@@ -274,7 +274,7 @@ class MutationScopeExecutionTest {
     }
 
     private static ExecutionInput.Builder ownedInput(String query) {
-        return Graphitron.newOwnedExecutionInput("{\"sub\":\"test-user\"}", "test-user").query(query);
+        return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"), "{\"sub\":\"test-user\"}", "test-user").query(query);
     }
 
     /** A DataSource that hands out real connections and counts each acquisition. */

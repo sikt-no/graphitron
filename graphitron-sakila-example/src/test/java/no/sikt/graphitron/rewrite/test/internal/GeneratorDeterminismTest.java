@@ -210,20 +210,37 @@ class GeneratorDeterminismTest {
 
     private static RunContext contextFor(Path outputDir) {
         // The fixture schema binds a $session service parameter and carries @outbox fields, so the
-        // context needs the same <sessionState> pair and <outbox> block the example pom configures
+        // context needs the same <sessionState> handle and <outbox> block the example pom configures
         // for the default execution.
         return new RunContext(
             List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
             outputDir,
             OUTPUT_PACKAGE,
-            JOOQ_PACKAGE
+            JOOQ_PACKAGE,
+            classpathRoots()
         ).withSessionStateConfig(SessionStateConfig.from(
-            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#mount",
-            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount"))
+            "no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord", null, null))
             .withOutboxConfig(no.sikt.graphitron.model.config.OutboxConfig.from(
                 "outbox", null, java.util.Map.of(), java.util.Map.of(),
                 "operation: $scope.operationName"));
+    }
+
+    /**
+     * The entries the fixture's referenced classes are read from: the example's own modules on this
+     * test's classpath (the jOOQ catalog with the session handle, the services module, the
+     * example's classes) and the libraries the schema names a class of, not every third-party
+     * jar, which the census would read for nothing.
+     */
+    private static List<Path> classpathRoots() {
+        return java.util.Arrays.stream(System.getProperty("java.class.path").split(java.io.File.pathSeparator))
+            .map(Path::of)
+            .filter(p -> p.toString().contains("graphitron-sakila")
+                || p.getFileName().toString().startsWith("jooq-3")
+                || p.getFileName().toString().startsWith("graphql-java-2")
+                || p.getFileName().toString().startsWith("graphql-java-extended-scalars"))
+            .filter(p -> java.nio.file.Files.isDirectory(p) || p.toString().endsWith(".jar"))
+            .toList();
     }
 
     /**

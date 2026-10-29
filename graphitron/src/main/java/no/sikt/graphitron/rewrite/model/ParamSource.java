@@ -21,8 +21,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
 public sealed interface ParamSource
     permits ParamSource.RoutineParamSource, ParamSource.Context, ParamSource.Sources,
             ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable,
-            ParamSource.SessionSeam, ParamSource.SessionHandle, ParamSource.SessionHandleMember,
-            ParamSource.SessionTenant {
+            ParamSource.SessionHandle, ParamSource.SessionHandleMember {
 
     /**
      * The two arms a {@link RoutineRef.ArgBinding} may carry, named as a type so the routine
@@ -265,33 +264,7 @@ public sealed interface ParamSource
     }
 
     /**
-     * A session hook's seam parameter: the one parameter of a {@code <mount>}/{@code <unmount>}
-     * method typed {@code org.jooq.Configuration} or {@code java.sql.Connection}, supplied by the
-     * generated hook class (never extracted from the request). The {@link Kind} is decided once
-     * in {@code ServiceCatalog} at reflection time, so no emitter re-derives the fork from a
-     * type-name string; the emit-side switch breaks at compile until the arm is covered.
-     * Filtered out of {@link MethodRef#callParams()}, so the seam never contributes to
-     * call-parameter arity.
-     */
-    record SessionSeam(Kind kind) implements ParamSource {
-        public SessionSeam {
-            Objects.requireNonNull(kind, "kind");
-        }
-
-        /** Which seam type the consumer declared; the generated hook builds or passes accordingly. */
-        public enum Kind {
-            /** jOOQ {@code org.jooq.Configuration}: the hook builds a provider-free
-             *  {@code DSL.using(connection, dialect, settings).configuration()}. */
-            CONFIGURATION,
-            /** Raw JDBC {@code java.sql.Connection}: the hook passes the pinned connection. */
-            CONNECTION
-        }
-    }
-
-    /**
-     * A parameter bound to the session handle. Two producers: the {@code <unmount>} hook's
-     * handle parameter (the generated hook passes the pinned carrier's stored handle), and a
-     * service parameter bound via the {@code $session} argMapping sigil, whose call-site
+     * A parameter bound to the session handle by the {@code $session} argMapping sigil, whose call-site
      * extraction reads the handle off the resolved {@code DSLContext}'s own
      * {@code configuration().data(...)} slot (per-key-carrier scoped, so a tenant-routed call
      * reads that tenant's handle), never off {@code graphQLContext}. Supplied by the generator,
@@ -303,22 +276,10 @@ public sealed interface ParamSource
      * A parameter bound to one readable member of the session handle, by the
      * {@code $session.<member>} argMapping sigil. Read the way {@link SessionHandle} is, off the
      * resolved {@code DSLContext}'s own configuration data, then through the member's accessor.
-     * Never produced for the {@code <unmount>} hook, whose parameter is the whole handle.
      * Supplied by the generator, filtered out of {@link MethodRef#callParams()} for a service;
      * a {@code @condition} reads it through a call-site extraction.
      *
      * @param member the authored member name, joined against the handle's decoded members
      */
     record SessionHandleMember(String member) implements ParamSource {}
-
-    /**
-     * A {@code <mount>} method's tenant slot: the one parameter typed exactly
-     * {@code java.util.Optional<K>}, {@code K} being the boxed Java type of the configured
-     * {@code <tenantColumn>}. Recognised by type in {@code ServiceCatalog} at reflection time, the
-     * way {@link SessionSeam} is, and only in a {@code <tenantColumn>} build. The generated hook
-     * passes the tenant the connection is being mounted for ({@code Optional.empty()} for the
-     * default source); it is neither payload nor a factory slot, so it is filtered out of
-     * {@link MethodRef#callParams()} and never reaches the contextArgument classifier.
-     */
-    record SessionTenant() implements ParamSource {}
 }

@@ -126,8 +126,14 @@ class StageOrderGateTest {
             Set.of("graphitron_outbox_leaf")),
         new Step("OutboxTargets", "graphitron_outbox_target_rule",
             Set.of("graphitron_outbox_target")),
+        new Step("SessionHandleMembers", null,
+            Set.of("graphitron_session_handle_member")),
+        new Step("ArgMappingParameters", null,
+            Set.of("graphitron_argmapping_parameter")),
         new Step("EntryDefects", "graphitron_entry_defect_rule",
-            Set.of("graphitron_entry_defect")));
+            Set.of("graphitron_entry_defect")),
+        new Step("ArgMappingPairDefects", "graphitron_argmapping_pair_defect_rule",
+            Set.of("graphitron_argmapping_pair_defect")));
 
     /**
      * The roster is the stratum, name for name and write set for write set, in order. Without this

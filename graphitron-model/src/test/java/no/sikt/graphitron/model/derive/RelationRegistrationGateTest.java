@@ -117,7 +117,7 @@ class RelationRegistrationGateTest {
             "store_graph_max_allowed_page_size",
             "store_graph_outbox", "store_graph_outbox_role", "store_graph_outbox_payload_entry",
             "store_graph_lint_disabled_rule", "store_graph_lint_excluded_type",
-            "store_graph_session_mount", "store_graph_session_unmount", "store_graph_dependency",
+            "store_graph_session_supplied", "store_graph_session_handle", "store_graph_dependency",
             "store_graph_module", "store_graph_module_entry",
             "store_graph_source",
             // The java_ family: the store's rows and the walker's declarations are one parse
@@ -496,6 +496,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
+        registrations.put("graphitron_session_handle_member", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_parameter", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
@@ -503,6 +505,9 @@ class RelationRegistrationGateTest {
         // states no defect population at all: the walk threw, and a thrown error is not a
         // row anything can be held to. What pins it is the entry-defect fact documents.
         registrations.put("graphitron_entry_defect", Arm.UNSHADOWED);
+        // The entry-grain detail of the same collapse, on the same terms.
+        registrations.put("graphitron_argmapping_pair_defect", Arm.UNSHADOWED);
+        registrations.put("graphitron_argmapping_pair_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement

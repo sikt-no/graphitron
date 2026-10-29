@@ -6,8 +6,8 @@ import com.palantir.javapoet.ParameterSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
+import no.sikt.graphitron.emit.SessionIdentityRows;
+import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
@@ -52,7 +52,6 @@ class ConnectionRuntimeClassGeneratorTest {
 
     private static final String PACKAGE = "com.example";
     private static final String SCHEMA_PACKAGE = PACKAGE + ".schema";
-    private static final String FIXTURE = LifecycleHookFixture.class.getName();
 
     private static EmittedCodeHarness harness;
     private static Class<?> pinnedConnectionClass;
@@ -61,28 +60,18 @@ class ConnectionRuntimeClassGeneratorTest {
     /** Ordered log of observable lifecycle events, shared by all fakes and the hook fixture. */
     private final List<String> events = new ArrayList<>();
 
-    /** The fixture hook pair: {@code Connection}-seam mount with a String payload, String handle. */
-    private static SessionHooks fixtureHooks() {
-        var mount = SessionHooksFixtures.hookRef(FIXTURE, "mount", ClassName.get(String.class),
-            SessionHooksFixtures.connectionSeam(), SessionHooksFixtures.stringPayload("claims"));
-        var unmount = SessionHooksFixtures.hookRef(FIXTURE, "unmount", TypeName.VOID,
-            SessionHooksFixtures.connectionSeam(),
-            SessionHooksFixtures.handleParam(ClassName.get(String.class)));
-        return new SessionHooks.Handled(mount, ClassName.get(String.class), Optional.of(unmount));
-    }
-
     @BeforeAll
     static void compileEmittedRuntime() {
         // The runtime's newGraphQL(schema) references the connection instrumentation, which in
         // turn references the transaction provider and the carrier: the emitted runtime classes
         // are one connected cluster, so they compile together. This test still only drives the
         // connection-lifecycle classes below.
-        harness = compile(fixtureHooks());
+        harness = compile(SessionIdentityFixtures.recording());
         pinnedConnectionClass = harness.load(SCHEMA_PACKAGE + ".PinnedConnection");
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
     }
 
-    private static EmittedCodeHarness compile(SessionHooks hooks) {
+    private static EmittedCodeHarness compile(SessionIdentityRows hooks) {
         Map<String, TypeSpec> units = new LinkedHashMap<>();
         for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
@@ -119,7 +108,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     @Test
     void acquireThenRelease_success_mountsThenUnmountsInOrder() throws Throwable {
-        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        Object pinned = acquire(fakeDataSource());
         release(pinned);
 
         assertThat(events).containsExactly(
@@ -130,7 +119,7 @@ class ConnectionRuntimeClassGeneratorTest {
     void mountFailure_evictsAndFailsClosedBeforeAnySql() {
         LifecycleHookFixture.mountThrows = new RuntimeException("unentitled role");
 
-        assertThatThrownBy(() -> acquire(fakeDataSource(), "claims-payload"))
+        assertThatThrownBy(() -> acquire(fakeDataSource()))
             .as("a throwing mount becomes the request-scoped rejection, the mount's throw as its cause")
             .satisfies(t -> assertThat(t.getClass().getSimpleName()).isEqualTo("SessionMountException"))
             .hasCause(LifecycleHookFixture.mountThrows);
@@ -144,7 +133,7 @@ class ConnectionRuntimeClassGeneratorTest {
     void unmountFailure_evictsInsteadOfReturningToPool() throws Throwable {
         LifecycleHookFixture.unmountThrows = new RuntimeException("unmount failed");
 
-        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        Object pinned = acquire(fakeDataSource());
         assertThatThrownBy(() -> release(pinned))
             .as("a throwing unmount surfaces the failure")
             .isInstanceOf(Throwable.class);
@@ -157,7 +146,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     @Test
     void release_isIdempotent_cancelThenCompleteUnmountsExactlyOnce() throws Throwable {
-        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        Object pinned = acquire(fakeDataSource());
         release(pinned); // e.g. cancellation signal
         release(pinned); // e.g. completion signal
 
@@ -183,7 +172,7 @@ class ConnectionRuntimeClassGeneratorTest {
         // The NotConfigured arm emits no hook class and no mount call at all, which is stronger
         // than holding a no-op; the autocommit assertion stays, as the resting state graphitron
         // holds an owned connection in.
-        try (var plain = compile(SessionHooks.NotConfigured.INSTANCE)) {
+        try (var plain = compile(SessionIdentityRows.empty())) {
             Class<?> plainRuntime = plain.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
             Object runtime = plainRuntime.getConstructor(DataSource.class, SQLDialect.class)
                 .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
@@ -203,7 +192,7 @@ class ConnectionRuntimeClassGeneratorTest {
         // configured that way); acquire must assert the mode before the mount, or on Postgres
         // the mount's session-scoped state would sit in an implicit never-committed transaction
         // and revert with a later rollback, leaving the operation running unmounted under RLS.
-        acquire(fakeDataSource(), "claims-payload");
+        acquire(fakeDataSource());
 
         assertThat(events)
             .as("autocommit is asserted after pinning and before the mount")
@@ -212,7 +201,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     @Test
     void release_operationLeftTransactionOpen_settlesBeforeTheUnmountRuns() throws Throwable {
-        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        Object pinned = acquire(fakeDataSource());
         // Simulate an operation that died mid-mutation: the provider turned autocommit off and
         // never settled. Release must roll back and assert autocommit before the unmount (in
         // that order: switching autocommit on commits an open transaction), so the unmount's
@@ -230,7 +219,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     @Test
     void handle_isCarriedFromMountToRelease_andExposedForTheCarrierEntry() throws Throwable {
-        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        Object pinned = acquire(fakeDataSource());
 
         assertThat(pinnedConnectionClass.getMethod("handle").invoke(pinned))
             .as("the mount's returned handle is the pinned carrier's one retained field, "
@@ -291,7 +280,7 @@ class ConnectionRuntimeClassGeneratorTest {
     @Test
     void fetcherErrorLog_tenantFailedIsADefaultTypedWithTheTenantKey() {
         TypeSpec log = unit(
-            ConnectionRuntimeClassGenerator.generate(PACKAGE, SessionHooks.NotConfigured.INSTANCE,
+            ConnectionRuntimeClassGenerator.generate(PACKAGE, SessionIdentityRows.empty(),
                 ClassName.get(Integer.class), TenantColumnFixtures.INTEGER_KEY_COLUMN),
             ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
 
@@ -395,7 +384,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     /** Runs acquire, then {@code body}, then release in a finally, capturing the event log. */
     private List<String> driveRelease(Runnable body) throws Throwable {
-        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        Object pinned = acquire(fakeDataSource());
         try {
             body.run();
         } catch (RuntimeException ignored) {
@@ -406,12 +395,14 @@ class ConnectionRuntimeClassGeneratorTest {
         return events;
     }
 
-    private Object acquire(DataSource dataSource, String claims) throws Throwable {
+    private Object acquire(DataSource dataSource) throws Throwable {
         Executor sameThread = Runnable::run;
         Method acquire = pinnedConnectionClass.getMethod(
-            "acquire", DataSource.class, SQLDialect.class, Settings.class, Executor.class, String.class);
+            "acquire", DataSource.class, SQLDialect.class, Settings.class, Executor.class,
+            harness.load(SCHEMA_PACKAGE + ".SessionState"));
         try {
-            return acquire.invoke(null, dataSource, SQLDialect.POSTGRES, new Settings(), sameThread, claims);
+            return acquire.invoke(null, dataSource, SQLDialect.POSTGRES, new Settings(), sameThread,
+                RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }

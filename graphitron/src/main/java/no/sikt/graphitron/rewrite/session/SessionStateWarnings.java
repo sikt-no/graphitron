@@ -32,7 +32,7 @@ public final class SessionStateWarnings {
      * The advisories for this configuration: {@link SessionStateConfig.None} yields
      * {@code no-session-state} (graphitron owns the connection boundary but was told no way to
      * mount identity, so the generated API is unsecured at the database); a configured
-     * {@link SessionStateConfig.MethodHooks} yields none.
+     * {@link SessionStateConfig.Callbacks} yields none.
      *
      * @param config the authored session-state configuration
      */
@@ -41,13 +41,14 @@ public final class SessionStateWarnings {
             case SessionStateConfig.None ignored -> List.of(BuildWarning.LintFinding.of(
                 "No <sessionState> is configured: the owned-connection runtime mounts no database identity "
                     + "on the connection, so the database cannot enforce per-caller row access for the "
-                    + "generated API. Configure <sessionState> with a <mount> method to mount identity — "
-                    + "a definer-rights routine, a signed token verified in-database, or a session "
-                    + "variable set by convention (see the security guide for the integrity gradient "
-                    + "between them) — or silence this rule (no-session-state) if the API is intentionally "
+                    + "generated API. Add <sessionState/> and pass a SessionState built from your mount "
+                    + "callback to Graphitron.newOwnedExecutionInput to mount identity: a definer-rights "
+                    + "routine, a signed token verified in-database, or a session variable set by "
+                    + "convention (see the security guide for the integrity gradient between them). "
+                    + "Or silence this rule (no-session-state) if the API is intentionally "
                     + "unsecured or uses only the caller-owns-everything escape hatch.",
                 null, LintRule.NO_SESSION_STATE));
-            case SessionStateConfig.MethodHooks ignored -> List.of();
+            case SessionStateConfig.Callbacks ignored -> List.of();
         };
     }
 }

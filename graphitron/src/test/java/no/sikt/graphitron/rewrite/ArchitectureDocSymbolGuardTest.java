@@ -143,6 +143,8 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("Graphitron", "emitted: per-app entry-point class carrying newExecutionInput");
         exempt.put("GraphitronContext", "emitted: per-app context interface");
         exempt.put("GraphitronContextImpl", "emitted: the consumer's own implementation of it");
+        exempt.put("MountedSession", "emitted: per-app view of the connection a mount callback receives");
+        exempt.put("SessionState", "emitted: per-app carrier of a request's mount and unmount callbacks");
         exempt.put("NodeIdEncoder", "emitted: per-app node-id encoder");
         exempt.put("NodeIdStrategy", "emitted: per-app node-id strategy interface");
         exempt.put("OrderByResult", "emitted: per-app order-by result class");

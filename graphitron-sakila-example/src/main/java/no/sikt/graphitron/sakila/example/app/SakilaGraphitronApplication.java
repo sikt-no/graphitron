@@ -46,6 +46,7 @@ public class SakilaGraphitronApplication extends AbstractGraphitronApplication {
 
     @Override
     public ExecutionInput.Builder newExecutionInput() {
-        return Graphitron.newOwnedExecutionInput("{\"sub\":\"test-user\"}", "test-user");
+        String claims = "{\"sub\":\"test-user\"}";
+        return Graphitron.newOwnedExecutionInput(SakilaSessions.of(claims), claims, "test-user");
     }
 }

@@ -60,6 +60,9 @@ import java.util.Set;
  * against itself: a connection's default page size is well formed on its own and fails only beside
  * a {@code <maxAllowedPageSize>} smaller than it, which no other family reads.
  *
+ * <p>{@link #sessionIdentity} judges the {@code $session} bindings and the configured handle
+ * class against the build's {@code <sessionState>} and the classpath, which no other family reads.
+ *
  * <p>{@link #nodeIdDecodeCoverage} is the second member that is not a detection, and it is not one
  * for a different reason than {@link #keyProjections}: it is half of a rule whose other half the
  * store does not hold at all. What the generator did about each decoding {@code @nodeId} coordinate
@@ -85,6 +88,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               UnlowerableOrderings.Detection unlowerableOrderings,
                               DefaultPageSizeDefects.Detection defaultPageSizes,
+                              SessionIdentityDefects.Detection sessionIdentity,
                               NodeLegacyKeyDefects.Detection nodeLegacyKeys,
                               OutboxDefects.Detection outboxes,
                               ResolvedKeyProjections.Projections keyProjections,
@@ -115,6 +119,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
         roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
         roster.put("DefaultPageSizeDefects", DefaultPageSizeDefects.READS);
+        roster.put("SessionIdentityDefects", SessionIdentityDefects.READS);
         roster.put("NodeLegacyKeyDefects", NodeLegacyKeyDefects.READS);
         roster.put("OutboxDefects", OutboxDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
@@ -142,6 +147,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     UnlowerableOrderings.detect(dsl, graphName),
                     DefaultPageSizeDefects.detect(dsl, graphName),
+                    SessionIdentityDefects.detect(dsl, graphName),
                     NodeLegacyKeyDefects.detect(dsl, graphName),
                     OutboxDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
@@ -161,6 +167,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             ReferenceForParticipantDefects.Detection.empty(),
             UnlowerableOrderings.Detection.empty(),
             DefaultPageSizeDefects.Detection.empty(),
+            SessionIdentityDefects.Detection.empty(),
             NodeLegacyKeyDefects.Detection.empty(),
             OutboxDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
@@ -178,6 +185,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(referenceForParticipants.violations());
         out.addAll(unlowerableOrderings.violations());
         out.addAll(defaultPageSizes.violations());
+        out.addAll(sessionIdentity.violations());
         out.addAll(nodeLegacyKeys.violations());
         out.addAll(outboxes.violations());
         return List.copyOf(out);

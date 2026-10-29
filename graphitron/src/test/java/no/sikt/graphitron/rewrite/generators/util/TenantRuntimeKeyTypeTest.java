@@ -5,7 +5,7 @@ import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
+import no.sikt.graphitron.emit.SessionIdentityRows;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -52,7 +52,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void configuredTenantColumnTypesEveryTenantKeyedSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
@@ -70,7 +70,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantAcquisitionTakesTheTenantItMountsFor() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         // The tenant rides between the seam's settings and the abort executor; the runtime's
@@ -88,7 +88,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantAcquisitionCarriesNoTenant() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+            "fake.code.generated", SessionIdentityRows.empty());
 
         assertThat(parameters(method(type(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME), "acquire")))
             .containsExactly(
@@ -101,7 +101,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierHoldsTheRequestTenantSet() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
@@ -136,7 +136,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantBuildEmitsTheRequestTenancyValue() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var requestTenants = type(units, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
 
@@ -194,7 +194,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheGlobalReadAcquisition() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
@@ -231,7 +231,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantBuildEmitsNoRequestTenancyValueAndNoGlobalReadAcquisition() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+            "fake.code.generated", SessionIdentityRows.empty());
         var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
         assertThat(units).extracting(TypeSpec::name)
@@ -243,7 +243,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantCarrierHoldsNoTenantSet() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+            "fake.code.generated", SessionIdentityRows.empty());
         var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
         assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name).doesNotContain("tenants");
@@ -253,7 +253,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheRoutingStatics() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
@@ -277,7 +277,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantCarrierOmitsTheRoutingMachinery_butKeepsTheUnifiedResolution() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+            "fake.code.generated", SessionIdentityRows.empty());
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
@@ -297,7 +297,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantRuntimeShipsTheFanOutConfigurationSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
@@ -319,7 +319,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheScatterSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
@@ -349,7 +349,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheFanOutHelpers() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
@@ -389,7 +389,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantOmitsTheFanOutSubstrate() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+            "fake.code.generated", SessionIdentityRows.empty());
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
@@ -414,7 +414,7 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void singleTenantKeepsTheErasedObjectShape() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
+            "fake.code.generated", SessionIdentityRows.empty());
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)

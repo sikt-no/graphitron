@@ -1,12 +1,12 @@
-# The first reading: a run configured with a tenant column, a maximum page size, a mount and an
-# unmount, and two disabled lint rules.
+# The first reading: a run configured with a tenant column, a maximum page size, a session
+# identity naming its handle class, and two disabled lint rules.
 
 extend schema @withConfiguration(
   tenantColumn: "tenant_id",
   maxAllowedPageSize: 1000,
   lintDisabledRules: ["no-typename-prefix", "field-names-camel-case"],
-  mount: "com.example.Identity#mount",
-  unmount: "com.example.Identity#unmount"
+  sessionState: true,
+  sessionHandle: "com.example.Identity"
 )
 
 extend schema @expectEquals(relation: "store_graph_tenant_column", rows: """
@@ -19,7 +19,7 @@ extend schema @expectEquals(relation: "store_graph_max_allowed_page_size", rows:
   1000,          1000000000
   """)
 
-extend schema @expectEquals(relation: "store_graph_session_unmount", rows: """
-  unmount_method,               touched_at
-  com.example.Identity#unmount, 1000000000
+extend schema @expectEquals(relation: "store_graph_session_handle", rows: """
+  handle_class,         touched_at
+  com.example.Identity, 1000000000
   """)

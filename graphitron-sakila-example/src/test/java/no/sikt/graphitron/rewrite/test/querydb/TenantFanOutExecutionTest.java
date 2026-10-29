@@ -134,7 +134,7 @@ class TenantFanOutExecutionTest {
     }
 
     private static ExecutionResult execute(String query, Collection<Integer> tenants) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{}")
+        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{}"))
             .query(query)
             .build());
     }
@@ -189,7 +189,7 @@ class TenantFanOutExecutionTest {
         // handle sequences occupy disjoint ranges (restarted at 1000 and 2000 in setup), so
         // the session number identifies which tenant's mount produced the observed handle.
         var result = graphql.execute(Graphitron
-            .newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"fanout-user\"}")
+            .newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"fanout-user\"}"))
             .query("{ filmsEverywhere { title mountedPrincipal } }")
             .build());
 
@@ -217,7 +217,7 @@ class TenantFanOutExecutionTest {
         // connection (the statement's dsl), so tenant 1's rows see a number from its 1000s range
         // and tenant 2's from the 2000s, in one operation, and rows of one tenant share the one.
         var result = graphql.execute(Graphitron
-            .newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"fanout-user\"}")
+            .newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"fanout-user\"}"))
             .query("{ filmsEverywhere { title mountedSessionNumber } }")
             .build());
 
@@ -331,7 +331,7 @@ class TenantFanOutExecutionTest {
             4, java.time.Duration.ofMillis(500));
         var slowEngine = slowRuntime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{}")
+        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{}"))
             .query("{ filmsEverywhere { title } }")
             .build());
 
@@ -379,7 +379,7 @@ class TenantFanOutExecutionTest {
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{}")
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{}"))
             .query("{ filmsEverywhere { title } }")
             .build());
 
@@ -404,7 +404,7 @@ class TenantFanOutExecutionTest {
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.execute(Graphitron
-                .newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"reject-me\"}")
+                .newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"reject-me\"}"))
                 .query("{ a: filmsEverywhere { title } b: filmsEverywhere { title } }")
                 .build()))
             .isInstanceOf(SessionMountException.class)
@@ -426,7 +426,7 @@ class TenantFanOutExecutionTest {
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{}")
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{}"))
             .query("{ filmsEverywhere { title } }")
             .build());
 

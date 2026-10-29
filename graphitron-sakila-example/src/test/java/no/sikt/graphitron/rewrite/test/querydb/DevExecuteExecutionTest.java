@@ -80,11 +80,11 @@ class DevExecuteExecutionTest {
         String devResult;
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             devResult = GraphitronDevExecutor.execute(
-                connection, "POSTGRES", query, null, CLAIMS, Map.of("userId", USER_ID));
+                connection, "POSTGRES", query, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
 
         ExecutionResult inApp = inAppEngine.execute(
-            Graphitron.newOwnedExecutionInput(CLAIMS, USER_ID).query(query).build());
+            Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), CLAIMS, USER_ID).query(query).build());
         assertThat(inApp.getErrors()).as("errors: " + inApp.getErrors()).isEmpty();
 
         // Same serializer on both sides (the executor uses JSONValue internally), so byte-equal
@@ -105,7 +105,7 @@ class DevExecuteExecutionTest {
         String result;
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = no.sikt.graphitron.generated.federated.GraphitronDevExecutor.execute(
-                connection, "POSTGRES", query, Map.of("reps", reps), CLAIMS, Map.of());
+                connection, "POSTGRES", query, Map.of("reps", reps), SessionStates.federated(CLAIMS), Map.of());
         }
         assertThat(result).contains("\"__typename\":\"Customer\"", "\"firstName\"")
             .doesNotContain("\"errors\"");
@@ -118,7 +118,7 @@ class DevExecuteExecutionTest {
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
                 connection, "POSTGRES", query, Map.of("ids", java.util.List.of("1")),
-                CLAIMS, Map.of("userId", USER_ID));
+                no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
         assertThat(result).contains("\"filmId\":1").doesNotContain("\"errors\"");
     }
@@ -133,7 +133,7 @@ class DevExecuteExecutionTest {
         String result;
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
-                connection, "POSTGRES", mutation, null, CLAIMS, Map.of("userId", USER_ID));
+                connection, "POSTGRES", mutation, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
 
         // The mutation ran for real (the generated fetcher returned the inserted row) ...
@@ -163,7 +163,7 @@ class DevExecuteExecutionTest {
         String result;
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
-                connection, "POSTGRES", mutation, null, CLAIMS, Map.of("userId", USER_ID));
+                connection, "POSTGRES", mutation, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
 
         assertThat(result)
@@ -178,14 +178,15 @@ class DevExecuteExecutionTest {
 
     @Test
     void missingClaims_failLoudAtTheExecutorGate_namingTheConfigKnob() throws Exception {
-        // This module configures <sessionState>, so the emitted executor requires a claims
-        // payload rather than running under a different security posture than production.
+        // This module configures <sessionState>, so the emitted executor requires a session
+        // state rather than running under a different security posture than production.
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             assertThatThrownBy(() -> GraphitronDevExecutor.execute(
-                    connection, "POSTGRES", "{ films { filmId } }", null, null, Map.of("userId", USER_ID)))
+                    connection, "POSTGRES", "{ films { filmId } }", null,
+                    (no.sikt.graphitron.generated.schema.SessionState) null, Map.of("claims", CLAIMS, "userId", USER_ID)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("<sessionState>")
-                .hasMessageContaining("GRAPHITRON_DEV_CLAIMS");
+                .hasMessageContaining("GRAPHITRON_DEV_SESSION");
         }
     }
 
@@ -199,7 +200,8 @@ class DevExecuteExecutionTest {
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             assertThatThrownBy(() -> GraphitronDevExecutor.execute(
                     connection, "POSTGRES", "{ films { filmId } }", null,
-                    "{\"sub\": \"reject-me\"}", Map.of("userId", USER_ID)))
+                    no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\": \"reject-me\"}"),
+                    Map.of("claims", CLAIMS, "userId", USER_ID)))
                 .hasMessageContaining("unentitled principal: reject-me");
         }
     }

@@ -9,14 +9,13 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
-import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
-import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
+import no.sikt.graphitron.emit.SessionIdentityRows;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -100,7 +99,7 @@ import java.util.Optional;
  * <h2>Session hooks</h2>
  * With no {@code <sessionState>} configured nothing is emitted and {@code acquire} carries no
  * mount call at all: no hook unit, no runtime field, no dispatch. A configured method pair
- * ({@link SessionHooks.HandleLess} / {@link SessionHooks.Handled}) additionally emits
+ * (a graph that supplies session identity per request) additionally emits
  * {@value #SESSION_HOOK_IMPL_CLASS_NAME}, one final class with static {@code mount} and
  * {@code unmount} methods that {@code PinnedConnection} calls directly: the choice between a
  * mount and no mount is known at generation time, so it is a choice about what to emit, never a
@@ -121,6 +120,15 @@ public final class ConnectionRuntimeClassGenerator {
      * only with it: a build that mounts nothing has nothing to reject.
      */
     public static final String SESSION_MOUNT_EXCEPTION_CLASS_NAME = "SessionMountException";
+
+    /** The per-request pair of mount and unmount callbacks the consumer builds the input with. */
+    public static final String SESSION_STATE_CLASS_NAME = "SessionState";
+
+    /** What graphitron knows about the connection being mounted, handed to each callback. */
+    public static final String MOUNTED_SESSION_CLASS_NAME = "MountedSession";
+
+    /** The name the request's {@code SessionState} travels under as a parameter and a field. */
+    static final String SESSION_STATE_SLOT = "sessionState";
     /** The per-operation tenant-keyed connection carrier. */
     public static final String TENANT_CONNECTIONS_CLASS_NAME = "TenantConnections";
     /**
@@ -179,6 +187,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static final TypeName OBJECT_KEY = ClassName.get(Object.class);
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName CONFIGURATION = ClassName.get("org.jooq", "Configuration");
     private static final ClassName DATA_TYPE = ClassName.get("org.jooq", "DataType");
     private static final ClassName DATA_FETCHING_ENVIRONMENT = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName DATA_ACCESS_EXCEPTION = ClassName.get("org.jooq.exception", "DataAccessException");
@@ -215,12 +224,12 @@ public final class ConnectionRuntimeClassGenerator {
     /**
      * @param outputPackage the consumer's root output package; the classes are emitted into
      *                      {@code outputPackage + ".schema"} (beside {@code GraphitronContext})
-     * @param sessionHooks  the resolved session-hook carrier: {@link SessionHooks.NotConfigured}
+     * @param identity  the graph's session identity as the store states it: {@link SessionIdentityRows#empty()}
      *                      emits no hook unit and no mount call; a configured arm additionally
      *                      emits {@link #SESSION_HOOK_IMPL_CLASS_NAME}, called directly
      */
-    public static List<TypeSpec> generate(String outputPackage, SessionHooks sessionHooks) {
-        return generate(outputPackage, sessionHooks, null, null);
+    public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity) {
+        return generate(outputPackage, identity, null, null);
     }
 
     /**
@@ -239,7 +248,7 @@ public final class ConnectionRuntimeClassGenerator {
      *
      * @throws IllegalArgumentException when exactly one of the two is {@code null}
      */
-    public static List<TypeSpec> generate(String outputPackage, SessionHooks sessionHooks,
+    public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           TypeName tenantKeyType, CodeBlock tenantColumn) {
         if ((tenantKeyType == null) != (tenantColumn == null)) {
             throw new IllegalArgumentException("A multi-tenant runtime needs both the tenant key type and"
@@ -269,19 +278,21 @@ public final class ConnectionRuntimeClassGenerator {
         boolean multiTenant = tenantKeyType != null;
 
         var units = new ArrayList<TypeSpec>();
-        units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, sessionHooks,
+        units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, identity,
             tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
-            sessionHooks, tenantKey, multiTenant, tenantConnections));
+            identity, tenantKey, multiTenant, tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, sessionHooks, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException));
+            multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
-        if (sessionHooks.emitsHookImplementation()) {
-            units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
+        if (identity.emitsHookImplementation()) {
+            units.add(mountedSession(schemaPackage, tenantKey, multiTenant));
+            units.add(sessionState(schemaPackage, identity));
+            units.add(sessionHookImpl(schemaPackage, identity, tenantKey, multiTenant));
             units.add(sessionMountException(sessionMountException));
         }
         return List.copyOf(units);
@@ -289,7 +300,7 @@ public final class ConnectionRuntimeClassGenerator {
 
     /** Back-compatible overload for callers that mount no identity (unit-tier drivers, no {@code <sessionState>}). */
     public static List<TypeSpec> generate(String outputPackage) {
-        return generate(outputPackage, SessionHooks.NotConfigured.INSTANCE);
+        return generate(outputPackage, SessionIdentityRows.empty());
     }
 
     /**
@@ -297,19 +308,18 @@ public final class ConnectionRuntimeClassGenerator {
      * Multi-tenant builds additionally emit {@code abort()}, the straggler seam the scatter helper's
      * timeout path routes through: evict without the unmount hook, safe against a worker that may
      * still be executing on the connection. The emitted shape follows the resolved
-     * {@link SessionHooks} arm: no hook configured means no mount call at all; a handle-less mount
+     * session identity the store states: none configured means no mount call at all; a handle-less mount
      * means no handle field; a handled mount adds the typed handle field {@code release} reads.
      * Multi-tenant builds give {@code acquire} an {@code Optional<K>} parameter ({@value #MOUNTED_TENANT}) naming the
      * tenant the connection is acquired for, handed on to the mount.
      */
     private static TypeSpec pinnedConnection(ClassName pinnedConnection, ClassName sessionHookImpl,
-            ClassName sessionMountException, SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant) {
-        var payload = payloadParams(sessionHooks);
-        boolean mounts = sessionHooks.emitsHookImplementation();
-        boolean unmounts = sessionHooks.unmountRef().isPresent();
-        TypeName handleType = sessionHooks instanceof SessionHooks.Handled handled ? handled.handleType() : null;
-        boolean unmountTakesHandle = unmounts && sessionHooks.unmountRef().orElseThrow().params().stream()
-            .anyMatch(p -> p.source() instanceof ParamSource.SessionHandle);
+            ClassName sessionMountException, SessionIdentityRows identity, TypeName tenantKey, boolean multiTenant) {
+        var payload = payloadParams(identity, pinnedConnection);
+        boolean mounts = identity.emitsHookImplementation();
+        boolean unmounts = identity.emitsHookImplementation();
+        TypeName handleType = identity.handleType().orElse(null);
+        boolean unmountTakesHandle = unmounts && handleType != null;
 
         var connectionField = FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build();
         var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL)
@@ -326,6 +336,16 @@ public final class ConnectionRuntimeClassGenerator {
                     + "for {@code $$session}-bound service parameters.\n")
                 .build();
         var abortExecutorField = FieldSpec.builder(EXECUTOR, "abortExecutor", Modifier.PRIVATE, Modifier.FINAL).build();
+        var sessionStateType = ClassName.get(pinnedConnection.packageName(), SESSION_STATE_CLASS_NAME);
+        var mountedTenantType = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+        var sessionStateField = FieldSpec.builder(sessionStateType, SESSION_STATE_SLOT, Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The request's session state, kept so release unmounts through the same callbacks\n"
+                + "that mounted this connection.\n")
+            .build();
+        var mountedTenantField = FieldSpec.builder(mountedTenantType, MOUNTED_TENANT, Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The tenant this connection was mounted for, handed to the unmount callback as it\n"
+                + "was to the mount.\n")
+            .build();
         var releasedField = FieldSpec.builder(boolean.class, "released", Modifier.PRIVATE).build();
 
         var constructorBuilder = MethodSpec.constructorBuilder()
@@ -336,17 +356,28 @@ public final class ConnectionRuntimeClassGenerator {
         if (handleType != null) {
             constructorBuilder.addParameter(handleType, "handle");
         }
+        constructorBuilder.addParameter(EXECUTOR, "abortExecutor");
+        if (mounts) {
+            constructorBuilder.addParameter(sessionStateType, SESSION_STATE_SLOT);
+            if (multiTenant) {
+                constructorBuilder.addParameter(mountedTenantType, MOUNTED_TENANT);
+            }
+        }
         constructorBuilder
-            .addParameter(EXECUTOR, "abortExecutor")
             .addStatement("this.connection = connection")
             .addStatement("this.dialect = dialect")
             .addStatement("this.settings = settings");
         if (handleType != null) {
             constructorBuilder.addStatement("this.handle = handle");
         }
-        var constructor = constructorBuilder
-            .addStatement("this.abortExecutor = abortExecutor")
-            .build();
+        constructorBuilder.addStatement("this.abortExecutor = abortExecutor");
+        if (mounts) {
+            constructorBuilder.addStatement("this.$L = $L", SESSION_STATE_SLOT, SESSION_STATE_SLOT);
+            if (multiTenant) {
+                constructorBuilder.addStatement("this.$L = $L", MOUNTED_TENANT, MOUNTED_TENANT);
+            }
+        }
+        var constructor = constructorBuilder.build();
 
         var acquireBuilder = MethodSpec.methodBuilder("acquire")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -376,7 +407,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("runs before any hook SQL.")
             .addStatement("connection.setAutoCommit(true)");
         if (mounts) {
-            String args = mountCallArgs(payload, multiTenant);
+            String args = mountCallArgs(multiTenant);
             acquireBuilder
                 .addComment("Only the mount itself is a rejected identity: a failed autocommit assertion above is")
                 .addComment("a deployment fault and must not reach a consumer's mapping of identity rejections.")
@@ -398,13 +429,18 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("evict(connection, abortExecutor)")
             .addStatement("throw rethrow(mountFailure)")
             .endControlFlow();
+        var constructed = new StringBuilder("connection, dialect, settings");
         if (handleType != null) {
-            acquireBuilder.addStatement("return new $T(connection, dialect, settings, handle, abortExecutor)",
-                pinnedConnection);
-        } else {
-            acquireBuilder.addStatement("return new $T(connection, dialect, settings, abortExecutor)",
-                pinnedConnection);
+            constructed.append(", handle");
         }
+        constructed.append(", abortExecutor");
+        if (mounts) {
+            constructed.append(", ").append(SESSION_STATE_SLOT);
+            if (multiTenant) {
+                constructed.append(", ").append(MOUNTED_TENANT);
+            }
+        }
+        acquireBuilder.addStatement("return new $T($L)", pinnedConnection, constructed.toString());
         var acquire = acquireBuilder
             .addJavadoc(mounts
                 ? "Pins one connection, asserts autocommit on it, and mounts identity through the generated\n"
@@ -457,8 +493,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("connection.setAutoCommit(true)")
             .endControlFlow();
         if (unmounts) {
+            String tenantArg = multiTenant ? ", " + MOUNTED_TENANT : "";
             String handleArg = unmountTakesHandle ? ", handle" : "";
-            releaseBuilder.addStatement("$T.unmount(connection, dialect, settings$L)", sessionHookImpl, handleArg);
+            releaseBuilder.addStatement("$T.unmount($L, connection, dialect, settings$L$L)", sessionHookImpl,
+                SESSION_STATE_SLOT, tenantArg, handleArg);
         }
         var release = releaseBuilder
             .nextControlFlow("catch ($T releaseFailure)", Throwable.class)
@@ -552,8 +590,14 @@ public final class ConnectionRuntimeClassGenerator {
         if (handleField != null) {
             builder.addField(handleField);
         }
-        builder.addField(abortExecutorField)
-            .addField(releasedField)
+        builder.addField(abortExecutorField);
+        if (mounts) {
+            builder.addField(sessionStateField);
+            if (multiTenant) {
+                builder.addField(mountedTenantField);
+            }
+        }
+        builder.addField(releasedField)
             .addMethod(constructor)
             .addMethod(acquire)
             .addMethod(connectionAccessor)
@@ -579,30 +623,32 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
-    /** The mount's payload parameters as typed params, empty when nothing is configured. */
-    private static List<MethodRef.Param.Typed> payloadParams(SessionHooks sessionHooks) {
-        return sessionHooks.mountRef()
-            .map(m -> m.params().stream()
-                .filter(p -> p instanceof MethodRef.Param.Typed typed
-                    && typed.source() instanceof ParamSource.Context)
-                .map(p -> (MethodRef.Param.Typed) p)
-                .toList())
-            .orElse(List.of());
+    /**
+     * One request-scoped value the carrier holds and hands to every acquisition: its Java type and
+     * the name it travels under as a parameter and a field.
+     */
+    private record Slot(TypeName javaType, String name) {}
+
+    /**
+     * The request's session state as the one payload slot: the {@code SessionState} the consumer
+     * built the input with, empty when the graph supplies no session identity. Every acquisition
+     * of the request mounts through it, so the carrier holds it for the life of the request.
+     */
+    private static List<Slot> payloadParams(SessionIdentityRows identity, ClassName sibling) {
+        return identity.emitsHookImplementation()
+            ? List.of(new Slot(ClassName.get(sibling.packageName(), SESSION_STATE_CLASS_NAME), SESSION_STATE_SLOT))
+            : List.of();
     }
 
     /**
-     * The argument list for the generated hook's static {@code mount}: the connection, the
-     * resolved source's dialect and settings, the tenant in multi-tenant builds, then the payload
-     * in the generated mount's parameter order (the generated mount spreads it into the
-     * consumer's method's own declaration order).
+     * The argument list for the generated hook's static {@code mount}: the request's session state,
+     * the connection, the resolved source's dialect and settings, then the tenant in multi-tenant
+     * builds.
      */
-    private static String mountCallArgs(List<MethodRef.Param.Typed> payload, boolean multiTenant) {
-        var args = new StringBuilder("connection, dialect, settings");
+    private static String mountCallArgs(boolean multiTenant) {
+        var args = new StringBuilder(SESSION_STATE_SLOT + ", connection, dialect, settings");
         if (multiTenant) {
             args.append(", ").append(MOUNTED_TENANT);
-        }
-        for (var p : payload) {
-            args.append(", ").append(p.name());
         }
         return args.toString();
     }
@@ -652,9 +698,9 @@ public final class ConnectionRuntimeClassGenerator {
      */
     private static TypeSpec runtime(ClassName runtime, ClassName pinnedConnection, ClassName instrumentation,
                                     ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
-                                    SessionHooks sessionHooks, TypeName tenantKey,
+                                    SessionIdentityRows identity, TypeName tenantKey,
                                     boolean multiTenant, ClassName tenantConnections) {
-        var payload = payloadParams(sessionHooks);
+        var payload = payloadParams(identity, runtime);
         var source = runtime.nestedClass(SOURCE_CLASS_NAME);
 
         var defaultSourceField = FieldSpec.builder(source, "defaultSource", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -1069,7 +1115,7 @@ public final class ConnectionRuntimeClassGenerator {
                 + "serial mutation strategy: a {@code .mutationExecutionStrategy(...)} that is not an\n"
                 + "{@code AsyncSerialExecutionStrategy} is refused when a mutation starts, since each\n"
                 + "top-level mutation field settles its transaction when the next one starts.\n"
-                + (sessionHooks.emitsHookImplementation()
+                + (identity.emitsHookImplementation()
                     ? "\n<p>When the mount rejects the caller's identity, {@code execute} throws\n"
                         + "{@code SessionMountException} in place of a result, with the mount's exception as\n"
                         + "its cause.\n"
@@ -1213,13 +1259,13 @@ public final class ConnectionRuntimeClassGenerator {
      */
     private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
-                                              boolean multiTenant, SessionHooks sessionHooks,
+                                              boolean multiTenant, SessionIdentityRows identity,
                                               ClassName requestTenants, CodeBlock tenantColumn,
                                               ClassName errorRouter, ClassName columnValues,
                                               ClassName sessionMountException) {
-        var payload = payloadParams(sessionHooks);
-        boolean mounts = sessionHooks.emitsHookImplementation();
-        TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
+        var payload = payloadParams(identity, self);
+        boolean mounts = identity.emitsHookImplementation();
+        TypeName handleType = identity.handleType().orElse(null);
         boolean handled = handleType != null;
         var clientException = ClassName.get(self.packageName(),
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
@@ -1395,7 +1441,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addCode("        dsl.configuration().set(provider);\n");
         if (handled) {
             entryForBuilder.addCode("        dsl.configuration().data($S, pinned.handle());\n",
-                SessionHooks.HANDLE_DATA_KEY);
+                SessionIdentityRows.HANDLE_DATA_KEY);
         }
         entryForBuilder
             .addCode("        return new Entry(pinned, dsl, provider);\n")
@@ -1644,7 +1690,7 @@ public final class ConnectionRuntimeClassGenerator {
         }
         if (handled) {
             carrier.addMethod(sessionHandleAccessor(handleType));
-            for (var member : ((SessionHooks.Handled) sessionHooks).members()) {
+            for (var member : identity.handle().orElseThrow().members()) {
                 carrier.addMethod(sessionMemberAccessor(member));
             }
         }
@@ -2914,7 +2960,7 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(handleType)
             .addParameter(DSL_CONTEXT, "dsl")
             .addParameter(String.class, "fieldCoordinate")
-            .addStatement("Object handle = dsl.configuration().data($S)", SessionHooks.HANDLE_DATA_KEY)
+            .addStatement("Object handle = dsl.configuration().data($S)", SessionIdentityRows.HANDLE_DATA_KEY)
             .beginControlFlow("if (handle == null)")
             .addStatement("throw new $T($S + fieldCoordinate + $S)", IllegalStateException.class,
                 "Field '",
@@ -2952,10 +2998,8 @@ public final class ConnectionRuntimeClassGenerator {
      * join of the authored member name and the decoded member lives here and nowhere in the
      * call-site emitters, which name only the member.
      */
-    private static MethodSpec sessionMemberAccessor(SessionHooks.HandleMember member) {
-        var read = member.form() == SessionHooks.HandleMember.Form.METHOD
-            ? CodeBlock.of("sessionHandle(dsl, fieldCoordinate).$L()", member.accessor())
-            : CodeBlock.of("sessionHandle(dsl, fieldCoordinate).$L", member.accessor());
+    private static MethodSpec sessionMemberAccessor(SessionIdentityRows.Member member) {
+        var read = CodeBlock.of("sessionHandle(dsl, fieldCoordinate).$L()", member.accessor());
         return MethodSpec.methodBuilder(sessionMemberMethod(member.name()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(member.type())
@@ -3211,156 +3255,243 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * Emits the generated hook class: one final class with static {@code mount} and
-     * {@code unmount} methods that call the consumer's resolved methods directly (nothing is
-     * registered, nothing is dispatched polymorphically; the call site is a direct static
-     * invocation). Called only when {@link SessionHooks#emitsHookImplementation()} holds, the
-     * single membership fact the emit plan also reads. This class is where the provider-free
-     * {@code Configuration} is built, from the connection and the resolved source's dialect and
-     * settings (so a consumer's schema mapping reaches their own mount method, and the
-     * transaction-demarcation provider structurally cannot), and where the payload is spread into
-     * the mount method's own declaration order; {@code PinnedConnection} stays free of both. In
-     * multi-tenant builds the generated {@code mount} also takes the {@code Optional<K>} tenant it
-     * is mounting for, spread into the consumer's tenant slot when the method declares one
-     * ({@link SessionHooks#tenantSlot()}) and dropped otherwise.
+     * {@code MountedSession}: what graphitron knows about the connection a callback is mounting
+     * identity on. {@code configuration()} is the provider-free {@code Configuration} carrying the
+     * resolved source's dialect and settings, so the consumer's schema and render mapping apply to
+     * their own SQL there as everywhere else, and the transaction-demarcation provider structurally
+     * cannot. In multi-tenant builds {@code tenant()} is the tenant the connection is mounted for,
+     * {@code Optional.empty()} for the default source; a single-tenant build declares no such
+     * method, so a callback cannot ask a question that has no answer.
      */
-    private static TypeSpec sessionHookImpl(SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant) {
-        MethodRef.StaticOnly mountRef = sessionHooks.mountRef().orElseThrow(() -> new IllegalStateException(
-            "no session hook implementation exists for the not-configured arm; gate on emitsHookImplementation()"));
-        TypeName handleType = sessionHooks instanceof SessionHooks.Handled handled ? handled.handleType() : null;
-        var payload = payloadParams(sessionHooks);
-
-        var mountBuilder = MethodSpec.methodBuilder("mount")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(handleType == null ? TypeName.VOID : handleType)
-            .addParameter(CONNECTION, "connection")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings");
+    private static TypeSpec mountedSession(String schemaPackage, TypeName tenantKey, boolean multiTenant) {
+        var self = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
+        var tenantType = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+        var configuration = FieldSpec.builder(CONFIGURATION, "configuration", Modifier.PRIVATE, Modifier.FINAL).build();
+        var constructor = MethodSpec.constructorBuilder()
+            .addParameter(CONFIGURATION, "configuration");
         if (multiTenant) {
-            mountBuilder.addParameter(ParameterizedTypeName.get(OPTIONAL, tenantKey), MOUNTED_TENANT);
+            constructor.addParameter(tenantType, "tenant");
         }
-        for (var p : payload) {
-            mountBuilder.addParameter(p.javaType(), p.name());
+        constructor.addStatement("this.configuration = configuration");
+        if (multiTenant) {
+            constructor.addStatement("this.tenant = tenant");
         }
-        var mountCall = hookCallArgs(mountRef);
-        if (handleType != null) {
-            mountBuilder.addStatement("return $T.$L($L)",
-                ClassName.bestGuess(mountRef.className()), mountRef.methodName(), mountCall);
-        } else {
-            mountBuilder.addStatement("$T.$L($L)",
-                ClassName.bestGuess(mountRef.className()), mountRef.methodName(), mountCall);
-        }
-        var mount = mountBuilder
-            .addJavadoc("Mounts the caller's identity onto the freshly pinned {@code connection} by calling\n"
-                + "{@code " + mountRef.className() + "#" + mountRef.methodName() + "} directly, spreading the\n"
-                + "typed payload in that method's own declaration order"
-                + (handleType == null ? "" : " and returning its handle") + ".\n"
-                + (!multiTenant ? ""
-                    : sessionHooks.tenantSlot().isPresent()
-                        ? "{@code " + MOUNTED_TENANT + "} is the tenant this connection is mounted for, passed to the method's\n"
-                            + "tenant slot: the routed key, or {@code Optional.empty()} for the default source.\n"
-                        : "{@code " + MOUNTED_TENANT + "} is the tenant this connection is mounted for; the method declares no\n"
-                            + "tenant slot, so it is not passed on.\n")
-                + "Runs before any operation SQL, with autocommit asserted by the runtime: the mount is\n"
-                + "its own committed transaction, so a later transaction's rollback cannot revert it, and\n"
-                + "what the method sets must be <em>session-scoped</em> state in the database's own\n"
-                + "vocabulary (transaction-scoped storage is gone by this call's own implicit commit).\n"
-                + "A thrown exception fails the request closed: the connection is evicted, never pooled.\n"
-                + (seamKind(mountRef) == ParamSource.SessionSeam.Kind.CONFIGURATION
-                    ? "The {@code Configuration} handed to the method is provider-free and carries the\n"
-                        + "resolved source's dialect and settings, so the consumer's schema and render\n"
-                        + "mapping apply to their own SQL here as everywhere else.\n"
-                    : "The method declared a raw JDBC {@code Connection} seam, so the pinned connection is\n"
-                        + "passed directly.\n"))
-            .build();
-
-        MethodSpec unmount = null;
-        if (sessionHooks.unmountRef().isPresent()) {
-            MethodRef.StaticOnly unmountRef = sessionHooks.unmountRef().orElseThrow();
-            boolean takesHandle = unmountRef.params().stream()
-                .anyMatch(p -> p.source() instanceof ParamSource.SessionHandle);
-            var unmountBuilder = MethodSpec.methodBuilder("unmount")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(TypeName.VOID)
-                .addParameter(CONNECTION, "connection")
-                .addParameter(SQL_DIALECT, "dialect")
-                .addParameter(SETTINGS, "settings");
-            if (takesHandle) {
-                unmountBuilder.addParameter(handleType, "handle");
-            }
-            unmount = unmountBuilder
-                .addStatement("$T.$L($L)",
-                    ClassName.bestGuess(unmountRef.className()), unmountRef.methodName(),
-                    hookCallArgs(unmountRef))
-                .addJavadoc("Unmounts the identity {@code mount} mounted by calling\n"
-                    + "{@code " + unmountRef.className() + "#" + unmountRef.methodName() + "} directly"
-                    + (takesHandle ? ", bound to\nthe handle mount returned" : "") + ". Fires at release on\n"
-                    + "every completion path, outside any transaction (the runtime rolls back anything the\n"
-                    + "operation left open and asserts autocommit first), so the clears take effect\n"
-                    + "immediately. The method's return value, if any, is discarded. If this throws, the\n"
-                    + "runtime evicts the physical connection rather than returning tainted state to the\n"
-                    + "pool.\n")
-                .build();
-        }
-
-        var builder = TypeSpec.classBuilder(SESSION_HOOK_IMPL_CLASS_NAME)
+        var builder = TypeSpec.classBuilder(self)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("Generated session-hook calls for the {@code <sessionState>} method pair: static\n"
-                + "{@code mount}"
-                + (unmount == null ? "" : " and {@code unmount}") + " called directly by the connection\n"
-                + "lifecycle, resolved at build time from the configured {@code fqcn#method} references.\n"
-                + "Nothing is registered and nothing is dispatched polymorphically; a misnamed method is a\n"
-                + "build failure, not a runtime surprise.\n")
-            .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
-            .addMethod(mount);
-        if (unmount != null) {
-            builder.addMethod(unmount);
+            .addJavadoc("What graphitron knows about the connection a session callback is mounting identity\n"
+                + "on: the provider-free {@code Configuration}"
+                + (multiTenant ? " and the tenant the connection is mounted for" : "") + ".\n"
+                + "Everything else a callback needs is the consumer's own, captured when the input was built.\n")
+            .addField(configuration);
+        if (multiTenant) {
+            builder.addField(FieldSpec.builder(tenantType, "tenant", Modifier.PRIVATE, Modifier.FINAL).build());
+        }
+        builder.addMethod(constructor.build())
+            .addMethod(MethodSpec.methodBuilder("configuration")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(CONFIGURATION)
+                .addStatement("return configuration")
+                .addJavadoc("The provider-free {@code Configuration} over the pinned connection, carrying the\n"
+                    + "resolved source's dialect and settings. Valid for the duration of the callback.\n")
+                .build());
+        if (multiTenant) {
+            builder.addMethod(MethodSpec.methodBuilder("tenant")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(tenantType)
+                .addStatement("return tenant")
+                .addJavadoc("The tenant this connection is mounted for: the routed key, or\n"
+                    + "{@code Optional.empty()} for the default source.\n")
+                .build());
         }
         return builder.build();
     }
 
-    /** The resolved seam kind of a hook method (exactly one seam parameter by construction). */
-    private static ParamSource.SessionSeam.Kind seamKind(MethodRef.StaticOnly ref) {
-        return ref.params().stream()
-            .map(MethodRef.Param::source)
-            .filter(s -> s instanceof ParamSource.SessionSeam)
-            .map(s -> ((ParamSource.SessionSeam) s).kind())
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException(
-                "resolved hook method carries no seam parameter: " + ref.className() + "#" + ref.methodName()));
+    /**
+     * {@code SessionState}: the per-request pair of a mount callback and an optional unmount
+     * callback, which the consumer builds with {@code SessionState.of(mount)} or
+     * {@code SessionState.of(mount, unmount)} and hands to {@code newOwnedExecutionInput}. One
+     * shape per build, from whether the graph names a handle class: without one the mount returns
+     * nothing and the unmount takes the {@code MountedSession} alone; with one the mount returns the
+     * handle and the unmount receives it. Not generic, so a build has one {@code of} form and a
+     * lambda never faces overload ambiguity. The callbacks may throw anything; what the mount throws
+     * is reported as the cause of a {@code SessionMountException}.
+     */
+    private static TypeSpec sessionState(String schemaPackage, SessionIdentityRows identity) {
+        var self = ClassName.get(schemaPackage, SESSION_STATE_CLASS_NAME);
+        var mountedSession = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
+        TypeName handleType = identity.handleType().orElse(null);
+        var mountType = self.nestedClass("Mount");
+        var unmountType = self.nestedClass("Unmount");
+
+        var mountInterface = TypeSpec.interfaceBuilder("Mount")
+            .addAnnotation(FunctionalInterface.class)
+            .addModifiers(Modifier.PUBLIC)
+            .addJavadoc("Mounts the request's identity on the connection {@code session} describes"
+                + (handleType == null ? "" : " and returns the handle the unmount and the\n"
+                    + "{@code $$session} bindings read") + ".\n")
+            .addMethod(MethodSpec.methodBuilder("mount")
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .returns(handleType == null ? TypeName.VOID : handleType)
+                .addParameter(mountedSession, "session")
+                .addException(Exception.class)
+                .build())
+            .build();
+        var unmountMethod = MethodSpec.methodBuilder("unmount")
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .returns(TypeName.VOID)
+            .addParameter(mountedSession, "session");
+        if (handleType != null) {
+            unmountMethod.addParameter(handleType, "handle");
+        }
+        var unmountInterface = TypeSpec.interfaceBuilder("Unmount")
+            .addAnnotation(FunctionalInterface.class)
+            .addModifiers(Modifier.PUBLIC)
+            .addJavadoc("Unmounts the identity the mount mounted, at release, outside any transaction.\n")
+            .addMethod(unmountMethod.addException(Exception.class).build())
+            .build();
+
+        var mountField = FieldSpec.builder(mountType, "mount", Modifier.PRIVATE, Modifier.FINAL).build();
+        var unmountField = FieldSpec.builder(unmountType, "unmount", Modifier.PRIVATE, Modifier.FINAL).build();
+        var constructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PRIVATE)
+            .addParameter(mountType, "mount")
+            .addParameter(unmountType, "unmount")
+            .addStatement("this.mount = mount")
+            .addStatement("this.unmount = unmount")
+            .build();
+        var ofMount = MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(mountType, "mount")
+            .addStatement("return new $T($T.requireNonNull(mount, $S), null)", self, Objects.class, "mount")
+            .addJavadoc("A session state that mounts and never unmounts: the next request's mount overwrites\n"
+                + "this one's identity wholesale on a pooled connection.\n")
+            .build();
+        var ofBoth = MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(mountType, "mount")
+            .addParameter(unmountType, "unmount")
+            .addStatement("return new $T($T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))",
+                self, Objects.class, "mount", Objects.class, "unmount")
+            .addJavadoc("A session state that mounts at acquisition and unmounts at release.\n")
+            .build();
+
+        var mountCall = MethodSpec.methodBuilder("mount")
+            .returns(handleType == null ? TypeName.VOID : handleType)
+            .addParameter(mountedSession, "session")
+            .addException(Exception.class);
+        mountCall.addStatement(handleType == null ? "mount.mount(session)" : "return mount.mount(session)");
+        var unmountCall = MethodSpec.methodBuilder("unmount")
+            .returns(TypeName.VOID)
+            .addParameter(mountedSession, "session");
+        if (handleType != null) {
+            unmountCall.addParameter(handleType, "handle");
+        }
+        unmountCall.addException(Exception.class)
+            .beginControlFlow("if (unmount != null)")
+            .addStatement(handleType == null ? "unmount.unmount(session)" : "unmount.unmount(session, handle)")
+            .endControlFlow();
+
+        return TypeSpec.classBuilder(self)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addJavadoc("The request's session identity, as code: a mount callback and an optional unmount\n"
+                + "callback the consumer builds with {@code of} and passes to\n"
+                + "{@code Graphitron.newOwnedExecutionInput}. Graphitron calls the mount lazily, on whatever\n"
+                + "thread first needs a connection, so the values it needs are captured by the callbacks\n"
+                + "when the input is built rather than looked up from any ambient state.\n")
+            .addType(mountInterface)
+            .addType(unmountInterface)
+            .addField(mountField)
+            .addField(unmountField)
+            .addMethod(constructor)
+            .addMethod(ofMount)
+            .addMethod(ofBoth)
+            .addMethod(mountCall.build())
+            .addMethod(unmountCall.build())
+            .build();
     }
 
     /**
-     * The argument list for the direct call into a consumer hook method, in the method's own
-     * declaration order: the seam parameter becomes the provider-free {@code Configuration}
-     * (or the raw connection, per the {@link ParamSource.SessionSeam.Kind} decided once at
-     * reflection), payload parameters read the generated method's same-named locals, the mount's
-     * tenant slot reads {@value #MOUNTED_TENANT}, and the unmount's handle parameter reads {@code handle}.
+     * Emits the generated hook class: one final class with static {@code mount} and
+     * {@code unmount} methods that build the {@code MountedSession} for a freshly pinned connection
+     * and invoke the request's {@code SessionState} callbacks. Emitted only when
+     * {@link SessionIdentityRows#emitsHookImplementation()} holds, the single membership fact the emit
+     * plan also reads. This class is where the provider-free {@code Configuration} is built, from
+     * the connection and the resolved source's dialect and settings, which {@code PinnedConnection}
+     * stays free of. In multi-tenant builds the session also carries the tenant it is mounting for.
      */
-    private static CodeBlock hookCallArgs(MethodRef.StaticOnly ref) {
-        var args = CodeBlock.builder();
-        boolean first = true;
-        for (var p : ref.params()) {
-            if (!first) {
-                args.add(", ");
-            }
-            first = false;
-            switch (p.source()) {
-                case ParamSource.SessionSeam seam -> {
-                    if (seam.kind() == ParamSource.SessionSeam.Kind.CONFIGURATION) {
-                        args.add("$T.using(connection, dialect, settings).configuration()", DSL);
-                    } else {
-                        args.add("connection");
-                    }
-                }
-                case ParamSource.Context ignored -> args.add("$L", p.name());
-                case ParamSource.SessionHandle ignored -> args.add("handle");
-                case ParamSource.SessionTenant ignored -> args.add(MOUNTED_TENANT);
-                default -> throw new IllegalStateException(
-                    "unexpected hook parameter source " + p.source().getClass().getSimpleName()
-                        + " on " + ref.className() + "#" + ref.methodName());
-            }
+    private static TypeSpec sessionHookImpl(String schemaPackage, SessionIdentityRows identity,
+                                            TypeName tenantKey, boolean multiTenant) {
+        TypeName handleType = identity.handleType().orElse(null);
+        var sessionState = ClassName.get(schemaPackage, SESSION_STATE_CLASS_NAME);
+        var mountedSession = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
+        var tenantType = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+
+        var mountBuilder = MethodSpec.methodBuilder("mount")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(handleType == null ? TypeName.VOID : handleType)
+            .addParameter(sessionState, SESSION_STATE_SLOT)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(SETTINGS, "settings");
+        if (multiTenant) {
+            mountBuilder.addParameter(tenantType, MOUNTED_TENANT);
         }
-        return args.build();
+        mountBuilder.addException(Exception.class);
+        var sessionArgs = multiTenant
+            ? CodeBlock.of("$T.using(connection, dialect, settings).configuration(), $L", DSL, MOUNTED_TENANT)
+            : CodeBlock.of("$T.using(connection, dialect, settings).configuration()", DSL);
+        mountBuilder.addStatement("$T session = new $T($L)", mountedSession, mountedSession, sessionArgs);
+        mountBuilder.addStatement(handleType == null ? "$L.mount(session)" : "return $L.mount(session)",
+            SESSION_STATE_SLOT);
+        var mount = mountBuilder
+            .addJavadoc("Mounts the request's identity onto the freshly pinned {@code connection} by calling\n"
+                + "the mount callback with a {@code MountedSession}"
+                + (handleType == null ? "" : " and returning its handle") + ".\n"
+                + "Runs before any operation SQL, with autocommit asserted by the runtime: the mount is\n"
+                + "its own committed transaction, so a later transaction's rollback cannot revert it, and\n"
+                + "what the callback sets must be <em>session-scoped</em> state in the database's own\n"
+                + "vocabulary (transaction-scoped storage is gone by this call's own implicit commit).\n"
+                + "A thrown exception fails the request closed: the connection is evicted, never pooled.\n")
+            .build();
+
+        var unmountBuilder = MethodSpec.methodBuilder("unmount")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(TypeName.VOID)
+            .addParameter(sessionState, SESSION_STATE_SLOT)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(SETTINGS, "settings");
+        if (multiTenant) {
+            unmountBuilder.addParameter(tenantType, MOUNTED_TENANT);
+        }
+        if (handleType != null) {
+            unmountBuilder.addParameter(handleType, "handle");
+        }
+        unmountBuilder.addException(Exception.class);
+        unmountBuilder.addStatement("$T session = new $T($L)", mountedSession, mountedSession, sessionArgs);
+        unmountBuilder.addStatement(handleType == null ? "$L.unmount(session)" : "$L.unmount(session, handle)",
+            SESSION_STATE_SLOT);
+        var unmount = unmountBuilder
+            .addJavadoc("Unmounts the identity {@code mount} mounted by calling the request's unmount\n"
+                + "callback, when it supplied one"
+                + (handleType == null ? "" : ", with the handle mount returned") + ". Fires at release on\n"
+                + "every completion path, outside any transaction (the runtime rolls back anything the\n"
+                + "operation left open and asserts autocommit first), so the clears take effect\n"
+                + "immediately. If this throws, the runtime evicts the physical connection rather than\n"
+                + "returning tainted state to the pool.\n")
+            .build();
+
+        return TypeSpec.classBuilder(SESSION_HOOK_IMPL_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addJavadoc("Generated session-hook calls for a graph that supplies session identity per request:\n"
+                + "static {@code mount} and {@code unmount} called directly by the connection lifecycle,\n"
+                + "building the {@code MountedSession} and invoking the request's {@code SessionState}.\n"
+                + "Nothing is registered and nothing is dispatched polymorphically.\n")
+            .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+            .addMethod(mount)
+            .addMethod(unmount)
+            .build();
     }
 }

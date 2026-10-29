@@ -53,7 +53,6 @@ public class GraphitronSchemaValidator {
         validateOutcomeChildArmSwitch(schema, errors);
         validateWrapperArmSiblingPosture(schema, errors);
         validateContextArgumentTypeAgreement(schema, errors);
-        validateSessionHandleBindings(schema, errors);
         validateSessionConditionsUnderFanOut(schema, errors);
         validateSessionConditionsUnderLegacyProjection(schema, errors);
         validateTenantBindings(schema, errors);
@@ -382,131 +381,6 @@ public class GraphitronSchemaValidator {
             }
         }
         return null;
-    }
-
-    /** One session binding of a field: the member bound ({@code null} for the whole handle) and the declared type. */
-    private record SessionBinding(String name, String member, com.palantir.javapoet.TypeName declared) {}
-
-    /**
-     * The {@code $session} sigil's located rejections, checked against the resolved session-hook
-     * carrier ({@link GraphitronSchema#sessionHooks()}): a binding with no method-hook
-     * {@code <sessionState>} configured, a binding against a handle-less mount (the mount
-     * returns {@code void}), and a bound parameter whose declared type is not the mount's
-     * reflected handle type, each naming the field coordinate, the sigil, and the config side.
-     * The classifier lowers the sigil structurally without judging the config, so this pass is
-     * the one home of the cross-artifact check.
-     */
-    private void validateSessionHandleBindings(GraphitronSchema schema, List<ValidationError> errors) {
-        var hooks = schema.sessionHooks();
-        for (var field : schema.fields().values()) {
-            String qualifiedName = field.parentTypeName() + "." + field.name();
-            var bindings = new java.util.ArrayList<SessionBinding>();
-            if (field instanceof no.sikt.graphitron.rewrite.model.MethodBackedField mbf) {
-                for (var p : mbf.method().params()) {
-                    if (p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed typed) {
-                        switch (typed.source()) {
-                            case no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle ignored ->
-                                bindings.add(new SessionBinding(typed.name(), null, typed.javaType()));
-                            case no.sikt.graphitron.rewrite.model.ParamSource.SessionHandleMember m ->
-                                bindings.add(new SessionBinding(typed.name(), m.member(), typed.javaType()));
-                            default -> { }
-                        }
-                    }
-                }
-            }
-            if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
-                var carrier = sf.serviceMethodCall();
-                var entries = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.MappingEntry>(carrier.methodArgs());
-                if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
-                    entries.addAll(inst.ctorArgs());
-                }
-                for (var entry : entries) {
-                    switch (entry) {
-                        case no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle handle ->
-                            bindings.add(new SessionBinding(handle.javaName(), null, handle.javaType()));
-                        case no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandleMember m ->
-                            bindings.add(new SessionBinding(m.javaName(), m.member(), m.javaType()));
-                        default -> { }
-                    }
-                }
-            }
-            // A @condition's session reads: every filter on the coordinate (field, argument and
-            // input-field conditions alike) carries its bindings as call params.
-            if (field instanceof no.sikt.graphitron.rewrite.model.SqlGeneratingField sql) {
-                for (var filter : sql.filters()) {
-                    for (var param : filter.callParams()) {
-                        switch (param.extraction()) {
-                            case no.sikt.graphitron.rewrite.model.CallSiteExtraction.SessionHandleRead ignored ->
-                                bindings.add(new SessionBinding(param.name(), null, param.javaType()));
-                            case no.sikt.graphitron.rewrite.model.CallSiteExtraction.SessionMemberRead m ->
-                                bindings.add(new SessionBinding(param.name(), m.member(), param.javaType()));
-                            default -> { }
-                        }
-                    }
-                }
-            }
-            for (var binding : bindings) {
-                String paramName = binding.name();
-                var declared = binding.declared();
-                String member = binding.member();
-                String sigil = member == null
-                    ? ArgMappingSigil.SESSION_LITERAL : ArgMappingSigil.SESSION_MEMBER_PREFIX + member;
-                switch (hooks) {
-                    case no.sikt.graphitron.rewrite.session.SessionHooks.NotConfigured ignored ->
-                        errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
-                            "argMapping binds parameter '" + paramName + "' to "
-                                + sigil + ", but no method-hook <sessionState> is"
-                                + " configured; configure <sessionState><mount>fqcn#method</mount> whose"
-                                + " return value is the handle, or remove the binding"),
-                            graphql.language.SourceLocation.EMPTY));
-                    case no.sikt.graphitron.rewrite.session.SessionHooks.HandleLess handleLess ->
-                        errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
-                            "argMapping binds parameter '" + paramName + "' to "
-                                + sigil + ", but the configured <mount> ("
-                                + handleLess.mount().className() + "#" + handleLess.mount().methodName()
-                                + ") returns void — there is no session handle to bind"),
-                            graphql.language.SourceLocation.EMPTY));
-                    case no.sikt.graphitron.rewrite.session.SessionHooks.Handled handled -> {
-                        if (member == null) {
-                            if (!handled.handleType().equals(declared)) {
-                                errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
-                                    "argMapping binds parameter '" + paramName + "' to "
-                                        + sigil + " with declared type '" + declared
-                                        + "', but the configured <mount> (" + handled.mount().className() + "#"
-                                        + handled.mount().methodName() + ") returns '" + handled.handleType()
-                                        + "' — both are your declarations; align the parameter type with the"
-                                        + " mount's return type"),
-                                    graphql.language.SourceLocation.EMPTY));
-                            }
-                            break;
-                        }
-                        var decoded = handled.member(member);
-                        if (decoded.isEmpty()) {
-                            errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
-                                "argMapping binds parameter '" + paramName + "' to " + sigil
-                                    + ", but the session handle type '" + handled.handleType()
-                                    + "' has no readable member '" + member + "'; its readable members are "
-                                    + handled.members().stream()
-                                        .map(no.sikt.graphitron.rewrite.session.SessionHooks.HandleMember::name)
-                                        .toList()),
-                                graphql.language.SourceLocation.EMPTY));
-                            break;
-                        }
-                        var memberType = decoded.get().type();
-                        boolean boxedAgrees = memberType.isPrimitive() && memberType.box().equals(declared);
-                        if (!memberType.equals(declared) && !boxedAgrees) {
-                            errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
-                                "argMapping binds parameter '" + paramName + "' to " + sigil
-                                    + " with declared type '" + declared + "', but member '" + member
-                                    + "' of the session handle type '" + handled.handleType()
-                                    + "' is declared '" + memberType + "' — both are your declarations;"
-                                    + " align the parameter type with the member's type"),
-                                graphql.language.SourceLocation.EMPTY));
-                        }
-                    }
-                }
-            }
-        }
     }
 
     private void validateType(GraphitronType type, Map<String, GraphitronType> types, List<ValidationError> errors) {

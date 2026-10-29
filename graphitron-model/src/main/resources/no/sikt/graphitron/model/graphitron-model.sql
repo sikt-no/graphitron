@@ -272,29 +272,28 @@ COMMENT ON COLUMN store_graph_lint_excluded_type.ordinal IS 'position in the con
 COMMENT ON COLUMN store_graph_lint_excluded_type.type_pattern IS 'the type-name glob as configured';
 COMMENT ON COLUMN store_graph_lint_excluded_type.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
-CREATE TABLE store_graph_session_mount (
-  graph_name   VARCHAR NOT NULL,
-  mount_method VARCHAR NOT NULL,
-  touched_at   TIMESTAMP NOT NULL,
+CREATE TABLE store_graph_session_supplied (
+  graph_name VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE store_graph_session_mount IS 'The <sessionState> <mount> reference: the consumer''s static Java method that mounts identity on each acquired connection, as authored. Row presence is the fact, per the family''s absence rule: no row means no identity is mounted. The primary key on graph_name alone makes "at most one mount per graph" structural. Only the authored string lands here; the reflected signature is a build-time model fact, never stored back into this provenance family.';
-COMMENT ON COLUMN store_graph_session_mount.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN store_graph_session_mount.mount_method IS 'the mounting method as authored, fqcn#method, from <mount>';
-COMMENT ON COLUMN store_graph_session_mount.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
+COMMENT ON TABLE store_graph_session_supplied IS 'One graph whose session identity is supplied per request, as its build declared it with a <sessionState> block. For example a build with <sessionState/> in its POM is one row, and a build with no block has none.';
+COMMENT ON COLUMN store_graph_session_supplied.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_session_supplied.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
-CREATE TABLE store_graph_session_unmount (
-  graph_name     VARCHAR NOT NULL,
-  unmount_method VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
+CREATE TABLE store_graph_session_handle (
+  graph_name   VARCHAR   NOT NULL,
+  handle_class VARCHAR   NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_session_mount (graph_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph_session_supplied (graph_name),
+  CHECK (CHAR_LENGTH(handle_class) >= 1)
 );
-COMMENT ON TABLE store_graph_session_unmount IS 'The optional <unmount> reference beside the mount. Row presence is the fact: no row means the supported mount-only configuration (the next request''s mount overwrites wholesale), which the reconciler admits without ceremony, and the foreign key to store_graph_session_mount is the "unmount without mount is a defect" rule made structural.';
-COMMENT ON COLUMN store_graph_session_unmount.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_mount';
-COMMENT ON COLUMN store_graph_session_unmount.unmount_method IS 'the unmounting method as authored, fqcn#method, from <unmount>';
-COMMENT ON COLUMN store_graph_session_unmount.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. Swept before the mount beside it, which is the foreign key deciding the order rather than a rule this family states twice';
+COMMENT ON TABLE store_graph_session_handle IS 'The class a graph''s session mount returns, as its build named it in <sessionState><handle>. For example a build naming com.example.Identity is one row reading that name, and a build whose mount returns nothing has none.';
+COMMENT ON COLUMN store_graph_session_handle.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_supplied, so a handle without the switch is unwritable';
+COMMENT ON COLUMN store_graph_session_handle.handle_class IS 'the class as authored, fully qualified, from <handle>; read against the classpath later, never resolved here';
+COMMENT ON COLUMN store_graph_session_handle.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
 CREATE TABLE store_graph_dependency (
   graph_name  VARCHAR NOT NULL,
@@ -10881,6 +10880,186 @@ SELECT x.graph_name, x.source_name, x.table_schema, x.table_name, x.type_column,
    AND x.payload_type IN ('ORG.JOOQ.JSON', 'ORG.JOOQ.JSONB', 'JAVA.LANG.STRING');
 COMMENT ON VIEW graphitron_outbox_target_rule IS 'One row the outbox-target rule computes, in the shape graphitron_outbox_target stores: the rule itself, evaluated on demand rather than read off disk. For example the derivation inserts this view''s row for one graph into graphitron_outbox_target, which is the name every reader spells.';
 
+CREATE TABLE graphitron_session_handle_member (
+  graph_name  VARCHAR NOT NULL,
+  member_name VARCHAR NOT NULL,
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, member_name, source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_session_handle (graph_name) ON DELETE CASCADE,
+  -- The accessor the member is read through, so a member cannot outlive the class file that
+  -- offered it, and what reading it yields is the slot's, not a copy held here.
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_session_handle_member IS 'One accessor of the class a graph names as its session handle, under the property name an author writes after $session. For example a handle record with components brukerId and sokerId draws two rows, and a class offering getTitle and isTitle draws two rows under one name.';
+COMMENT ON COLUMN graphitron_session_handle_member.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_handle';
+COMMENT ON COLUMN graphitron_session_handle_member.member_name IS 'the property the accessor offers, which is what $session.<member> names; deliberately not unique within a graph, two accessors for one property being two rows, which a defect reports at the binding that names it';
+COMMENT ON COLUMN graphitron_session_handle_member.source_name IS 'the entry the handle class was read from, the leading dimension of the slot''s key';
+COMMENT ON COLUMN graphitron_session_handle_member.class_name IS 'the handle class, the class the slot is offered by';
+COMMENT ON COLUMN graphitron_session_handle_member.method_name IS 'the accessor, with the descriptor the key of the slot it reads through';
+COMMENT ON COLUMN graphitron_session_handle_member.descriptor IS 'the accessor''s descriptor, completing the slot''s key';
+
+CREATE TABLE graphitron_argmapping_parameter (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  position           INT     NOT NULL,
+  method_source_name VARCHAR NOT NULL,
+  method_class_name  VARCHAR NOT NULL,
+  method_name        VARCHAR NOT NULL,
+  method_descriptor  VARCHAR NOT NULL,
+  parameter_position INT     NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
+    REFERENCES graphitron_ast_argmapping_pair_entry (graph_name, source_name, source_line, source_column, position)
+    ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor, parameter_position)
+    REFERENCES code_method_parameter (source_name, class_name, method_name, descriptor, position)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_argmapping_parameter IS 'The Java parameter one written argMapping entry binds: the entry, and the parameter of the method its code reference resolved to that carries the name written on its left. For example the entry brukerId: $session.brukerId on a @service resolves to the parameter named brukerId of the one method the service names, and an entry whose method is overloaded, missing or compiled without -parameters has no row.';
+COMMENT ON COLUMN graphitron_argmapping_parameter.graph_name IS 'the owning graph''s partition, carried from the entry';
+COMMENT ON COLUMN graphitron_argmapping_parameter.source_name IS 'the file the mapping string was written in, the first of the four columns that are the entry''s key in graphitron_ast_argmapping_pair_entry';
+COMMENT ON COLUMN graphitron_argmapping_parameter.source_line IS 'source line of the mapping string, part of the entry''s key';
+COMMENT ON COLUMN graphitron_argmapping_parameter.source_column IS 'source column of the mapping string, part of the entry''s key';
+COMMENT ON COLUMN graphitron_argmapping_parameter.position IS 'the entry''s 0-based position within its own argMapping list, completing its key';
+COMMENT ON COLUMN graphitron_argmapping_parameter.method_source_name IS 'the entry the resolved method was read from, the leading dimension of the parameter''s key';
+COMMENT ON COLUMN graphitron_argmapping_parameter.method_class_name IS 'the class declaring the method the code reference resolved to';
+COMMENT ON COLUMN graphitron_argmapping_parameter.method_name IS 'the method the code reference resolved to';
+COMMENT ON COLUMN graphitron_argmapping_parameter.method_descriptor IS 'that method''s descriptor, which tells overloads apart';
+COMMENT ON COLUMN graphitron_argmapping_parameter.parameter_position IS 'the position in the method''s parameter list of the parameter whose name is the entry''s left side; what the parameter takes is the parameter row''s, not copied here';
+
+CREATE TABLE graphitron_argmapping_pair_defect (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  code          VARCHAR NOT NULL,
+  detail        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position, code),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
+    REFERENCES graphitron_ast_argmapping_pair_entry (graph_name, source_name, source_line, source_column, position)
+    ON DELETE CASCADE,
+  -- The string's own verdict, so an entry defect cannot outlive the string's row in
+  -- graphitron_entry_defect and goes with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_argmapping_pair_defect IS 'One written argMapping entry a rule refuses, under the code that names the rule: the entry-grain detail of the defect graphitron_entry_defect states once for the whole string. For example brukerId: $session.nope on a handle with no such member is one row reading SESSION_MEMBER_UNKNOWN and the member written, under the string''s one row.';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.graph_name IS 'the owning graph''s partition, carried from the entry';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_name IS 'the file the mapping string was written in, the first of the four columns that are the entry''s key in graphitron_ast_argmapping_pair_entry';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_line IS 'source line of the mapping string, part of the entry''s key';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_column IS 'source column of the mapping string, part of the entry''s key and, with the two above, the position of the string''s row in graphitron_entry_defect';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.position IS 'the entry''s 0-based position within its own argMapping list, completing its key';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.code IS 'which defect, a graphitron_defect_type key reached through the string''s row; an entry may offend two rules and then carries two rows';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.detail IS 'the specific one entry''s message quotes back: the spelling, the member, or the parameter against what it should be';
+
+CREATE VIEW graphitron_argmapping_pair_defect_rule
+  (graph_name, source_name, source_line, source_column, position, code, detail) AS
+WITH
+-- Every argMapping entry whose right side reads the session handle, bare or by member. The member
+-- is what follows the dot; a deeper path is refused where the sigil is scanned, not here.
+session_pair (graph_name, source_name, source_line, source_column, position, bound_to, member) AS (
+  SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position, p.bound_to,
+         CASE WHEN p.bound_to = '$session' THEN CAST(NULL AS VARCHAR)
+              ELSE SUBSTRING(p.bound_to, 10) END
+    FROM graphitron_ast_argmapping_pair_entry p
+   WHERE p.bound_to = '$session' OR p.bound_to LIKE '$session.%'
+),
+-- A graph whose named handle class the classpath actually holds. Without it the member arms would
+-- report a missing class as a missing member; the class itself is reported where it is configured.
+session_handle_found (graph_name, handle_class) AS (
+  SELECT h.graph_name, h.handle_class
+    FROM store_graph_session_handle h
+   WHERE EXISTS (SELECT 1 FROM store_graph_source gs
+                   JOIN code_class c ON c.source_name = gs.source_name
+                                    AND c.class_name = h.handle_class
+                  WHERE gs.graph_name = h.graph_name)
+),
+session_unknown_member (graph_name, source_name, source_line, source_column, position, detail) AS (
+  SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position, sp.member
+    FROM session_pair sp
+    JOIN session_handle_found hf ON hf.graph_name = sp.graph_name
+   WHERE sp.member IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_session_handle_member m
+                      WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member)
+),
+-- What each bound parameter is declared as, beside what the handle, or the one accessor the member
+-- names, yields. An ambiguous member has no single yield and is reported as ambiguous instead.
+session_binding_type (graph_name, source_name, source_line, source_column, position, bound_to,
+                      parameter_name, parameter_type, expected) AS (
+  SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position, sp.bound_to,
+         cp.parameter_name, cp.parameter_type,
+         CASE WHEN sp.member IS NULL THEN hf.handle_class
+              ELSE (SELECT MAX(s.slot_type)
+                      FROM graphitron_session_handle_member m
+                      JOIN code_read_slot s
+                        ON s.source_name = m.source_name AND s.class_name = m.class_name
+                       AND s.method_name = m.method_name AND s.descriptor = m.descriptor
+                     WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) END
+    FROM session_pair sp
+    JOIN session_handle_found hf ON hf.graph_name = sp.graph_name
+    JOIN graphitron_argmapping_parameter ap
+      ON ap.graph_name = sp.graph_name AND ap.source_name = sp.source_name
+     AND ap.source_line = sp.source_line AND ap.source_column = sp.source_column
+     AND ap.position = sp.position
+    JOIN code_method_parameter cp
+      ON cp.source_name = ap.method_source_name AND cp.class_name = ap.method_class_name
+     AND cp.method_name = ap.method_name AND cp.descriptor = ap.method_descriptor
+     AND cp.position = ap.parameter_position
+   WHERE sp.member IS NULL
+      OR (SELECT COUNT(*) FROM graphitron_session_handle_member m
+           WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) = 1
+)
+SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
+       'SESSION_BINDING_WITHOUT_IDENTITY', sp.bound_to
+  FROM session_pair sp
+ WHERE NOT EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
+UNION ALL
+-- The session is configured and no handle class is named, so there is nothing for the sigil to read.
+SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
+       'SESSION_HANDLE_UNNAMED', sp.bound_to
+  FROM session_pair sp
+ WHERE EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
+   AND NOT EXISTS (SELECT 1 FROM store_graph_session_handle h WHERE h.graph_name = sp.graph_name)
+UNION ALL
+-- $session.<member> naming a member the handle does not offer. The detail is the member written;
+-- what the handle does offer is graphitron_session_handle_member's rows, which a message joins in.
+SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
+       'SESSION_MEMBER_UNKNOWN', u.detail
+  FROM session_unknown_member u
+UNION ALL
+-- $session.<member> naming a member two accessors offer, which has no single thing to read.
+SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
+       'SESSION_MEMBER_AMBIGUOUS', sp.member
+  FROM session_pair sp
+ WHERE sp.member IS NOT NULL
+   AND (SELECT COUNT(*) FROM graphitron_session_handle_member m
+         WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) > 1
+UNION ALL
+-- The parameter is not declared as what it reads, on the full spelling. A primitive may bind its
+-- boxed parameter and no other pair is loosened.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column, t.position,
+       'SESSION_BINDING_TYPE_MISMATCH',
+       t.bound_to || ': parameter ' || t.parameter_name || ' is ' || t.parameter_type
+         || ', expected ' || t.expected
+  FROM session_binding_type t
+ WHERE t.expected IS NOT NULL
+   AND t.parameter_type <> t.expected
+   AND NOT EXISTS (SELECT 1 FROM (VALUES ('boolean', 'java.lang.Boolean'), ('byte', 'java.lang.Byte'),
+                                         ('char', 'java.lang.Character'), ('short', 'java.lang.Short'),
+                                         ('int', 'java.lang.Integer'), ('long', 'java.lang.Long'),
+                                         ('float', 'java.lang.Float'), ('double', 'java.lang.Double'))
+                          b (prim, boxed)
+                    WHERE b.prim = t.expected AND b.boxed = t.parameter_type);
+COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
+
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
@@ -11692,7 +11871,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYL
                                 WHERE l.graph_name = o.graph_name AND l.type_name = o.type_name
                                   AND l.field_name = o.field_name AND l.ordinal = o.ordinal
                                   AND l.key_name = c.key_name))) d
- WHERE d.rn = 1;
+ WHERE d.rn = 1
+UNION ALL
+-- A $session binding the session configuration cannot answer, at the written position of the
+-- string, once per code however many of its entries offend. Which entries, and what is wrong with
+-- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
+SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column, r.code,
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_argmapping_pair_defect_rule r;
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -16000,6 +16186,9 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- source reading records. ModelCapture runs it first.
   ('graphitron', 'graphql-source'),
   ('code', 'classpath-source'),
+  -- The handle class a graph names for its session identity is read for its members whatever
+  -- package or origin it is in, and the name is a row the store gatherer wrote first.
+  ('code', 'store'),
   ('derivation', 'store'),
   ('derivation', 'classpath-source'),
   ('derivation', 'sdl'),
@@ -16160,6 +16349,21 @@ INSERT INTO meta_grain VALUES
   ('graph-max-page-size',
    'one graph whose build declares a largest page its connections return',
    'graph_name', 'configuration'),
+  ('graph-session-supplied',
+   'one graph whose build declares that its session identity is supplied per request',
+   'graph_name', 'configuration'),
+  ('graph-session-handle',
+   'one graph whose build names the class its session mount returns',
+   'graph_name', 'configuration'),
+  ('session-handle-member',
+   'one accessor of the class a graph names as its session handle, under the property name it offers',
+   'graph_name, member_name, source_name, class_name, method_name, descriptor', 'classpath'),
+  ('argmapping-parameter',
+   'one argMapping entry that binds a parameter of the method its code reference resolved to',
+   'graph_name, source_name, source_line, source_column, position', 'sdl'),
+  ('argmapping-pair-defect',
+   'one argMapping entry a rule refuses, under the code that names the rule',
+   'graph_name, source_name, source_line, source_column, position, code', 'sdl'),
   ('facet-binding',
    'one @asFacet application, at the input field it sits on, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -16663,7 +16867,17 @@ INSERT INTO graphitron_defect_type VALUES
   ('OUTCOME_FIELD_NON_NULL', 'error', 'GRAPHITRON', 'graphitron.error-channel.non-nullable-success-field',
    'A field of a type a service, write or routine hands back with its errors may not be null, and when the producer fails there is no value to read it from, so graphql-java would drop the errors with it: make the field nullable.'),
   ('ERRORS_IN_A_ROW', 'error', 'GRAPHITRON', 'GRAPHITRON_ERRORS_IN_A_ROW',
-   'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.');
+   'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.'),
+  ('SESSION_BINDING_WITHOUT_IDENTITY', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_BINDING_WITHOUT_IDENTITY',
+   'An argMapping entry reads $session, and the build configures no <sessionState>, so no session is mounted for the sigil to read: add <sessionState> to the build or bind the parameter another way.'),
+  ('SESSION_HANDLE_UNNAMED', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_HANDLE_UNNAMED',
+   'An argMapping entry reads $session, and <sessionState> names no <handle>, so the mount returns nothing the sigil could read: name the class the mount callback returns in <handle>.'),
+  ('SESSION_MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_MEMBER_UNKNOWN',
+   'An argMapping entry reads a member of $session that the handle class does not offer, as a record component or a get or is accessor it declares itself: name one it does.'),
+  ('SESSION_MEMBER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_MEMBER_AMBIGUOUS',
+   'An argMapping entry reads a member of $session that two accessors of the handle class offer, a getX and an isX for one property, so there is no single thing to read: remove one accessor.'),
+  ('SESSION_BINDING_TYPE_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_BINDING_TYPE_MISMATCH',
+   'An argMapping entry reads $session or one of its members into a parameter that is not declared as what the handle or the member yields, so the generated call would not compile: declare the parameter as that type, a primitive member being allowed its boxed type.');
 
 INSERT INTO meta_relation VALUES
   ('graphitron_field_path_fanout', 'field-path-intermediate', 'graphitron',
@@ -16810,6 +17024,30 @@ INSERT INTO meta_relation VALUES
    'The largest page any connection of one graph returns, as its build declared it in <maxAllowedPageSize>.',
    'For example a build setting the parameter to 1000 is one row reading 1000, and a build that sets none has no row.',
    'Configuration rather than a reading, and generation policy the store reads: the minted first argument''s default is lowered to it and an authored default above it is a defect, both of which are views, so the maximum is a row they can join rather than a value only the generator holds. Its own graph-keyed relation, on store_graph_tenant_column''s terms: single-valued, optional and run-owned, so row presence is the fact and a build with no maximum has no row.'),
+  ('store_graph_session_supplied', 'graph-session-supplied', 'store',
+   'One graph whose session identity is supplied per request, as its build declared it with a <sessionState> block.',
+   'For example a build with <sessionState/> in its POM is one row, and a build with no block has none.',
+   'Configuration rather than a reading, and the fact every question about session identity starts from: the generators emit the session types, the factory parameter and the connection hook only for a graph with a row, and the derived rejections of a $session binding anti-join against it. Row presence is the fact, per the family''s absence rule: no row means no identity is mounted. Its own graph-keyed relation, on store_graph_tenant_column''s terms: single-valued, optional and run-owned.'),
+  ('store_graph_session_handle', 'graph-session-handle', 'store',
+   'The class a graph''s session mount returns, as its build named it in <sessionState><handle>.',
+   'For example a build naming com.example.Identity is one row reading that name, and a build whose mount returns nothing has none.',
+   'Configuration rather than a reading: only the authored name lands here, and what the class offers is derived from the classpath corpus, so the members a $session binding may name are rows that cite the class files and not a value only the generator holds. A child of store_graph_session_supplied rather than a nullable column on it, after the unmount relation it replaces: row presence is the fact, and a handle without the switch is unwritable by the foreign key.'),
+  ('graphitron_session_handle_member', 'session-handle-member', 'derivation',
+   'One accessor of the class a graph names as its session handle, under the property name an author writes after $session.',
+   'For example a handle record with components brukerId and sokerId draws two rows, and a class offering getTitle and isTitle draws two rows under one name.',
+   'Derived from the configured handle row and the class the classpath corpus read, so what $session.<member> may name is a row an author''s binding can be checked against rather than a reflection result only the generator holds. The members are the slots the class declares itself, not the ones it inherits: a jOOQ record handle offers the two accessors its generated class declares, not the Record API beneath them. Kept as one row per accessor, so two accessors for one property are visible as such and the binding that names it is the defect, instead of the class being refused for a member nobody reads.'),
+  ('graphitron_argmapping_parameter', 'argmapping-parameter', 'derivation',
+   'The Java parameter one written argMapping entry binds: the entry, and the parameter of the method its code reference resolved to that carries the name written on its left.',
+   'For example the entry brukerId: $session.brukerId on a @service resolves to the parameter named brukerId of the one method the service names, and an entry whose method is overloaded, missing or compiled without -parameters has no row.',
+   'The join a check of an argMapping''s left side needs and every such check used to rebuild: the entry''s string sits under a code reference, the reference resolves to one method, and the method''s parameters carry the names an entry targets. An entry that does not resolve has no row, which is what a defect arm anti-joins on, and a parameter name the class file does not carry resolves nowhere rather than guessing, on the parameter column''s own terms.'),
+  ('graphitron_argmapping_pair_defect_rule', 'argmapping-pair-defect', 'derivation',
+   'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.',
+   'The rule, kept in the catalog rather than in the stage that runs it. It sits at the entry because that is where each offence is: a string carries several entries, and judging them at the string would force the offences into one value, which the fact schema refuses for a set. The string-grain verdict is read off these rows, so there is one statement of the rule and two grains of its answer.'),
+  ('graphitron_argmapping_pair_defect', 'argmapping-pair-defect', 'derivation',
+   'One written argMapping entry a rule refuses, under the code that names the rule: the entry-grain detail of the defect graphitron_entry_defect states once for the whole string.',
+   'For example brukerId: $session.nope on a handle with no such member is one row reading SESSION_MEMBER_UNKNOWN and the member written, under the string''s one row.',
+   'The child of graphitron_entry_defect at the grain a mapping string is made of. The defect relation is keyed by the written position of a directive, which for an argMapping is the string; a string holds several entries and a message names one, so the specifics of a defect are rows under the string''s row and the string''s row is the verdict. Keeping them apart is what lets every offending entry be reported at once without collapsing a set into one value, and the foreign key to the string''s row is what makes a sweep of the verdict collect its details. Named for the grain and not for a rule: the session rules are the first to judge an entry, not the only ones that could.'),
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the refusals the toolchain this graph is built with raised, whichever of the four stages raised it.',
    'For example a file that will not parse is one row naming that file, a second file declaring a type an earlier file already declares is another, and a second federation @link is a third.',
@@ -17043,15 +17281,15 @@ INSERT INTO meta_relation VALUES
    'The Java constant a scalar type is bound to, as one row per scalar however many @scalarType applications the corpus wrote on it.',
    'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row, split into the class that declares the field and the field itself.',
    'Derived from the entry beside it on the same terms as the table binding, a rank over a type''s applications in corpus merge order with the first taken. Where that one joins the decode outwards this joins it inwards, and the difference is the relation''s own shape rather than a preference: the reference is this row''s only unkeyed column and it is NOT NULL, so an application naming nothing has no fact to state and draws no row, which is what the walk this replaces said by returning early. Whether the named class declares such a field is the classpath census''s question and is asked where the resolving happens.'),
-  ('graphitron_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+  ('graphitron_entry_defect_rule', 'graphitron-entry-defect', 'derivation',
    'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms and for its reasons. Stored at all because the read that matters is interactive: the editor asks for one file''s diagnostics, and the chain arms of this rule once reached a relation whose two recursive walks ran over every chain in the graph. A per-file predicate cannot push into a recursion behind a view boundary, so as a view the whole walk ran on every keystroke''s worth of diagnostics, and the LSP''s scan-count gate is what caught it. What the gate measured is not the argument, and the measurement is recorded where measurements live rather than here, because a ceiling moves and a rationale that cites one goes stale the day it does. The argument is that the walk already runs once per capture, FieldPaths storing every step it takes and every place it stops, so a chain defect is read off that record and computing it again per read is a second evaluation of a rule the capture has already performed. The write arms are cheap and are stored with the rest rather than split out, one relation being the name every consumer already spells and the split buying a second relation to keep in agreement with this one.'),
-  ('graphitron_entry_defect', 'graphitron-entry-defect', 'graphitron',
+  ('graphitron_entry_defect', 'graphitron-entry-defect', 'derivation',
    'A rule a schema breaks, at the written position an author edits to fix it, under the code that names the rule.',
    'For example a mutation field carrying @routine and an @orderBy draws one row at the @orderBy''s own line, reading READ_SURFACE_ON_WRITE.',
    'The key is the entry, not the coordinate. A coordinate is an aggregate over the sites that declare it, so keying a defect there loses which of two offending applications to fix and reintroduces by the key the ranking this relation exists without. The entry is what the author edits. One relation and not one per defect: eleven sibling relations differed almost only in payload, and every payload column went into a rendered sentence, a prose coordinate or a file position, with nothing computing on them. The family follows the grain rather than being chosen: a defect registers at an entry, this family owns those entries, so it is filed here. A defect at a grain this family does not own belongs with whoever owns it, which is why a generated class publishing malformed constants is not in this population. What the position is about is not stored: graphitron_entry_defect_site reaches the element in fixed hops.'),
-  ('graphitron_entry_defect_site', 'graphitron-entry-defect', 'graphitron',
+  ('graphitron_entry_defect_site', 'graphitron-entry-defect', 'derivation',
    'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
    'A view and not columns on the defect, the element being a fact of the position: a declaration is its own element, a directive application''s is its parent, and a value''s is reached through the node holding it, the climb graphitron_code_reference_site already takes. Every hop is a key the transcription declares, so the view states no decision of its own and a reader that wants the element joins it rather than the rule restating it per arm.'),

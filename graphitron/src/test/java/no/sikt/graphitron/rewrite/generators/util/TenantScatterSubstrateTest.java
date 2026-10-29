@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
+import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
@@ -64,7 +64,7 @@ class TenantScatterSubstrateTest {
 
     @BeforeAll
     static void compile() {
-        var hooks = SessionHooksFixtures.recordingConnectionHooks();
+        var hooks = SessionIdentityFixtures.recording();
         Map<String, TypeSpec> units = new LinkedHashMap<>();
         for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, ClassName.get(String.class),
                 TenantColumnFixtures.STRING_KEY_COLUMN)) {
@@ -549,8 +549,10 @@ class TenantScatterSubstrateTest {
             SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         Object requestTenants = requestTenantsClass.getMethod("of", java.util.Collection.class)
             .invoke(null, hosted);
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, String.class)
-            .newInstance(runtime, commitPolicyCommit, requestTenants, "{}");
+        Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
+            .newInstance(runtime, commitPolicyCommit, requestTenants,
+                RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
     }
 
     private List<?> scatter(Object tc, Collection<String> keys, Function<Object, Object> perTenant) throws Throwable {

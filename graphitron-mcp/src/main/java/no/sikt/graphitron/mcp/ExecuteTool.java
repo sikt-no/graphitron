@@ -122,7 +122,8 @@ public final class ExecuteTool {
         }
 
         var db = new DevQueryExecutor.DbConfig(
-            config.db().url(), config.db().user(), config.db().password(), config.db().dialect(), claims);
+            config.db().url(), config.db().user(), config.db().password(), config.db().dialect(), claims,
+            config.db().session());
         try {
             String resultJson = invoker.execute(config.wiring(), db, query.get(), variables, contextArgs);
             return success(resultJson);

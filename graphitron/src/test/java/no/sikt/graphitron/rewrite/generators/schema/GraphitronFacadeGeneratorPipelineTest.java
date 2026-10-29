@@ -98,12 +98,10 @@ class GraphitronFacadeGeneratorPipelineTest {
     }
 
     @Test
-    void ownedFactory_mountPayloadSlotSortsAlphabeticallyAmongDeclaredContextArguments() {
-        // A configured mount's payload parameter is an ordinary contextArgument slot: one
-        // population, sorted alphabetically by name, mount-derived and @service-declared alike
-        // ("claims" from the mount before "userId" from the directive). The call into the mount
-        // itself preserves the method's own declaration order instead; that half is pinned by
-        // SessionHookImplGeneratorTest.
+    void ownedFactory_takesTheSessionStateBeforeTheDeclaredContextArguments() {
+        // Where the graph supplies session identity the owned factory takes the request's
+        // SessionState, and only the schema's declared contextArguments follow it, alphabetical as
+        // before: the mount contributes none, since its inputs are captured by the callbacks.
         String sdl = """
             type Query {
                 rating: String @service(service: {
@@ -112,27 +110,31 @@ class GraphitronFacadeGeneratorPipelineTest {
                 }, contextArguments: ["userId"])
             }
             """;
-        var schema = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.withHooks(
-            TestSchemaHelper.buildSchema(sdl),
-            no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
-                com.palantir.javapoet.ClassName.get(String.class),
-                no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("claims")));
-        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var spec = GraphitronFacadeGenerator.generate(schema, "com.example", false, false,
+            no.sikt.graphitron.rewrite.session.SessionIdentityFixtures.handleLess()).get(0);
 
         MethodSpec owned = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("newOwnedExecutionInput"))
             .findFirst()
             .orElseThrow();
         assertThat(owned.parameters()).extracting(p -> p.name())
-            .containsExactly("claims", "userId");
+            .containsExactly("session", "userId");
         assertThat(owned.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("java.lang.String", "java.lang.String");
+            .containsExactly("com.example.schema.SessionState", "java.lang.String");
+        MethodSpec escapeHatch = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("newExecutionInput"))
+            .findFirst()
+            .orElseThrow();
+        assertThat(escapeHatch.parameters()).extracting(p -> p.name())
+            .as("the escape hatch's caller owns identity, so it takes no session state")
+            .containsExactly("defaultDsl", "userId");
     }
 
     @Test
     void sessionBoundParameter_growsNoFactorySlot() {
         // The $session binding is per-connection state read at the call site, never
-        // caller-supplied: the owned factory's parameter list carries the mount's payload only,
+        // caller-supplied: the owned factory's parameter list carries the session state only,
         // no slot for the bound `identity` parameter. (That the emitted read goes through the
         // resolved connection's configuration rather than graphQLContext is behavioral and
         // execution-pinned, per the no-code-string-assertion rule.)
@@ -145,12 +147,10 @@ class GraphitronFacadeGeneratorPipelineTest {
                 })
             }
             """;
-        var schema = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.withHooks(
-            TestSchemaHelper.buildSchema(sdl),
-            no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
-                com.palantir.javapoet.ClassName.get(String.class),
-                no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("claims")));
-        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var spec = GraphitronFacadeGenerator.generate(schema, "com.example", false, false,
+            no.sikt.graphitron.rewrite.session.SessionIdentityFixtures.handled(
+                com.palantir.javapoet.ClassName.get(String.class))).get(0);
 
         MethodSpec owned = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("newOwnedExecutionInput"))
@@ -158,6 +158,6 @@ class GraphitronFacadeGeneratorPipelineTest {
             .orElseThrow();
         assertThat(owned.parameters()).extracting(p -> p.name())
             .as("the handle is bound at the consuming site, not supplied by the caller")
-            .containsExactly("claims");
+            .containsExactly("session");
     }
 }

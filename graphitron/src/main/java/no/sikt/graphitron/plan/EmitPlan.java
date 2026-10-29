@@ -13,7 +13,7 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
+import no.sikt.graphitron.emit.SessionIdentityRows;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,7 +52,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                        RoutineWriteQuery.Rows routineWrites,
                        KeyProjectionRelation keyProjections,
                        ErrorChannelRelation errorChannels,
-                       OutboxQuery.Rows outboxes) {
+                       OutboxQuery.Rows outboxes,
+                       SessionIdentityRows sessionIdentity) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -91,8 +92,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
 
     /**
      * Produces the plan for one run. {@code federationLink} and {@code usesOneOf} are the
-     * bundle's schema-level facts; the schema's resolved session-hook carrier
-     * ({@link GraphitronSchema#sessionHooks()}) decides the connection runtime's hook unit;
+     * bundle's schema-level facts; the graph's session identity, read from the store
+     * ({@link SessionIdentityRows}), decides the connection runtime's hook unit;
      * {@code outputPackage} anchors every unit name. {@code projections} is the store's resolved
      * key projections and {@code store} the open handle each planner reads its own facts through;
      * both arrive from the fact store rather than from the walk, and {@link #produceWithoutStore}
@@ -118,6 +119,17 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                                    String outputPackage,
                                    ResolvedKeyProjections.Projections projections,
                                    StoreHandle store) {
+        return produce(schema, federationLink, usesOneOf, outputPackage, projections, store,
+            store == null ? SessionIdentityRows.empty() : SessionIdentityRows.read(store));
+    }
+
+    private static EmitPlan produce(GraphitronSchema schema,
+                                    boolean federationLink,
+                                    boolean usesOneOf,
+                                    String outputPackage,
+                                    ResolvedKeyProjections.Projections projections,
+                                    StoreHandle store,
+                                    SessionIdentityRows sessionIdentity) {
         var units = new GeneratedUnits(outputPackage);
         var globals = new ArrayList<GlobalCommand>();
 
@@ -149,7 +161,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES, units.selectionOccurrences()));
         globals.add(one(GlobalUnitKind.NESTING_COORDINATES, units.nestingCoordinates()));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
-        globals.add(connectionRuntime(units, schema.sessionHooks(), schema.requestTenantKeyType().isPresent()));
+        globals.add(connectionRuntime(units, sessionIdentity, schema.requestTenantKeyType().isPresent()));
         globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));
@@ -177,7 +189,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             routineWrites,
             keyProjections,
             errorChannels,
-            outboxes);
+            outboxes,
+            sessionIdentity);
     }
 
     /**
@@ -261,6 +274,21 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             ResolvedKeyProjections.Projections.empty(), null);
     }
 
+    /**
+     * {@link #produceWithoutStore(GraphitronSchema, boolean, boolean, String)} for a caller that
+     * states the graph's session identity itself, the way a driver without a store states the
+     * rest: the connection runtime plans the session units exactly when {@code sessionIdentity}
+     * says the graph supplies identity.
+     */
+    public static EmitPlan produceWithoutStore(GraphitronSchema schema,
+                                               boolean federationLink,
+                                               boolean usesOneOf,
+                                               String outputPackage,
+                                               SessionIdentityRows sessionIdentity) {
+        return produce(schema, federationLink, usesOneOf, outputPackage,
+            ResolvedKeyProjections.Projections.empty(), null, sessionIdentity);
+    }
+
     /** A fixed-substrate global command committing exactly one unit. */
     private static GlobalCommand one(GlobalUnitKind kind, UnitRef unit) {
         return new GlobalCommand.Fixed(kind, List.of(unit));
@@ -270,14 +298,15 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * The connection runtime's unit set: the three fixed units and the {@code FetcherErrorLog} and
      * {@code FetcherErrorResponse} interfaces (unconditional; only the log's surface varies with the
      * tenant key), plus the generated hook class and the {@code SessionMountException} a throwing
-     * mount becomes, both exactly when the resolved session-hook carrier emits one
-     * ({@link SessionHooks#emitsHookImplementation()}, the same fact the generator gates on),
+     * mount becomes, plus the {@code MountedSession} and {@code SessionState} the consumer builds the
+     * input with, all exactly when the graph supplies session identity
+     * ({@link SessionIdentityRows#emitsHookImplementation()}, the same fact the generator gates on),
      * plus the {@code RequestTenants} value exactly in a {@code <tenantColumn>} build
      * ({@link GraphitronSchema#requestTenantKeyType()}, the fact the generator's tenant key type
-     * is read from). The {@link SessionHooks.NotConfigured} arm plans no hook unit at all:
+     * is read from). A graph that supplies no session identity plans no hook unit at all:
      * nothing is emitted and nothing is held.
      */
-    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionHooks sessionHooks,
+    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionIdentityRows sessionHooks,
                                                    boolean multiTenant) {
         var refs = new ArrayList<UnitRef>();
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
@@ -290,6 +319,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorResponse"));
         if (sessionHooks.emitsHookImplementation()) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
+            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "MountedSession"));
+            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionState"));
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionMountException"));
         }
         return new GlobalCommand.Fixed(GlobalUnitKind.CONNECTION_RUNTIME, refs);

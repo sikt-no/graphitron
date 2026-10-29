@@ -13,8 +13,8 @@ extend schema @withConfiguration(
   outputDirectory: "/build/generated",
   lintDisabledRules: ["no-typename-prefix", "field-names-camel-case"],
   lintExcludedTypes: ["Legacy*", "*Internal"],
-  mount: "com.example.Identity#mount",
-  unmount: "com.example.Identity#unmount",
+  sessionState: true,
+  sessionHandle: "com.example.Identity",
   maxAllowedPageSize: 1000
 )
 
@@ -50,12 +50,7 @@ extend schema @expectEquals(relation: "store_graph_lint_excluded_type", rows: ""
   1,       *Internal
   """)
 
-extend schema @expectEquals(relation: "store_graph_session_mount", rows: """
-  mount_method
-  com.example.Identity#mount
-  """)
-
-extend schema @expectEquals(relation: "store_graph_session_unmount", rows: """
-  unmount_method
-  com.example.Identity#unmount
+extend schema @expectEquals(relation: "store_graph_session_handle", rows: """
+  handle_class
+  com.example.Identity
   """)

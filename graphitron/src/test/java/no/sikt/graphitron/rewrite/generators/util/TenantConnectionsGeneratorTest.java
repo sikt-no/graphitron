@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
+import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * ({@code GraphitronRuntime.acquireForTenant}) and the per-operation {@code TenantConnections} carrier.
  * Because these are emitted, the honest way to assert their behaviour is to compile the real emitted
  * {@code TypeSpec}s and drive them over fake JDBC. The units are generated with the
- * {@link RecordingHookFixture} method pair so the real mount/unmount runs at acquisition/release,
+ * {@link RecordingSessionState} callback pair so the real mount/unmount runs at acquisition/release,
  * letting a fake {@code Connection} observe both phases as the {@code prepareStatement} calls the
  * fixture makes; the fake tenant {@code DataSource}s are keyed so "the right source per key" and
  * "one connection per distinct key" read straight off the call log.
@@ -55,7 +55,7 @@ class TenantConnectionsGeneratorTest {
 
     @BeforeAll
     static void compile() {
-        var hooks = SessionHooksFixtures.recordingConnectionHooks();
+        var hooks = SessionIdentityFixtures.recording();
         Map<String, TypeSpec> units = new LinkedHashMap<>();
         for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
@@ -102,13 +102,13 @@ class TenantConnectionsGeneratorTest {
     void acquireForTenant_selectsTheKeysSource_andUnknownKeyRaisesBeforeAnySql() throws Throwable {
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", false)));
 
-        acquireForTenant(runtime, "A", "{}");
+        acquireForTenant(runtime, "A", session());
         assertThat(events)
             .as("acquiring for key A pins A's source and mounts identity on it")
             .containsExactly("getConnection:A", "connect:A");
 
         events.clear();
-        assertThatThrownBy(() -> acquireForTenant(runtime, "Z", "{}"))
+        assertThatThrownBy(() -> acquireForTenant(runtime, "Z", session()))
             .as("an unknown tenant key is a request-level error, structurally distinct from acquisition failure")
             .isInstanceOf(NoSuchElementException.class);
         assertThat(events).as("no connection is acquired for an unknown key: the error precedes all SQL").isEmpty();
@@ -117,7 +117,7 @@ class TenantConnectionsGeneratorTest {
     @Test
     void dslFor_pinsOneConnectionPerDistinctKey_reusingWithinTheOperation() throws Throwable {
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", false)));
-        Object tc = newTenantConnections(runtime, "{}");
+        Object tc = newTenantConnections(runtime, session());
 
         dslFor(tc, "A");
         dslFor(tc, "A"); // same key again within the operation
@@ -144,7 +144,7 @@ class TenantConnectionsGeneratorTest {
         // B's disconnect fails; A's succeeds. releaseAll must release both (A returned, B evicted) and
         // rethrow, rather than let B's failed unmount orphan A or vice versa.
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", true)));
-        Object tc = newTenantConnections(runtime, "{}");
+        Object tc = newTenantConnections(runtime, session());
 
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -164,7 +164,7 @@ class TenantConnectionsGeneratorTest {
     @Test
     void sessionHandle_onAMountedConnection_returnsTheHandleWrittenAtMint() throws Throwable {
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
-        Object tc = newTenantConnections(runtime, "{}");
+        Object tc = newTenantConnections(runtime, session());
 
         Object dsl = dslForReturning(tc, "A");
 
@@ -197,13 +197,22 @@ class TenantConnectionsGeneratorTest {
             .newInstance(defaultDs, new LinkedHashMap<Object, DataSource>(tenantSources), SQLDialect.POSTGRES);
     }
 
-    private Object newTenantConnections(Object runtime, String claims) throws Throwable {
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, String.class)
-            .newInstance(runtime, commitPolicyCommit, claims);
+    /** The request's session state: callbacks that run the recording statements and return a handle. */
+    private static Object session() throws Exception {
+        return RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}");
     }
 
-    private void acquireForTenant(Object runtime, Object key, String claims) throws Throwable {
-        invoke(() -> runtimeClass.getMethod("acquireForTenant", Object.class, String.class).invoke(runtime, key, claims));
+    private Object newTenantConnections(Object runtime, Object session) throws Throwable {
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sessionStateClass())
+            .newInstance(runtime, commitPolicyCommit, session);
+    }
+
+    private void acquireForTenant(Object runtime, Object key, Object session) throws Throwable {
+        invoke(() -> runtimeClass.getMethod("acquireForTenant", Object.class, sessionStateClass()).invoke(runtime, key, session));
+    }
+
+    private static Class<?> sessionStateClass() {
+        return harness.load(SCHEMA_PACKAGE + ".SessionState");
     }
 
     private void dslFor(Object tc, Object key) throws Throwable {
@@ -260,7 +269,7 @@ class TenantConnectionsGeneratorTest {
     private Connection fakeConnection(String label, boolean failDisconnect) {
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
-                // The RecordingHookFixture pair runs prepareStatement for both mount and unmount;
+                // The RecordingSessionState callbacks run prepareStatement for both mount and unmount;
                 // the unmount SQL is the one that clears to the empty string. Label the phase off the SQL.
                 case "prepareStatement" -> {
                     boolean disconnect = ((String) args[0]).contains("'', false");
@@ -298,7 +307,7 @@ class TenantConnectionsGeneratorTest {
     @Test
     void multiTenantCarrierDeclaresThePublicCanonicalTenantKey() {
         var carrier = carrierOf(ConnectionRuntimeClassGenerator.generate(PACKAGE,
-            SessionHooksFixtures.recordingConnectionHooks(), ClassName.get(String.class),
+            SessionIdentityFixtures.recording(), ClassName.get(String.class),
             TenantColumnFixtures.STRING_KEY_COLUMN));
 
         assertThat(carrier.methodSpecs())
@@ -313,14 +322,14 @@ class TenantConnectionsGeneratorTest {
     @Test
     void singleTenantCarrierHasNoCanonicalTenantKey() {
         var carrier = carrierOf(ConnectionRuntimeClassGenerator.generate(PACKAGE,
-            SessionHooksFixtures.recordingConnectionHooks()));
+            SessionIdentityFixtures.recording()));
 
         assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("canonicalTenantKey");
     }
 
     @Test
     void aKeyTypeWithoutAColumnOrAColumnWithoutAKeyTypeIsRefused() {
-        var hooks = SessionHooksFixtures.recordingConnectionHooks();
+        var hooks = SessionIdentityFixtures.recording();
         assertThatThrownBy(() -> ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks,
                 ClassName.get(String.class), null))
             .isInstanceOf(IllegalArgumentException.class);

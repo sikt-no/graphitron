@@ -5,7 +5,7 @@ import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
+import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -68,7 +68,7 @@ class EmitPlanTest {
 
     @Test
     void connectionRuntime_commitsTheFixedThreeWithoutSessionState() {
-        // The NotConfigured arm plans no hook unit at all: no SessionHook interface exists any
+        // A graph supplying no session identity plans no hook unit at all: no SessionHook interface exists any
         // more, and nothing is emitted for the no-configuration case.
         var plan = producePlain();
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
@@ -77,15 +77,14 @@ class EmitPlanTest {
     }
 
     @Test
-    void connectionRuntime_commitsTheHookClassAndItsRejectionWhenSessionHooksAreResolved() {
+    void connectionRuntime_commitsTheHookClassItsRejectionAndTheSessionTypesWhenIdentityIsSupplied() {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(PLAIN_SDL);
-        var model = SessionHooksFixtures.withHooks(bundle.model(),
-            SessionHooksFixtures.handleLess(SessionHooksFixtures.stringPayload("claims")));
-        var plan = EmitPlan.produceWithoutStore(model, bundle.federationLink(), bundle.usesOneOf(),
-            DEFAULT_OUTPUT_PACKAGE);
+        var plan = EmitPlan.produceWithoutStore(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
+            DEFAULT_OUTPUT_PACKAGE, SessionIdentityFixtures.handleLess());
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections",
-                "FetcherErrorLog", "FetcherErrorResponse", "GraphitronSessionHook", "SessionMountException");
+                "FetcherErrorLog", "FetcherErrorResponse", "GraphitronSessionHook", "MountedSession",
+                "SessionState", "SessionMountException");
     }
 
     @Test

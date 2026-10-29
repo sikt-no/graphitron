@@ -56,6 +56,9 @@ public final class GraphitronFacadeGenerator {
     private static final String ESCAPE_HATCH_NOTICE_FIELD = "ESCAPE_HATCH_NOTICE_LOGGED";
     /** The factories' request-tenant-set parameter, present in every {@code <tenantColumn>} build. */
     public static final String TENANTS_PARAM = "tenants";
+
+    /** The owned factories' parameter carrying the request's {@code SessionState}. */
+    public static final String SESSION_PARAM = "session";
     /** The owned factory overload's typed request-tenancy parameter ({@code RequestTenants}). */
     public static final String REQUEST_TENANTS_PARAM = "requestTenants";
 
@@ -68,9 +71,13 @@ public final class GraphitronFacadeGenerator {
      *                       routes {@code schemaSdl} through the generated {@code OneOfDirectiveSdl}
      *                       helper, the same gate {@link GraphitronSchemaClassGenerator} applies to
      *                       its federation build
+     * @param identity the graph's session identity as the store states it; when the graph supplies
+     *                 it, both owned factories take the request's {@code SessionState} and write it
+     *                 where the connection instrumentation reads it
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
-                                          boolean federationLink, boolean usesOneOf) {
+                                          boolean federationLink, boolean usesOneOf,
+                                          no.sikt.graphitron.emit.SessionIdentityRows identity) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
@@ -84,6 +91,12 @@ public final class GraphitronFacadeGenerator {
         var graphQLBuilder = ClassName.get("graphql", "GraphQL", "Builder");
         var dataLoaderRegistry = ClassName.get("org.dataloader", "DataLoaderRegistry");
         var dslContext = ClassName.get("org.jooq", "DSLContext");
+        // The request's session state parameter exists only where the graph supplies identity, and
+        // only on the owned factories: the escape hatch's caller owns identity.
+        ClassName sessionState = identity.emitsHookImplementation()
+            ? ClassName.get(schemaPackage,
+                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.SESSION_STATE_CLASS_NAME)
+            : null;
 
         var buildSchema = MethodSpec.methodBuilder("buildSchema")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -120,7 +133,7 @@ public final class GraphitronFacadeGenerator {
             CodeBlock.of("b.put($T.class, defaultDsl);", dslContext),
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections, requestTenants, false,
-            escapeHatchJavadoc(contextArgs, requestTenantKey != null));
+            escapeHatchJavadoc(contextArgs, requestTenantKey != null), null);
 
         // The owned-connection factory: the caller brings only the declared contextArguments
         // (the mount's payload parameters among them, ordinary name-keyed slots); the execution
@@ -129,7 +142,7 @@ public final class GraphitronFacadeGenerator {
             "newOwnedExecutionInput", null, null, null,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections, requestTenants, false,
-            ownedExecutionInputJavadoc(contextArgs, requestTenantKey != null, false));
+            ownedExecutionInputJavadoc(contextArgs, requestTenantKey != null, false), sessionState);
 
         // In a <tenantColumn> build the owned path also takes the typed RequestTenants value, which
         // can name a default tenant for global reads. It differs from the Collection form by the
@@ -139,7 +152,7 @@ public final class GraphitronFacadeGenerator {
             "newOwnedExecutionInput", null, null, null,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections, requestTenants, true,
-            ownedExecutionInputJavadoc(contextArgs, true, true));
+            ownedExecutionInputJavadoc(contextArgs, true, true), sessionState);
 
         // Emit the caller-owns-everything notice once per process, even if the engine is rebuilt.
         var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
@@ -227,7 +240,7 @@ public final class GraphitronFacadeGenerator {
 
     /** Convenience overload for non-federation usage. */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        return generate(schema, outputPackage, false, false);
+        return generate(schema, outputPackage, false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty());
     }
 
     /**
@@ -297,7 +310,8 @@ public final class GraphitronFacadeGenerator {
             ClassName executionInput, ClassName executionInputBuilder,
             ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs,
             com.palantir.javapoet.TypeName requestTenantKey, ClassName tenantConnections,
-            ClassName requestTenants, boolean typedRequestTenants, String javadoc) {
+            ClassName requestTenants, boolean typedRequestTenants, String javadoc,
+            ClassName sessionState) {
         String tenantsParam = typedRequestTenants ? REQUEST_TENANTS_PARAM : TENANTS_PARAM;
         var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -311,11 +325,17 @@ public final class GraphitronFacadeGenerator {
                 : ParameterizedTypeName.get(ClassName.get("java.util", "Collection"), requestTenantKey),
                 tenantsParam);
         }
+        if (sessionState != null) {
+            method.addParameter(sessionState, SESSION_PARAM);
+        }
         for (ResolvedContextArg arg : contextArgs) {
             method.addParameter(arg.javaType(), arg.name());
         }
         if (firstParamType != null) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, firstParamName, firstParamName);
+        }
+        if (sessionState != null) {
+            method.addStatement("$T.requireNonNull($L, $S)", Objects.class, SESSION_PARAM, SESSION_PARAM);
         }
         if (requestTenantKey != null) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, tenantsParam, tenantsParam);
@@ -340,6 +360,12 @@ public final class GraphitronFacadeGenerator {
                 typedRequestTenants
                     ? CodeBlock.of("$L", tenantsParam)
                     : CodeBlock.of("$T.of($L)", requestTenants, tenantsParam));
+        }
+        if (sessionState != null) {
+            // The identity key constant, so the write here and the instrumentation's read cannot
+            // drift, and no contextArgument name can collide with it.
+            method.addCode("        b.put($S, $L);\n",
+                no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY, SESSION_PARAM);
         }
         for (ResolvedContextArg arg : contextArgs) {
             method.addCode("        b.put($S, $L);\n", arg.name(), arg.name());
@@ -457,9 +483,8 @@ public final class GraphitronFacadeGenerator {
                                                      boolean typedRequestTenants) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
-        sb.append("pass only the declared {@code contextArguments} (a configured {@code <mount>} method's\n");
-        sb.append("payload parameters are ordinary entries in that population, typed by the method's own\n");
-        sb.append("declaration). Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
+        sb.append("pass the {@code SessionState} and then only the declared {@code contextArguments}, which\n");
+        sb.append("no longer include any session identity payload. Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
         sb.append("here; the execution instrumentation wired by\n");
         sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} pins connections on first demand,\n");
         sb.append("mounts identity through the mount method, produces every {@code DSLContext}, demarcates\n");

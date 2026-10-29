@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
+import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
@@ -58,7 +58,7 @@ class TenantAuthorizationSubstrateTest {
 
     @BeforeAll
     static void compile() {
-        var hooks = SessionHooksFixtures.recordingTenantSlotHooks();
+        var hooks = SessionIdentityFixtures.recording();
         var tenantType = ClassName.get(String.class);
         Map<String, TypeSpec> units = new LinkedHashMap<>();
         for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, tenantType,
@@ -106,7 +106,7 @@ class TenantAuthorizationSubstrateTest {
     @BeforeEach
     void reset() {
         events.clear();
-        RecordingHookFixture.MOUNTED_TENANTS.clear();
+        RecordingSessionState.mountedTenants(harness).clear();
     }
 
     @Test
@@ -119,7 +119,7 @@ class TenantAuthorizationSubstrateTest {
             .hasMessageContaining("'B'")
             .hasMessageContaining("not permitted");
         assertThat(events).as("no connection to a refused tenant is ever opened").isEmpty();
-        assertThat(RecordingHookFixture.MOUNTED_TENANTS).isEmpty();
+        assertThat(RecordingSessionState.mountedTenants(harness)).isEmpty();
         releaseAll(tc);
     }
 
@@ -149,7 +149,7 @@ class TenantAuthorizationSubstrateTest {
         dslFor(tc, "A");
         invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
 
-        assertThat(RecordingHookFixture.MOUNTED_TENANTS)
+        assertThat(RecordingSessionState.mountedTenants(harness))
             .containsExactly(Optional.of("A"), Optional.empty());
         releaseAll(tc);
     }
@@ -169,7 +169,7 @@ class TenantAuthorizationSubstrateTest {
         assertThat(events.stream().filter(e -> e.equals("getConnection:shared")).count())
             .as("session identity is per (connection, tenant): one pin per key, reused within the key")
             .isEqualTo(2);
-        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.of("A"), Optional.of("B"));
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("A"), Optional.of("B"));
         releaseAll(tc);
     }
 
@@ -192,7 +192,7 @@ class TenantAuthorizationSubstrateTest {
         dslGlobal(tc);
 
         assertThat(events).containsExactly("getConnection:B");
-        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.of("B"));
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("B"));
         releaseAll(tc);
     }
 
@@ -206,7 +206,7 @@ class TenantAuthorizationSubstrateTest {
 
         assertThat(routed).as("one entry per tenant key, shared by both acquisitions").isSameAs(global);
         assertThat(events).containsExactly("getConnection:A");
-        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.of("A"));
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("A"));
         releaseAll(tc);
     }
 
@@ -218,7 +218,7 @@ class TenantAuthorizationSubstrateTest {
         invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
 
         assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.empty());
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.empty());
         releaseAll(tc);
     }
 
@@ -229,7 +229,7 @@ class TenantAuthorizationSubstrateTest {
         dslGlobal(tc);
 
         assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingHookFixture.MOUNTED_TENANTS).containsExactly(Optional.empty());
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.empty());
         releaseAll(tc);
     }
 
@@ -247,8 +247,10 @@ class TenantAuthorizationSubstrateTest {
     }
 
     private Object newTenantConnections(Object runtime, Object requestTenants) throws Throwable {
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, String.class)
-            .newInstance(runtime, commitPolicyCommit, requestTenants, "{}");
+        Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
+        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
+            .newInstance(runtime, commitPolicyCommit, requestTenants,
+                RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
     }
 
     private static Object withDefault(Set<String> tenants, String defaultTenant) throws Throwable {

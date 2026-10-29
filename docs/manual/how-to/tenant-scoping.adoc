@@ -34,12 +34,12 @@ var runtime = new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES);
 var graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 ----
 
-Every request states which tenants it may touch. The generated factories take the set as a parameter ahead of your mount's payload, typed as a collection of your tenant key type, so leaving it out is a compile error:
+Every request states which tenants it may touch. The generated factories take the set as a parameter ahead of your `SessionState`, typed as a collection of your tenant key type, so leaving it out is a compile error:
 
 [source,java]
 ----
 Set<Long> permitted = permittedInstitutions(jwt);   // from the caller's claims, narrowed to this deployment
-ExecutionInput input = Graphitron.newOwnedExecutionInput(permitted, claims)
+ExecutionInput input = Graphitron.newOwnedExecutionInput(permitted, session)
     .query(query).build();
 ----
 
@@ -47,19 +47,19 @@ Graphitron checks every tenant an operation routes to against this set before it
 
 The set means the tenants this request may touch _in this deployment_. If a user's permissions can include tenants another deployment serves, narrow the set before passing it: a tenant in the set that this deployment has no `DataSource` for fails every `@tenantFanOut` field, because graphitron cannot tell a tenant served elsewhere from a `DataSource` that was never wired. Narrow against your own list of this deployment's tenants to keep that check; narrowing against `runtime.tenantKeys()` also works, but turns the check off.
 
-Your `<sessionState>` mount's payload follows the set on the same factory (the parameter names and types are your mount method's own). Connections are taken lazily, one per distinct tenant the operation actually touches, and your mount runs on each, so sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant. A `$session`-bound service parameter likewise receives the handle of the tenant connection its call runs on, never a neighbor's.
+Your `SessionState` follows the set on the same factory, and any declared `contextArguments` follow it. Connections are taken lazily, one per distinct tenant the operation actually touches, and your mount runs on each, so sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant. A `$session`-bound service parameter likewise receives the handle of the tenant connection its call runs on, never a neighbor's.
 
-Your mount can learn which tenant it is mounting for. Declare a parameter typed `Optional` of your tenant key type, anywhere in the signature:
+Your mount can learn which tenant it is mounting for: the `MountedSession` it receives answers `tenant()`, an `Optional` of your tenant key type:
 
 [source,java]
 ----
-public static RasHandle mount(Configuration cfg, Optional<Long> tenant, Claims claims) {
-    long institution = tenant.orElseThrow();   // or handle the default source
-    ...
-}
+var session = SessionState.of(s -> {
+    long institution = s.tenant().orElseThrow();   // or handle the default source
+    return Routines.connect(s.configuration(), institution, claims);
+});
 ----
 
-A connection routed to a tenant receives that tenant; a connection to the default source receives `Optional.empty()`. The parameter is not part of the payload and does not appear on the factory. Graphitron recognises it by type alone, so any other `Optional` parameter on a multi-tenant mount is a build error, and a plain `Long tenant` parameter is ordinary payload that your factory will ask for. Tenant keys that share one `DataSource` still get one connection and one mount each, each with its own key. A mount that throws fails the request closed and evicts the connection, so it is also the place for any per-tenant check the tenant set cannot express. Your unmount does not receive the tenant; if it needs it, put it in the handle your mount returns.
+A connection routed to a tenant receives that tenant; a connection to the default source receives `Optional.empty()`. Tenant keys that share one `DataSource` still get one connection and one mount each, each with its own key. A mount that throws fails the request closed and evicts the connection, so it is also the place for any per-tenant check the tenant set cannot express. The unmount does not receive the tenant separately; if it needs it, put it in the handle your mount returns.
 
 *Reading global tables from a tenant database.* If your global tables are present in every tenant database (for example as views over shared reference data), a request can name one of its tenants as its _default tenant_, and graphitron then reads global tables for that request from that tenant's database instead of from the default source:
 
@@ -135,6 +135,6 @@ new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES, myExecutor, Du
 
 A tenant that fails or misses the deadline contributes one `null` element and a path-bearing entry in the response's `errors` array; the field's element nullability chooses whether that stays partial data (`[Thing]`) or nulls the whole field (`[Thing!]`). See the xref:../reference/directives/tenantFanOut.adoc[directive reference].
 
-The one exception is a rejected identity. When your `<sessionState>` mount throws on any tenant, the request fails as a whole instead of returning partial data: `GraphQL.execute` throws `SessionMountException`, as described in xref:../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A rejected identity rejects the request]. The mount payload is one identity for every tenant, so the first rejection answers every later acquisition in the operation. On a mutation, the top-level field during which a mount is rejected fails and rolls back on every tenant it touched, but an earlier top-level field has already committed by then, and the rejection does not undo it (xref:../../architecture/reference/runtime-extension-points.adoc#owned-path-transactions[Transactions on the owned-connection path]).
+The one exception is a rejected identity. When your `<sessionState>` mount throws on any tenant, the request fails as a whole instead of returning partial data: `GraphQL.execute` throws `SessionMountException`, as described in xref:../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A rejected identity rejects the request]. The session state is one identity for every tenant, so the first rejection answers every later acquisition in the operation. On a mutation, the top-level field during which a mount is rejected fails and rolls back on every tenant it touched, but an earlier top-level field has already committed by then, and the rejection does not undo it (xref:../../architecture/reference/runtime-extension-points.adoc#owned-path-transactions[Transactions on the owned-connection path]).
 
 xref:index.adoc[← How-to index]

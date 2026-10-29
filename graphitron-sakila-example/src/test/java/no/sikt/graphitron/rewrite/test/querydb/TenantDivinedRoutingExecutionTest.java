@@ -210,7 +210,7 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     private static ExecutionResult executeAs(String query, java.util.Collection<Integer> tenants, String sub) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"" + sub + "\"}")
+        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"" + sub + "\"}"))
             .query(query).build());
     }
 
@@ -223,7 +223,7 @@ class TenantDivinedRoutingExecutionTest {
     private static ExecutionResult executeWithDefaultAs(String query, java.util.Collection<Integer> tenants,
                                                         int defaultTenant, String sub) {
         return graphql.execute(Graphitron.newOwnedExecutionInput(
-                RequestTenants.withDefault(tenants, defaultTenant), "{\"sub\":\"" + sub + "\"}")
+                RequestTenants.withDefault(tenants, defaultTenant), SessionStates.multitenant("{\"sub\":\"" + sub + "\"}"))
             .query(query).build());
     }
 
@@ -1096,7 +1096,7 @@ class TenantDivinedRoutingExecutionTest {
 
     @Test
     void entities_tenantSlotThatDoesNotDecode_nullsThatSlot_andTheRestResolves() {
-        var result = graphql.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"test-user\"}")
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"test-user\"}"))
             .query(INVENTORY_ENTITIES)
             .variables(Map.of("reps", List.of(
                 Map.of("__typename", "FilmActor", "id", TENANT_SLOT_ABC),
@@ -1146,7 +1146,7 @@ class TenantDivinedRoutingExecutionTest {
     // ===== FetcherErrorResponse.clientErrorMessage rewords an unclaimed client error =====
 
     private static ExecutionResult executeReworded(String query, java.util.Collection<Integer> tenants) {
-        return rewordingGraphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"test-user\"}")
+        return rewordingGraphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"test-user\"}"))
             .query(query).build());
     }
 
@@ -1322,7 +1322,7 @@ class TenantDivinedRoutingExecutionTest {
         String sub = "mount-probe-" + java.util.UUID.randomUUID();
 
         var result = sharedEngine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2),
-                "{\"sub\":\"" + sub + "\"}")
+                SessionStates.multitenant("{\"sub\":\"" + sub + "\"}"))
             .query("{ a: films(filmId: 1) { title } b: films(filmId: 2) { title } }").build());
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         assertThat(mountedTenants(sub))
@@ -1634,7 +1634,7 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     private static List<Map<String, Object>> entities(RequestTenants tenants, List<Map<String, Object>> reps) {
-        var result = graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"test-user\"}")
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"test-user\"}"))
             .query(INVENTORY_ENTITIES).variables(Map.of("reps", reps)).build());
         return (List<Map<String, Object>>) data(result, "_entities");
     }
@@ -1692,7 +1692,7 @@ class TenantDivinedRoutingExecutionTest {
         + " ... on FilmActor { actorId } } }";
 
     private static ExecutionResult entitiesAndLanguages(RequestTenants tenants, List<Map<String, Object>> reps) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"test-user\"}")
+        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"test-user\"}"))
             .query(ENTITIES_AND_LANGUAGES).variables(Map.of("reps", reps)).build());
     }
 

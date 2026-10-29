@@ -218,11 +218,10 @@ public final class FactDocuments {
             var lint = disabled.isEmpty() && excluded.isEmpty()
                 ? LintConfig.empty()
                 : LintConfig.validated(new LinkedHashSet<>(disabled), excluded);
-            var mount = string(directive, "mount");
-            var unmount = string(directive, "unmount");
-            var session = mount.isEmpty() && unmount.isEmpty()
+            var handle = string(directive, "sessionHandle");
+            var session = !bool(directive, "sessionState") && handle.isEmpty()
                 ? SessionStateConfig.none()
-                : SessionStateConfig.from(mount.orElse(null), unmount.orElse(null));
+                : SessionStateConfig.from(handle.orElse(null), null, null);
             var outbox = OutboxConfig.from(string(directive, "outboxTable").orElse(null),
                 string(directive, "outboxFunction").orElse(null),
                 roles(strings(directive, "outboxColumns")),
@@ -244,6 +243,17 @@ public final class FactDocuments {
                 out.put(binding.substring(0, equals).strip(), binding.substring(equals + 1).strip());
             }
             return out;
+        }
+
+        private static boolean bool(Directive directive, String name) {
+            var argument = directive.getArgument(name);
+            if (argument == null) {
+                return false;
+            }
+            if (!(argument.getValue() instanceof graphql.language.BooleanValue value)) {
+                throw new AssertionError("@" + DIRECTIVE + "(" + name + ":) takes a boolean");
+            }
+            return value.isValue();
         }
 
         private static OptionalInt integer(Directive directive, String name) {

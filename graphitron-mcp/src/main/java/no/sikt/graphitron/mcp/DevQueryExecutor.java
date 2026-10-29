@@ -64,10 +64,16 @@ public final class DevQueryExecutor {
      * environment-variable overrides, the {@code @file} claims form) happens upstream; by the
      * time this record exists the values are final.
      */
-    public record DbConfig(String url, String user, String password, String dialect, String claims) {
+    public record DbConfig(String url, String user, String password, String dialect, String claims,
+                           String session) {
         public DbConfig {
             Objects.requireNonNull(url, "url");
             Objects.requireNonNull(dialect, "dialect");
+        }
+
+        /** A configuration with no session method, for a schema that mounts no identity. */
+        public DbConfig(String url, String user, String password, String dialect, String claims) {
+            this(url, user, password, dialect, claims, null);
         }
     }
 
@@ -132,8 +138,14 @@ public final class DevQueryExecutor {
             throws DevExecutionException {
         try {
             Class<?> executor = Class.forName(wiring.executorClassName(), true, loader);
-            return executor.getMethod(EXECUTE_METHOD,
-                Connection.class, String.class, String.class, Map.class, String.class, Map.class);
+            // The fifth parameter is a String (claims) where the schema mounts no identity and the
+            // generated SessionState where it does, so the method is found by name and arity: the
+            // host never names a generated type, and passes the state as an Object.
+            return java.util.Arrays.stream(executor.getMethods())
+                .filter(m -> m.getName().equals(EXECUTE_METHOD) && m.getParameterCount() == 6
+                    && java.lang.reflect.Modifier.isStatic(m.getModifiers()))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchMethodException(EXECUTE_METHOD));
         } catch (ClassNotFoundException e) {
             throw new DevExecutionException(
                 "The generated " + wiring.executorClassName() + " is not on the dev classpath: "
@@ -191,7 +203,8 @@ public final class DevQueryExecutor {
         thread.setContextClassLoader(loader);
         try {
             return (String) executeMethod.invoke(null,
-                connection, db.dialect(), query, variables, db.claims(), contextArgs);
+                connection, db.dialect(), query, variables, fifthArgument(executeMethod, loader, db),
+                contextArgs);
         } catch (IllegalAccessException e) {
             throw new DevExecutionException("Could not invoke the generated executor: " + e.getMessage(), e);
         } catch (java.lang.reflect.InvocationTargetException e) {
@@ -204,6 +217,55 @@ public final class DevQueryExecutor {
                 : cause.getClass().getName(), cause);
         } finally {
             thread.setContextClassLoader(previous);
+        }
+    }
+
+    /**
+     * What the executor takes in the fifth position: the claims string where the schema mounts no
+     * identity, and the request's session state where it does. The state is built by the
+     * consumer's own method, named in {@code <devDatabase><session>} as {@code fqcn#method} and
+     * taking the claims string, resolved here in the generated world's loader so the consumer's
+     * classes and the generated {@code SessionState} meet where they were compiled. Reflection
+     * stays in this host, the decode boundary; the generated executor carries none.
+     */
+    private static Object fifthArgument(java.lang.reflect.Method executeMethod, ClassLoader loader,
+            DbConfig db) throws DevExecutionException {
+        if (executeMethod.getParameterTypes()[4] == String.class) {
+            return db.claims();
+        }
+        if (db.session() == null || db.session().isBlank()) {
+            throw new DevExecutionException("This schema configures <sessionState>, so dev execution "
+                + "mounts identity through your SessionState and needs one: name the method that builds "
+                + "it from the claims payload in <devDatabase><session>fqcn#method</session> (or "
+                + "GRAPHITRON_DEV_SESSION), next to the claims payload.");
+        }
+        int hash = db.session().indexOf('#');
+        if (hash <= 0 || hash == db.session().length() - 1) {
+            throw new DevExecutionException("<devDatabase><session> must name a method as fqcn#method "
+                + "(e.g. com.example.DevSession#of), got '" + db.session() + "'.");
+        }
+        String className = db.session().substring(0, hash).trim();
+        String methodName = db.session().substring(hash + 1).trim();
+        try {
+            var method = Class.forName(className, true, loader).getMethod(methodName, String.class);
+            if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                    || !executeMethod.getParameterTypes()[4].isAssignableFrom(method.getReturnType())) {
+                throw new DevExecutionException("<devDatabase><session> " + db.session()
+                    + " must be a public static method taking the claims String and returning "
+                    + executeMethod.getParameterTypes()[4].getName() + ".");
+            }
+            return method.invoke(null, db.claims());
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            throw new DevExecutionException("<devDatabase><session> " + db.session()
+                + " does not resolve to a public static method taking the claims String on the "
+                + "project's compiled classes: " + e.getMessage(), e);
+        } catch (IllegalAccessException e) {
+            throw new DevExecutionException("Could not call <devDatabase><session> " + db.session()
+                + ": " + e.getMessage(), e);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new DevExecutionException(cause.getMessage() != null
+                ? cause.getMessage() : cause.getClass().getName(), cause);
         }
     }
 

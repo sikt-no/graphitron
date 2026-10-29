@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.session;
 
+import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -8,107 +9,70 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
-import no.sikt.graphitron.model.config.SessionStateConfig;
 
 /**
- * Unit-tier coverage of the authored {@code <sessionState>} reconciliation: the method-hook arm
- * with and without {@code <unmount>}, the surviving unmount-without-mount rejection, and the
- * {@code fqcn#method} shape rejections. All config-shape defects are {@code pom.xml} concerns
- * with no SDL coordinate, so {@link SessionStateConfig#from} throws
- * {@link IllegalArgumentException} and the Maven seam turns it into a build failure. Failures of
- * the referenced methods themselves are reflection facts, covered by the resolution tests, not
- * here.
+ * Unit-tier coverage of the authored {@code <sessionState>} reconciliation: a present block is
+ * the callback form with or without a {@code <handle>}, a blank handle is a defect, and the
+ * retired {@code <mount>}/{@code <unmount>} elements fail with the migration message. All
+ * config-shape defects are {@code pom.xml} concerns with no SDL coordinate, so
+ * {@link SessionStateConfig#from} throws {@link IllegalArgumentException} and the Maven seam
+ * turns it into a build failure. What the handle class offers is the classpath corpus's fact,
+ * covered at the store tier, not here.
  */
 @UnitTier
 class SessionStateConfigTest {
 
     @Test
     void absentBlock_isNone() {
-        assertThat(SessionStateConfig.from(null, null)).isEqualTo(SessionStateConfig.none());
+        assertThat(SessionStateConfig.none()).isEqualTo(SessionStateConfig.None.INSTANCE);
     }
 
     @Test
-    void mountAlone_isTheSupportedMountOnlyConfiguration() {
-        // Omitting <unmount> is mount-only, with no opt-out ceremony and no rejection: the next
-        // request's mount overwrites wholesale.
-        var config = SessionStateConfig.from("com.example.db.Routines#connect", null);
-        assertThat(config).isInstanceOfSatisfying(SessionStateConfig.MethodHooks.class, hooks -> {
-            assertThat(hooks.mount().className()).isEqualTo("com.example.db.Routines");
-            assertThat(hooks.mount().methodName()).isEqualTo("connect");
-            assertThat(hooks.unmount()).isEmpty();
-        });
+    void aBareBlock_isTheCallbackFormWithNoHandle() {
+        var config = SessionStateConfig.from(null, null, null);
+        assertThat(config).isInstanceOfSatisfying(SessionStateConfig.Callbacks.class,
+            callbacks -> assertThat(callbacks.handleType()).isEmpty());
     }
 
     @Test
-    void mountAndUnmount_carryBothReferencesVerbatim() {
-        var config = SessionStateConfig.from(
-            "com.example.KernelIdentity#mount", "com.example.KernelIdentity#unmount");
-        assertThat(config).isInstanceOfSatisfying(SessionStateConfig.MethodHooks.class, hooks -> {
-            assertThat(hooks.mount().raw()).isEqualTo("com.example.KernelIdentity#mount");
-            assertThat(hooks.unmount()).map(SessionStateConfig.HookRef::raw)
-                .isEqualTo(Optional.of("com.example.KernelIdentity#unmount"));
-        });
+    void aNamedHandle_isCarriedAsAuthoredAndTrimmed() {
+        var config = SessionStateConfig.from("  com.example.Identity  ", null, null);
+        assertThat(config).isInstanceOfSatisfying(SessionStateConfig.Callbacks.class,
+            callbacks -> assertThat(callbacks.handleType()).isEqualTo(Optional.of("com.example.Identity")));
     }
 
     @Test
-    void referencesAreTrimmed() {
-        var config = SessionStateConfig.from("  com.example.Hooks#mount  ", null);
-        assertThat(((SessionStateConfig.MethodHooks) config).mount().raw())
-            .isEqualTo("com.example.Hooks#mount");
-    }
-
-    @Test
-    void unmountWithoutMount_isRejected() {
-        // Unmounting what nothing mounted is a defect in either direction of reading it.
+    void aBlankHandle_isADefectNeverSilentlyAbsent() {
         assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from(null, "com.example.Hooks#unmount"))
-            .withMessageContaining("<unmount>")
-            .withMessageContaining("no <mount>");
+            .isThrownBy(() -> SessionStateConfig.from("  ", null, null))
+            .withMessageContaining("<handle>");
     }
 
     @Test
-    void malformedReferences_areRejectedNamingTheElement() {
+    void theRetiredMountAndUnmountElements_failWithTheMigration() {
         assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks", null))
+            .isThrownBy(() -> SessionStateConfig.from(null, "com.example.Hooks#mount", null))
             .withMessageContaining("<mount>")
-            .withMessageContaining("fqcn#method");
+            .withMessageContaining("SessionState")
+            .withMessageContaining("newOwnedExecutionInput");
         assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from("#mount", null))
-            .withMessageContaining("<mount>");
-        assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks#", null))
-            .withMessageContaining("<mount>");
-        assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from("a#b#c", null))
-            .withMessageContaining("<mount>");
-        assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks#mount", "unmount"))
-            .withMessageContaining("<unmount>")
-            .withMessageContaining("fqcn#method");
-    }
-
-    @Test
-    void blankElements_areDefectsNeverSilentlyAbsent() {
-        assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from("  ", null))
-            .withMessageContaining("<mount>");
-        assertThatIllegalArgumentException()
-            .isThrownBy(() -> SessionStateConfig.from("com.example.Hooks#mount", " "))
+            .isThrownBy(() -> SessionStateConfig.from(null, null, "com.example.Hooks#unmount"))
             .withMessageContaining("<unmount>");
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> SessionStateConfig.from("com.example.Identity", "com.example.Hooks#mount", null))
+            .withMessageContaining("<mount>");
     }
 
     @Test
-    void theConfigIsTwoArmsAndTwoStrings_nothingElseIsAcceptedAnyMore() {
-        // Pins the deletions structurally: the sealed alternation carries exactly None and the
-        // method-hook arm (no FunctionHooks, no Variables, no Unmount hierarchy), and the one
-        // reconciler takes exactly the two authored strings, so <variables>, <handle> and
-        // <stateSurvivesTransactions> have no seam left to be accepted through.
+    void theConfigIsTwoArmsAndOneReconciler_nothingElseIsAccepted() {
+        // Pins the shape structurally: the sealed alternation carries exactly None and the
+        // callback arm, and the one reconciler takes exactly the three authored strings.
         assertThat(SessionStateConfig.class.getPermittedSubclasses())
             .extracting(Class::getSimpleName)
-            .containsExactlyInAnyOrder("None", "MethodHooks");
+            .containsExactlyInAnyOrder("None", "Callbacks");
         assertThat(Arrays.stream(SessionStateConfig.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("from")))
             .allSatisfy(m -> assertThat(m.getParameterTypes())
-                .containsExactly(String.class, String.class));
+                .containsExactly(String.class, String.class, String.class));
     }
 }

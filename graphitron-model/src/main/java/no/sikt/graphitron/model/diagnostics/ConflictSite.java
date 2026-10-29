@@ -13,10 +13,8 @@ package no.sikt.graphitron.model.diagnostics;
  *
  * <p>{@code className} and {@code methodName} are projected at construction from whichever model
  * value the reference came from: a {@code MethodRef} for {@code @condition} /
- * {@code @externalField}, a {@code ServiceMethodCall} for a root sync {@code @service} carrier, or
- * the {@code <sessionState>} {@code <mount>} method, which spells its class with a
- * {@code <mount>} prefix so a mount-versus-{@code @service} conflict names the element rather
- * than only the routine class the reference resolves to. The model value itself stays with the
+ * {@code @externalField}, or a {@code ServiceMethodCall} for a root sync {@code @service}
+ * carrier. The model value itself stays with the
  * classifier's own output ({@code ResolvedContextArg.Site}), which is where a consumer that wants
  * to navigate to the declaration reads it.
  */

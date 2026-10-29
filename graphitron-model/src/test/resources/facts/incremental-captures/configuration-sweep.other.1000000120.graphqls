@@ -5,9 +5,9 @@
 
 type Unrelated { note: String }
 
-extend schema @expectEquals(relation: "store_graph_session_mount", rows: """
-  mount_method,               touched_at
-  com.example.Identity#mount, 1000000120
+extend schema @expectEquals(relation: "store_graph_session_supplied", rows: """
+  touched_at
+  1000000120
   """)
 
 extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """
