@@ -46,6 +46,11 @@ import no.sikt.graphitron.model.lint.LintRule;
  * {@code (organisasjonskode, rollekode)} is unique is the author's word. The fixture is the
  * end-to-end proof that a keyless connection still pages on its listed columns, so the warning is
  * pinned here. The message format is pinned on minimal SDL in {@code GraphitronSchemaBuilderTest}.
+ *
+ * <p>The same keyless tables also carry ordered lists, each of which raises
+ * {@link LintRule#LIST_ORDER_NOT_UNIQUE}. That rule fires once per list, so the gate asserts it as a
+ * set (present on the keyless routine list, absent from any keyed table) and does not count it
+ * among the three.
  */
 @PipelineTier
 class FixtureWarningsGateTest {
@@ -85,6 +90,15 @@ class FixtureWarningsGateTest {
             // segregate it like the ENGINE lint findings above.
             .filter(w -> !(w instanceof BuildWarning.LintFinding lf
                 && lf.rule().source() == no.sikt.graphitron.model.lint.LintRule.Source.CODEGEN))
+            // The list-order-not-unique advisory fires once per ordered list over a keyless table, and
+            // the fixture's keyless views and tables carry several; the count is not what this gate
+            // pins, so they are segregated here and asserted as a set below.
+            .filter(w -> !(w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == LintRule.LIST_ORDER_NOT_UNIQUE))
+            .toList();
+        List<BuildWarning> listWarnings = allWarnings.stream()
+            .filter(w -> w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == LintRule.LIST_ORDER_NOT_UNIQUE)
             .toList();
 
         assertThat(warnings)
@@ -92,6 +106,15 @@ class FixtureWarningsGateTest {
                 + "a new entry means a fixture started tripping an advisory that is not "
                 + "declared/asserted (see R294)")
             .hasSize(3);
+
+        assertThat(listWarnings)
+            .as("the list-order-not-unique advisory on the keyless routine list, and on no keyed list")
+            .anySatisfy(warning -> assertThat(warning.message())
+                .contains("list 'Query.tilganger'")
+                .contains("rows that tie on every listed column come back in an order the database chooses"))
+            .allSatisfy(warning -> assertThat(warning.message())
+                .containsAnyOf("'tilganger_for_feidebruker_med_fs_fiktivt_fnr'", "'films_for_actor'",
+                    "'role_assignment'"));
 
         assertThat(warnings)
             .as("the @asConnection same-table @nodeId advisory")
