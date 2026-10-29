@@ -289,7 +289,7 @@ Shipped: the directive and its store vocabulary, the table target, the `<outbox>
 * **The payload column.** A jOOQ `JSON` or `JSONB` column takes the JSON value and a `String` column takes it rendered as text; the Oracle `CLOB` rendering is not built.
 * **Test tiers.** A pipeline test pins the companion's shape and the call at each DML site; an execution test drives four mutations through GraphQL on PostgreSQL and reads the rows they leave; a unit-tier test calls the generated companion directly on a real PostgreSQL inside a rolled-back transaction.
 
-### Phase 1b: the `$session` source (shipped)
+### Phase 1b: the `$session` source (shipped at `eca552968`)
 
 Shipped: `$session.<member>` as a source in an `@outbox` message and in the common payload. It reuses the session work that landed in between: the handle's member relation, and the session defects, which read every argMapping pair whatever site wrote it, so an unknown member, an ambiguous one and a build with no session identity are reported at an `@outbox` with no new rule. What this phase added:
 
