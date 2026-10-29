@@ -6370,7 +6370,6 @@ class FieldBuilder {
 
         // ID-return encode resolution (mirrors the shared DML path at the @mutation classifier).
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
-        var echoColumns = no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
             // The by-table node index is one-to-many; the implicit ID encoder is
@@ -7132,7 +7131,6 @@ class FieldBuilder {
 
         // ID-return encode resolution against the resolved write target (mirrors the DELETE path).
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
-        var echoColumns = no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
             var nodesOnTable = ctx.nodes.forTable(tableSqlName);
