@@ -26,7 +26,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-29 <sub>created 2026-08-27</sub> | [plan](corpus-directives-to-expect-equals.md) |
-| `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | Spec | 2026-10-28 | [plan](signed-reference-entities-across-subgraphs.md) |
+| `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | Spec | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |

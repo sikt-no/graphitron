@@ -7,7 +7,7 @@ priority: 3
 theme: service
 depends-on: []
 created: 2026-10-28
-last-updated: 2026-10-28
+last-updated: 2026-10-29
 ---
 
 # Signed voucher handover: one subgraph vouches, another grants through RLS
@@ -208,6 +208,23 @@ once the spellings are chosen, the design is wrong.
 * Isolation: one connection per vouch scopes a subtree by graph shape, not by connection. If a consumer
   needs a connection per row, the routing key can include the key fields at the cost of the cap.
 * Multi-tenant: confirm a voucher cannot widen the tenant set the request may touch.
+* The accept step against the session-identity rework (added 2026-10-29, from the transaction-scope item). The
+  reflected `<mount>` and `<unmount>` are gone: identity is now supplied per request as an emitted `SessionState`
+  of lambdas passed to the generated factory. The plan's "accept method read at build time like the mount",
+  "`<accept>` requires a `<sessionState><mount>`" and the table row "Session state from a verified voucher"
+  predate that. Decide the accept contract against the new form: a second lambda in `SessionState`, or no accept
+  step at all, with the mount told the voucher.
+* What the mount is told. The session value the mount receives holds the provider-free `Configuration` and, in a
+  multi-tenant build only, the tenant. A connection for a voucher needs the mount to know the vouch as well, and
+  the routing record's two optional parts (tenant, vouch id) and the session value's should be one shape, derived
+  from facts the store holds (the tenant column row, and the presence of a voucher marker in the schema), so a
+  graph with neither sees neither and nothing is added by hand in two places. If the mount is told the vouch, the
+  accept method folds into it, which also answers the question above about whether B needs one.
+* Mutations. The transaction-scope item treats the connection key as opaque to its field scope (equality and
+  hashing only), so keying by `(tenant, vouch id)` needs nothing from it. `@issue` under a mutation payload is
+  not covered here: the voucher would be signed inside the field's transaction for rows that may still roll back,
+  and is only kept from the client by that item's rule that a rolled-back field shows no value (its phase 2).
+  Either restrict `@issue` to fields outside mutation payloads, or name that rule as a prerequisite.
 
 ## Other solutions we've considered
 
