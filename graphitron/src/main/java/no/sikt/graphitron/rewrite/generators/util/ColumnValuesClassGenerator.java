@@ -21,11 +21,12 @@ import java.util.Objects;
  * Generates the {@code ColumnValues} utility class, emitted once per code-generation run: the one
  * decode-side answer to "is this value a value of that column, and if so which one".
  *
- * <p>Both entry points run the value on the <em>column trip</em>, read off the column's
+ * <p>Every entry point runs the value on the <em>column trip</em>, read off the column's
  * {@code DataType} and its converter (jOOQ's identity converter when the column has none, so there
  * is one emitted shape): the user value {@code type.convert(input)}, or the input parsed as the
  * parse class {@code exact} is handed for a converter's user type, the database value
- * {@code converter.to(user)}, and the canonical value {@code converter.from(database)}. The trip
+ * {@code converter.to(user)}, and the canonical value {@code converter.from(database)};
+ * {@code fromDatabase} starts the trip at the database value. The trip
  * fails when a step gives {@code null} or throws {@code IllegalArgumentException} or
  * {@code DataTypeException}; any other exception is a fault in the consumer's converter and
  * propagates. Following the value through the converter is what catches a converter-backed column,
@@ -53,6 +54,13 @@ import java.util.Objects;
  *       {@code null} without a parse class, since a consumer's own class need not have value
  *       equality. The node-id decode asks it only after {@code exact} refused a slot, to tell an
  *       operator that a key column's converter loses what the column holds.</li>
+ *   <li>{@code fromDatabase(type, value)} reads a value written as the column's <em>database</em>
+ *       value, as a connection cursor carries it: the trip's first step parses the input as the
+ *       database type ({@code type.getSQLDataType().convert(input)}) and the canonical value is
+ *       {@code converter.from} of that, which must fit the declared precision. Parsing through the
+ *       converted {@code convert} instead would answer {@code null} for text the user type does not
+ *       share with the database type, and hand an input that is already an instance of the user
+ *       type back untouched rather than converting it.</li>
  * </ul>
  *
  * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
@@ -134,6 +142,40 @@ public class ColumnValuesClassGenerator {
             .addStatement("$T trip = trip(type, parseClass, text)", tripOfT)
             .addStatement("return trip == null || $T.deepEquals(trip.parsed, trip.canonical) ? null : trip.canonical",
                 Objects.class)
+            .build();
+
+        var fromDatabase = MethodSpec.methodBuilder("fromDatabase")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(t)
+            .returns(t)
+            .addParameter(dataTypeOfT, "type")
+            .addParameter(Object.class, "value")
+            .addJavadoc("The value {@code value}, read as the column's database value, names in a column of\n"
+                + "{@code type}, or {@code null} when it names none: parsed as the database type, taken through\n"
+                + "the converter, and fitting the column's precision.\n")
+            .addStatement("if (value == null) return null")
+            .beginControlFlow("try")
+            .addStatement("Object database = type.getSQLDataType().convert(value)")
+            .addStatement("if (database == null) return null")
+            .addStatement("$T canonical = fromDatabaseValue(type.getConverter(), database)", t)
+            .addStatement("if (canonical == null) return null")
+            .addStatement("return fitsPrecision(type, numericValue(new $T<>(canonical, canonical, database)))"
+                + " ? canonical : null", TRIP)
+            .nextControlFlow("catch ($T | $T e)", IllegalArgumentException.class, DATA_TYPE_EXCEPTION)
+            .addStatement("return null")
+            .endControlFlow()
+            .build();
+
+        // Generic over the converter's database type, as roundTrip is, so handing the parsed database
+        // value to from() type-checks in Java 17 against the wildcard getConverter() returns.
+        var fromDatabaseValue = MethodSpec.methodBuilder("fromDatabaseValue")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addTypeVariable(d)
+            .addTypeVariable(t)
+            .returns(t)
+            .addParameter(ParameterizedTypeName.get(CONVERTER, d, t), "converter")
+            .addParameter(Object.class, "database")
+            .addStatement("return converter.from(converter.fromType().cast(database))")
             .build();
 
         var trip = MethodSpec.methodBuilder("trip")
@@ -264,6 +306,8 @@ public class ColumnValuesClassGenerator {
             .addMethod(exact)
             .addMethod(coerce)
             .addMethod(folded)
+            .addMethod(fromDatabase)
+            .addMethod(fromDatabaseValue)
             .addMethod(trip)
             .addMethod(roundTrip)
             .addMethod(numericValue)

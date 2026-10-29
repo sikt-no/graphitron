@@ -53,13 +53,21 @@ Then, if the build sets xref:../reference/mojo-configuration.adoc[`<maxAllowedPa
 
 The maximum covers connections only. A plain list field with a `first:` argument is not a connection and is not limited by it.
 
+[#cursor-encoding]
 == Cursor encoding is part of the public contract
 
-Cursors are base64-encoded NUL-separated tuples of the active sort columns' values for the last row of the page. Three consequences worth restating here (the sort recipe covers the full set):
+A cursor names one row's position in the active order: the values of the order's columns for that row, written as a JSON array with one element per column in order, then encoded as URL-safe Base64 without padding. SQL `NULL` is `null`; every other value is a JSON string of the column's database value, so a column with a jOOQ converter contributes its database type's text, not the converted value's. Clients should still treat a cursor as opaque. The format is stated here because it is a compatibility promise, not an interface to build on.
+
+This is the format Graphitron 9 issued. A cursor a client stored under Graphitron 9 keeps working after the upgrade while the connection pages on the same columns: the order is unchanged and already identifies a row (Graphitron 9 wrote some values as bare JSON numbers; both forms are read). Two kinds of connection are the exception, and a client drops a cursor it stored from one and restarts from the first page:
+
+* A connection whose order does not identify a row. Graphitron now appends the table's primary key to it (see xref:sort-results.adoc#stable-cursors-and-tie-breakers[How-to: Sort results]), so a Graphitron 9 cursor has too few values and is rejected.
+* A connection over a multi-table interface or union. Graphitron 9 wrapped its cursors in an object naming the type, which Graphitron 10 rejects.
+
+Three consequences worth restating here (the sort recipe covers the full set):
 
 * *The cursor's columns are the order's columns.* Adding, removing, or reordering columns in xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] or in an xref:../reference/directives/order.adoc[`@order`] enum value invalidates outstanding cursors. So does changing the table's primary key, which graphitron appends to an order that does not already identify a row. Treat the order column list as part of the cursor wire contract.
 * *Decoding rejects shape mismatches.* When the request's effective order produces a different column count than the cursor decodes, the request fails. A cursor issued under `@orderBy` cannot be replayed against a `@defaultOrder`-only request unless the column lists happen to coincide.
-* *An empty cursor is no cursor.* `after: ""` and `before: ""` (or a whitespace-only value) read as if the argument were omitted, so an operation that declares `$after: String!` can fetch the first page by sending the empty string. One cursor graphitron emits is itself empty: when the order is a single text column that graphitron appends nothing to (the column is itself a key, or the table has none) and the page's last row holds `''` in it. List a non-empty column after it, such as the primary key, if clients page through it one row at a time.
+* *An empty cursor is no cursor.* `after: ""` and `before: ""` (or a whitespace-only value) read as if the argument were omitted, so an operation that declares `$after: String!` can fetch the first page by sending the empty string.
 
 Backward pagination reuses the same encoding; the rewrite reverses each `SortField`'s direction via jOOQ's `$field()`/`$sortOrder()` model API, runs the seek, and reverses the in-memory result before returning. A cursor issued from a `first:` page round-trips through a `before:` request and vice versa.
 

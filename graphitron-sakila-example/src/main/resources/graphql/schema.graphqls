@@ -558,6 +558,10 @@ type Query {
     # A converter-backed temporal key, read and filtered by id. The listing hands out the minted
     # ids; the filter is a @nodeId argument over the same key.
     converterIdChanges: [ConverterIdChange!]! @defaultOrder(primaryKey: true)
+    # The same key as a connection: a cursor over a converter-backed order column, whose user
+    # value's text (LocalDateTime) the column's database type (timestamptz) does not parse.
+    converterIdChangesConnection(first: Int, after: String, last: Int, before: String): [ConverterIdChange!]!
+        @asConnection @defaultOrder(primaryKey: true)
     converterIdChangeByNodeId(filter: ConverterIdChangeNodeIdFilter): [ConverterIdChange!]!
     filmsConnection(
         first: Int, last: Int, after: String, before: String

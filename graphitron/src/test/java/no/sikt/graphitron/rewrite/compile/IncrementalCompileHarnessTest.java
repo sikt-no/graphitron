@@ -219,7 +219,7 @@ class IncrementalCompileHarnessTest {
             "schema.ErrorRouter", Set.of("schema.FetcherErrorLog", "schema.FetcherErrorResponse",
                 "schema.GraphitronClientException", "schema.TenantConnections"),
             "util.ConnectionHelper", Set.of("schema.GraphitronClientException", "schema.GraphitronContext",
-                "util.ConnectionResult"),
+                "util.ColumnValues", "util.ConnectionResult"),
             "util.ConnectionResult", Set.of("util.ConnectionHelper"),
             "util.SelectionOccurrences", Set.of("schema.GraphitronClientException")));
     }

@@ -215,4 +215,40 @@ class ColumnValuesTest {
         assertThat(ColumnValues.coerce(ORG_CODE, "abc")).isNull();
         assertThat(ColumnValues.coerce(ORG_CODE, "99999999999999999999")).isNull();
     }
+
+    // ===== fromDatabase: a value written as the column's database value, as a cursor carries it =====
+
+    /** A {@code bigint} whose user text is not the database text: 186 reads as {@code "C186"}. */
+    private static final DataType<String> PREFIXED_CODE = SQLDataType.BIGINT.asConvertedDataType(
+        Converter.ofNullable(Long.class, String.class, l -> "C" + l, s -> Long.valueOf(s.substring(1))));
+
+    @Test
+    void fromDatabase_parsesAsTheDatabaseTypeAndRunsTheConverter() {
+        assertThat(ColumnValues.fromDatabase(ORG_CODE, "186")).isEqualTo("186");
+        assertThat(ColumnValues.fromDatabase(PREFIXED_CODE, "186"))
+            .as("the converted value, not the String input handed back as a user value")
+            .isEqualTo("C186");
+        assertThat(ColumnValues.fromDatabase(INTEGER, "1234")).isEqualTo(1234);
+        assertThat(ColumnValues.fromDatabase(BIGINT, "1234567890123456789"))
+            .as("a 19-digit number keeps every digit").isEqualTo(1234567890123456789L);
+    }
+
+    @Test
+    void fromDatabase_readsATimestamptzRenderingAsTheUtcLocalDateTime() {
+        for (String text : new String[] {"2007-08-22T02:24:00+00:00", "2007-08-22T02:24Z",
+                "2007-08-22T04:24:00.000000+02:00"}) {
+            assertThat(ColumnValues.fromDatabase(CHANGE_INSTANT, text)).as(text).isEqualTo(SMALL_HOURS_VALUE);
+        }
+        assertThat(ColumnValues.fromDatabase(CHANGE_INSTANT, SMALL_HOURS))
+            .as("the user type's own text is no timestamptz")
+            .isNull();
+    }
+
+    @Test
+    void fromDatabase_refusesWhatTheColumnCannotHold() {
+        assertThat(ColumnValues.fromDatabase(NUMERIC_4, "99999")).as("five digits in NUMERIC(4)").isNull();
+        assertThat(ColumnValues.fromDatabase(NUMERIC_4, "9999")).isEqualByComparingTo("9999");
+        assertThat(ColumnValues.fromDatabase(INTEGER, "abc")).isNull();
+        assertThat(ColumnValues.fromDatabase(INTEGER, null)).isNull();
+    }
 }

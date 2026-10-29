@@ -1999,13 +1999,13 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_nonCoercibleTokenAfterCursor_surfacesClientError() {
-        // Failure mode 3: a well-formed Base64 cursor whose single token ("abc") cannot coerce to
-        // the numeric FILM_ID order-by column. jOOQ 3.20.11's DataType.convert is lenient and
-        // returns null rather than throwing DataTypeException, so decodeCursor's non-null guard on
-        // a non-sentinel token is what rejects it. filmsConnection genuinely exercises the coerce
-        // path (a string column would round-trip).
-        String cursor = java.util.Base64.getEncoder()
-            .encodeToString("abc".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // Failure mode 3: a well-formed cursor whose single element ("abc") is no value of the
+        // numeric FILM_ID order-by column. jOOQ 3.20.11's DataType.convert is lenient and returns
+        // null rather than throwing DataTypeException, so decodeCursor's non-null guard on a
+        // non-null element is what rejects it. filmsConnection genuinely exercises the coerce path
+        // (a string column would round-trip).
+        String cursor = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("[\"abc\"]".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var result = executeRaw(
             "{ filmsConnection(first: 2, after: \"" + cursor + "\") { nodes { title } } }");
         assertThat(result.getErrors()).isNotEmpty();
@@ -2016,12 +2016,12 @@ class GraphQLQueryTest {
 
     @Test
     void filmsByRateDescTitleAsc_underSplitAfterCursor_surfacesClientError() {
-        // Failure mode 2: too few tokens. filmsByRateDescTitleAsc's cursor carries three columns
+        // Failure mode 2: too few elements. filmsByRateDescTitleAsc's cursor carries three columns
         // (RENTAL_RATE, TITLE, and the FILM_ID graphitron appends because rate and title do not
-        // identify a film), but this NUL-free cursor decodes to a single token: an arity mismatch
-        // (unguarded, tokens[1] throws ArrayIndexOutOfBoundsException and redacts).
-        String cursor = java.util.Base64.getEncoder()
-            .encodeToString("2.99".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // identify a film), but this cursor holds a single element: an arity mismatch (unguarded,
+        // reading the second element throws IndexOutOfBoundsException and redacts).
+        String cursor = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("[\"2.99\"]".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var result = executeRaw(
             "{ filmsByRateDescTitleAsc(first: 2, after: \"" + cursor + "\") { nodes { title } } }");
         assertThat(result.getErrors()).isNotEmpty();
@@ -2032,11 +2032,10 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_overSplitAfterCursor_surfacesClientError() {
-        // Too many tokens: "1\u00002" decodes to two tokens against the single
-        // FILM_ID order-by column. Strict arity rejects an over-split (forged/stale) cursor
-        // rather than silently ignoring the extra token.
-        String cursor = java.util.Base64.getEncoder()
-            .encodeToString("1\u00002".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // Too many elements: ["1","2"] against the single FILM_ID order-by column. Strict arity
+        // rejects an over-long (forged/stale) cursor rather than silently ignoring the extra element.
+        String cursor = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("[\"1\",\"2\"]".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var result = executeRaw(
             "{ filmsConnection(first: 2, after: \"" + cursor + "\") { nodes { title } } }");
         assertThat(result.getErrors()).isNotEmpty();

@@ -22,16 +22,19 @@ import java.util.OptionalInt;
  * {@code edgeNode}, {@code edgeCursor}) plus a nested {@code Edge} class carrying a
  * {@code Record} and its cursor string.
  *
- * <p>Cursor encoding: column values are joined with {@code \u0000} (NUL) as separator;
- * SQL {@code NULL} is encoded as {@code \u0001} (SOH). The joined string is Base64-encoded.
- * PostgreSQL strings cannot contain NUL bytes, so no escaping is needed. Decoding splits on
- * {@code \u0000} and uses {@code field.getDataType().convert(token)} for type-safe
- * round-tripping. Returns {@code Field<?>[]} so jOOQ's {@code .seek(Field<?>...)} receives
- * correctly-typed bind values. When no cursor is present (absent, empty, or blank),
- * {@code DSL.noField(field)} is returned per column, making {@code .seek()} a no-op.
+ * <p>Cursor encoding, the format Graphitron 9 issued: a JSON array with one element per order
+ * column, SQL {@code NULL} as {@code null} and every other value as a JSON string of the column's
+ * database value (the record's value passed back through the column's converter), encoded as
+ * URL-safe Base64 without padding. Decoding reads any JSON scalar, since Graphitron 9 wrote some
+ * values as bare numbers, and binds each element through
+ * {@code ColumnValues.fromDatabase(column.getDataType(), element)}, which parses it as the column's
+ * database type and runs the converter. Returns {@code Field<?>[]} so jOOQ's
+ * {@code .seek(Field<?>...)} receives correctly-typed bind values. When no cursor is present
+ * (absent, empty, or blank), {@code DSL.noField(field)} is returned per column, making
+ * {@code .seek()} a no-op.
  *
- * <p>Every malformed-input failure of decode (bad Base64, wrong token arity, a token not
- * coercible to its column type) is rethrown as a {@code GraphitronClientException} carrying
+ * <p>Every malformed-input failure of decode (bad Base64, a malformed JSON array, wrong element
+ * arity, an element that is no value of its column) is rethrown as a {@code GraphitronClientException} carrying
  * {@code cursor is not valid (was: "<echo>")}, echo capped at 100 characters; any other
  * unchecked throw from decode is a server fault and propagates. The {@code decodeCursor}
  * emission below carries the full blame contract.
@@ -80,6 +83,7 @@ public class ConnectionHelperClassGenerator {
         // no-channel disposition surfaces the real message instead of redacting.
         var clientException = ClassName.get(outputPackage + ".schema",
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
+        var columnValuesClass = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
 
         // --- Edge nested class ---
         var edgeClass = TypeSpec.classBuilder("Edge")
@@ -220,36 +224,190 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // --- encodeCursor(Record, List<Field<?>>) ---
-        // Column-driven: each value serialised via DataType (no hand-rolled type tags).
+        // Column-driven: one JSON array element per order column, SQL NULL as null and every other
+        // value as a JSON string of the column's database value, so the column's DataType alone
+        // decides how decodeCursor reads it back (no type tag beside it). URL-safe Base64 without
+        // padding, the format Graphitron 9 issued.
         var encodeCursor = MethodSpec.methodBuilder("encodeCursor")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(String.class)
             .addParameter(RECORD, "record")
             .addParameter(listOfField, "orderByColumns")
-            .addStatement("$T sb = new $T()",
-                ClassName.get("java.lang", "StringBuilder"),
-                ClassName.get("java.lang", "StringBuilder"))
+            .addStatement("$T json = new $T(\"[\")", StringBuilder.class, StringBuilder.class)
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
-            .addCode("    if (i > 0) sb.append(\"\\u0000\");\n")
-            .addCode("    Object val = record.get(orderByColumns.get(i));\n")
-            .addCode("    sb.append(val == null ? \"\\u0001\" : val.toString());\n")
+            .addCode("    if (i > 0) json.append(',');\n")
+            .addCode("    Object value = databaseValue(record, orderByColumns.get(i));\n")
+            .addCode("    if (value == null) json.append(\"null\");\n")
+            .addCode("    else writeJsonString(json, value.toString());\n")
             .addCode("}\n")
-            .addStatement("return $T.getEncoder().encodeToString(sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))", BASE64)
+            .addStatement("json.append(']')")
+            .addStatement("return $T.getUrlEncoder().withoutPadding().encodeToString("
+                + "json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))", BASE64)
+            .build();
+
+        // --- databaseValue(Record, Field<T>) ---
+        // The record's value passed back through the column's converter (jOOQ's identity converter
+        // when it has none), so a converter-backed column contributes its database type's text,
+        // which is what Graphitron 9's SQL-side jsonArray carried. Generic over the column's type so
+        // the wildcard capture type-checks in Java 17.
+        var t = no.sikt.graphitron.javapoet.TypeVariableName.get("T");
+        var databaseValue = MethodSpec.methodBuilder("databaseValue")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addTypeVariable(t)
+            .returns(Object.class)
+            .addParameter(RECORD, "record")
+            .addParameter(ParameterizedTypeName.get(JOOQ_FIELD, t), "column")
+            .addStatement("$T value = record.get(column)", t)
+            .addStatement("return value == null ? null : column.getDataType().getConverter().to(value)")
+            .build();
+
+        // --- writeJsonString(StringBuilder, String) ---
+        // RFC 8259 string escaping: the quote, the backslash and every character below U+0020, so
+        // no text value can end an element early or read as anything but itself.
+        var writeJsonString = MethodSpec.methodBuilder("writeJsonString")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(StringBuilder.class, "json")
+            .addParameter(String.class, "text")
+            .addStatement("json.append('\"')")
+            .addCode("for (int i = 0; i < text.length(); i++) {\n")
+            .addCode("    char c = text.charAt(i);\n")
+            .addCode("    if (c == '\"' || c == '\\\\') json.append('\\\\').append(c);\n")
+            .addCode("    else if (c == '\\n') json.append(\"\\\\n\");\n")
+            .addCode("    else if (c == '\\t') json.append(\"\\\\t\");\n")
+            .addCode("    else if (c < 0x20) json.append(String.format(\"\\\\u%04x\", (int) c));\n")
+            .addCode("    else json.append(c);\n")
+            .addCode("}\n")
+            .addStatement("json.append('\"')")
+            .build();
+
+        // --- readJsonArray(String) → List<Object> ---
+        // Parses exactly one JSON array of scalars: a string becomes its unescaped text, a number
+        // its literal text (so the column's own type does the numeric conversion and a 19-digit
+        // value loses nothing), true/false a Boolean and null a null. Anything else (an object, a
+        // nested array, trailing content, a bad escape, input that ends early) is malformed, and
+        // every such failure is an IllegalArgumentException so it reaches decodeCursor's catch as
+        // the client's mistake rather than escaping as a server fault.
+        var listOfObject = ParameterizedTypeName.get(LIST_CLASS, ClassName.get(Object.class));
+        var readJsonArray = MethodSpec.methodBuilder("readJsonArray")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfObject)
+            .addParameter(String.class, "text")
+            .addStatement("int[] at = {0}")
+            .addCode("if (readJsonChar(text, at, true) != '[')\n")
+            .addCode("    throw new IllegalArgumentException(\"cursor is not a JSON array\");\n")
+            .addStatement("$T<Object> values = new $T<>()", LIST_CLASS, ARRAY_LIST)
+            .addStatement("char c = readJsonChar(text, at, true)")
+            .addCode("if (c != ']') {\n")
+            .addCode("    while (true) {\n")
+            .addCode("        values.add(readJsonScalar(text, at, c));\n")
+            .addCode("        c = readJsonChar(text, at, true);\n")
+            .addCode("        if (c == ']') break;\n")
+            .addCode("        if (c != ',') throw new IllegalArgumentException(\"cursor array is malformed\");\n")
+            .addCode("        c = readJsonChar(text, at, true);\n")
+            .addCode("    }\n")
+            .addCode("}\n")
+            .addCode("while (at[0] < text.length() && \" \\t\\n\\r\".indexOf(text.charAt(at[0])) >= 0) at[0]++;\n")
+            .addCode("if (at[0] != text.length())\n")
+            .addCode("    throw new IllegalArgumentException(\"cursor has content after its array\");\n")
+            .addStatement("return values")
+            .build();
+
+        // --- readJsonChar(String, int[], boolean) → char ---
+        // The next character, past JSON whitespace when asked, advancing the position; running
+        // off the end is malformed input.
+        var readJsonChar = MethodSpec.methodBuilder("readJsonChar")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(char.class)
+            .addParameter(String.class, "text")
+            .addParameter(int[].class, "at")
+            .addParameter(boolean.class, "skipWhitespace")
+            .addCode("while (skipWhitespace && at[0] < text.length() && \" \\t\\n\\r\".indexOf(text.charAt(at[0])) >= 0) at[0]++;\n")
+            .addCode("if (at[0] >= text.length())\n")
+            .addCode("    throw new IllegalArgumentException(\"cursor ends early\");\n")
+            .addStatement("return text.charAt(at[0]++)")
+            .build();
+
+        // --- readJsonScalar(String, int[], char) → Object ---
+        // One array element whose first character, first, is already consumed.
+        var readJsonScalar = MethodSpec.methodBuilder("readJsonScalar")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(String.class, "text")
+            .addParameter(int[].class, "at")
+            .addParameter(char.class, "first")
+            .addCode("if (first == '\"') return readJsonString(text, at);\n")
+            .addCode("if (first == 't' || first == 'f' || first == 'n') {\n")
+            .addCode("    String literal = first == 't' ? \"true\" : first == 'f' ? \"false\" : \"null\";\n")
+            .addCode("    if (!text.startsWith(literal, at[0] - 1))\n")
+            .addCode("        throw new IllegalArgumentException(\"cursor element is malformed\");\n")
+            .addCode("    at[0] += literal.length() - 1;\n")
+            .addCode("    return first == 'n' ? null : Boolean.valueOf(first == 't');\n")
+            .addCode("}\n")
+            .addCode("if (first != '-' && (first < '0' || first > '9'))\n")
+            .addCode("    throw new IllegalArgumentException(\"cursor element is not a JSON scalar\");\n")
+            .addStatement("int end = at[0]")
+            .addCode("while (end < text.length() && \"0123456789+-.eE\".indexOf(text.charAt(end)) >= 0) end++;\n")
+            .addStatement("String number = text.substring(at[0] - 1, end)")
+            .addCode("if (!number.matches(\"-?(0|[1-9][0-9]*)(\\\\.[0-9]+)?([eE][+-]?[0-9]+)?\"))\n")
+            .addCode("    throw new IllegalArgumentException(\"cursor element is not a JSON number\");\n")
+            .addStatement("at[0] = end")
+            .addStatement("return number")
+            .build();
+
+        // --- readJsonString(String, int[]) → String ---
+        // The rest of a JSON string whose opening quote is already consumed, unescaped. A
+        // four-hex-digit escape is one UTF-16 unit, so a surrogate pair written as two escapes
+        // comes back whole.
+        var readJsonString = MethodSpec.methodBuilder("readJsonString")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(String.class, "text")
+            .addParameter(int[].class, "at")
+            .addStatement("$T out = new $T()", StringBuilder.class, StringBuilder.class)
+            .addCode("while (true) {\n")
+            .addCode("    char c = readJsonChar(text, at, false);\n")
+            .addCode("    if (c == '\"') return out.toString();\n")
+            .addCode("    if (c < 0x20) throw new IllegalArgumentException(\"cursor string holds a control character\");\n")
+            .addCode("    if (c != '\\\\') {\n")
+            .addCode("        out.append(c);\n")
+            .addCode("        continue;\n")
+            .addCode("    }\n")
+            .addCode("    char escape = readJsonChar(text, at, false);\n")
+            .addCode("    if (escape == '\"' || escape == '\\\\' || escape == '/') out.append(escape);\n")
+            .addCode("    else if (escape == 'b') out.append('\\b');\n")
+            .addCode("    else if (escape == 'f') out.append('\\f');\n")
+            .addCode("    else if (escape == 'n') out.append('\\n');\n")
+            .addCode("    else if (escape == 'r') out.append('\\r');\n")
+            .addCode("    else if (escape == 't') out.append('\\t');\n")
+            .addCode("    else if (escape == 'u') {\n")
+            .addCode("        int code = 0;\n")
+            .addCode("        for (int k = 0; k < 4; k++) {\n")
+            .addCode("            int digit = \"0123456789abcdef\".indexOf(Character.toLowerCase(readJsonChar(text, at, false)));\n")
+            .addCode("            if (digit < 0) throw new IllegalArgumentException(\"cursor string has a bad escape\");\n")
+            .addCode("            code = code * 16 + digit;\n")
+            .addCode("        }\n")
+            .addCode("        out.append((char) code);\n")
+            .addCode("    } else {\n")
+            .addCode("        throw new IllegalArgumentException(\"cursor string has a bad escape\");\n")
+            .addCode("    }\n")
+            .addCode("}\n")
             .build();
 
         // --- decodeCursor(String cursor, List<Field<?>>) → Field<?>[] ---
         // Returns DSL.noField(col) per column when cursor is null (seek no-op); pageRequest has
         // already turned an empty or blank cursor into null.
-        // Returns DSL.val(DataType.convert(token), DataType) per column when cursor is present.
+        // Otherwise reads the JSON array encodeCursor writes (and Graphitron 9 wrote, some numbers
+        // bare) and binds each element as its column's value: null as a typed NULL, anything else
+        // through ColumnValues.fromDatabase, which parses it as the column's database type and runs
+        // the converter, the inverse of encodeCursor's databaseValue.
         // The decode body is wrapped in one try whose multi-catch classifies blame at the wire
-        // boundary: Base64 decode, strict-arity, and convert failures are all pure functions
-        // of the opaque client cursor, so they collapse to one GraphitronClientException the
-        // no-channel disposition surfaces instead of redacting to a correlation-id 500. Any
+        // boundary: Base64 decode, JSON read, strict-arity, and coercion failures are all pure
+        // functions of the opaque client cursor, so they collapse to one GraphitronClientException
+        // the no-channel disposition surfaces instead of redacting to a correlation-id 500. Any
         // other unchecked throw (e.g. an NPE from a buggy custom Converter) is a genuine server
         // fault and keeps propagating. Arity is strict in both directions: encodeCursor emits
-        // exactly N NUL-joined tokens and PostgreSQL strings cannot contain NUL, so any other token
-        // count is a forged, corrupted, or stale-across-schema-change cursor this generator never
-        // emitted.
+        // exactly one element per order column, so any other count is a forged, corrupted, or
+        // stale-across-schema-change cursor.
         var decodeCursor = MethodSpec.methodBuilder("decodeCursor")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ArrayTypeName.of(fieldWildcard))
@@ -262,21 +420,20 @@ public class ConnectionHelperClassGenerator {
             .addCode("    return seekFields;\n")
             .addCode("}\n")
             .addCode("try {\n")
-            .addCode("    String[] tokens = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8).split(\"\\u0000\", -1);\n", BASE64)
-            .addCode("    if (tokens.length != orderByColumns.size())\n")
+            .addCode("    $T<Object> values = readJsonArray(new String($T.getUrlDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8));\n",
+                LIST_CLASS, BASE64)
+            .addCode("    if (values.size() != orderByColumns.size())\n")
             .addCode("        throw new IllegalArgumentException(\"cursor arity mismatch\");\n")
             .addCode("    for (int i = 0; i < orderByColumns.size(); i++) {\n")
             .addCode("        $T col = orderByColumns.get(i);\n", fieldWildcard)
-            .addCode("        if (\"\\u0001\".equals(tokens[i])) {\n")
+            .addCode("        if (values.get(i) == null) {\n")
             .addCode("            seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
             .addCode("        } else {\n")
-            // jOOQ's DataType.convert is lenient: an uncoercible wire token yields null rather
-            // than throwing DataTypeException, so a null here (the sentinel branch above already
-            // handled a genuine SQL NULL) means the token is malformed. Rejecting it collapses
-            // into the same client error as bad Base64 / wrong arity instead of silently seeking
-            // on a null bound value. A legitimate token always round-trips (encode is
-            // value.toString(), decode is convert of it), so this never fires on a real cursor.
-            .addCode("            Object value = col.getDataType().convert(tokens[i]);\n")
+            // fromDatabase answers null for an element that is no value of the column (text its
+            // database type does not parse, a number wider than the column); rejecting it here
+            // collapses into the same client error as bad Base64 / wrong arity instead of silently
+            // seeking on a null bound value. A cursor encodeCursor wrote always comes back.
+            .addCode("            Object value = $T.fromDatabase(col.getDataType(), values.get(i));\n", columnValuesClass)
             .addCode("            if (value == null)\n")
             .addCode("                throw new IllegalArgumentException(\"cursor token not coercible\");\n")
             .addCode("            seekFields[i] = $T.val(value, col.getDataType());\n", DSL)
@@ -441,9 +598,8 @@ public class ConnectionHelperClassGenerator {
             .addCode("    $T f = byLabel.get(row.value1());\n", facetSpecClass)
             .addCode("    if (f == null) continue;\n")
             .addCode("    $T col = f.column();\n", jooqFieldWildcard)
-            // DSL.val(Object, DataType<T>).getValue() is the non-deprecated wire→typed coercion,
-            // the same form decodeCursor's replacement uses: the column's Converter applies,
-            // null in, null out (a preserved NULL bucket stays null).
+            // DSL.val(Object, DataType<T>).getValue() is the non-deprecated wire→typed coercion:
+            // the column's Converter applies, null in, null out (a preserved NULL bucket stays null).
             .addCode("    Object typed = row.value2() == null ? null"
                 + " : $T.val((Object) row.value2(), col.getDataType()).getValue();\n", DSL)
             .addCode("    $T<String, Object> entry = new $T<>();\n", hashMap, hashMap)
@@ -513,20 +669,18 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return (($L) env.getSource()).cursor()", "Edge")
             .build();
 
-        // decodeCursor binds wire-format String tokens via DataType.convert(Object), which
-        // jOOQ deprecated for removal in 3.20.0. The recommended replacement does not accept
-        // Object input, and the only public Object→T coercion path (org.jooq.tools.Convert)
-        // is itself marked for removal. Suppress until jOOQ ships a public successor.
-        var suppressRemoval = AnnotationSpec.builder(SuppressWarnings.class)
-            .addMember("value", "{$S, $S}", "deprecation", "removal")
-            .build();
         var builder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
-            .addAnnotation(suppressRemoval)
             .addType(edgeClass)
             .addType(pageRequestClass)
             .addMethod(encodeCursor)
+            .addMethod(databaseValue)
+            .addMethod(writeJsonString)
             .addMethod(decodeCursor)
+            .addMethod(readJsonArray)
+            .addMethod(readJsonChar)
+            .addMethod(readJsonScalar)
+            .addMethod(readJsonString)
             .addMethod(reverseOrderBy)
             .addMethod(pageRequest)
             .addMethod(edgesMethod)
