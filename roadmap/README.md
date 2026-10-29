@@ -31,8 +31,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1124` | A DELETE whose key matches no row is idempotent by default, and failing on it is the opt-in | Ready | 2026-10-29 | [plan](idempotent-delete-by-default.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
-| `R1100` | A node type can narrow its key and still accept ids minted under the old key | In Progress | 2026-10-29 <sub>created 2026-10-26</sub> | [plan](legacy-node-key-shape.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R1100` | A node type can narrow its key and still accept ids minted under the old key | In Review | 2026-10-29 <sub>created 2026-10-26</sub> | [plan](legacy-node-key-shape.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R1120` | The POM switches session identity on; the consumer supplies it per request as code | Spec | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](owned-session-state-supplied-per-request.md) |
@@ -519,7 +519,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
-- `R1100` [**A node type can narrow its key and still accept ids minted under the old key**](legacy-node-key-shape.md) — In Progress, feature
+- `R1100` [**A node type can narrow its key and still accept ids minted under the old key**](legacy-node-key-shape.md) — In Review, feature
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt

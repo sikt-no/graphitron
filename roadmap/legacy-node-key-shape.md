@@ -1,7 +1,7 @@
 ---
 id: R1100
 title: "A node type can narrow its key and still accept ids minted under the old key"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: nodeid
@@ -161,6 +161,8 @@ All are `error`. The build fails on them through a new `StoreDetections` family,
 The existing `keyColumns` rules in `TypeBuilder.buildTableType` stay as they are. They are walk-side prose with store twins already, and moving their build gate onto the store is that rule family's own migration, not this item's.
 
 ## Implementation
+
+Shipped at `398d639`, as planned below with the two in-flight notes recorded under *A store fact keyed by type id* and *How the rules are enforced*.
 
 * **Directive.** `graphitron-model`'s `directives.graphqls`: `@node` gains `legacyKeyColumns: [String!]` with a description. The walk reads nothing from it.
 * **Catalog reading.** `JooqCatalog`: the `__NODE_LEGACY_KEY_COLUMNS` reading described above, and `JooqFactCapture` writing `sql_node_legacy_key_column` or `sql_node_legacy_key_unreadable` beside its node-metadata rows, swept with them.
