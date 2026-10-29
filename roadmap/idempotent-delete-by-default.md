@@ -1,7 +1,7 @@
 ---
 id: R1124
 title: "A DELETE whose key matches no row is idempotent by default, and failing on it is the opt-in"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: mutation-write
