@@ -1,7 +1,7 @@
 ---
 id: R1124
 title: "A DELETE whose key matches no row is idempotent by default, and failing on it is the opt-in"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: mutation-write
@@ -274,3 +274,31 @@ What would satisfy it: name the third case wherever the spec lists what fails th
 * `buildDmlFetcher` takes a `KeyStatement` and hands it to `emitDmlReturnExpression`, so both the single `ID` echo (after the `fetchOne`) and the direct bulk loop (in place of the one-statement fetch) need a seam there that the plan does not name. An implementer will find it; it does not change the design.
 
 > Response: took it. The Goal now lists three kinds of input that fail the build, the third being plain primary-key fields under a response id that encodes more than the primary key, with its ways out (key by the node id, or `failOnMissing: true`), and says it builds today on both DELETE shapes. The design names where the direct-return path newly reaches it, and the user-docs draft restores the sentence and the matching `migrating-from-legacy.adoc` line. Tests add a pipeline case for the direct-return form and restate `SuperkeyNodeIdDmlClassificationTest` as a change in meaning. Non-blocking notes: `stillFailsTheBatch` is deleted with the reason given under Tests; R1123 joins the retired-vocabulary reword list; `buildDmlFetcher` gains a payload-declaration parameter, named in Design. R1123 landed `MissPolicy` and `PerRow` while this round was open, so the design now builds on them as they stand. The projection answers `Optional<MissPolicy>`, empty on `Broadcast`, because no arm reads "answer `null`", and that remains the single-row answer there. The extracted loop takes `PerRow`, the verb and the coordinate.
+
+### Round 3 (2026-10-29, In Review -> Done, reviewer session 01FY5UvurnRXFZUr6B8aZR6w)
+
+Verdict: rework. One blocking finding, on an approval precondition. Otherwise the delivery is clean.
+
+Question one passes. The tree at `2f0d13c` is the change the spec approved. `DeleteRowsWalker.walk` implements the decision table as written. `classifyDeleteTableField` passes the parsed `failOnMissing` and real `EchoColumns` to the walker. `DmlTableField.deleteReturning()` feeds both `requireEchoMatchesReturning` and the direct bulk loop's `RETURNING`. `deleteMissPolicy` projects the arm onto `MissPolicy` on all four paths. `perRowLoop` is extracted and shared. The fact-store columns, the diagnostics, the directive and the user docs follow the rename. The retirement sweep is clean outside dated audits and the changelog. The substitutions are recorded under Implementation notes: the deferred `buildDmlFetcher` seam, the static `deleteReturningOf`, and the extra `deleteInventoryItems` fold.
+
+Question two passes on its evidence. The cases the spec names as its proof exist and assert the goal:
+* `deleteFilmsIdCarrier_*`: no argument; a missing key is echoed in input order and the call commits.
+* `deleteFilms_existingAndMissingInNonKeyOrder_answersBothInInputOrder`: the same for the direct `[ID!]` return.
+* `deleteFilmsDirectFailOnMissing_missingKey_rollsBackTheExistingRow` and `deleteFilmFailOnMissing_singleMissingKey_reportsAnErrorRatherThanNull`: the opt-in fails on both shapes.
+* `deleteFilmCategoryNodesDirect_missingThenStale_answersTheSentIdAndTheStoredLastUpdate`: the reordered-key case.
+
+The unit and pipeline cases cover the spec's list. `mvn install -Plocal-db` is green on the delivered tree. Note for the next build in a web sandbox: re-seed `rewrite_test` after the sync, since R1100's `init.sql` change otherwise fails `FactExpectationTest` on a stale DB. That failure is unrelated to this item.
+
+**Finding 1 (approval precondition: banned test form). Two delivered tests match code strings in a generated method body.**
+
+`FetcherPipelineTest.dmlDeleteField_bulkKeyedInput_emitsThePerRowLoopWithTheEchoAndEncodesInInputOrder` (new) and `dmlDeleteField_bulkBroadcastInput_emitsRowTupleInWithStreamMap` (rewritten) both take `deleteFilms.code().toString()` and assert `.contains("for (int rowIndex = 0; ...")`, `.contains("rec = txd.newRecord(")`, `.contains(".in(in.stream().map(row -> ...")` and similar. `docs/architecture/how-to/testing.adoc` names `FetcherPipelineTest` and says "Banned: code-string body matching", and the In Review -> Done gate holds that rule over the delivered tests. The rewritten test pre-dated this item in another form. The delivery replaced its assertions and added a sibling in the same form, so both are now this item's tests.
+
+What would satisfy it: take the delete-emit evidence off body strings. The execution tier already pins both behaviours:
+* the keyed per-row loop (input order, echo, rollback on a strict miss): `deleteFilms_existingAndMissingInNonKeyOrder_answersBothInInputOrder`, `deleteFilmsDirectFailOnMissing_missingKey_rollsBackTheExistingRow`, `deleteFilmCategoryNodesDirect_missingThenStale_answersTheSentIdAndTheStoredLastUpdate`;
+* the broadcast one-statement form: `deleteFilmsByReleaseYear_multiRowBroadcastsAcrossInputCardinality`.
+
+So deleting the two tests loses no evidence. Converting them to structural `TypeSpec` or variant assertions is also acceptable. Either way the item returns through In Review with no `code().toString()` matching in its tests.
+
+**Non-blocking.**
+
+* `FetcherPipelineTest` holds about a dozen more `code().toString()` matches that predate this item. Clearing them is not this item's scope; a Backlog item could take it.
