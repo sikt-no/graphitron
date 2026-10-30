@@ -1,7 +1,7 @@
 ---
 id: R747
 title: "Generated input records carry no constraint annotations, so the VALIDATION handler can never fire"
-status: In Review
+status: Spec
 bucket: architecture
 priority: 4
 theme: error-channel
@@ -366,3 +366,20 @@ Non-blocking, for a Backlog item if wanted: the pre-step's locals (`validator`, 
 method's Java parameters. A parameter named `element` or `i` on a VALIDATION-channel field now
 fails to compile the generated code. The same hazard predates this item for `result`, `dsl` and
 `validator`, so it is a reserved-locals question for `ServiceMethodCallEmitter` as a whole.
+
+### Round 2: In Review → Ready, rework (reported by the user from the sis subgraph, 2026-10-30)
+
+A consumer regression; question 1 fails. The goal's premise, that the generated input class carries
+no constraints, is false for a consumer that attaches constraints to it programmatically. sis's
+`NotBlankConstraints` maps `@NotBlank` onto the generated `AngiStudentbilderInput`, which the
+retired pre-step validated for every input-object argument whatever the parameter type. After this
+item, `angiStudentbilder`, which takes `List<PersonbildeRecord>`, validates nothing. A blank image
+is written, Oracle stores `''` as `NULL`, and the response then errors on the null `bilde` field
+(`angiStudentbilder_tomtBilde…`, `…bildeMedBareMellomrom…`). Nothing fails at build time: the
+constraints just stop running. Every sis `@service` takes jOOQ records, so the "a jOOQ record
+parameter is passed through unchecked" rule also leaves the v9 `size must be between 0 and n`
+(C35) unrecoverable for `@service` inputs, although sis generates jOOQ with
+`<validationAnnotations>`.
+
+What satisfies it: validate jOOQ record parameters too, without the partial-record objection that
+excluded them. This is a design change, so the item goes back through Spec.
