@@ -457,9 +457,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_outbox_leaf", Arm.DERIVED);
         registrations.put("graphitron_outbox_leaf_rule", Arm.DERIVED);
         registrations.put("graphitron_outbox_target", Arm.DERIVED);
-        registrations.put("graphitron_outbox_target_rule", Arm.DERIVED);
         registrations.put("graphitron_outbox_routine_target", Arm.DERIVED);
-        registrations.put("graphitron_outbox_routine_target_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_routine", Arm.DERIVED);
         registrations.put("graphitron_producer_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_service", Arm.DERIVED);

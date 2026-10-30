@@ -490,14 +490,9 @@ pass and no stratum that clears and recomputes.
   below and on "Nothing resolves a path but the walk".
   * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
     `NodeIdCandidates`, `SpelledTables` and `ResolvedTypeBindings`; the path steps go with the walk.
-* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the four below.
+* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
-  * **The outbox targets are views** `open`. `graphitron_outbox_target` and
-    `graphitron_outbox_routine_target` read only the configuration and the catalog, one row per
-    graph, so each `_rule` view takes its relation's name and `OutboxTargets` and
-    `OutboxRoutineTargets` go; the keys and checks they lose guarded only the rule's own output.
-    R1113's phase 2 record says where they are now.
   * **An outbox message's keys are a view** `open`. `graphitron_outbox_leaf`'s rule takes the
     relation's name and `OutboxLeaves` goes, once the entry-defect and outbox-leaf rules are timed
     on sis before and after; a reader made slower keeps the relation a table until that reader
