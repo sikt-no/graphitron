@@ -410,7 +410,7 @@ static method needs no holder.
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
 * **A service call is emitted from the store** `blocked`, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
   `ServiceCatalog`'s decode, claim and bind phases go.
-* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "A `@service` mutation is a write the outbox admits", "A service's `$result` is read off its returned value" and "The outbox on a service is emitted where the service call is".
+* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "A service's `$result` is read off its returned value" and "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
@@ -418,24 +418,24 @@ static method needs no holder.
   * **The outbox on a service is modelled before it is built** `done`. A top-level `@service` field
     on the mutation root is a write: `graphitron_producer` and `graphql_root_operation` already say
     so, and the `OUTBOX_NOT_A_WRITE` arm reads them beside `graphitron_producer_write`, with no new
-    relation. A `$result` over a returned value is a `graphitron_outbox_leaf` of kind `RESULT_MEMBER`,
-    or `RESULT_NODE_ID` ending on a node id over a record of the node's table, with its steps in a
-    child relation `graphitron_outbox_leaf_step` naming each GraphQL field and its `code_read_slot`
-    or the carrier's pass-through; a member a payload cannot carry is `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`.
-  * **A `@service` mutation is a write the outbox admits** `open`.
-    `graphitron_producer_write` states only a `@mutation`'s INSERT, UPDATE or DELETE, so an
-    `@outbox` on a `@service` field draws `OUTBOX_NOT_A_WRITE`; the store states which `@service`
-    fields are writes, and the outbox admits them.
-  * **A service's `$result` is read off its returned value** `open`.
-    A `$result` path resolves step by step over the class the service returns, through
-    `graphitron_carrier_data_channel` where the object passes through a payload's data field, then
-    `graphitron_type_backing` and the class's `code_read_slot` accessors, a record of a node's table
-    giving the node id; a step naming no member, or a member JSON cannot hold, is a defect at the
-    `@outbox`.
+    relation. A `$result` over a returned value is a pointer to the result: a `graphitron_outbox_leaf`
+    of kind `RESULT_MEMBER`, or `RESULT_NODE_ID` ending on a node id over a record of the node's
+    table, keeping only its path, each step read as its field's own facts say; a member a payload
+    cannot carry is `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`.
+  * **A field that reads an accessor names its member** `open`. `graphitron_reader` says a field
+    reads its parent's object through an `ACCESSOR` but not which; a subtype of it names the
+    `code_read_slot` read, off the class the parent's result holds, by the field's name or
+    `@field(name:)`, one row per field and parent class.
+  * **A service's `$result` is read off its returned value** `blocked`, on "A field that reads an accessor names its member".
+    The `RESULT_MEMBER` and service `RESULT_NODE_ID` leaves resolve a path step by step over the
+    field's result, through `graphitron_carrier_data_channel` where the object passes through a
+    payload's data field and the accessor each field names; a step with no stated read stays
+    `OUTBOX_SOURCE_UNRESOLVED`.
   * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
-    `$result` leaves off the returned object; it also waits on R1101's phase 2, nested scopes joining
-    the field's transaction, so a service's own transactions join the field's.
+    `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write
+    in the same commit, so a service `@outbox` is never accepted without being emitted. It also waits
+    on R1101's phase 2, nested scopes joining the field's transaction.
 * **A table class's column fields are stated** `blocked`, on "The generated jOOQ classes are read with their members". The code family keeps each generated table's public column fields, which
   the census reads and the capture drops.
 * **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
