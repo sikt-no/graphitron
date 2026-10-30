@@ -1,7 +1,7 @@
 ---
 id: R747
 title: "The VALIDATION handler validates what a @service method receives, jOOQ records included"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: error-channel
@@ -579,3 +579,27 @@ Non-blocking:
   `asConnection.adoc`, `reference-path-fans-out` in `reference.adoc`), so `error-channel.adoc` is
   the place.
 - The title still states round 2's disproved premise.
+
+### Round 4: Spec → Ready, sign off (session_01FY5UvueevUDMxVcGwzfPD8, 2026-10-30)
+
+Both questions pass. When this lands, a `@service` field whose channel has a `VALIDATION` member
+also validates the jOOQ records the method takes, column by column for the columns the record
+writes, so sis's `@NotBlank` (remapped onto `PersonbildeRecord`) and the `@Size` jOOQ's
+`<validationAnnotations>` generates come back as typed errors with the service not called. The plan
+extends shapes already in the tree: the capture sits beside `sql_table_record_supertype` in
+`JooqFactCapture`, the lint is folded in at `withLintFindings` beside `ReferencePathFanout`, the
+emission rides the shipped pre-step, `Paths` constant and `validationPathsConstant`, and one
+partition feeds the pre-step and the lint (the `LengthCheck` shape). Round 3's three findings are
+addressed. Every symbol, test, fixture and neighbouring item the spec names exists as named; the
+getter rule was checked against `org.jooq.tools.StringUtils.toCamelCase` in jOOQ 3.20.11 (`BILDE`
+to `getBilde`, `film_id` to `getFilmId`, `FilmId` to `getFilmid`), and the R534 flag-reset the
+manual draft states is the one `JooqRecordInstantiationEmitter.emitKeyDecode` documents.
+
+Non-blocking, for the implementer:
+
+- A new `LintRule` also needs its row in the `lint_rule` `INSERT` in `graphitron-model.sql`
+  (`'CODEGEN', 'WARNING'`), beside `LintRuleCatalogueTest`'s pinned set.
+- `pathsInitializer` and `validationPathsConstant` for a `WrittenColumns` subject need the checks,
+  not the subject alone; the context holds the `Rows`, so either pass the checks or compute them there.
+- `error-channel.adoc`'s summary bullet (`VALIDATION` runs pre-execution, "on the classes you
+  bind") also needs to name jOOQ records, beside the `bean-validation` paragraphs the draft replaces.
