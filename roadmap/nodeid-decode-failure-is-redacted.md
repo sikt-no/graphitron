@@ -1,7 +1,7 @@
 ---
 id: R1036
 title: "A bad node id fails with the same client error at every @nodeId site, never redacted"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: nodeid

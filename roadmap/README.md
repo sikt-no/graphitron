@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | Spec | 2026-10-29 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R1115` | A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key | In Progress | 2026-10-30 <sub>created 2026-10-28</sub> | [plan](same-table-table-child-without-reference-is-rejected.md) |
-| `R1036` | A bad node id fails with the same client error at every @nodeId site, never redacted | Spec | 2026-10-30 <sub>created 2026-10-14</sub> | [plan](nodeid-decode-failure-is-redacted.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
@@ -30,6 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | Spec | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1036` | A bad node id fails with the same client error at every @nodeId site, never redacted | Ready | 2026-10-30 <sub>created 2026-10-14</sub> | [plan](nodeid-decode-failure-is-redacted.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
 | `R1122` | every ordering graphitron generates is deterministic and ends in a tiebreaker | In Review | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](every-generated-ordering-is-total.md) |
@@ -513,7 +513,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
-- `R1036` [**A bad node id fails with the same client error at every @nodeId site, never redacted**](nodeid-decode-failure-is-redacted.md) — Spec, bug
+- `R1036` [**A bad node id fails with the same client error at every @nodeId site, never redacted**](nodeid-decode-failure-is-redacted.md) — Ready, bug
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
