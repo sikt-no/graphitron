@@ -48,8 +48,9 @@ import java.util.List;
  * {@code PinnedConnection.release}'s open-transaction detection), never a mode to preserve.
  *
  * <h2>Every close names the scope its open recorded</h2>
- * The provider keeps a stack of open scopes, each a {@code TopLevel} transaction or a
- * {@code Savepointed} one, and ties every close to its open through jOOQ's per-call
+ * The provider keeps a stack of open scopes: the outermost one, a {@code TopLevel} transaction or (under
+ * {@code ROLLBACK_ONLY}) a {@code Savepointed} one, and above it {@code Joined} scopes that took no
+ * JDBC state of their own. It ties every close to its open through jOOQ's per-call
  * {@code TransactionContext}: {@code transactionResult} builds a fresh context for each call and
  * passes that same object to {@code begin}, {@code commit} and {@code rollback}. The contract:
  * <ul>
@@ -66,7 +67,13 @@ import java.util.List;
  * A mutation field's own scope has no {@code TransactionContext}: the connection carrier opens it
  * through the package-private {@code open()} on the field's first acquisition of the connection,
  * holds the returned {@code Scope}, and ends it through {@code end(scope, failed)} when the field
- * settles. Every jOOQ transaction inside the field then nests on top as a savepoint.
+ * settles. A jOOQ transaction opened while a scope is open joins it: it takes no savepoint and
+ * cannot fail to open, its commit does nothing, and its rollback marks the outermost scope
+ * rollback-only, so that scope can no longer commit even when the code that opened the nested one
+ * caught its exception. A joined scope graphitron's own fetcher opened (marked through
+ * {@code owned}) fails the field through the fetcher's exception already; one a consumer's code
+ * opened also records its cause for the report, and is named to the carrier's callback once per
+ * calling method.
  * Savepoint release is skipped where the driver does not implement it (Oracle), since an
  * unreleased marker dies with the enclosing transaction; no other release failure is hidden,
  * because a swallowed release over an aborted transaction turns into a silent rollback at the
@@ -100,6 +107,9 @@ public final class GraphitronTransactionProviderGenerator {
     private static final ClassName CONFIGURATION = ClassName.get("org.jooq", "Configuration");
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName CONSUMER = ClassName.get("java.util.function", "Consumer");
+    private static final ClassName STACK_WALKER = ClassName.get("java.lang", "StackWalker");
+    private static final ClassName STACK_FRAME = ClassName.get("java.lang", "StackWalker", "StackFrame");
 
     private GraphitronTransactionProviderGenerator() {}
 
@@ -118,6 +128,7 @@ public final class GraphitronTransactionProviderGenerator {
         var scope = self.nestedClass("Scope");
         var topLevel = self.nestedClass("TopLevel");
         var savepointed = self.nestedClass("Savepointed");
+        var joined = self.nestedClass("Joined");
         var scopeDeque = ParameterizedTypeName.get(DEQUE, scope);
 
         var connectionField = FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -165,17 +176,26 @@ public final class GraphitronTransactionProviderGenerator {
             .addJavadoc("Whether the scope {@code ctx} opens was marked by {@link #owned}.\n")
             .build();
 
+        var consumerJoinField = FieldSpec.builder(ParameterizedTypeName.get(CONSUMER, ClassName.get(String.class)),
+                "consumerJoin", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("Told the calling method of every scope a consumer's code opened that joined the open\n"
+                + "transaction, so the carrier can warn once per method that no savepoint was taken.\n")
+            .build();
+
         var canonicalConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(CONNECTION, "connection")
             .addParameter(commitPolicy, "commitPolicy")
+            .addParameter(ParameterizedTypeName.get(CONSUMER, ClassName.get(String.class)), "consumerJoin")
             .addStatement("this.connection = connection")
             .addStatement("this.commitPolicy = commitPolicy")
+            .addStatement("this.consumerJoin = consumerJoin")
             .addJavadoc("Builds a provider over the pinned {@code connection} applying {@code commitPolicy}\n"
                 + "to every top-level transaction it demarcates. One instance per pinned connection,\n"
                 + "constructed inside the carrier entry that owns the connection's one cached\n"
                 + "{@code DSLContext}, so this instance's scope stack is the only record of open\n"
-                + "transactions on that connection.\n")
+                + "transactions on that connection. {@code consumerJoin} receives the calling method\n"
+                + "of each scope a consumer's code opened that joined the open transaction.\n")
             .build();
 
         var open = MethodSpec.methodBuilder("open")
@@ -200,15 +220,29 @@ public final class GraphitronTransactionProviderGenerator {
             .addStatement("connection.setAutoCommit(false)")
             .addStatement("opened = new $T()", topLevel)
             .nextControlFlow("else")
-            .addStatement("opened = new $T(connection.setSavepoint())", savepointed)
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "A scope is already open: only the outermost scope is opened, nested ones join it")
             .endControlFlow()
             .addComment("Every JDBC call succeeded: only now does the provider's state change.")
             .addStatement("scopes.push(opened)")
             .addStatement("return opened")
-            .addJavadoc("Opens one scope, all or nothing: the JDBC calls run first and the scope is pushed\n"
-                + "only once they all succeeded, so a failed open leaves the stack as it was.\n"
+            .addJavadoc("Opens the outermost scope, all or nothing: the JDBC calls run first and the scope is\n"
+                + "pushed only once they all succeeded, so a failed open leaves the stack as it was. A\n"
+                + "scope opened while another is open is not opened at all: it joins ({@link #join}).\n"
                 + "Package-private: {@code begin} records the scope on jOOQ's context, and the connection\n"
                 + "carrier holds a mutation field's scope itself and hands it back to {@link #end}.\n")
+            .build();
+
+        var join = MethodSpec.methodBuilder("join")
+            .returns(scope)
+            .addParameter(boolean.class, "own")
+            .addStatement("$T opened = new $T(own)", scope, joined)
+            .addStatement("scopes.push(opened)")
+            .addStatement("return opened")
+            .addJavadoc("Joins the open transaction: a nested scope gets no JDBC state, so it takes no savepoint\n"
+                + "and cannot fail to open. Its commit does nothing; its rollback marks the outermost scope\n"
+                + "rollback-only. {@code own} is whether graphitron's own fetcher opened it (see\n"
+                + "{@link #owned}).\n")
             .build();
 
         var begin = MethodSpec.methodBuilder("begin")
@@ -216,6 +250,15 @@ public final class GraphitronTransactionProviderGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
             .addParameter(TRANSACTION_CONTEXT, "ctx")
+            .beginControlFlow("if (!scopes.isEmpty())")
+            .addComment("Nested: join the open transaction. No JDBC call, so it cannot fail.")
+            .addStatement("boolean own = isOwn(ctx)")
+            .addStatement("ctx.data($L, join(own))", SCOPE_KEY)
+            .beginControlFlow("if (!own)")
+            .addStatement("reportConsumerJoin()")
+            .endControlFlow()
+            .addStatement("return")
+            .endControlFlow()
             .beginControlFlow("try")
             .addStatement("ctx.data($L, open())", SCOPE_KEY)
             .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
@@ -229,21 +272,25 @@ public final class GraphitronTransactionProviderGenerator {
             .addParameter(scope, "closing")
             .addParameter(boolean.class, "failed")
             .addException(SQL_EXCEPTION)
+            .beginControlFlow("if (closing instanceof $T)", joined)
+            .addComment("Joined: the enclosing scope owns the transaction, so there is nothing to close.")
+            .addStatement("return")
+            .endControlFlow()
             .beginControlFlow("if (closing instanceof $T sp && failed)", savepointed)
-            .addComment("Nested, or a deferred-rollback field: discard exactly this scope's writes and")
+            .addComment("A deferred-rollback field: discard exactly this scope's writes and")
             .addComment("keep the enclosing (or operation) transaction open.")
             .addStatement("connection.rollback(sp.savepoint())")
             .nextControlFlow("else if (closing instanceof $T sp)", savepointed)
-            .addComment("Nested, or a deferred-rollback field settling: release the marker; the enclosing")
-            .addComment("(or operation) transaction stays open.")
+            .addComment("A deferred-rollback field settling: release the marker; the operation")
+            .addComment("transaction stays open.")
             .addStatement("releaseSavepoint(sp.savepoint())")
             .nextControlFlow("else")
             .addComment("Top-level: the commit policy decides persist-vs-discard; failed forces a rollback.")
             .addStatement("settle(failed)")
             .endControlFlow()
-            .addJavadoc("Closes {@code closing}, dispatching on its variant: a savepointed scope rolls back\n"
-                + "to its savepoint when {@code failed} and releases it otherwise; the top-level scope\n"
-                + "settles. Leaves the stack to the caller.\n")
+            .addJavadoc("Closes {@code closing}, dispatching on its variant: a joined scope has nothing to\n"
+                + "close; a savepointed scope rolls back to its savepoint when {@code failed} and releases\n"
+                + "it otherwise; the top-level scope settles. Leaves the stack to the caller.\n")
             .build();
 
         var innermost = MethodSpec.methodBuilder("requireInnermost")
@@ -272,6 +319,13 @@ public final class GraphitronTransactionProviderGenerator {
                 "Cannot commit a transaction scope that never opened")
             .endControlFlow()
             .addStatement("requireInnermost(closing, $S)", "commit")
+            .beginControlFlow("if (closing.rollbackOnly)")
+            .addComment("A nested scope failed: the outermost scope cannot commit, and the caller sees the")
+            .addComment("failure it may have swallowed. The scope stays open, so the rollback jOOQ issues")
+            .addComment("next for this context closes it, and the connection is not touched here.")
+            .addStatement("throw new $T($S, closing.cause)", DATA_ACCESS_EXCEPTION,
+                "A nested transaction failed, so this transaction cannot commit and is rolled back")
+            .endControlFlow()
             .addComment("The scope closes (pop, and the context entry cleared) only once its commit succeeded:")
             .addComment("when anything here throws, the scope stays open, so the rollback jOOQ issues next")
             .addComment("for the same context closes it exactly once.")
@@ -282,6 +336,47 @@ public final class GraphitronTransactionProviderGenerator {
             .endControlFlow()
             .addStatement("scopes.pop()")
             .addStatement("ctx.data().remove($L)", SCOPE_KEY)
+            .build();
+
+        var reportConsumerJoin = MethodSpec.methodBuilder("reportConsumerJoin")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(void.class)
+            .addStatement("$T prefix = getClass().getName()", String.class)
+            .addStatement("$T caller = $T.getInstance().walk(frames -> frames"
+                + ".dropWhile(f -> f.getClassName().startsWith(prefix))"
+                + ".dropWhile(f -> f.getClassName().startsWith($S) || f.getClassName().startsWith($S)"
+                + " || f.getClassName().startsWith($S))"
+                + ".findFirst().map(f -> f.getClassName() + $S + f.getMethodName()).orElse(null))",
+                String.class, STACK_WALKER, "org.jooq.", "java.", "jdk.", "#")
+            .beginControlFlow("if (caller != null)")
+            .addStatement("consumerJoin.accept(caller)")
+            .endControlFlow()
+            .addJavadoc("Names the code that opened a scope that joined: walking outward from {@code begin}, past\n"
+                + "this provider's frames, jOOQ's and the JDK's (jOOQ runs a transaction through\n"
+                + "{@code ForkJoinPool.managedBlock}), the next frame is the code that called\n"
+                + "{@code transaction} or {@code transactionResult}. No package rule is needed, so a\n"
+                + "consumer's service placed under the output package is still named.\n")
+            .build();
+
+        var markRollbackOnly = MethodSpec.methodBuilder("markRollbackOnly")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(void.class)
+            .addParameter(joined, "nested")
+            .addParameter(Throwable.class, "cause")
+            .addStatement("$T outermost = scopes.peekLast()", scope)
+            .beginControlFlow("if (outermost == null)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("outermost.rollbackOnly = true")
+            .beginControlFlow("if (!nested.own && !outermost.consumerFailure)")
+            .addComment("Only a scope a consumer's code opened records its cause: a failed scope of")
+            .addComment("graphitron's own fetcher already surfaces as the fetcher's exception.")
+            .addStatement("outermost.consumerFailure = true")
+            .addStatement("outermost.cause = cause")
+            .endControlFlow()
+            .addJavadoc("A joined scope rolled back: the outermost scope can no longer commit, and the mark\n"
+                + "is sticky for that scope's life. The first cause a consumer's scope fails with is\n"
+                + "kept on the outermost scope for the report.\n")
             .build();
 
         var releaseSavepoint = MethodSpec.methodBuilder("releaseSavepoint")
@@ -318,6 +413,12 @@ public final class GraphitronTransactionProviderGenerator {
             .addStatement("return")
             .endControlFlow()
             .addStatement("requireInnermost(closing, $S)", "roll back")
+            .beginControlFlow("if (closing instanceof $T nested)", joined)
+            .addStatement("scopes.pop()")
+            .addStatement("ctx.data().remove($L)", SCOPE_KEY)
+            .addStatement("markRollbackOnly(nested, ctx.cause())")
+            .addStatement("return")
+            .endControlFlow()
             .addComment("Removed whether or not the JDBC call succeeds: nothing calls rollback for this scope")
             .addComment("again, and a failed top-level rollback is left to PinnedConnection.release, whose")
             .addComment("open-transaction detection covers it.")
@@ -336,6 +437,11 @@ public final class GraphitronTransactionProviderGenerator {
             .addParameter(boolean.class, "failed")
             .addException(SQL_EXCEPTION)
             .addStatement("requireInnermost(closing, failed ? $S : $S)", "roll back", "commit")
+            .beginControlFlow("if (!failed && closing.rollbackOnly)")
+            .addComment("A nested scope failed: the caller that holds this scope rolls it back instead.")
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "A nested transaction failed, so this scope cannot commit; end it as failed")
+            .endControlFlow()
             .beginControlFlow("if (failed)")
             .addComment("As rollback: removed first, so a failed JDBC call leaves nothing to close twice;")
             .addComment("a failed top-level rollback is left to PinnedConnection.release.")
@@ -390,23 +496,30 @@ public final class GraphitronTransactionProviderGenerator {
                 + "chosen per site.\n")
             .build();
 
-        var scopeType = TypeSpec.interfaceBuilder("Scope")
-            .addModifiers(Modifier.STATIC, Modifier.SEALED)
-            .addJavadoc("One transaction this provider demarcates: the top-level transaction or a savepoint\n"
-                + "nested inside it. Compared by identity; both arms live in this compilation unit, so the\n"
-                + "sealed interface needs no {@code permits} clause.\n")
+        var scopeType = TypeSpec.classBuilder("Scope")
+            .addModifiers(Modifier.STATIC, Modifier.SEALED, Modifier.ABSTRACT)
+            .addJavadoc("One transaction this provider demarcates: the outermost transaction, the savepoint a\n"
+                + "deferred-rollback field is, or a nested scope that joined the outermost one. Compared by\n"
+                + "identity; every arm lives in this compilation unit, so the sealed class needs no\n"
+                + "{@code permits} clause. The state below is only ever set on the outermost scope.\n")
+            .addField(FieldSpec.builder(boolean.class, "rollbackOnly")
+                .addJavadoc("Whether a joined scope rolled back: the scope can no longer commit.\n").build())
+            .addField(FieldSpec.builder(boolean.class, "consumerFailure")
+                .addJavadoc("Whether the failed joined scope was opened by a consumer's code, not graphitron's.\n").build())
+            .addField(FieldSpec.builder(Throwable.class, "cause")
+                .addJavadoc("The first failure of a consumer's joined scope, for the report; may be null.\n").build())
             .build();
         var topLevelType = TypeSpec.classBuilder("TopLevel")
             .addModifiers(Modifier.STATIC, Modifier.FINAL)
-            .addSuperinterface(scope)
+            .superclass(scope)
             .addJavadoc("A top-level transaction under {@link CommitPolicy#COMMIT}: opened by turning\n"
                 + "autocommit off, closed by {@code settle}.\n")
             .build();
         var savepointedType = TypeSpec.classBuilder("Savepointed")
             .addModifiers(Modifier.STATIC, Modifier.FINAL)
-            .addSuperinterface(scope)
-            .addJavadoc("Every other scope (a nested transaction, or a field under\n"
-                + "{@link CommitPolicy#ROLLBACK_ONLY}): closed by releasing or rolling back to its savepoint.\n")
+            .superclass(scope)
+            .addJavadoc("A field under {@link CommitPolicy#ROLLBACK_ONLY}: closed by releasing or rolling back\n"
+                + "to its savepoint. The only savepoint this provider takes.\n")
             .addField(FieldSpec.builder(SAVEPOINT, "savepoint", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addParameter(SAVEPOINT, "savepoint")
@@ -415,6 +528,19 @@ public final class GraphitronTransactionProviderGenerator {
             .addMethod(MethodSpec.methodBuilder("savepoint")
                 .returns(SAVEPOINT)
                 .addStatement("return savepoint")
+                .build())
+            .build();
+
+        var joinedType = TypeSpec.classBuilder("Joined")
+            .addModifiers(Modifier.STATIC, Modifier.FINAL)
+            .superclass(scope)
+            .addJavadoc("A nested scope that joined the outermost transaction: no JDBC state, so it takes no\n"
+                + "savepoint and cannot fail to open. {@code own} is whether graphitron's own fetcher\n"
+                + "opened it.\n")
+            .addField(FieldSpec.builder(boolean.class, "own", Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addParameter(boolean.class, "own")
+                .addStatement("this.own = own")
                 .build())
             .build();
 
@@ -430,10 +556,12 @@ public final class GraphitronTransactionProviderGenerator {
             .addType(scopeType)
             .addType(topLevelType)
             .addType(savepointedType)
+            .addType(joinedType)
             .addField(scopeKeyField)
             .addField(ownScopeKeyField)
             .addField(connectionField)
             .addField(policyField)
+            .addField(consumerJoinField)
             .addField(scopesField)
             .addMethod(canonicalConstructor)
             .addMethod(owned)
@@ -442,9 +570,12 @@ public final class GraphitronTransactionProviderGenerator {
             .addMethod(commit)
             .addMethod(rollback)
             .addMethod(open)
+            .addMethod(join)
             .addMethod(end)
             .addMethod(close)
             .addMethod(innermost)
+            .addMethod(markRollbackOnly)
+            .addMethod(reportConsumerJoin)
             .addMethod(releaseSavepoint)
             .addMethod(settle)
             .build();

@@ -47,6 +47,8 @@ class MutationScopeExecutionTest {
     static DSLContext dsl;               // out-of-band, for assertions and cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
     static final AtomicInteger CONNECTIONS_OPENED = new AtomicInteger();
+    /** What every connection the runtime pinned was asked to do about transactions, in order. */
+    static final List<String> CONNECTION_EVENTS = java.util.Collections.synchronizedList(new ArrayList<>());
     static GraphitronRuntime runtime;
     static GraphQL graphql;
 
@@ -111,6 +113,100 @@ class MutationScopeExecutionTest {
             .as("the @error channel turned the exception into business data")
             .containsExactly("MutationScopeRefused");
         assertThat(rows(refused)).as("a claimed exception still fails the field").isZero();
+    }
+
+    // ===== a transaction opened inside the field joins it =====
+
+    private static final String NESTED_FAILED = "A nested transaction in this field failed; the field's writes were rolled back; reference = ";
+
+    @Test
+    void aNestedScopeThatSucceeds_joinsTheFieldsTransaction_takingNoSavepoint() {
+        String marker = marker();
+        CONNECTION_EVENTS.clear();
+
+        ExecutionResult result = execute("mutation { n: scopeNestedSucceeds(marker: \"%s\") }".formatted(marker));
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(data(result).get("n")).isEqualTo(marker);
+        assertThat(rows(marker)).as("both writes committed with the field").isEqualTo(2);
+        assertThat(CONNECTION_EVENTS)
+            .as("the nested scope took no savepoint, and the field committed once")
+            .doesNotContain("setSavepoint")
+            .filteredOn("commit"::equals).hasSize(1);
+    }
+
+    @Test
+    void aNestedFailure_caughtByTheService_stillFailsTheField_withTheNamedError() {
+        String caught = marker(), next = marker();
+
+        ExecutionResult result = execute("""
+            mutation {
+                n: scopeNestedFailsCaught(marker: "%s")
+                next: scopeWriteOne(marker: "%s")
+            }
+            """.formatted(caught, next));
+
+        assertThat(data(result).get("n")).as("the field returned normally, but it rolled back").isNull();
+        assertThat(errorPaths(result)).containsExactly(List.of("n"));
+        assertThat(result.getErrors().get(0).getMessage()).startsWith(NESTED_FAILED);
+        assertThat(rows(caught)).as("nothing it wrote, before or after the nested scope, stayed").isZero();
+        assertThat(rows(next)).as("the next field ran and committed").isEqualTo(1);
+    }
+
+    @Test
+    void aNestedSqlFailure_caughtByTheService_failsTheNextStatement_andTheFieldCarriesBothErrors() {
+        String marker = marker();
+
+        ExecutionResult result = execute(
+            "mutation { n: scopeNestedSqlFailCaught(marker: \"%s\") }".formatted(marker));
+
+        assertThat(data(result).get("n")).isNull();
+        assertThat(errorPaths(result)).as("the router's redacted error and the named one, beside each other")
+            .containsExactly(List.of("n"), List.of("n"));
+        assertThat(result.getErrors()).extracting(GraphQLError::getMessage)
+            .anySatisfy(m -> assertThat(m).startsWith("An error occurred. Reference: "))
+            .anySatisfy(m -> assertThat(m).startsWith(NESTED_FAILED));
+        assertThat(rows(marker)).isZero();
+    }
+
+    @Test
+    void aNestedFailure_notCaught_failsTheFieldWithTheRoutersErrorAndTheNamedOne() {
+        String marker = marker();
+
+        ExecutionResult result = execute(
+            "mutation { n: scopeNestedFailsUncaught(marker: \"%s\") }".formatted(marker));
+
+        assertThat(data(result).get("n")).isNull();
+        assertThat(result.getErrors()).extracting(GraphQLError::getMessage)
+            .anySatisfy(m -> assertThat(m).startsWith("An error occurred. Reference: "))
+            .anySatisfy(m -> assertThat(m).startsWith(NESTED_FAILED));
+        assertThat(rows(marker)).isZero();
+    }
+
+    @Test
+    void aGeneratedMutationThatFails_answersWithTheRoutersErrorOnly_noNamedNestedFailure() {
+        String title = "MUTATION-SCOPE-" + UUID.randomUUID();
+        filmTitles.add(title);
+        CONNECTION_EVENTS.clear();
+
+        ExecutionResult result = execute(
+            "mutation { c: createFilm(in: { title: \"%s\", languageId: 999 }) { filmId } }".formatted(title));
+
+        assertThat(data(result).get("c")).isNull();
+        assertThat(result.getErrors()).as("graphitron's own nested scope failing adds no second error").hasSize(1);
+        assertThat(result.getErrors().get(0).getMessage()).doesNotContain("nested transaction");
+        assertThat(CONNECTION_EVENTS).doesNotContain("setSavepoint");
+    }
+
+    @Test
+    void aQueryServiceThatOpensATransaction_nestsWithoutASavepoint_andACaughtNestedFailureFailsItsCommit() {
+        CONNECTION_EVENTS.clear();
+
+        ExecutionResult result = graphql.execute(ownedInput(
+            "{ scopeQueryNestedCaught(marker: \"q\") }").build());
+
+        assertThat(errorPaths(result)).containsExactly(List.of("scopeQueryNestedCaught"));
+        assertThat(CONNECTION_EVENTS).doesNotContain("setSavepoint");
     }
 
     // ===== a field reported as successful has committed =====
@@ -277,6 +373,25 @@ class MutationScopeExecutionTest {
         return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"), "{\"sub\":\"test-user\"}", "test-user").query(query);
     }
 
+    /** The real connection, recording each transaction call made on it into {@link #CONNECTION_EVENTS}. */
+    private static java.sql.Connection recording(java.sql.Connection real) {
+        return (java.sql.Connection) Proxy.newProxyInstance(
+            MutationScopeExecutionTest.class.getClassLoader(),
+            new Class<?>[]{java.sql.Connection.class},
+            (proxy, method, args) -> {
+                switch (method.getName()) {
+                    case "setSavepoint", "commit", "rollback", "close" -> CONNECTION_EVENTS.add(method.getName());
+                    case "setAutoCommit" -> CONNECTION_EVENTS.add("setAutoCommit:" + args[0]);
+                    default -> { }
+                }
+                try {
+                    return method.invoke(real, args);
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            });
+    }
+
     /** A DataSource that hands out real connections and counts each acquisition. */
     private static DataSource countingDataSource() {
         return (DataSource) Proxy.newProxyInstance(
@@ -285,7 +400,7 @@ class MutationScopeExecutionTest {
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     CONNECTIONS_OPENED.incrementAndGet();
-                    return SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword);
+                    return recording(SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword));
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);

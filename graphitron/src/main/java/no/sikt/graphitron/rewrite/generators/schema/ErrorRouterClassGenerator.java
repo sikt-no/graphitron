@@ -204,7 +204,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(buildNewReferenceMethod(fetcherErrorResponse))
             .addMethod(buildClientMessageMethod(fetcherErrorResponse))
             .addMethod(surfaceClientErrorOrRedact)
-            .addMethod(buildSettleFailureMethod(fetcherErrorResponse))
+            .addMethod(buildSettleFailureMethod(fetcherErrorResponse, outputPackage))
             .addMethod(claim)
             .addMethod(buildRecordClaimMethod(fetcherErrorLog, fetcherErrorResponse))
             .addMethod(matchesSource)
@@ -539,7 +539,7 @@ public final class ErrorRouterClassGenerator {
             .beginControlFlow("if (mapping.match(thrown, t))")
             .addStatement("recordClaim(thrown, t, env)")
             .addComment("A claimed exception still fails the field: its mutation transaction rolls back.")
-            .addStatement("$T.markFieldFailed(env)", tenantConnections)
+            .addStatement("$T.markFieldFailed(env, thrown)", tenantConnections)
             .addStatement("return t")
             .endControlFlow()
             .endControlFlow()
@@ -663,7 +663,7 @@ public final class ErrorRouterClassGenerator {
                 clientException, DATA_FETCHER_RESULT, fetcherErrorResponse)
             .addCode(CodeBlock.builder()
                 .add("// Every arm below fails the field: its mutation transaction, if any, rolls back.\n")
-                .addStatement("$T.markFieldFailed(env)", tenantConnectionsClass(outputPackage))
+                .addStatement("$T.markFieldFailed(env, thrown)", tenantConnectionsClass(outputPackage))
                 .beginControlFlow("if ($T.isMountFailure(thrown))", tenantConnectionsClass(outputPackage))
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
                 .add("    .data(null)\n")
@@ -880,7 +880,7 @@ public final class ErrorRouterClassGenerator {
      * disposition as {@code redact}, through the same configured log and response, built for the
      * instrumentation to add to the result rather than returned from a fetcher.
      */
-    private static MethodSpec buildSettleFailureMethod(ClassName fetcherErrorResponse) {
+    private static MethodSpec buildSettleFailureMethod(ClassName fetcherErrorResponse, String outputPackage) {
         return MethodSpec.methodBuilder("settleFailure")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(GRAPHQL_ERROR_CN)
@@ -903,6 +903,14 @@ public final class ErrorRouterClassGenerator {
             .beginControlFlow("if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
             .addStatement("LOGGER.error(\"Mutation field failed to settle its transaction; correlation id = {}\","
                 + " reference, thrown)")
+            .endControlFlow()
+            .beginControlFlow("if (thrown instanceof $T)", tenantConnectionsClass(outputPackage).nestedClass("NestedScopeFailedException"))
+            .addComment("A transaction a consumer's code opened inside the field failed: graphitron's own fixed")
+            .addComment("message, so it states the cause the same way in every deployment. It carries no")
+            .addComment("database text; the log under the reference has the cause.")
+            .addStatement("return (env == null ? $T.newError().path(path) : $T.newError(env))"
+                + ".message($S + reference).build()", GRAPHQL_ERROR_BUILDER, GRAPHQL_ERROR_BUILDER,
+                "A nested transaction in this field failed; the field's writes were rolled back; reference = ")
             .endControlFlow()
             .addStatement("$T message = answer(configured(env, $T.class),"
                 + " response -> response.unmatchedMessage(thrown, reference, env), () -> $S + reference)",

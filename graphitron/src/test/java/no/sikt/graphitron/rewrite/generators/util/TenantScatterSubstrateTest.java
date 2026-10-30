@@ -65,10 +65,20 @@ class TenantScatterSubstrateTest {
     private static Class<?> successClass;
     private static Class<?> failedClass;
     private static Class<?> timedOutClass;
+    private static Class<?> providerClass;
+    private static Class<?> nestedScopeFailedClass;
 
     private final List<String> events = java.util.Collections.synchronizedList(new ArrayList<>());
     /** Labels whose fake connection fails {@code commit()}, after recording it. */
     private final java.util.Set<String> failCommitFor = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Labels whose probe statement fails as an aborted PostgreSQL transaction does. */
+    private final java.util.Set<String> failProbeFor = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Labels whose commit fails with an unchecked exception, as a pool wrapper's might. */
+    private final java.util.Set<String> uncheckedCommitFor = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Labels whose {@code setAutoCommit(false)} fails, after recording it. */
+    private final java.util.Set<String> failOpenFor = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Labels whose {@code setAutoCommit(false)} blocks until the latch is released, after recording it. */
+    private final Map<String, CountDownLatch> stallOpenFor = new java.util.concurrent.ConcurrentHashMap<>();
 
     @BeforeAll
     static void compile() {
@@ -103,7 +113,8 @@ class TenantScatterSubstrateTest {
         successClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$Outcome$Success");
         failedClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$Outcome$Failed");
         timedOutClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$Outcome$TimedOut");
-        Class<?> providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
+        providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
+        nestedScopeFailedClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$NestedScopeFailedException");
         commitPolicyClass = java.util.Arrays.stream(providerClass.getDeclaredClasses())
             .filter(c -> c.getSimpleName().equals("CommitPolicy"))
             .findFirst().orElseThrow();
@@ -127,6 +138,10 @@ class TenantScatterSubstrateTest {
     void resetEvents() {
         events.clear();
         failCommitFor.clear();
+        failProbeFor.clear();
+        uncheckedCommitFor.clear();
+        failOpenFor.clear();
+        stallOpenFor.clear();
     }
 
     @Test
@@ -490,19 +505,21 @@ class TenantScatterSubstrateTest {
 
         assertThat(cause).isInstanceOf(SQLException.class).hasMessageContaining("deferred");
         assertThat(events)
-            .as("each connection settles on its own, in the order opened: A probes and commits, B's"
-                + " commit fails and rolls back, and C, after the field failed, rolls back unprobed")
-            .containsSubsequence("probe:A", "commit:A", "probe:B", "commit:B", "rollback:B", "rollback:C")
-            .doesNotContain("rollback:A", "commit:C", "probe:C");
+            .as("every connection is probed before any of them commits, then they commit in the order"
+                + " opened: A commits, B's commit fails and rolls back, and C, after the field failed,"
+                + " rolls back")
+            .containsSubsequence("probe:A", "probe:B", "probe:C", "commit:A", "commit:B", "rollback:B", "rollback:C")
+            .doesNotContain("rollback:A", "commit:C");
         releaseAll(tc);
     }
 
     @Test
-    void mutationField_aStragglerEnlistsOnTheFieldThatDispatchedIt_neverOnALaterOne() throws Throwable {
+    void mutationField_aStragglerAfterItsFieldSettled_isRefused_andWritesNothing() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
         Object tc = newTenantConnections(runtime);
         var hold = new CountDownLatch(1);
         var workerDone = new CountDownLatch(1);
+        var straggler = new java.util.concurrent.atomic.AtomicReference<Object>();
         beginField(tc, "first");
 
         List<?> outcomes = scatter(tc, List.of("A"), dsl -> {
@@ -511,6 +528,7 @@ class TenantScatterSubstrateTest {
                 // A straggler that resumes after its field settled and acquires another key.
                 return dslFor(tc, "B");
             } catch (Throwable e) {
+                straggler.set(e);
                 return e;
             } finally {
                 workerDone.countDown();
@@ -523,6 +541,10 @@ class TenantScatterSubstrateTest {
         events.clear();
         hold.countDown();
         assertThat(workerDone.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat((Throwable) straggler.get())
+            .as("the acquisition is refused, so the straggler can write nothing")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("has settled");
         assertThat(events)
             .as("B is pinned, but the settled first field opens nothing on it, and the second field"
                 + " never sees the straggler")
@@ -532,6 +554,143 @@ class TenantScatterSubstrateTest {
         events.clear();
         assertThat(settleField(tc, false)).as("the second field has nothing to fail for").isNull();
         assertThat(events).doesNotContain("commit:B", "rollback:B");
+        releaseAll(tc);
+    }
+
+    // --- phase 2: nested scopes join, and settle scans before it commits ------------------------------
+
+    @Test
+    void mutationField_aFailedConsumerScope_commitsNoConnection_andReportsTheNestedFailure() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        beginField(tc, "m");
+        var a = (org.jooq.DSLContext) dslFor(tc, "A");
+        dslFor(tc, "B");
+        var boom = new IllegalStateException("boom");
+        try {
+            a.transactionResult(tx -> { throw boom; });
+        } catch (IllegalStateException caught) {
+            // the consumer's code decides the nested failure is not fatal
+        }
+
+        events.clear();
+        Throwable report = settleField(tc, false);
+
+        assertThat(report).as("reported even though nothing else failed the field")
+            .isInstanceOf(nestedScopeFailedClass).hasCause(boom);
+        assertThat(events).contains("rollback:A", "rollback:B").doesNotContain("commit:A", "commit:B");
+        releaseAll(tc);
+    }
+
+    @Test
+    void mutationField_aFailedOwnScope_rollsTheFieldBack_butAddsNoNestedFailureReport() throws Throwable {
+        Object runtime = newRuntime(sources("A"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        beginField(tc, "m");
+        var a = (org.jooq.DSLContext) dslFor(tc, "A");
+        var owned = (org.jooq.DSLContext) providerClass.getMethod("owned", org.jooq.DSLContext.class).invoke(null, a);
+        try {
+            owned.transactionResult(tx -> { throw new IllegalStateException("fetcher failed"); });
+        } catch (IllegalStateException caught) {
+            // propagates to the router in a real field, which marks the field failed
+        }
+
+        events.clear();
+        Throwable report = settleField(tc, false);
+
+        assertThat(report).as("the router's error is the report; no second, misleading one").isNull();
+        assertThat(events).contains("rollback:A").doesNotContain("commit:A");
+        releaseAll(tc);
+    }
+
+    @Test
+    void mutationField_aProbeThatFailsOnTheSecondConnection_leavesTheFirstUncommitted() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        beginField(tc, "m");
+        dslFor(tc, "A");
+        dslFor(tc, "B");
+        failProbeFor.add("B");
+
+        events.clear();
+        Throwable cause = settleField(tc, false);
+
+        assertThat(cause).isInstanceOf(SQLException.class).hasMessageContaining("aborted");
+        assertThat(events).contains("probe:A", "probe:B", "rollback:A", "rollback:B")
+            .doesNotContain("commit:A", "commit:B");
+        releaseAll(tc);
+    }
+
+    @Test
+    void mutationField_anUncheckedFailureSettlingOneConnection_failsTheField_andTheOthersStillSettle() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        beginField(tc, "m");
+        dslFor(tc, "A");
+        dslFor(tc, "B");
+        uncheckedCommitFor.add("A");
+
+        events.clear();
+        Throwable cause = settleField(tc, false);
+
+        assertThat(cause).isInstanceOf(UnsupportedOperationException.class).hasMessageContaining("pool wrapper");
+        assertThat(events).as("A's commit failed, so A and B roll back; B is not left unsettled")
+            .contains("commit:A", "rollback:A", "rollback:B").doesNotContain("commit:B");
+        releaseAll(tc);
+    }
+
+    @Test
+    void mutationField_aWorkerWhoseOpenStalls_blocksNeitherAnotherWorkersEnlistNorTheSettle() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(400));
+        Object tc = newTenantConnections(runtime);
+        var stall = new CountDownLatch(1);
+        stallOpenFor.put("A", stall);
+        beginField(tc, "m");
+
+        List<?> outcomes = scatter(tc, List.of("A", "B"), dsl -> dsl);
+
+        assertThat(outcomes.stream().map(o -> o.getClass().getName()).toList())
+            .as("B enlisted and finished while A's open was stalled; A missed the deadline")
+            .containsExactly(timedOutClass.getName(), successClass.getName());
+        events.clear();
+        Throwable cause = settleField(tc, false);
+
+        assertThat(cause).as("settle returned without waiting for the stalled open")
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("still opening");
+        assertThat(events).contains("rollback:B").doesNotContain("commit:B", "commit:A", "rollback:A");
+        stall.countDown();
+        releaseAll(tc);
+    }
+
+    @Test
+    void mutationField_aSecondAcquirerOfAKey_waitsForTheOpen_andFailsWhenTheOpenFailed() throws Throwable {
+        Object runtime = newRuntime(sources("A"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        var stall = new CountDownLatch(1);
+        stallOpenFor.put("A", stall);
+        failOpenFor.add("A");
+        beginField(tc, "m");
+        var results = new java.util.concurrent.ConcurrentLinkedQueue<Object>();
+        var done = new CountDownLatch(2);
+        for (int i = 0; i < 2; i++) {
+            new Thread(() -> {
+                try {
+                    results.add(dslFor(tc, "A"));
+                } catch (Throwable e) {
+                    results.add(e);
+                } finally {
+                    done.countDown();
+                }
+            }).start();
+        }
+
+        assertThat(done.await(300, TimeUnit.MILLISECONDS))
+            .as("neither acquirer is handed a context while the open is still running").isFalse();
+        stall.countDown();
+        assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(results).as("the waiter fails the way the first acquirer did")
+            .hasSize(2).allSatisfy(r -> assertThat(r).isInstanceOf(SQLException.class));
+        settleField(tc, false);
         releaseAll(tc);
     }
 
@@ -661,15 +820,24 @@ class TenantScatterSubstrateTest {
                     yield fakePreparedStatement(disconnect && failDisconnect);
                 }
                 // A mutation field's transaction on this connection, as the carrier opens and ends it.
-                case "setAutoCommit" -> { events.add("setAutoCommit:" + label + ":" + args[0]); yield null; }
+                case "setAutoCommit" -> {
+                    events.add("setAutoCommit:" + label + ":" + args[0]);
+                    if (Boolean.FALSE.equals(args[0])) {
+                        var stall = stallOpenFor.get(label);
+                        if (stall != null) stall.await();
+                        if (failOpenFor.contains(label)) throw new SQLException("autocommit refused", "08003");
+                    }
+                    yield null;
+                }
                 case "commit" -> {
                     events.add("commit:" + label);
+                    if (uncheckedCommitFor.contains(label)) throw new UnsupportedOperationException("pool wrapper failed");
                     if (failCommitFor.contains(label)) throw new SQLException("deferred constraint violated", "23503");
                     yield null;
                 }
                 case "createStatement" -> {
                     events.add("probe:" + label);
-                    yield fakeStatement();
+                    yield fakeStatement(label);
                 }
                 case "rollback" -> { events.add("rollback:" + label); yield null; }
                 case "close" -> { events.add("close:" + label); yield null; }
@@ -679,10 +847,15 @@ class TenantScatterSubstrateTest {
             });
     }
 
-    private java.sql.Statement fakeStatement() {
+    private java.sql.Statement fakeStatement(String label) {
         return (java.sql.Statement) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{java.sql.Statement.class},
-            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "fakeStatement"));
+            (proxy, method, args) -> {
+                if (method.getName().equals("execute") && failProbeFor.contains(label)) {
+                    throw new SQLException("current transaction is aborted", "25P02");
+                }
+                return objectMethodOrDefault(proxy, method, args, "fakeStatement");
+            });
     }
 
     private PreparedStatement fakePreparedStatement(boolean throwOnExecute) {

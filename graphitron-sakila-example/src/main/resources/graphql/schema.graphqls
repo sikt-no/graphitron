@@ -6407,6 +6407,26 @@ type Mutation {
             className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
             method: "noDatabase"
         })
+    scopeNestedSucceeds(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "nestedScopeSucceeds"
+        })
+    scopeNestedFailsCaught(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "nestedScopeFailsAndIsCaught"
+        })
+    scopeNestedSqlFailCaught(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "nestedSqlFailureIsCaught"
+        })
+    scopeNestedFailsUncaught(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "nestedScopeFailsUncaught"
+        })
 }
 
 # The @error channel of Mutation.scopeWriteTwiceThenRefuse: the claimed exception becomes payload data,
@@ -6628,6 +6648,13 @@ extend type Query {
         method: "sessionNumber",
         argMapping: "number: $session.sessionNo"
     })
+    # A @service on a Query field that opens a transaction of its own and nests another inside it
+    # (MutationScopeExecutionTest): the nested one joins, and a caught nested failure fails the outer commit.
+    scopeQueryNestedCaught(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "queryNestedFailureIsCaught"
+        })
 }
 
 # Fixture types for the session-reading condition on a child projected into its parent's statement.

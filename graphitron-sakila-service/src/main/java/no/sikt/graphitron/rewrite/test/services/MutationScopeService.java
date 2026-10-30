@@ -59,6 +59,77 @@ public final class MutationScopeService {
         return marker;
     }
 
+    /**
+     * Writes a marker row, then another inside a nested transaction that succeeds. The nested scope
+     * joins the field's transaction: no savepoint, and nothing commits until the field does.
+     */
+    public static String nestedScopeSucceeds(DSLContext dsl, String marker) {
+        insert(dsl, marker);
+        dsl.transaction(tx -> insert(DSL.using(tx), marker));
+        return marker;
+    }
+
+    /**
+     * Writes a marker row, opens a nested transaction that writes and then throws, catches the
+     * exception, writes again and returns normally. The field still rolls back, on every database.
+     */
+    public static String nestedScopeFailsAndIsCaught(DSLContext dsl, String marker) {
+        insert(dsl, marker);
+        try {
+            dsl.transaction(tx -> {
+                insert(DSL.using(tx), marker);
+                throw new IllegalStateException("mutation-scope fixture: the nested scope fails");
+            });
+        } catch (IllegalStateException expected) {
+            // The service decides the nested failure is not fatal.
+        }
+        insert(dsl, marker);
+        return marker;
+    }
+
+    /**
+     * Writes a marker row, opens a nested transaction that fails on a SQL error, catches it and
+     * writes again. On PostgreSQL the nested failure aborted the whole transaction, so the next
+     * statement fails too.
+     */
+    public static String nestedSqlFailureIsCaught(DSLContext dsl, String marker) {
+        insert(dsl, marker);
+        try {
+            dsl.transaction(tx -> DSL.using(tx).execute("select 1 / 0"));
+        } catch (DataAccessException expected) {
+            // The service decides the failure is not fatal; the database has already decided otherwise.
+        }
+        insert(dsl, marker);
+        return marker;
+    }
+
+    /** Writes a marker row, then opens a nested transaction that throws, and does not catch it. */
+    public static String nestedScopeFailsUncaught(DSLContext dsl, String marker) {
+        insert(dsl, marker);
+        dsl.transaction(tx -> {
+            throw new IllegalStateException("mutation-scope fixture: the nested scope fails and is not caught");
+        });
+        return marker;
+    }
+
+    /**
+     * A Query field's service that opens a transaction of its own, nests another inside it, and
+     * catches the nested failure. The outer transaction then cannot commit, and the caller sees the
+     * failure the service swallowed.
+     */
+    public static String queryNestedFailureIsCaught(DSLContext dsl, String marker) {
+        return dsl.transactionResult(outer -> {
+            try {
+                DSL.using(outer).transaction(inner -> {
+                    throw new IllegalStateException("mutation-scope fixture: the nested scope fails");
+                });
+            } catch (IllegalStateException expected) {
+                // The service decides the nested failure is not fatal.
+            }
+            return marker;
+        });
+    }
+
     /** Touches no database. */
     public static String noDatabase(String marker) {
         return marker;

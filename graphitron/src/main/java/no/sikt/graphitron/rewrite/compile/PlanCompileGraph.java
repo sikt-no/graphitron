@@ -97,6 +97,9 @@ public final class PlanCompileGraph {
      * {@code @node} type, so it is reached by the precise and leaf-derived edges instead of the
      * blanket. {@code NESTING_COORDINATES} belongs here although its content is per schema: the
      * coordinate set is a private field behind one fixed public method, so its ABI is stable.
+     * {@code TRANSACTION_PROVIDER} is here because every write fetcher opens its transaction
+     * through the provider's {@code owned} seam, and the provider is emitted the same for every
+     * schema.
      */
     public static final Set<GlobalUnitKind> FROZEN_SCAFFOLD_KINDS = Collections.unmodifiableSet(EnumSet.of(
         GlobalUnitKind.GRAPHITRON_VALUES,
@@ -112,6 +115,7 @@ public final class PlanCompileGraph {
         GlobalUnitKind.CLIENT_EXCEPTION,
         GlobalUnitKind.ZERO_ROWS_MATCHED_EXCEPTION,
         GlobalUnitKind.ERROR_ROUTER,
+        GlobalUnitKind.TRANSACTION_PROVIDER,
         GlobalUnitKind.ERROR_MAPPINGS));
 
     /**

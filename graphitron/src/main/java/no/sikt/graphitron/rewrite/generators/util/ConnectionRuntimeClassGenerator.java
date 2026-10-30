@@ -1488,7 +1488,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .replace("key.get()", "k.get()"), acquireDefault)
             .addCode("        $T dsl = $T.using(pinned.connection(), pinned.dialect(), pinned.settings());\n",
                 DSL_CONTEXT, DSL)
-            .addCode("        $T provider = new $T(pinned.connection(), commitPolicy);\n", provider, provider)
+            .addCode("        $T provider = new $T(pinned.connection(), commitPolicy, this::warnConsumerJoin);\n", provider, provider)
             .addCode("        dsl.configuration().set(provider);\n");
         if (handled) {
             entryForBuilder.addCode("        dsl.configuration().data($S, pinned.handle());\n",
@@ -1726,7 +1726,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(mountCause(mounts ? sessionMountException : null))
             .addMethod(isMountFailure())
             .addMethod(MutationFieldScopeEmitter.beginField(self))
-            .addMethod(MutationFieldScopeEmitter.enlist(self, tenantKey, multiTenant))
+            .addMethod(MutationFieldScopeEmitter.enlist(self, provider, tenantKey, multiTenant))
+            .addMethod(MutationFieldScopeEmitter.await(self))
             .addMethod(MutationFieldScopeEmitter.settleField(self, provider, tenantKey, multiTenant))
             .addMethod(MutationFieldScopeEmitter.probe(self))
             .addMethod(MutationFieldScopeEmitter.rollBackQuietly(self, provider))
@@ -1746,8 +1747,15 @@ public final class ConnectionRuntimeClassGenerator {
                 carrier.addMethod(sessionMemberAccessor(member));
             }
         }
+        carrier.addField(FieldSpec.builder(SLF4J_LOGGER, "LOGGER", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, self)
+                .build())
+            .addField(MutationFieldScopeEmitter.reportedJoins())
+            .addMethod(MutationFieldScopeEmitter.warnConsumerJoin(self));
         carrier.addType(entryClass)
-            .addType(MutationFieldScopeEmitter.fieldScopeType(provider, tenantKey));
+            .addType(MutationFieldScopeEmitter.fieldScopeType(self, provider, tenantKey))
+            .addType(MutationFieldScopeEmitter.openingType(provider))
+            .addType(MutationFieldScopeEmitter.nestedScopeFailedType());
         if (multiTenant) {
             carrier.addField(FieldSpec.builder(String.class, TENANTS_KEY_FIELD,
                     Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -1757,10 +1765,6 @@ public final class ConnectionRuntimeClassGenerator {
                     + "execution instrumentation, which hands the decoded set to this carrier. One constant so\n"
                     + "the two sites cannot drift, and a graphitron-owned name no contextArgument can collide\n"
                     + "with.\n")
-                .build());
-            carrier.addField(FieldSpec.builder(SLF4J_LOGGER, "LOGGER",
-                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, self)
                 .build());
             carrier.addMethod(scatterMethod(self, tenantKey))
                 .addMethod(scatterWorkerMethod(self, tenantKey))

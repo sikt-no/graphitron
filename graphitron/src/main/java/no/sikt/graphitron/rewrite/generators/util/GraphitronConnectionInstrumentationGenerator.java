@@ -54,9 +54,9 @@ import java.util.List;
  * <h2>One transaction per top-level mutation field</h2>
  * {@code beginFieldExecution} settles the previous top-level mutation field and begins the next on
  * the carrier ({@code TenantConnections.beginField}); the carrier opens the field's transaction on
- * each connection the field first acquires and nests every jOOQ transaction inside it as a
- * savepoint, so the field's writes and its payload's reads, batched sub-fields included, are one
- * transaction per connection. Settling here rather than in the previous field's own
+ * each connection the field first acquires and every jOOQ transaction inside it joins it, so the
+ * field's writes and its payload's reads, batched sub-fields included, are one transaction per
+ * connection. Settling here rather than in the previous field's own
  * {@code beginFieldExecution} completion matters: graphql-java completes that context before the
  * field's sub-selections are done. The last field settles in the operation callback, ahead of
  * release by construction; the strategy's own completion is a sibling callback on the same
@@ -72,6 +72,11 @@ import java.util.List;
  * value becomes {@code null}, with null propagation for a non-null field, and its redacted error,
  * logged under a reference through the consumer's {@code FetcherErrorLog}, is added at its path.
  * A rejected session mount still takes precedence and is thrown in place of the result.
+ *
+ * <p>A field that rolled back because of an error under its path has its value dropped too, with
+ * no error added, and a field whose consumer-opened nested transaction failed gets the carrier's
+ * nested-failure error beside whatever else it reported. An {@code @error} channel's payload
+ * stays, since it describes the failure.
  *
  * <h2>A rejected mount rejects the request ({@code instrumentExecutionResult})</h2>
  * When {@code <sessionState>} configures a mount and it threw during the operation, the carrier
@@ -341,8 +346,10 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 MAP, String.class, Object.class, LINKED_HASH_MAP)
             .addStatement("$T<$T> errors = new $T<>(executionResult.getErrors())", LIST, GRAPHQL_ERROR, ARRAY_LIST)
             .beginControlFlow("for ($T failed : state.failedFields)", failedField)
+            .beginControlFlow("if (failed.error != null)")
             .addStatement("errors.add(failed.error)")
-            .beginControlFlow("if (rewritten != null)")
+            .endControlFlow()
+            .beginControlFlow("if (failed.nullField && rewritten != null)")
             .addStatement("rewritten.put(failed.resultKey, null)")
             .beginControlFlow("if (failed.nonNull)")
             .addStatement("rewritten = null")
@@ -372,11 +379,23 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .endControlFlow()
             .addStatement("$T path = state.fieldPath", RESULT_PATH)
             .addStatement("state.fieldPath = null")
-            .addStatement("boolean errorUnder = failed || errorUnder(state.executionContext, path.toList())")
-            .addStatement("$T cause = state.carrier.settleField(errorUnder)", Throwable.class)
-            .beginControlFlow("if (cause != null)")
+            .addStatement("boolean errorUnder = errorUnder(state.executionContext, path.toList())")
+            .addStatement("$T cause = state.carrier.settleField(failed || errorUnder)", Throwable.class)
+            .beginControlFlow("if (cause instanceof $T nested)", tenantConnections.nestedClass("NestedScopeFailedException"))
+            .addComment("A transaction a consumer's code opened inside the field failed: reported beside whatever")
+            .addComment("else the field reported. The value is dropped unless the field had already failed (its")
+            .addComment("own error, or a claimed payload, which describes the failure and stays).")
             .addStatement("state.failedFields.add(new $T(path.getSegmentName(), state.fieldNonNull,"
-                + " $T.settleFailure(cause, state.fieldEnvironment, path)))", failedField, errorRouter)
+                + " $T.settleFailure(cause, state.fieldEnvironment, path), !nested.fieldReported() || errorUnder))",
+                failedField, errorRouter)
+            .nextControlFlow("else if (cause != null)")
+            .addStatement("state.failedFields.add(new $T(path.getSegmentName(), state.fieldNonNull,"
+                + " $T.settleFailure(cause, state.fieldEnvironment, path), true))", failedField, errorRouter)
+            .nextControlFlow("else if (errorUnder)")
+            .addComment("Rolled back because of an error under the field's path: the writes are gone, so no value")
+            .addComment("describes them. The errors stand and none is added.")
+            .addStatement("state.failedFields.add(new $T(path.getSegmentName(), state.fieldNonNull, null, true))",
+                failedField)
             .endControlFlow()
             .addJavadoc("Settles the running top-level mutation field, if any: its transaction commits unless\n"
                 + "it failed ({@code failed}, an error recorded under its path, or a mark from\n"
@@ -442,19 +461,23 @@ public final class GraphitronConnectionInstrumentationGenerator {
 
         var failedFieldType = TypeSpec.classBuilder("FailedField")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("A top-level mutation field whose transaction failed to settle: where it sits in the\n"
-                + "result, whether null propagation reaches {@code data}, and its redacted error.\n")
+            .addJavadoc("A top-level mutation field that rolled back after it resolved: where it sits in the\n"
+                + "result, whether null propagation reaches {@code data}, the error to add (none when the\n"
+                + "errors under its path already stand), and whether its value is dropped.\n")
             .addField(FieldSpec.builder(String.class, "resultKey", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(boolean.class, "nonNull", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(GRAPHQL_ERROR, "error", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(boolean.class, "nullField", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(String.class, "resultKey")
                 .addParameter(boolean.class, "nonNull")
                 .addParameter(GRAPHQL_ERROR, "error")
+                .addParameter(boolean.class, "nullField")
                 .addStatement("this.resultKey = resultKey")
                 .addStatement("this.nonNull = nonNull")
                 .addStatement("this.error = error")
+                .addStatement("this.nullField = nullField")
                 .build())
             .build();
 

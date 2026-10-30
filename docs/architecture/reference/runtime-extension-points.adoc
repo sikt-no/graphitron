@@ -186,32 +186,59 @@ payload included: it commits when the field succeeded and rolls back when the
 field failed. A field fails when its fetcher, or anything under it, threw,
 whether or not an `@error` channel turned the exception into a typed payload,
 or when a GraphQL error lies under the field's path. Fields commit
-independently of each other, in document order. A `transactionResult` your
-`@service` opens inside the field is a savepoint in that transaction, not a
-commit. A field that never touches the database opens no transaction. Query
-operations are unchanged and run in autocommit.
+independently of each other, in document order. A field that never touches the
+database opens no transaction. Query operations run in autocommit.
 
-A field reported as successful has committed. If the commit fails, or the
-database had already aborted the transaction (on PostgreSQL, any statement that
-failed inside it, even one your code caught, aborts the transaction, and the
-driver's commit then rolls back without an error), the field is reported as
-failed: its value becomes `null` and the response carries a redacted error at
-its path, and the cause is logged under the error's reference through your
-`FetcherErrorLog` like any unmatched fetcher failure. Later fields in the
-operation still run.
+Inside the field there is one transaction and no savepoints. A `transaction(...)`
+or `transactionResult(...)` your `@service` opens joins the field's
+transaction, and Graphitron logs a warning naming the field and your calling
+method, once per calling method: leaving it normally commits nothing, and
+leaving it by an exception marks the whole field to roll back. Catching that
+exception does not save the field: nothing the field wrote commits, before or
+after the nested scope, and the field is reported as failed with an error that
+says a nested transaction failed and the field's writes were rolled back,
+whatever else went wrong after it; the log under the error's reference says
+whether your code caught the exception. The same holds on every database. On
+PostgreSQL there is no carrying on after a failed SQL statement at all: the
+statement aborted the whole transaction, so the next one fails too. Only an
+exception that is not a database error leaves the transaction usable after the
+catch. The same rule applies to a `@service` on a Query field that opens a
+transaction of its own: what it nests inside that transaction joins it, and a
+caught nested failure makes the transaction's commit fail. Work that must
+commit on its own belongs in its own top-level mutation field, or in a job.
+
+A field reported as successful has committed, and a field that rolled back is
+never shown with a value: a field that rolled back because of an error under it
+(a nested read in its payload that failed, say) is `null`, like one that failed
+itself; only an `@error` channel's payload, which describes the failure, is
+kept. If the commit fails, or the database had already aborted the transaction
+(on PostgreSQL, any statement that failed inside it aborts it, and the driver's
+commit then rolls back without an error), the field is reported as failed: its
+value becomes `null` and the response carries an error at its path, logged under
+the error's reference through your `FetcherErrorLog` like any unmatched fetcher
+failure. Later fields in the operation still run.
 
 The mutations run one field at a time. An engine configured with a mutation
 execution strategy other than graphql-java's serial one
 (`AsyncSerialExecutionStrategy` or a subclass) is rejected when a mutation
 starts, since each field settles when the next one starts.
 
-In a multi-tenant build each connection the field touches commits or rolls
-back on its own: there is no transaction across connections. A field whose
-first connection committed and whose second then failed to commit is reported
-as failed with the first connection's writes kept; once one connection fails,
-the field's remaining connections roll back. A tenant whose fan-out worker
-missed its deadline fails the field, and its transaction is discarded with its
-connection.
+In a multi-tenant build each connection the field touches has its own
+transaction: there is no transaction across connections. Before committing
+anything, Graphitron checks every connection the field used, the PostgreSQL
+aborted-transaction check included, and a field rolls back on every connection
+when any of them is not clean. Only then do they commit, in the order the field
+first used them, so a field is left partly committed only when a commit itself
+fails on a later connection (a deferred constraint, a serialization failure, a
+lost connection), and it is then reported as failed with the earlier
+connections' writes kept. A tenant whose fan-out worker missed its deadline
+fails the field, and its transaction is discarded with its connection. A worker
+that acquires a connection after its field has settled is refused, so it writes
+nothing.
+
+Under `CommitPolicy.ROLLBACK_ONLY`, the dev-execution mode, each field is one
+savepoint in a single operation transaction that is discarded at the end, so
+later fields observe earlier ones. That is the only savepoint Graphitron takes.
 
 On the escape-hatch path you own the `DSLContext` and its transactions, and
 Graphitron opens no scope. The same effect there is a consumer `Instrumentation`

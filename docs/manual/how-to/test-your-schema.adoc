@@ -68,6 +68,8 @@ The Testcontainers fallback runs Postgres 18 alpine with `init.sql` as the boots
 
 == Executing a request
 
+NOTE: A test written this way goes through the escape hatch, where you own the `DSLContext` and its transactions. It never exercises the transaction graphitron opens around each top-level mutation field on the owned-connection path (`runtime.newGraphQL(schema)`), so a test of how a `@service` mutation behaves when a nested transaction fails, or when a later part of a field's payload fails after its write, has to run through the owned-connection engine to see what production does. See xref:../../architecture/reference/runtime-extension-points.adoc#owned-path-transactions[Transactions on the owned-connection path].
+
 A helper method captures the request shape; tests call it with the GraphQL string:
 
 [source,java]

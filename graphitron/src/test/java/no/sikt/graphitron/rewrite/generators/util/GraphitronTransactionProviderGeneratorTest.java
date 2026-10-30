@@ -54,6 +54,8 @@ class GraphitronTransactionProviderGeneratorTest {
     private static Object commitPolicyRollbackOnly;
 
     private final List<String> events = new ArrayList<>();
+    /** The calling methods the provider reported for scopes a consumer's code opened that joined. */
+    private final List<String> joins = new ArrayList<>();
     /** When set, the fake connection throws this from {@code releaseSavepoint}, after recording it. */
     private SQLException releaseFailure;
     /** When set, the fake connection throws this from {@code commit}, after recording it. */
@@ -92,6 +94,7 @@ class GraphitronTransactionProviderGeneratorTest {
     @BeforeEach
     void resetEvents() {
         events.clear();
+        joins.clear();
         releaseFailure = null;
         commitFailure = null;
         savepointFailure = null;
@@ -159,7 +162,8 @@ class GraphitronTransactionProviderGeneratorTest {
         // mode as a value to preserve).
         assertThat(providerClass.getConstructors()).hasSize(1);
         assertThat(providerClass.getConstructors()[0].getParameterTypes())
-            .containsExactly(harnessConnectionParam(), commitPolicyCommit.getClass());
+            .containsExactly(harnessConnectionParam(), commitPolicyCommit.getClass(),
+                java.util.function.Consumer.class);
         assertThat(java.util.Arrays.stream(providerClass.getDeclaredFields())
             .map(java.lang.reflect.Field::getName))
             .doesNotContain("priorAutoCommit", "afterSettle", "depth", "savepoints");
@@ -179,33 +183,76 @@ class GraphitronTransactionProviderGeneratorTest {
     }
 
     @Test
-    void nested_usesSavepoints_notASecondTopLevelTransaction() throws Throwable {
+    void nested_joinsTheOpenTransaction_withNoJdbcCall() throws Throwable {
         Object provider = newProvider(fakeConnection(), commitPolicyCommit);
         begin(provider);   // top-level: autocommit off
-        begin(provider);   // nested: savepoint
-        commit(provider);  // nested: release savepoint
+        begin(provider);   // nested: joins, no JDBC
+        commit(provider);  // nested: nothing to do
         commit(provider);  // top-level: commit + restore
 
-        assertThat(events).containsExactly(
-            "setAutoCommit:false",
-            "setSavepoint:sp1",
-            "releaseSavepoint:sp1",
-            "commit", "setAutoCommit:true");
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
     }
 
     @Test
-    void nested_rollback_rollsBackToSavepointOnly() throws Throwable {
+    void nestedRollback_marksTheOutermostScopeRollbackOnly_soItRefusesToCommit() throws Throwable {
         Object provider = newProvider(fakeConnection(), commitPolicyCommit);
         begin(provider);    // top-level
-        begin(provider);    // nested savepoint
-        rollback(provider); // nested: rollback to savepoint, not the whole tx
-        commit(provider);   // top-level commit
+        begin(provider);    // nested: joins
+        rollback(provider); // nested: touches no connection, marks the outermost scope
+        assertThat(events).containsExactly("setAutoCommit:false");
 
-        assertThat(events).containsExactly(
-            "setAutoCommit:false",
-            "setSavepoint:sp1",
-            "rollbackToSavepoint:sp1",
-            "commit", "setAutoCommit:true");
+        // The outermost commit throws without touching the connection; jOOQ's follow-up rollback
+        // is what rolls the transaction back.
+        assertThatThrownBy(() -> commit(provider))
+            .isInstanceOf(DataAccessException.class)
+            .hasMessageContaining("nested transaction failed");
+        assertThat(events).containsExactly("setAutoCommit:false");
+        rollback(provider);
+
+        assertThat(events).containsExactly("setAutoCommit:false", "rollback", "setAutoCommit:true");
+    }
+
+    @Test
+    void aScopeAConsumerOpensThatJoins_isReportedWithItsCallingMethod_andAnOwnScopeIsNot() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        var dsl = jooqOver(fakeConnection(), provider);
+        var owned = (DSLContext) providerClass.getMethod("owned", DSLContext.class).invoke(null, dsl);
+
+        dsl.transactionResult(outer -> outer.dsl().transactionResult(inner -> 1));
+        owned.transactionResult(outer -> outer.dsl().transactionResult(inner -> 1));
+
+        assertThat(joins).as("only the consumer's nested scope joined and reported, once")
+            .hasSize(1)
+            .allSatisfy(caller -> assertThat(caller)
+                .startsWith(GraphitronTransactionProviderGeneratorTest.class.getName() + "#"));
+    }
+
+    @Test
+    void aConsumersNestedFailure_recordsItsCause_andAnOwnScopesDoesNot() throws Throwable {
+        var boom = new IllegalStateException("boom");
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+
+        var outer = fakeContext(null, false);
+        invokeTx(provider, "begin", outer);
+        var consumer = fakeContext(boom, false);
+        invokeTx(provider, "begin", consumer);
+        invokeTx(provider, "rollback", consumer);
+        assertThatThrownBy(() -> invokeTx(provider, "commit", outer))
+            .isInstanceOf(DataAccessException.class)
+            .hasCause(boom);
+        invokeTx(provider, "rollback", outer);
+
+        events.clear();
+        var outer2 = fakeContext(null, false);
+        invokeTx(provider, "begin", outer2);
+        var own = fakeContext(boom, true);
+        invokeTx(provider, "begin", own);
+        invokeTx(provider, "rollback", own);
+        assertThatThrownBy(() -> invokeTx(provider, "commit", outer2))
+            .as("the outermost scope is rollback-only either way")
+            .isInstanceOf(DataAccessException.class)
+            .hasNoCause();
+        invokeTx(provider, "rollback", outer2);
     }
 
     @Test
@@ -221,35 +268,6 @@ class GraphitronTransactionProviderGeneratorTest {
         assertThat(events).containsExactly(
             "setAutoCommit:false", "commit", "setAutoCommit:true",
             "setAutoCommit:false", "rollback", "setAutoCommit:true");
-    }
-
-    @Test
-    void nested_commit_toleratesUnsupportedReleaseSavepoint() throws Throwable {
-        // Oracle's driver does not implement releaseSavepoint. Releasing only frees the marker,
-        // which dies with the enclosing transaction anyway, so the nested commit succeeds.
-        releaseFailure = new SQLFeatureNotSupportedException("Unsupported feature");
-        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
-        begin(provider);
-        begin(provider);
-        commit(provider);
-        commit(provider);
-
-        assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
-    }
-
-    @Test
-    void nested_commit_toleratesSqlState0A() throws Throwable {
-        // SQLState class 0A is "feature not supported", for drivers raising a plain SQLException.
-        releaseFailure = new SQLException("Unsupported feature", "0A000");
-        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
-        begin(provider);
-        begin(provider);
-        commit(provider);
-        commit(provider);
-
-        assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
     }
 
     @Test
@@ -269,15 +287,13 @@ class GraphitronTransactionProviderGeneratorTest {
     }
 
     @Test
-    void nested_releaseFailure_propagates_andTheFollowingRollbackClosesTheSameScope() throws Throwable {
+    void rollbackOnly_releaseFailure_propagates_andTheFollowingRollbackClosesTheSameScope() throws Throwable {
         // Postgres refuses the release over an aborted transaction (25P02). That failure must
-        // surface: swallowed, the enclosing COMMIT would silently roll back and report success.
-        // jOOQ follows the failed commit with a rollback of the same scope, which must land on the
-        // nested savepoint, not on the enclosing transaction.
+        // surface: swallowed, the field would silently report success. jOOQ follows the failed
+        // commit with a rollback of the same scope, which must land on the field's savepoint.
         var aborted = new SQLException("current transaction is aborted", "25P02");
         releaseFailure = aborted;
-        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
-        begin(provider);
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
         begin(provider);
         assertThatThrownBy(() -> commit(provider))
             .isInstanceOf(DataAccessException.class)
@@ -285,18 +301,16 @@ class GraphitronTransactionProviderGeneratorTest {
         rollback(provider);
 
         assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "rollbackToSavepoint:sp1");
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1",
+            "rollbackToSavepoint:sp1");
 
-        // The scope stack came back consistent: a further nested scope and the top-level commit
-        // behave as on a fresh provider.
+        // The scope stack came back consistent: the next field takes its own savepoint.
         releaseFailure = null;
         events.clear();
         begin(provider);
         commit(provider);
-        commit(provider);
 
-        assertThat(events).containsExactly(
-            "setSavepoint:sp2", "releaseSavepoint:sp2", "commit", "setAutoCommit:true");
+        assertThat(events).containsExactly("getAutoCommit", "setSavepoint:sp2", "releaseSavepoint:sp2");
     }
 
     @Test
@@ -329,43 +343,38 @@ class GraphitronTransactionProviderGeneratorTest {
     // begin/rollback by hand, which would assume the sequence the tests exist to check.
 
     @Test
-    void nestedOpenFailure_underCommit_leavesTheEnclosingScopeToItsOwnRollback() throws Throwable {
-        // Postgres refuses the savepoint inside an aborted transaction (25P02). The nested open
-        // fails, jOOQ rolls back a scope that never opened (nothing happens), and the exception
-        // propagates out of the outer body, whose own rollback is the only one.
+    void nestedScope_overAnAbortedPostgresTransaction_joinsAndCannotFailToOpen() throws Throwable {
+        // The nested open used to take a savepoint, which Postgres refuses inside an aborted
+        // transaction (25P02). A joined scope takes none, so it has nothing to refuse.
         var aborted = new SQLException("current transaction is aborted", "25P02");
         Object provider = newProvider(fakeConnection(), commitPolicyCommit);
         var dsl = jooqOver(fakeConnection(), provider);
         savepointFailure = aborted;
 
-        assertThatThrownBy(() -> dsl.transactionResult(outer ->
-                outer.dsl().transactionResult(inner -> 1)))
-            .isInstanceOf(DataAccessException.class)
-            .hasMessageContaining("Could not begin transaction")
-            .hasCause(aborted)
-            .satisfies(t -> assertThat(t.getSuppressed()).isEmpty());
-        assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "rollback", "setAutoCommit:true");
+        int result = dsl.transactionResult(outer -> outer.dsl().transactionResult(inner -> 1));
+
+        assertThat(result).isEqualTo(1);
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
     }
 
     @Test
-    void nestedOpenFailure_underCommit_caughtByTheOuterBody_letsTheOuterScopeCommitOnce() throws Throwable {
+    void nestedFailure_caughtByTheOuterBody_stillFailsTheOuterTransaction() throws Throwable {
         Object provider = newProvider(fakeConnection(), commitPolicyCommit);
         var dsl = jooqOver(fakeConnection(), provider);
-        savepointFailure = new SQLException("current transaction is aborted", "25P02");
+        var boom = new IllegalStateException("boom");
 
-        int result = dsl.transactionResult(outer -> {
+        assertThatThrownBy(() -> dsl.transactionResult(outer -> {
             try {
-                outer.dsl().transactionResult(inner -> 1);
-            } catch (DataAccessException expected) {
+                outer.dsl().transactionResult(inner -> { throw boom; });
+            } catch (IllegalStateException expected) {
                 // the service decides the nested failure is not fatal
             }
             return 2;
-        });
-
-        assertThat(result).isEqualTo(2);
-        assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "commit", "setAutoCommit:true");
+        }))
+            .isInstanceOf(DataAccessException.class)
+            .hasMessageContaining("nested transaction failed")
+            .hasCause(boom);
+        assertThat(events).containsExactly("setAutoCommit:false", "rollback", "setAutoCommit:true");
     }
 
     @Test
@@ -388,25 +397,22 @@ class GraphitronTransactionProviderGeneratorTest {
     }
 
     @Test
-    void nestedOpenFailure_underRollbackOnly_leavesTheFieldSavepointToTheFieldsOwnCommit() throws Throwable {
+    void nestedFailure_underRollbackOnly_failsTheFieldSavepoint_andTakesNoSavepointOfItsOwn() throws Throwable {
         Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
         var dsl = jooqOver(fakeConnection(), provider);
+        var boom = new IllegalStateException("boom");
 
-        dsl.transactionResult(field -> {
-            savepointFailure = new SQLException("current transaction is aborted", "25P02");
+        assertThatThrownBy(() -> dsl.transactionResult(field -> {
             try {
-                field.dsl().transactionResult(inner -> 1);
-            } catch (DataAccessException expected) {
+                field.dsl().transactionResult(inner -> { throw boom; });
+            } catch (IllegalStateException expected) {
                 // caught by the field body
             }
-            savepointFailure = null;
             return 1;
-        });
+        })).isInstanceOf(DataAccessException.class).hasCause(boom);
 
         assertThat(events).containsExactly(
-            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1",
-            "setSavepoint:sp2",
-            "releaseSavepoint:sp1");
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1", "rollbackToSavepoint:sp1");
     }
 
     @Test
@@ -442,8 +448,7 @@ class GraphitronTransactionProviderGeneratorTest {
 
         invokeTx(provider, "commit", inner);
         invokeTx(provider, "commit", outer);
-        assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
     }
 
     @Test
@@ -472,8 +477,7 @@ class GraphitronTransactionProviderGeneratorTest {
         end(provider, field, false);
 
         assertThat(field.getClass().getSimpleName()).isEqualTo("TopLevel");
-        assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
     }
 
     @Test
@@ -488,8 +492,24 @@ class GraphitronTransactionProviderGeneratorTest {
 
         commit(provider);
         end(provider, field, false);
-        assertThat(events).containsExactly(
-            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void fieldScope_withAFailedNestedScope_refusesACommittedEnd_andRollsBackWhenEndedAsFailed() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        Object field = open(provider);
+        begin(provider);
+        rollback(provider);
+
+        assertThatThrownBy(() -> end(provider, field, false))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("nested transaction failed");
+        assertThat(events).containsExactly("setAutoCommit:false");
+
+        end(provider, field, true);
+
+        assertThat(events).containsExactly("setAutoCommit:false", "rollback", "setAutoCommit:true");
     }
 
     @Test
@@ -579,7 +599,8 @@ class GraphitronTransactionProviderGeneratorTest {
 
     private Object newProvider(Connection connection, Object policy) throws Throwable {
         Class<?> policyClass = policy.getClass();
-        return providerClass.getConstructor(Connection.class, policyClass).newInstance(connection, policy);
+        return providerClass.getConstructor(Connection.class, policyClass, java.util.function.Consumer.class)
+            .newInstance(connection, policy, (java.util.function.Consumer<String>) joins::add);
     }
 
     private void begin(Object provider) throws Throwable {
@@ -614,7 +635,17 @@ class GraphitronTransactionProviderGeneratorTest {
 
     /** A {@link TransactionContext} whose {@code data} methods are backed by its own map, as jOOQ's are. */
     private static TransactionContext fakeContext() {
+        return fakeContext(null, false);
+    }
+
+    /**
+     * The same, carrying {@code cause} (what jOOQ sets before it rolls back a failed body) and a
+     * configuration that is marked as graphitron's own when {@code own}, as the seam's is.
+     */
+    private static TransactionContext fakeContext(Throwable cause, boolean own) {
         var data = new java.util.HashMap<Object, Object>();
+        DSLContext base = DSL.using(SQLDialect.POSTGRES);
+        var configuration = own ? ownedConfiguration(base) : base.configuration();
         return (TransactionContext) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{TransactionContext.class}, (proxy, method, args) -> {
                 if (method.getName().equals("data")) {
@@ -622,8 +653,18 @@ class GraphitronTransactionProviderGeneratorTest {
                     if (args.length == 1) return data.get(args[0]);
                     return data.put(args[0], args[1]);
                 }
+                if (method.getName().equals("configuration")) return configuration;
+                if (method.getName().equals("cause")) return cause;
                 return objectMethodOrDefault(proxy, method, args, "ctx");
             });
+    }
+
+    private static org.jooq.Configuration ownedConfiguration(DSLContext dsl) {
+        try {
+            return ((DSLContext) providerClass.getMethod("owned", DSLContext.class).invoke(null, dsl)).configuration();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
     }
 
     // --- recording fakes -------------------------------------------------------------------------
