@@ -1,7 +1,7 @@
 ---
 id: R1131
 title: "A clean build runs in under five minutes"
-status: Spec
+status: Ready
 bucket: dx
 priority: 5
 theme: tooling
