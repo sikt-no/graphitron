@@ -181,6 +181,14 @@ built-in directive means what graphql-java executes.
   * **A use site is identified by position** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". Nothing spells a use site as `Type.field#ordinal`.
   * **The emitted applications number their own** `open`. A configured or minted application keeps
     an ordinal of its own, and the authored ones rank by position instead of copying one.
+* **The schema-file extensions are a set, keyed by the extension** `open`.
+  `store_graph_schema_extension` numbers each accepted extension by an ordinal, but the extensions
+  arrive as a `Set` (`AbstractRewriteMojo.buildSchemaRecipe`, `RunContext`), whose iteration order
+  differs from one JVM to the next, so two captures of one configuration number the same extensions
+  differently: on opptak, tilgangsstyring and sis the two rows swapped positions 0 and 1 between
+  runs. The filter is a set, so the relation is keyed by graph and extension, the ordinal goes, and
+  a reader that ordered by it orders by the extension. A capture twice over one configuration
+  writes the same rows.
 
 ### The classpath family affords what its readers ask `done`
 
@@ -397,7 +405,7 @@ static method needs no holder.
   replacing the delivery `intent_argmapping_bound_parameter_type` derives.
 * **`$context` names a context value** `open`. A context argument is an argMapping source as
   `$session` is, so `contextArguments` reads as the pairs it implies and a parameter row names the key.
-* **Every call's parameter states what fills it** `blocked`, on "A parameter states its type's first argument", "A `Configuration` parameter is the jOOQ context", "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+* **Every call's parameter states what fills it** `blocked`, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
   claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
