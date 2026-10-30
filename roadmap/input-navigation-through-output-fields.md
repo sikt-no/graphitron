@@ -1,13 +1,13 @@
 ---
 id: R1099
 title: "Inputs navigate through output fields, and argMapping names its source"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
 depends-on: [derived-read-cost-is-a-shape-problem]
 created: 2026-10-24
-last-updated: 2026-10-25
+last-updated: 2026-10-31
 ---
 
 # Inputs navigate through output fields, and argMapping names its source
@@ -49,14 +49,32 @@ type Actor @table(name: "actor") {
 
 ## Design
 
-### Two anchors
+### Three anchors
 
-An input hooks into two anchors, both inherited from the field it is used on.
+An input hooks into three anchors, all inherited from the field it is used on.
 
 | Anchor | What it is | Navigates | Cannot |
 | --- | --- | --- | --- |
+| `$source` | the row the field hangs off | its columns | reach a row further along the field's path |
+| `$path.<as>` | the row a named segment of the field's own path reaches | its columns | reach a segment the author did not name |
 | `$target` | the rows the field returns | forward through the target type's output fields | go back to the source |
-| `$source` | the row the field hangs off, or the row a path step departs from | forward along the field's own path, junction steps included | reach tables the path does not pass |
+
+A segment is named by `as:` on its path element, and only a named segment can be referenced:
+
+```graphql
+type Film @table(name: "film") {
+    actors: [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey", as: "casting"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+```
+
+`$path.casting.<column>` then reads a column of the `film_actor` row the segment reaches. Naming is
+required because a position would shift when the path gains or loses a step, while a name moves with
+its segment. A name is unique within a path. An implementation inheriting an interface field's path
+inherits its names, and a name an implementation's own path does not carry is a defect at that
+implementation's field, naming the segment.
 
 Navigation names schema things, never tables: a field name is unique within its type, where a table can occur twice in one path. The one SQL name inside a navigation is a node id's key column, below.
 
@@ -67,7 +85,7 @@ An input type is reused across fields, so its navigation is checked per field th
 A right-hand side is a source followed by names inside it. A name never means two things.
 
 - **Arguments are the default source.** A bare name is an argument of the field, or a field inside an argument's input type. With exactly one argument, naming it is optional: at `rentFilm(input:)` both `input.inventoryId` and `inventoryId` resolve. A head that names the argument is read as the argument; only a head naming no argument is read inside the single argument's type, so `input` at a field whose argument `input` has a field `input` is the argument, and its field is `input.input`.
-- **`$source.<column>`** reads a column of the row the directive's step departs from: the parent's row for a `@routine` first in its path, the table the preceding `@reference` reached otherwise. A bare name never binds a column.
+- **`$source.<column>`** reads a column of the row the field hangs off, the parent's row. A `@routine` further along the path reads the row a preceding segment reached through **`$path.<as>.<column>`**, naming that segment with `as:`. A bare name never binds a column. This narrows what step 1 shipped, where `$source` on a `@routine` after a `@reference` read the row that reference reached: such a mapping names the segment instead.
 - **`$session`** stays as it is (the per-caller handle, `@service` only). `$context`, replacing `contextArguments`, is a later item.
 - **A node id unpacks to its key columns.** A node is defined by its keyColumns, not by fields, and not every key column is a field, so `filter.actorRef.actor_id` names a key column of the node type the id decodes to. Unpacking needs exactly one node type; an id with several candidate types can be passed whole but not unpacked.
 - Input-type cycles are not supported.
@@ -81,7 +99,7 @@ A right-hand side is a source followed by names inside it. A name never means tw
 - a list field along the way filters with the semantics an input `@reference` through the same route has today, which the implementer pins with a fact before changing anything;
 - a nested input field that navigates to an object-typed output field sets `$target` for the input beneath it: `cast: ActorFilter @field(name: "$target.actors")` makes `ActorFilter` read `Actor`'s output fields, so one input type serves every target offering its names, at the top level or nested;
 - where the target is an interface or a union, a navigation resolves per member type, each member's own fields and table, since each member is its own walk; a member lacking a name draws the defect, naming the member;
-- `$source.` navigates the using field's own path the same way; sis has no use of it on inputs, so it is specified and left unbuilt until a schema needs it, and until then a schema writing it draws a defect at the writing site with an `UNSUPPORTED` basis, as `ROOT_REFERENCE_WITHOUT_ROUTINE` does.
+- `$source.` and `$path.<as>.` read the row the using field hangs off and the row a named segment of its path reaches; sis has no use of either on inputs, so they are specified and left unbuilt until a schema needs them, and until then a schema writing one draws a defect at the writing site with an `UNSUPPORTED` basis, as `ROOT_REFERENCE_WITHOUT_ROUTINE` does.
 
 Every navigation is resolved and checked per occurrence, one using field and the path of input fields beneath its argument, and a defect sits at the writing site naming the using field.
 
@@ -105,7 +123,12 @@ This item builds on it rather than modelling inputs a second time.
   `graphitron_argmapping_candidate`, whose 13,574 rows on sis enumerate every writable path under
   every coordinate to serve 54 written mappings.
 - **Defects at the writing site:** a name resolving to nothing, a navigation through a field whose own
-  path does not resolve, unpacking a node id with several candidates, `$source` where no row stands.
+  path does not resolve, unpacking a node id with several candidates, `$source` where no row stands,
+  a `$path` name no segment of the field's path carries, and two segments of one path under one name.
+- **A segment's name is captured with its element.** `as:` is a column of the written path element,
+  so `$path.<as>` resolves to a step of the field's path, which R876's path model gives a path
+  starting from: an argument's or input field's path starts at the named step, or at the landing
+  where it names none.
 - **Ledger.** It adds `graphitron_argmapping_binding` and one walk element kind.
 
 | Dissolves | Read by today |
@@ -135,6 +158,7 @@ The comparison is by tables, not keys: where two keys reach the same table (a st
 2. **argMapping resolves by the keyed walk.** `graphitron_argmapping_match` and the generator's `ArgBindingMap.of` read the walk; the candidate table, its stage and the `intent_` node-key chain go.
 3. **`$target` navigation in `@field` on inputs**, once R876's branch has input `@reference` in the walk as anonymous paths: the field element kind, the per-occurrence `$target`, and the defects above.
 4. **Editor completion** offers the names valid at the cursor: arguments, then fields of the type stood in, then key columns past a node id, and the sources' members after a sigil.
+5. **`as:` names a path segment, and `$path.<as>` reads it.** `ReferenceElement` gains `as:`; an `argMapping` on a `@routine` after a `@reference` moves from `$source` to `$path.<as>`, shipped as breaking, beside step 1's changelog line.
 
 Each step lands green on its own; 2 is independent of R876's branch, 3 depends on it.
 
@@ -142,7 +166,7 @@ Each step lands green on its own; 2 is independent of R876's branch, 3 depends o
 
 For `routine.adoc`, "Where a parameter takes its value":
 
-> Every IN parameter takes its value from the name its `argMapping` entry writes, or from its own name where no entry names it. A bare name is an argument of the field, or a field inside one. `$source.<column>` is a column of the row the routine is applied to: the parent's row, or the table the preceding `@reference` reached. When the field has a single argument, you may leave its name out of the path.
+> Every IN parameter takes its value from the name its `argMapping` entry writes, or from its own name where no entry names it. A bare name is an argument of the field, or a field inside one. `$source.<column>` is a column of the parent's row. `$path.<as>.<column>` is a column of the row a segment of the field's path reaches, the segment you named with `as:` on its path element. When the field has a single argument, you may leave its name out of the path.
 
 For `field.adoc`, "Filtering through the output types":
 
