@@ -32,7 +32,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
 | `R1036` | A bad node id fails with the same client error at every @nodeId site, never redacted | In Progress | 2026-10-30 <sub>created 2026-10-14</sub> | [plan](nodeid-decode-failure-is-redacted.md) |
-| `R1122` | every ordering graphitron generates is deterministic and ends in a tiebreaker | In Review | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](every-generated-ordering-is-total.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -665,7 +664,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R1076` [**_entities answers a representation with an unknown __typename with an error, not a silent null**](entities-unknown-typename-is-an-error.md) — Backlog, bug
-- `R1122` [**every ordering graphitron generates is deterministic and ends in a tiebreaker**](every-generated-ordering-is-total.md) — In Review, bug
 - `R1111` [**A routine argument mapped from a computed $source column looks up a parentInput field typed with its generator**](routine-source-column-strips-generator.md) — Backlog, bug
 - `R1078` [**An enum-typed output field over a jOOQ-enum column is not checked against the Java enum constants**](enum-output-over-jooq-enum-column-unchecked.md) — Backlog, bug
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture
