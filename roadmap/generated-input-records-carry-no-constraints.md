@@ -446,3 +446,62 @@ jOOQ with `<validationAnnotations>`, so C35's `size must be between 0 and n` ret
 same path; extending the column-length check is recorded as a rejected alternative. The shipped
 bound-class half is collapsed under `## Shipped`, and the old `## Implementation notes` folded into
 it.
+
+### Round 3: Spec → Ready, revise (session_01FY5UvrnkGA9iof1QZJn5GA, 2026-10-30)
+
+The goal is clear and reachable: a `VALIDATION` channel on a `@service` field validates what the
+service receives, a class whole and a jOOQ record column by column for the columns it writes, so
+sis's `@NotBlank` and jOOQ's generated `@Size` come back as typed errors. The capture, the
+`ValidationSubject` split and the emission extend shapes already in the tree, and every symbol,
+test and fixture the spec names exists as named. Three findings keep it in Spec. The first is
+question 2; the other two are question 1, a promise to the consumer the plan as written does not
+keep.
+
+1. **The lint finding is minted where no finding reaches the report (question 2).** The plan has
+   the pre-step's join in `TypeFetcherGenerator` mint `validation-column-unchecked`. Build warnings
+   are assembled in `GraphQLRewriteGenerator.withLintFindings`, called from `capturedFrom`, which
+   runs before `TypeFetcherGenerator.generate`; its javadoc calls it the one assembly point, because
+   the suppression filter runs there over the combined list. A projection that wants no emission
+   (the LSP, validate) never runs the pre-step at all. As written the finding reaches no report, no
+   suppression and no LSP. The existing `CODEGEN` rules are all produced at that assembly point
+   (`SessionStateWarnings`, `DependencyVersionWarnings`, the `EmittedRegistry` narrowings passed in).
+   What satisfies it: name a producer that runs at report assembly. The model is in hand there (the
+   field's `ErrorChannel.hasValidationHandler()`, `validationTargets()`) and the store is live, so
+   the accessor relation can be read. Choose the rule's `Source` for that producer, and say how the
+   producer and the pre-step's check list share one join, so the lint and the emitted checks cannot
+   disagree about which columns are checked.
+
+2. **"A column the request sets to null is checked" does not hold beside a key decode (question
+   1).** The manual draft promises it and the Implementation's `changed` paragraph says "a column
+   the client sent, null included, is checked". R534 (`record-key-decode-null-write-erasure`,
+   Backlog) is the counterexample: a key decode loads through `fromArray`, whose null-skip resets
+   the changed flag of every null-valued column record-wide, after the column bindings ran. A
+   request that sends `id` and `description: null` to `FilmRecordDraftInput` leaves `description`
+   `changed=false`, so the guard skips it and the mapped `@NotNull` does not fire. That agrees with
+   what the record writes, since the column is not written either, but it is not what the manual
+   says, and the fixture input carries exactly the `id` that reaches it. What satisfies it: state
+   the guard as the columns the record writes and name the R534 exception in the manual draft (or
+   take R534 as a dependency), and pin the case in Tests next to the partial-record cases.
+
+3. **The getter-name rule is ambiguous for the consumer this round exists for (question 1).** "`get`
+   plus the SQL column name in PascalCase" reads two ways for an uppercase Oracle column. jOOQ's
+   `DefaultGeneratorStrategy` upper-cases the first letter of each underscore-separated word and
+   lower-cases the rest: checked against jooq-codegen 3.20.11, `BILDE` gives `getBilde`,
+   `PERSONLOPENR` gives `getPersonlopenr`, and a mixed-case `FilmId` gives `getFilmid`. A literal
+   PascalCase reading gives `getBILDE`, which confirms on no sis record, so every sis column would
+   fall to the lint and nothing would be checked, while sakila's lowercase columns pass the
+   acceptance tests under either reading. What satisfies it: name jOOQ's own conversion as the rule
+   (`org.jooq.tools.StringUtils.toCamelCase` agrees with the strategy on these inputs), in the plan
+   and in the manual draft, and give the capture test an uppercase column.
+
+Non-blocking:
+
+- The registration through `META-INF/validation.xml` puts the file on the test classpath of a
+  module that also runs `@QuarkusTest` tests with `quarkus-hibernate-validator`. `GraphQLQueryTest`
+  is plain JUnit and bootstraps Hibernate Validator directly, so the mapping should reach it; the
+  implementer should confirm that the Quarkus tests tolerate the file.
+- The Docs list sends the lint rule to "wherever the rule catalogue lists rules". The manual has no
+  catalogue page: rules are documented at their feature's page (`shared-type-tags-narrowed` in
+  `asConnection.adoc`, `reference-path-fans-out` in `reference.adoc`), so `error-channel.adoc` is
+  the place.
+- The title still states round 2's disproved premise.
