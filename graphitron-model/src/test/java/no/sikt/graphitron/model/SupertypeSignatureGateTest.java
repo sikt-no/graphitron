@@ -231,6 +231,13 @@ class SupertypeSignatureGateTest {
                "graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
                "graphql_directive_application_arg"),
         Set.of("graphitron_argument_reference_step_entry", "graphitron_field_reference_step_entry"),
+        // What a key: spelling names, under the two kinds of key it can name: a foreign key, keyed by
+        // the constraint, and a table's own primary key, keyed by the table. The shared payload is
+        // only which namespace the spelling matched in. No supertype is owed: each relation's
+        // foreign key into the catalog (sql_referential_constraint, sql_primary_key) is the integrity
+        // rule saying what kind of key its rows are, and a relation over both would trade those for
+        // a kind column and a nullable half of its key.
+        Set.of("graphitron_path_element_key", "graphitron_path_element_primary_key"),
         // The legacy key-columns array is a second positional list of a table's columns, the same
         // payload as the current one under the same key.
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column",

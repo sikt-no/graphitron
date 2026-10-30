@@ -11,19 +11,21 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A child field returning a {@code @table} type bound to its parent's own table, with no
- * {@code @reference}, against a real PostgreSQL database: it reads the parent's own row, so every
- * parent gets its own values. Fixtures: {@code Film.sameRow: FilmSameRow} (both on {@code film}),
- * whose type holds a foreign-key child and a cycle back to {@code Film};
+ * A child field returning a {@code @table} type bound to its parent's own table, over a
+ * {@code @reference} naming the table's own primary key, against a real PostgreSQL database: the
+ * hop joins each row to itself, so every parent gets its own values. Fixtures:
+ * {@code Film.sameRow: FilmSameRow} (both on {@code film}), whose type holds a foreign-key child
+ * and a cycle back to {@code Film}; {@code Film.sameRowSplit}, the same child fetched in a batch;
  * {@code Film.sameRowNested: FilmSameRowNest}, a plain nested object holding the same child;
  * {@code PivotNestingHost.labelsRow: HostLabelsRow} (both on {@code pivot_nesting_host}) for the
  * null rule, where host 1 carries {@code nn} and {@code nb}, host 2 neither and host 3 only
- * {@code nb}; and {@code Film.sameTableById}, the narrowed form, a read of {@code film} by its own
- * argument that is the same under every film.
+ * {@code nb}; and {@code Film.sameTableById}, the narrowed form with no {@code @reference}, a read
+ * of {@code film} by its own argument that is the same under every film.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -31,11 +33,18 @@ class SameRowTableChildExecutionTest {
 
     static DSLContext dsl;
     static GraphQL graphql;
+    static final AtomicInteger STATEMENT_COUNT = new AtomicInteger();
 
     @BeforeAll
     static void startDatabase() {
         dsl = SakilaDatabase.dsl();
-
+        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
+            new org.jooq.ExecuteListener() {
+                @Override
+                public void executeStart(org.jooq.ExecuteContext ctx) {
+                    STATEMENT_COUNT.incrementAndGet();
+                }
+            }));
         graphql = Graphitron.newGraphQL().build();
     }
 
@@ -77,6 +86,18 @@ class SameRowTableChildExecutionTest {
             assertThat(child(film, "sameRow")).containsEntry("title", film.get("title"));
         });
         assertThat(films.values()).extracting(f -> child(f, "sameRow").get("title")).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void splitQuery_everyFilm_getsItsOwnRow_inASecondStatement() {
+        STATEMENT_COUNT.set(0);
+        var films = films("title sameRowSplit { filmId title }");
+        assertThat(STATEMENT_COUNT.get()).as("the films and one batched statement for their rows").isEqualTo(2);
+        assertThat(films).hasSizeGreaterThan(1);
+        films.forEach((id, film) -> {
+            assertThat(child(film, "sameRowSplit")).containsEntry("filmId", id);
+            assertThat(child(film, "sameRowSplit")).containsEntry("title", film.get("title"));
+        });
     }
 
     /**

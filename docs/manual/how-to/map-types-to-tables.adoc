@@ -175,15 +175,15 @@ type FilmRelease {
 
 A nullable field returning the nested type resolves to `null` when the object would hold nothing; see <<single-object-null,When a single object resolves to `null`>>. Declare the field non-null (`release: FilmRelease!`) to always get an object.
 
-[#parents-own-row-as-table-type]
-== Returning the parent's own row as a table type
+[#parents-own-row]
+== Returning the parent's own row
 
-A field whose return type is bound to the same table as its parent, with no xref:../reference/directives/reference.adoc[`@reference`], reads the parent's own row. Use it when the return type must stay `@table` because other fields return it on their own:
+A field whose return type has no `@table` reads its fields from the parent's own row (see "Grouping columns into a nested object" above). When the return type must be a `@table` type, because a root field or a field on another table also returns it, say that the field joins the parent's row to itself by naming the table's primary key:
 
 [source,graphql]
 ----
 type Film @table {
-    summary: FilmSummary
+    summary: FilmSummary @reference(path: [{key: "film_pkey"}])
 }
 type FilmSummary @table(name: "film") {
     title: String @field(name: "TITLE")
@@ -191,9 +191,9 @@ type FilmSummary @table(name: "film") {
 }
 ----
 
-`film { summary { title } }` returns each film's own title, in the same statement as the film. The field must be single-valued and take no arguments. A nullable one resolves to `null` when the object would hold nothing; see <<single-object-null,When a single object resolves to `null`>>.
+`film { summary { title } }` returns each film's own title. A nullable `summary` resolves to `null` when the object would hold nothing; see <<single-object-null,When a single object resolves to `null`>>. The primary key is named like a foreign key, by its constraint name or its jOOQ `Keys` constant. It must be the whole path, and the field must be single-valued.
 
-With arguments, a xref:../reference/directives/condition.adoc[`@condition`] or a xref:../reference/directives/lookupKey.adoc[`@lookupKey`], the same field means something else: a read of the whole table narrowed by them, the same for every parent. `related(filter: FilmFilter): [Film!]` on `Film` returns the films matching the filter, whichever film it is selected under. A same-table field that is neither, a list or a single field with arguments that filter nothing, would read every row of the table under every parent and is rejected at build time. To reach other rows of the table related to the parent, state the self-referencing key with `@reference(path: [{key: ...}])`.
+Without the `@reference`, a single field returning a `@table` type on its parent's own table and taking no arguments is a build error: two `@table` types on one table are a join, and Graphitron does not guess which rows it pairs, nor does it infer a self-referencing foreign key. To reach other rows of the table related to the parent, name a self-referencing foreign key with `@reference(path: [{key: ...}])`.
 
 [#single-object-null]
 == When a single object resolves to `null`

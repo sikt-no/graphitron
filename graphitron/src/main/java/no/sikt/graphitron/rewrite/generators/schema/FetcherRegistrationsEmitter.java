@@ -163,7 +163,7 @@ public final class FetcherRegistrationsEmitter {
             // A nested-only (pure NestingType) coordinate is never dual-shape (a mixed-source type is a
             // ResultType, emitted via typeBody), so resultType and dualWiring are null and the dispatch
             // path in registrationEntry short-circuits. The schema still reaches FetcherEmitter.bind,
-            // which reads a same-row child's null contract off it.
+            // which reads a single table child's null contract off it.
             body.add(registrationEntry(schema, ntw.nestedTypeName(), field,
                 nestedFetchersClass, ntw.representativeParentTable(), null, outputPackage, parentSource, null));
         }

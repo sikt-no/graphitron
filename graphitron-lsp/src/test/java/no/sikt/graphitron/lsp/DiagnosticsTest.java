@@ -526,6 +526,28 @@ class DiagnosticsTest {
     }
 
     @Test
+    void aTablesOwnPrimaryKeyIsNotAnUnknownKey() {
+        // The identity join a same-table field writes names the table's primary key; whether the
+        // build admits it there is the classifier's rule, not a question of whether the name exists.
+        var known = file("""
+            type Foo @table(name: "film") {
+                bar: Int @reference(path: [{key: "film_pkey"}])
+                baz: Int @reference(path: [{key: "FILM_PKEY"}])
+            }
+            """);
+        assertThat(compute(known, catalogOnly)).isEmpty();
+
+        var misspelled = file("""
+            type Foo @table(name: "film") {
+                bar: Int @reference(path: [{key: "film_pkye"}])
+            }
+            """);
+        var diags = compute(misspelled, catalogOnly);
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("film_pkye");
+    }
+
+    @Test
     void unknownReferenceTableProducesError() {
         var file = file("""
             type Foo @table(name: "film") {

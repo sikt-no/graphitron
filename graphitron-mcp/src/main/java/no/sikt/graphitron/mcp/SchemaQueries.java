@@ -37,14 +37,17 @@ import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.when;
@@ -308,10 +311,13 @@ final class SchemaQueries {
      * @param position the element's 0-based place in the field's path
      * @param via {@code INFERRED} on the step no element wrote, from a routine's result to the
      *     {@code @table} the field returns; {@code ROUTINE} where the element calls a routine,
-     *     {@code KEY} where it named a constraint, {@code CONDITION} where it names a method the join
-     *     is, {@code TABLE} otherwise
-     * @param keyMatchedBy which namespace answered a {@code KEY} element, {@code null} on any other
-     * @param constraintName the constraint a {@code KEY} step crosses, {@code null} on any other
+     *     {@code KEY} where it named a constraint, {@code PRIMARY_KEY} where it named the table's own
+     *     primary key and so joins each row to itself, {@code CONDITION} where it names a method the
+     *     join is, {@code TABLE} otherwise
+     * @param keyMatchedBy which namespace answered a {@code KEY} or {@code PRIMARY_KEY} element,
+     *     {@code null} on any other
+     * @param constraintName the constraint a {@code KEY} or {@code PRIMARY_KEY} step crosses,
+     *     {@code null} on any other
      * @param fkOnFrom whether that constraint is declared on the table the step departs
      */
     record Hop(
@@ -830,6 +836,9 @@ final class SchemaQueries {
         var e = GRAPHITRON_PATH_ELEMENT_KEY;
         var m = GRAPHITRON_FIELD_PATH_METHOD;
         var rt = GRAPHITRON_FIELD_PATH_ROUTINE;
+        var pk = GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
+        var pe = GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
+        var sp = SQL_PRIMARY_KEY;
         return multiset(
             select(p.POSITION,
                 when(p.ELEMENT_SOURCE_NAME.isNull(), inline("INFERRED"))
@@ -839,18 +848,32 @@ final class SchemaQueries {
                         rt.START_SCHEMA.eq(p.START_SCHEMA), rt.START_TABLE.eq(p.START_TABLE),
                         rt.POSITION.eq(p.POSITION))), inline("ROUTINE"))
                     .when(k.CONSTRAINT_NAME.isNotNull(), inline("KEY"))
+                    .when(pk.TABLE_NAME.isNotNull(), inline("PRIMARY_KEY"))
                     .when(exists(selectOne().from(m).where(
                         m.GRAPH_NAME.eq(p.GRAPH_NAME), m.TYPE_NAME.eq(p.TYPE_NAME),
                         m.FIELD_NAME.eq(p.FIELD_NAME), m.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
                         m.START_SCHEMA.eq(p.START_SCHEMA), m.START_TABLE.eq(p.START_TABLE),
                         m.POSITION.eq(p.POSITION))), inline("CONDITION"))
                     .otherwise(inline("TABLE")),
-                e.MATCHED_BY,
+                coalesce(e.MATCHED_BY, pe.MATCHED_BY),
                 qualified(p.FROM_SCHEMA, p.FROM_TABLE),
                 qualified(p.TO_SCHEMA, p.TO_TABLE),
-                k.CONSTRAINT_NAME,
+                coalesce(k.CONSTRAINT_NAME, sp.CONSTRAINT_NAME),
                 k.CONSTRAINT_SCHEMA.eq(p.FROM_SCHEMA).and(k.CONSTRAINT_TABLE.eq(p.FROM_TABLE)))
                 .from(p)
+                .leftJoin(pk).on(pk.GRAPH_NAME.eq(p.GRAPH_NAME), pk.TYPE_NAME.eq(p.TYPE_NAME),
+                    pk.FIELD_NAME.eq(p.FIELD_NAME), pk.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
+                    pk.START_SCHEMA.eq(p.START_SCHEMA), pk.START_TABLE.eq(p.START_TABLE),
+                    pk.POSITION.eq(p.POSITION))
+                .leftJoin(sp).on(sp.SOURCE_NAME.eq(pk.TABLE_SOURCE_NAME),
+                    sp.TABLE_SCHEMA.eq(pk.TABLE_SCHEMA), sp.TABLE_NAME.eq(pk.TABLE_NAME))
+                .leftJoin(pe).on(pe.GRAPH_NAME.eq(p.GRAPH_NAME),
+                    pe.SOURCE_NAME.eq(p.ELEMENT_SOURCE_NAME),
+                    pe.SOURCE_LINE.eq(p.ELEMENT_SOURCE_LINE),
+                    pe.SOURCE_COLUMN.eq(p.ELEMENT_SOURCE_COLUMN),
+                    pe.TABLE_SOURCE_NAME.eq(pk.TABLE_SOURCE_NAME),
+                    pe.TABLE_SCHEMA.eq(pk.TABLE_SCHEMA),
+                    pe.TABLE_NAME.eq(pk.TABLE_NAME))
                 .leftJoin(k).on(k.GRAPH_NAME.eq(p.GRAPH_NAME), k.TYPE_NAME.eq(p.TYPE_NAME),
                     k.FIELD_NAME.eq(p.FIELD_NAME), k.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
                     k.START_SCHEMA.eq(p.START_SCHEMA), k.START_TABLE.eq(p.START_TABLE),

@@ -24,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * counts by the row it reaches: {@code PivotNestingHost.origin} is a {@code HostOrigin} holding
  * only references from {@code pivot_nesting_host.language_id}, which reaches a language on host 1
  * and nothing on hosts 2 and 3. A scalar {@code @externalField} counts as a column does:
- * {@code labelsComputed}, its same-row twin {@code labelsComputedRow}, and {@code labelsMixed} (one
+ * {@code labelsComputed}, its table-type twin {@code labelsComputedRow} over the host's primary key,
+ * and {@code labelsMixed} (one
  * column, one {@code @externalField}) read the same two columns through expressions, and agree with
  * {@code labels} on every host. The references-and-lists cases over a join column that is always
  * set are {@code TableChildNullContractExecutionTest}'s.

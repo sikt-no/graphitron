@@ -91,9 +91,9 @@ type Film implements Node @table(name: "film") @node
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",
         method: "titleTitlecase"
     })
-    # Same-row table child under an entity: each representation's sameRow is that film's own
-    # row, never one row shared by every entity in the batch.
-    sameRow: FilmSameRow
+    # Same-table child over the primary key under an entity: each representation's sameRow is that
+    # film's own row, never one row shared by every entity in the batch.
+    sameRow: FilmSameRow @reference(path: [{key: "film_pkey"}])
 }
 
 # The return type of Film.sameRow, a table type over film returned on its own by

@@ -8,6 +8,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_TABLE;
@@ -17,8 +19,8 @@ import static org.jooq.impl.DSL.val;
 
 /**
  * The capture-cadence writer of what each path element names: {@code graphitron_path_element_key},
- * {@code _table}, {@code _method} and {@code _routine}, one row per element and candidate, each
- * filled from its rule view beside it.
+ * {@code _primary_key}, {@code _table}, {@code _method} and {@code _routine}, one row per element
+ * and candidate, each filled from its rule view beside it.
  *
  * <p>Reads only the element entries, written before the first stage, and the catalog and classpath
  * families, written before this gatherer starts, so it runs at the bottom of the reference stratum.
@@ -29,9 +31,10 @@ public final class PathElements {
 
     private PathElements() {}
 
-    /** Re-derives the graph's four resolutions and sweeps what each no longer names. */
+    /** Re-derives the graph's five resolutions and sweeps what each no longer names. */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         keys(dsl, graphName, touchedAt);
+        primaryKeys(dsl, graphName, touchedAt);
         tables(dsl, graphName, touchedAt);
         methods(dsl, graphName, touchedAt);
         routines(dsl, graphName, touchedAt);
@@ -48,6 +51,28 @@ public final class PathElements {
                 .select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
                     r.CONSTRAINT_SOURCE_NAME, r.CONSTRAINT_SCHEMA, r.CONSTRAINT_TABLE,
                     r.CONSTRAINT_NAME, r.MATCHED_BY, val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graphName)))
+            .onDuplicateKeyUpdate()
+            .set(t.MATCHED_BY, excluded(t.MATCHED_BY))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(t.TOUCHED_AT.ne(touchedAt))
+            .execute();
+    }
+
+    private static void primaryKeys(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
+        var r = GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY_RULE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.MATCHED_BY, t.TOUCHED_AT)
+            .select(dsl
+                .select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
+                    r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA, r.TABLE_NAME, r.MATCHED_BY,
+                    val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graphName)))
             .onDuplicateKeyUpdate()

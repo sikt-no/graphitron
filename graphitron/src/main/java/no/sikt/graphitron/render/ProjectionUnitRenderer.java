@@ -216,11 +216,6 @@ public final class ProjectionUnitRenderer {
                             builder.addCode("        }\n");
                         }
                     }
-                    case CallWrap.SameRow sr -> {
-                        builder.addCode("        case $S -> {\n", c.field());
-                        builder.addCode("$L", sameRowArmBody(c, sr, outputPackage));
-                        builder.addCode("        }\n");
-                    }
                     case CallWrap.Multiset m -> {
                         builder.addCode("        case $S -> {\n", c.field());
                         builder.addCode("$L", multisetArmBody(argHelpers, c, m, outputPackage));
@@ -304,35 +299,6 @@ public final class ProjectionUnitRenderer {
     // Multiset arms
     // ------------------------------------------------------------------------------------------
 
-    /**
-     * The same-row arm: a single-row multiset with no {@code FROM} of its own, whose select list
-     * reads this unit's {@code table} alias directly. The callee is a table type's anchor unit
-     * bound to the same table, so its column terms type-check against the alias and its own
-     * reference children correlate on it, which is the parent row. The presence columns land
-     * first in one set with the callee's fields, so a column both project lands once.
-     */
-    private static CodeBlock sameRowArmBody(Contribution.Call c, CallWrap.SameRow sr, String outputPackage) {
-        var code = CodeBlock.builder();
-        var callee = ProjectionCall.fromOccurrences(c.callee(),
-            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage, c.calleeTakesDsl());
-        if (sr.presence().isEmpty() && sr.probe().isEmpty()) {
-            code.addStatement("fields.add($T.multiset($T.select($L)).as($L))",
-                DSL, DSL, callee, rkAlias(c));
-            return code.build();
-        }
-        code.addStatement("$T<$T> sameRow = new $T<>()", SET, fieldWildcard(), LINKED_HASH_SET);
-        for (var column : sr.presence()) {
-            code.addStatement("sameRow.add(table.$L)", column.javaName());
-        }
-        if (sr.probe().isPresent()) {
-            code.addStatement("sameRow.add($L)", PresenceProbeFragments.declare(code, sr.probe().get(), "table", ""));
-        }
-        code.addStatement("sameRow.addAll($L)", callee);
-        code.addStatement("fields.add($T.multiset($T.select(sameRow)).as($L))",
-            DSL, DSL, rkAlias(c));
-        return code.build();
-    }
-
     private static CodeBlock multisetArmBody(ArgPathHelperRegistry argHelpers, Contribution.Call c, CallWrap.Multiset m, String outputPackage) {
         var code = CodeBlock.builder();
         // Occurrence argument guard: the arm reads runtime state off the canonical
@@ -366,8 +332,8 @@ public final class ProjectionUnitRenderer {
         CodeBlock selectList = callee;
         if (!m.presence().isEmpty() || m.probe().isPresent()) {
             // A single child's null contract reads its presence columns and probe off the child's
-            // own row, so both land inside the multiset beside the callee's fields, the way the
-            // same-row arm lands them; one set, so a column both project lands once.
+            // own row, so both land inside the multiset beside the callee's fields; one set, so a
+            // column both project lands once.
             code.addStatement("$T<$T> single = new $T<>()", SET, fieldWildcard(), LINKED_HASH_SET);
             for (var column : m.presence()) {
                 code.addStatement("single.add($L.$L)", terminalAlias, column.javaName());

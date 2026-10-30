@@ -71,8 +71,11 @@ class LeafRatchetTest {
      * read as a table type, which neither the join-path table read nor the nesting hand-through
      * names. It restores Graphitron 9's reading of a same-table child with no {@code @reference}
      * as a bug fix, with no operation term (its one member is the plain select).
+     * 24 to 23 (2026-10-30): SameRowTableField retired. A same-table child with no
+     * {@code @reference} is rejected, and the parent's own row is the primary-key
+     * {@code @reference}, an ordinary TableField over the identity join.
      */
-    private static final int CHILD_FIELD_LEAVES = 24;
+    private static final int CHILD_FIELD_LEAVES = 23;
 
     /**
      * Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline).

@@ -964,9 +964,6 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.NestingField ignored            -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
-                // The parent's own row: the single-row multiset unwrap and null check are reified by
-                // FetcherEmitter.bind, collected below; the return type's fetchers are its own.
-                case ChildField.SameRowTableField ignored       -> { }
                 // Inline @pivot: projection via the coordinate's pivot $project unit (the multiset
                 // arm); the multiset unwrap read is reified by FetcherEmitter.bind, collected below.
                 case ChildField.PivotField ignored              -> { }

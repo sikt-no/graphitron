@@ -2821,10 +2821,12 @@ type Film implements Node & Searchable @table(name: "film") @node {
     ])
     # R503 mixed-source nested type fixture (nesting edge): FilmBlurb projected off the film row.
     blurb: FilmBlurb
-    # Same-row table child: FilmSameRow is bound to film like this type and the field has no
-    # @reference, so it reads this film's own row. sameTableById is the narrowed form of the same
-    # shape: a read of film narrowed by its own argument, the same rows under every film.
-    sameRow: FilmSameRow
+    # Same-table child over the primary key: FilmSameRow is bound to film like this type, and the
+    # @reference names film's own primary key, so it joins this film's row to itself and reads it.
+    # sameTableById is the narrowed form with no @reference: a read of film narrowed by its own
+    # argument, the same rows under every film.
+    sameRow: FilmSameRow @reference(path: [{key: "film_pkey"}])
+    sameRowSplit: FilmSameRow @splitQuery @reference(path: [{key: "film_pkey"}])
     sameRowNested: FilmSameRowNest
     sameTableById(filmId: Int @field(name: "FILM_ID")): [FilmSameRow!]!
     # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /
@@ -3674,22 +3676,22 @@ type LanguageAlias implements Node @table(name: "language") @node(keyColumns: ["
 }
 
 # The return type of Film.sameRow: a table type over film, returned on its own by
-# Query.filmSameRows, so it stays @table. language and languageName correlate on the parent film's
+# Query.filmSameRows, so it stays @table. language and languageName correlate on the joined film's
 # row, languageName under the same result-key alias as Film.languageName; film closes a same-table
-# cycle back to Film.
+# cycle back to Film over the same primary key.
 type FilmSameRow @table(name: "film") {
     filmId: Int!    @field(name: "FILM_ID")
     title:  String! @field(name: "TITLE")
     language: Language @reference(path: [{key: "film_language_id_fkey"}])
     languageName: String @field(name: "NAME") @reference(path: [{key: "film_language_id_fkey"}])
-    film: Film
+    film: Film @reference(path: [{key: "film_pkey"}])
 }
 
-# A plain nested object over Film's row holding a same-row table child: the child reads the
-# film's own row at nested depth, as it does directly under Film.
+# A plain nested object over Film's row holding a same-table child over the primary key: the child
+# reads the film's own row at nested depth, as it does directly under Film.
 type FilmSameRowNest {
     rating: String @field(name: "RATING")
-    row: FilmSameRow
+    row: FilmSameRow @reference(path: [{key: "film_pkey"}])
 }
 
 type StockFilm @table(name: "film") {
@@ -6432,27 +6434,28 @@ type PivotNestingHost @table(name: "pivot_nesting_host") {
     labels: HostLabels
     labelsRequired: HostLabels!
     origin: HostOrigin
-    labelsRow: HostLabelsRow
-    labelsWithFilms: HostLabelsWithFilms
+    labelsRow: HostLabelsRow @reference(path: [{key: "pivot_nesting_host_pkey"}])
+    labelsWithFilms: HostLabelsWithFilms @reference(path: [{key: "pivot_nesting_host_pkey"}])
     labelsComputed: HostLabelsComputed
-    labelsComputedRow: HostLabelsComputedRow
+    labelsComputedRow: HostLabelsComputedRow @reference(path: [{key: "pivot_nesting_host_pkey"}])
     labelsMixed: HostLabelsMixed
     languageNames: HostLanguageNames @reference(path: [{key: "pivot_nesting_host_language_id_fkey"}])
     languageNamesSplit: HostLanguageNames @splitQuery @reference(path: [{key: "pivot_nesting_host_language_id_fkey"}])
 }
 
 # The table-type twin of HostLabels, returned on its own by Query.hostLabelRows: reached from
-# PivotNestingHost.labelsRow it reads the host's own row, and resolves to null when nn and nb both
-# are, by the same rule as the nesting type.
+# PivotNestingHost.labelsRow over the host's primary key it reads the host's own row, and resolves
+# to null when nn and nb both are, by the same rule as the nesting type.
 type HostLabelsRow @table(name: "pivot_nesting_host") {
     nn: String
     nb: String
 }
 
 # The shape of a same-table child holding more than columns (sis's Karakter.navnAlleSprak): reached
-# from PivotNestingHost.labelsWithFilms it reads the host's own row, two nullable columns and the
-# films in the host's language. It resolves to null when both columns are null and the list is
-# empty, where an object of nulls came back while a list blocked the collapse.
+# from PivotNestingHost.labelsWithFilms over the host's primary key it reads the host's own row,
+# two nullable columns and the films in the host's language. It resolves to null when both columns
+# are null and the list is empty, where an object of nulls came back while a list blocked the
+# collapse.
 type HostLabelsWithFilms @table(name: "pivot_nesting_host") {
     nn: String
     nb: String
@@ -6479,8 +6482,8 @@ type HostLabelsComputed {
     })
 }
 
-# The table-type twin of HostLabelsComputed, reached from PivotNestingHost.labelsComputedRow as a
-# same-row child: the same null contract through the same-row arm.
+# The table-type twin of HostLabelsComputed, reached from PivotNestingHost.labelsComputedRow over
+# the host's primary key: the same null contract over the joined row.
 type HostLabelsComputedRow @table(name: "pivot_nesting_host") {
     nn: String @externalField(reference: {
         className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "nn"

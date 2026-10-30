@@ -35,7 +35,7 @@ input ReferenceElement {
 |===
 | Name | Type | Default | Description
 | `table` | `String` | inferred from the field's target type | The jOOQ table identifier for this hop's destination. Overrides the type-level `@table` if both are present.
-| `key` | `String` | inferred when unique | The foreign-key constraint name (matching jOOQ's `Keys` class). Required when more than one foreign key exists between the source and destination tables for a hop. Accepts a leading schema qualifier (`schema.constraint`) for cross-schema constraint-name collisions; see <<Schema-qualified keys>>.
+| `key` | `String` | inferred when unique | The foreign-key constraint name (matching jOOQ's `Keys` class), or the primary key of the table the path starts on, which joins each row to itself (see <<Joining a row to itself>>). Required when more than one foreign key exists between the source and destination tables for a hop. Accepts a leading schema qualifier (`schema.constraint`) for cross-schema constraint-name collisions; see <<Schema-qualified keys>>.
 | `condition` | `ExternalCodeReference` | none | An external Java method that returns a `org.jooq.Condition` to add to the join. Acts as an `ON` condition when neither `table` nor `key` is set, otherwise as an extra `WHERE` constraint on the joined hop.
 |===
 
@@ -155,6 +155,20 @@ event: Event @reference(path: [{key: "multischema_a.note_event_fk"}])
 ----
 
 The qualifier binds the *FK-holder* (child / referencing) side, the schema whose generated `Keys` class declares the constraint, not the FK target's schema. A qualifier naming a schema that holds no such foreign key is rejected as unresolved; a qualifier that resolves to a foreign key not connected to the current source table is rejected with the same "does not connect" error a wrong bare key gets. Unqualified keys resolve exactly as before; reach for the qualifier only on an actual cross-schema collision.
+
+== Joining a row to itself
+
+A `{key:}` element may name the primary key of the table the path starts on, by its constraint name or its jOOQ `Keys` constant. The hop joins each row to itself, so the field returns the parent's own row:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+  summary: FilmSummary @reference(path: [{key: "film_pkey"}])
+}
+type FilmSummary @table(name: "film") { title: String }
+----
+
+This is how a field returns its parent's row as a `@table` type, which a field with no `@reference` cannot: two `@table` types on one table are a join, and a join with no stated key is a build error. The element must be the path's only element, the field must be single-valued, and its parent and return type must both be bound to the key's table. Anywhere else, including an argument or input-field path and a xref:referenceFor.adoc[`@referenceFor`] path, naming a primary key is rejected. See xref:../../how-to/map-types-to-tables.adoc#parents-own-row[Map types to tables].
 
 == See also
 

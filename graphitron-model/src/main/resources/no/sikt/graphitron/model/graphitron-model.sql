@@ -6977,6 +6977,82 @@ COMMENT ON VIEW graphitron_path_element_key_rule IS 'One row the path element ke
 -- COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_name IS 'the candidate key''s SQL name';
 -- COMMENT ON COLUMN graphitron_path_element_key_rule.matched_by IS 'SQL_NAME or JOOQ_NAME, the arm that matched the spelling';
 
+CREATE TABLE graphitron_path_element_primary_key (
+  graph_name        VARCHAR NOT NULL,
+  source_name       VARCHAR NOT NULL,
+  source_line       INT     NOT NULL,
+  source_column     INT     NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  matched_by        VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column,
+               table_source_name, table_schema, table_name),
+  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_key_step_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_primary_key (source_name, table_schema, table_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_path_element_primary_key IS 'A table''s own primary key a path element names: one row per element whose key: spelling names a table''s primary key, per candidate key. For example {key: "film_pkey"} names public.film''s primary key, which joins each film row to itself.';
+COMMENT ON COLUMN graphitron_path_element_primary_key.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_primary_key.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_primary_key.source_line IS 'the element''s source line, 1-based';
+COMMENT ON COLUMN graphitron_path_element_primary_key.source_column IS 'the element''s source column. With the three columns before it, the element''s key in graphitron_ast_reference_key_step_entry, which holds the spelling this row resolves';
+COMMENT ON COLUMN graphitron_path_element_primary_key.table_source_name IS 'the catalog partition of the table whose primary key the element names';
+COMMENT ON COLUMN graphitron_path_element_primary_key.table_schema IS 'the SQL schema of that table';
+COMMENT ON COLUMN graphitron_path_element_primary_key.table_name IS 'the table whose primary key the element names. With the two columns before it, sql_primary_key''s key, which names the constraint';
+COMMENT ON COLUMN graphitron_path_element_primary_key.matched_by IS 'which name the written spelling matched: SQL_NAME, the key''s SQL name, or JOOQ_NAME, the generated Keys constant, which answers only where no primary key''s SQL name in the graph''s catalogs does. The editor and the MCP server say which an author wrote';
+COMMENT ON COLUMN graphitron_path_element_primary_key.touched_at IS 'when the reading that last found this candidate ran: the mark the sweep reads, so a candidate no longer found goes';
+
+CREATE VIEW graphitron_path_element_primary_key_rule
+  (graph_name, source_name, source_line, source_column,
+   table_source_name, table_schema, table_name, matched_by) AS
+-- The precedence graphitron_path_element_key_rule states for a foreign key, over primary keys: a
+-- written name is a primary key's SQL name wherever one in the graph's catalogs answers it, and only
+-- where none does is it the generated Keys constant. A schema written before the name binds the
+-- schema of the key's table.
+SELECT k.graph_name, k.source_name, k.source_line, k.source_column,
+       p.source_name, p.table_schema, p.table_name, 'SQL_NAME'
+  FROM graphitron_ast_reference_key_step_entry k
+  JOIN store_graph_source m ON m.graph_name = k.graph_name
+  JOIN sql_constraint c
+    ON c.source_name = m.source_name AND c.constraint_name_upper = k.key_ref_name_part_upper
+  JOIN sql_primary_key p
+    ON p.source_name = c.source_name AND p.table_schema = c.table_schema
+   AND p.table_name = c.table_name AND p.constraint_name = c.constraint_name
+ WHERE k.key_ref_namespace_part_upper IS NULL OR c.table_schema_upper = k.key_ref_namespace_part_upper
+UNION ALL
+SELECT k.graph_name, k.source_name, k.source_line, k.source_column,
+       p.source_name, p.table_schema, p.table_name, 'JOOQ_NAME'
+  FROM graphitron_ast_reference_key_step_entry k
+  JOIN store_graph_source m ON m.graph_name = k.graph_name
+  JOIN sql_constraint c
+    ON c.source_name = m.source_name AND c.jooq_name_upper = k.key_ref_name_part_upper
+  JOIN sql_primary_key p
+    ON p.source_name = c.source_name AND p.table_schema = c.table_schema
+   AND p.table_name = c.table_name AND p.constraint_name = c.constraint_name
+ WHERE (k.key_ref_namespace_part_upper IS NULL OR c.table_schema_upper = k.key_ref_namespace_part_upper)
+   AND NOT EXISTS (SELECT 1 FROM sql_constraint s
+                     JOIN sql_primary_key sp
+                       ON sp.source_name = s.source_name AND sp.table_schema = s.table_schema
+                      AND sp.table_name = s.table_name AND sp.constraint_name = s.constraint_name
+                     JOIN store_graph_source sm ON sm.source_name = s.source_name
+                    WHERE sm.graph_name = k.graph_name
+                      AND s.constraint_name_upper = k.key_ref_name_part_upper);
+COMMENT ON VIEW graphitron_path_element_primary_key_rule IS 'One row the path element primary key rule computes, in the shape graphitron_path_element_primary_key stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_path_element_primary_key, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.source_name IS 'the file the element was written in';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.source_line IS 'the element''s source line';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.source_column IS 'the element''s source column';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.table_source_name IS 'the catalog partition of the table whose primary key the element names';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.table_schema IS 'the SQL schema of that table';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.table_name IS 'the table whose primary key the element names';
+-- COMMENT ON COLUMN graphitron_path_element_primary_key_rule.matched_by IS 'SQL_NAME or JOOQ_NAME, the arm that matched the spelling';
+
 CREATE TABLE graphitron_path_element_table (
   graph_name        VARCHAR NOT NULL,
   source_name       VARCHAR NOT NULL,
@@ -9202,6 +9278,41 @@ COMMENT ON COLUMN graphitron_field_path_key.constraint_table IS 'the table holdi
 COMMENT ON COLUMN graphitron_field_path_key.constraint_name IS 'the key''s SQL name. Whether the author wrote it is whether the element has a graphitron_path_element_key row';
 COMMENT ON COLUMN graphitron_field_path_key.touched_at IS 'when the walk that last took the step ran, as on the step';
 
+CREATE TABLE graphitron_field_path_primary_key (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  start_source_name VARCHAR NOT NULL,
+  start_schema      VARCHAR NOT NULL,
+  start_table       VARCHAR NOT NULL,
+  position          INT     NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position)
+    REFERENCES graphitron_field_path (graph_name, type_name, field_name, start_source_name,
+                                      start_schema, start_table, position) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_primary_key (source_name, table_schema, table_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_path_primary_key IS 'The primary key a step of a field''s path rode to join a row to itself: one row per step that rode one. For example Film.sameRow over @reference(path: [{key: "film_pkey"}]) is one step from film back to film on film_pkey, reading the parent''s own row.';
+COMMENT ON COLUMN graphitron_field_path_primary_key.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_field_path_primary_key.type_name IS 'the type owning the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_primary_key.field_name IS 'the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_primary_key.start_source_name IS 'the start''s catalog partition, as on the step';
+COMMENT ON COLUMN graphitron_field_path_primary_key.start_schema IS 'the start''s SQL schema, as on the step';
+COMMENT ON COLUMN graphitron_field_path_primary_key.start_table IS 'the start table, as on the step';
+COMMENT ON COLUMN graphitron_field_path_primary_key.position IS 'the step''s position; with the columns before it, the step';
+COMMENT ON COLUMN graphitron_field_path_primary_key.table_source_name IS 'the catalog partition of the table whose primary key the step rode';
+COMMENT ON COLUMN graphitron_field_path_primary_key.table_schema IS 'the SQL schema of that table';
+COMMENT ON COLUMN graphitron_field_path_primary_key.table_name IS 'the table whose primary key the step rode, both its from and its to. With the two columns before it, sql_primary_key''s key, which names the constraint';
+COMMENT ON COLUMN graphitron_field_path_primary_key.touched_at IS 'when the walk that last took the step ran, as on the step';
+
 CREATE TABLE graphitron_field_path_method (
   graph_name         VARCHAR NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -10234,18 +10345,25 @@ WITH frontier (graph_name, type_name, field_name, start_source_name, start_schem
       ON e.graph_name = p.graph_name AND e.source_name = p.element_source_name
      AND e.element_line = p.element_source_line AND e.element_column = p.element_source_column
 ),
--- The element written next where each walk stands, read by its place in the field's path, and
--- whether the field reads one row, which is what decides the way a key from a table to itself is
--- ridden until the field states it. The flags are CASE expressions rather than bare EXISTS: H2 pushes a
+-- The element written next where each walk stands, read by its place in the field's path, whether
+-- the field reads one row, which is what decides the way a key from a table to itself is ridden until
+-- the field states it, and whether the element is the path's only one, which a primary key needs. The flags are CASE expressions rather than bare EXISTS: H2 pushes a
 -- predicate onto a view's boolean column and writes one over a bare EXISTS it cannot parse back.
 step (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
       source_name, source_line, source_column, from_source_name, from_schema, from_table,
-      single_valued, has_key, has_table, has_condition, has_routine) AS (
+      single_valued, sole_element, has_key, has_table, has_condition, has_routine) AS (
   SELECT fr.graph_name, fr.type_name, fr.field_name,
          fr.start_source_name, fr.start_schema, fr.start_table, fr.position,
          w.source_name, w.element_line, w.element_column,
          fr.from_source_name, fr.from_schema, fr.from_table,
          NOT (f.is_list OR nv.wrapper_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM'),
+         -- Whether the element is the field's whole path: place 0 is only ever the first step from a
+         -- parent's result or bound table, a routine's walk starting after the routine.
+         CASE WHEN fr.position = 0
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry w1
+                                    WHERE w1.graph_name = w.graph_name AND w1.source_name = w.source_name
+                                      AND w1.field_line = w.field_line AND w1.field_column = w.field_column
+                                      AND w1.position = 1) THEN TRUE ELSE FALSE END,
          CASE WHEN EXISTS (SELECT 1 FROM graphitron_ast_reference_key_step_entry k
                   WHERE k.graph_name = w.graph_name AND k.source_name = w.source_name
                     AND k.source_line = w.element_line AND k.source_column = w.element_column) THEN TRUE ELSE FALSE END,
@@ -10293,6 +10411,23 @@ move (graph_name, type_name, field_name, start_source_name, start_schema, start_
      AND (NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
                AND h.from_table = h.to_table)
           OR h.fk_on_from = s.single_valued)
+  UNION ALL
+  -- A table's own primary key, joining each row to itself: the path's only element, on a field
+  -- reading one row, from where the walk stands back to the same table. It rides no foreign key, so
+  -- the key columns stay empty and graphitron_field_path_primary_key says which key it was.
+  SELECT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema, s.start_table,
+         s.position, s.source_name, s.source_line, s.source_column,
+         s.from_source_name, s.from_schema, s.from_table,
+         s.from_source_name, s.from_schema, s.from_table,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BOOLEAN)
+    FROM step s
+    JOIN graphitron_path_element_primary_key pk
+      ON pk.graph_name = s.graph_name AND pk.source_name = s.source_name
+     AND pk.source_line = s.source_line AND pk.source_column = s.source_column
+     AND pk.table_source_name = s.from_source_name AND pk.table_schema = s.from_schema
+     AND pk.table_name = s.from_table
+   WHERE s.has_key AND s.sole_element AND s.single_valued
   UNION ALL
   -- A table, reached by a key between it and where the walk stands.
   SELECT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema, s.start_table,
@@ -11321,6 +11456,10 @@ SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
                           WHERE k.graph_name = st.graph_name AND k.source_name = st.element_source_name
                             AND k.source_line = st.element_source_line
                             AND k.source_column = st.element_source_column)
+              OR EXISTS (SELECT 1 FROM graphitron_path_element_primary_key pk
+                          WHERE pk.graph_name = st.graph_name AND pk.source_name = st.element_source_name
+                            AND pk.source_line = st.element_source_line
+                            AND pk.source_column = st.element_source_column)
               OR EXISTS (SELECT 1 FROM graphitron_path_element_table t
                           WHERE t.graph_name = st.graph_name AND t.source_name = st.element_source_name
                             AND t.source_line = st.element_source_line
@@ -16786,6 +16925,9 @@ INSERT INTO meta_grain VALUES
   ('path-element-key-candidate',
    'one key a path element names, in one graph',
    'graph_name, source_name, source_line, source_column, constraint_source_name, constraint_schema, constraint_table, constraint_name', 'catalog'),
+  ('path-element-primary-key-candidate',
+   'one table''s primary key a path element names, in one graph',
+   'graph_name, source_name, source_line, source_column, table_source_name, table_schema, table_name', 'catalog'),
   ('path-element-table-candidate',
    'one table a path element names, in one graph',
    'graph_name, source_name, source_line, source_column, table_source_name, table_schema, table_name', 'catalog'),
@@ -17157,6 +17299,10 @@ INSERT INTO meta_relation VALUES
    'The foreign key a step of a field''s path rode: one row per step that rode one, written or inferred.',
    'For example {key: "film_language_id_fkey"} and {table: "language"} from film both ride film_language_id_fkey; a step matched by name or joined by a method rides none.',
    'Provenance for the editor and the messages, which name the key a step rode whether the author wrote it, inferred it from a table or it was discovered; the columns are the join.'),
+  ('graphitron_field_path_primary_key', 'field-path-key', 'graphitron',
+   'The primary key a step of a field''s path rode to join a row to itself: one row per step that rode one.',
+   'For example Film.sameRow over @reference(path: [{key: "film_pkey"}]) is one step from film back to film on film_pkey, reading the parent''s own row.',
+   'Provenance for the editor and the MCP server, which name the key a step rode; the columns, each primary-key column paired with itself, are the join. A sibling of graphitron_field_path_key, whose foreign key to sql_referential_constraint would refuse a primary key.'),
   ('graphitron_field_path_method', 'field-path-method', 'graphitron',
    'The condition method a step of a field''s path joins or filters by: one row per step and overload.',
    'For example {condition: {className: "…Conditions", method: "filmActors"}} alone is the step''s join; beside a key or a table it filters the step its columns join.',
@@ -18007,6 +18153,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_path_element_key_rule', 'path-element-key-candidate', 'graphitron',
    'One row the path element key rule computes, in the shape graphitron_path_element_key stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_path_element_key, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_path_element_primary_key', 'path-element-primary-key-candidate', 'graphitron',
+   'A table''s own primary key a path element names: one row per element whose key: spelling names a table''s primary key, per candidate key.',
+   'For example {key: "film_pkey"} names public.film''s primary key, which joins each film row to itself.',
+   'The key: spelling a field writes to read its parent''s own row through a @table return type on the same table: the identity join. A sibling of graphitron_path_element_key rather than a widening of it, because that relation''s foreign key to sql_referential_constraint is the integrity rule that makes its rows foreign keys, and a kind column would trade it away. Keyed by the element and the table, the constraint name being sql_primary_key''s to say. Whether the walk may ride it is the walk''s question: only as a path''s only element on a field reading one row.'),
+  ('graphitron_path_element_primary_key_rule', 'path-element-primary-key-candidate', 'graphitron',
+   'One row the path element primary key rule computes, in the shape graphitron_path_element_primary_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_path_element_primary_key, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_path_element_table', 'path-element-table-candidate', 'graphitron',
    'A table a path element names: one row per element and candidate table.',

@@ -65,15 +65,16 @@ class FetcherRegistrationsEmitterTest {
     }
 
     /**
-     * A same-row table child inside a nested object: its fetcher reads the child's null contract
-     * off the schema, so the nested registration path must carry the schema to it.
+     * A single table child over the primary-key reference inside a nested object: its fetcher
+     * reads the child's null contract off the schema, so the nested registration path must carry
+     * the schema to it.
      */
     @Test
-    void nestedSameRowChild_registersUnderTheNestedType() {
+    void nestedPrimaryKeyChild_registersUnderTheNestedType() {
         var sdl = """
             type Query { films: [Film!]! }
             type FilmSameRow @table(name: "film") { title: String }
-            type FilmNest { row: FilmSameRow }
+            type FilmNest { row: FilmSameRow @reference(path: [{key: "film_pkey"}]) }
             type Film @table(name: "film") { title: String  nest: FilmNest }
             """;
         var bodies = bodiesFor(sdl);

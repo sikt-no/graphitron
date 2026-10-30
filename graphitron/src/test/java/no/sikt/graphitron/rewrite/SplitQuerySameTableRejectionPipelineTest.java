@@ -17,7 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * anchor keys on each parent's correlation to the child has nothing to key on. Classification
  * rejects it as an author error naming the field, the applied delivery marker, both types, the
  * table and the remedies, rather than letting it reach the emitter with a null correlation. The
- * remedies classify, and the inline twin (no {@code @splitQuery}) reads the parent's own row.
+ * remedies classify: the primary-key {@code @reference} batches on the parent's own key, and a
+ * {@code condition:} states the correlation.
  */
 @PipelineTier
 class SplitQuerySameTableRejectionPipelineTest {
@@ -38,11 +39,12 @@ class SplitQuerySameTableRejectionPipelineTest {
                     .startsWith(marker + " fetches the child in a batch")
                     .contains("'FilmDetails' is bound to the same table as 'Film' ('film')")
                     .contains("has no @reference")
-                    .contains("drop " + marker + " from a single-cardinality field with no arguments,"
-                        + " which reads the parent's own row in the same statement")
-                    .contains("for a field that must stay split, state the correlation with"
-                        + " @reference(path: [{condition: ...}])")
-                    .endsWith("drop " + marker + ".");
+                    .contains("To return the parent's own row from a single-cardinality field, name"
+                        + " the table's primary key with @reference(path: [{key: \"film_pkey\"}]),"
+                        + " which gives the batch the parent's key to batch on")
+                    .endsWith("state the correlation with @reference(path: [{condition: ...}]).")
+                    .doesNotContain("@lookupKey")
+                    .doesNotContain("narrow");
             });
     }
 
@@ -168,17 +170,19 @@ class SplitQuerySameTableRejectionPipelineTest {
     }
 
     @Test
-    void inlineTwin_readsTheParentsOwnRow() {
+    void primaryKeyReferenceRemedy_classifiesAsABatchOnTheParentsKey() {
         var schema = TestSchemaHelper.buildSchema(DETAILS + """
             type Film @table(name: "film") {
                 title: String
-                details: FilmDetails
+                details: FilmDetails @splitQuery @reference(path: [{key: "film_pkey"}])
             }
             type Query { films: [Film!]! }
             """);
 
         assertThat(schema.field("Film", "details"))
-            .isInstanceOfSatisfying(ChildField.SameRowTableField.class, f ->
-                assertThat(f.returnType().table().tableName()).isEqualTo("film"));
+            .isInstanceOfSatisfying(ChildField.BatchedTableField.class, f -> {
+                assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnFkSlots.class);
+                assertThat(f.sourceKey().columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+            });
     }
 }

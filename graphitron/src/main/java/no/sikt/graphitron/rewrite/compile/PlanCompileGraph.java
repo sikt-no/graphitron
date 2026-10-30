@@ -439,7 +439,6 @@ public final class PlanCompileGraph {
                                     }
                                 }
                                 case CallWrap.Splice ignored -> { }
-                                case CallWrap.SameRow ignored -> { }
                                 case CallWrap.PivotMultiset ignored -> { }
                             }
                         }

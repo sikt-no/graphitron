@@ -1560,7 +1560,8 @@ class FieldBuilder {
             // already demoted it in the registry; resolveReturnType would yield a ScalarReturnType and
             // the cast would crash. The collision still hard-fails the build at the validation pass.
             var returnType = new ReturnTypeRef.TableBoundReturnType(elementTypeName, tbt.table(), wrapper);
-            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName(), returnType.table(), wrapper.isList());
+            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName(), returnType.table(), wrapper.isList(),
+                /*admitPrimaryKey=*/true);
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(referencePath.errorMessage()));
             }
@@ -1629,8 +1630,9 @@ class FieldBuilder {
             // A same-table field with no @reference: the path is empty (parsePath infers a key
             // only between two different tables), so the inline read has no correlation to the
             // parent. Narrowed by its own filters or lookup, it reads the table independent of
-            // the parent, the same rows under every parent; single-valued and argument-free, it
-            // reads the parent's own row; anything else would read every row under every parent.
+            // the parent, the same rows under every parent. Unnarrowed, two @table types on one
+            // table are a join the author has not stated, so it is rejected; the parent's own row
+            // is the primary-key @reference, which classifies as an ordinary TableField above.
             if (referencePath.elements().isEmpty() && tbtParentCorrelation == null) {
                 boolean narrowed = !tfc.filters().isEmpty()
                     || !(tfc.lookup() instanceof LookupResolution.None);
@@ -1638,14 +1640,10 @@ class FieldBuilder {
                     boolean argumentFree = fieldDef.getArguments().isEmpty()
                         && tfc.orderBy() instanceof OrderBySpec.None
                         && tfc.pagination() == null;
-                    if (returnType.wrapper() instanceof FieldWrapper.Single && argumentFree) {
-                        return new no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField(
-                            parentTypeName, name, location, returnType, aliasOwnerOf(parentTypeName, name),
-                            aliasScopeOf(parentTypeName));
-                    }
                     return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
                         unnarrowedSameTableMessage(parentTypeName, elementTypeName,
-                            returnType.table().tableName(), isList)));
+                            returnType.table().tableName(), isList, argumentFree,
+                            ctx.catalog.primaryKeyName(returnType.table().tableName(), false))));
                 }
             }
             return new TableField(parentTypeName, name, location,
@@ -7262,7 +7260,7 @@ class FieldBuilder {
      * The author error for a split-delivered field whose return type is bound to its parent's
      * table with no {@code @reference}: the path is empty, so the batch has no parent key. Names
      * the delivery markers the coordinate actually carries (the union {@link #forcesSplitDelivery}
-     * reads) and the three remedies with their preconditions; the validator prefixes the field
+     * reads) and the remedies with their preconditions; the validator prefixes the field
      * coordinate.
      */
     private String uncorrelatedSameTableSplitMessage(GraphQLFieldDefinition fieldDef,
@@ -7273,39 +7271,48 @@ class FieldBuilder {
         if (row.tenantFanOut()) markers.add("@" + DIR_TENANT_FAN_OUT);
         String applied = String.join(" and ", markers);
         String verb = markers.size() == 1 ? "fetches" : "fetch";
+        var primaryKey = ctx.catalog.primaryKeyName(tableName, false);
         return applied + " " + verb
             + " the child in a batch keyed on each parent's correlation to it, but '"
             + returnTypeName + "' is bound to the same table as '" + parentTypeName + "' ('"
             + tableName + "') and the field has no @reference, so there is no parent key to"
-            + " batch on. To return the parent's own row, drop " + applied + " from a"
-            + " single-cardinality field with no arguments, which reads the parent's own row in"
-            + " the same statement; for a field that must stay split, state the correlation with"
-            + " @reference(path: [{condition: ...}]). To read rows of '" + tableName
-            + "' independent of the parent, narrowed by this field's @condition or @lookupKey"
-            + " arguments, drop " + applied + ".";
+            + " batch on."
+            + primaryKey.map(pk -> " To return the parent's own row from a single-cardinality"
+                + " field, name the table's primary key with @reference(path: [{key: \"" + pk
+                + "\"}]), which gives the batch the parent's key to batch on;").orElse("")
+            + " to read rows of '" + tableName + "' related to the parent, state the correlation"
+            + " with @reference(path: [{condition: ...}]).";
     }
 
     /**
      * The author error for an inline field whose return type is bound to its parent's table,
-     * with no {@code @reference} and nothing narrowing the read, that cannot read the parent's
-     * own row: a list, or a single field carrying arguments that filter nothing. Its read would
-     * be every row of the table under every parent. The sibling of
-     * {@link #uncorrelatedSameTableSplitMessage}; names both types, the table and the remedies,
-     * and the validator prefixes the field coordinate.
+     * with no {@code @reference} and nothing narrowing the read. Putting {@code @table} on the
+     * return type says its row is reached by a join, and two {@code @table} types on one table
+     * describe a self-join with no default, so the author states it. Covers the three shapes:
+     * single and argument-free, a list, and a single field with arguments that filter nothing.
+     * The single-valued shapes are offered dropping {@code @table} (a plain nested object reads
+     * the parent's own row) and the table's primary key in {@code @reference}, or a
+     * {@code condition:} where the table has none; a list is offered a self-referencing key or a
+     * {@code condition:}. The sibling of {@link #uncorrelatedSameTableSplitMessage}; the validator
+     * prefixes the field coordinate.
      */
     private static String unnarrowedSameTableMessage(String parentTypeName, String returnTypeName,
-            String tableName, boolean isList) {
-        String shape = isList
-            ? "the field is a list"
-            : "the field takes arguments that filter nothing";
-        return "'" + returnTypeName + "' is bound to the same table as '" + parentTypeName + "' ('"
-            + tableName + "') and the field has no @reference, so it is not correlated to the"
-            + " parent; nothing narrows it and " + shape + ", so it would read every row of '"
-            + tableName + "' under every parent. To read the parent's own row, make the field"
-            + " single-valued with no arguments; to read rows of '" + tableName + "' related to the"
-            + " parent, state the self-referencing key with @reference(path: [{key: ...}]); to"
-            + " read rows of '" + tableName + "' independent of the parent, narrow the field with"
-            + " an argument, @condition or @lookupKey.";
+            String tableName, boolean isList, boolean argumentFree, Optional<String> primaryKey) {
+        String head = "'" + returnTypeName + "' is bound to the same table as '" + parentTypeName
+            + "' ('" + tableName + "') and the field has no @reference: two @table types on one"
+            + " table are a join, and the field does not say which rows it pairs.";
+        if (isList) {
+            return head + " To read rows of '" + tableName + "' related to the parent, state the"
+                + " self-referencing key with @reference(path: [{key: ...}]), or the correlation"
+                + " with @reference(path: [{condition: ...}]).";
+        }
+        String shape = argumentFree ? "" : " The field's arguments filter nothing, so they do not"
+            + " narrow it either.";
+        String join = primaryKey
+            .map(pk -> "name the table's primary key with @reference(path: [{key: \"" + pk + "\"}])")
+            .orElse("state the correlation with @reference(path: [{condition: ...}])");
+        return head + shape + " To read the parent's own row, drop @table from '" + returnTypeName
+            + "' if nothing else returns it as a table type, or " + join + ".";
     }
 
     /**

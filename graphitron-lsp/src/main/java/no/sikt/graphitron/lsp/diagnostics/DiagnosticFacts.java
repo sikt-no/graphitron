@@ -43,6 +43,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.exists;
@@ -754,7 +755,10 @@ final class DiagnosticFacts {
     /**
      * The same probe over the key census, which needs the {@code sql_constraint} join
      * {@link CatalogKeys#spelledBy}'s unqualified arm reads the generated spelling from. Its own arm
-     * rather than a parameter of the read above because the join belongs to the question.
+     * rather than a parameter of the read above because the join belongs to the question. A
+     * spelling naming a table's own primary key resolves too ({@link CatalogKeys#primaryKeySpelledBy}),
+     * the identity join a same-table field writes; where the build admits one is the classifier's
+     * rule, not a question of whether the name exists.
      */
     private static Field<List<String>> foreignKeySpellings(
         StoreHandle store, Collection<String> spellings
@@ -767,7 +771,16 @@ final class DiagnosticFacts {
             .and(SQL_CONSTRAINT.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
             .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME))
             .where(store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
-            .and(CatalogKeys.spelledBy(spelling)));
+            .and(CatalogKeys.spelledBy(spelling))
+            .union(selectDistinct(inline(spelling))
+                .from(SQL_PRIMARY_KEY)
+                .join(SQL_CONSTRAINT)
+                .on(SQL_CONSTRAINT.SOURCE_NAME.eq(SQL_PRIMARY_KEY.SOURCE_NAME))
+                .and(SQL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_PRIMARY_KEY.TABLE_SCHEMA))
+                .and(SQL_CONSTRAINT.TABLE_NAME.eq(SQL_PRIMARY_KEY.TABLE_NAME))
+                .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_PRIMARY_KEY.CONSTRAINT_NAME))
+                .where(store.reads(SQL_PRIMARY_KEY.SOURCE_NAME))
+                .and(CatalogKeys.primaryKeySpelledBy(spelling))));
     }
 
     /**

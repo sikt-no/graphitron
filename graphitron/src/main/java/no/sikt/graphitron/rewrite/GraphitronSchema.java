@@ -438,8 +438,8 @@ public record GraphitronSchema(
      * A pure per-type fold over this schema's own components (the {@link #nestingReach}
      * precedent), read by both the projection producer, which projects the presence columns and
      * the probe, and the fetcher emitter, which checks them, so the two cannot disagree. A
-     * same-row child met among the type's fields blocks the collapse, which terminates a
-     * same-table cycle.
+     * same-table cycle terminates because a reference child is a probe over its target's column
+     * leaves, which never recurses into the target's own references.
      */
     public Presence.SubtreePresence presenceOf(String typeName) {
         var fields = fieldsOf(typeName).stream()
@@ -483,8 +483,6 @@ public record GraphitronSchema(
     public Presence.NullContract nullContractOf(no.sikt.graphitron.rewrite.model.ChildField field) {
         return switch (field) {
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField nf -> nf.nullContract(presenceLookup());
-            case no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField srf ->
-                Presence.NullContract.of(srf.returnType().wrapper(), presenceOf(srf.returnType().returnTypeName()));
             case no.sikt.graphitron.rewrite.model.ChildField.TableField tf ->
                 Presence.NullContract.of(tf.returnType().wrapper(), presenceOf(tf.returnType().returnTypeName()));
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf

@@ -1595,6 +1595,22 @@ class BuildContext {
      */
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
             String startSqlTableName, String targetSqlTableName, TableRef returnTableRef, boolean isList) {
+        return parsePath(container, fieldName, startSqlTableName, targetSqlTableName, returnTableRef, isList,
+            /*admitPrimaryKey=*/false);
+    }
+
+    /**
+     * Variant of {@link #parsePath} that additionally opts in to a {@code {key:}} element naming
+     * the primary key of the table the path starts on, the identity self-join that reads the
+     * parent's own row ({@link On.Keying.PrimaryKey}). The element is admitted only where the site
+     * can carry it: a field of a {@code @table} type returning a table-bound type, which is the one
+     * caller passing {@code true}. Every other site parses with it off, so the element is a
+     * rejection there; within an opted-in site {@link #parsePathElement} further requires the
+     * element to be the whole path, the field single-valued and the return table the start table.
+     */
+    ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
+            String startSqlTableName, String targetSqlTableName, TableRef returnTableRef, boolean isList,
+            boolean admitPrimaryKey) {
         // @reference is repeatable, and repeated field-level applications compose one
         // chain — their path elements concatenate in authored order over a single running
         // source, so a multi-application chain is just a longer path to every downstream
@@ -1623,7 +1639,7 @@ class BuildContext {
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
         resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
-            /*stepIndexBase=*/0, /*endsChain=*/true, resolvedElements, errors);
+            /*stepIndexBase=*/0, /*endsChain=*/true, admitPrimaryKey, resolvedElements, errors);
 
         if (!errors.isEmpty()) {
             return new ParsedPath(List.of(), String.join("; ", errors), new TerminalTargetVerdict.NotApplicable());
@@ -1718,7 +1734,7 @@ class BuildContext {
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
         resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
-            /*stepIndexBase=*/0, /*endsChain=*/true, resolvedElements, errors);
+            /*stepIndexBase=*/0, /*endsChain=*/true, /*admitPrimaryKey=*/false, resolvedElements, errors);
         if (!errors.isEmpty()) {
             return new ParsedPath(List.of(), String.join("; ", errors), new TerminalTargetVerdict.NotApplicable());
         }
@@ -1739,10 +1755,14 @@ class BuildContext {
      * {@code @table}, which a {@code {condition:}}-only element prefers over reflecting on its
      * method signature) to the element that truly ends the field's chain: a segment followed by
      * further chain nodes passes {@code false} so none of its elements read the return table.
+     *
+     * <p>{@code admitPrimaryKey} is the site's opt-in to a primary-key {@code {key:}} element
+     * (see the {@code admitPrimaryKey} overload of {@link #parsePath}); the element rule reads it
+     * together with the element count.
      */
     private void resolvePathElements(List<?> elements, String fieldName, String startSqlTableName,
             String targetSqlTableName, boolean isList, int stepIndexBase, boolean endsChain,
-            List<JoinStep> resolvedElements, List<String> errors) {
+            boolean admitPrimaryKey, List<JoinStep> resolvedElements, List<String> errors) {
         String currentSource = startSqlTableName;
         int stepIndex = stepIndexBase;
         int localIndex = 0;
@@ -1750,8 +1770,10 @@ class BuildContext {
         for (var v : elements) {
             if (v instanceof Map<?, ?>) {
                 boolean isTerminal = endsChain && (localIndex == totalElements - 1);
+                boolean primaryKeyAdmissible = admitPrimaryKey && totalElements == 1;
                 parsePathElement(asMap(v), currentSource, fieldName, stepIndex,
-                    resolvedElements, errors, isList, isTerminal, targetSqlTableName);
+                    resolvedElements, errors, isList, isTerminal, targetSqlTableName,
+                    primaryKeyAdmissible);
                 stepIndex++;
                 localIndex++;
                 if (!resolvedElements.isEmpty()) {
@@ -1804,7 +1826,7 @@ class BuildContext {
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
         resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
-            stepIndexBase, endsChain, resolvedElements, errors);
+            stepIndexBase, endsChain, /*admitPrimaryKey=*/false, resolvedElements, errors);
         if (!errors.isEmpty()) {
             return new ChainSegment(List.of(), String.join("; ", errors));
         }
@@ -2171,10 +2193,14 @@ class BuildContext {
      *
      * <p>{@code fieldName} and {@code stepIndex} are used to compute the step's alias as
      * {@code fieldName + "_" + stepIndex}.
+     *
+     * <p>{@code primaryKeyAdmissible} is true when the site opted in to a primary-key
+     * {@code {key:}} element and this element is the path's only one; the {@code key} branch
+     * still requires a single-valued field whose start and return tables are the key's table.
      */
     private void parsePathElement(Map<String, Object> element, String currentSourceSqlName,
             String fieldName, int stepIndex, List<JoinStep> out, List<String> errors, boolean isList,
-            boolean isTerminal, String terminalTargetSqlName) {
+            boolean isTerminal, String terminalTargetSqlName, boolean primaryKeyAdmissible) {
         Object keyRaw = element.get(ARG_KEY);
         Object tableRaw = element.get(ARG_TABLE_REF);
         Object conditionRaw = element.get(ARG_CONDITION);
@@ -2200,9 +2226,49 @@ class BuildContext {
             // position's table; a genuine unresolved collision surfaces as a typed Ambiguous
             // rejection, not a silent hit.
             var fkLookup = catalog.findForeignKey(qfk.name(), currentSourceSqlName, qfk.schema().orElse(null));
+            // The same spelling may name a table's own primary key: the identity self-join. It is
+            // taken where no foreign key on this table answers the name, and a name answering both
+            // here is refused rather than silently picked.
+            var pkLookup = catalog.findPrimaryKey(qfk.name(), currentSourceSqlName, qfk.schema().orElse(null));
+            boolean fkHere = fkLookup instanceof JooqCatalog.ForeignKeyLookup.Resolved fr
+                && (currentSourceSqlName == null || catalog.foreignKeyTouchesTable(fr.fk(), currentSourceSqlName));
+            if (pkLookup instanceof JooqCatalog.PrimaryKeyLookup.Resolved pr
+                    && (fkHere || fkLookup instanceof JooqCatalog.ForeignKeyLookup.NotInCatalog
+                                || primaryKeyOf(pr.key(), currentSourceSqlName))) {
+                if (fkHere && primaryKeyOf(pr.key(), currentSourceSqlName)) {
+                    var fk = ((JooqCatalog.ForeignKeyLookup.Resolved) fkLookup).fk();
+                    errors.add("key '" + keyName.get() + "' is ambiguous: it names both the foreign key '"
+                        + fk.getName() + "' on '" + fk.getTable().getName() + "' and the primary key '"
+                        + pr.key().getName() + "' of '" + pr.key().getTable().getName()
+                        + "'; rename one of the constraints so the element names one key");
+                    return;
+                }
+                if (!fkHere) {
+                    if (hasCondition) {
+                        errors.add("key '" + keyName.get() + "' names the primary key of '"
+                            + pr.key().getTable().getName() + "', which joins each row to itself;"
+                            + " a primary-key element takes no condition");
+                        return;
+                    }
+                    primaryKeyHop(pr.key(), keyName.get(), currentSourceSqlName, fieldName, stepIndex,
+                        isList, terminalTargetSqlName, primaryKeyAdmissible, out, errors);
+                    return;
+                }
+            }
+            if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.NotInCatalog
+                    && pkLookup instanceof JooqCatalog.PrimaryKeyLookup.Ambiguous pamb) {
+                errors.add("key '" + keyName.get() + "' is ambiguous: it names the primary key of a table in"
+                    + " each of the schemas " + pamb.schemas() + "; schema-qualify the key so it names one");
+                return;
+            }
             if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.NotInCatalog) {
+                var candidates = new ArrayList<>(fkCandidateNames(currentSourceSqlName, keyName.get()));
+                if (sameCatalogTable(currentSourceSqlName, terminalTargetSqlName)) {
+                    catalog.primaryKeyName(currentSourceSqlName, /*constantNamespace=*/false)
+                        .ifPresent(candidates::add);
+                }
                 errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
-                    + candidateHint(keyName.get(), fkCandidateNames(currentSourceSqlName, keyName.get())));
+                    + candidateHint(keyName.get(), candidates));
                 return;
             }
             if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.Ambiguous amb) {
@@ -2328,6 +2394,79 @@ class BuildContext {
             return;
         }
         errors.add("path element has neither 'key', 'table', nor 'condition'");
+    }
+
+    /**
+     * The identity self-join a {@code {key:}} element naming a table's own primary key resolves
+     * to: one hop from the table to itself, pairing every primary-key column with itself in key
+     * order, keyed {@link On.Keying.PrimaryKey}. Admitted only as the whole path of a single-valued
+     * field of a {@code @table} type whose return type is bound to that same table
+     * ({@code primaryKeyAdmissible} carries the site and element-count half); every other placement
+     * is a rejection naming the rule, so the element answers exactly one question, the parent's own
+     * row, and never reaches a multi-hop reader.
+     */
+    private void primaryKeyHop(org.jooq.UniqueKey<?> pk, String spelling, String currentSourceSqlName,
+            String fieldName, int stepIndex, boolean isList, String terminalTargetSqlName,
+            boolean primaryKeyAdmissible, List<JoinStep> out, List<String> errors) {
+        String keyTable = pk.getTable().getName();
+        String rule = "a primary key joins each row to itself, so it is admitted only as the whole"
+            + " @reference path of a single-valued field whose parent and return type are both bound"
+            + " to the key's table";
+        String head = "key '" + spelling + "' names the primary key of '" + keyTable + "'";
+        if (currentSourceSqlName == null || !primaryKeyOf(pk, currentSourceSqlName)) {
+            errors.add(head + (currentSourceSqlName == null ? "" : ", not of '" + currentSourceSqlName
+                + "' where the path stands") + "; " + rule);
+            return;
+        }
+        if (!primaryKeyAdmissible) {
+            errors.add(head + ", which is not admitted here: " + rule);
+            return;
+        }
+        if (!sameCatalogTable(currentSourceSqlName, terminalTargetSqlName)) {
+            errors.add(head + ", but the field's return type is bound to '" + terminalTargetSqlName
+                + "'; " + rule);
+            return;
+        }
+        if (isList) {
+            errors.add(head + ", which joins the parent's row to itself and so reads exactly one row;"
+                + " make the field single-valued");
+            return;
+        }
+        var entry = catalog.findTableByClass(pk.getTable().getClass());
+        if (entry.isEmpty()) {
+            errors.add(unknownTableRejection(new JooqCatalog.TableResolution.NotInCatalog(), keyTable).message());
+            return;
+        }
+        TableRef table = entry.get().toTableRef(currentSourceSqlName);
+        var columns = resolveFkColumnRefs(pk.getTable(), pk.getFields());
+        var slots = columns.stream().map(c -> new JoinSlot.FkSlot(c, c)).toList();
+        out.add(new JoinStep.Hop(
+            new TableExpr.Catalog(table),
+            new On.ColumnPairs(new On.Keying.PrimaryKey(pk.getName()), slots),
+            table, /*whereFilter=*/null, fieldName + "_" + stepIndex));
+    }
+
+    /**
+     * Whether {@code pk} is the primary key of the table {@code tableSqlName} names: by jOOQ table
+     * class identity when the name resolves to one catalog table, by bare name otherwise.
+     */
+    private boolean primaryKeyOf(org.jooq.UniqueKey<?> pk, String tableSqlName) {
+        if (tableSqlName == null) return false;
+        return catalog.findTable(tableSqlName).asEntry()
+            .map(e -> e.table().getClass() == pk.getTable().getClass())
+            .orElseGet(() -> pk.getTable().getName().equalsIgnoreCase(tableSqlName));
+    }
+
+    /**
+     * Whether two SQL table names denote one catalog table: by jOOQ table class identity when both
+     * resolve, by a case-insensitive name compare otherwise; false when either is {@code null}.
+     */
+    private boolean sameCatalogTable(String a, String b) {
+        if (a == null || b == null) return false;
+        var ca = catalog.findTable(a).asEntry().map(e -> e.table().getClass());
+        var cb = catalog.findTable(b).asEntry().map(e -> e.table().getClass());
+        if (ca.isPresent() && cb.isPresent()) return ca.get() == cb.get();
+        return a.equalsIgnoreCase(b);
     }
 
     /**

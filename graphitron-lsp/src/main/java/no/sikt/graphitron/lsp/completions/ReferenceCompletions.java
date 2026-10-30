@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import io.github.treesitter.jtreesitter.Node;
 import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
@@ -7,6 +8,7 @@ import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
+import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.CompletionItem;
@@ -35,7 +37,9 @@ import java.util.Set;
  * are store reads now, the binding through {@link BoundTables} and the census through
  * {@link CatalogKeys}, which is the arm's whole answer coming out of one transaction. Path-step
  * refinement (narrowing later steps by where the previous step landed) is not implemented; every
- * step suggests the same set.
+ * step suggests the same set. The table's own primary key joins the set only on a single-valued
+ * field whose return type is bound to the same table and whose path holds no other element, the one
+ * place the build admits it.
  *
  * <p>A binding the census answers twice is offered twice. The incumbent asked the classifier, whose
  * verdict on an unqualified name two schemas both declare is {@code Ambiguous} and therefore no
@@ -72,7 +76,74 @@ public final class ReferenceCompletions {
         if (typeDecl.isEmpty()) return List.of();
         var typeName = TypeContext.declaredNameOf(typeDecl.get(), source);
         if (typeName.isEmpty()) return List.of();
-        return keyItems(store, BoundTables.of(store, typeName.get()), context);
+        var tables = BoundTables.of(store, typeName.get());
+        var candidates = keyCandidates(store, tables);
+        candidates.addAll(primaryKeyCandidates(store, tables, directive, source));
+        return items(candidates, context);
+    }
+
+    /**
+     * The primary key of the enclosing type's table, offered where naming it is admitted: a
+     * single-valued field whose return type is bound to that same table, on a path holding no other
+     * element. That {@code @reference} joins each row to itself, reading the parent's own row.
+     */
+    private static List<Candidate> primaryKeyCandidates(
+        StoreHandle store, List<CatalogTable> tables, Directives.Directive directive, byte[] source
+    ) {
+        var field = TypeContext.enclosingFieldDefinition(directive.outer());
+        if (field.isEmpty() || pathElementCount(directive, source) > 1) return List.of();
+        Node type = null;
+        for (int i = 0; i < field.get().getChildCount(); i++) {
+            Node child = field.get().getChild(i).orElse(null);
+            if (child != null && "type".equals(child.getType())) type = child;
+        }
+        if (type == null || containsKind(type, "list_type")) return List.of();
+        Node named = firstOfKind(type, "named_type");
+        if (named == null) return List.of();
+        String returnTypeName = Nodes.text(named, source).trim();
+        var returnTables = BoundTables.of(store, returnTypeName);
+        var out = new ArrayList<Candidate>();
+        for (CatalogTable table : tables) {
+            if (!returnTables.contains(table)) continue;
+            CatalogKeys.primaryKeyOf(store, table).ifPresent(key -> out.add(new Candidate(key.schema(),
+                key.name(), "↺ " + key.table() + " (primary key: the parent's own row)", key.constant())));
+        }
+        return out;
+    }
+
+    /** The elements the directive's {@code path:} lists: its object values, not counting nested ones. */
+    private static int pathElementCount(Directives.Directive directive, byte[] source) {
+        for (var argument : directive.arguments()) {
+            if ("path".equals(Nodes.text(argument.key(), source))) {
+                return countObjects(argument.value());
+            }
+        }
+        return 0;
+    }
+
+    private static int countObjects(Node node) {
+        if ("object_value".equals(node.getType())) return 1;
+        int count = 0;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            var child = node.getChild(i).orElse(null);
+            if (child != null) count += countObjects(child);
+        }
+        return count;
+    }
+
+    private static boolean containsKind(Node node, String kind) {
+        return firstOfKind(node, kind) != null;
+    }
+
+    private static Node firstOfKind(Node node, String kind) {
+        if (kind.equals(node.getType())) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            var child = node.getChild(i).orElse(null);
+            if (child == null) continue;
+            var found = firstOfKind(child, kind);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     /** One foreign key as the arm renders it: what an author can spell, and what it joins. */
@@ -83,9 +154,7 @@ public final class ReferenceCompletions {
      * that table's point of view: the direction arrow and the other endpoint are relative to the
      * table the cursor sits under, which is the arm's own business rather than the census's.
      */
-    private static List<CompletionItem> keyItems(
-        StoreHandle store, List<CatalogTable> tables, CompletionContext context
-    ) {
+    private static List<Candidate> keyCandidates(StoreHandle store, List<CatalogTable> tables) {
         var candidates = new ArrayList<Candidate>();
         for (CatalogTable table : tables) {
             for (var key : CatalogKeys.touching(store, table)) {
@@ -95,7 +164,7 @@ public final class ReferenceCompletions {
                     (outbound ? "→ " : "← ") + other, key.constant()));
             }
         }
-        return items(candidates, context);
+        return candidates;
     }
 
     /**

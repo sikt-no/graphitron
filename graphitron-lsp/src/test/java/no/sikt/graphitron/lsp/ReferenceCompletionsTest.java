@@ -59,6 +59,37 @@ class ReferenceCompletionsTest {
     }
 
     /**
+     * A field whose return type is bound to its parent's own table is offered that table's primary
+     * key, the identity join that reads the parent's own row. Only there: a field returning anything
+     * else, or a list, is not, since the build admits the primary key nowhere else.
+     */
+    @Test
+    void theTablesOwnPrimaryKeyIsOfferedOnASameTableField(@TempDir Path tmp) {
+        String sdl = """
+            type Foo @table(name: "film") { bar: Int }
+            type FooSelf @table(name: "film") { title: String }
+            type Query { foo: Foo }
+            """;
+        String single = """
+            type Foo {
+                bar: FooSelf @reference(path: [{key: ""}])
+            }
+            """;
+        String list = """
+            type Foo {
+                bar: [FooSelf] @reference(path: [{key: ""}])
+            }
+            """;
+        try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
+            var items = items(fixture, single);
+            assertThat(labels(items)).contains("film_pkey", "film_language_id_fkey");
+            assertThat(detailOf(items, "film_pkey")).isEqualTo("↺ film (primary key: the parent's own row)");
+            assertThat(labels(items(fixture, list))).doesNotContain("film_pkey");
+            assertThat(labels(items(fixture, keySite()))).doesNotContain("film_pkey");
+        }
+    }
+
+    /**
      * The generated {@code Keys} constant is documented rather than offered: {@code key:} resolves
      * both namespaces, but only one of them is what the manual teaches and what every constraint has.
      */

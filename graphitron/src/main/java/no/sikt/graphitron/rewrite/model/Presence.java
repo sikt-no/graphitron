@@ -13,8 +13,8 @@ import java.util.Optional;
  * its type whatever the query selects. Three field kinds are decided by it: a
  * {@link ChildField.NestingField}, whose leaves are its own per-edge nested fields
  * ({@link ChildField.NestingField#nullContract}), and a child with a table of its own
- * ({@link ChildField.TableField}, {@link ChildField.BatchedTableField},
- * {@link ChildField.SameRowTableField}), whose leaves are its return type's
+ * ({@link ChildField.TableField}, {@link ChildField.BatchedTableField}), whose leaves are its
+ * return type's
  * ({@link no.sikt.graphitron.rewrite.GraphitronSchema#presenceOf}).
  *
  * <p>A leaf is a column of the object's own row, a reference or list probed by a correlated
@@ -176,10 +176,13 @@ public final class Presence {
          *       service child, an {@code @externalField} returning an object type or reached over
          *       a join path, a {@code @pivot} child, a field reached
          *       through a routine, an uncorrelated read of the own table, a {@code @splitQuery}
-         *       child fetched on another tenant's or a global connection, and a
-         *       {@link ChildField.SameRowTableField}, which is what terminates a same-table
-         *       cycle.</li>
+         *       child fetched on another tenant's or a global connection.</li>
          * </ul>
+         *
+         * <p>A same-table cycle (two {@code @table} types on one table referencing each other
+         * through the primary-key {@code @reference}) terminates because a reference is a
+         * {@link PresenceLeaf.Probe} over its target's column leaves alone
+         * ({@code targetColumnLeaves}), which never recurses into the target's own references.
          */
         static SubtreePresence over(List<? extends ChildField> fields, TypeFields types) {
             var leaves = new ArrayList<PresenceLeaf>();

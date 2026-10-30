@@ -50,7 +50,9 @@ public final class JoinFragments {
         return switch (cp.keying()) {
             case On.Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
                 joinedAlias, CatalogRefs.className(k.fk().keysClassName()), k.fk().constantName());
-            case On.Keying.NameMatchedKey ignored -> {
+            // Neither derivation has a foreign-key Keys constant to name, so the ON is the
+            // explicit column-equality conjunction over the slots.
+            case On.Keying.NameMatchedKey _, On.Keying.PrimaryKey _ -> {
                 var on = CodeBlock.builder();
                 int i = 0;
                 for (var slot : cp.slots()) {

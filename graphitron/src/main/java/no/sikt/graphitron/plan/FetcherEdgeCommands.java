@@ -210,7 +210,6 @@ public final class FetcherEdgeCommands {
             // relation carries the callee and glue references.
             case ChildField.TableField ignored -> null;
             case ChildField.NestingField ignored -> null;
-            case ChildField.SameRowTableField ignored -> null;
             case ChildField.PivotField ignored -> null;
             case ChildField.PivotSlotField ignored -> null;
             // Reads off the arrived source (or the routed error payload): no generated-unit

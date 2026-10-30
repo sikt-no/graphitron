@@ -106,9 +106,10 @@ class CommandSeamRatchetTest {
      * Raised 66 to 67 when the same-row table child landed: its fetcher read in
      * {@code FetcherEmitter.bindRaw}, a new leaf's one read site rather than new dispatch on an
      * existing leaf. Lowered 67 to 64 when an errors field became an outcome's alone: the three
-     * probes that read an {@code ErrorsField}'s transport went with the transport.
+     * probes that read an {@code ErrorsField}'s transport went with the transport. Lowered 64 to
+     * 63 when the same-row table child retired, its fetcher read in {@code bindRaw} with it.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 64;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 63;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -148,9 +149,10 @@ class CommandSeamRatchetTest {
      * retired, the plan already naming each column and whether its writer decodes.
      * Raised 57 to 58 when the same-row table child landed: its no-method arm in the fetcher
      * dispatch, a new leaf's one dispatch site. Lowered 58 to 56 when an errors field became an
-     * outcome's alone: the switch over its two transports went with the transport.
+     * outcome's alone: the switch over its two transports went with the transport. Lowered 56 to
+     * 55 when the same-row table child retired, taking its no-method arm with it.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 56;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 55;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -283,8 +285,10 @@ class CommandSeamRatchetTest {
      * <p>Raised 140 to 143 when the same-row table child landed: its contribution arm and its
      * projection-identity arm in the projection producer, and its no-row arm in the fetcher-edge
      * membership switch, each a new leaf's own exhaustive-switch site.
+     *
+     * <p>Lowered 143 to 140 when the same-row table child retired, taking those three arms.
      */
-    private static final int PLAN_LEAF_REFERENCES = 143;
+    private static final int PLAN_LEAF_REFERENCES = 140;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

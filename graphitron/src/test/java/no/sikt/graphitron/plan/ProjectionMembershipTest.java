@@ -36,7 +36,7 @@ class ProjectionMembershipTest {
     // Every unit-minting shape in one fixture: two anchors sharing a nesting type (per-anchor
     // nested units), a second-level nesting type, an inline and a batched pivot coordinate, and
     // the correlation-key leaves reachable without new types (a split child, a split lookup
-    // child, both @service child shapes), and a same-row table child.
+    // child, both @service child shapes), and a table child over the primary-key reference.
     private static final String SDL = """
         type Language @table(name: "language") {
             name: String
@@ -56,7 +56,7 @@ class ProjectionMembershipTest {
         type Film @table(name: "film") {
             title: String
             details: FilmDetails
-            sameRow: FilmSameRow
+            sameRow: FilmSameRow @reference(path: [{key: "film_pkey"}])
             titleTexts: TranslatedTexts @reference(path: [{table: "film_translation"}])
                                         @pivot(on: "lang_code", value: "title_txt")
             titleTextsSplit: TranslatedTexts @splitQuery @reference(path: [{table: "film_translation"}])

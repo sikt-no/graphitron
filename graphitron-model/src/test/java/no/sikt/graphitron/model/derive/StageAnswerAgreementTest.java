@@ -58,6 +58,7 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_field_target", "graphitron_field_target_rule"),
         new Stage("graphitron_field_target_table", "graphitron_field_target_table_rule"),
         new Stage("graphitron_path_element_key", "graphitron_path_element_key_rule"),
+        new Stage("graphitron_path_element_primary_key", "graphitron_path_element_primary_key_rule"),
         new Stage("graphitron_path_element_table", "graphitron_path_element_table_rule"),
         new Stage("graphitron_path_element_method", "graphitron_path_element_method_rule"),
         new Stage("graphitron_field_source_table", "graphitron_field_source_table_rule"),
@@ -325,6 +326,10 @@ class StageAnswerAgreementTest {
               castings: [FilmActor!]! @reference(path: [{condition: {
                 className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
                 method: "filmToFilmActor"}}])
+              self: FilmSelf @reference(path: [{key: "film_pkey"}])
+            }
+            type FilmSelf @table(name: "film") {
+              title: String
             }
             type FilmActor @table(name: "film_actor") {
               lastUpdate: String @field(name: "last_update")

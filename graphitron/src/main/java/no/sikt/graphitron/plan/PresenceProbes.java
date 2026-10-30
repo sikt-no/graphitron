@@ -16,7 +16,7 @@ import java.util.function.Function;
  * existence test, its reach narrowed from the leaf's join path and its filter the coordinate's own
  * condition glue call; a {@link Presence.PresenceLeaf.Computed} becomes a null test of the
  * field's {@code @externalField} expression. Shared by the projection producer (the
- * nesting, same-row and inline multiset carriers) and the launcher producer (the batched rows
+ * nesting and inline multiset carriers) and the launcher producer (the batched rows
  * method's source and the root table read's {@link no.sikt.graphitron.command.NullCheck}), which
  * resolve glue calls differently but must mint the same probe.
  */

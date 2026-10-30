@@ -486,23 +486,30 @@ public final class Hovers {
     }
 
     /**
-     * The foreign key the cursor names, in the direction the census declares it: from the table that
-     * holds the key to the table it references, which is the same reading whatever the enclosing
-     * type is bound to. The projection matched the generated constant exactly, so an author who
-     * wrote the SQL constraint name, which is the spelling the manual teaches and the completion arm
-     * offers, got nothing; {@link CatalogKeys#named} matches the spellings the generator's own
-     * resolver accepts.
+     * The key the cursor names. A foreign key reads in the direction the census declares it: from
+     * the table that holds the key to the table it references, which is the same reading whatever
+     * the enclosing type is bound to; a table's own primary key reads as the identity join it
+     * states. The projection matched the generated constant exactly, so an author who wrote the SQL
+     * constraint name, which is the spelling the manual teaches and the completion arm offers, got
+     * nothing; {@link CatalogKeys#named} matches the spellings the generator's own resolver accepts.
      */
     private static Optional<Hover> fkHover(FileSnapshot file, StoreHandle store, Node valueNode) {
         String spelling = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (spelling.isEmpty()) return Optional.empty();
         var keys = CatalogKeys.named(store, spelling);
         if (keys.isEmpty()) return Optional.empty();
-        var sb = new StringBuilder("**Foreign key** `").append(spelling).append("`");
+        boolean allPrimary = keys.stream().allMatch(CatalogKeys.Key::primaryKey);
+        var sb = new StringBuilder(allPrimary ? "**Primary key** `" : "**Foreign key** `")
+            .append(spelling).append("`");
         boolean ambiguous = keys.size() > 1;
         for (var key : keys) {
-            sb.append("\n\n`").append(key.table()).append("` → `")
-              .append(key.referencedTable()).append('`');
+            if (key.primaryKey()) {
+                sb.append("\n\n`").append(key.table())
+                  .append("`'s primary key, joining each row to itself");
+            } else {
+                sb.append("\n\n`").append(key.table()).append("` → `")
+                  .append(key.referencedTable()).append('`');
+            }
             if (ambiguous) {
                 sb.append(" (schema `").append(key.schema()).append("`)");
             }

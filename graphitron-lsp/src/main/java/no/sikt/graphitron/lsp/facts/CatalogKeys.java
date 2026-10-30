@@ -7,13 +7,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 
 /**
- * The foreign keys of the catalog census: one query over {@code sql_referential_constraint} joined
- * to the constraint it extends, which is where the generated {@code Keys} constant lives, and to the
- * declaring schema, which is where the class holding that constant lives.
+ * The keys a {@code @reference(key:)} element can name, from the catalog census: the foreign keys,
+ * one query over {@code sql_referential_constraint} joined to the constraint it extends, which is
+ * where the generated {@code Keys} constant lives, and to the declaring schema, which is where the
+ * class holding that constant lives; and a table's own primary key, which a same-table field names
+ * to join each row to itself, read the same way over {@code sql_primary_key}.
  *
  * <p>Shared because completion, hover and goto-definition ask about the same rows from different
  * ends. Completion asks which keys touch a table, having a table and no name; hover asks which key
@@ -58,7 +61,38 @@ public final class CatalogKeys {
      * means is a resolution question, and the census answers with every key that spells it.
      */
     public static List<Key> named(StoreHandle store, String spelling) {
-        return read(store, spelledBy(spelling));
+        var keys = new ArrayList<>(read(store, spelledBy(spelling)));
+        keys.addAll(readPrimaryKeys(store, primaryKeySpelledBy(spelling)));
+        return keys;
+    }
+
+    /**
+     * The primary key of {@code table}, which a {@code key:} element names to join each of the
+     * table's rows to itself; empty where the table has none.
+     */
+    public static java.util.Optional<Key> primaryKeyOf(StoreHandle store, CatalogTable table) {
+        return readPrimaryKeys(store, SQL_PRIMARY_KEY.SOURCE_NAME.eq(table.sourceName())
+            .and(SQL_PRIMARY_KEY.TABLE_SCHEMA.eq(table.schema()))
+            .and(SQL_PRIMARY_KEY.TABLE_NAME.eq(table.tableName())))
+            .stream().findFirst();
+    }
+
+    /**
+     * The {@link #spelledBy} rule over the primary-key census, as a condition over
+     * {@code sql_primary_key} joined to the {@code sql_constraint} it names: the same two
+     * namespaces, case-foldings and qualifier, so a spelling naming a table's own primary key is one
+     * the editor recognises exactly where the generator does.
+     */
+    public static Condition primaryKeySpelledBy(String spelling) {
+        int dot = spelling.indexOf('.');
+        if (dot > 0 && dot < spelling.length() - 1) {
+            return SQL_PRIMARY_KEY.TABLE_SCHEMA
+                .equalIgnoreCase(spelling.substring(0, dot))
+                .and(SQL_PRIMARY_KEY.CONSTRAINT_NAME
+                    .equalIgnoreCase(spelling.substring(dot + 1)));
+        }
+        return SQL_PRIMARY_KEY.CONSTRAINT_NAME.equalIgnoreCase(spelling)
+            .or(SQL_CONSTRAINT.JOOQ_NAME.equalIgnoreCase(spelling));
     }
 
     /**
@@ -111,7 +145,35 @@ public final class CatalogKeys {
         var keys = new ArrayList<Key>(rows.size());
         for (var row : rows) {
             keys.add(new Key(row.value1(), row.value2(), row.value3(), row.value4(),
-                nullToEmpty(row.value5()), nullToEmpty(row.value6())));
+                nullToEmpty(row.value5()), nullToEmpty(row.value6()), false));
+        }
+        return keys;
+    }
+
+    /**
+     * The primary keys matching {@code match}, as {@link Key}s whose referenced table is their own:
+     * the identity join a primary-key element states. Same joins and order as {@link #read}.
+     */
+    private static List<Key> readPrimaryKeys(StoreHandle store, Condition match) {
+        var rows = store.dsl()
+            .select(SQL_PRIMARY_KEY.TABLE_SCHEMA, SQL_PRIMARY_KEY.TABLE_NAME,
+                SQL_PRIMARY_KEY.CONSTRAINT_NAME, SQL_CONSTRAINT.JOOQ_NAME, SQL_SCHEMA.KEYS_CLASS_FQN)
+            .from(SQL_PRIMARY_KEY)
+            .join(SQL_CONSTRAINT).on(SQL_CONSTRAINT.SOURCE_NAME.eq(SQL_PRIMARY_KEY.SOURCE_NAME)
+                .and(SQL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_PRIMARY_KEY.TABLE_SCHEMA))
+                .and(SQL_CONSTRAINT.TABLE_NAME.eq(SQL_PRIMARY_KEY.TABLE_NAME))
+                .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_PRIMARY_KEY.CONSTRAINT_NAME)))
+            .join(SQL_SCHEMA).on(SQL_SCHEMA.SOURCE_NAME.eq(SQL_PRIMARY_KEY.SOURCE_NAME)
+                .and(SQL_SCHEMA.TABLE_SCHEMA.eq(SQL_PRIMARY_KEY.TABLE_SCHEMA)))
+            .where(store.reads(SQL_PRIMARY_KEY.SOURCE_NAME))
+            .and(match)
+            .orderBy(SQL_PRIMARY_KEY.TABLE_SCHEMA, SQL_PRIMARY_KEY.CONSTRAINT_NAME,
+                SQL_PRIMARY_KEY.TABLE_NAME)
+            .fetch();
+        var keys = new ArrayList<Key>(rows.size());
+        for (var row : rows) {
+            keys.add(new Key(row.value1(), row.value2(), row.value3(), row.value2(),
+                nullToEmpty(row.value4()), nullToEmpty(row.value5()), true));
         }
         return keys;
     }
@@ -121,7 +183,9 @@ public final class CatalogKeys {
     }
 
     /**
-     * One foreign key: what an author can spell, and what it joins.
+     * One key a {@code key:} element can name: what an author can spell, and what it joins. A
+     * foreign key, or, where {@link #primaryKey}, a table's own primary key, whose referenced table
+     * is its own table: the identity join.
      *
      * @param constant the generated {@code Keys} constant, or empty where no {@code Keys} class
      *                 names the key. Empty is a fact rather than a gap: a generated model need not
@@ -134,10 +198,11 @@ public final class CatalogKeys {
      *                 that collides across schemas are declared in two different classes. Empty
      *                 exactly when {@link #constant} is, both being facts about the same absent
      *                 class, but read from the relation that owns each rather than inferred.
+     * @param primaryKey whether this is the table's own primary key rather than a foreign key
      */
     public record Key(
         String schema, String table, String name, String referencedTable, String constant,
-        String keysClassFqn
+        String keysClassFqn, boolean primaryKey
     ) {
 
         /**

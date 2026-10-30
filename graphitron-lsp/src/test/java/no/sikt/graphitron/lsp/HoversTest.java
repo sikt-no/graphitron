@@ -260,6 +260,22 @@ class HoversTest {
         assertThat(md).contains("Also resolves under the generated constant `FILM__FILM_LANGUAGE_ID_FKEY`.");
     }
 
+    /** A table's own primary key names the identity join a same-table field writes. */
+    @Test
+    void referenceKeyHoverNamesATablesOwnPrimaryKey() {
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @reference(path: [{key: "film_pkey"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "film_pkey");
+
+        var md = markdownAt(file, pos);
+
+        assertThat(md).contains("**Primary key** `film_pkey`");
+        assertThat(md).contains("`film`'s primary key, joining each row to itself");
+    }
+
     /**
      * The generated constant is the other spelling {@code key:} resolves, and the one the projection
      * matched exclusively and case-sensitively. Both namespaces answer here, as they do in the

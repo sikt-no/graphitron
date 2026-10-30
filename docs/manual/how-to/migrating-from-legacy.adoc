@@ -41,7 +41,7 @@ The implicit reading stops at `Node.id`. A *different* bare `ID` field on the sa
 
 == Hard removals
 
-Two directives the rewrite refuses to accept, one argument it no longer declares, and one inference it no longer performs. The two directives stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message. The argument is a harder break: the schema does not load at all. The retired inference is quieter than either, and is called out as such below.
+Two directives the rewrite refuses to accept, one argument it no longer declares, one inference it no longer performs, and one implicit join it no longer reads. The two directives stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message. The argument is a harder break: the schema does not load at all. The retired inference is quieter than either, and is called out as such below.
 
 === `@notGenerated`
 
@@ -134,6 +134,10 @@ input CustomerFilter {
 When the FK is ambiguous (more than one path from the consuming field's table to the target), add an explicit `@reference(path: [{key: "fk_constraint_name"}])` alongside the `@nodeId`. The xref:join-with-references.adoc[`@reference` recipe] covers the FK-disambiguation mechanics; the migration is otherwise mechanical.
 
 An input field named for its target's own `id` needs no directive at all: `id: ID!` on an input consumed against a node-backed table reads as that node's global ID, the same way `Node.id` does on the type. Where the table backs more than one node type the build fails and asks for `@nodeId(typeName:)`, rather than picking one.
+
+=== A `@table` child on its parent's own table needs `@reference`
+
+A field returning a `@table` type bound to the parent's own table, with no xref:../reference/directives/reference.adoc[`@reference`], read the parent's own row in Graphitron 9. It is now a build error. Drop `@table` from the return type if nothing else returns it as a table type, or add `@reference(path: [{key: "<the table's primary key>"}])`; either way the field answers as before. xref:map-types-to-tables.adoc#parents-own-row[Map types to tables] covers both forms.
 
 == WARN today, error later
 
@@ -271,7 +275,6 @@ Every other directive on the legacy surface reads under the rewrite the same way
 * xref:../reference/directives/condition.adoc[`@condition`]: same surface; the cascade divergence (above) is the only behavior change.
 * xref:../reference/directives/error.adoc[`@error`]: same handler-tuple surface, and `description:` keeps its Graphitron 9 contract of replacing the exception's message on `message:`. Two classify-time rejections are new: duplicate handler tuples, and `description:` on a `{handler: VALIDATION}` entry (the validator emits one error per constraint violation, each with its own interpolated message, so put the client-facing string on the constraint annotation's `message` attribute). xref:error-channel.adoc[How-to: The errors channel] covers the dispatch loop and the resolution order for `message:`. If you subclassed `SchemaBasedErrorStrategy` or `TopLevelErrorHandler` to turn exceptions no handler named into payload errors or computed top-level messages, declare a catch-all `@error` member last in the union, then move the subclass's message code into a `FetcherErrorResponse` and its logging into a `FetcherErrorLog` (xref:error-channel.adoc#caught-errors[Logging the errors a handler caught]).
 * A nullable field returning one object, nested without `@table` or with a table of its own: it still resolves to `null` when the object would hold nothing, decided over every field of the type whatever the query selects; a non-null field still always resolves to an object. The divergences are above.
-* A field returning a `@table` type bound to the parent's own table, with no xref:../reference/directives/reference.adoc[`@reference`]: it still reads the parent's own row, with Graphitron 9's null rule, and needs no `@splitQuery`. xref:map-types-to-tables.adoc#parents-own-row-as-table-type[Map types to tables] covers the shape.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`], xref:../reference/directives/splitQuery.adoc[`@splitQuery`]: unchanged. Mid-migration schemas that mixed `@splitQuery` with `@notGenerated` (the legacy custom-batch-fetcher pattern) need to migrate the body to `@service` (above).
 
 == Migration sequence

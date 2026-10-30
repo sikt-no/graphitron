@@ -277,7 +277,8 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * A same-row table child under an entity: three representations for three films each get
+     * A same-table child over the primary-key reference under an entity: three representations for
+     * three films each get
      * their own film's title under {@code sameRow}, never one row shared by the batch.
      */
     @Test

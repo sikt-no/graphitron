@@ -106,10 +106,11 @@ class TableChildNullContractPipelineTest {
     }
 
     @Test
-    void sharedNestedType_presenceDecidedDifferentlyAtTwoSites_rejects() {
-        // Under Content, Inner.film is a reference and probes; under Film it reads Film's own row
-        // and blocks. One fetcher on Wrap cannot read a probe only one site projects; the
-        // nested-shape check rejects the pair before the presence comparison, which backstops it.
+    void sharedNestedType_sameTableSiteWithoutReference_rejects() {
+        // Inner.film is a reference under Content and, under Film, a @table child on its parent's
+        // own table with no @reference. That site is rejected as an unstated self-join, so one
+        // nested field can no longer read its parent's own row at one site and probe at another;
+        // the pair fails the build at the site that does not say which rows it pairs.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String wrap: Wrap }
             type Inner { film: Film }
@@ -118,7 +119,9 @@ class TableChildNullContractPipelineTest {
             type Query { a: Content b: Film }
             """);
         assertThat(new GraphitronSchemaValidator().validate(schema).stream().map(ValidationError::message))
-            .anySatisfy(m -> assertThat(m).contains("shared across 'Content' and 'Film'"));
+            .anySatisfy(m -> assertThat(m)
+                .startsWith("Field 'Film.wrap': nested type 'Wrap' field 'inner': nested type 'Inner' field 'film':")
+                .contains("'Film' is bound to the same table as 'Inner' ('film') and the field has no @reference"));
     }
 
     private static final String COMPUTED_SDL = """

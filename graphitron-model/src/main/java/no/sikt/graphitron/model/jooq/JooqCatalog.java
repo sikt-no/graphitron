@@ -719,6 +719,87 @@ public class JooqCatalog {
     }
 
     /**
+     * Scoped, sealed primary-key lookup by name: the {@code @reference(key:)} sibling of
+     * {@link #findForeignKey(String, String, String)} for an element naming a table's own primary
+     * key. The same dual namespace (first the SQL constraint name, e.g. {@code "film_pkey"}, then,
+     * only if that finds nothing, the jOOQ-generated {@code Keys} constant, e.g.
+     * {@code "FILM_PKEY"}), both case-insensitive, and the same scoping precedence: the author's
+     * {@code schemaScope} qualifier is hard and binds the key's table's schema, {@code sourceSqlName}
+     * is soft and narrows only when it leaves something.
+     */
+    public PrimaryKeyLookup findPrimaryKey(String name, String sourceSqlName, String schemaScope) {
+        if (catalog == null) return new PrimaryKeyLookup.NotInCatalog();
+        List<org.jooq.UniqueKey<?>> primaryKeys = catalog.schemaStream()
+            .flatMap(schema -> schema.getTables().stream())
+            .<org.jooq.UniqueKey<?>>map(Table::getPrimaryKey)
+            .filter(Objects::nonNull)
+            .toList();
+        List<org.jooq.UniqueKey<?>> bySql = primaryKeys.stream()
+            .filter(pk -> pk.getName().equalsIgnoreCase(name))
+            .toList();
+        List<org.jooq.UniqueKey<?>> candidates = bySql.isEmpty()
+            ? catalog.schemaStream()
+                .flatMap(schema -> keysClass(schema).stream())
+                .flatMap(cls -> Arrays.stream(cls.getFields()))
+                .filter(f -> org.jooq.UniqueKey.class.isAssignableFrom(f.getType()))
+                .filter(f -> f.getName().equalsIgnoreCase(name))
+                .map(f -> fieldValue(f))
+                .filter(v -> primaryKeys.stream().anyMatch(pk -> pk == v))
+                .<org.jooq.UniqueKey<?>>map(v -> (org.jooq.UniqueKey<?>) v)
+                .toList()
+            : bySql;
+        if (candidates.isEmpty()) return new PrimaryKeyLookup.NotInCatalog();
+        if (schemaScope != null) {
+            candidates = candidates.stream()
+                .filter(pk -> pk.getTable().getSchema().getName().equalsIgnoreCase(schemaScope))
+                .toList();
+            if (candidates.isEmpty()) return new PrimaryKeyLookup.NotInCatalog();
+        }
+        if (sourceSqlName != null) {
+            Optional<Class<?>> resolved = findTable(sourceSqlName).asEntry().map(e -> e.table().getClass());
+            var scoped = candidates.stream()
+                .filter(pk -> endpointMatches(pk.getTable(), sourceSqlName, resolved))
+                .toList();
+            if (!scoped.isEmpty()) candidates = scoped;
+        }
+        var distinct = candidates.stream().distinct().toList();
+        if (distinct.size() == 1) return new PrimaryKeyLookup.Resolved(distinct.get(0));
+        List<String> schemas = distinct.stream()
+            .map(pk -> pk.getTable().getSchema().getName())
+            .distinct()
+            .sorted()
+            .toList();
+        return new PrimaryKeyLookup.Ambiguous(schemas);
+    }
+
+    /**
+     * The primary key's name of the table {@code tableSqlName} names, in the namespace an author
+     * attempt is spelled in: the jOOQ {@code Keys} constant when {@code constantNamespace}, the SQL
+     * constraint name otherwise. Empty when the table does not resolve or has no primary key.
+     * Feeds the candidate hint of an unresolved {@code @reference(key:)} on a same-table field.
+     */
+    public Optional<String> primaryKeyName(String tableSqlName, boolean constantNamespace) {
+        return findTable(tableSqlName).asEntry()
+            .map(te -> te.table().getPrimaryKey())
+            .filter(Objects::nonNull)
+            .map(pk -> constantNamespace ? primaryKeyConstantName(pk).orElse(pk.getName()) : pk.getName());
+    }
+
+    /**
+     * The jOOQ {@code Keys} constant naming {@code pk}, by reference identity over the key's own
+     * schema's {@code Keys} class, as {@link #findForeignKeyRef} resolves a foreign key's.
+     */
+    public Optional<String> primaryKeyConstantName(org.jooq.UniqueKey<?> pk) {
+        if (catalog == null) return Optional.empty();
+        return keysClass(pk.getTable().getSchema()).stream()
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> org.jooq.UniqueKey.class.isAssignableFrom(f.getType()))
+            .filter(f -> fieldValue(f) == pk)
+            .map(Field::getName)
+            .findFirst();
+    }
+
+    /**
      * Returns the Java constant name (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}) of a foreign
      * key in the generated {@code Keys} class, given the jOOQ {@link ForeignKey} instance
      * (resolved by class identity via {@link #findForeignKeyRef}, not by re-looking-up the
@@ -2020,6 +2101,24 @@ public class JooqCatalog {
 
         /** More than one distinct FK matches after scoping; {@code schemas} names the colliding schemas. */
         record Ambiguous(List<String> schemas) implements ForeignKeyLookup {
+            public Ambiguous { schemas = List.copyOf(schemas); }
+        }
+    }
+
+    /**
+     * Sealed outcome of the scoped primary-key name lookup {@link #findPrimaryKey}, the sibling of
+     * {@link ForeignKeyLookup}: the raw jOOQ {@link org.jooq.UniqueKey} on {@link Resolved}, and a
+     * cross-schema name collision the scope cannot narrow as {@link Ambiguous}.
+     */
+    public sealed interface PrimaryKeyLookup {
+        /** The name resolves (within scope) to exactly one table's primary key. */
+        record Resolved(org.jooq.UniqueKey<?> key) implements PrimaryKeyLookup {}
+
+        /** No primary key matches the name in either the SQL or jOOQ-constant namespace. */
+        record NotInCatalog() implements PrimaryKeyLookup {}
+
+        /** More than one table's primary key matches after scoping; {@code schemas} names them. */
+        record Ambiguous(List<String> schemas) implements PrimaryKeyLookup {
             public Ambiguous { schemas = List.copyOf(schemas); }
         }
     }

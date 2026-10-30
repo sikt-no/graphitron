@@ -20,7 +20,6 @@ public sealed interface ChildField extends OutputField
             ChildField.InterfaceField, ChildField.UnionField,
             ChildField.BatchedInterfaceField, ChildField.BatchedUnionField,
             ChildField.NestingField,
-            ChildField.SameRowTableField,
             ChildField.PivotSpecField, ChildField.PivotSlotField,
             ChildField.ServiceRecordField,
             ChildField.RecordReadField,
@@ -73,7 +72,6 @@ public sealed interface ChildField extends OutputField
             case ServiceRecordField f -> f.keySource().sourceShape();
             case ComputedField ignored -> SourceShape.Table;
             case NestingField ignored -> SourceShape.Table;
-            case SameRowTableField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
             case UnionField ignored -> SourceShape.Table;
             case BatchedInterfaceField ignored -> SourceShape.Table;
@@ -112,7 +110,6 @@ public sealed interface ChildField extends OutputField
             case BatchedTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case SameRowTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
             case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case RecordReadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
@@ -1012,44 +1009,6 @@ public sealed interface ChildField extends OutputField
          */
         @Override public List<ColumnRef> parentRowColumns() {
             return nullContract(Presence.TypeFields.none()).presenceColumns();
-        }
-    }
-
-    /**
-     * A child field whose return type is a {@code @table} type bound to the parent's own table,
-     * reached with no {@code @reference}: its value is the parent's own row, read through the
-     * return type's own classification. Unlike {@link NestingField}, which carries a per-edge
-     * classification of its nested fields against the host's table, this leaf holds no copy of
-     * the return type's fields; the type is a table type, classified once, and the leaf points
-     * at it.
-     *
-     * <p>Single cardinality only: the classifier mints it for an argument-free, unnarrowed
-     * same-table field and rejects the list shape, which would read every row of the table under
-     * every parent. The projection is a single-row multiset with no {@code FROM} of its own over
-     * the host's alias, aliased by result key, so the child's result-key namespace stays inside
-     * it. A nullable field resolves to {@code null} by the {@link Presence} rule, decided over
-     * every field of the return type ({@link no.sikt.graphitron.rewrite.GraphitronSchema#presenceOf}).
-     */
-    record SameRowTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        AliasOwner aliasOwner,
-        AliasScope aliasScope
-    ) implements ChildField, ResultKeyAliasedField {
-        public SameRowTableField {
-            java.util.Objects.requireNonNull(returnType, "returnType");
-            java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
-            java.util.Objects.requireNonNull(aliasScope, "aliasScope");
-            if (!(returnType.wrapper() instanceof FieldWrapper.Single)) {
-                throw new IllegalArgumentException(
-                    "SameRowTableField reads the parent's own row and is single-valued; got "
-                    + returnType.wrapper().getClass().getSimpleName());
-            }
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
         }
     }
 

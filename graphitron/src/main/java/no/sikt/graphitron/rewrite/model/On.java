@@ -21,7 +21,8 @@ import no.sikt.graphitron.model.jooq.ForeignKeyRef;
  * step type. The FK-vs-derived question is its own small seal on {@link ColumnPairs}
  * ({@link Keying}): the catalog FK is one derivation of the pairs,
  * the name-matched key (hops adjacent to a routine node, whose result table carries no FK
- * metadata) the other.
+ * metadata) another, and the table's own primary key (a field joining its parent's row to
+ * itself) the third.
  */
 public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
 
@@ -32,7 +33,7 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
      * where none does — see {@code JoinPathEmitter.emitBridgingJoin}). Correlation and
      * split-rows readers stay on {@code slots} and never dispatch here.
      */
-    sealed interface Keying permits Keying.ForeignKey, Keying.NameMatchedKey {
+    sealed interface Keying permits Keying.ForeignKey, Keying.NameMatchedKey, Keying.PrimaryKey {
 
         /** Human-readable derivation label for diagnostics; never emitted into generated code. */
         String describe();
@@ -74,13 +75,31 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
             }
             @Override public String describe() { return "name-matched key '" + targetKeyName + "'"; }
         }
+
+        /**
+         * The pairs pair every column of the table's own primary key with itself: an identity
+         * self-join, written as a {@code @reference} path whose only element names the primary
+         * key of the table the path starts on. The parent's row joins to exactly itself, so a
+         * field returning a {@code @table} type on its parent's own table reads the parent's own
+         * row. {@code keyName} is the primary key's SQL name, retained for diagnostics only; the
+         * emitted ON is the explicit column-equality conjunction over {@code slots}, there being
+         * no foreign-key {@code Keys} constant to reference.
+         */
+        record PrimaryKey(String keyName) implements Keying {
+            public PrimaryKey {
+                if (keyName == null) {
+                    throw new NullPointerException("On.Keying.PrimaryKey.keyName must not be null");
+                }
+            }
+            @Override public String describe() { return "primary key '" + keyName + "'"; }
+        }
     }
 
     /**
      * The step joins on paired source / target columns.
      *
-     * <p>{@code keying} is the pairing's derivation ({@link Keying}): a resolved catalog FK or
-     * the name-matched key. Emitters dispatch on it for the ON clause shape; slot readers
+     * <p>{@code keying} is the pairing's derivation ({@link Keying}): a resolved catalog FK, the
+     * name-matched key, or the table's own primary key. Emitters dispatch on it for the ON clause shape; slot readers
      * do not.
      *
      * <p>{@code slots} carries the pairing as {@link JoinSlot.FkSlot}s oriented at synthesis

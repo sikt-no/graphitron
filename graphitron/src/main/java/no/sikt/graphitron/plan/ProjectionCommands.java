@@ -88,7 +88,6 @@ public final class ProjectionCommands {
         ChildField.ColumnBackedReferenceField.class,
         ChildField.TableField.class,
         ChildField.NestingField.class,
-        ChildField.SameRowTableField.class,
         ChildField.ComputedField.class,
         ChildField.PivotField.class,
         ChildField.BatchedPivotField.class,
@@ -174,7 +173,6 @@ public final class ProjectionCommands {
             case CallWrap.Multiset m -> takesDsl(m.filter()) || probeTakesDsl(m.probe());
             case CallWrap.LookupMultiset lm -> takesDsl(lm.filter());
             case CallWrap.Splice s -> probeTakesDsl(s.probe());
-            case CallWrap.SameRow sr -> probeTakesDsl(sr.probe());
             case CallWrap.PivotMultiset ignored -> false;
         };
     }
@@ -266,17 +264,6 @@ public final class ProjectionCommands {
                     new CallWrap.Splice(contract.presenceColumns(),
                         probeOf(nf, contract, units, glueEnvByMethod)),
                     aliasOwnerOf(nf), aliasScopeOf(nf)));
-            }
-            // The parent's own row through the return type's anchor unit, in a record scope of its
-            // own; the presence columns and probe are the null contract's, read off the same
-            // schema fold the fetcher emitter consumes.
-            case ChildField.SameRowTableField srf -> {
-                var contract = schema.nullContractOf(srf);
-                yield Optional.of(new Contribution.Call(srf.name(),
-                    units.typeClass(srf.returnType().returnTypeName()),
-                    new CallWrap.SameRow(contract.presenceColumns(),
-                        probeOf(srf, contract, units, glueEnvByMethod)),
-                    aliasOwnerOf(srf), aliasScopeOf(srf)));
             }
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp), aliasScopeOf(cmp)));
@@ -838,7 +825,6 @@ public final class ProjectionCommands {
             case ChildField.ComputedField cmp -> java.util.Arrays.asList(
                 cmp.returnType(), cmp.joinPath(), cmp.method());
             case ChildField.PivotField pf -> java.util.Arrays.asList(pf.pivot(), pf.spec());
-            case ChildField.SameRowTableField srf -> java.util.Arrays.asList(srf.returnType());
             default -> throw new IllegalStateException(
                 "ResultKeyAliasedField '" + field.qualifiedName() + "' ("
                 + field.getClass().getSimpleName() + ") has no projection identity; declare what "

@@ -18,6 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PARAMETER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START;
@@ -29,9 +30,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.exists;
@@ -45,8 +48,9 @@ import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.when;
 
 /**
- * The walk: fills {@code graphitron_field_path} with its column pairs, the key each step rode, the
- * methods each step joins or filters by, and where each walk stopped short of its written elements,
+ * The walk: fills {@code graphitron_field_path} with its column pairs, the key each step rode (a
+ * foreign key, or a table's own primary key joining a row to itself), the methods each step joins or
+ * filters by, and where each walk stopped short of its written elements,
  * from the starts it writes first.
  *
  * <p>A walk starts on a table the parent type's result is a row of, on the table bound to a parent
@@ -96,6 +100,7 @@ public final class FieldPaths {
         }
         var counted = counted(dsl, graph);
         keys(dsl, counted, touchedAt);
+        primaryKeys(dsl, counted, graph, touchedAt);
         columns(dsl, counted, graph, touchedAt);
         methods(dsl, graph, touchedAt);
         routines(dsl, graph, touchedAt);
@@ -168,8 +173,33 @@ public final class FieldPaths {
     }
 
     /**
+     * The primary key each step that joined a row to itself rode: the step a key element naming the
+     * table's own primary key took, which rides no foreign key and so is not in
+     * {@code graphitron_field_path_key}.
+     */
+    private static void primaryKeys(DSLContext dsl, Table<Record> c, String graph,
+                                    LocalDateTime touchedAt) {
+        var pk = GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
+        var source = dsl.selectDistinct(cols(c, STEP))
+            .select(pk.TABLE_SOURCE_NAME, pk.TABLE_SCHEMA, pk.TABLE_NAME)
+            .from(c)
+            .join(pk).on(pk.GRAPH_NAME.eq(graph), pk.SOURCE_NAME.eq(str(c, "ELEMENT_SOURCE_NAME")),
+                pk.SOURCE_LINE.eq(f(c, "ELEMENT_SOURCE_LINE", Integer.class)),
+                pk.SOURCE_COLUMN.eq(f(c, "ELEMENT_SOURCE_COLUMN", Integer.class)),
+                pk.TABLE_SOURCE_NAME.eq(str(c, "FROM_SOURCE_NAME")), pk.TABLE_SCHEMA.eq(str(c, "FROM_SCHEMA")),
+                pk.TABLE_NAME.eq(str(c, "FROM_TABLE")),
+                pk.TABLE_SOURCE_NAME.eq(str(c, "TO_SOURCE_NAME")), pk.TABLE_SCHEMA.eq(str(c, "TO_SCHEMA")),
+                pk.TABLE_NAME.eq(str(c, "TO_TABLE")))
+            .where(f(c, "MOVES").eq(1)).and(f(c, "CONSTRAINT_NAME").isNull())
+            .asTable("pk");
+        merge(dsl, GRAPHITRON_FIELD_PATH_PRIMARY_KEY, source, STEP,
+            List.of("TABLE_SOURCE_NAME", "TABLE_SCHEMA", "TABLE_NAME"), touchedAt);
+    }
+
+    /**
      * The column pairs each step joins on: a key's own columns, each paired with the referenced
-     * column its {@code REFERENCES} list names, oriented the way the step rode it; or, for a table
+     * column its {@code REFERENCES} list names, oriented the way the step rode it; for a step joining
+     * a row to itself, each of the table's primary-key columns paired with itself; or, for a table
      * reached from a function's result, the named table's key matched to the result's columns by name.
      */
     private static void columns(DSLContext dsl, Table<Record> c, String graph,
@@ -219,7 +249,29 @@ public final class FieldPaths {
                     ts.SOURCE_NAME.eq(str(c, "ELEMENT_SOURCE_NAME")),
                     ts.SOURCE_LINE.eq(f(c, "ELEMENT_SOURCE_LINE", Integer.class)),
                     ts.SOURCE_COLUMN.eq(f(c, "ELEMENT_SOURCE_COLUMN", Integer.class))))));
-        var pairs = byKey.unionAll(byName).asTable("p");
+        var epk = GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
+        var spk = SQL_PRIMARY_KEY;
+        var kc = SQL_CONSTRAINT_COLUMN.as("kc");
+        var byPrimaryKey = dsl.select(cols(c, keys))
+            .select(kc.POSITION.as("ORDINAL"),
+                f(c, "FROM_SOURCE_NAME").as("FROM_SOURCE_NAME"), f(c, "FROM_SCHEMA").as("FROM_SCHEMA"),
+                f(c, "FROM_TABLE").as("FROM_TABLE"), kc.COLUMN_NAME.as("FROM_COLUMN"),
+                f(c, "TO_SOURCE_NAME").as("TO_SOURCE_NAME"), f(c, "TO_SCHEMA").as("TO_SCHEMA"),
+                f(c, "TO_TABLE").as("TO_TABLE"), kc.COLUMN_NAME.as("TO_COLUMN"))
+            .from(c)
+            .join(epk).on(epk.GRAPH_NAME.eq(graph), epk.SOURCE_NAME.eq(str(c, "ELEMENT_SOURCE_NAME")),
+                epk.SOURCE_LINE.eq(f(c, "ELEMENT_SOURCE_LINE", Integer.class)),
+                epk.SOURCE_COLUMN.eq(f(c, "ELEMENT_SOURCE_COLUMN", Integer.class)),
+                epk.TABLE_SOURCE_NAME.eq(str(c, "FROM_SOURCE_NAME")), epk.TABLE_SCHEMA.eq(str(c, "FROM_SCHEMA")),
+                epk.TABLE_NAME.eq(str(c, "FROM_TABLE")),
+                epk.TABLE_SOURCE_NAME.eq(str(c, "TO_SOURCE_NAME")), epk.TABLE_SCHEMA.eq(str(c, "TO_SCHEMA")),
+                epk.TABLE_NAME.eq(str(c, "TO_TABLE")))
+            .join(spk).on(spk.SOURCE_NAME.eq(epk.TABLE_SOURCE_NAME), spk.TABLE_SCHEMA.eq(epk.TABLE_SCHEMA),
+                spk.TABLE_NAME.eq(epk.TABLE_NAME))
+            .join(kc).on(kc.SOURCE_NAME.eq(spk.SOURCE_NAME), kc.TABLE_SCHEMA.eq(spk.TABLE_SCHEMA),
+                kc.TABLE_NAME.eq(spk.TABLE_NAME), kc.CONSTRAINT_NAME.eq(spk.CONSTRAINT_NAME))
+            .where(f(c, "MOVES").eq(1)).and(f(c, "CONSTRAINT_NAME").isNull());
+        var pairs = byKey.unionAll(byName).unionAll(byPrimaryKey).asTable("p");
         merge(dsl, GRAPHITRON_FIELD_PATH_COLUMN, pairs, concat(keys, List.of("ORDINAL")),
             concat(List.of("FROM_SOURCE_NAME", "FROM_SCHEMA", "FROM_TABLE", "FROM_COLUMN"),
                 List.of("TO_SOURCE_NAME", "TO_SCHEMA", "TO_TABLE", "TO_COLUMN")), touchedAt);
@@ -279,6 +331,7 @@ public final class FieldPaths {
     /** What this reading did not mark, children before the steps and starts they hang on. */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_FIELD_PATH_COLUMN, GRAPHITRON_FIELD_PATH_KEY,
+                GRAPHITRON_FIELD_PATH_PRIMARY_KEY,
                 GRAPHITRON_FIELD_PATH_METHOD, GRAPHITRON_FIELD_PATH_PARAMETER,
                 GRAPHITRON_FIELD_PATH_ROUTINE, GRAPHITRON_FIELD_PATH_STOP, GRAPHITRON_FIELD_PATH,
                 GRAPHITRON_FIELD_PATH_START_RESULT, GRAPHITRON_FIELD_PATH_START_BINDING,

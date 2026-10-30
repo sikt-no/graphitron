@@ -320,6 +320,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path_column", Arm.DERIVED);
         registrations.put("graphitron_field_path_key", Arm.DERIVED);
+        registrations.put("graphitron_field_path_primary_key", Arm.DERIVED);
         registrations.put("graphitron_field_path_method", Arm.DERIVED);
         registrations.put("graphitron_field_path_routine", Arm.DERIVED);
         registrations.put("graphitron_field_path_parameter", Arm.DERIVED);
@@ -466,6 +467,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_target_table", Arm.DERIVED);
         registrations.put("graphitron_path_element_key", Arm.DERIVED);
         registrations.put("graphitron_path_element_key_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_element_primary_key", Arm.DERIVED);
+        registrations.put("graphitron_path_element_primary_key_rule", Arm.DERIVED);
         registrations.put("graphitron_path_element_table", Arm.DERIVED);
         registrations.put("graphitron_path_element_table_rule", Arm.DERIVED);
         registrations.put("graphitron_path_element_method", Arm.DERIVED);

@@ -301,7 +301,6 @@ public sealed interface ParentSourceBinding {
         ChildField.ColumnBackedReferenceField.class,
         ChildField.ParticipantColumnReferenceField.class,
         ChildField.TableField.class,
-        ChildField.SameRowTableField.class,
         ChildField.TableInterfaceField.class,
         ChildField.PivotField.class,
         ChildField.BatchedPivotField.class,

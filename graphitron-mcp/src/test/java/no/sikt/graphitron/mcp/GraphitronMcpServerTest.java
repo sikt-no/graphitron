@@ -1056,6 +1056,7 @@ class GraphitronMcpServerTest {
           title: String
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
           spokenIn: Language @reference(path: [{table: "language"}])
+          own: FilmOwn @reference(path: [{key: "film_pkey"}])
           summary: FilmSummary @service(service: {className: "%1$sCardService", method: "summary"})
           description: String @service(service: {className: "%1$sCardService", method: "describe"})
         }
@@ -1065,6 +1066,7 @@ class GraphitronMcpServerTest {
         interface Named { name: String }
         type Language implements Named @table(name: "language") { name: String }
         type FilmSummary { title: String released: Boolean }
+        type FilmOwn @table(name: "film") { title: String }
         type Contested @table(name: "actor") { title: String }
         input FilmFilter @table(name: "film") {
           title: String @condition(condition: {className: "%1$sFilmConditions", method: "titled"})
@@ -1208,6 +1210,20 @@ class GraphitronMcpServerTest {
         assertThat(language)
             .as("the walk took every element, so there is no stop to report")
             .doesNotContainKey("pathStops");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsAPrimaryKeyStepAsTheIdentityJoin() {
+        // A key: element naming the table's own primary key rides no foreign key, so the step is
+        // told apart from a key step and from a table step, naming the primary key it rode.
+        var own = fieldNamed(onlyType(SCHEMA, "Film"), "Film.own");
+
+        assertThat((List<Map<String, Object>>) own.get("joinPath")).containsExactly(Map.of(
+            "position", 0,
+            "via", "PRIMARY_KEY", "keyMatchedBy", "SQL_NAME",
+            "fromTable", "public.film", "toTable", "public.film",
+            "constraint", "film_pkey", "fkOnFrom", false));
     }
 
     @Test

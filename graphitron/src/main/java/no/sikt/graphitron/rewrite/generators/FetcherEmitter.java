@@ -160,7 +160,7 @@ public final class FetcherEmitter {
      * Builds the {@code DataFetcher} value expression for {@code field}.
      *
      * @param schema        the classified schema, for the facts a leaf's read needs beyond its own
-     *                      components (a same-row child's null contract over its return type)
+     *                      components (a single table child's null contract over its return type)
      * @param field         the classified field
      * @param fetchersClass the {@code <TypeName>Fetchers} class that owns the method reference
      *                      for unclassified / catch-all fields; may be {@code null} for nested
@@ -504,18 +504,6 @@ public final class FetcherEmitter {
     }
 
     /**
-     * The same-row child's fetcher body: unwrap the single-row multiset aliased
-     * {@code __rk_<resultKey>} (the projection's same-row arm), then apply the null contract over
-     * the presence columns and probe projected inside it. The row handed on holds the return
-     * type's projection, as a root or multiset read of that type does, plus those presence
-     * columns, so the return type's own fetchers read it unchanged.
-     */
-    private static CodeBlock sameRowBody(ChildField.SameRowTableField srf, NullContract contract,
-            String outputPackage) {
-        return singleRowBody(srf, srf.returnType().table(), contract, outputPackage);
-    }
-
-    /**
      * The fetcher body of a child read as a single-row multiset aliased {@code __rk_<resultKey>}:
      * unwrap the row, then apply {@code contract} over the presence columns and probe the
      * projection placed inside the multiset beside the child's fields.
@@ -560,9 +548,6 @@ public final class FetcherEmitter {
             String outputPackage) {
         if (field instanceof ChildField.NestingField nf) {
             return sourceOnly(field.name(), fetchersClass, outputPackage, nestingBody(schema, nf));
-        }
-        if (field instanceof ChildField.SameRowTableField srf) {
-            return envDependent(field.name(), fetchersClass, sameRowBody(srf, schema.nullContractOf(srf), outputPackage));
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
             // Payload-returning DELETE carrier: read the PK column(s) off each RETURNING row and

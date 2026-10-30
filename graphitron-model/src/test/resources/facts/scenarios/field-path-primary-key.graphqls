@@ -1,0 +1,62 @@
+# A key: element naming the table's own primary key joins each row to itself: a field returning a
+# @table type bound to its parent's own table reads the parent's own row. The walk takes one step from
+# the table back to it, rides no foreign key, and joins every primary-key column to itself, in key
+# order. The key is spelled by its SQL name or by its generated Keys constant; a primary key's constant
+# is its SQL name upper-cased, so the case-insensitive SQL name answers both spellings first.
+
+type FilmSelf @table(name: "film") {
+  title: String
+}
+
+type FilmActorRow @table(name: "film_actor") {
+  lastUpdate: String @field(name: "last_update")
+}
+
+type Film @table(name: "film") {
+  title: String
+  self: FilmSelf @reference(path: [{key: "film_pkey"}])
+  selfByConstant: FilmSelf @reference(path: [{key: "FILM_PKEY"}])
+}
+
+type FilmActor @table(name: "film_actor") {
+  # A composite key: both of its columns, each paired with itself.
+  row: FilmActorRow @reference(path: [{key: "film_actor_pkey"}])
+}
+
+extend type Query {
+  films: [Film]
+  filmActors: [FilmActor]
+}
+
+extend schema @expectEquals(relation: "graphitron_path_element_primary_key", rows: """
+  source_column, table_name, matched_by
+  36,            film,       SQL_NAME
+  46,            film,       SQL_NAME
+  39,            film_actor, SQL_NAME
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path", rows: """
+  type_name, field_name,     start_table, position, from_table, to_table
+  Film,      self,           film,        0,        film,       film
+  Film,      selfByConstant, film,        0,        film,       film
+  FilmActor, row,            film_actor,  0,        film_actor, film_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_primary_key", rows: """
+  type_name, field_name,     position, table_name
+  Film,      self,           0,        film
+  Film,      selfByConstant, 0,        film
+  FilmActor, row,            0,        film_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_column", rows: """
+  type_name, field_name,     position, ordinal, from_table, from_column, to_table,   to_column
+  Film,      self,           0,        0,       film,       film_id,     film,       film_id
+  Film,      selfByConstant, 0,        0,       film,       film_id,     film,       film_id
+  FilmActor, row,            0,        0,       film_actor, actor_id,    film_actor, actor_id
+  FilmActor, row,            0,        1,       film_actor, film_id,     film_actor, film_id
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_field_path_key")
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect")
