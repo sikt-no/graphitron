@@ -1,7 +1,7 @@
 ---
 id: R1115
 title: "A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: classification-model
@@ -169,6 +169,18 @@ Execution tier, `graphitron-sakila-example`, on the migrated fixtures:
 - One new case: a `@splitQuery` field over the primary-key reference returns each film's own row in a second statement.
 
 No assertions on generated method bodies.
+
+## Implementation notes
+
+Both parts landed in one commit; the plan above is unchanged. Where the implementation settled something the plan left open, or departed from its wording:
+
+- `CatalogKeys.touching` stays foreign-key only. Completion offers the primary key through a new `CatalogKeys.primaryKeyOf`, gated on the field being single-valued, its return type bound to the enclosing type's table, and the path holding no other element; widening `touching` would have offered it at every `key:` position. `named` (hover, go-to-definition, references) and the diagnostic spelling probe recognise primary keys.
+- A primary key's generated `Keys` constant is its SQL name upper-cased (`FILM_PKEY`), so the case-insensitive SQL-name arm answers both spellings and the store records `SQL_NAME` for each; the `JOOQ_NAME` arm of `graphitron_path_element_primary_key_rule` mirrors the foreign-key rule's precedence but no sakila spelling reaches it. The scenario and `PrimaryKeySelfJoinPathTest` pin that.
+- A primary-key element carrying a `condition:` sub-argument is rejected ("a primary-key element takes no condition") rather than silently dropping the filter. The plan did not cover the combination.
+- The FK-and-PK name ambiguity rejection is implemented in `BuildContext.parsePathElement` but not pinned by a test: no sakila constraint name is both a foreign key touching a table and that table's primary key, and `JooqCatalog.findPrimaryKey` alone cannot see the foreign-key side.
+- `graphitron_field_path_primary_key` reuses the `field-path-key` grain; `graphitron_path_element_primary_key` gets a grain of its own (`path-element-primary-key-candidate`), its key being the element and the table. `SupertypeSignatureGateTest` records the new relation and `graphitron_path_element_key` as a subtype set sharing only `matched_by`, with the reason no supertype is owed.
+- The corpus example `same-row-table.graphqls` now classifies as `operations: [Join, Select]`.
+- Ratchets: `LeafRatchetTest` child leaves 24 to 23, `CommandSeamRatchetTest` generator instanceof 64 to 63, generator case patterns 56 to 55, plan leaf references 143 to 140.
 
 ## Retired vocabulary
 

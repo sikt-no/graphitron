@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | Spec | 2026-10-29 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R1115` | A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key | In Progress | 2026-10-30 <sub>created 2026-10-28</sub> | [plan](same-table-table-child-without-reference-is-rejected.md) |
+| `R1115` | A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key | In Review | 2026-10-30 <sub>created 2026-10-28</sub> | [plan](same-table-table-child-without-reference-is-rejected.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
@@ -416,7 +416,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### classification-model
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
-- `R1115` [**A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key**](same-table-table-child-without-reference-is-rejected.md) — In Progress, bug
+- `R1115` [**A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key**](same-table-table-child-without-reference-is-rejected.md) — In Review, bug
 - `R846` [**A field returning an author-declared connection type has no scope table**](authored-connection-type-scope-silence.md) — Backlog, bug
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R852` [**A field-site terminal condition hop resolves only through its signature, never the declared target**](field-walk-declared-target-condition-rung.md) — Backlog, bug
