@@ -7,7 +7,7 @@ priority: 2
 theme: classification-model
 depends-on: []
 created: 2026-10-28
-last-updated: 2026-10-28
+last-updated: 2026-10-30
 ---
 
 # A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key
@@ -174,3 +174,37 @@ No assertions on generated method bodies.
 - **A `condition:` hop.** Each of the four sis fields would carry a hand-written `(parent, child) -> parent.pk.eq(child.pk)` method. That works today but is boilerplate for a join the catalog already states.
 - **`{table: "film"}` meaning the identity join on a same-table hop.** `{table:}` already means "the one foreign key between these tables", and a table with a self-referencing foreign key (`category`) would make that element mean two things.
 - **A dedicated element field (`{self: true}` or similar).** It avoids spelling the constraint name, but it adds directive surface the LSP, store capture and docs would all learn, for a case `key:` expresses with an existing, completable, greppable name.
+
+## Reviewer findings
+
+### Round 1 (2026-10-30, Spec -> Ready, reviewer session 01FY5Uvv7jMh7m1yJqxsD43t)
+
+Verdict: withhold. One blocking finding on question one, which the user has ruled on, and a set of factual findings on question two against trunk `8bd6160`. The architecture fit is good: nearly every claim the plan makes about the classifier, the model and the store checks out, and the primary-key arm extends shapes already in the tree.
+
+**Finding 1 (question one: the goal). The item conflicts with a later R876 ruling, and is narrowed to Part 1.**
+
+Four hours after this Spec landed, Alf's rulings of 2026-10-28 (`e7d39bd`) added R876's bullet "A table-bound child is a join, and `SameRowTableField` goes": a same-table bound child joins as any bound child does, its key inferred or written and its absence a defect, "so a same-row read is the author's condition on the primary key; this reverts R1045's leaf and its uncorrelated narrowed read". This item does not mention R876 and differs on two points: it keeps the narrowed uncorrelated read as out of scope, and it rejects the `condition:` remedy in favour of a primary-key `key:` element.
+
+The user's ruling (2026-10-30): this item keeps Part 1 only, the primary-key `key:` element, as a small item of its own; it is cheaper for sis's four fields than four hand-written condition methods and adds no directive surface. Part 2 (rejecting shape B and retiring the leaf) and the fate of the narrowed read belong to R876's bullet, which a colleague is taking on. The revision therefore:
+- rewrites the goal around the primary-key element, so a reader can judge it without Part 2;
+- drops Part 2, its fixture migration, its tests and the retired vocabulary, or keeps them only as a hand-off note to R876 (findings 9 and 10 below are written for that note);
+- states that discovery infers no key on a same-table hop, so R876's "key inferred or written" can never pick a self-referencing foreign key silently;
+- drops the manual prose documenting the narrowed read as settled behaviour.
+
+**Finding 2 (question two). The walk writes every named constraint as a foreign key.** `FieldPaths.keys()` (`FieldPaths.java:163-169`) writes every counted row with a non-null `CONSTRAINT_NAME` into `graphitron_field_path_key`, whose foreign key to `sql_referential_constraint` rejects `film_pkey`. The primary-key move arm must leave `constraint_*` null and record the key only in `graphitron_field_path_primary_key`. The step CTE has no "only element" flag today; the plan should say it adds one.
+
+**Finding 3 (question two). Step labels.** A step with column pairs and no `graphitron_field_path_key` row is labelled `NAME_MATCH` by `graphitron_field_path_fanout` and by `RoutineWriteQuery`'s `stepVia`, and MCP `SchemaQueries.joinPath` falls to `TABLE`. The plan covers MCP only; it should say what the fanout view labels a primary-key step.
+
+**Finding 4 (question two, factual). `RoutineWriteQuery` does not read `On.Keying`.** It has its own `RoutineWriteQuery.Keying` built from the store's `via` string. The reason given for a separate `On.Keying.PrimaryKey` arm ("the store and `RoutineWriteQuery` read it that way") should cite `synthesizeNameMatchedJoin`, the only producer of `NameMatchedKey`, and the store's `NAME_MATCH`; the conclusion stands. The only `switch` over `On.Keying` in main code is `JoinFragments.emitKeyedJoin`.
+
+**Finding 5 (factual). The recombination contingency is moot.** `ReferenceStepRecombinationTest` compares `graphitron_field_reference_step_entry` with the AST recombination, not the walk with the step-hop family; no gate asserts they agree element for element. Drop the "if a gate asserts" clause.
+
+**Finding 6 (question two). The store arm is required, not an editor nicety.** Entry defects reach only the LSP and MCP today, but R876's "Entry defects fail validate" makes them build failures, and `FactExpectationTest.everyFolderHoldsWhatItClaims` already requires the new scenario to store no defect. The plan should say the classifier and store arms land together.
+
+**Finding 7 (factual). No new gatherer edge.** `meta_gatherer_dependency` already holds `('graphitron','jooq')` and `sql_primary_key` is in the `jooq` family; the new relation owes `meta_relation` rows like `graphitron_path_element_key`'s and nothing more.
+
+**Finding 8 (question two). Cardinality and the inline remedy.** The admission rule does not say whether a list field over the primary-key element (`[FilmNames] @reference(path: [{key: "film_pkey"}])`, a one-element list) is admitted or rejected; say which. The `condition:` remedy has a `@splitQuery` test (`SplitQuerySameTableRejectionPipelineTest.conditionReferenceRemedy_classifiesAsParentAnchoredBatch`) but no inline one. For a table with no primary key, sakila's `role_assignment` has no key at all (`stint` and `stint_single` have unique keys only).
+
+**Finding 9 (for the R876 hand-off). The retirement list is incomplete.** Besides the arms named, `SameRowTableField` / `CallWrap.SameRow` appear in `ProjectionCommands`' `readsSessionGlue` (`:177`) and `projectionIdentity` (`:841`) arms and `ChildField`'s two output-shape switches (`:76`, `:115`); comments in `PresenceProbes.java:19` and `FetcherRegistrationsEmitter.java:166` describe the leaf. `Presence` has no explicit arm (the leaf falls to `default -> Blocked`), so only its javadoc changes. `uncorrelatedSameTableSplitMessage` has three remedies today, not two.
+
+**Finding 10 (for the R876 hand-off). Missed shape-B sites.** `PivotNestingHost.labelsComputedRow: HostLabelsComputedRow` (`schema.graphqls:6422`, the type `@table(name: "pivot_nesting_host")`) is shape B and not in the fixture list. `ProjectionMembershipTest` (`:55-59`, `:107`) declares `Film.sameRow: FilmSameRow` with no `@reference`, and the comment in `NestingNullContractExecutionTest:27` describes the same-row twin.
