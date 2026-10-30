@@ -528,10 +528,9 @@ class TestServiceStub {
     }
 
     /**
-     * Returns the dummy {@code SakPayload} from a {@link TestInputBean} input. Used by the
-     * validator-pre-step regression test that needs an Input-typed arg (for the fromMap
-     * materialisation path) plus a SakPayload return (so the surrounding ErrorChannel carries
-     * the validation handler the pre-step reads).
+     * Returns the dummy {@code SakPayload} from a {@link TestInputBean} input. Used where a test
+     * needs the validator pre-step emitted: the input binds a record, which is what the pre-step
+     * validates, and the SakPayload return carries an error channel with a validation handler.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithInputBean(TestInputBean input) {
         throw new UnsupportedOperationException();
@@ -539,8 +538,9 @@ class TestServiceStub {
 
     /**
      * Returns the dummy {@code SakPayload} from a list of lists of {@link TestInputBean} inputs,
-     * bound whole. Used by the classification test pinning that such an argument is rejected under
-     * a {@code VALIDATION} channel and admitted without one.
+     * bound whole as a {@code Map} pass-through. Used by the classification tests pinning that such
+     * an argument classifies with and without a {@code VALIDATION} channel, and gives the validator
+     * pre-step nothing to validate.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithInputGrid(
             java.util.List<java.util.List<java.util.Map<String, Object>>> grid) {

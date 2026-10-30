@@ -53,7 +53,7 @@ class DunderFreeEmissionPipelineTest {
         """;
 
     /** Validator + input group: drives the TypeFetcherGenerator validator pre-step (validator /
-     *  violations / arg_ locals) and InputRecordGenerator.fromMap (c_ locals, element lambda). */
+     *  violations / violation locals and the Paths constant) and InputRecordGenerator.fromMap (c_ locals, element lambda). */
     private static final String VALIDATOR_INPUT_SDL = """
         enum TestInputBeanEnum { LOW HIGH }
         input TestInputNested { key: String, value: String }

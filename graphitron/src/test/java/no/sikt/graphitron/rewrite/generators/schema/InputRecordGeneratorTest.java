@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Unit-tier shape coverage for {@link InputRecordGenerator}: emission package, public-class
  * visibility, presence of the {@code fromMap} factory and component accessors. Behavioural
- * coverage (the reachable-closure walk, list / nested / unreachable handling, validator
- * pre-step rewire) lives at the pipeline tier in {@code FetcherPipelineTest}.
+ * coverage (the reachable-closure walk, list / nested / unreachable handling) lives at the
+ * pipeline tier in {@code FetcherPipelineTest}.
  */
 @UnitTier
 class InputRecordGeneratorTest {

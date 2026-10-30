@@ -39,7 +39,7 @@
         </dependency>
         <!--
             Provided scope for the constraint annotations on the classes a VALIDATION-channel
-            @service method takes (FilmDraft, FilmShelfDraft and their members). The example
+            @service method takes (FilmDraft, FilmBundleDraft and their members). The example
             module supplies the API and a validation provider at runtime.
         -->
         <dependency>

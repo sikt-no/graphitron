@@ -325,22 +325,38 @@ what shipped:
 1. `graphitron/src/test/java/no/sikt/graphitron/rewrite/TestServiceStub.java`, `runSakWithInputGrid`
    javadoc: "pinning that such an argument is rejected under a `VALIDATION` channel". It now
    classifies with no target.
+
+   *Response:* rewritten: a `Map` pass-through that classifies with and without a VALIDATION
+   channel and gives the pre-step nothing to validate.
 2. `graphitron-sakila-service/src/main/java/no/sikt/graphitron/rewrite/test/services/FilmValidatedLookupPayload.java`
    class javadoc: "a VALIDATION handler puts the wrapper's Jakarta validation pre-step on every
    fetcher mapping the channel". It does so only where the call has a bound-class target, and this
    fixture's field has none.
+
+   *Response:* rewritten: the field takes a scalar, so no pre-step is emitted. The stale "the one
+   `@error` channel in the suite carrying VALIDATION" claim in the same sentence went too, since
+   `FilmWriteInvalid` is another.
 
 Four more are stale:
 
 3. `TestServiceStub.runSakWithInputBean` javadoc: "the validator-pre-step regression test that
    needs an Input-typed arg (for the fromMap materialisation path)". That test was deleted, and
    `fromMap` is no longer on the path.
+
+   *Response:* rewritten: the input binds a record, which is what the pre-step validates.
 4. `InputRecordGeneratorTest` class javadoc: "validator pre-step rewire lives at the pipeline tier
    in `FetcherPipelineTest`". That pipeline test was deleted.
+
+   *Response:* the clause dropped; the remaining `FetcherPipelineTest` coverage it names is still there.
 5. `DunderFreeEmissionPipelineTest`, `VALIDATOR_INPUT_SDL` javadoc: "(validator / violations /
    arg_ locals)". There are no `arg_` locals any more; the pre-step now declares `element` and `i`.
+
+   *Response:* now names the validator, violations and violation locals and the `Paths` constant;
+   the fixture's input binds one record, so no `element` or `i` is emitted there.
 6. `graphitron-sakila-service/pom.xml`, the `jakarta.validation-api` comment, names
    `FilmShelfDraft`. The fixture is `FilmBundleDraft`.
+
+   *Response:* corrected.
 
 What satisfies it: rewrite those six to the shipped fact, with no code change. Then return to
 In Review; the next Done pass is a delta check on these lines.
