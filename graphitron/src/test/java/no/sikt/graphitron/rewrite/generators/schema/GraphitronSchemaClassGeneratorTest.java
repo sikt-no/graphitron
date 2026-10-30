@@ -525,22 +525,6 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
-    void build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath() {
-        // The path read is reified onto <ErrorType>Fetchers. A GraphQLError carrying a non-empty
-        // path routes through GraphQLError.getPath() (preserving per-violation paths recorded by
-        // ConstraintViolations.toGraphQLError); every other source walks the step info from the
-        // error object over list-element steps to the field that returned it, and answers that
-        // field's parent's path: the holder of the error, so the SDL field's [String!]! non-null
-        // contract holds and the client sees which field the error belongs to.
-        var fetchers = errorFetcherSource(ERROR_UNION_SDL, "ValidationErr");
-        assertThat(fetchers).contains("ge.getPath() != null && !ge.getPath().isEmpty()");
-        assertThat(fetchers).contains("ExecutionStepInfo step = env.getExecutionStepInfo().getParent()");
-        assertThat(fetchers).contains("while (step.getPath().isListSegment())");
-        assertThat(fetchers).contains("step.getParent().getPath().toList()");
-        assertThat(fetchers).doesNotContain("env.getExecutionStepInfo().getPath()");
-    }
-
-    @Test
     void build_errorTypeFieldFetchers_wiringIsMethodReferenceIntoReifiedClass() {
         // The schema build() body wires <ErrorType>Fetchers::path /::message (method
         // references, no DataFetcher<Object> cast lambda); the reads themselves are named methods

@@ -1,7 +1,7 @@
 ---
 id: R1126
 title: "A matched error's path names the field that owns the payload"
-status: Ready
+status: In Review
 bucket: bug
 priority: 4
 theme: error-channel
@@ -88,7 +88,7 @@ The class javadoc's "`path` synthesises from the GraphQL execution context for n
 
 ## Tests
 
-All in the execution tier (`graphitron-sakila-example`, real PostgreSQL), since the change is in what a client reads off a response. The generator-tier wiring test (`GraphitronSchemaClassGeneratorTest`, which checks `<ErrorType>Fetchers::path` is registered) is unaffected, but its `build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath` pins the emitted body's `env.getExecutionStepInfo().getPath().toList()` and follows the new walk.
+All in the execution tier (`graphitron-sakila-example`, real PostgreSQL), since the change is in what a client reads off a response. The generator-tier wiring test (`GraphitronSchemaClassGeneratorTest`, which checks `<ErrorType>Fetchers::path` is registered) is unaffected. Its `build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath` matched substrings of the emitted `path` body, which the test-tier rules ban, so it is deleted rather than updated: the cases below pin the walk.
 
 * The seven `GraphQLQueryTest` assertions ending `"errors", "0", "path"` flip to the owning field alone (`["rentFilmPayload"]`, `["filmLookup"]`, `["submitFilmReview"]`, `["submitFilmReviewWithFilm"]`, `["createFilmWithErrors"]`).
 * `filmLookup_bothShapesSource_prefersAuthoredDescriptionOverGraphQLErrorMessage` flips from `isEmpty()` to `["filmLookup"]`, with its comment rewritten: a path-less `GraphQLError` now answers the holder too.
@@ -129,3 +129,5 @@ Requested 2026-10-29 by sis (the Graphitron 10 port, request C37), reversing R10
 The behaviour is the change the spec approved and it is demonstrated: the emitted walk matches the spec's body, every assertion the Tests section names is present and passing in the execution tier (including the alias case and both list indices under `Film.titleCheck`), the docs follow the Docs list, and `mvn install -Plocal-db` passes on the delivered tree. One approval precondition fails.
 
 1. **Code-string assertions on a generated method body (precondition; bears on question 2).** `GraphitronSchemaClassGeneratorTest.build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath` renders `<ErrorType>Fetchers` and asserts five substrings of the emitted `path` body (`ge.getPath() != null && !ge.getPath().isEmpty()`, the `ExecutionStepInfo step = ...` line, the `while` header, `step.getParent().getPath().toList()`, and a `doesNotContain`). `development-principles.adoc` ("Behaviour is pinned at the pipeline tier and above": asserting on generated Java text is banned) and `testing.adoc` ("Banned: code-string body matching") rule this out, and the gate's preconditions admit no such assertion in the delivered tests. The test predates the item, but this delivery rewrote and widened it; the spec's Tests section directed that ("follows the new walk"), so the Spec -> Ready round missed it too. The assertions add no evidence the execution tier lacks: the walk is pinned there by the root, aliased, path-less-`GraphQLError`, own-path and nested-list cases. To satisfy: delete the test (or reduce it to a structural check on the generated `TypeSpec`, e.g. that a `path(DataFetchingEnvironment)` method exists, if that carries something the wiring test does not), and update the Tests section's sentence about it to match what ships.
+
+   *Response:* deleted the test. The wiring test already checks `<ErrorType>Fetchers::path` is registered and the `graphitron-sakila-example` compile fails if the method is missing, so a structural replacement would carry nothing new. The Tests section now says so.
