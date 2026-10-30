@@ -1,13 +1,13 @@
 ---
 id: R1126
 title: "A matched error's path names the field that owns the payload"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: error-channel
 depends-on: []
 created: 2026-10-29
-last-updated: 2026-10-29
+last-updated: 2026-10-30
 ---
 
 # A matched error's path names the field that owns the payload
@@ -88,7 +88,7 @@ The class javadoc's "`path` synthesises from the GraphQL execution context for n
 
 ## Tests
 
-All in the execution tier (`graphitron-sakila-example`, real PostgreSQL), since the change is in what a client reads off a response and the generator-tier wiring test (`GraphitronSchemaClassGeneratorTest`, which checks `<ErrorType>Fetchers::path` is registered) is unaffected.
+All in the execution tier (`graphitron-sakila-example`, real PostgreSQL), since the change is in what a client reads off a response. The generator-tier wiring test (`GraphitronSchemaClassGeneratorTest`, which checks `<ErrorType>Fetchers::path` is registered) is unaffected, but its `build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath` pins the emitted body's `env.getExecutionStepInfo().getPath().toList()` and follows the new walk.
 
 * The seven `GraphQLQueryTest` assertions ending `"errors", "0", "path"` flip to the owning field alone (`["rentFilmPayload"]`, `["filmLookup"]`, `["submitFilmReview"]`, `["submitFilmReviewWithFilm"]`, `["createFilmWithErrors"]`).
 * `filmLookup_bothShapesSource_prefersAuthoredDescriptionOverGraphQLErrorMessage` flips from `isEmpty()` to `["filmLookup"]`, with its comment rewritten: a path-less `GraphQLError` now answers the holder too.
