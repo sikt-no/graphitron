@@ -336,6 +336,14 @@ branch rather than modelling inputs again. Deferred on 2026-10-22: it starts aft
   "Encode and decode read the target type, and the old node-id relations go" lands. Neither side
   checks where a `@referenceFor` route lands today; it becomes a landing arm here.
   `NodeIdDecodeCoverage` stays, comparing the census with the walk's ledger, until the walk goes.
+* **A manual example is a query over a fact document** `open`. A `.graphql` file beside a manual page
+  holds one operation or fragment carrying `@factDocument(path:)`, naming the fact document it
+  selects from; `QueryViewRenderer` renders the selection against that document's schema to a
+  `.graphqls` beside it, real directives kept and test directives stripped, and the page includes
+  the result. The outputs are committed and approval-checked, as the corpus fragments are, with the
+  same placement floors: a query without an output, an output without a query, an output no page
+  includes, and a query naming a document that does not exist. Proven on an existing fact document
+  before the path rules' examples use it.
 
 ### A reference resolves where its directive is decoded `open`
 
@@ -1125,39 +1133,188 @@ interface's field, each implementation's path calls the overload for its own tab
 A condition may not stand for paths that differ in where they land. Write one `@referenceFor` per
 member instead; they may all name the same method, and each calls the overload for its member's table.
 
+**Examples.** Each example is a query file beside the page, selecting from the fact document
+`scenarios/path-rules` drafted below; the build renders it to the SDL the page includes, so an example
+cannot say what the store does not. Three files carry the rules above:
+
 ```graphql
-interface Qualification {                       # each implementation has its own @table
-    children: [Qualification!]!
-        @referenceFor(type: "Programme", path: [{condition: {className: "QualificationConditions", method: "children"}}])
-        @referenceFor(type: "Area",      path: [{condition: {className: "QualificationConditions", method: "children"}}])
-        @referenceFor(type: "Subject",   path: [{condition: {className: "QualificationConditions", method: "children"}}])
-    owner: Person @reference(path: [{condition: {className: "QualificationConditions", method: "owner"}}])
+# examples/interface-paths.graphql
+fragment InterfacePaths on Person @factDocument(path: "scenarios/path-rules") {
+  address { addressId }
+  homeAddress { addressId }
+  customerAddress { addressId }
+  store { storeId }
 }
-type Programme implements Qualification @table(name: "v_programme") { ... }
-type Area      implements Qualification @table(name: "v_area")      { ... }
-type Subject   implements Qualification @table(name: "v_subject")   { ... }
 ```
 
-`children` is written once on the interface and inherited, so it stands for nine paths, three
-starting tables times three members, and each calls `children(VProgramme parent, VSubject child)` or
-whichever overload takes its two tables. `owner` lands on one table, so one `@reference` serves all
-three implementations, each calling the `owner` overload for its own table. A missing overload is an
-error at the `{condition:}` element, naming the pairs no overload takes.
-
-Where members are reached by different routes, `@referenceFor` states each:
+`Person` has no table, so each of `Customer` and `Staff` starts from its own. `address` is inferred
+from each one's key to `address`. `homeAddress` is one written path that calls
+`homeAddress(Customer, Address)` from `customer` and `homeAddress(Staff, Address)` from `staff`.
+`customerAddress` names a method with no overload for `staff`, so it is an error at
+`Staff.customerAddress`, naming the pair. `store` is inferred for `Customer`, while `Staff`, with two
+keys to `store`, states its own path on its own field.
 
 ```graphql
-union Stock = StockFilm | StockInventory
+# examples/member-paths.graphql
+fragment MemberPaths on Store @factDocument(path: "scenarios/path-rules") {
+  people { ... on Customer { address { addressId } } }
+  peopleByKey { ... on Customer { address { addressId } } }
+  peopleByCondition { ... on Staff { address { addressId } } }
+}
+```
 
-input StockFilter {
-    languageId: ID @nodeId(typeName: "Language")
-        @referenceFor(type: "StockFilm",      path: [{key: "film_language_id_fkey"}])
-        @referenceFor(type: "StockInventory", path: [{key: "inventory_film_id_fkey"}, {key: "film_language_id_fkey"}])
+`people` lands on two tables: `Customer`'s path is inferred and `Staff`'s is stated with
+`@referenceFor`. `peopleByKey` is an error, a `@reference` with no one table to land on.
+`peopleByCondition` names one method in a `@referenceFor` per member, each calling the overload for its
+member's table.
+
+```graphql
+# examples/argument-paths.graphql
+query ArgumentPaths @factDocument(path: "scenarios/path-rules") {
+  people(storeId: "c3RvcmU6MQ==") { address { addressId } }
 }
 ```
 
 On an argument or input field the path starts at the type the consuming field returns, once per
-consuming field, here at each member of `Stock`, and lands on the `@nodeId` type's table.
+consuming field, here at each implementation of `Person`, and lands on the type the argument
+targets, `Store`. `@nodeId` says only how to read the id.
+
+### Draft fact document: `scenarios/path-rules.graphqls`
+
+One document covers the rules, one field per rule, so the manual's examples select from it through
+query files beside the pages rather than carrying SDL of their own. It cannot run before "The walk is keyed by the path"
+lands; it is the document "The corpus is written against the target model" asks for, and the
+condition parts of `undecided/field-path-and-participant-path`, `undecided/condition-method-route`,
+`undecided/condition-method-route-departures`, `undecided/field-path-condition`,
+`defects/reference-step-target-refused` and `defects/argument-reference-step-target-chain` move into
+it. `graphitron_path` stands for the per-pair relation the target model declares, one row per field,
+target member and pair of tables, with where the path came from; its final name and columns are that
+node's to settle. The `PathRulesFixtures` methods are new, in `graphitron-sakila-service` beside
+`ConditionMethodRouteFixtures`; the defect codes after `ROUTE_AMBIGUOUS` are new too.
+
+The rules it does not cover yet: a lifted parent's start, which needs a record-backed type, and an
+inferred path on a single-table interface's own field.
+
+```graphql
+# The path rules, one field per rule, over the sakila catalog. customer and staff each have one key
+# to address; customer has one key to store, staff two (staff.store_id, and store.manager_staff_id
+# back to it); film has two keys to language.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Store implements Node @table(name: "store") @node { storeId: Int @field(name: "store_id") }
+
+"An interface no table backs: each implementation's path starts at its own table."
+interface Person {
+  "Inherited, and inferred from each implementation's one key to address."
+  address: Address
+  "Inherited, one condition, an overload per starting table: homeAddress(Customer, Address), homeAddress(Staff, Address)."
+  homeAddress: Address @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "homeAddress"}}])
+  "Inherited, and only homeAddress's Customer overload exists for this method: Staff has no overload for its pair."
+  customerAddress: Address @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "customerOnlyAddress"}}])
+  "Inferred for Customer; ambiguous for Staff, which states its own."
+  store: Store
+}
+
+type Customer implements Person @table(name: "customer") {
+  address: Address
+  homeAddress: Address
+  customerAddress: Address
+  store: Store
+  "A scalar path: a column reached through two keys."
+  city: String @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}]) @field(name: "city")
+}
+
+type Staff implements Person @table(name: "staff") {
+  address: Address
+  homeAddress: Address
+  customerAddress: Address
+  "Overrides the inherited path, which cannot be inferred from staff."
+  store: Store @reference(path: [{key: "staff_store_id_fkey"}])
+}
+
+type Film @table(name: "film") { title: String }
+
+"A single-table interface: one table, members told apart by a column."
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
+type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+type ShortItem implements MediaItem @table(name: "film") @discriminator(value: "short") { title: String }
+
+type Language @table(name: "language") {
+  "The interface's own path, with one member reached by another key."
+  media: [MediaItem!]!
+    @reference(path: [{key: "film_language_id_fkey"}])
+    @referenceFor(type: "ShortItem", path: [{key: "film_original_language_id_fkey"}])
+  "Two keys from language to film and no path: ambiguous."
+  films: [Film!]!
+}
+
+extend type Store {
+  "A target with no table of its own: Customer inferred, Staff stated."
+  people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+  "A @reference on a target with no table to land on."
+  peopleByKey: [Person!]! @reference(path: [{key: "customer_store_id_fkey"}])
+  "The remedy for a condition that differs by member: one @referenceFor each, one method."
+  peopleByCondition: [Person!]!
+    @referenceFor(type: "Customer", path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "storePerson"}}])
+    @referenceFor(type: "Staff",    path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "storePerson"}}])
+  "Two overloads take the one pair: agreeingOnBoth(Customer, Address) and the same with a String."
+  tied: Address @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "agreeingOnBoth"}}])
+}
+
+extend type Query {
+  people(
+    "Per member of Person, to the node type's table: Customer inferred, Staff stated."
+    storeId: ID @nodeId(typeName: "Store") @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+    "A @reference on an argument whose consumer returns members on two tables."
+    byKey: ID @nodeId(typeName: "Store") @reference(path: [{key: "customer_store_id_fkey"}])
+  ): [Person!]!
+  languages: [Language!]!
+  stores: [Store!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_path", rows: """
+  type_name, field_name,        member,   start_table, target_table, origin
+  Customer,  address,           -,        customer,    address,      INFERRED
+  Customer,  city,              -,        customer,    city,         WRITTEN
+  Customer,  customerAddress,   -,        customer,    address,      INHERITED
+  Customer,  homeAddress,       -,        customer,    address,      INHERITED
+  Customer,  store,             -,        customer,    store,        INFERRED
+  Language,  media,             -,        language,    film,         WRITTEN
+  Language,  media,             ShortItem, language,   film,         WRITTEN
+  Query,     people.storeId,    Customer, customer,    store,        INFERRED
+  Query,     people.storeId,    Staff,    staff,       store,        WRITTEN
+  Staff,     address,           -,        staff,       address,      INFERRED
+  Staff,     customerAddress,   -,        staff,       address,      INHERITED
+  Staff,     homeAddress,       -,        staff,       address,      INHERITED
+  Staff,     store,             -,        staff,       store,        WRITTEN
+  Store,     people,            Customer, store,       customer,     INFERRED
+  Store,     people,            Staff,    store,       staff,        WRITTEN
+  Store,     peopleByCondition, Customer, store,       customer,     WRITTEN
+  Store,     peopleByCondition, Staff,    store,       staff,        WRITTEN
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                           coordinate
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Staff.customerAddress
+  CONDITION_OVERLOAD_TIE,         Store.tied
+  REFERENCE_WITHOUT_TARGET_TABLE, Query.people(byKey:)
+  REFERENCE_WITHOUT_TARGET_TABLE, Store.peopleByKey
+  ROUTE_AMBIGUOUS,                Language.films
+  """)
+```
+
+What the document pins beyond the rows:
+
+* `Staff.store` states its own path because the inherited one cannot be inferred from `staff`; without
+  it the document would carry `ROUTE_AMBIGUOUS` at `Staff.store`, which is how a missing path for one
+  implementation reads.
+* `Staff.customerAddress` inherits a path and draws the defect at the implementation's own field, the
+  written position an author edits, naming the pair `(staff, address)` in its detail.
+* The `homeAddress` rows are one written path resolved twice, by the overload each starting table
+  takes; `graphitron_field_path_method`, or its successor, holds one method row per pair.
+* `peopleByCondition` reuses one method across members; `storePerson(Store, Customer)` and
+  `storePerson(Store, Staff)` are each taken by one pair. Written as one `@reference`, the same field
+  would draw `REFERENCE_WITHOUT_TARGET_TABLE`, as `peopleByKey` does.
 
 ## Tests
 
