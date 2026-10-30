@@ -159,6 +159,16 @@ Build: this is a documentation plus test item; the verification build is the ful
   `resolveServiceOutcomeChannel` answering `NoChannel` because `lookAheadVerdict` does not return a
   `ResultType` for the payload) and this item needs a repro schema, not just the pin.
 * Is dropping a service-populated errors list acceptable, or should a populated success-path list
-  surface? The recommendation is to keep it dropped and say so.
+  surface? The recommendation is to keep it dropped and say so. The kreg port objects: its baseline
+  case 27 is one thrown `MeldingerException` carrying four validation messages, which Graphitron 9
+  rendered as four errors, each path suffixed with the message code
+  (`{"message": "Saksbehandler mangler.", "path": ["annullerVgdok", "KM-1-055"]}`). Under channel-wins
+  one exception yields one error with a fixed path, and the only v9-shaped workaround (the service
+  returning one error per message on the success path) is the route this decision closes. Two ways
+  out: (a) let one claimed exception produce several errors, for example an exception exposing a
+  list of errors or a handler hook that fans out with a per-error path (the reporter's preference,
+  kreg being the concrete consumer); (b) keep the decision and state in the error-channel manual's
+  Graphitron 9 migration notes that fan-out plus path suffix has no v10 equivalent. This is a design
+  fork for the author and user to settle before Ready; (a) may deserve its own item.
 
 Provenance: reported by the kreg Graphitron 10 port session (fs-plattform's kreg module on 10.0.0-RC46, branch `worktree-kreg-g10` at `7858137af4`, not pushed), 2026-10-30; the reporter found it present on graphitron `origin/main` the same day.

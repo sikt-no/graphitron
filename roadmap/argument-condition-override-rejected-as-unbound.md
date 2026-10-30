@@ -77,7 +77,7 @@ Out of scope: a field-level `@condition(override: true)` over an unbound argumen
 `@condition` of its own stays rejected, because the field-level method may or may not read that
 argument and the cascade verdict for it is a different decision (the input-field analog, an
 `UnboundField` admitted by an enclosing override, is the shape to follow if the author wants
-it). Also distinct from `input-field-condition-drops-implicit-predicate` (R1092), which is about
+it). The kreg port has a concrete case, filed as its own item (R1139): `navn(spraakkoder: [String!]) @splitQuery @reference(...) @condition(condition: navnFilterCondition, override: true)`, where `spraakkoder` matches no column. Also distinct from `input-field-condition-drops-implicit-predicate` (R1092), which is about
 an input field's `@condition` *without* override dropping a column predicate that does resolve;
 the two touch different carriers and share no code, so neither depends on the other.
 

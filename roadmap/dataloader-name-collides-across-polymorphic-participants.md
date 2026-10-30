@@ -80,10 +80,16 @@ rows of several concrete types. Each emission site, verified against the tree:
 the name at generation time, from `ctx.parentTypeName()`, which `loaderNameDeclaration` already
 holds. (b) Read it at request time with `env.getExecutionStepInfo().getObjectType().getName()`.
 Recommendation: (a). The generated fetcher is emitted per declaring type, so the field coordinate is
-a constant at the emission site, and keying on the declaring type keeps a field declared once on an
-interface sharing one loader across all its participants, which is correct (one table, one batch)
-and preserves today's single batched query for it; (b) would split that into one loader and one
-query per concrete participant and change batch counts for no correctness gain.
+a constant at the emission site. The governing rule is that the name identifies the emitted batch
+function, meaning the table its rows method joins, not the interface. On a single-table interface a
+field declared once on the interface has one batch function, so one loader across its participants
+is correct and keeps today's single batched query. On a multitable interface each participant has
+its own table, so a loader shared across participants brings this bug back. Pickup must therefore
+establish which type `ctx.parentTypeName()` holds when the field is declared on the interface itself
+of a multitable interface (the interface name, or one emission per participant), and make the name
+carry the participant whenever the rows method differs per participant. (b) would split single-table
+interface fields into one loader and one query per concrete participant and change batch counts
+for no correctness gain on them.
 
 Steps:
 
@@ -128,6 +134,9 @@ so the regression case belongs in the execution tier, with unit-tier pins for th
   returns wrong or empty children. If the classifier rejects the list-cardinality parent-holds-FK
   path on `FilmInventory`, fall back to a new pair of small participant tables in `init.sql`
   rather than bending the shape. Assert both orders of the two fragments and an aliased control.
+  Also cover a multitable interface whose `@splitQuery` field is declared on the interface itself as
+  well as on the participants (the kreg schema declares per participant only, so it is no evidence
+  for the interface-declared form); assert the children of each participant come from its own table.
   Also add the `@referenceFor` multitable child shape (nested under a parent), since the report
   names both.
 * Unit/pipeline: update the assertions that pin the path-only name: `DataLoaderFetcherEmitterTest`
@@ -140,8 +149,8 @@ so the regression case belongs in the execution tier, with unit-tier pins for th
 
 ## Other solutions we've considered
 
-* Request-time `getObjectType()` (fork (b) above): rejected for splitting interface-declared fields
-  into per-participant queries.
+* Request-time `getObjectType()` (fork (b) above): rejected for splitting single-table interface
+  fields into per-participant queries.
 * Fix only the single-tenant inline form: rejected, the multi-tenant carrier has the same defect and
   one recipe should have one home.
 * Tell consumers to alias: rejected, it is a workaround that changes the response shape and the

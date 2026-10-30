@@ -64,6 +64,6 @@ All three claims in the report hold, and the cause of the first is one level low
 
 ## Open question
 
-`ParsedPath.errorMessage` is a string, so the typed `AmbiguousMethod` arm (and its `lspCode`) does not survive to the `@referenceFor` rejection, which stays `Structural`. This item restores the prose only. Carrying the typed rejection through `ParsedPath` would let the LSP show `graphitron.reflect.ambiguous-method` on path-step conditions, but widens the change to every `ParsedPath` consumer; file separately if wanted.
+`ParsedPath.errorMessage` is a string, so the typed `AmbiguousMethod` arm (and its `lspCode`) does not survive to the `@referenceFor` rejection, which stays `Structural`. This item restores the prose only. Carrying the typed rejection through `ParsedPath` would let the LSP show `graphitron.reflect.ambiguous-method` on path-step conditions, but widens the change to every `ParsedPath` consumer; filed as R1141.
 
 Provenance: reported by the kreg Graphitron 10 port session (fs-plattform's kreg module on 10.0.0-RC46, branch `worktree-kreg-g10` at `7858137af4`, not pushed), 2026-10-30; the reporter found it present on graphitron `origin/main` the same day.
