@@ -416,13 +416,6 @@ pass and no stratum that clears and recomputes.
     `NodeIdCandidates`, `SpelledTables` and `ResolvedTypeBindings`; the path steps go with the walk.
 * **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
-  * **The stratum only shrinks** `open`. A ceiling gate in the model's tests, shaped as
-    `SeedingDissolutionGateTest`, counts the relations `DerivationStratum.steps()` writes (24 over
-    21 steps on 2026-10-30) and the `meta_relation` rows owned by `derivation`, and fails when
-    either rises, naming the owning gatherer's anchor phase as the place a new derivation goes.
-    Feature work copies the nearest example, and four stages arrived that way in two days
-    (`OutboxLeaves`, `OutboxTargets`, `OutboxRoutineTargets`, `SessionHandleMembers`). Each
-    dissolution lowers the ceiling in its own commit; the gate goes with the stratum.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
     `CarrierDataFields` first, since a graphitron anchor reader sees the previous capture's rows.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
