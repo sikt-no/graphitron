@@ -184,6 +184,32 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     static final long LOCK_TIMEOUT_MILLIS = 1;
 
+    /**
+     * The database user {@link #reader(ReadBudget)} connects as, created by the DDL's "Store access"
+     * section with {@code SELECT} on the schema and nothing else. Spelled in the DDL as well, so a
+     * rename here without the file fails the first reader's connect.
+     */
+    static final String READER_USER = "GRAPHITRON_READER";
+
+    /** The system property that overrides {@link #QUERY_CACHE_SIZE} for one JVM. */
+    static final String QUERY_CACHE_SIZE_PROPERTY = "graphitron.queryCacheSize";
+
+    /**
+     * Prepared statements each session of the store keeps, against H2's default of 8. A capture
+     * and the reads over it run roughly six hundred distinct statements, a set the code fixes
+     * rather than the schema captured, in the same order every round, so a cache smaller than the
+     * set evicts each statement just before it comes round again and saves nothing. The size is a
+     * database-level setting: a reader's session inherits it from the open database, so only the
+     * writer's URL states it.
+     *
+     * <p>What it costs is memory, about 50 KB a statement, which a store fills up to the ~600 it
+     * runs and no further: roughly 30 MB more per captured store than the default holds, however
+     * much room is left unused above that. One store or two, as the build and the dev loop hold,
+     * pays that without noticing. A test JVM keeping dozens of stores alive does not, and sets
+     * {@value #QUERY_CACHE_SIZE_PROPERTY} lower in its own surefire configuration.
+     */
+    static final int QUERY_CACHE_SIZE = Integer.getInteger(QUERY_CACHE_SIZE_PROPERTY, 1024);
+
     private final Connection connection;
     private final DSLContext dsl;
     private final Path location;
@@ -264,7 +290,7 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     public static GraphitronModelStore open() {
         String url = "jdbc:h2:mem:graphitron-model-" + UUID.randomUUID()
-            + ";DB_CLOSE_DELAY=-1;ANALYZE_AUTO=0";
+            + ";DB_CLOSE_DELAY=-1;ANALYZE_AUTO=0;QUERY_CACHE_SIZE=" + QUERY_CACHE_SIZE;
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
@@ -470,7 +496,24 @@ public final class GraphitronModelStore implements AutoCloseable {
      *         store's own database is gone rather than that the caller asked for the wrong thing
      */
     public StoreReader reader(ReadBudget budget) {
-        return new StoreReader(connect(url), budget);
+        return new StoreReader(connectAsReader(url), budget);
+    }
+
+    /**
+     * A connection to the database {@code url} names as {@link #READER_USER}, on the URL with its
+     * settings cut off: they are database-level, need admin rights, and the open database already
+     * carries them, so a second connection that restated them would be refused for rights it
+     * has no use for.
+     */
+    private static Connection connectAsReader(String url) {
+        int settings = url.indexOf(';');
+        JdbcDataSource source = new JdbcDataSource();
+        source.setURL(settings < 0 ? url : url.substring(0, settings));
+        try {
+            return source.getConnection(READER_USER, "");
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not open a reader onto the model store at " + url, e);
+        }
     }
 
     /**
@@ -729,7 +772,7 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     private static String fileUrl(Path directory) {
         return "jdbc:h2:retry:" + directory.toAbsolutePath().resolve(DATABASE)
-            + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS + ";ANALYZE_AUTO=0";
+            + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS + ";ANALYZE_AUTO=0;QUERY_CACHE_SIZE=" + QUERY_CACHE_SIZE;
     }
 
     /**

@@ -31,8 +31,11 @@ import java.util.function.Function;
  * reporting a schema that never existed; one transaction per answer makes the consistency claim
  * structural rather than a property of whatever isolation level H2 defaults to, which is why the
  * level is set explicitly at mint time and no bare query surface is exposed beside it. The
- * transaction ends in a rollback: a reader has nothing to commit, so nothing it does can reach the
- * rows the writer owns.
+ * transaction ends in a commit, and a commit is safe because the reader's database user holds
+ * {@code SELECT} and nothing else: a write is refused where it is issued, so there is nothing to
+ * roll back. A rollback would empty the session's prepared statements, and a reader that
+ * re-prepared its statements on every read paid for the parser and optimizer far more than for
+ * the query.
  *
  * <p>A capture commits gatherer by gatherer and derivation step by step, so a read sees whatever
  * the writer has committed so far: during a round, some relations from this reading beside others
@@ -111,7 +114,7 @@ public final class StoreReader implements AutoCloseable {
      *
      * <p>Only an expired budget becomes an arm. Every other failure propagates unchanged, because a
      * query the database refused is a defect in that query and an arm that swallowed it would turn
-     * a build-breaking bug into a warning nobody reads. The transaction is rolled back on both
+     * a build-breaking bug into a warning nobody reads. The transaction is ended on both
      * paths, which leaves the session usable for the next read: an aborted statement is the
      * statement's end, not the connection's.
      *
@@ -134,7 +137,7 @@ public final class StoreReader implements AutoCloseable {
             }
             return new StoreAnswer.OutOfBudget<>(statementOf(e), budget);
         } finally {
-            rollback();
+            endTransaction();
         }
     }
 
@@ -177,9 +180,9 @@ public final class StoreReader implements AutoCloseable {
      * record to lose, and the caller is either receiving an answer already assembled or handling
      * the query's own failure, neither of which this improves by throwing a second exception.
      */
-    private void rollback() {
+    private void endTransaction() {
         try {
-            connection.rollback();
+            connection.commit();
             connection.setAutoCommit(true);
         } catch (SQLException e) {
             // The next read opens its own transaction and fails there if the connection is gone.

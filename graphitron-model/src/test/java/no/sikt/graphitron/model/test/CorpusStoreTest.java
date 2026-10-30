@@ -13,10 +13,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * {@link CorpusStore}'s read-only claim, one enforcer per case: the reader's rollback, and the
- * handout check for each of the two writes a rollback does not stop. Each case writes, so each
- * runs on a private store filled with one small document rather than on the shared corpus, which
- * the write would break for every class after it.
+ * {@link CorpusStore}'s read-only claim, one enforcer per case: the reader's database user, which
+ * holds {@code SELECT} and nothing else, so a write and a DDL statement are each refused where
+ * they are issued, and the handout check behind it for what a refusal cannot see. Each case
+ * writes, so each runs on a private store filled with one small document rather than on the shared
+ * corpus, which a write that landed would break for every class after it.
  */
 class CorpusStoreTest {
 
@@ -28,13 +29,14 @@ class CorpusStoreTest {
     }
 
     @Test
-    void aRowWrittenInsideAReadIsRolledBack() {
+    void aRowWrittenInsideAReadIsRefused() {
         var store = store();
         try {
-            store.run(dsl -> writeARow(dsl, "rolled-back"));
+            assertThatThrownBy(() -> store.run(dsl -> writeARow(dsl, "refused")))
+                .hasMessageContaining("STORE_GRAPH");
             int graphs = store.read(dsl -> dsl.fetchCount(STORE_GRAPH));
             assertThat(graphs)
-                .as("the handout check passed and the row never landed")
+                .as("the write was refused and the store holds only the capture's own row")
                 .isOne();
         } finally {
             store.close();
@@ -42,20 +44,20 @@ class CorpusStoreTest {
     }
 
     @Test
-    void aTableCreatedThroughAReaderFailsTheNextHandout() {
+    void aTableCreatedThroughAReaderIsRefused() {
         var store = store();
         try {
-            store.run(dsl -> dsl.execute("CREATE TABLE leaked_by_reader (id INT)"));
-            assertThatThrownBy(store::reader)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("LEAKED_BY_READER");
+            assertThatThrownBy(() -> store.run(dsl -> dsl.execute("CREATE TABLE leaked_by_reader (id INT)")))
+                .hasMessageContaining("Not enough rights");
+            int graphs = store.read(dsl -> dsl.fetchCount(STORE_GRAPH));
+            assertThat(graphs).isOne();
         } finally {
             store.close();
         }
     }
 
     @Test
-    void aRowWrittenThroughAContextKeptPastTheReadFailsTheNextHandout() {
+    void aRowWrittenThroughAContextKeptPastTheReadIsRefused() {
         var store = store();
         try {
             var leaked = new AtomicReference<DSLContext>();
@@ -64,11 +66,11 @@ class CorpusStoreTest {
                     leaked.set(dsl);
                     return null;
                 });
-                writeARow(leaked.get(), "leaked");
+                assertThatThrownBy(() -> writeARow(leaked.get(), "leaked"))
+                    .hasMessageContaining("STORE_GRAPH");
             }
-            assertThatThrownBy(store::reader)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("STORE_GRAPH");
+            int graphs = store.read(dsl -> dsl.fetchCount(STORE_GRAPH));
+            assertThat(graphs).isOne();
         } finally {
             store.close();
         }

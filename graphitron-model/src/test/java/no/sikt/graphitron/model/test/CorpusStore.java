@@ -44,15 +44,12 @@ import java.util.stream.Stream;
  * completes under this object's lock before the first reader is minted, so a reader sees the whole
  * population.
  *
- * <p><b>Read-only, enforced.</b> A reader's transaction always rolls back, so a row written inside
- * {@link StoreReader#read} never lands. Two things get past a rollback: DDL, which H2 commits
- * implicitly, and a context kept past {@code read()}, which then runs on autocommit. Every handout
- * therefore compares the store's base tables and its per-table row census against what the capture
- * left, and fails naming whatever changed. The set of tables is compared as well as the counts,
- * because a census keyed by the tables the capture made sees a table dropped and not one created.
- * What is not caught is an {@code UPDATE} through a leaked context: equal counts do not prove equal
- * content. That residue needs a context deliberately kept past {@code read()}, which the reader's
- * own javadoc already forbids, and the rollback covers every ordinary use.
+ * <p><b>Read-only, enforced.</b> A reader connects as a database user that holds {@code SELECT} and
+ * nothing else, so an {@code INSERT}, {@code UPDATE}, {@code DELETE} or DDL statement run inside
+ * {@link StoreReader#read}, or through a context kept past it, is refused where it is issued. Every
+ * handout still compares the store's base tables and its per-table row census against what the
+ * capture left and fails naming whatever changed: the refusal is the enforcer, the comparison is
+ * the check that it held for a write the grant does not name.
  *
  * <p>Never closed. An in-memory H2 dies with the JVM, and a class finishing has nobody to hand
  * the store to; {@code BundledVocabulary} in the language server's tests has the same lifetime for
@@ -180,9 +177,8 @@ public final class CorpusStore {
             var dropped = new ArrayList<>(tables);
             dropped.removeAll(now);
             throw new IllegalStateException(("the shared corpus store's tables changed after its"
-                + " capture: created %s, dropped %s. A reader ran DDL, which H2 commits past the"
-                + " reader's rollback, and every class reading this store after it reads a different"
-                + " schema. A case that needs DDL wants a store of its own.").formatted(created, dropped));
+                + " capture: created %s, dropped %s. A reader ran DDL past its read-only user,"
+                + " and every class reading this store after it reads a different schema. A case that needs DDL wants a store of its own.").formatted(created, dropped));
         }
         var found = ThreadConfinedStore.counts(dsl, census);
         var changed = counts.entrySet().stream()
@@ -192,9 +188,8 @@ public final class CorpusStore {
             .toList();
         if (!changed.isEmpty()) {
             throw new IllegalStateException(("the shared corpus store's rows changed after its"
-                + " capture: %s. A reader's transaction rolls back, so the write came through a"
-                + " DSLContext kept past StoreReader.read, which runs on autocommit. Keep every"
-                + " query inside the read that handed the context over.").formatted(changed));
+                + " capture: %s. A reader's user may only select, so the write came from"
+                + " somewhere that is not a reader. Keep every write on the capturing connection.").formatted(changed));
         }
     }
 

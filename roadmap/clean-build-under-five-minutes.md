@@ -105,7 +105,7 @@ numbering is the order to take them in, largest and cheapest first.
 1. **Stop preparing the same statement twice.** Two changes, both in `GraphitronModelStore` and
    both production code, so real captures (the sis schema, the consumer modules) and the
    long-lived stores of `graphitron:dev`, the LSP and MCP gain as well as the tests:
-   * **A statement cache that holds a capture.** Set `QUERY_CACHE_SIZE=2048` on the store's
+   * **A statement cache that holds a capture.** Set `QUERY_CACHE_SIZE=1024` on the store's
      connection URLs (in-memory and file-backed): room for the roughly 600 distinct statements a
      capture and its reads run, with headroom as the store grows. A larger cache buys nothing,
      the statement set being bounded by the code.
@@ -125,6 +125,20 @@ numbering is the order to take them in, largest and cheapest first.
    does, and off repeated reads. A test that boots a fresh store and captures once gains little,
    since every statement is new to that store; what it pays is first-time planning, which step 6
    addresses.
+
+   Landed. The size is 1024, and the cost is memory: about 50 KB a cached statement, filled up to
+   the roughly 600 a capture runs, so about 30 MB more per captured store than H2's default of 8
+   (40.7 MB to 70.7 MB measured over six stores held at once); sizes from 700 up cost the same, and
+   64 or 128 cost only 3 to 5 MB but, a capture cycling through its statements in order, should
+   save nothing. A JVM that keeps dozens of stores alive does not afford that: `graphitron-lsp`'s
+   tests ran out of heap at 700 and above and pass at 8, so its surefire configuration sets
+   `graphitron.queryCacheSize=8`. One before-and-after pair on `FactExpectationTest` (forked, load
+   under 2 at the start of each, cache at 2048): 297.0 s before, 235.7 s after, 21% off. A single
+   pair, not yet the interleaved set `## Measuring` asks for, so the spread is still owed.
+   Findings from landing it: `QUERY_CACHE_SIZE` has no `SET` form and is not persisted, only a URL
+   setting read when the first connection opens the database, so the writer's URL states it and a
+   reader inherits it; and a select-only reader can still create session-local temporary tables,
+   which touch nothing the writer owns.
 2. **Check `{@link}` references in the compiler.** Replace the `javadoc-no-fork` execution
    (`check-link-references`) with javac's own `-Xdoclint:reference`, excluding the generated jOOQ
    packages that the javadoc sourcepath reads today, so the reference gate costs nothing beyond

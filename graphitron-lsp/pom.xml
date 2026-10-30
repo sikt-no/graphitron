@@ -157,8 +157,12 @@
                       Without this flag JDK 25 only warns, but a future release will block
                       the call; declare the access up-front. @{argLine} leads so the JaCoCo
                       agent flags from -Pcoverage survive this override.
+
+                      graphitron.queryCacheSize is the fact store's prepared-statement cache,
+                      about 30 MB per captured store at its default. These tests keep dozens of
+                      stores alive in one JVM and run out of heap there, so they take H2's own 8.
                     -->
-                    <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
+                    <argLine>@{argLine} --enable-native-access=ALL-UNNAMED -Dgraphitron.queryCacheSize=8</argLine>
                 </configuration>
             </plugin>
         </plugins>

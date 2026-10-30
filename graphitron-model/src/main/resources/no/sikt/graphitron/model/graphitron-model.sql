@@ -65,6 +65,20 @@
 -- relation because a rule over the whole class of relations carrying a column is true by
 -- construction, where a hand-written line per relation needs a gate to stay true.
 
+-- ==== Store access ================================================================
+-- The one database user a reader connects as: it may select from every relation in the schema,
+-- views included, and nothing else. A read that tries to write is refused where it is issued,
+-- which is what lets a reader end its transaction in a commit instead of a rollback and so keep
+-- its prepared statements from one read to the next. The user lives here rather than in code
+-- because this file is what every created store executes and what the store's directory name
+-- hashes, so a store that exists has the user and a store from before it moves to a new path.
+-- The name is GraphitronModelStore.READER_USER; the empty password is deliberate, the writer
+-- sharing the process and the grant being the whole guard. A schema-level grant covers the
+-- relations created after it.
+
+CREATE USER IF NOT EXISTS GRAPHITRON_READER PASSWORD '';
+GRANT SELECT ON SCHEMA PUBLIC TO GRAPHITRON_READER;
+
 -- ==== Store bookkeeping ===========================================================
 -- The store's own family: the record of what it read, what it was built from, and which graphs
 -- it holds. Not a transcription of the consumer's schema, database or classpath, which is what
