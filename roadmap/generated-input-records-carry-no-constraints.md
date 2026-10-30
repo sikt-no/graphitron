@@ -1,7 +1,7 @@
 ---
 id: R747
 title: "The VALIDATION handler validates what a @service method receives, jOOQ records included"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: error-channel
