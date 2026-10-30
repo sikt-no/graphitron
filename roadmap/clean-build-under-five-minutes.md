@@ -50,9 +50,31 @@ that shape the plan:
    test phase, 48% of execution samples sit under H2's parser (`org.h2.command.Parser`) and 41%
    under its optimizer, against 6% under query execution
    (`org.h2.command.query.Select.queryWithoutCache`). In `graphitron-model` the share is about 37%
-   of test samples. The same statements are prepared again and again. H2's per-session statement
-   cache holds 8 statements by default (`QUERY_CACHE_SIZE`), and whether jOOQ binds or inlines
-   values decides whether two executions even share SQL text.
+   of test samples. 91% of that preparation happens while a capture writes, led by the derivation
+   steps' large `INSERT ... SELECT` statements (`ArgumentReferenceStepTargets`, `FieldPaths`,
+   `FieldReferenceStepHops`), and 9% inside `StoreReader.read`.
+
+   The same statements are prepared again and again, for three reasons found in H2's
+   `SessionLocal.prepareLocal`:
+   * The per-session statement cache holds 8 statements by default (`QUERY_CACHE_SIZE`). jOOQ's
+     statement log over `GraphitronStoreTest` shows 12,138 executions of 601 distinct SQL texts, of
+     which 410 ran exactly once per capture: a capture runs about 500 distinct statements, a set
+     fixed by the code rather than by the schema captured. With 8 slots none of them survives
+     until it comes round again.
+   * A rollback empties the session's cache (`SessionLocal.rollbackTo`), and `StoreReader.read`
+     ends every read with one, so a reader prepares everything afresh on every read. A commit
+     leaves the cache alone.
+   * A schema change empties every session's cache, database-wide. Plain DML and `ANALYZE` do
+     not.
+
+   jOOQ already binds values rather than inlining them (the store sets no `statementType`):
+   folding repeated value lists and `IN` lists merges only 5 of the 601 texts, so the statements
+   do repeat textually.
+
+   One interleaved pair on `FactExpectationTest`, which captures many graphs into one store,
+   with the cache raised to 1024 through the `h2.queryCacheSize` system property: 515 s wall and
+   781 s CPU at 8, 374 s and 581 s at 1024, a quarter less of each. A second pair ran at load 15
+   to 35 and is discarded; the figure stands to be confirmed by the method in `## Measuring`.
 2. **The `graphitron` test phase is CPU-bound.** Median CPU use is 90% of 16 cores with four test
    classes running. The rest of the load is garbage collection: 13 parallel GC threads, 34 s of
    pauses, and the top allocation sites are H2 tokens and plans (`Token.clone`,
@@ -80,14 +102,29 @@ The module graph bounds what reactor parallelism can do. After `graphitron-model
 Each step is measured before it starts and priced after it lands, and lands on its own; the
 numbering is the order to take them in, largest and cheapest first.
 
-1. **Stop preparing the same statement twice.** Establish, per store reader and writer, whether
-   jOOQ renders bind values or inlined literals (`Settings.statementType`), raise H2's
-   `QUERY_CACHE_SIZE` on the store's connection URL (`GraphitronModelStore`), and check whether
-   the test stores' resets (`ThreadConfinedStore`, the truncations between cases) invalidate the
-   cache through H2's modification counter. Where a hot statement is built per row or per graph,
-   prepare it once and rebind. This step changes production code: real captures (the sis schema,
-   the consumer modules) prepare the same statements, so they speed up too. Expected: 30 to 45%
-   off every store-heavy test phase, about 250 to 300 s, and the matching share of allocation.
+1. **Stop preparing the same statement twice.** Two changes, both in `GraphitronModelStore` and
+   both production code, so real captures (the sis schema, the consumer modules) and the
+   long-lived stores of `graphitron:dev`, the LSP and MCP gain as well as the tests:
+   * **A statement cache that holds a capture.** Set `QUERY_CACHE_SIZE=2048` on the store's
+     connection URLs (in-memory and file-backed): room for the roughly 600 distinct statements a
+     capture and its reads run, with headroom as the store grows. A larger cache buys nothing,
+     the statement set being bounded by the code.
+   * **Readers end in a commit, kept read-only by H2's rights.** `GraphitronModelStore` creates a
+     reader user with `GRANT SELECT ON SCHEMA PUBLIC` when it boots a store, and
+     `GraphitronModelStore.reader` connects as that user, on a URL without the database-level
+     settings (`DB_CLOSE_DELAY`, `ANALYZE_AUTO`, `LOCK_TIMEOUT`) that need admin rights.
+     `StoreReader.read` keeps one transaction per answer and ends it with a commit, so the
+     session's cache survives from read to read. Measured on 2.5.250: such a user can select
+     through views and set its query timeout, so `ReadBudget` keeps working, while `INSERT`,
+     `UPDATE`, `DELETE`, `MERGE`, `TRUNCATE`, `CREATE`, `DROP` and `ANALYZE` are refused with an
+     error. That is stronger than the rollback it replaces: a write fails where it is issued
+     instead of vanishing, and DDL, which H2 commits past a rollback, is refused too.
+     `StoreConsole` is untouched; it connects to a database of its own.
+
+   Expected: about a quarter off a store that captures many graphs, as `FactExpectationTest`
+   does, and off repeated reads. A test that boots a fresh store and captures once gains little,
+   since every statement is new to that store; what it pays is first-time planning, which step 6
+   addresses.
 2. **Check `{@link}` references in the compiler.** Replace the `javadoc-no-fork` execution
    (`check-link-references`) with javac's own `-Xdoclint:reference`, excluding the generated jOOQ
    packages that the javadoc sourcepath reads today, so the reference gate costs nothing beyond
@@ -109,7 +146,7 @@ numbering is the order to take them in, largest and cheapest first.
    copy, or reuse a booted store through the reset `ThreadConfinedStore` already performs in
    `graphitron-model`. Expected: about 30 s.
 7. **Take the slow test suites off the critical path.** With steps 1 to 6 the build projects to
-   about nine minutes: the compile chain still waits for each module's tests before the next
+   about ten minutes: the compile chain still waits for each module's tests before the next
    module starts. Moving the heaviest suites into test modules of their own (or adopting Maven 4's
    concurrent builder, if it lets a dependent start once the jar is packaged) lets those suites
    run beside the compile chain, which is about 200 s on its own. This is the step that reaches
@@ -137,9 +174,11 @@ The `build-profile` skill owns the method; this item follows it:
 * The acceptance is the measurement itself: a recorded clean `mvn install` under five minutes on
   the reference machine, by the method above, with the same gates as the 2026-10-30 baseline and
   per-module surefire test totals no lower than it, except where a test retired with the walk.
-* Step 1 adds a test that pins the statement reuse it relies on, for example that a capture of a
-  fixed schema prepares each distinct statement a bounded number of times, so a regression back to
-  re-preparing fails the build rather than slowing it.
+* Step 1 adds a test that pins the statement reuse it relies on: capturing a fixed schema twice
+  into one store prepares no statement a second time, and a reader's second identical read
+  prepares nothing, so a regression back to re-preparing fails the build rather than slowing it.
+  `CorpusStoreTest`'s case that a write inside a read never lands becomes a case that it is
+  refused, and gains one for DDL.
 * Step 2 is proved by a deliberately dangling `{@link}` failing the compile, then removed.
 * Step 3 is proved by two consecutive `-T` builds passing.
 
@@ -150,3 +189,8 @@ The `build-profile` skill owns the method; this item follows it:
 * **Skipping the javadoc gate locally.** It is the only check of `{@link}` validity, and the
   verification build owes it. Moving it into javac keeps the check and drops the cost.
 * **Dropping or sampling tests.** Out of scope by the goal: coverage stays what it is.
+* **Keeping the reader's rollback and only raising the cache.** The rollback empties the cache
+  on every read, so readers would keep preparing everything afresh; the select-only user gives
+  the read-only guarantee without that cost.
+* **Marking the reader's connection read-only through JDBC.** H2 treats
+  `Connection.setReadOnly` as a hint and enforces nothing.
