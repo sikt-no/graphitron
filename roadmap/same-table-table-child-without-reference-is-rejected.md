@@ -1,7 +1,7 @@
 ---
 id: R1115
 title: "A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: classification-model
