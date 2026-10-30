@@ -1,9 +1,24 @@
 # The file the second reading leaves alone. Its coordinates are touched once, by the first reading,
-# and never again.
+# and never again. It holds one of each kind of anchor, so the second reading can show each keeps it.
 
-type Actor {
+type Actor implements Named {
+  id: ID
   name: String
+  films(first: Int): [String] @shelved
 }
+
+interface Named {
+  id: ID
+}
+
+enum Rating {
+  G
+  PG
+}
+
+union Cast = Actor
+
+directive @shelved(at: Int) on FIELD_DEFINITION
 
 extend type Query { actors: [Actor] }
 

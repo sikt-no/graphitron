@@ -4,29 +4,97 @@
 # extends it too. $schema is the extend schema block carrying this expectation, which the file
 # writes like any other declaration.
 
-type Film {
+type Film implements Named {
+  id: ID
   name: String
   year: Int
 }
 
 extend type Query { films: [Film] }
 
-# The anchors re-derive only what that reaches: the edited file's fields carry this reading's mark,
-# and the untouched file's keep the first reading's.
-extend schema @assertContains(relation: "graphql_field", rows: """
-  type_name, field_name, touched_at
-  Actor,     name,       1000000000
-  Film,      name,       1000000060
-  Film,      year,       1000000060
-  """)
-
 extend schema @expectEquals(relation: "graphql_ast_touched_coordinate", rows: """
   coordinate
   $schema
   Film
+  Film.id
   Film.name
   Film.title
   Film.year
   Query
   Query.films
+  """)
+
+# The anchors re-derive only what that reaches: what this file declares carries this reading's mark,
+# and every kind of anchor the untouched actor file declares keeps the first reading's.
+extend schema @assertContains(relation: "graphql_type", rows: """
+  type_name, touched_at
+  Film,      1000000060
+  Actor,     1000000000
+  Named,     1000000000
+  Rating,    1000000000
+  Cast,      1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_field", rows: """
+  type_name, field_name, touched_at
+  Film,      name,       1000000060
+  Film,      year,       1000000060
+  Actor,     name,       1000000000
+  Actor,     films,      1000000000
+  Named,     id,         1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_argument", rows: """
+  type_name, field_name, argument_name, touched_at
+  Actor,     films,      first,         1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_enum_value", rows: """
+  type_name, value_name, touched_at
+  Rating,    G,          1000000000
+  Rating,    PG,         1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_union_member", rows: """
+  union_name, member_type_name, touched_at
+  Cast,       Actor,            1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_directive", rows: """
+  directive_name, touched_at
+  shelved,        1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name, touched_at
+  shelved,        at,            1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_directive_application", rows: """
+  coordinate,  directive_name, touched_at
+  Actor.films, shelved,        1000000000
+  """)
+
+# The one reach past this file, by design: an implementor's position is numbered across the
+# interface, so the edited Film re-derives every implementor of Named, the untouched Actor included.
+extend schema @assertContains(relation: "graphql_implements_interface", rows: """
+  type_name, interface_name, touched_at
+  Film,      Named,          1000000060
+  Actor,     Named,          1000000060
+  """)
+
+# The untouched file's entries keep the first reading's instant; Actor's declaration at 4:1 shows
+# the filter reaches the file.
+extend schema @assertAbsent(relation: "graphql_ast_entry", where: """
+  source_name LIKE '%touched-coordinates.actor.graphqls'
+  """, rows: """
+  touched_at
+  1000000060
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_entry", where: """
+  source_name LIKE '%touched-coordinates.actor.graphqls'
+  """, rows: """
+  entry_kind,       source_line, source_column, touched_at
+  TYPE_DECLARATION, 4,           1,             1000000000
   """)

@@ -1,7 +1,8 @@
 # What a reading touches, read in steps over two files. The first reading writes every file, so it
 # touches everything they name.
 
-type Film {
+type Film implements Named {
+  id: ID
   title: String
   year: Int
 }
