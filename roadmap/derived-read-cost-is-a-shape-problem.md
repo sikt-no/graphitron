@@ -1067,6 +1067,90 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
   `ClassName`, and a test initializing the two from opposite ends on two threads pins it.
 * **A refused compaction does not depend on luck** `done`.
 
+## User documentation (first-client check): paths
+
+User-visible authoring, so the docs draft is part of the design of
+"Arguments and input fields are resolved as fields are, from a target model". It replaces the rules on
+`docs/manual/reference/directives/reference.adoc` and `referenceFor.adoc`, and the shapes
+`docs/manual/how-to/polymorphic-types.adoc` walks through, when that section ships. Until then the
+manual describes what the generator does today, which differs: it rejects `@referenceFor` on a
+single-table polymorphic field, rejects any field-level `@reference` on a multi-table child, and
+inherits nothing from an interface's field. If the draft does not read simply, the rules are wrong
+and change before implementation.
+
+### `@reference` and `@referenceFor`: where a path starts and where it lands
+
+A field whose type is bound to a table is a *path field*: selecting it joins from the table the
+field's rows come from to the table its type is bound to. The path starts at the type the field is
+declared on and lands on the type the field returns.
+
+**Where a path starts.** A union is never bound to a table, so a path field sits on an object type or
+an interface.
+
+* On an object type with `@table`, the path starts at that table.
+* On an interface with its own `@table`, the path starts at the interface's table.
+* On an interface whose implementations each carry their own `@table`, there is no one table to start
+  at, so there is one path per implementation, each starting at that implementation's table.
+
+A path written on an interface's field is inherited by every implementation's field. An
+implementation states its own path on its own field to start from its own table instead.
+
+**Where a path lands.**
+
+* A field returning an object type with `@table` lands on that table. `@reference` states the path.
+* A field returning an interface with its own `@table` lands on the interface's table, stated by
+  `@reference`. `@referenceFor(type:)` states a different path for one implementation where it needs
+  one; the others take the interface's.
+* A field returning a union, or an interface whose implementations each carry their own `@table`, has
+  no one table to land on. There is one path per member, each stated by `@referenceFor(type:)` naming
+  the member. `@reference` on such a field is an error, since it has nothing to land on.
+
+**Paths you do not write.** Where exactly one foreign key joins the two tables, you need not write the
+path; the generator takes that key. Every path a field needs must be written, inherited or decided
+this way; a field left without one is an error naming the implementation or member it lacks.
+
+**A condition is chosen by both tables.** A `{condition:}` element names a method, and each path calls
+the overload whose two table parameters take the table the step leaves and the table it reaches. One
+`@reference` may therefore stand for several paths that differ in where they start: written on an
+interface's field, each implementation's path calls the overload for its own table.
+
+A condition may not stand for paths that differ in where they land. Write one `@referenceFor` per
+member instead; they may all name the same method, and each calls the overload for its member's table.
+
+```graphql
+interface Qualification {                       # each implementation has its own @table
+    children: [Qualification!]!
+        @referenceFor(type: "Programme", path: [{condition: {className: "QualificationConditions", method: "children"}}])
+        @referenceFor(type: "Area",      path: [{condition: {className: "QualificationConditions", method: "children"}}])
+        @referenceFor(type: "Subject",   path: [{condition: {className: "QualificationConditions", method: "children"}}])
+    owner: Person @reference(path: [{condition: {className: "QualificationConditions", method: "owner"}}])
+}
+type Programme implements Qualification @table(name: "v_programme") { ... }
+type Area      implements Qualification @table(name: "v_area")      { ... }
+type Subject   implements Qualification @table(name: "v_subject")   { ... }
+```
+
+`children` is written once on the interface and inherited, so it stands for nine paths, three
+starting tables times three members, and each calls `children(VProgramme parent, VSubject child)` or
+whichever overload takes its two tables. `owner` lands on one table, so one `@reference` serves all
+three implementations, each calling the `owner` overload for its own table. A missing overload is an
+error at the `{condition:}` element, naming the pairs no overload takes.
+
+Where members are reached by different routes, `@referenceFor` states each:
+
+```graphql
+union Stock = StockFilm | StockInventory
+
+input StockFilter {
+    languageId: ID @nodeId(typeName: "Language")
+        @referenceFor(type: "StockFilm",      path: [{key: "film_language_id_fkey"}])
+        @referenceFor(type: "StockInventory", path: [{key: "inventory_film_id_fkey"}, {key: "film_language_id_fkey"}])
+}
+```
+
+On an argument or input field the path starts at the type the consuming field returns, once per
+consuming field, here at each member of `Stock`, and lands on the `@nodeId` type's table.
+
 ## Tests
 
 The obligation this section carried is discharged and not by being measured. It asked the Done gate
