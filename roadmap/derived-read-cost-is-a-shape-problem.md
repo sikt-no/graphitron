@@ -1316,6 +1316,83 @@ What the document pins beyond the rows:
   `storePerson(Store, Staff)` are each taken by one pair. Written as one `@reference`, the same field
   would draw `REFERENCE_WITHOUT_TARGET_TABLE`, as `peopleByKey` does.
 
+## Path model (draft)
+
+The relations "Arguments and input fields are resolved as fields are, from a target model" builds,
+agreed with Alf on 2026-10-31 and not yet turned into nodes; the section's nodes are rewritten from
+this when it is picked up. It holds the rules the docs draft above states, and `scenarios/path-rules`
+asserts it once `graphitron_path` stands where that document's placeholder does.
+
+**What it rests on.** Every path belongs to an output field. A field's own path runs from the table
+of the type it is declared on to the type it returns, one path per pair of a starting table and a
+landing table, each end expanded to its tables. An argument's path is anchored at the argument, whose
+coordinate names its field. An input field's path is unanchored: an input type is reused, so its
+written elements become a path only per occurrence, under one output field. An argument's or input
+field's path starts on a step of its field's own path: the step named by `as:`, or the landing where
+none is named. The base facts are already captured: `graphql_type`, `graphql_implements_interface`,
+`graphql_union_member`, `graphitron_resolved_type_binding`, `graphitron_field_target_table`, the
+`graphitron_ast_reference_*` entries and the `graphitron_path_element_*` resolutions. What is missing
+is the paths themselves, keyed for members and occurrences, with inference and inheritance derived.
+
+**The relations, with their grains.**
+
+* `graphitron_ast_path_entry`, capture: one element of one written path, at its place. Keyed by the
+  written anchor's position and the place; the anchor is a field declaration, its `@routine` and
+  `@reference` composed in order, a `@referenceFor` application, an argument or an input field. It
+  carries the element's `as:` name, where one is written. It generalises
+  `graphitron_ast_field_path_entry`, which covers output field declarations only.
+* `graphitron_path_holder`, anchoring: one place a path is needed from. One row per output field, per
+  argument of one, and per input-field occurrence under one, the occurrence being the output field,
+  the argument and the chain of input fields down to an input field carrying a path, so only chains
+  ending at one are enumerated. Keyed by the holder's coordinate spelled as the editor shows it:
+  `Customer.address`, `Query.people(storeId:)`, `Query.films(filter:).cast.firstName`.
+* `graphitron_path_need`, anchoring: one path a holder must have. One row per holder, starting table
+  and landing type: the source end expanded (each implementation of a multi-table interface from its
+  own table), the target end expanded (each table-bound member; the type itself where it has a table;
+  a member a `@referenceFor` names on a single-table interface). The landing type is part of the key,
+  so `MediaItem` and `ShortItem` landing on `film` are two needs.
+* `graphitron_path`, anchoring: one path a holder has. The need's key plus the target table, with its
+  origin (`WRITTEN`, `INHERITED`, `INFERRED`), the written anchor it follows (none where inferred), the
+  implementing type that inherited it, and for an argument or input field the step of its field's
+  path it starts from, by name. An inherited path is a row per implementation, so no reader joins
+  through implementations.
+* `graphitron_path_step`: one step a path takes, per path and place, with its from and to table and the
+  element it resolved (none where inferred), and the element's `as:` name.
+* One row per step and joined column pair, foreign key, condition overload, routine and routine
+  parameter: `graphitron_path_step_column`, `_key`, `_method`, `_routine`, `_parameter`. The method is
+  the one overload whose two table parameters take the step's from and to table.
+* `graphitron_path_stop`: one path that stopped short, with the place and what it met there. Landing
+  stays a view over steps and stops.
+
+**Defects**, as `graphitron_entry_defect` rows at the written position: a need with no path, no route
+or an ambiguous one (`ROUTE_AMBIGUOUS`, `NO_ROUTE_TO_TARGET`); no overload for a step's pair
+(`CONDITION_NO_OVERLOAD_FOR_PAIR`); two overloads taking one pair (`CONDITION_OVERLOAD_TIE`);
+`@reference` where there is no target table (`REFERENCE_WITHOUT_TARGET_TABLE`); a `$path` name no
+segment carries, and two segments of one path under one name (R1099's).
+
+**What it replaces.**
+
+| Today | Becomes |
+| --- | --- |
+| `graphitron_field_path_start` and its four kind subtypes | `graphitron_path`, its start |
+| `graphitron_field_path` and its children | `graphitron_path_step` and its children |
+| `graphitron_field_participant_path` | `graphitron_ast_path_entry` |
+| `intent_input_occurrence_path` and its steps | `graphitron_path_holder` |
+| the argument and input-field reference step targets, keyed and keyless | `graphitron_path` |
+| `graphitron_field_scope_table`, `graphitron_argument_scope_table`, `graphitron_input_field_resolving_table` | `graphitron_path_need` |
+
+The element resolutions `graphitron_path_element_*` stay as they are.
+
+**Decided.** Inheritance is a row per implementation. A holder is keyed by its spelled coordinate,
+since a column per part of an occurrence would need a placeholder for the parts an output field's own
+path lacks. The landing type is a key column of a path. A path's start is a named step, so an inserted
+step moves nothing.
+
+**Open.** A lifted parent's start (a `TableRecord` matching its table, or a key or routine type
+matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How the
+generator reads a path per pair at run time is not yet planned; R1132's shared DataLoader is the same
+missing source type there.
+
 ## Tests
 
 The obligation this section carried is discharged and not by being measured. It asked the Done gate
