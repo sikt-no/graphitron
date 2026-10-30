@@ -549,6 +549,34 @@ class GraphitronTransactionProviderGeneratorTest {
         }
     }
 
+    @Test
+    void owned_marksTheScopesItOpens_andLeavesTheCallersContextUnmarked() throws Throwable {
+        // The seam's mark rides the Configuration jOOQ derives into every TransactionContext, so
+        // begin can tell a scope graphitron's own fetcher opened from one a consumer's code did.
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        var seen = new ArrayList<TransactionContext>();
+        var spy = (TransactionProvider) Proxy.newProxyInstance(
+            harness.classLoader(), new Class<?>[]{TransactionProvider.class}, (proxy, method, args) -> {
+                if (method.getName().equals("begin")) seen.add((TransactionContext) args[0]);
+                try {
+                    return method.invoke(provider, args);
+                } catch (InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            });
+        DSLContext dsl = DSL.using(fakeConnection(), SQLDialect.POSTGRES).configuration().derive(spy).dsl();
+        var owned = providerClass.getMethod("owned", DSLContext.class);
+        var isOwn = providerClass.getDeclaredMethod("isOwn", TransactionContext.class);
+        isOwn.setAccessible(true);
+
+        ((DSLContext) owned.invoke(null, dsl)).transactionResult(tx -> 1);
+        dsl.transactionResult(tx -> 2);
+
+        assertThat(seen).hasSize(2);
+        assertThat(isOwn.invoke(null, seen.get(0))).as("opened through the seam").isEqualTo(true);
+        assertThat(isOwn.invoke(null, seen.get(1))).as("opened on the caller's own context").isEqualTo(false);
+    }
+
     private Object newProvider(Connection connection, Object policy) throws Throwable {
         Class<?> policyClass = policy.getClass();
         return providerClass.getConstructor(Connection.class, policyClass).newInstance(connection, policy);

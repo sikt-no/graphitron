@@ -118,10 +118,12 @@ public final class RoutineWriteEmitter {
      * @param argHelpers        the host class's collector of dotted-path descent helpers
      * @param keys              the method's node-id decodes, for an argument whose path projects a
      *                          key column
+     * @param transactionProvider the emitted provider the write's transaction is opened through,
+     *                          from {@link OwnedScope#provider}
      */
     public static MethodSpec render(Row row, String methodName, ClassName returnTypeClass,
             ClassName selectionOccurrences, Errors errors, Tenancy tenancy, Supplier<CodeBlock> graphitronContext,
-            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
+            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys, ClassName transactionProvider) {
         var dsl = switch (tenancy) {
             case Tenancy.Unrouted ignored -> CodeBlock.builder()
                 .addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, graphitronContext.get())
@@ -132,14 +134,15 @@ public final class RoutineWriteEmitter {
         };
         var call = routineCall(row, argHelpers, keys);
         return switch (row.seat()) {
-            case CHAIN -> chainReread(row, methodName, returnTypeClass, selectionOccurrences, errors, dsl, call, keys);
-            case CARRIER -> carrierKeys(row, methodName, errors, dsl, call, keys);
+            case CHAIN -> chainReread(row, methodName, returnTypeClass, selectionOccurrences, errors, dsl, call, keys,
+                transactionProvider);
+            case CARRIER -> carrierKeys(row, methodName, errors, dsl, call, keys, transactionProvider);
         };
     }
 
     private static MethodSpec chainReread(Row row, String methodName, ClassName returnTypeClass,
             ClassName selectionOccurrences,
-            Errors errors, CodeBlock dsl, CodeBlock call, ProjectedKeyReads keys) {
+            Errors errors, CodeBlock dsl, CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
         boolean isList = row.listReturn();
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
         TypeName declaredType = declaredValueType(errors, valueType);
@@ -161,7 +164,7 @@ public final class RoutineWriteEmitter {
         TypeName keyRowType = keyRecordType(capturedColumns);
         builder.addCode(captureTransaction(
             isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType,
-            capturedColumns, null, isList));
+            capturedColumns, null, isList, transactionProvider));
         builder.addCode(nullKeysGuard(declaredType, isList));
 
         // The post-commit re-read: from the anchor keyed by the captured values, the tail hops
@@ -200,7 +203,7 @@ public final class RoutineWriteEmitter {
     }
 
     private static MethodSpec carrierKeys(Row row, String methodName, Errors errors, CodeBlock dsl,
-            CodeBlock call, ProjectedKeyReads keys) {
+            CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
         boolean isList = row.listReturn();
         var targetKeyColumns = row.capturedPairs().stream().map(Pair::target).toList();
         TypeName keyRowType = keyRecordType(targetKeyColumns);
@@ -221,7 +224,7 @@ public final class RoutineWriteEmitter {
                 target.javaFieldName(), c.javaName()))
             .toList(), ", ");
         builder.addCode(captureTransaction(valueType,
-            row.capturedPairs().stream().map(Pair::source).toList(), coerceTo, isList));
+            row.capturedPairs().stream().map(Pair::source).toList(), coerceTo, isList, transactionProvider));
         builder.addCode(nullKeysGuard(declaredType, isList));
 
         return closeEntryPoint(builder, errors, declaredType, "keys");
@@ -278,13 +281,13 @@ public final class RoutineWriteEmitter {
     }
 
     /**
-     * {@code <keysType> keys = dsl.transactionResult(tx -> DSL.using(tx).select(...).from(source)
+     * {@code <keysType> keys = <Provider>.owned(dsl).transactionResult(tx -> DSL.using(tx).select(...).from(source)
      * [.coerce(...)].fetch[One]());}, the write half both seats emit.
      */
     private static CodeBlock captureTransaction(TypeName keysType, List<Column> capturedColumns,
-            CodeBlock coerceTo, boolean isList) {
+            CodeBlock coerceTo, boolean isList, ClassName transactionProvider) {
         var b = CodeBlock.builder()
-            .add("$T keys = dsl.transactionResult(tx -> $T.using(tx)\n", keysType, DSL).indent()
+            .add("$T keys = $L$T.using(tx)\n", keysType, OwnedScope.transactionResult(transactionProvider, "dsl"), DSL).indent()
             .add(".select($L)\n", CodeBlock.join(capturedColumns.stream()
                 .map(c -> CodeBlock.of("source.$L", c.javaName())).toList(), ", "))
             .add(".from(source)\n");

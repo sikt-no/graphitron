@@ -96,6 +96,10 @@ public final class GraphitronTransactionProviderGenerator {
     private static final ClassName TRANSACTION_CONTEXT = ClassName.get("org.jooq", "TransactionContext");
     private static final ClassName DATA_ACCESS_EXCEPTION = ClassName.get("org.jooq.exception", "DataAccessException");
     private static final String SCOPE_KEY = "SCOPE_KEY";
+    private static final String OWN_SCOPE_KEY = "OWN_SCOPE_KEY";
+    private static final ClassName CONFIGURATION = ClassName.get("org.jooq", "Configuration");
+    private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
 
     private GraphitronTransactionProviderGenerator() {}
 
@@ -128,6 +132,37 @@ public final class GraphitronTransactionProviderGenerator {
             .addJavadoc("The {@code TransactionContext} data key a successful {@code begin} records its scope\n"
                 + "under. jOOQ builds a fresh context, with its own data map, for every\n"
                 + "{@code transactionResult} call, so the entry names exactly the scope that call opened.\n")
+            .build();
+
+        var ownScopeKeyField = FieldSpec.builder(Object.class, OWN_SCOPE_KEY, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("new $T()", Object.class)
+            .addJavadoc("The {@code Configuration} data key {@link #owned} marks a scope graphitron's own\n"
+                + "fetcher opens with. jOOQ derives the configuration a {@code TransactionContext} carries\n"
+                + "from the one the call was made on, so {@code begin} reads the mark off the context.\n")
+            .build();
+
+        var owned = MethodSpec.methodBuilder("owned")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(DSL_CONTEXT, "dsl")
+            .addStatement("$T configuration = dsl.configuration().derive()", CONFIGURATION)
+            .addStatement("configuration.data($L, $T.TRUE)", OWN_SCOPE_KEY, Boolean.class)
+            .addStatement("return $T.using(configuration)", DSL)
+            .addJavadoc("The seam every generated fetcher opens its own transaction through: a {@code DSLContext}\n"
+                + "on a copy of {@code dsl}'s configuration that marks the scopes opened on it as\n"
+                + "graphitron's own. A generated fetcher's failure already reaches the router as the\n"
+                + "fetcher's exception, so the provider tells it from a scope a consumer's code opened\n"
+                + "by this mark. On a connection graphitron does not own the mark is ignored.\n"
+                + "@param dsl the context the fetcher would otherwise open the transaction on\n"
+                + "@return a context whose transactions are marked as graphitron's own\n")
+            .build();
+
+        var isOwn = MethodSpec.methodBuilder("isOwn")
+            .addModifiers(Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(TRANSACTION_CONTEXT, "ctx")
+            .addStatement("return ctx.configuration().data($L) != null", OWN_SCOPE_KEY)
+            .addJavadoc("Whether the scope {@code ctx} opens was marked by {@link #owned}.\n")
             .build();
 
         var canonicalConstructor = MethodSpec.constructorBuilder()
@@ -396,10 +431,13 @@ public final class GraphitronTransactionProviderGenerator {
             .addType(topLevelType)
             .addType(savepointedType)
             .addField(scopeKeyField)
+            .addField(ownScopeKeyField)
             .addField(connectionField)
             .addField(policyField)
             .addField(scopesField)
             .addMethod(canonicalConstructor)
+            .addMethod(owned)
+            .addMethod(isOwn)
             .addMethod(begin)
             .addMethod(commit)
             .addMethod(rollback)

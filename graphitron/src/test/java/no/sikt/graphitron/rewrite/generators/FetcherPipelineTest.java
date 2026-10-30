@@ -627,7 +627,7 @@ class FetcherPipelineTest {
         var body = createContent.code().toString();
         assertThat(body)
             .as("write half unchanged: PK-only RETURNING inside a transaction")
-            .contains("dsl.transactionResult")
+            .contains(".owned(dsl).transactionResult")
             .contains(".returningResult(")
             .as("the fetcher calls the named reentry rows companion after the write (R314 slice 4)")
             .contains("rowsCreateContent(keys, env)");
@@ -661,7 +661,7 @@ class FetcherPipelineTest {
         var mutationFetchers = findSpec("MutationFetchers", sdl);
         var updateContent = method(mutationFetchers, "updateContent");
         assertThat(updateContent.code().toString())
-            .contains("dsl.transactionResult")
+            .contains(".owned(dsl).transactionResult")
             .contains("rowsUpdateContent(keys, env)");
         assertThat(method(mutationFetchers, "rowsUpdateContent").code().toString())
             .contains("__discriminator__")

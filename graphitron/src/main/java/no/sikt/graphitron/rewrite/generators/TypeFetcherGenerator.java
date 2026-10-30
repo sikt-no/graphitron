@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.emit.OwnedScope;
 import no.sikt.graphitron.render.TenantHandDown;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import com.palantir.javapoet.ClassName;
@@ -1559,7 +1560,7 @@ public class TypeFetcherGenerator {
             className(units.selectionOccurrences()),
             routineWriteErrors(ctx, field, units), routineWriteTenancy(ctx, coordinate, units),
             () -> ctx.requestContextRead().call(), ctx.argPathHelpers(),
-            ctx.projectedKeyHost().at(coordinate));
+            ctx.projectedKeyHost().at(coordinate), OwnedScope.provider(outputPackage));
     }
 
     /**
@@ -5229,7 +5230,7 @@ public class TypeFetcherGenerator {
                 ? ParameterizedTypeName.get(RESULT, keyRecordType)
                 : keyRecordType;
             var tx = renderTransactionalKeyFetch(statement, keysType, "keys", keyFields.build(),
-                keyRecordType, isList ? ".fetch()" : ".fetchOne()", outbox);
+                keyRecordType, isList ? ".fetch()" : ".fetchOne()", outbox, outputPackage);
             var tail = CodeBlock.builder();
             if (isList) {
                 tail.add("$T payload = keys.map($L);\n", valueType,
@@ -5315,7 +5316,8 @@ public class TypeFetcherGenerator {
 
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(reentry.correlation(), statement, isList,
-                outboxHook(ctx, field.name(), isList, reentry.correlation().columns(), outputPackage)));
+                outboxHook(ctx, field.name(), isList, reentry.correlation().columns(), outputPackage),
+                outputPackage));
 
         if (!isList) {
             // Single-row UPDATE / DELETE with no match: keys is null. Skip the follow-up SELECT
@@ -5338,7 +5340,7 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock emitKeysTransaction(
             ParentCorrelation.OnLiftedSlots correlation,
-            KeyStatement statement, boolean isList, Optional<OutboxHook> outbox) {
+            KeyStatement statement, boolean isList, Optional<OutboxHook> outbox, String outputPackage) {
         var keyCols = correlation.columns();
         var owner = correlation.targetTable();
         var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
@@ -5354,7 +5356,7 @@ public class TypeFetcherGenerator {
             keyFields.add("$T.$L.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName());
         }
         return renderTransactionalKeyFetch(statement, keysType, "keys", keyFields.build(), keyRowType,
-            isList ? ".fetch()" : ".fetchOne()", outbox);
+            isList ? ".fetch()" : ".fetchOne()", outbox, outputPackage);
     }
 
     /**
@@ -5895,7 +5897,7 @@ public class TypeFetcherGenerator {
 
         builder.addCode(renderTransactionalKeyFetch(chainAndGuards.statement(), payloadType, "payload",
             buildPkFieldList(pkCols, tablesOnly, tableRef), payloadType, ".fetchOne()",
-            outboxHook(ctx, field.name(), false, pkCols, outputPackage)));
+            outboxHook(ctx, field.name(), false, pkCols, outputPackage), outputPackage));
         // A DELETE whose key matched no row answers the key the client sent, or fails the call,
         // ahead of the null-data check below, which then never fires for that shape.
         // Only the DELETE chain carries a policy (buildRecordDeleteChain).
@@ -6160,9 +6162,9 @@ public class TypeFetcherGenerator {
      * expression lambda; the UPDATE shapes take a block lambda to hold the statement local.
      */
     private static CodeBlock renderTransactionalKeyFetch(KeyStatement statement, TypeName resultType,
-            String local, CodeBlock keyFields, TypeName keyRecordType, String fetch) {
+            String local, CodeBlock keyFields, TypeName keyRecordType, String fetch, String outputPackage) {
         return renderTransactionalKeyFetch(statement, resultType, local, keyFields, keyRecordType, fetch,
-            Optional.empty());
+            Optional.empty(), outputPackage);
     }
 
     /**
@@ -6172,11 +6174,12 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock renderTransactionalKeyFetch(KeyStatement statement, TypeName resultType,
             String local, CodeBlock keyFields, TypeName keyRecordType, String fetch,
-            Optional<OutboxHook> outbox) {
+            Optional<OutboxHook> outbox, String outputPackage) {
         var receiver = CodeBlock.of("$T.using(tx)", DSL);
+        var head = OwnedScope.transactionResult(OwnedScope.provider(outputPackage), "dsl");
         if (outbox.isPresent()) {
             return CodeBlock.builder()
-                .add("$T $L = dsl.transactionResult(tx -> {\n", resultType, local).indent()
+                .add("$T $L = $L{\n", resultType, local, head).indent()
                 .add(renderKeyFetch(statement, CodeBlock.of("$T written = ", resultType), receiver,
                     keyFields, keyRecordType, CodeBlock.of(fetch)))
                 .add(outbox.get().callAfter("written"))
@@ -6186,10 +6189,10 @@ public class TypeFetcherGenerator {
         }
         return switch (statement) {
             case KeyStatement.Chain c -> renderKeyFetch(c,
-                CodeBlock.of("$T $L = dsl.transactionResult(tx -> ", resultType, local), receiver,
+                CodeBlock.of("$T $L = $L", resultType, local, head), receiver,
                 keyFields, keyRecordType, CodeBlock.of("$L)", fetch));
             case KeyStatement.KeyedUpdate _, KeyStatement.ValuesJoinUpdate _ -> CodeBlock.builder()
-                .add("$T $L = dsl.transactionResult(tx -> {\n", resultType, local).indent()
+                .add("$T $L = $L{\n", resultType, local, head).indent()
                 .add(renderKeyFetch(statement, CodeBlock.of("return "), receiver,
                     keyFields, keyRecordType, CodeBlock.of(fetch)))
                 .unindent().add("});\n")
@@ -6517,7 +6520,8 @@ public class TypeFetcherGenerator {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         boolean countMisses = perRow.onMiss() instanceof MissPolicy.CountThenThrow;
         var tx = CodeBlock.builder()
-            .add("$T $L = dsl.transactionResult(tx -> {\n", resultType, local).indent()
+            .add("$T $L = $L{\n", resultType, local,
+                OwnedScope.transactionResult(OwnedScope.provider(outputPackage), "dsl")).indent()
             .add("$T txd = $T.using(tx);\n", dslContextClass, DSL)
             .add("$T acc = txd.newResult($L);\n", resultType, returningFields);
         if (countMisses) {
