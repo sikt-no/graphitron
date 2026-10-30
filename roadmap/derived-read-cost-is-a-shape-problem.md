@@ -426,8 +426,8 @@ static method needs no holder.
     subtype of `graphitron_reader` for its `ACCESSOR` reads, names the `code_read_slot` read off each
     class the parent's result holds (`graphitron_result_class`), by the field's name or
     `@field(name:)`, one row per field, class and the classpath entry the class was read from.
-  * **A service's `$result` is read off its returned value** `open`.
-    The `RESULT_MEMBER` and service `RESULT_NODE_ID` leaves resolve a path step by step over the
+  * **A service's `$result` is read off its returned value** `blocked`, on "An outbox message's keys are a view", since it extends the leaf rule and the
+    stratum takes no new step. The `RESULT_MEMBER` and service `RESULT_NODE_ID` leaves resolve a path step by step over the
     field's result, through `graphitron_carrier_data_channel` where the object passes through a
     payload's data field and the accessor each field names; a step with no stated read stays
     `OUTBOX_SOURCE_UNRESOLVED`.
@@ -471,8 +471,24 @@ pass and no stratum that clears and recomputes.
   below and on "Nothing resolves a path but the walk".
   * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
     `NodeIdCandidates`, `SpelledTables` and `ResolvedTypeBindings`; the path steps go with the walk.
-* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
+* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the five below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
+  `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
+  * **A session handle's members are a view** `open`. `graphitron_session_handle_member` is a join
+    of the configured handle, the graph's sources and `code_read_slot`, so its rule takes the
+    relation's name and `SessionHandleMembers` goes. Its readers read the same name: the session
+    identity rows and defects, and the outbox-leaf, argMapping pair-defect and entry-defect rules.
+  * **The outbox targets are views** `open`. `graphitron_outbox_target` and
+    `graphitron_outbox_routine_target` read only the configuration and the catalog, one row per
+    graph, so each `_rule` view takes its relation's name and `OutboxTargets` and
+    `OutboxRoutineTargets` go; the keys and checks they lose guarded only the rule's own output.
+    R1113's phase 2 record says where they are now.
+  * **An outbox message's keys are a view** `open`. `graphitron_outbox_leaf`'s rule takes the
+    relation's name and `OutboxLeaves` goes, once the entry-defect and outbox-leaf rules are timed
+    on sis before and after; a reader made slower keeps the relation a table until that reader
+    moves. One key per message, which the primary key held, is a fact document's to state: the
+    message's own entry before a common one, and the first written before the second. R1113's
+    phase 1b record, which places the outbox relations with `derivation`, is restated.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
     `CarrierDataFields` first, since a graphitron anchor reader sees the previous capture's rows.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
