@@ -410,13 +410,28 @@ static method needs no holder.
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
 * **A service call is emitted from the store** `blocked`, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
   `ServiceCatalog`'s decode, claim and bind phases go.
-* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "A service call is emitted from the store".
-  R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk,
-  and also on R1113's phase 1 and R1101's phase 2 reaching trunk. It builds on R1113's seam
-  (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in `TypeFetcherGenerator`), admitted by the
-  service's `graphitron_producer_write` row; `$result` reads the returned value through
-  `graphitron_type_backing`, `graphitron_carrier_data_channel` and the class's read slots, since a
-  service has no written key to read rows back by.
+* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "A `@service` mutation is a write the outbox admits", "A service's `$result` is read off its returned value" and "The outbox on a service is emitted where the service call is".
+  R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
+  It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
+  `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
+  off the returned value, since a service has no written key to read rows back by.
+  * **The outbox on a service is modelled before it is built** `open`. The admission, the `$result`
+    leaves over a returned value and their defects are written down as relations with their grains,
+    keys and readers, in the store's own terms, and reviewed before either node below changes code.
+  * **A `@service` mutation is a write the outbox admits** `blocked`, on "The outbox on a service is modelled before it is built".
+    `graphitron_producer_write` states only a `@mutation`'s INSERT, UPDATE or DELETE, so an
+    `@outbox` on a `@service` field draws `OUTBOX_NOT_A_WRITE`; the store states which `@service`
+    fields are writes, and the outbox admits them.
+  * **A service's `$result` is read off its returned value** `blocked`, on "The outbox on a service is modelled before it is built".
+    A `$result` path resolves step by step over the class the service returns, through
+    `graphitron_carrier_data_channel` where the object passes through a payload's data field, then
+    `graphitron_type_backing` and the class's `code_read_slot` accessors, a record of a node's table
+    giving the node id; a step naming no member, or a member JSON cannot hold, is a defect at the
+    `@outbox`.
+  * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
+    The store-emitted service fetcher calls R1113's companion after the service returns, reading the
+    `$result` leaves off the returned object; it also waits on R1101's phase 2, nested scopes joining
+    the field's transaction, so a service's own transactions join the field's.
 * **A table class's column fields are stated** `blocked`, on "The generated jOOQ classes are read with their members". The code family keeps each generated table's public column fields, which
   the census reads and the capture drops.
 * **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
