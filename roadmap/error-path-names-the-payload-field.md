@@ -1,7 +1,7 @@
 ---
 id: R1126
 title: "A matched error's path names the field that owns the payload"
-status: In Review
+status: Ready
 bucket: bug
 priority: 4
 theme: error-channel
@@ -121,3 +121,11 @@ Surveying the shapes an `@error` object can reach turned up four classifier gaps
 ## Provenance
 
 Requested 2026-10-29 by sis (the Graphitron 10 port, request C37), reversing R1085. R1085 proposed correcting the manual to match the code. sis wants the code corrected to match the manual, so R1085 is discarded in favour of this item. sis's ITs assert only `hasItem(<field>)` and pass with either shape.
+
+## Reviewer findings
+
+### Round 1: In Review -> Done, rework (session_01FY5Uvw5K2arhRQuxwvTbza, 2026-10-30)
+
+The behaviour is the change the spec approved and it is demonstrated: the emitted walk matches the spec's body, every assertion the Tests section names is present and passing in the execution tier (including the alias case and both list indices under `Film.titleCheck`), the docs follow the Docs list, and `mvn install -Plocal-db` passes on the delivered tree. One approval precondition fails.
+
+1. **Code-string assertions on a generated method body (precondition; bears on question 2).** `GraphitronSchemaClassGeneratorTest.build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath` renders `<ErrorType>Fetchers` and asserts five substrings of the emitted `path` body (`ge.getPath() != null && !ge.getPath().isEmpty()`, the `ExecutionStepInfo step = ...` line, the `while` header, `step.getParent().getPath().toList()`, and a `doesNotContain`). `development-principles.adoc` ("Behaviour is pinned at the pipeline tier and above": asserting on generated Java text is banned) and `testing.adoc` ("Banned: code-string body matching") rule this out, and the gate's preconditions admit no such assertion in the delivered tests. The test predates the item, but this delivery rewrote and widened it; the spec's Tests section directed that ("follows the new walk"), so the Spec -> Ready round missed it too. The assertions add no evidence the execution tier lacks: the walk is pinned there by the root, aliased, path-less-`GraphQLError`, own-path and nested-list cases. To satisfy: delete the test (or reduce it to a structural check on the generated `TypeSpec`, e.g. that a `path(DataFetchingEnvironment)` method exists, if that carries something the wiring test does not), and update the Tests section's sentence about it to match what ships.
