@@ -1,6 +1,6 @@
 ---
 id: R747
-title: "Generated input records carry no constraint annotations, so the VALIDATION handler can never fire"
+title: "The VALIDATION handler validates what a @service method receives, jOOQ records included"
 status: Spec
 bucket: architecture
 priority: 4
@@ -10,7 +10,7 @@ created: 2026-08-20
 last-updated: 2026-10-30
 ---
 
-# Generated input records carry no constraint annotations, so the VALIDATION handler can never fire
+# The VALIDATION handler validates what a @service method receives, jOOQ records included
 
 ## Goal
 
@@ -23,7 +23,7 @@ so the only constraints that counted were ones a consumer attached to that gener
 When this lands, graphitron validates the very instance it is about to hand the service, so the
 constraints that count are the ones on the class or record the service takes. For a jOOQ record
 that includes what jOOQ's `<validationAnnotations>` generates from the schema (`@Size` on a
-`varchar(n)` column, `@NotNull` on a `NOT NULL` one), checked for the columns the request wrote.
+`varchar(n)` column, `@NotNull` on a `NOT NULL` one), checked for the columns the record writes.
 
 The sakila example has both shapes. `Mutation.countFilmDrafts` takes a list of `FilmDraftInput`,
 binds each element to the consumer record `FilmDraft`, and shares the VALIDATION-handled
@@ -101,16 +101,20 @@ Replaces the `VALIDATION` paragraphs of `docs/manual/how-to/error-channel.adoc` 
 > A class is validated whole, with the `jakarta.validation` constraints declared on it. Nested
 > classes are validated only where you ask for it with `@Valid`, as Bean Validation always does.
 >
-> A jOOQ record is validated column by column, for the columns the request wrote: each column is
+> A jOOQ record is validated column by column, for the columns the record writes: each column is
 > checked against the constraints on the record's property for it. Those are the ones jOOQ
 > generates when `<validationAnnotations>` is on (`@Size` on a `varchar(n)` column, `@NotNull` on a
-> `NOT NULL` one) and any you map onto the record yourself. A column the request left out is not
-> checked, so a record that sets two columns does not fail on the others; a column the request
-> sets to null is. Key columns decoded from a node id are not checked, and neither is a constraint
-> on the record class as a whole. Graphitron finds a column's property by jOOQ's default getter
-> name (`get` followed by the column name in PascalCase); if your generator strategy names getters
-> differently, that column is not checked, and the build reports a `validation-column-unchecked`
-> lint finding naming it, which you can suppress like any lint rule.
+> `NOT NULL` one) and any you map onto the record yourself. A column the request left out is
+> neither written nor checked, so a record that sets two columns does not fail on the others; a
+> column the request sets to null is written as `NULL` and checked. One exception: where the same
+> input also carries a node id that Graphitron decodes into the record, a null sent for another
+> column is dropped from the record, so that column is neither written nor checked. Key columns
+> decoded from a node id are not checked, and neither is a constraint on the record class as a
+> whole. Graphitron finds a column's property through the getter jOOQ's default generator strategy
+> writes: `get`, then the column's SQL name with each underscore-separated word capitalised and the
+> rest of it lower-cased (`BILDE` gives `getBilde`, `film_id` gives `getFilmId`). If your generator
+> strategy names getters differently, that column is not checked, and the build reports a
+> `validation-column-unchecked` lint finding naming it, which you can suppress like any lint rule.
 >
 > A violation's `path` names the SDL input fields, not the Java members: the field's path, the
 > argument, the element index for a list, then the input fields down to the violated value
@@ -169,10 +173,16 @@ walk already holds the record `Class`. A new relation `sql_column_record_accesso
 table's generated record reads this column through this public no-argument getter", keyed as
 `sql_column` and referencing it `ON DELETE CASCADE`, holds `getter_name` and the Bean Validation
 `property_name` it names (java.beans decapitalisation). `JooqFactCapture` writes it in the same pass
-as `recordSupertypes`: the default-strategy getter (`get` plus the SQL column name in PascalCase:
-`bilde` gives `getBilde`, `film_id` gives `getFilmId`), confirmed on the record class with a return
-type assignable from the column's Java type. A column whose getter is not there (a generator
-strategy that renames getters) has no row. The relation is single-corpus (stratum one), owned by
+as `recordSupertypes`. The getter name is the one jOOQ's `DefaultGeneratorStrategy` writes with its
+defaults: `get` plus `org.jooq.tools.StringUtils.toCamelCase` of the SQL name after ` `, `-` and `.`
+become `_`, which is the strategy's own path (`getJavaGetterName` through `getJavaClassName0` and
+`toPascalCase`). That conversion capitalises each underscore-separated word and lower-cases the
+rest of it, so `BILDE` gives `getBilde`, `film_id` gives `getFilmId` and a mixed-case `FilmId` gives
+`getFilmid`; it is the rule, and "PascalCase" in a literal reading (`getBILDE`) is not. The name is
+confirmed on the record class as a public no-argument method with a return type assignable from the
+column's Java type, which also rejects a name jOOQ disambiguated against a `Record` method. A column
+whose getter is not there (a generator strategy that renames getters, or
+`javaBeansGettersAndSetters`) has no row. The relation is single-corpus (stratum one), owned by
 `JooqFactCapture` in `meta_relation`, marked and swept with the `sql_` family; the
 `adding-a-relation` skill governs the rest.
 
@@ -186,14 +196,21 @@ binding; a record whose bindings are all key decodes (`JooqRecord.keyDecodes`) y
 graphitron decoded those values itself and a decode failure is already a client error. The
 cardinality axis stays orthogonal to the subject.
 
-*Emission.* `TypeFetcherEmissionContext` gains the accessor relation, installed by
-`TypeFetcherGenerator` from the store the way `setErrorChannels` and `setOutboxes` install theirs.
-For a `WrittenColumns` subject the pre-step computes its checks once, one
-`ColumnCheck(column, property, primaryPath)` per plain column binding with an accessor row, and both
-the loop and the `Paths` constant read that list. A target with no checks is dropped before the
-"no targets, no pre-step" test, so a field whose records offer nothing to check still emits no
-`Validator` lookup. Per check, with a null record (a null element, for `PerElement`) skipped as for
-a class:
+*One read, one partition.* The accessor rows have one reader, a query class in
+`no.sikt.graphitron.emit` beside `OutboxQuery` (`read(store)` to a `Rows` lookup keyed by table and
+column). `GraphQLRewriteGenerator.runPipeline` reads it once from the live store, ahead of
+`capturedFrom`, and hands the same `Rows` to both consumers: to `withLintFindings` (through
+`capturedFrom`) for the lint below, and to `TypeFetcherGenerator.generate`, which installs it on
+`TypeFetcherEmissionContext` the way `setErrorChannels` and `setOutboxes` install theirs. Which of
+a record's columns are checked is decided once, by a pure function of a `WrittenColumns` subject
+and those `Rows`: it returns the checks, one `ColumnCheck(column, property, primaryPath)` per plain
+column binding with an accessor row, and the unchecked bindings, those with none. The pre-step
+reads the first list and the lint the second, so the two cannot disagree about a column.
+
+*Emission.* Both the loop and the `Paths` constant read a subject's checks. A target with no
+checks is dropped before the "no targets, no pre-step" test, so a field whose records offer nothing
+to check still emits no `Validator` lookup. Per check, with a null record (a null element, for
+`PerElement`) skipped as for a class:
 
 ```java
 if (element.changed(Tables.FILM.TITLE)) {
@@ -204,12 +221,20 @@ if (element.changed(Tables.FILM.TITLE)) {
 }
 ```
 
-The `changed` guard answers the partial-record objection that kept jOOQ records out until now. It
-rests on a contract `CallSiteExtraction.ColumnBinding` already pins: `create<Record>` leaves an
-omitted column (an omitted alias group included) `changed=false`, jOOQ leaves it out of the
-statement, and its constraints are not checked, including the `@NotNull` that
-`<validationAnnotations>` puts on every `NOT NULL` column. A column the client sent, null included,
-is checked. `validateProperty` runs no class-level constraint, which jOOQ does not generate. The
+The `changed` guard answers the partial-record objection that kept jOOQ records out until now: it
+checks exactly the columns the record will write. It rests on a contract
+`CallSiteExtraction.ColumnBinding` already pins: `create<Record>` leaves an omitted column (an
+omitted alias group included) `changed=false`, jOOQ leaves it out of the statement, and its
+constraints are not checked, including the `@NotNull` that `<validationAnnotations>` puts on every
+`NOT NULL` column. A column the client sent is checked, null included, with one exception the guard
+inherits rather than introduces: R534 (`record-key-decode-null-write-erasure`, Backlog). A key
+decode loads through `Record.fromArray`, whose null-skip resets the changed flag of every
+null-valued column record-wide, after the column bindings ran
+(`JooqRecordInstantiationEmitter.emitKeyDecode` documents it). An explicit null beside a decoded
+node id is therefore neither written nor checked. The check and the write agree, which is the
+property this item needs; the manual draft states the exception, and when R534 changes the write
+the check follows it with no change here. `validateProperty` runs no class-level constraint, which
+jOOQ does not generate. The
 `Paths` constant binds each check's property to its primary path (`ColumnBinding.path()`, the live
 name in an alias group, so a client writing through a deprecated alias sees the live field's name)
 and is registered through the shipped `validationPathsConstant`, whose signature, like
@@ -218,12 +243,23 @@ translation and the wire shape are the bound-class ones, and a record's violatio
 accumulator, so a field binding a class and a record reports both.
 
 *Lint.* A `@service` field whose channel carries a `VALIDATION` handler and that binds a plain
-column with no accessor row cannot have that column checked. The pre-step's join is where that is
-known, so it mints a `LintRule` of `Source.CODEGEN`, `validation-column-unchecked`, one finding per
-(record class, column) located at a field reaching it, naming the column and the getter looked
-for. A lint finding rather than a `BuildWarning.NoRule`, because a consumer whose strategy renames
-getters gets it on every build and must be able to suppress it; a warning rather than a rejection,
-because rejecting would stop a schema that builds today from building.
+column with no accessor row cannot have that column checked. A new `LintRule`,
+`validation-column-unchecked` of `Source.CODEGEN`, says so. It is produced at report assembly,
+not during emission. `withLintFindings` is the one point where warnings enter the report, and it
+runs inside `capturedFrom` before `TypeFetcherGenerator.generate`, under the suppression filter.
+A projection that emits nothing (the LSP, validate) never reaches the fetcher generator at all. The
+producer is a `ValidationColumnWarnings.findings(schema, accessors, excludedTypes)` in `graphitron`,
+beside `SessionStateWarnings` and `DependencyVersionWarnings`, folded in at `withLintFindings` like
+them. It walks the classified `ServiceField`s whose `errorChannel()` has `hasValidationHandler()`,
+takes each `WrittenColumns` target from `validationTargets()`, and reads the unchecked bindings off
+the shared partition. It emits one finding per (record class, column), located at the first field in
+schema order that reaches it, naming the column and the getter looked for, and applies
+`excludedTypes` at that field's owning type through `ExcludedTypes`, as `ReferencePathFanout` does.
+This is the shape `LengthCheck` and `dml-write-length-unrouted` already have: one derived value,
+read by the emitter and by the advisory. A lint finding rather than a `BuildWarning.NoRule`, because
+a consumer whose strategy renames getters gets it on every build and must be able to suppress it; a
+warning rather than a rejection, because rejecting would stop a schema that builds today from
+building. `LintRuleCatalogueTest`'s pinned `CODEGEN` set gains the id.
 
 *Fixtures and prose.* `graphitron-sakila-example` gains, sharing `countFilmDrafts`' payload and
 channel: `countFilmRecordDrafts(in: [FilmRecordDraftInput!]!)` over
@@ -237,10 +273,16 @@ checked. The generated default `GraphitronContext.getValidator` bootstraps throu
 `Validation.buildDefaultValidatorFactory()`, which reads
 `hibernate.validator.constraint_mapping_contributors` from `META-INF/validation.xml`; that is the
 registration. This is the shape sis has, and it stands in for `<validationAnnotations>`, which the
-sakila catalog build does not enable. Docs: the draft above into `error-channel.adoc`, the `@error`
-reference's `handler` row and `VALIDATION` section, the lint rule's entry wherever the rule
-catalogue lists rules, and the javadoc of `validatorPreStep`, `ServiceMethodCall.validationTargets()`
-and `ConstraintViolationsClassGenerator` to name records.
+sakila catalog build does not enable. The module also runs `@QuarkusTest` tests on
+`quarkus-hibernate-validator`, so the implementer confirms they still boot with the file present.
+If they do not, the contributor is registered through
+`HibernateValidatorConfiguration.CONSTRAINT_MAPPING_CONTRIBUTORS` as a system property set for the
+plain-JUnit execution tier only, which reaches the same bootstrap. Docs: the draft above into
+`error-channel.adoc`, which also carries the lint rule's paragraph and its suppression (the manual
+documents each rule on its feature's page, as `asConnection.adoc` does `shared-type-tags-narrowed`),
+the `@error` reference's `handler` row and `VALIDATION` section, and the javadoc of
+`validatorPreStep`, `ServiceMethodCall.validationTargets()` and `ConstraintViolationsClassGenerator`
+to name records.
 
 ## Neighbouring items
 
@@ -256,7 +298,7 @@ one decision that belongs in one place:
   unread; the manual names the move until then.
 - R92 (`catalog-check-constraint-validation`, Spec) attaches CHECK-derived constraints through a
   `ConstraintMapping` on the `.inputs` classes and on jOOQ records. Its record-side mapping takes
-  effect through the per-column validation here, for the columns the request wrote; its input-side
+  effect through the per-column validation here, for the columns the record writes; its input-side
   mapping has to target what the service binds.
 - R98 (`multi-source-input-validation`, Backlog) attaches constraints per `InputRecordShape`
   component, which nothing validates.
@@ -281,6 +323,9 @@ For the record half:
 - Execution tier, the partial record: with `@NotNull` mapped onto `description`, a request omitting
   `description` runs the service, and one sending `description: null` returns one violation at
   `[..., "description"]`.
+- Execution tier, the R534 exception: a request sending a valid `id` and `description: null` runs
+  the service, the check agreeing with the write, which drops the null. The case pins the agreement,
+  not the erasure: when R534 changes the write, this test is the one that moves with it.
 - Execution tier, a decoded key: a request sending a valid `id` runs the service although `@Null`
   is mapped onto `filmId`.
 - Execution tier, a single record beside a class: `countFilmRecordDraft` with a blank `draft.title`
@@ -291,12 +336,16 @@ For the record half:
   declares a `ConstraintViolations.Paths` field; without the channel it declares none. A record
   binding only key decodes yields no target. Structural assertions only.
 - Pipeline tier, the lint: a column with no accessor row under a VALIDATION channel yields one
-  `validation-column-unchecked` finding, and none without the channel.
-- Unit tier: the check list for a `WrittenColumns` subject maps each property to the binding's
-  primary path, the live name in an alias group.
+  `validation-column-unchecked` finding in the build's warnings, from a validate-only run as well
+  as a generating one, and none without the channel; with the rule id in `disabledRules` it yields
+  none. `LintRuleCatalogueTest`'s `CODEGEN` set names the rule.
+- Unit tier: the partition of a `WrittenColumns` subject maps each checked property to the binding's
+  primary path, the live name in an alias group, and puts a binding with no accessor row on the
+  unchecked side and only there.
 - Capture (`graphitron-model`): a fact-document scenario declaring `sql_column_record_accessor` rows
-  for a sakila table, and a hand-written `TableRecordImpl` subclass in the module's test sources
-  whose getter is renamed, which yields no row for that column.
+  for a sakila table; a hand-written `TableRecordImpl` subclass in the module's test sources whose
+  getter is renamed, which yields no row for that column; and one whose column has an uppercase SQL
+  name (`BILDE`), which yields a row for `getBilde` and property `bilde`.
 - No test reads a generated method body.
 
 ## Retired vocabulary
@@ -471,6 +520,16 @@ keep.
    producer and the pre-step's check list share one join, so the lint and the emitted checks cannot
    disagree about which columns are checked.
 
+   *Response:* the lint moved to report assembly. A `ValidationColumnWarnings` producer beside
+   `SessionStateWarnings` is folded in at `withLintFindings`, walking the classified `ServiceField`s
+   whose channel has a `VALIDATION` handler, so it rides the suppression filter and reaches
+   validate-only and LSP runs. The accessor rows have one reader, read once in `runPipeline` and
+   handed to both `withLintFindings` and `TypeFetcherGenerator.generate`, and one pure partition of a
+   `WrittenColumns` subject into checks and unchecked bindings, which the pre-step and the producer
+   both read (the `LengthCheck` shape). The rule stays `Source.CODEGEN`, which names exactly a
+   generator producer folded in at report assembly; `excludedTypes` applies at the finding's field
+   as in `ReferencePathFanout`. Tests gain the validate-only and `disabledRules` cases.
+
 2. **"A column the request sets to null is checked" does not hold beside a key decode (question
    1).** The manual draft promises it and the Implementation's `changed` paragraph says "a column
    the client sent, null included, is checked". R534 (`record-key-decode-null-write-erasure`,
@@ -483,6 +542,13 @@ keep.
    the guard as the columns the record writes and name the R534 exception in the manual draft (or
    take R534 as a dependency), and pin the case in Tests next to the partial-record cases.
 
+   *Response:* the guard is now stated as the columns the record writes, with R534 named as an
+   exception the guard inherits: the check and the write agree, and a fix to R534 moves both. The
+   manual draft states the exception in consumer terms (a null beside a decoded node id is dropped,
+   so neither written nor checked), and Tests gain an execution case sending `id` and
+   `description: null`, framed as pinning the agreement so it is the test that moves with R534.
+   Not a dependency: the regression this item fixes does not wait on R534.
+
 3. **The getter-name rule is ambiguous for the consumer this round exists for (question 1).** "`get`
    plus the SQL column name in PascalCase" reads two ways for an uppercase Oracle column. jOOQ's
    `DefaultGeneratorStrategy` upper-cases the first letter of each underscore-separated word and
@@ -493,6 +559,14 @@ keep.
    acceptance tests under either reading. What satisfies it: name jOOQ's own conversion as the rule
    (`org.jooq.tools.StringUtils.toCamelCase` agrees with the strategy on these inputs), in the plan
    and in the manual draft, and give the capture test an uppercase column.
+
+   *Response:* the capture names jOOQ's own path as the rule: `get` plus
+   `org.jooq.tools.StringUtils.toCamelCase` of the SQL name after ` `, `-` and `.` become `_`, which
+   is what `DefaultGeneratorStrategy.getJavaGetterName` does with its defaults, with the three
+   examples, and says the literal PascalCase reading is wrong. The manual draft describes the same
+   rule in consumer terms with `BILDE` as its example. The capture test gains an uppercase-column
+   record. The non-blocking points are taken too: the Quarkus check and a fallback registration
+   are in Fixtures, the lint's docs go to `error-channel.adoc`, and the item is retitled to the goal.
 
 Non-blocking:
 
