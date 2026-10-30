@@ -36,7 +36,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R747` | The VALIDATION handler validates what a @service method receives, jOOQ records included | Ready | 2026-10-30 <sub>created 2026-08-20</sub> | [plan](generated-input-records-carry-no-constraints.md) |
+| `R747` | The VALIDATION handler validates what a @service method receives, jOOQ records included | In Progress | 2026-10-30 <sub>created 2026-08-20</sub> | [plan](generated-input-records-carry-no-constraints.md) |
 | `R1098` | A graphitron-jakarta-rest subgraph writes only what is its own | In Review | 2026-10-29 <sub>created 2026-10-23</sub> | [plan](jakarta-rest-request-aware-execution-input.md) |
 | `R1126` | A matched error's path names the field that owns the payload | In Review | 2026-10-30 <sub>created 2026-10-29</sub> | [plan](error-path-names-the-payload-field.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
@@ -586,7 +586,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
 - `R1126` [**A matched error's path names the field that owns the payload**](error-path-names-the-payload-field.md) — In Review, bug
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
-- `R747` [**The VALIDATION handler validates what a @service method receives, jOOQ records included**](generated-input-records-carry-no-constraints.md) — Ready, architecture
+- `R747` [**The VALIDATION handler validates what a @service method receives, jOOQ records included**](generated-input-records-carry-no-constraints.md) — In Progress, architecture
 - `R778` [**Collapse the four verbatim copies of the CamelCase to SCREAMING_SNAKE transform**](screaming-snake-transform-single-spelling.md) — Backlog, cleanup
 - `R536` [**Retire the always-empty ErrorChannel.Mapped slots on the polymorphic and table-interface @service variants**](always-empty-service-channel-slots.md) — Backlog, cleanup
 - `R274` [**OutcomeType carries its success projection so the error-arm invariant lives on the carrier**](outcometype-carry-success-projection.md) — Backlog, structural
