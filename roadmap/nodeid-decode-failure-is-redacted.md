@@ -1,7 +1,7 @@
 ---
 id: R1036
 title: "A bad node id fails with the same client error at every @nodeId site, never redacted"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: nodeid
@@ -74,3 +74,13 @@ All in `graphitron-sakila-example`'s execution tier; the change is in generated 
 ## Evidence
 
 Seen while writing `TableOnlyNodeIdLeafExecutionTest` (sakila-example). `levelIntervals(filter: {fromLevelIds: [<XlatParent id>]})` returns the "Invalid node id" message, while `updateLevelInterval(in: {fromLevelId: <XlatParent id>})` returns the redacted reference. sis (the Graphitron 10 port, request C38, 2026-10-30) widened the item to every site. sis has 20 mutations without an errors channel where a wrong-type reference id currently returns a log reference. Graphitron 9 returned the decode text everywhere (an `IllegalArgumentException` whose message `TopLevelErrorHandler` passed through). sis's `UgyldigIdIMutasjonIT` already asserts the `Invalid node id` text for a `@service` mutation and a DML DELETE, so sis needs no change when this lands.
+
+## Implementation notes
+
+Landed as planned. Where the delivery departs from or adds to the plan:
+
+* **Where the client-exception type is resolved on the legacy-core side.** Not once in `generateForType` and threaded through every `build*Fetcher` signature; instead a private `TypeFetcherGenerator.clientExceptionClass(outputPackage)` resolves it through `GeneratedUnits.clientException()` at each top-level DML builder, the two `LookupRows.buildInputRowsMethod` call sites and the jOOQ-record emitter's call site, and threads the `ClassName` down the static chain from there. The formula still has one home per side of the import rule, as the plan intended; only the number of resolutions differs.
+* **The DML appenders share one throw.** `TypeFetcherGenerator.decodeMismatchThrow` wraps `NodeIdDecodeFailure.throwStatement` with the decode's facts, so `appendDecodeLocal` and both arms of `appendSetDecodeLocal` cannot disagree. `appendSetDecodeLocal`'s `CannotArrive`-with-presence arm now binds `<recLocal>Wire` like the other arms.
+* **Tests beyond the plan's list.** Five existing execution tests pinned the redacted reference or asserted only that errors were non-empty, and now assert the decode text: `GraphQLQueryTest.assignFilmRecord_wrongTypeNodeId_failsWithTheDecodeClientError` (renamed from `..._throwsDecodeMismatch`), `assignLanguagePair_nodeIdAtAliasField_refuses`, `assignLanguagePair_aliasIdAtLanguageField_refuses`, `compositeNodeIdLookup_typeMismatch_raisesError` (the lookup wrong-type case), and `SelfFkNodeIdInsertExecutionTest.wrongTypeInReplyTo_stillThrowsAndInsertsNothing`.
+* **Where the new cases live.** INSERT reference: `NodeIdValueAgreementExecutionTest.mutationInsert_wrongTypeReferenceId_...` (`insertEndorsementOverlap`). DELETE identity: `DmlBulkMutationsExecutionTest.deleteFilmActorByNodeId_wrongTypeId_...` and `..._malformedId_...` (the DML family's malformed case). `@service` input-bean: `GraphQLQueryTest.assignFilmRecord_*` (wrong type and malformed). jOOQ-record `emitKeyDecode`: `GraphQLQueryTest.modifyFilmActorRecord_*` (wrong type and malformed). jOOQ-record `emitPrepare` overlap: `NodeIdValueAgreementExecutionTest.serviceRecord_wrongTypeId_...` (`agreeStorageBin`). Lookup: `GraphQLQueryTest.compositeNodeIdLookup_typeMismatch_raisesError` and `compositeNodeIdLookup_malformedId_...`. Every new case asserts the absence of `Reference:` on a field without an errors channel. The nested-lookup arm (`ProjectionUnitRenderer`, `ArgSource.SELECTED_FIELD`) runs the same row-building body as the root lookup the tests drive.
+* **Roadmap bodies.** R419 and R882 quote the new text. The generated-output hygiene sweep's bullet asking to standardise node-id rejection messages on the rich form is removed, since this item does exactly that.
