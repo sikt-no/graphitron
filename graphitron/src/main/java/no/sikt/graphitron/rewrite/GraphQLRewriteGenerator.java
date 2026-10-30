@@ -348,8 +348,9 @@ public class GraphQLRewriteGenerator {
                                   AttributedRegistry attributed, GraphitronSchemaBuilder.Bundle bundle,
                                   boolean federationLink, String outputPackage,
                                   StoreDetections storeFacts,
-                                  List<EmittedRegistry.TagNarrowing> narrowings) {
-        var warnings = withLintFindings(schema, attributed, store, narrowings);
+                                  List<EmittedRegistry.TagNarrowing> narrowings,
+                                  no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
+        var warnings = withLintFindings(schema, attributed, store, narrowings, recordAccessors);
         var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
         var fused = new ArrayList<>(walkErrors);
         fused.addAll(storeFacts.violations());
@@ -463,8 +464,11 @@ public class GraphQLRewriteGenerator {
         // The store's detections feed the verdict, and the plan is produced only for a schema the
         // verdict accepts, before the per-type generators that read its launcher rows.
         var storeFacts = StoreDetections.over(store.dsl(), store.graphName(), ClassifiedRun.present());
+        // The record getters, read once and handed to both of their readers: the lint naming the
+        // record columns a VALIDATION pre-step cannot check, and the pre-step itself.
+        var recordAccessors = no.sikt.graphitron.emit.RecordAccessorQuery.read(store);
         var captured = capturedFrom(projection, schema, attributed, bundle, federationLink,
-            outputPackage, storeFacts, schemas.narrowings());
+            outputPackage, storeFacts, schemas.narrowings(), recordAccessors);
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {
@@ -477,7 +481,8 @@ public class GraphQLRewriteGenerator {
             plan.routineWrites(),
             plan.keyProjections(),
             plan.errorChannels(),
-            plan.outboxes());
+            plan.outboxes(),
+            recordAccessors);
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
@@ -715,7 +720,8 @@ public class GraphQLRewriteGenerator {
     private List<BuildWarning> withLintFindings(GraphitronSchema schema,
                                                 AttributedRegistry attributed,
                                                 no.sikt.graphitron.model.read.StoreHandle store,
-                                                List<EmittedRegistry.TagNarrowing> narrowings) {
+                                                List<EmittedRegistry.TagNarrowing> narrowings,
+                                                no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
         // The nine rules, read off this run's rows. Both things the walk was handed here are gone
@@ -745,6 +751,11 @@ public class GraphQLRewriteGenerator {
         // asymmetry the comment below accepts for the classifier advisories would read as a bug.
         all.addAll(no.sikt.graphitron.model.lint.ReferencePathFanout.findings(
             store, no.sikt.graphitron.model.lint.ExcludedTypes.of(lintConfig)));
+        // The jOOQ record columns a VALIDATION pre-step cannot check, from the same partition the
+        // pre-step emits its checks from, so the two agree on every column. It applies excludedTypes
+        // at the field it locates a finding on, as the fan-out producer does.
+        all.addAll(no.sikt.graphitron.rewrite.validation.ValidationColumnWarnings.findings(
+            schema, recordAccessors, no.sikt.graphitron.model.lint.ExcludedTypes.of(lintConfig)));
         // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
         // classifier advisories (schema.warnings()) and engine findings are concatenated means it
         // covers both channels, so a classifier advisory is suppressible by rule id like any

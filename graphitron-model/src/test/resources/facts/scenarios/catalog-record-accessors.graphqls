@@ -1,0 +1,17 @@
+# The getter a table's generated record reads each column through, and the Bean Validation property
+# that getter names, as the catalog reading writes them.
+#
+# The name is the one jOOQ's default generator strategy writes: get, then each underscore-separated
+# word of the SQL name capitalised. film_id is the multi-word case, read through getFilmId; the
+# property drops the get and lower-cases what is left of the first letter, so it reads filmId. A
+# column whose record declares no such getter has no row, which the hand-written catalog in
+# JooqFactCaptureTest pins.
+
+extend schema @assertContains(relation: "sql_column_record_accessor", rows: """
+  table_schema, table_name, column_name,      getter_name,       property_name
+  public,       film,       film_id,          getFilmId,         filmId
+  public,       film,       title,            getTitle,          title
+  public,       film,       description,      getDescription,    description
+  public,       film,       rental_duration,  getRentalDuration, rentalDuration
+  public,       language,   language_id,      getLanguageId,     languageId
+  """)

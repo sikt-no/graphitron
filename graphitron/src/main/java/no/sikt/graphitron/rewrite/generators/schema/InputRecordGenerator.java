@@ -23,8 +23,8 @@ import java.util.Map;
 /**
  * Emits one Java class per reachable SDL {@code input} type into
  * {@code <outputPackage>.inputs}. No generated code reads these classes: the {@code @service}
- * validation pre-step validates the instance the service method receives, the class the consumer
- * bound the input to, not an emitted one.
+ * validation pre-step validates the instance the service method receives, the class or jOOQ record
+ * the consumer bound the input to, not an emitted one.
  *
  * <p>The emitted shape is intentionally a plain Java class (not a Java {@code record}) and the
  * package contains no sealed marker / {@code package-info.java} yet. A build-time audit of service-side

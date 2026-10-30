@@ -470,9 +470,9 @@ public sealed interface GraphitronType
         }
 
         /**
-         * Marks the channel for native Jakarta validation: the wrapper invokes
-         * {@code jakarta.validation.Validator.validate(input)} before the body runs and
-         * routes each {@code ConstraintViolation} into the payload's errors slot as a
+         * Marks the channel for native Jakarta validation: before the body runs, the wrapper
+         * validates the classes a {@code @service} method takes, and the columns its jOOQ records
+         * write, and routes each {@code ConstraintViolation} into the payload's errors slot as a
          * {@code GraphQLError}. Lift target for {@code {handler: VALIDATION}}. Carries no
          * dispatch criteria and no {@link ClientMessage}; it is a wrapper-side flag, never
          * reached by the dispatcher.

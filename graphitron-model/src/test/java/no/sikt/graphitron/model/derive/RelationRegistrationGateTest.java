@@ -110,7 +110,7 @@ class RelationRegistrationGateTest {
             "sql_index_column", "sql_routine", "sql_routine_parameter",
             "sql_node_metadata", "sql_node_key_column", "sql_node_metadata_unreadable",
             "sql_node_legacy_key_column", "sql_node_legacy_key_unreadable",
-            "sql_table_record_supertype",
+            "sql_table_record_supertype", "sql_column_record_accessor",
             "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",

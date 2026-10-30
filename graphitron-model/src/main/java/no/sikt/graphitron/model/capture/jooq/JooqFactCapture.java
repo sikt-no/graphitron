@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.sink.BindBatch;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.jooq.RecordGetters;
 import org.jooq.DSLContext;
 import org.jooq.EnumType;
 import org.jooq.Field;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN_RECORD_ACCESSOR;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -127,6 +129,7 @@ public final class JooqFactCapture {
         routineParameters(dsl, jooq, tables, touchedAt);
         executableRoutines(dsl, jooq, tables, touchedAt);
         recordSupertypes(dsl, tables);
+        recordAccessors(dsl, jooq, tables, touchedAt);
         enumBindings(dsl, tables, touchedAt);
         sweep(dsl, sourceNames(tables), touchedAt);
     }
@@ -979,6 +982,74 @@ public final class JooqFactCapture {
         collectSupertypes(cls.getSuperclass(), out);
     }
 
+    /**
+     * The getter each column's generated record reads it through, the property Bean Validation
+     * names it by. The name is the one jOOQ's default generator strategy writes ({@link RecordGetters#getterName}),
+     * kept only where the live record class declares it, so a strategy that renames getters leaves
+     * its columns without a row rather than with a guessed one.
+     */
+    private static void recordAccessors(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
+                                        LocalDateTime touchedAt) {
+        var t = SQL_COLUMN_RECORD_ACCESSOR;
+        record Accessor(TableAt at, String column, String getter) {}
+        var found = new ArrayList<Accessor>();
+        for (TableAt at : tables) {
+            Class<?> recordClass = at.table().getRecordType();
+            if (recordClass == null || recordClass.getName().equals("org.jooq.Record")) {
+                continue;
+            }
+            // The columns sql_column holds, which is what the foreign key references.
+            var captured = new LinkedHashSet<String>();
+            jooq.columnFactsOf(at.table()).forEach(column -> captured.add(column.sqlName()));
+            for (Field<?> field : at.table().fields()) {
+                if (!captured.contains(field.getName())) {
+                    continue;
+                }
+                recordGetter(recordClass, field.getName(), field.getType())
+                    .ifPresent(getter -> found.add(new Accessor(at, field.getName(), getter)));
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var rows = found.stream().collect(Rows.toRowList(
+            a -> val(a.at().source(), t.SOURCE_NAME),
+            a -> val(a.at().schema(), t.TABLE_SCHEMA),
+            a -> val(a.at().name(), t.TABLE_NAME),
+            a -> val(a.column(), t.COLUMN_NAME),
+            a -> val(a.getter(), t.GETTER_NAME),
+            a -> val(RecordGetters.propertyName(a.getter()), t.PROPERTY_NAME),
+            a -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.COLUMN_NAME, t.GETTER_NAME,
+                    t.PROPERTY_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.GETTER_NAME, excluded(t.GETTER_NAME))
+                .set(t.PROPERTY_NAME, excluded(t.PROPERTY_NAME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The getter {@code recordClass} reads the column {@code sqlName} through, where it declares the
+     * name jOOQ's default strategy writes as a public no-argument instance method returning a type the
+     * column's Java type {@code columnType} is assignable to. The return-type check is also what
+     * rejects a name jOOQ disambiguated against a method {@link org.jooq.Record} already has.
+     */
+    static java.util.Optional<String> recordGetter(Class<?> recordClass, String sqlName, Class<?> columnType) {
+        String name = RecordGetters.getterName(sqlName);
+        try {
+            var method = recordClass.getMethod(name);
+            if (java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                    || !method.getReturnType().isAssignableFrom(columnType)) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(name);
+        } catch (NoSuchMethodException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
     /** The Java enum a column binds to, which is a fact about the generated code and not the table. */
     private static void enumBindings(DSLContext dsl, List<TableAt> tables, LocalDateTime touchedAt) {
         var t = SQL_ENUM_BINDING;
@@ -1017,7 +1088,7 @@ public final class JooqFactCapture {
      * relation added above and not here would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
+        SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_COLUMN_RECORD_ACCESSOR, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_REFERENTIAL_CONSTRAINT_COLUMN, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
         SQL_NODE_METADATA,
         SQL_NODE_KEY_COLUMN, SQL_NODE_LEGACY_KEY_COLUMN, SQL_NODE_METADATA_UNREADABLE,

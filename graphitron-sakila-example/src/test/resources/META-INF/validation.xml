@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Registers FilmRecordConstraints with the default Validator the generated GraphitronContext
+    bootstraps, so the VALIDATION handler's per-column check on a jOOQ FilmRecord has constraints to
+    run. Test classpath only.
+-->
+<validation-config
+        xmlns="https://jakarta.ee/xml/ns/validation/configuration"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://jakarta.ee/xml/ns/validation/configuration https://jakarta.ee/xml/ns/validation/validation-configuration-3.0.xsd"
+        version="3.0">
+    <property name="hibernate.validator.constraint_mapping_contributors">no.sikt.graphitron.rewrite.test.querydb.FilmRecordConstraints</property>
+</validation-config>

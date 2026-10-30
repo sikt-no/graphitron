@@ -9348,6 +9348,178 @@ class GraphQLQueryTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_blankTitle_isAValidationErrorAndTheServiceIsNotCalled() {
+        // FilmRecordConstraints maps @NotBlank onto FilmRecord's title getter; the VALIDATION handler
+        // checks each column a record writes against its property's constraints, so the blank title
+        // of the second record is a typed error under its SDL path and the service does not run.
+        var rawResult = executeRaw("""
+            mutation {
+                countFilmRecordDrafts(in: [{ title: "DRAFT ONE", description: "ONE" }, { title: "", description: "TWO" }]) {
+                    count
+                    errors {
+                        __typename
+                        ... on FilmWriteInvalid { path message }
+                    }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class))).singleElement(as(MAP));
+        only.containsEntry("__typename", "FilmWriteInvalid");
+        only.containsEntry("path", List.of("countFilmRecordDrafts", "in", "1", "title"));
+        only.containsEntry("message", constraintMessage(FILM_RECORD, "title", ""));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_overLongTitle_isTheSizeViolationJooqWouldGenerate() {
+        // The @Size(max = 255) mapped onto title is what jOOQ's <validationAnnotations> generates from
+        // film.title's varchar(255): a 256-character title answers the size message.
+        String title = "T".repeat(256);
+        var rawResult = executeRaw("mutation { countFilmRecordDrafts(in: [{ title: \"" + title
+            + "\", description: \"ONE\" }]) { count errors { ... on FilmWriteInvalid { path message } } } }");
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class))).singleElement(as(MAP));
+        only.containsEntry("path", List.of("countFilmRecordDrafts", "in", "0", "title"));
+        only.containsEntry("message", constraintMessage(FILM_RECORD, "title", title));
+        assertThat(constraintMessage(FILM_RECORD, "title", title)).contains("255");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_validBatch_runsTheService() {
+        Map<String, Object> data = execute("""
+            mutation {
+                countFilmRecordDrafts(in: [{ title: "DRAFT ONE", description: "ONE" }, { title: "DRAFT TWO", description: "TWO" }]) {
+                    count
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", 2);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_omittedColumn_isNeitherWrittenNorChecked() {
+        // @NotNull is mapped onto description. A record the request sends no description for leaves
+        // the column unwritten (changed=false), so its constraints are not run and the service does.
+        Map<String, Object> data = execute("""
+            mutation {
+                countFilmRecordDrafts(in: [{ title: "DRAFT ONE" }]) {
+                    count
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", 1);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_explicitNull_isWrittenAndChecked() {
+        // An explicit null is a value the record writes as NULL, so the @NotNull on description runs.
+        var rawResult = executeRaw("""
+            mutation {
+                countFilmRecordDrafts(in: [{ title: "DRAFT ONE", description: null }]) {
+                    count
+                    errors { ... on FilmWriteInvalid { path message } }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class))).singleElement(as(MAP));
+        only.containsEntry("path", List.of("countFilmRecordDrafts", "in", "0", "description"));
+        only.containsEntry("message", constraintMessage(FILM_RECORD, "description", null));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_nullForANotNullColumnBesideADecodedNodeId_isNeitherWrittenNorChecked() {
+        // A node id decoded into the record loads its key through fromArray, and jOOQ's from() then
+        // resets the touched flag of every null-valued column the database declares NOT NULL, so a
+        // null sent for film.title beside it is not written. The check agrees with the write: this
+        // pins the agreement, not the erasure, and moves with the write when that changes.
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        Map<String, Object> data = execute("mutation { countFilmRecordDrafts(in: [{ id: \"" + id
+            + "\", title: null }]) { count errors { __typename } } }");
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", 1);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_nullForANullableColumnBesideADecodedNodeId_isWrittenAndChecked() {
+        // The reset spares a column the database lets be null: film.description keeps its NULL write
+        // beside a decoded id, so the @NotNull mapped onto it runs.
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        var rawResult = executeRaw("mutation { countFilmRecordDrafts(in: [{ id: \"" + id
+            + "\", title: \"DRAFT ONE\", description: null }]) { count errors { ... on FilmWriteInvalid { path } } } }");
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", null);
+        payload.extractingByKey("errors", as(list(Map.class))).singleElement(as(MAP))
+            .containsEntry("path", List.of("countFilmRecordDrafts", "in", "0", "description"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_decodedKey_isNotChecked() {
+        // @Null is mapped onto filmId, which a decoded node id sets. Graphitron decoded that value
+        // itself, so a key decode is not a column check and the service runs.
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        Map<String, Object> data = execute("mutation { countFilmRecordDrafts(in: [{ id: \"" + id
+            + "\", title: \"DRAFT ONE\", description: \"ONE\" }]) { count errors { __typename } } }");
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", 1);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDraft_classAndRecord_reportBothViolations() {
+        // One call binding a class (FilmDraft) and a record (FilmRecord): both are validated into one
+        // errors list, each violation at its own argument.
+        var rawResult = executeRaw("""
+            mutation {
+                countFilmRecordDraft(draft: { title: "" }, film: { title: "", description: "ONE" }) {
+                    count
+                    errors { ... on FilmWriteInvalid { path message } }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmRecordDraft", as(MAP));
+        payload.containsEntry("count", null);
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .extracting(e -> e.get("path"), e -> e.get("message"))
+            .containsExactlyInAnyOrder(
+                tuple(List.of("countFilmRecordDraft", "draft", "title"), constraintMessage(
+                    no.sikt.graphitron.rewrite.test.services.FilmDraft.class, "title", "")),
+                tuple(List.of("countFilmRecordDraft", "film", "title"), constraintMessage(FILM_RECORD, "title", "")));
+    }
+
+    private static final Class<?> FILM_RECORD =
+        no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord.class;
+
+    @Test
     void filmLookupValidated_bindsNoClass_soNoValidatorIsAskedFor() {
         // The mirror of countFilmDrafts_failureInsideValidation_isHandledByTheFetchersCatchArm:
         // filmLookupValidated's channel carries a VALIDATION handler, but its service takes a scalar,

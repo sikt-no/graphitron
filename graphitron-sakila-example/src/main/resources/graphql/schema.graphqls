@@ -1948,8 +1948,8 @@ type FilmWriteInvalid @error(handlers: [{handler: VALIDATION}]) {
 
 union FilmCreateError = FilmCreateConstraintViolation | FilmWriteInvalid
 
-# The errors union of Mutation.countFilmDrafts and Mutation.countFilmBundleDraft, sharing the
-# VALIDATION-handled FilmWriteInvalid with FilmCreateError.
+# The errors union of Mutation.countFilmDrafts, Mutation.countFilmBundleDraft and the two
+# countFilmRecordDraft* fields, sharing the VALIDATION-handled FilmWriteInvalid with FilmCreateError.
 union FilmDraftError = FilmWriteInvalid
 
 input FilmDraftInput {
@@ -1966,6 +1966,15 @@ input FilmBundleDraftInput {
 
 input FilmBundleLimitsInput {
     capacity: Int
+}
+
+# Binds a jOOQ FilmRecord, one column per plain field and the film's own key through the node id.
+# The constraints the VALIDATION handler checks on it are mapped onto FilmRecord's getters by the
+# example's test-classpath FilmRecordConstraints, standing in for jOOQ's <validationAnnotations>.
+input FilmRecordDraftInput {
+    id: ID @nodeId(typeName: "Film")
+    title: String @field(name: "title")
+    description: String @field(name: "description")
 }
 
 type FilmDraftsCountedPayload {
@@ -5740,6 +5749,23 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService",
             method: "count", argMapping: "bundle: in"
+        })
+
+    # The same channel over jOOQ records rather than classes: the handler checks each column a
+    # FilmRecord writes against the constraints on the record's property for it, and leaves the
+    # columns the request did not send unchecked. Pinned by GraphQLQueryTest's countFilmRecordDraft*
+    # cases; see FilmRecordDraftService.
+    countFilmRecordDrafts(in: [FilmRecordDraftInput!]!): FilmDraftsCountedPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+            method: "count", argMapping: "drafts: in"
+        })
+
+    # A class and a record beside each other on one call, whose violations share one errors list.
+    countFilmRecordDraft(draft: FilmDraftInput!, film: FilmRecordDraftInput!): FilmDraftsCountedPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+            method: "countOne"
         })
 
     # R156 compilation-tier fixture: payload-returning DELETE carrier, ID-typed element-shape arm.

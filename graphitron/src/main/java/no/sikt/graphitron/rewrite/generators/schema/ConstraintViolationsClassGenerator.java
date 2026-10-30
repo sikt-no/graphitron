@@ -7,6 +7,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.ValueShape;
 
 import javax.lang.model.element.Modifier;
@@ -21,8 +22,9 @@ import java.util.List;
  * message (already interpolated by Jakarta's {@code MessageInterpolator}), a {@code path} that
  * splices the field's execution path, the argument path (the argument name, then the element index
  * when the argument is a list validated element by element), and the property path translated from
- * the Java members of the class the service binds to the SDL input fields they were bound from
- * (a {@code Paths} tree, built per bound class by {@link #pathsInitializer}), and
+ * the Java members of the class or the properties of the jOOQ record the service binds to the SDL
+ * input fields they were bound from (a {@code Paths} tree, built per validated class or record by
+ * {@link #pathsInitializer(ServiceMethodCall.ValidationSubject, List, String)}), and
  * an {@code extensions} map carrying the violated constraint annotation's simple name under
  * {@code "constraint"}. Schema authors opt into client visibility of the constraint name by
  * declaring an {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type;
@@ -159,7 +161,7 @@ public final class ConstraintViolationsClassGenerator {
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Translation helper for the wrapper's pre-execution Jakarta validation step.\n"
-                + "Each {@link $T} produced by {@code Validator.validate(input)} fans into one\n"
+                + "Each {@link $T} the {@code Validator} produces fans into one\n"
                 + "{@link $T} placed directly into the payload's errors slot; graphql-java's\n"
                 + "{@code TypeResolver} routes each entry to the channel's VALIDATION-marked\n"
                 + "{@code @error} SDL type at serialisation time. A DML mutation without an errors\n"
@@ -182,17 +184,19 @@ public final class ConstraintViolationsClassGenerator {
     }
 
     /**
-     * {@code ConstraintViolations.Paths}: for each Java member of a validated class, the SDL input
-     * fields it was bound from, and the translation for the member's own class where it binds one.
-     * Built once per bound class, at class initialisation, through {@code bind}.
+     * {@code ConstraintViolations.Paths}: for each Java member of a validated class, or each checked
+     * property of a validated jOOQ record, the SDL input fields it was bound from, and the translation
+     * for the member's own class where it binds one. Built once per validated class or record, at
+     * class initialisation, through {@code bind}.
      */
     private static TypeSpec pathsType(ClassName paths, ParameterizedTypeName listOfString) {
         var names = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfString);
         var children = ParameterizedTypeName.get(MAP, ClassName.get(String.class), paths);
         return TypeSpec.classBuilder(PATHS_CLASS)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("How a validated class's Java members name the SDL input fields they were bound\n"
-                + "from. Graphitron builds one per class a {@code @service} method takes, once.\n")
+            .addJavadoc("How a validated class's Java members, or a jOOQ record's properties, name the SDL\n"
+                + "input fields they were bound from. Graphitron builds one per class or record a\n"
+                + "{@code @service} method takes, once.\n")
             .addField(FieldSpec.builder(names, "names", Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("new $T<>()", HASH_MAP).build())
             .addField(FieldSpec.builder(children, "children", Modifier.PRIVATE, Modifier.FINAL)
@@ -215,6 +219,27 @@ public final class ConstraintViolationsClassGenerator {
     }
 
     /**
+     * The expression that builds a validation subject's {@code ConstraintViolations.Paths}. For a
+     * bound class, {@link #pathsInitializer(ValueShape.BoundClass, String)}; for a jOOQ record, each of
+     * its {@code checks} binds the property {@code validateProperty} names to the column binding's
+     * primary SDL path, with nothing below it.
+     */
+    public static CodeBlock pathsInitializer(ServiceMethodCall.ValidationSubject subject,
+                                             List<ServiceMethodCall.ValidationSubject.ColumnCheck> checks,
+                                             String outputPackage) {
+        return switch (subject) {
+            case ServiceMethodCall.ValidationSubject.WholeObject whole -> pathsInitializer(whole.boundClass(), outputPackage);
+            case ServiceMethodCall.ValidationSubject.WrittenColumns ignored -> {
+                var b = CodeBlock.builder().add("new $T()", pathsClass(outputPackage));
+                for (var check : checks) {
+                    b.add(".bind($S, $L, null)", check.property(), sdlPath(check.primaryPath()));
+                }
+                yield b.build();
+            }
+        };
+    }
+
+    /**
      * The expression that builds a bound class's {@code ConstraintViolations.Paths}: a projection of
      * its {@link ValueShape.FieldBinding} tree. Each binding names its Java member
      * ({@link ValueShape.FieldBinding#javaFieldName()}) by its whole
@@ -225,19 +250,23 @@ public final class ConstraintViolationsClassGenerator {
     public static CodeBlock pathsInitializer(ValueShape.BoundClass bound, String outputPackage) {
         var b = CodeBlock.builder().add("new $T()", pathsClass(outputPackage));
         for (var field : bound.fields()) {
-            var sdl = CodeBlock.builder().add("$T.of(", List.class);
-            for (int i = 0; i < field.accessPath().size(); i++) {
-                sdl.add(i == 0 ? "$S" : ", $S", field.accessPath().get(i));
-            }
-            sdl.add(")");
             var child = switch (field.shape()) {
                 case ValueShape.BoundClass nested -> pathsInitializer(nested, outputPackage);
                 case ValueShape.ListOf list when list.elementShape() instanceof ValueShape.BoundClass nested ->
                     pathsInitializer(nested, outputPackage);
                 default -> CodeBlock.of("null");
             };
-            b.add(".bind($S, $L, $L)", field.javaFieldName(), sdl.build(), child);
+            b.add(".bind($S, $L, $L)", field.javaFieldName(), sdlPath(field.accessPath()), child);
         }
         return b.build();
+    }
+
+    /** {@code List.of(...)} over an SDL access path. */
+    private static CodeBlock sdlPath(List<String> accessPath) {
+        var sdl = CodeBlock.builder().add("$T.of(", List.class);
+        for (int i = 0; i < accessPath.size(); i++) {
+            sdl.add(i == 0 ? "$S" : ", $S", accessPath.get(i));
+        }
+        return sdl.add(")").build();
     }
 }

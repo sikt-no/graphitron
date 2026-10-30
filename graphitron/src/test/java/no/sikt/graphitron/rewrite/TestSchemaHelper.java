@@ -199,6 +199,15 @@ public final class TestSchemaHelper {
     public static no.sikt.graphitron.plan.EmitPlan storeBackedPlan(java.nio.file.Path directory,
             String schemaText, RunContext ctx,
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
+        return storeBacked(directory, schemaText, ctx, projections).plan();
+    }
+
+    /** A store-backed plan and the store's record accessors, read in the one capture window. */
+    private record StoreBacked(no.sikt.graphitron.plan.EmitPlan plan,
+                               no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {}
+
+    private static StoreBacked storeBacked(java.nio.file.Path directory, String schemaText, RunContext ctx,
+            no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
         var bundle = buildBundle(schemaText, ctx);
         // The run's outbox block, and the session handle its payload may read a member of, are the
         // configuration this capture carries over; everything else a context holds stays as the plan
@@ -213,9 +222,10 @@ public final class TestSchemaHelper {
         try (var store = CapturedStore.ofCatalogWith(directory, CapturedStore.GRAPH, schemaText,
                 no.sikt.graphitron.model.test.CatalogInput.of(ctx),
                 testClasspath(), configuration)) {
-            return no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(), bundle.federationLink(),
-                bundle.usesOneOf(), ctx.outputPackage(), projections,
-                new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH));
+            var handle = new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH);
+            return new StoreBacked(no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
+                bundle.federationLink(), bundle.usesOneOf(), ctx.outputPackage(), projections, handle),
+                no.sikt.graphitron.emit.RecordAccessorQuery.read(handle));
         }
     }
 
@@ -238,11 +248,13 @@ public final class TestSchemaHelper {
     public static java.util.List<com.palantir.javapoet.TypeSpec> storeBackedFetchers(
             java.nio.file.Path directory, String schemaText, RunContext ctx) {
         var bundle = buildBundle(schemaText, ctx);
-        var plan = storeBackedPlan(directory, schemaText, ctx);
+        var backed = storeBacked(directory, schemaText, ctx,
+            no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections.empty());
+        var plan = backed.plan();
         return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
             bundle.model(), bundle.assembled(), ctx.outputPackage(), plan.launchers(),
             plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(), plan.routineWrites(),
-            plan.keyProjections(), plan.errorChannels(), plan.outboxes());
+            plan.keyProjections(), plan.errorChannels(), plan.outboxes(), backed.recordAccessors());
     }
 
     /**

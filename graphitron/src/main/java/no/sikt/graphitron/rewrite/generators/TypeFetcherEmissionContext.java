@@ -67,6 +67,11 @@ final class TypeFetcherEmissionContext {
     private no.sikt.graphitron.emit.OutboxQuery.Rows outboxes =
         no.sikt.graphitron.emit.OutboxQuery.Rows.empty();
 
+    // The store's record accessors, for the VALIDATION pre-step's per-column check on a jOOQ record.
+    // Empty by default, so a context with no store checks no record column.
+    private no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors =
+        no.sikt.graphitron.emit.RecordAccessorQuery.Rows.empty();
+
     TypeFetcherEmissionContext(String parentTypeName,
             no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema) {
         this.parentTypeName = parentTypeName;
@@ -157,6 +162,19 @@ final class TypeFetcherEmissionContext {
      */
     void requestOutboxJsonValue() {
         requested.add(HelperKind.OUTBOX_JSON_VALUE);
+    }
+
+    /** Installs the store's record accessors for this class's emission. */
+    void setRecordAccessors(no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
+        this.recordAccessors = recordAccessors;
+    }
+
+    /**
+     * The Bean Validation property each catalog record reads a column through, which decides the
+     * columns a VALIDATION pre-step checks on a jOOQ record parameter.
+     */
+    no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors() {
+        return recordAccessors;
     }
 
     /** Installs the store's error channels for this class's emission. */
@@ -279,16 +297,19 @@ final class TypeFetcherEmissionContext {
 
     /**
      * The name of this class's {@code private static final ConstraintViolations.Paths} constant
-     * translating {@code bound}'s Java members to the SDL input fields they bind, declaring it on
-     * first request. Class assembly drains the declarations through {@link #drainValidationPathFields()}.
+     * translating {@code subject}'s Java members to the SDL input fields they bind, declaring it on
+     * first request: a bound class's members, or a jOOQ record's {@code checks}. Class assembly drains
+     * the declarations through {@link #drainValidationPathFields()}.
      */
-    String validationPathsConstant(no.sikt.graphitron.rewrite.model.ValueShape.BoundClass bound,
+    String validationPathsConstant(no.sikt.graphitron.rewrite.model.ServiceMethodCall.ValidationSubject subject,
+            java.util.List<no.sikt.graphitron.rewrite.model.ServiceMethodCall.ValidationSubject.ColumnCheck> checks,
             String outputPackage) {
         var initializer = no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator
-            .pathsInitializer(bound, outputPackage);
+            .pathsInitializer(subject, checks, outputPackage);
+        var javaClass = (com.palantir.javapoet.ClassName) subject.javaType();
         return validationPathNames.computeIfAbsent(initializer.toString(), key -> {
             String stem = "VALIDATION_PATHS_"
-                + bound.javaClass().simpleName().replaceAll("([a-z0-9])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT);
+                + javaClass.simpleName().replaceAll("([a-z0-9])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT);
             String name = stem;
             for (int n = 2; validationPathNames.containsValue(name); n++) {
                 name = stem + "_" + n;

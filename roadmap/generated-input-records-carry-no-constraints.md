@@ -284,6 +284,39 @@ the `@error` reference's `handler` row and `VALIDATION` section, and the javadoc
 `validatorPreStep`, `ServiceMethodCall.validationTargets()` and `ConstraintViolationsClassGenerator`
 to name records.
 
+## Implementation notes
+
+The record half landed as planned, with these choices the plan left open or that moved:
+
+- *The partition is the subject's own method.* `ValidationSubject.WrittenColumns.partition` takes a
+  property lookup rather than the `Rows` themselves, so the model package does not reach into
+  `no.sikt.graphitron.emit`; `RecordAccessorQuery.Rows.propertyOf` is the lookup both readers pass.
+  `ColumnCheck` and `Partition` sit beside it in `ServiceMethodCall.ValidationSubject`.
+- *The rows are keyed by record class.* A `TableRef` carries no catalog source or schema, so
+  `RecordAccessorQuery` joins `sql_table` for `record_class_fqn` and keys on it and the column's SQL
+  name, scoped to the graph's sources through `store_graph_source`.
+- *The naming rule is one public class.* `RecordGetters` in `graphitron-model` holds `getterName`
+  and `propertyName`; the capture confirms the name, and the lint uses the same rule to name the
+  getter it looked for.
+- *The argument path uses the outer argument name,* as the bound-class half does.
+- *The hand-written catalog test is its own class,* `JooqRecordAccessorCaptureTest`, because
+  `JooqFactCaptureTest`'s premise is the generated fixture catalog. The catalog lives under
+  `capture/jooq/handwritten` in the model's test sources.
+- *The lint's pipeline cases drop an accessor row from the captured store* to stand for a renaming
+  generator strategy, the sakila catalog having every getter where the default rule looks.
+- *Test plumbing:* `TestSchemaHelper.storeBackedFetchers` reads the accessor rows from the store it
+  plans from, so a store-backed pipeline test emits record checks as a run does.
+- *The guard reads `touched(Field)`,* jOOQ 3.20's non-deprecated name for the changed flag;
+  `changed(Field)` is deprecated there and fails the example's `-Werror` compile.
+- *The R534 exception is narrower and wider than the plan stated.* jOOQ's `from()` (which every
+  `fromArray` load runs) calls `Tools.resetTouchedOnNotNull`, clearing the flag only on null-valued
+  columns whose type is `NOT NULL`, and it does so on every value load, not only a key decode. So a
+  null for a nullable column beside a decoded id is written and checked, and a null for a `NOT NULL`
+  column is dropped by any later load. The check still agrees with the write, which is what the
+  plan asked of it. The execution case moved to `title` (`NOT NULL`) beside a decoded id, a second
+  case pins `description` (nullable) as written and checked, and the manual states the exception in
+  those terms. R534's own body is corrected to match.
+
 ## Neighbouring items
 
 Nothing reads the generated `<outputPackage>.inputs` classes now. This item does not delete them,

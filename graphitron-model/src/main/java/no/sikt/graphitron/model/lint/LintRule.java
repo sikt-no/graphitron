@@ -52,12 +52,14 @@ public enum LintRule {
     // not derived from the AST and not from a per-field classifier verdict, so neither an engine
     // visitor nor a classifier-tagged advisory. Emitted from GraphQLRewriteGenerator via
     // SessionStateWarnings (the <sessionState> identity posture), DependencyVersionWarnings (the
-    // resolved dependency graph) and the emitted registry's federation-directive fold (a generated
-    // type whose carriers disagree on their tags).
+    // resolved dependency graph), the emitted registry's federation-directive fold (a generated
+    // type whose carriers disagree on their tags) and ValidationColumnWarnings (a jOOQ record column
+    // a VALIDATION pre-step cannot check).
     NO_SESSION_STATE("no-session-state", Source.CODEGEN),
     GRAPHQL_JAVA_VERSION_LAG("graphql-java-version-lag", Source.CODEGEN),
     JOOQ_VERSION_LAG("jooq-version-lag", Source.CODEGEN),
     SHARED_TYPE_TAGS_NARROWED("shared-type-tags-narrowed", Source.CODEGEN),
+    VALIDATION_COLUMN_UNCHECKED("validation-column-unchecked", Source.CODEGEN),
 
     // Derived-relation producers: a set reduction over one derived view, folded in at report
     // assembly beside the codegen advisories. Not an engine visitor, because the view is a

@@ -8,8 +8,8 @@ import java.util.List;
  * slot plus the errors slot as {@code List<?>}, so the dispatch lambda's
  * {@code Function<List<?>, P>} parameter stays substitutable) and deliberately a separate type, so
  * the VALIDATION handler stays off the fixtures that exercise dispatch. The field it serves takes a
- * scalar, so no validation pre-step is emitted for it: the pre-step validates only the classes a
- * {@code @service} method takes.
+ * scalar, so no validation pre-step is emitted for it: the pre-step validates only the classes and
+ * jOOQ records a {@code @service} method takes.
  *
  * <p>What this pins is the emitted {@code message} body's {@code GraphQLError} arm. The
  * validation path puts {@code GraphQLError} instances in the errors slot which need not be

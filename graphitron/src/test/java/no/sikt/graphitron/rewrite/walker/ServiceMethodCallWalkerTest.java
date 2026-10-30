@@ -365,7 +365,7 @@ class ServiceMethodCallWalkerTest {
 
         assertThat(call.validationTargets())
             .extracting(t -> t.getClass().getSimpleName(), ServiceMethodCall.ValidationTarget::local,
-                t -> t.boundClass().argName())
+                t -> ((ServiceMethodCall.ValidationSubject.WholeObject) t.subject()).boundClass().argName())
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple("Single", "one", "input"),
                 org.assertj.core.groups.Tuple.tuple("PerElement", "many", "beans"));

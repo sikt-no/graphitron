@@ -42,7 +42,8 @@ public final class TypeFetcherRenderTestSupport {
             RoutineWriteQuery.Rows.empty(),
             KeyProjectionRelation.empty(),
             no.sikt.graphitron.emit.ErrorChannelRelation.empty(),
-            no.sikt.graphitron.emit.OutboxQuery.Rows.empty());
+            no.sikt.graphitron.emit.OutboxQuery.Rows.empty(),
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows.empty());
     }
 
     /**

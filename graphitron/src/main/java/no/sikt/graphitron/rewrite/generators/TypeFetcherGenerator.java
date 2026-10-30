@@ -123,7 +123,9 @@ public class TypeFetcherGenerator {
      * reads its column off a decoded node id instead of off the wire map. {@code errorChannels} is the
      * store's error channels, from which every catch arm names the dispatch table of the outcome type
      * its producer catches into. {@code outboxes} is the store's {@code @outbox} rows, which the DML
-     * sites that write a table read to write a message beside their write.
+     * sites that write a table read to write a message beside their write. {@code recordAccessors}
+     * is the store's record getters, from which a VALIDATION pre-step learns the columns of a jOOQ
+     * record parameter it can check.
      * The overloads above default the walk-derived relations to ones produced from the same schema and
      * the projections to empty, there being no store behind a schema-only caller.
      */
@@ -135,7 +137,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
-            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes) {
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -158,7 +161,7 @@ public class TypeFetcherGenerator {
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
                     nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections,
-                    errorChannels, outboxes));
+                    errorChannels, outboxes, recordAccessors));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
                 if (wiring == null) {
@@ -183,7 +186,8 @@ public class TypeFetcherGenerator {
                     routineWrites,
                     keyProjections,
                     errorChannels,
-                    outboxes));
+                    outboxes,
+                    recordAccessors));
             }
         }
         for (var row : errorRows) {
@@ -273,7 +277,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
-            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes) {
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -282,7 +287,7 @@ public class TypeFetcherGenerator {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
-            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes);
+            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes, recordAccessors);
     }
 
     /**
@@ -526,13 +531,16 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage,
             graphitronSchema, dualWiring, launchers, routineWrites, keyProjections, errorChannels,
-            no.sikt.graphitron.emit.OutboxQuery.Rows.empty());
+            no.sikt.graphitron.emit.OutboxQuery.Rows.empty(),
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows.empty());
     }
 
     /**
-     * The canonical form with the store's {@code @outbox} rows: each DML site that writes a table
-     * asks {@code outboxes} for its coordinate and, on a row, writes the messages beside the write.
-     * The overloads above pass none, a model-only caller having no store.
+     * The canonical form with the store's {@code @outbox} rows and record accessors: each DML site
+     * that writes a table asks {@code outboxes} for its coordinate and, on a row, writes the messages
+     * beside the write, and a VALIDATION pre-step reads {@code recordAccessors} for the columns of a
+     * jOOQ record parameter it can check. The overloads above pass none, a model-only caller having
+     * no store.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
@@ -544,7 +552,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
-            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes) {
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
@@ -562,6 +571,7 @@ public class TypeFetcherGenerator {
         ctx.setKeyProjections(keyProjections);
         ctx.setErrorChannels(errorChannels);
         ctx.setOutboxes(outboxes);
+        ctx.setRecordAccessors(recordAccessors);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
@@ -2062,15 +2072,19 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits the wrapper's pre-execution Jakarta validation block. Walks
-     * {@link ServiceMethodCall#validationTargets()}, the parameters bound to a class the consumer
-     * wrote, and validates each non-null call-site local (each non-null element, for a list) via the
-     * {@code GraphitronContext}-supplied {@code Validator}, so the constraints the consumer declared
-     * on that class are the ones checked. Each violation becomes a {@code GraphQLError} via the
-     * generated {@code ConstraintViolations.toGraphQLError}, its path rooted at the argument (and the
-     * element index, for a list) and translated to SDL input-field names by the class's
-     * {@code ConstraintViolations.Paths} constant; the block short-circuits with the payload's
-     * errors-arm filled by the violations when the accumulator is non-empty. A call with no targets
-     * emits nothing, not even the {@code Validator} lookup.
+     * {@link ServiceMethodCall#validationTargets()} and validates each non-null call-site local (each
+     * non-null element, for a list) via the {@code GraphitronContext}-supplied {@code Validator}: a
+     * class the consumer wrote whole, with the constraints declared on it, and a jOOQ record one
+     * property at a time, for each column it writes (jOOQ's changed flag, read through
+     * {@code touched}) whose getter the store knows,
+     * which is the record's {@link ServiceMethodCall.ValidationSubject.WrittenColumns#partition}
+     * through {@link TypeFetcherEmissionContext#recordAccessors()}. Each violation becomes a
+     * {@code GraphQLError} via the generated {@code ConstraintViolations.toGraphQLError}, its path
+     * rooted at the argument (and the element index, for a list) and translated to SDL input-field
+     * names by a {@code ConstraintViolations.Paths} constant; the block short-circuits with the
+     * payload's errors-arm filled by the violations when the accumulator is non-empty. A target with
+     * nothing to check (a record none of whose written columns has a known getter) is dropped, and a
+     * call left with no targets emits nothing, not even the {@code Validator} lookup.
      *
      * <p>The caller places the block between the argument locals and the call, inside the fetcher's
      * {@code try}, so the early return is a return from inside it, as the DML column-length
@@ -2078,7 +2092,20 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, ServiceMethodCall carrier,
                                               TypeName outcomeType, String outputPackage) {
-        var targets = carrier.validationTargets();
+        record Checked(ServiceMethodCall.ValidationTarget target,
+                       List<ServiceMethodCall.ValidationSubject.ColumnCheck> checks) {}
+        var targets = new ArrayList<Checked>();
+        for (var target : carrier.validationTargets()) {
+            switch (target.subject()) {
+                case ServiceMethodCall.ValidationSubject.WholeObject ignored -> targets.add(new Checked(target, List.of()));
+                case ServiceMethodCall.ValidationSubject.WrittenColumns columns -> {
+                    var checks = columns.partition(ctx.recordAccessors()::propertyOf).checks();
+                    if (!checks.isEmpty()) {
+                        targets.add(new Checked(target, checks));
+                    }
+                }
+            }
+        }
         if (targets.isEmpty()) {
             return CodeBlock.of("");
         }
@@ -2091,20 +2118,26 @@ public class TypeFetcherGenerator {
         var b = CodeBlock.builder();
         b.addStatement("$T validator = $L.getValidator(env)", validator, ctx.graphitronContextCall());
         b.addStatement("$T violations = new $T<>()", listOfErrors, arrayList);
-        for (var target : targets) {
-            var bound = target.boundClass();
-            String paths = ctx.validationPathsConstant(bound, outputPackage);
+        for (var checked : targets) {
+            var target = checked.target();
+            var subject = target.subject();
+            String paths = ctx.validationPathsConstant(subject, checked.checks(), outputPackage);
+            String argName = switch (subject) {
+                case ServiceMethodCall.ValidationSubject.WholeObject whole -> whole.boundClass().argName();
+                case ServiceMethodCall.ValidationSubject.WrittenColumns columns -> columns.record().sdlPath().outerArgName();
+            };
             String local = target.local();
             b.beginControlFlow("if ($L != null)", local);
             switch (target) {
                 case ServiceMethodCall.ValidationTarget.Single ignored ->
-                    b.add(validateInto(local, CodeBlock.of("$T.of($S)", LIST, bound.argName()), paths, outputPackage));
+                    b.add(validateSubject(subject, checked.checks(), local,
+                        CodeBlock.of("$T.of($S)", LIST, argName), paths, outputPackage));
                 case ServiceMethodCall.ValidationTarget.PerElement ignored -> {
                     b.beginControlFlow("for (int i = 0; i < $L.size(); i++)", local);
-                    b.addStatement("$T element = $L.get(i)", bound.javaClass(), local);
+                    b.addStatement("$T element = $L.get(i)", subject.javaType(), local);
                     b.beginControlFlow("if (element != null)");
-                    b.add(validateInto("element", CodeBlock.of("$T.of($S, i)", LIST, bound.argName()), paths,
-                        outputPackage));
+                    b.add(validateSubject(subject, checked.checks(), "element",
+                        CodeBlock.of("$T.of($S, i)", LIST, argName), paths, outputPackage));
                     b.endControlFlow();
                     b.endControlFlow();
                 }
@@ -2118,17 +2151,42 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Validates the local {@code target} and adds each violation to {@code violations}, under the
-     * argument path {@code argPath} evaluates to, with member names translated by the
-     * {@code paths} constant.
+     * Validates the local {@code target} as {@code subject} says: a bound class whole, a jOOQ record
+     * one {@code validateProperty} per check, each guarded on the record writing that column.
      */
-    private static CodeBlock validateInto(String target, CodeBlock argPath, String paths, String outputPackage) {
+    private static CodeBlock validateSubject(ServiceMethodCall.ValidationSubject subject,
+                                             List<ServiceMethodCall.ValidationSubject.ColumnCheck> checks,
+                                             String target, CodeBlock argPath, String paths, String outputPackage) {
+        return switch (subject) {
+            case ServiceMethodCall.ValidationSubject.WholeObject ignored ->
+                validateInto(CodeBlock.of("validator.validate($L)", target), argPath, paths, outputPackage);
+            case ServiceMethodCall.ValidationSubject.WrittenColumns columns -> {
+                var table = columns.record().carrier().table();
+                var tablesClass = no.sikt.graphitron.render.CatalogRefs.constantsClass(table);
+                var b = CodeBlock.builder();
+                for (var check : checks) {
+                    b.beginControlFlow("if ($L.touched($T.$L.$L))", target, tablesClass, table.javaFieldName(),
+                        check.column().javaName());
+                    b.add(validateInto(CodeBlock.of("validator.validateProperty($L, $S)", target, check.property()),
+                        argPath, paths, outputPackage));
+                    b.endControlFlow();
+                }
+                yield b.build();
+            }
+        };
+    }
+
+    /**
+     * Adds each violation {@code violationsOf} evaluates to to {@code violations}, under the argument
+     * path {@code argPath} evaluates to, with member names translated by the {@code paths} constant.
+     */
+    private static CodeBlock validateInto(CodeBlock violationsOf, CodeBlock argPath, String paths, String outputPackage) {
         var violationWildcard = ParameterizedTypeName.get(
             ClassName.get("jakarta.validation", "ConstraintViolation"), WildcardTypeName.subtypeOf(Object.class));
         var constraintViolations = ClassName.get(outputPackage + ".schema",
             ConstraintViolationsClassGenerator.CLASS_NAME);
         return CodeBlock.builder()
-            .beginControlFlow("for ($T violation : validator.validate($L))", violationWildcard, target)
+            .beginControlFlow("for ($T violation : $L)", violationWildcard, violationsOf)
             .addStatement("violations.add($T.toGraphQLError(violation, env, $L, $L))",
                 constraintViolations, argPath, paths)
             .endControlFlow()

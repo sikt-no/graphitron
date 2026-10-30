@@ -5468,6 +5468,27 @@ COMMENT ON COLUMN sql_column.column_name_upper IS 'the upper-cased form of the c
 COMMENT ON COLUMN sql_column.jooq_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against an authored column reference or the field name standing in for one, which is the tier tried before the SQL name. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_column on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
+CREATE TABLE sql_column_record_accessor (
+  source_name   VARCHAR NOT NULL,
+  table_schema  VARCHAR NOT NULL,
+  table_name    VARCHAR NOT NULL,
+  column_name   VARCHAR NOT NULL,
+  getter_name   VARCHAR NOT NULL,
+  property_name VARCHAR NOT NULL,
+  touched_at    TIMESTAMP,
+  PRIMARY KEY (source_name, table_schema, table_name, column_name),
+  FOREIGN KEY (source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE sql_column_record_accessor IS 'The public no-argument getter this table''s generated record reads one column through. For example film.title, which FilmRecord reads through getTitle, the Bean Validation property title.';
+COMMENT ON COLUMN sql_column_record_accessor.source_name IS 'the generated package the table''s schema lives in, as on sql_column; the key''s leading dimension and the refresh unit the sweep is scoped by';
+COMMENT ON COLUMN sql_column_record_accessor.table_schema IS 'the table''s SQL schema, as on sql_column';
+COMMENT ON COLUMN sql_column_record_accessor.table_name IS 'the table''s SQL name, as on sql_column';
+COMMENT ON COLUMN sql_column_record_accessor.column_name IS 'the column''s SQL name, as on sql_column; with the three columns above, the column this row is about';
+COMMENT ON COLUMN sql_column_record_accessor.getter_name IS 'the getter''s method name: get, then the column''s SQL name with space, hyphen and dot read as underscores and each underscore-separated word capitalised with the rest of it lower-cased, which is the name jOOQ''s default generator strategy writes. For example BILDE gives getBilde and film_id gives getFilmId. Present only where the record class declares that name as a public no-argument instance method whose return type the column''s Java type is assignable to, which also rejects a name jOOQ disambiguated against a method of Record';
+COMMENT ON COLUMN sql_column_record_accessor.property_name IS 'the Bean Validation property the getter names: the getter''s name without get, decapitalised the way java.beans does, so a name starting with two capitals keeps them. What a Validator.validateProperty call on the record names, and what a constraint mapped onto the record''s getter is registered under';
+COMMENT ON COLUMN sql_column_record_accessor.touched_at IS 'when the reading that produced this row ran, as on sql_column; the reading finishes by deleting this source''s rows carrying a different instant, which are the getters the regenerated records no longer have';
+
 CREATE TABLE sql_enum_binding (
   source_name  VARCHAR NOT NULL,
   class_fqn    VARCHAR NOT NULL,
@@ -15789,6 +15810,7 @@ INSERT INTO lint_rule VALUES
   ('graphql-java-version-lag', 'CODEGEN', 'WARNING'),
   ('jooq-version-lag', 'CODEGEN', 'WARNING'),
   ('shared-type-tags-narrowed', 'CODEGEN', 'WARNING'),
+  ('validation-column-unchecked', 'CODEGEN', 'WARNING'),
   ('reference-path-fans-out', 'DERIVED', 'WARNING');
 
 CREATE VIEW lint_violation
@@ -18486,6 +18508,10 @@ INSERT INTO meta_relation VALUES
    'One column of one table the consumer''s catalog declares.',
    'For example film.title, a varchar the generated model binds to java.lang.String.',
    'A column is what the schema''s directives name, and it carries two types rather than one, the SQL type the database declares and the Java type jOOQ binds it to. Neither derives from the other by any rule the store could apply, the mapping being the generator''s configured binding, which nothing outside the codegen classpath can resolve afterwards.'),
+  ('sql_column_record_accessor', 'database-column', 'jooq',
+   'The public no-argument getter this table''s generated record reads one column through.',
+   'For example film.title, which FilmRecord reads through getTitle, the Bean Validation property title.',
+   'Bean Validation names a record''s values by its getter properties, and nothing else in the store knows them: a record is read and written through the table class''s fields, and the classpath census skips the generated jOOQ package. The name is the one jOOQ''s default generator strategy writes, confirmed on the live record class during the catalog walk, which already holds that class for sql_table_record_supertype; a column whose getter a renaming strategy moved has no row, which is what lets a reader say which columns it cannot check rather than guessing a name. The VALIDATION handler''s per-column check on a jOOQ record parameter reads it, and so does the lint finding naming the columns it misses.'),
   ('sql_enum_binding', 'bound-enum-class', 'jooq',
    'One Java enum class some column of one catalog source binds to.',
    'For example the class generated for the mpaa_rating database type, which film.rating binds to, and equally a hand-written enum a configured converter binds a column to.',

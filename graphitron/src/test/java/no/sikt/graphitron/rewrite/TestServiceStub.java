@@ -537,6 +537,20 @@ class TestServiceStub {
     }
 
     /**
+     * Returns the dummy {@code SakPayload} from a jOOQ {@link FilmRecord} input. Used where a test needs
+     * the validator pre-step's per-column check on a record, or a record carrying only a key decode.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithFilmRecord(FilmRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** {@link #runSakWithFilmRecord} over a list, validated element by element. */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithFilmRecords(
+            java.util.List<FilmRecord> in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Returns the dummy {@code SakPayload} from a list of lists of {@link TestInputBean} inputs,
      * bound whole as a {@code Map} pass-through. Used by the classification tests pinning that such
      * an argument classifies with and without a {@code VALIDATION} channel, and gives the validator
