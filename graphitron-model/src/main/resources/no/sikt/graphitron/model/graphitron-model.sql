@@ -7401,14 +7401,16 @@ COMMENT ON COLUMN graphitron_defect_type.lsp_code IS 'the diagnostic code an edi
 COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-facing sentence. The message a consumer renders quotes this and the finding''s detail; neither is stored per row';
 
 CREATE TABLE federation_version (
-  source_name VARCHAR NOT NULL,
-  version     VARCHAR NOT NULL,
+  source_name VARCHAR   NOT NULL,
+  version     VARCHAR   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, version),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE federation_version IS 'One federation specification version the federation library supports. For example v2.10, a link whose url ends in v2.10 being one the library on graphitron''s classpath accepts.';
-COMMENT ON COLUMN federation_version.source_name IS 'the library, by its group and artifact, anchored by store_source, whose stamp is the content of the jar these rows were read from; the jar carries no Maven metadata naming its release, so a changed stamp is read whole, the old rows going first';
+COMMENT ON COLUMN federation_version.source_name IS 'the library, by its group and artifact, anchored by store_source, whose stamp is the content of the jar these rows were read from; the jar carries no Maven metadata naming its release, so a changed stamp is read whole';
 COMMENT ON COLUMN federation_version.version IS 'the version as a link''s url spells it after the federation specification''s prefix, for example v2.10, which is how graphitron_ast_federation_link_entry spells the version a link names';
+COMMENT ON COLUMN federation_version.touched_at IS 'the reading of the library that last wrote this row; a row the latest reading did not write is a version the library stopped supporting, and goes';
 
 CREATE TABLE federation_written_version (
   source_name VARCHAR NOT NULL,
@@ -7431,6 +7433,7 @@ CREATE TABLE federation_version_definition (
   unimported_name VARCHAR NOT NULL,
   repeatable      BOOLEAN,
   description     VARCHAR,
+  touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, version, name),
   FOREIGN KEY (source_name, version) REFERENCES federation_version (source_name, version)
     ON DELETE CASCADE,
@@ -7449,6 +7452,7 @@ COMMENT ON COLUMN federation_version_definition.kind IS 'DIRECTIVE, SCALAR or EN
 COMMENT ON COLUMN federation_version_definition.unimported_name IS 'the name the library gives the definition in a schema whose link does not import it, spelled as name is: the specification''s namespace prefixed, federation__key, or the name itself where the library always imports it, as @link';
 COMMENT ON COLUMN federation_version_definition.repeatable IS 'whether the directive may be applied more than once at one site; NULL on a type';
 COMMENT ON COLUMN federation_version_definition.description IS 'the definition''s description as the specification writes it, NULL where it writes none';
+COMMENT ON COLUMN federation_version_definition.touched_at IS 'the reading of the library that last wrote this row; a row the latest reading did not write is a definition the version stopped bringing in, and goes';
 
 CREATE TABLE federation_version_directive_argument (
   source_name       VARCHAR NOT NULL,
@@ -7463,6 +7467,7 @@ CREATE TABLE federation_version_directive_argument (
   item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,
   description       VARCHAR,
+  touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, version, name, argument_name),
   FOREIGN KEY (source_name, version, name)
     REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
@@ -7480,12 +7485,14 @@ COMMENT ON COLUMN federation_version_directive_argument.is_list IS 'whether the 
 COMMENT ON COLUMN federation_version_directive_argument.item_non_null IS 'whether the innermost item of a list is non-null; NULL where the type is no list';
 COMMENT ON COLUMN federation_version_directive_argument.default_value_sdl IS 'the default as the specification writes it, NULL where it declares none';
 COMMENT ON COLUMN federation_version_directive_argument.description IS 'the argument''s description, NULL where the specification writes none';
+COMMENT ON COLUMN federation_version_directive_argument.touched_at IS 'the reading of the library that last wrote this row, on federation_version_definition''s terms';
 
 CREATE TABLE federation_version_directive_location (
-  source_name VARCHAR NOT NULL,
-  version     VARCHAR NOT NULL,
-  name        VARCHAR NOT NULL,
-  location    VARCHAR NOT NULL,
+  source_name VARCHAR   NOT NULL,
+  version     VARCHAR   NOT NULL,
+  name        VARCHAR   NOT NULL,
+  location    VARCHAR   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, version, name, location),
   FOREIGN KEY (source_name, version, name)
     REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
@@ -7495,11 +7502,13 @@ COMMENT ON COLUMN federation_version_directive_location.source_name IS 'the libr
 COMMENT ON COLUMN federation_version_directive_location.version IS 'the version';
 COMMENT ON COLUMN federation_version_directive_location.name IS 'the directive, with its at sign, anchored by federation_version_definition';
 COMMENT ON COLUMN federation_version_directive_location.location IS 'the location as the specification spells it';
+COMMENT ON COLUMN federation_version_directive_location.touched_at IS 'the reading of the library that last wrote this row, on federation_version_definition''s terms';
 
 CREATE TABLE federation_version_import (
-  source_name VARCHAR NOT NULL,
-  version     VARCHAR NOT NULL,
-  name        VARCHAR NOT NULL,
+  source_name VARCHAR   NOT NULL,
+  version     VARCHAR   NOT NULL,
+  name        VARCHAR   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, version, name),
   FOREIGN KEY (source_name, version, name)
     REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
@@ -7508,6 +7517,7 @@ COMMENT ON TABLE federation_version_import IS 'One name a federation version''s 
 COMMENT ON COLUMN federation_version_import.source_name IS 'the library, on federation_version''s terms';
 COMMENT ON COLUMN federation_version_import.version IS 'the version, anchored by federation_version';
 COMMENT ON COLUMN federation_version_import.name IS 'the name as a link''s import list spells it, a directive''s with its at sign and a type''s bare, so the list as written joins it by equality. What the library accepts as an import at this version rather than what its definition file holds, the two differing where versions share a file and a directive is younger than the file''s first version';
+COMMENT ON COLUMN federation_version_import.touched_at IS 'the reading of the library that last wrote this row; a row the latest reading did not write is a name the version stopped letting a link import, and goes';
 
 CREATE TABLE graphitron_federation_link (
   graph_name    VARCHAR   NOT NULL,

@@ -11,7 +11,12 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DEFINITION;
+import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DIRECTIVE_LOCATION;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_IMPORT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_DEFINITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
 import static no.sikt.graphitron.model.Tables.FEDERATION_WRITTEN_VERSION;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,12 +61,59 @@ class FederationCaptureTest {
             FederationCapture.gather(dsl, "g", "sha256:b", "v2.10", SECOND);
             assertThat(readAt(dsl)).isEqualTo(SECOND);
             assertThat(dsl.fetchCount(FEDERATION_VERSION_IMPORT))
-                .as("the old rows went first, so the same library reads to the same rows")
+                .as("the same library reads to the same rows")
                 .isEqualTo(imports);
 
             FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(1));
             FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(2));
             assertThat(readAt(dsl)).isEqualTo(SECOND.plusMinutes(2));
+        });
+    }
+
+    @Test
+    @DisplayName("a changed jar's reading sweeps what the library no longer declares and keeps the rest")
+    void aChangedJarSweepsWhatTheLibraryDropped() {
+        ThreadConfinedStore.run(dsl -> {
+            ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
+            FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
+            String source = FederationCapture.SOURCE_NAME;
+            var d = FEDERATION_VERSION_DEFINITION;
+            dsl.insertInto(d, d.SOURCE_NAME, d.VERSION, d.NAME, d.KIND, d.UNIMPORTED_NAME,
+                    d.REPEATABLE, d.TOUCHED_AT)
+                .values(source, "v2.10", "@dropped", "DIRECTIVE", "@federation__dropped", false, FIRST)
+                .execute();
+            var a = FEDERATION_VERSION_DIRECTIVE_ARGUMENT;
+            dsl.insertInto(a, a.SOURCE_NAME, a.VERSION, a.NAME, a.ARGUMENT_NAME, a.ORDINAL,
+                    a.TYPE_SDL, a.NAMED_TYPE, a.NON_NULL, a.IS_LIST, a.TOUCHED_AT)
+                .values(source, "v2.10", "@dropped", "reason", 0, "String", "String", false, false, FIRST)
+                .execute();
+            var l = FEDERATION_VERSION_DIRECTIVE_LOCATION;
+            dsl.insertInto(l, l.SOURCE_NAME, l.VERSION, l.NAME, l.LOCATION, l.TOUCHED_AT)
+                .values(source, "v2.10", "@dropped", "OBJECT", FIRST)
+                .execute();
+            var link = GRAPHITRON_FEDERATION_LINK;
+            dsl.insertInto(link, link.GRAPH_NAME, link.ORIGIN, link.VERSION, link.TOUCHED_AT)
+                .values("g", "CONFIGURED", "v2.10", FIRST)
+                .execute();
+            var g = GRAPHITRON_FEDERATION_DEFINITION;
+            dsl.insertInto(g, g.GRAPH_NAME, g.NAME, g.LOCAL_NAME, g.KIND, g.SOURCE_NAME, g.VERSION,
+                    g.TOUCHED_AT)
+                .values("g", "@key", "@key", "DIRECTIVE", source, "v2.10", FIRST)
+                .values("g", "@dropped", "@dropped", "DIRECTIVE", source, "v2.10", FIRST)
+                .execute();
+
+            FederationCapture.gather(dsl, "g", "sha256:b", "v2.10", SECOND);
+
+            assertThat(dsl.fetchExists(d, d.NAME.eq("@dropped")))
+                .as("a definition the library no longer declares goes").isFalse();
+            assertThat(dsl.fetchExists(a, a.NAME.eq("@dropped"))).isFalse();
+            assertThat(dsl.fetchExists(l, l.NAME.eq("@dropped"))).isFalse();
+            assertThat(dsl.select(g.NAME).from(g).fetch(g.NAME))
+                .as("a graph's definition goes with the library's, and one still declared stays")
+                .containsExactly("@key");
+            assertThat(dsl.selectDistinct(d.TOUCHED_AT).from(d).fetch(d.TOUCHED_AT))
+                .as("every definition still declared is marked by the reading that read it")
+                .containsExactly(SECOND);
         });
     }
 

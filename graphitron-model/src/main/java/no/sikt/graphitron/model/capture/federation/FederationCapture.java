@@ -19,8 +19,10 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.schema.federation.FederationSpec;
+import no.sikt.graphitron.model.sink.BindBatch;
 import no.sikt.graphitron.model.sink.Progress;
 import org.jooq.DSLContext;
+import org.jooq.Rows;
 
 import java.net.URISyntaxException;
 import java.nio.file.Files;
@@ -39,6 +41,8 @@ import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_IMPORT;
 import static no.sikt.graphitron.model.Tables.FEDERATION_WRITTEN_VERSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.val;
 
 /**
  * The federation gatherer: the specification versions federation-jvm supports, what each brings
@@ -48,7 +52,7 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * <p>The library is the source, named by its group and artifact and stamped by the jar its classes
  * were loaded from. The jar carries no Maven metadata to name its release by, so its content is its
  * identity: a stamp the store already holds is not read again, and a changed one is read whole,
- * the old rows going first. Where the classes come from no jar the stamp is null, which reads as
+ * marking every row it writes and sweeping the library's rows it did not. Where the classes come from no jar the stamp is null, which reads as
  * changed, on {@code store_source}'s terms.
  *
  * <p>Beside them, the version graphitron writes when it adds a link of its own, from
@@ -114,18 +118,29 @@ public final class FederationCapture {
             .execute();
     }
 
-    /** Reads the library whole, the old rows going first, and stamps it once the new rows are in. */
+    /**
+     * Reads the library whole, marking every row it writes and sweeping the library's rows it did
+     * not, and stamps it once the new rows are in. Each relation is written through one statement.
+     */
     private static void read(DSLContext dsl, String stamp, LocalDateTime readAt) {
         var s = STORE_SOURCE;
-        // The old versions go first, and everything under them by cascade.
-        var v = FEDERATION_VERSION;
-        dsl.deleteFrom(v).where(v.SOURCE_NAME.eq(SOURCE_NAME)).execute();
-        for (var version : versions()) {
-            dsl.insertInto(v, v.SOURCE_NAME, v.VERSION).values(SOURCE_NAME, version.version()).execute();
-            for (var definition : version.definitions()) {
-                write(dsl, version.version(), definition);
-            }
-        }
+        var versions = Library.VERSIONS;
+        var definitions = versions.stream()
+            .flatMap(version -> version.definitions().stream()
+                .map(definition -> new Placed<>(version.version(), definition, definition)))
+            .toList();
+        writeVersions(dsl, versions, readAt);
+        writeDefinitions(dsl, definitions, readAt);
+        writeArguments(dsl, definitions.stream()
+            .flatMap(d -> d.item().arguments().stream()
+                .map(argument -> new Placed<>(d.version(), d.definition(), argument)))
+            .toList(), readAt);
+        writeLocations(dsl, definitions.stream()
+            .flatMap(d -> d.item().locations().stream()
+                .map(location -> new Placed<>(d.version(), d.definition(), location)))
+            .toList(), readAt);
+        writeImports(dsl, definitions.stream().filter(d -> d.item().importable()).toList(), readAt);
+        sweep(dsl, readAt);
         dsl.update(s)
             .set(s.STAMP, stamp)
             .set(s.READ_AT, readAt)
@@ -133,35 +148,132 @@ public final class FederationCapture {
             .execute();
     }
 
-    private static void write(DSLContext dsl, String version, Definition definition) {
+    private static void writeVersions(DSLContext dsl, List<Version> versions, LocalDateTime readAt) {
+        var v = FEDERATION_VERSION;
+        var rows = versions.stream().collect(Rows.toRowList(
+            version -> val(SOURCE_NAME, v.SOURCE_NAME),
+            version -> val(version.version(), v.VERSION),
+            version -> val(readAt, v.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(v, v.SOURCE_NAME, v.VERSION, v.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(v.TOUCHED_AT, excluded(v.TOUCHED_AT)));
+    }
+
+    private static void writeDefinitions(DSLContext dsl, List<Placed<Definition>> definitions,
+                                         LocalDateTime readAt) {
         var d = FEDERATION_VERSION_DEFINITION;
-        dsl.insertInto(d, d.SOURCE_NAME, d.VERSION, d.NAME, d.KIND, d.UNIMPORTED_NAME, d.REPEATABLE,
-                d.DESCRIPTION)
-            .values(SOURCE_NAME, version, definition.name(), definition.kind(),
-                definition.unimportedName(), definition.repeatable(), definition.description())
-            .execute();
+        var rows = definitions.stream().collect(Rows.toRowList(
+            p -> val(SOURCE_NAME, d.SOURCE_NAME),
+            p -> val(p.version(), d.VERSION),
+            p -> val(p.item().name(), d.NAME),
+            p -> val(p.item().kind(), d.KIND),
+            p -> val(p.item().unimportedName(), d.UNIMPORTED_NAME),
+            p -> val(p.item().repeatable(), d.REPEATABLE),
+            p -> val(p.item().description(), d.DESCRIPTION),
+            p -> val(readAt, d.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(d, d.SOURCE_NAME, d.VERSION, d.NAME, d.KIND, d.UNIMPORTED_NAME,
+                    d.REPEATABLE, d.DESCRIPTION, d.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(d.KIND, excluded(d.KIND))
+                .set(d.UNIMPORTED_NAME, excluded(d.UNIMPORTED_NAME))
+                .set(d.REPEATABLE, excluded(d.REPEATABLE))
+                .set(d.DESCRIPTION, excluded(d.DESCRIPTION))
+                .set(d.TOUCHED_AT, excluded(d.TOUCHED_AT)));
+    }
+
+    private static void writeArguments(DSLContext dsl, List<Placed<Argument>> arguments,
+                                       LocalDateTime readAt) {
         var a = FEDERATION_VERSION_DIRECTIVE_ARGUMENT;
-        for (var argument : definition.arguments()) {
-            dsl.insertInto(a, a.SOURCE_NAME, a.VERSION, a.NAME, a.ARGUMENT_NAME, a.ORDINAL, a.TYPE_SDL,
-                    a.NAMED_TYPE, a.NON_NULL, a.IS_LIST, a.ITEM_NON_NULL, a.DEFAULT_VALUE_SDL,
-                    a.DESCRIPTION)
-                .values(SOURCE_NAME, version, definition.name(), argument.name(), argument.ordinal(),
-                    argument.typeSdl(), argument.namedType(), argument.nonNull(), argument.isList(),
-                    argument.itemNonNull(), argument.defaultValueSdl(), argument.description())
-                .execute();
-        }
+        var rows = arguments.stream().collect(Rows.toRowList(
+            p -> val(SOURCE_NAME, a.SOURCE_NAME),
+            p -> val(p.version(), a.VERSION),
+            p -> val(p.definition().name(), a.NAME),
+            p -> val(p.item().name(), a.ARGUMENT_NAME),
+            p -> val(p.item().ordinal(), a.ORDINAL),
+            p -> val(p.item().typeSdl(), a.TYPE_SDL),
+            p -> val(p.item().namedType(), a.NAMED_TYPE),
+            p -> val(p.item().nonNull(), a.NON_NULL),
+            p -> val(p.item().isList(), a.IS_LIST),
+            p -> val(p.item().itemNonNull(), a.ITEM_NON_NULL),
+            p -> val(p.item().defaultValueSdl(), a.DEFAULT_VALUE_SDL),
+            p -> val(p.item().description(), a.DESCRIPTION),
+            p -> val(readAt, a.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(a, a.SOURCE_NAME, a.VERSION, a.NAME, a.ARGUMENT_NAME, a.ORDINAL,
+                    a.TYPE_SDL, a.NAMED_TYPE, a.NON_NULL, a.IS_LIST, a.ITEM_NON_NULL,
+                    a.DEFAULT_VALUE_SDL, a.DESCRIPTION, a.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(a.ORDINAL, excluded(a.ORDINAL))
+                .set(a.TYPE_SDL, excluded(a.TYPE_SDL))
+                .set(a.NAMED_TYPE, excluded(a.NAMED_TYPE))
+                .set(a.NON_NULL, excluded(a.NON_NULL))
+                .set(a.IS_LIST, excluded(a.IS_LIST))
+                .set(a.ITEM_NON_NULL, excluded(a.ITEM_NON_NULL))
+                .set(a.DEFAULT_VALUE_SDL, excluded(a.DEFAULT_VALUE_SDL))
+                .set(a.DESCRIPTION, excluded(a.DESCRIPTION))
+                .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT)));
+    }
+
+    private static void writeLocations(DSLContext dsl, List<Placed<String>> locations,
+                                       LocalDateTime readAt) {
         var l = FEDERATION_VERSION_DIRECTIVE_LOCATION;
-        for (String location : definition.locations()) {
-            dsl.insertInto(l, l.SOURCE_NAME, l.VERSION, l.NAME, l.LOCATION)
-                .values(SOURCE_NAME, version, definition.name(), location)
-                .execute();
-        }
-        if (definition.importable()) {
-            var i = FEDERATION_VERSION_IMPORT;
-            dsl.insertInto(i, i.SOURCE_NAME, i.VERSION, i.NAME)
-                .values(SOURCE_NAME, version, definition.name())
-                .execute();
-        }
+        var rows = locations.stream().collect(Rows.toRowList(
+            p -> val(SOURCE_NAME, l.SOURCE_NAME),
+            p -> val(p.version(), l.VERSION),
+            p -> val(p.definition().name(), l.NAME),
+            p -> val(p.item(), l.LOCATION),
+            p -> val(readAt, l.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(l, l.SOURCE_NAME, l.VERSION, l.NAME, l.LOCATION, l.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(l.TOUCHED_AT, excluded(l.TOUCHED_AT)));
+    }
+
+    private static void writeImports(DSLContext dsl, List<Placed<Definition>> importable,
+                                     LocalDateTime readAt) {
+        var i = FEDERATION_VERSION_IMPORT;
+        var rows = importable.stream().collect(Rows.toRowList(
+            p -> val(SOURCE_NAME, i.SOURCE_NAME),
+            p -> val(p.version(), i.VERSION),
+            p -> val(p.item().name(), i.NAME),
+            p -> val(readAt, i.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(i, i.SOURCE_NAME, i.VERSION, i.NAME, i.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(i.TOUCHED_AT, excluded(i.TOUCHED_AT)));
+    }
+
+    /**
+     * Deletes the library's rows this reading did not write, parents first: a version or definition
+     * the library dropped takes its rows with it by cascade, and the children's own sweeps take what
+     * a surviving definition stopped declaring.
+     */
+    private static void sweep(DSLContext dsl, LocalDateTime readAt) {
+        var v = FEDERATION_VERSION;
+        dsl.deleteFrom(v).where(v.SOURCE_NAME.eq(SOURCE_NAME)).and(v.TOUCHED_AT.ne(readAt)).execute();
+        var d = FEDERATION_VERSION_DEFINITION;
+        dsl.deleteFrom(d).where(d.SOURCE_NAME.eq(SOURCE_NAME)).and(d.TOUCHED_AT.ne(readAt)).execute();
+        var a = FEDERATION_VERSION_DIRECTIVE_ARGUMENT;
+        dsl.deleteFrom(a).where(a.SOURCE_NAME.eq(SOURCE_NAME)).and(a.TOUCHED_AT.ne(readAt)).execute();
+        var l = FEDERATION_VERSION_DIRECTIVE_LOCATION;
+        dsl.deleteFrom(l).where(l.SOURCE_NAME.eq(SOURCE_NAME)).and(l.TOUCHED_AT.ne(readAt)).execute();
+        var i = FEDERATION_VERSION_IMPORT;
+        dsl.deleteFrom(i).where(i.SOURCE_NAME.eq(SOURCE_NAME)).and(i.TOUCHED_AT.ne(readAt)).execute();
+    }
+
+    /** Something read under one version and one definition: the definition itself or a part of it. */
+    private record Placed<T>(String version, Definition definition, T item) {}
+
+    /** The library's versions, probed once per loaded library, the answer being the jar's alone. */
+    private static final class Library {
+        static final List<Version> VERSIONS = versions();
     }
 
     /** One version the library supports, and what it brings into a schema that links it. */
