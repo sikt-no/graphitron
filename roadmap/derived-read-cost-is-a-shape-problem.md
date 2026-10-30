@@ -415,14 +415,18 @@ static method needs no holder.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **The outbox on a service is modelled before it is built** `open`. The admission, the `$result`
-    leaves over a returned value and their defects are written down as relations with their grains,
-    keys and readers, in the store's own terms, and reviewed before either node below changes code.
-  * **A `@service` mutation is a write the outbox admits** `blocked`, on "The outbox on a service is modelled before it is built".
+  * **The outbox on a service is modelled before it is built** `done`. A top-level `@service` field
+    on the mutation root is a write: `graphitron_producer` and `graphql_root_operation` already say
+    so, and the `OUTBOX_NOT_A_WRITE` arm reads them beside `graphitron_producer_write`, with no new
+    relation. A `$result` over a returned value is a `graphitron_outbox_leaf` of kind `RESULT_MEMBER`,
+    or `RESULT_NODE_ID` ending on a node id over a record of the node's table, with its steps in a
+    child relation `graphitron_outbox_leaf_step` naming each GraphQL field and its `code_read_slot`
+    or the carrier's pass-through; a member a payload cannot carry is `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`.
+  * **A `@service` mutation is a write the outbox admits** `open`.
     `graphitron_producer_write` states only a `@mutation`'s INSERT, UPDATE or DELETE, so an
     `@outbox` on a `@service` field draws `OUTBOX_NOT_A_WRITE`; the store states which `@service`
     fields are writes, and the outbox admits them.
-  * **A service's `$result` is read off its returned value** `blocked`, on "The outbox on a service is modelled before it is built".
+  * **A service's `$result` is read off its returned value** `open`.
     A `$result` path resolves step by step over the class the service returns, through
     `graphitron_carrier_data_channel` where the object passes through a payload's data field, then
     `graphitron_type_backing` and the class's `code_read_slot` accessors, a record of a node's table
