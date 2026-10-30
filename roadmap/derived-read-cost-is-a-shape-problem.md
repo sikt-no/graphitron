@@ -420,6 +420,19 @@ pass and no stratum that clears and recomputes.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
     `InputOccurrencePaths` and `AuthoredClaimRejectionRows` go with the relations they write.
 * **`FactSink` and `FactWrites` are gone, each writer stating its own insert** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". A capture site builds a generated record, sets one column at a time and hands it to a sink that assembles the insert at run time, with `FactWrites` overriding that for thirteen relations; the statement a writer issues is nowhere in its source. Twenty-nine relations still arrive that way: the legacy `graphitron_*_entry` decodes from `GraphitronFactCapture`, which leave with their node, then the schema inputs and extensions from `SdlFactCapture` and `SdlCoordinates`, the configuration from `StoredRecipe`, the Java declarations from `EmittedRegistry`, the build warnings, rejections, lint findings and javac diagnostics, and the `sql_` catalog from `JooqFactCapture`. Each writes through its own statement instead, set-based where it reads the store and bound once per row through `BindBatch` where it reads a corpus, the shape `GraphQLAstEntries` writes in. It absorbs R701, which stated the same end from the column side.
+* **The federation capture writes in the capture's shape, marked and swept** `open`.
+  `FederationCapture` predates that shape. It issues one `insertInto(...).values(...).execute()`
+  per row, and replaces a changed library by deleting its `federation_version` rows and letting
+  the cascade empty the five relations under them. A store with no stamp for the jar, which is
+  every fresh store, reads the library whole, probing each name of each version through an SDL
+  parse and the library's link processor (`FederationCapture.importable`). Measured over
+  `GraphitronStoreTest`: 8,570 of its 12,138 statement executions are these single-row inserts,
+  and `FederationCapture` is about 11% of the `graphitron` test phase's execution samples, 9% of
+  them the probing. Each relation's rows are collected and written through `BindBatch`, as
+  `GraphitronTypeEntries` writes them; the five `federation_version*` relations gain `touched_at`
+  and are marked and swept like `graphitron_federation_definition`, so a version or definition the
+  library dropped goes by the sweep rather than by deleting everything first; and the probing runs
+  once per loaded library, its answer being a function of the jar alone.
 
 ### `capture` runs against the model alone `done`
 
