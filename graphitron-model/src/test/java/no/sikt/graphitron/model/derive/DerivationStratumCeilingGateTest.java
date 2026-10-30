@@ -24,11 +24,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DerivationStratumCeilingGateTest {
 
-    /** Relations {@link DerivationStratum#steps} writes on 2026-10-30, over 20 steps. */
-    private static final int WRITTEN_CEILING = 23;
+    /** Relations {@link DerivationStratum#steps} writes on 2026-10-30, over 19 steps. */
+    private static final int WRITTEN_CEILING = 22;
 
     /** {@code meta_relation} rows owned by {@code derivation} on 2026-10-30. */
-    private static final int OWNED_CEILING = 15;
+    private static final int OWNED_CEILING = 14;
 
     private static final String WHERE_INSTEAD = "the derivation gatherer is dissolving: a new derivation "
         + "goes in the anchor phase of the gatherer that owns what it reads, marked and swept "

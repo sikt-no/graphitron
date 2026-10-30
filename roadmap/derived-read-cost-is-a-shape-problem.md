@@ -471,13 +471,9 @@ pass and no stratum that clears and recomputes.
   below and on "Nothing resolves a path but the walk".
   * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
     `NodeIdCandidates`, `SpelledTables` and `ResolvedTypeBindings`; the path steps go with the walk.
-* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the five below.
+* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the four below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
-  * **A session handle's members are a view** `open`. `graphitron_session_handle_member` is a join
-    of the configured handle, the graph's sources and `code_read_slot`, so its rule takes the
-    relation's name and `SessionHandleMembers` goes. Its readers read the same name: the session
-    identity rows and defects, and the outbox-leaf, argMapping pair-defect and entry-defect rules.
   * **The outbox targets are views** `open`. `graphitron_outbox_target` and
     `graphitron_outbox_routine_target` read only the configuration and the catalog, one row per
     graph, so each `_rule` view takes its relation's name and `OutboxTargets` and

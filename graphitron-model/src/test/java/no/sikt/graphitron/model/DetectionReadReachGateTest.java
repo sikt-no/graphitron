@@ -157,8 +157,10 @@ class DetectionReadReachGateTest {
         REACH.put("DefaultPageSizeDefects", Set.of());
 
         // The stored session defects, a configured handle class's class row and the mapping
-        // strings' sites: every relation it names is a table.
-        REACH.put("SessionIdentityDefects", Set.of());
+        // strings' sites are tables; the handle's members are a view, the one join that states
+        // them, which lists the offered members for a message in about a millisecond on sis.
+        REACH.put("SessionIdentityDefects", Set.of(
+            "graphitron_session_handle_member"));
 
         // The legacy key shape's verdicts and its positive half are both stored by the stage that
         // evaluates the rules, so reading either back expands no rule.

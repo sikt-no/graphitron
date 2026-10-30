@@ -11093,30 +11093,31 @@ SELECT x.graph_name, x.source_name, x.table_schema, x.table_name, x.type_column,
    AND x.payload_type IN ('ORG.JOOQ.JSON', 'ORG.JOOQ.JSONB', 'JAVA.LANG.STRING');
 COMMENT ON VIEW graphitron_outbox_target_rule IS 'One row the outbox-target rule computes, in the shape graphitron_outbox_target stores: the rule itself, evaluated on demand rather than read off disk. For example the derivation inserts this view''s row for one graph into graphitron_outbox_target, which is the name every reader spells.';
 
-CREATE TABLE graphitron_session_handle_member (
-  graph_name  VARCHAR NOT NULL,
-  member_name VARCHAR NOT NULL,
-  source_name VARCHAR NOT NULL,
-  class_name  VARCHAR NOT NULL,
-  method_name VARCHAR NOT NULL,
-  descriptor  VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, member_name, source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_session_handle (graph_name) ON DELETE CASCADE,
-  -- The accessor the member is read through, so a member cannot outlive the class file that
-  -- offered it, and what reading it yields is the slot's, not a copy held here.
-  FOREIGN KEY (source_name, class_name, method_name, descriptor)
-    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_session_handle_member IS 'One accessor of the class a graph names as its session handle, under the property name an author writes after $session. For example a handle record with components brukerId and sokerId draws two rows, and a class offering getTitle and isTitle draws two rows under one name.';
-COMMENT ON COLUMN graphitron_session_handle_member.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_handle';
-COMMENT ON COLUMN graphitron_session_handle_member.member_name IS 'the property the accessor offers, which is what $session.<member> names; deliberately not unique within a graph, two accessors for one property being two rows, which a defect reports at the binding that names it';
-COMMENT ON COLUMN graphitron_session_handle_member.source_name IS 'the entry the handle class was read from, the leading dimension of the slot''s key';
-COMMENT ON COLUMN graphitron_session_handle_member.class_name IS 'the handle class, the class the slot is offered by';
-COMMENT ON COLUMN graphitron_session_handle_member.method_name IS 'the accessor, with the descriptor the key of the slot it reads through';
-COMMENT ON COLUMN graphitron_session_handle_member.descriptor IS 'the accessor''s descriptor, completing the slot''s key';
+CREATE VIEW graphitron_session_handle_member
+  (graph_name, member_name, source_name, class_name, method_name, descriptor) AS
+-- The join is the whole of the rule: the handle class the graph configures, read from one of the
+-- graph's own sources, and the slots that class declares itself. declaring_class = class_name keeps
+-- the accessors a jOOQ record handle's generated class declares and not the Record API beneath them;
+-- the classpath reading writes only those for a handle class, but the rule belongs to this relation
+-- and not to how the reading reached it. The slot is the accessor the member is read through, so
+-- what reading it yields is the slot's, not a copy held here.
+SELECT handle.graph_name, slot.slot_name, slot.source_name, slot.class_name, slot.method_name,
+       slot.descriptor
+  FROM store_graph_session_handle handle
+  JOIN store_graph_source source ON source.graph_name = handle.graph_name
+  JOIN code_read_slot slot
+    ON slot.source_name = source.source_name AND slot.class_name = handle.handle_class
+ WHERE slot.declaring_class = slot.class_name;
+COMMENT ON VIEW graphitron_session_handle_member IS 'One accessor of the class a graph names as its session handle, under the property name an author writes after $session. For example a handle record with components brukerId and sokerId draws two rows, and a class offering getTitle and isTitle draws two rows under one name.';
+-- COMMENT ON COLUMN graphitron_session_handle_member.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_handle';
+-- COMMENT ON COLUMN graphitron_session_handle_member.member_name IS 'the property the accessor offers, which is what $session.<member> names; deliberately not unique within a graph, two accessors for one property being two rows, which a defect reports at the binding that names it';
+-- COMMENT ON COLUMN graphitron_session_handle_member.source_name IS 'the entry the handle class was read from, the leading dimension of the slot''s key';
+-- COMMENT ON COLUMN graphitron_session_handle_member.class_name IS 'the handle class, the class the slot is offered by';
+-- COMMENT ON COLUMN graphitron_session_handle_member.method_name IS 'the accessor, with the descriptor the key of the slot it reads through';
+-- COMMENT ON COLUMN graphitron_session_handle_member.descriptor IS 'the accessor''s descriptor, completing the slot''s key';
 
 -- The outbox leaf rule sits here, after the session handle's members, because it reads them: the view
--- needs the table it names to exist when it is created.
+-- needs the relation it names to exist when it is created.
 CREATE VIEW graphitron_outbox_leaf_rule
   (graph_name, type_name, field_name, ordinal, key_name, origin, position, source_kind,
    source_path, column_name, node_type_name) AS
@@ -17581,7 +17582,7 @@ INSERT INTO meta_relation VALUES
    'The class a graph''s session mount returns, as its build named it in <sessionState><handle>.',
    'For example a build naming com.example.Identity is one row reading that name, and a build whose mount returns nothing has none.',
    'Configuration rather than a reading: only the authored name lands here, and what the class offers is derived from the classpath corpus, so the members a $session binding may name are rows that cite the class files and not a value only the generator holds. A child of store_graph_session_supplied rather than a nullable column on it, after the unmount relation it replaces: row presence is the fact, and a handle without the switch is unwritable by the foreign key.'),
-  ('graphitron_session_handle_member', 'session-handle-member', 'derivation',
+  ('graphitron_session_handle_member', 'session-handle-member', 'graphitron',
    'One accessor of the class a graph names as its session handle, under the property name an author writes after $session.',
    'For example a handle record with components brukerId and sokerId draws two rows, and a class offering getTitle and isTitle draws two rows under one name.',
    'Derived from the configured handle row and the class the classpath corpus read, so what $session.<member> may name is a row an author''s binding can be checked against rather than a reflection result only the generator holds. The members are the slots the class declares itself, not the ones it inherits: a jOOQ record handle offers the two accessors its generated class declares, not the Record API beneath them. Kept as one row per accessor, so two accessors for one property are visible as such and the binding that names it is the defect, instead of the class being refused for a member nobody reads.'),

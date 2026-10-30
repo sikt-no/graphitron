@@ -105,9 +105,6 @@ public final class DerivationStratum {
                 NodeIdDecodeHopColumns::derive),
             step("NodeIdDecodeColumns", "graphitron_node_id_decode_column",
                 NodeIdDecodeColumns::derive),
-            step("SessionHandleMembers", "graphitron_session_handle_member",
-                SessionHandleMembers::derive),
-            // After the session handle's members: a leaf that reads a $session member reads them.
             step("OutboxLeaves", "graphitron_outbox_leaf", OutboxLeaves::derive),
             step("OutboxTargets", "graphitron_outbox_target", OutboxTargets::derive),
             step("OutboxRoutineTargets", "graphitron_outbox_routine_target",
