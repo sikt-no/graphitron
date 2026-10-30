@@ -7821,7 +7821,7 @@ class GraphQLQueryTest {
             .element(0, as(MAP));
         only.containsEntry("__typename", "RentFilmConstraintViolation");
         only.extractingByKey("path", as(LIST))
-            .containsExactly("rentFilmPayload", "errors", "0", "path");
+            .containsExactly("rentFilmPayload");
         only.extractingByKey("message", as(STRING))
             .containsIgnoringCase("foreign key");
         assertThat(rentalCount(999999, 3))
@@ -9061,14 +9061,12 @@ class GraphQLQueryTest {
         // what the encode is of, the two fields being one value in two forms.
         only.containsEntry("attemptedFilm",
             no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", -7));
-        // Synthesized path DataFetcher routes Throwable sources through
-        // env.getExecutionStepInfo().getPath().toList() so the [String!]! contract holds even
-        // though Throwable has no getPath() accessor. The path is the SDL field path of the
-        // path-field's own resolution (filmLookup → errors → 0 → path); list indices are
-        // String::valueOf-coerced so the [String!]! contract holds for graphql-java's mixed
-        // String/Integer path elements.
+        // Synthesized path DataFetcher answers a Throwable source with the response path of the
+        // field whose payload holds the error, so the [String!]! contract holds even though
+        // Throwable has no getPath() accessor, and the client reads which field the error
+        // belongs to rather than where it is reading.
         only.extractingByKey("path", as(LIST))
-            .containsExactly("filmLookup", "errors", "0", "path");
+            .containsExactly("filmLookup");
         // FilmLookupInvalid's handler is the one in this union carrying description:, so the
         // message DataFetcher's dispatch-table walk matches the source and returns the authored
         // string instead of the exception's own "invalid id: -7". The `attempted` assertion above
@@ -9102,9 +9100,10 @@ class GraphQLQueryTest {
             .element(0, as(MAP));
         only.containsEntry("__typename", "FilmLookupClientFacing");
         only.containsEntry("message", "The film lookup was refused.");
-        // The source implements GraphQLError, so `path` resolves through that arm rather than the
-        // synthesised execution path; getPath() is null on this fixture, which renders as [].
-        only.extractingByKey("path", as(LIST)).isEmpty();
+        // The source implements GraphQLError, but getPath() is null on this fixture, so `path`
+        // answers the holder of the error like any Throwable source: the field whose payload
+        // carries it.
+        only.extractingByKey("path", as(LIST)).containsExactly("filmLookup");
     }
 
     @Test
@@ -9365,7 +9364,7 @@ class GraphQLQueryTest {
         // pair is what proves the override is per-handler rather than per-channel.
         only.containsEntry("message", "film 0 not found");
         only.extractingByKey("path", as(LIST))
-            .containsExactly("filmLookup", "errors", "0", "path");
+            .containsExactly("filmLookup");
     }
 
     @Test
@@ -9427,7 +9426,7 @@ class GraphQLQueryTest {
         only.containsEntry("__typename", "FilmReviewBadRating");
         only.containsEntry("message", "rating must be in [1, 10]; got 11");
         only.extractingByKey("path", as(LIST))
-            .containsExactly("submitFilmReview", "errors", "0", "path");
+            .containsExactly("submitFilmReview");
     }
 
     @Test
@@ -9455,7 +9454,7 @@ class GraphQLQueryTest {
         only.containsEntry("__typename", "FilmReviewMissingFilm");
         only.containsEntry("message", "film 999 not found");
         only.extractingByKey("path", as(LIST))
-            .containsExactly("submitFilmReview", "errors", "0", "path");
+            .containsExactly("submitFilmReview");
     }
 
     @Test
@@ -9681,7 +9680,7 @@ class GraphQLQueryTest {
         only.containsEntry("__typename", "FilmReviewBadRating");
         only.containsEntry("message", "rating must be in [1, 10]; got 11");
         only.extractingByKey("path", as(LIST))
-            .containsExactly("submitFilmReviewWithFilm", "errors", "0", "path");
+            .containsExactly("submitFilmReviewWithFilm");
     }
 
     // ===== Source-record carrier with an error channel end-to-end =====
@@ -10054,15 +10053,87 @@ class GraphQLQueryTest {
             .hasSize(1)
             .element(0, as(MAP));
         only.containsEntry("__typename", "FilmCreateConstraintViolation");
-        // Path follows the same convention as the @service mutation tests: full coordinate path
-        // through the union element.
+        // Path follows the same convention as the @service mutation tests: the field whose
+        // payload carries the error.
         only.extractingByKey("path", as(LIST))
-            .containsExactly("createFilmWithErrors", "errors", "0", "path");
+            .containsExactly("createFilmWithErrors");
         // Message routes through Throwable.getMessage(); jOOQ wraps the PG message which names
         // the violated FK constraint. Liberal contains() check insulates against PG-version
         // formatting drift.
         only.extractingByKey("message", as(STRING))
             .containsIgnoringCase("foreign key");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmWithErrors_aliased_pathNamesTheAlias() {
+        // path is the response path of the field holding the payload, so an aliased field
+        // answers its alias, the key the client reads the payload under.
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                made: createFilmWithErrors(in: { title: "R12-LC-FK-ERR", languageId: 99999 }) {
+                    film { title }
+                    errors {
+                        ... on FilmCreateConstraintViolation { path }
+                    }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data).extractingByKey("made", as(MAP))
+            .extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP))
+            .extractingByKey("path", as(LIST))
+            .containsExactly("made");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void childServicePayload_underAList_pathNamesTheChildFieldWithTheFilmsIndex() {
+        // Film.titleCheck is a child @service whose payload carries an errors field. Its batch
+        // holds both films and throws for film 3, so each film's payload answers the error; the
+        // path is the response path of the payload-holding field, so it carries the list index of
+        // the film it hangs off rather than a fixed depth.
+        graphql.ExecutionResult result = executeRaw("""
+            {
+                filmById(film_id: ["1", "3"]) {
+                    titleCheck {
+                        title
+                        errors { ... on FilmLookupNotFound { path message } }
+                    }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var films = assertThat(data).extractingByKey("filmById", as(list(Map.class))).hasSize(2);
+        for (int i = 0; i < 2; i++) {
+            var check = films.element(i, as(MAP)).extractingByKey("titleCheck", as(MAP));
+            check.containsEntry("title", null);
+            var only = check.extractingByKey("errors", as(list(Map.class)))
+                .hasSize(1)
+                .element(0, as(MAP));
+            only.containsEntry("message", "film 3 refused the title check");
+            only.extractingByKey("path", as(LIST))
+                .containsExactly("filmById", String.valueOf(i), "titleCheck");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void childServicePayload_successArm_readsThePayload() {
+        // The success arm of the fixture above: a batch without film 3 returns the payload and
+        // the errors field resolves null.
+        Map<String, Object> data = execute("""
+            { filmById(film_id: ["1"]) { titleCheck { title errors { __typename } } } }
+            """);
+        var check = assertThat(data).extractingByKey("filmById", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .extractingByKey("titleCheck", as(MAP));
+        check.containsEntry("title", "checked 1");
+        check.containsEntry("errors", null);
     }
 
     @Test

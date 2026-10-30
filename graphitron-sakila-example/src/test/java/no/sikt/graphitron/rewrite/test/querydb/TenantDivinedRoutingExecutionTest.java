@@ -506,7 +506,7 @@ class TenantDivinedRoutingExecutionTest {
         // payload, with a null data field and no top-level error, before any tenant is opened.
         var result = execute("mutation { retitleFilmsClaimed(in: [{ id: \""
             + NodeIdEncoder.encodeFilm(2) + "\", title: \"Never Written\" }])"
-            + " { films { title } errors { __typename ... on FilmWriteClientError { message } } } }",
+            + " { films { title } errors { __typename ... on FilmWriteClientError { path message } } } }",
             List.of(1));
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("retitleFilmsClaimed");
@@ -516,6 +516,9 @@ class TenantDivinedRoutingExecutionTest {
             .satisfies(error -> {
                 assertThat(error.get("__typename")).isEqualTo("FilmWriteClientError");
                 assertThat(error.get("message")).isEqualTo("Tenant '2' is not permitted for this request.");
+                // The client exception is a GraphQLError built without a path of its own, so path
+                // answers the field whose payload holds it.
+                assertThat(error.get("path")).isEqualTo(List.of("retitleFilmsClaimed"));
             });
         assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
     }
@@ -1177,7 +1180,7 @@ class TenantDivinedRoutingExecutionTest {
     void dmlPayload_aClaimedClientError_isNotReadThroughClientErrorMessage() {
         var result = executeReworded("mutation { retitleFilmsClaimed(in: [{ id: \""
             + NodeIdEncoder.encodeFilm(2) + "\", title: \"Never Written\" }])"
-            + " { films { title } errors { __typename ... on FilmWriteClientError { message } } } }",
+            + " { films { title } errors { __typename ... on FilmWriteClientError { path message } } } }",
             List.of(1));
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("retitleFilmsClaimed");

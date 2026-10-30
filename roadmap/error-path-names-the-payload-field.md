@@ -1,7 +1,7 @@
 ---
 id: R1126
 title: "A matched error's path names the field that owns the payload"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: error-channel
@@ -96,6 +96,12 @@ All in the execution tier (`graphitron-sakila-example`, real PostgreSQL), since 
 * New, aliased: `createFilmWithErrors` under an alias (`made: createFilmWithErrors(...)`) answers `["made"]`.
 * New, nested under a list: no sakila fixture has a payload with an errors field below the root (every carrier is a `Query` or `Mutation` field). Add one child `@service` on `Film` returning a small payload with an errors union, its service throwing a mapped exception for one film id, modelled on an existing child `@service` fixture in `graphitron-sakila-service`. Querying it through a list of films asserts `["<rootField>", "<i>", "<childField>"]`, which pins the index segment and the walk past a non-root holder. A child carrier with an errors field must return a single payload (`FieldBuilder.buildMethodBackedWithChannel` rejects a list), so the fixture's field is single-valued.
 * Unchanged, and kept as the pin that a `GraphQLError`'s own path wins: the validation case (`["countFilmDrafts", "in", "1", "title"]`) and the three character-length cases (`createFilmWithErrors`, `createFilmsWithErrors`, `updateFilmWithErrors`).
+
+## Implementation notes
+
+* The nested fixture is `Film.titleCheck: FilmTitleCheckPayload` (`FilmTitleCheckService.check`, payload record `FilmTitleCheckPayload`), reusing the `FilmLookupError` union so `FilmLookupNotFound` claims what it throws. A child `@service` is batched, so the throw for film 3 fails the whole batch: `GraphQLQueryTest.childServicePayload_underAList_pathNamesTheChildFieldWithTheFilmsIndex` queries `filmById(film_id: ["1", "3"])` and asserts each element's error answers its own index (`["filmById", "0", "titleCheck"]`, `["filmById", "1", "titleCheck"]`), which pins a non-zero index too. `childServicePayload_successArm_readsThePayload` covers the arm without film 3.
+* The aliased case is `createFilmWithErrors_aliased_pathNamesTheAlias`.
+* Beyond the spec's Docs list, `docs/architecture/reference/code-generation-triggers.adoc` described `path` as "the SDL position the error fired at"; that sentence now states the holder rule and the own-path precedence.
 
 ## Out of scope
 

@@ -136,14 +136,9 @@ Since it is per handler, only entries that can *match* carry one. A `{handler: V
 
 Every `@error` type's `path: [String!]!` and `message: String!` slots get synthesised data fetchers. The slots are matched by *name*; an `@error` type without one of them is rejected at classify time.
 
-`path:` reads the GraphQL execution step path for non-validation sources (`ErrorTypeFetcherClassGenerator.pathMethod`; the schema class only wires the `<ErrorType>Fetchers::path` reference):
+`path:` answers the response path of the field whose payload holds the error (`ErrorTypeFetcherClassGenerator.pathMethod`; the schema class only wires the `<ErrorType>Fetchers::path` reference). It uses the field's alias when the query gives one, and carries a list index when the payload hangs off an element of a list: a child `@service` payload under the second of a list of films answers `["films", "1", "<childField>"]`.
 
-[source,java]
-----
-return env.getExecutionStepInfo().getPath().toList().stream().map(String::valueOf).toList();
-----
-
-For `VALIDATION` sources (which are `GraphQLError` instances pre-built by the Bean-Validation wrapper), `path:` reads from the error itself — `ge.getPath().stream().map(String::valueOf).toList()` — so the per-element constraint paths recorded by `ConstraintViolations.toGraphQLError` survive intact.
+A `GraphQLError` that carries its own path keeps it. Two producers build one: Bean Validation (`ConstraintViolations.toGraphQLError` records each violation's input path) and the column-length check before a `@mutation` write (see above), so their per-element input paths survive intact. A `GraphQLError` with no path, such as graphitron's own `GraphitronClientException` claimed by a handler, answers the holder like any other exception.
 
 The path is the GraphQL *response* path, not the mutation argument path. For:
 
@@ -152,7 +147,7 @@ The path is the GraphQL *response* path, not the mutation argument path. For:
 mutation { createFilm(input: {...}) { film { title } errors { path message } } }
 ----
 
-an exception thrown by `createFilm` and matched into `errors[0]` produces `path: ["createFilm"]` (or `["createFilm", "<some-subfield>"]` if the throw happened during nested resolution). To convey *which input field* triggered the error, encode that into the exception itself (the constraint or the validation-handler payload) and surface it through `message:` or a custom field on the error type.
+an exception thrown by `createFilm` and matched into `errors[0]` produces `path: ["createFilm"]`. To convey *which input field* triggered the error, encode that into the exception itself (the constraint or the validation-handler payload) and surface it through `message:` or a custom field on the error type.
 
 `message:` resolves in two steps, in this order:
 
@@ -313,7 +308,7 @@ With `graphitron-jakarta-rest`, a fault thrown while building the execution inpu
 
 * *Source order is significant.* Declare narrow handlers (with `matches:` substrings, more specific `className:` subclasses) before broad ones. The first match wins, not the most specific.
 * *`description:` changes `message:` and nothing else.* It does not move an error between union members, and it does not affect the extra fields, which keep reading the live exception. If you need the whole error shaped differently, that is a different `@error` type, not a description.
-* *`path:` is the response path.* If you need to point at an input argument, encode it in the exception or in a custom field on the error type. The synthesised fetcher reads `env.getExecutionStepInfo().getPath()` and can't distinguish argument positions.
+* *`path:` is the response path.* If you need to point at an input argument, encode it in the exception or in a custom field on the error type.
 * *`VALIDATION` runs pre-execution, on the classes you bind.* The Bean-Validation handler intercepts before the service method runs, checking the constraints on the records and beans its parameters receive (a scalar argument is not checked; see <<bean-validation,Bean Validation>>), and the <<column-length-check,column-length check>> before a payload-returning `@mutation` writes; their results bypass the dispatch loop and route straight into the errors field. There's at most one `VALIDATION` handler per channel.
 * *Cause-chain unwrap is per mapping, not per source-order step.* If a wrapping exception declares a handler at the channel and the wrapped exception declares a different one, the *wrapping* exception wins for any mapping it matches first — even if the wrapped exception would match a later mapping more specifically. Keep handler tuples disjoint across the wrap boundary.
 * *A catch-all can leak.* A broad handler without `description:` returns the exception's own message, jOOQ's SQL text included, unless a `matchedMessage` replaces it; see <<fetcher-error-response,Choosing what the client reads>>.

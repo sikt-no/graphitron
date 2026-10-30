@@ -352,9 +352,10 @@ include::_example-error-type.adoc[]
 
 `path` and `message` are required on every `@error` type, and graphitron supplies both values itself.
 That is why each gets a generated method taking the `DataFetchingEnvironment` rather than a source
-object: `path` synthesises from the execution context's path, the SDL position the error fired at
-(a validation-derived source routes through `GraphQLError.getPath()` instead, so the per-element
-paths survive), and `message` resolves at build time to the handler's `description:` when the author
+object: `path` synthesises from the execution context, the response path of the field whose
+payload holds the error (a `GraphQLError` carrying its own path, as a validation-derived source
+does, routes through `GraphQLError.getPath()` instead, so the per-element paths survive), and
+`message` resolves at build time to the handler's `description:` when the author
 wrote one and to the source's `getMessage()` when they did not.
 
 Any field beyond those two is the author's. `severity` is one, and its row reads `no method of its

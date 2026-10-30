@@ -1741,6 +1741,13 @@ type FilmLookupPayload {
     errors: [FilmLookupError]
 }
 
+# The payload of the child Film.titleCheck: reuses FilmLookupError, whose FilmLookupNotFound member
+# claims what FilmTitleCheckService throws.
+type FilmTitleCheckPayload {
+    title: String
+    errors: [FilmLookupError]
+}
+
 # A {handler: VALIDATION} channel on its own payload, kept off the dispatch fixtures above. Its
 # field binds no class, so nothing is validated; its point is the emitted message() body's
 # GraphQLError arm: the validation path puts GraphQLError instances in the errors slot which need
@@ -2937,6 +2944,14 @@ type Film implements Node & Searchable @table(name: "film") @node {
     languageByService: Language @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",
         method: "languageByService"
+    })
+    # A child @service on the error channel: its payload carries an errors field, so a matched
+    # exception lands below a list of films rather than in a root field's payload, and the error's
+    # path names this field with the index of the film it hangs off. Single-valued, as a child
+    # carrier with an errors field must be. See FilmTitleCheckService.
+    titleCheck: FilmTitleCheckPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmTitleCheckService",
+        method: "check"
     })
     # R311 child coordinate: a child @service whose rows-method takes the parent keys (Sources) plus a
     # jOOQ FilmRecord arg against ModifyFilmRecordInput. enrich runs for child @service too, so the arg

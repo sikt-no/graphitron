@@ -35,8 +35,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1126` | A matched error's path names the field that owns the payload | In Progress | 2026-10-30 <sub>created 2026-10-29</sub> | [plan](error-path-names-the-payload-field.md) |
 | `R1098` | A graphitron-jakarta-rest subgraph writes only what is its own | In Review | 2026-10-29 <sub>created 2026-10-23</sub> | [plan](jakarta-rest-request-aware-execution-input.md) |
+| `R1126` | A matched error's path names the field that owns the payload | In Review | 2026-10-30 <sub>created 2026-10-29</sub> | [plan](error-path-names-the-payload-field.md) |
 | `R747` | Generated input records carry no constraint annotations, so the VALIDATION handler can never fire | In Review | 2026-10-30 <sub>created 2026-08-20</sub> | [plan](generated-input-records-carry-no-constraints.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
@@ -584,7 +584,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Backlog, bug
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
-- `R1126` [**A matched error's path names the field that owns the payload**](error-path-names-the-payload-field.md) — In Progress, bug
+- `R1126` [**A matched error's path names the field that owns the payload**](error-path-names-the-payload-field.md) — In Review, bug
 - `R747` [**Generated input records carry no constraint annotations, so the VALIDATION handler can never fire**](generated-input-records-carry-no-constraints.md) — In Review, architecture
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
 - `R778` [**Collapse the four verbatim copies of the CamelCase to SCREAMING_SNAKE transform**](screaming-snake-transform-single-spelling.md) — Backlog, cleanup

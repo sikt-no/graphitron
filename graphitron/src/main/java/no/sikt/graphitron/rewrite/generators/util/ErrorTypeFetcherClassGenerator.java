@@ -28,8 +28,14 @@ import java.util.List;
  * <p>An {@code @error} type declares the required {@code path: [String!]!} / {@code message: String!}
  * and may declare extra fields. The source object can be a {@code Throwable} (no
  * {@code getPath()}) or a {@code GraphQLError} (has {@code getPath()} / {@code getMessage()}).
- * {@code path} synthesises from the GraphQL execution context for non-{@code GraphQLError} sources
- * so the non-null contract holds regardless of handler kind. An extra field is read at runtime by
+ * {@code path} answers a {@code GraphQLError}'s own path when it carries a non-empty one (a
+ * validation violation or a column-length rejection, naming the input field). Any other source
+ * answers the response path of its holder: from the error object's step, list-element steps are
+ * stepped over up to the field that returned the error, and that field's parent is the holder, so
+ * an error in a payload's errors list answers the payload field's path, alias and list indices
+ * included. The walk reads only graphql-java's step info, so every shape an {@code @error} object
+ * can land in gets the one answer and the non-null contract holds regardless of handler kind.
+ * An extra field is read at runtime by
  * graphql-java's {@code PropertyDataFetcher} on its accessor base, registered by
  * {@code GraphitronSchemaClassGenerator} and not through this class, with one exception: a field
  * carrying {@code @nodeId} has to encode what that read yielded, and a bare
@@ -78,6 +84,7 @@ public final class ErrorTypeFetcherClassGenerator {
 
     private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
+    private static final ClassName STEP_INFO     = ClassName.get("graphql.execution", "ExecutionStepInfo");
     private static final ClassName THROWABLE     = ClassName.get(Throwable.class);
     private static final ClassName STRING_CN     = ClassName.get(String.class);
     private static final ClassName PROPERTY_FETCHER = ClassName.get("graphql.schema", "PropertyDataFetcher");
@@ -137,11 +144,15 @@ public final class ErrorTypeFetcherClassGenerator {
             .returns(Object.class)
             .addParameter(ENV, "env")
             .addStatement("Object src = env.getSource()")
-            .beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR)
-            .addStatement("return ge.getPath() == null ? java.util.List.of() : "
-                + "ge.getPath().stream().map($T::valueOf).toList()", STRING_CN)
+            .beginControlFlow("if (src instanceof $T ge && ge.getPath() != null && !ge.getPath().isEmpty())",
+                GRAPHQL_ERROR)
+            .addStatement("return ge.getPath().stream().map($T::valueOf).toList()", STRING_CN)
             .endControlFlow()
-            .addStatement("return env.getExecutionStepInfo().getPath().toList().stream()"
+            .addStatement("$T step = env.getExecutionStepInfo().getParent()", STEP_INFO)
+            .beginControlFlow("while (step.getPath().isListSegment())")
+            .addStatement("step = step.getParent()")
+            .endControlFlow()
+            .addStatement("return step.getParent().getPath().toList().stream()"
                 + ".map($T::valueOf).toList()", STRING_CN)
             .build();
     }
