@@ -11205,36 +11205,42 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin,
      OR (r.origin = 'MESSAGE' AND r.bound_to NOT LIKE '$%' AND ca.path IS NOT NULL));
 COMMENT ON VIEW graphitron_outbox_leaf_rule IS 'One row the outbox-leaf rule computes, in the shape graphitron_outbox_leaf stores: the rule itself, evaluated on demand rather than read off disk. For example the derivation inserts this view''s rows for one graph into graphitron_outbox_leaf, which is the name every reader spells.';
 
-CREATE TABLE graphitron_argmapping_parameter (
-  graph_name         VARCHAR NOT NULL,
-  source_name        VARCHAR NOT NULL,
-  source_line        INT     NOT NULL,
-  source_column      INT     NOT NULL,
-  position           INT     NOT NULL,
-  method_source_name VARCHAR NOT NULL,
-  method_class_name  VARCHAR NOT NULL,
-  method_name        VARCHAR NOT NULL,
-  method_descriptor  VARCHAR NOT NULL,
-  parameter_position INT     NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
-    REFERENCES graphitron_ast_argmapping_pair_entry (graph_name, source_name, source_line, source_column, position)
-    ON DELETE CASCADE,
-  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor, parameter_position)
-    REFERENCES code_method_parameter (source_name, class_name, method_name, descriptor, position)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_argmapping_parameter IS 'The Java parameter one written argMapping entry binds: the entry, and the parameter of the method its code reference resolved to that carries the name written on its left. For example the entry brukerId: $session.brukerId on a @service resolves to the parameter named brukerId of the one method the service names, and an entry whose method is overloaded, missing or compiled without -parameters has no row.';
-COMMENT ON COLUMN graphitron_argmapping_parameter.graph_name IS 'the owning graph''s partition, carried from the entry';
-COMMENT ON COLUMN graphitron_argmapping_parameter.source_name IS 'the file the mapping string was written in, the first of the four columns that are the entry''s key in graphitron_ast_argmapping_pair_entry';
-COMMENT ON COLUMN graphitron_argmapping_parameter.source_line IS 'source line of the mapping string, part of the entry''s key';
-COMMENT ON COLUMN graphitron_argmapping_parameter.source_column IS 'source column of the mapping string, part of the entry''s key';
-COMMENT ON COLUMN graphitron_argmapping_parameter.position IS 'the entry''s 0-based position within its own argMapping list, completing its key';
-COMMENT ON COLUMN graphitron_argmapping_parameter.method_source_name IS 'the entry the resolved method was read from, the leading dimension of the parameter''s key';
-COMMENT ON COLUMN graphitron_argmapping_parameter.method_class_name IS 'the class declaring the method the code reference resolved to';
-COMMENT ON COLUMN graphitron_argmapping_parameter.method_name IS 'the method the code reference resolved to';
-COMMENT ON COLUMN graphitron_argmapping_parameter.method_descriptor IS 'that method''s descriptor, which tells overloads apart';
-COMMENT ON COLUMN graphitron_argmapping_parameter.parameter_position IS 'the position in the method''s parameter list of the parameter whose name is the entry''s left side; what the parameter takes is the parameter row''s, not copied here';
+CREATE VIEW graphitron_argmapping_parameter
+  (graph_name, source_name, source_line, source_column, position, method_source_name,
+   method_class_name, method_name, method_descriptor, parameter_position) AS
+-- The join is the whole of the rule: an entry's string sits under a code reference, the reference
+-- resolves to the one method it names, and that method's parameters carry the names an entry
+-- targets. parameter_name is NULL where the class was compiled without -parameters, which never
+-- equals a name, so such an entry resolves nowhere. An entry that resolves nowhere has no row,
+-- which is what a defect anti-joins on.
+SELECT pair.graph_name, pair.source_name, pair.source_line, pair.source_column, pair.position,
+       parameter.source_name, parameter.class_name, parameter.method_name, parameter.descriptor,
+       parameter.position
+  FROM graphitron_ast_argmapping_pair_entry pair
+  JOIN graphitron_argmapping_site site
+    ON site.graph_name = pair.graph_name AND site.source_name = pair.source_name
+   AND site.source_line = pair.source_line AND site.source_column = pair.source_column
+  JOIN graphitron_code_reference reference
+    ON reference.graph_name = site.graph_name AND reference.source_name = site.source_name
+   AND reference.source_line = site.reference_line AND reference.source_column = site.reference_column
+  JOIN code_method_parameter parameter
+    ON parameter.source_name = reference.method_source_name
+   AND parameter.class_name = reference.method_class_name
+   AND parameter.method_name = reference.method_name
+   AND parameter.descriptor = reference.method_descriptor
+   AND parameter.parameter_name = pair.param_name;
+COMMENT ON VIEW graphitron_argmapping_parameter IS 'The Java parameter one written argMapping entry binds: the entry, and the parameter of the method its code reference resolved to that carries the name written on its left. For example the entry brukerId: $session.brukerId on a @service resolves to the parameter named brukerId of the one method the service names, and an entry whose method is overloaded, missing or compiled without -parameters has no row.';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.graph_name IS 'the owning graph''s partition, carried from the entry';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.source_name IS 'the file the mapping string was written in, the first of the four columns that are the entry''s key in graphitron_ast_argmapping_pair_entry';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.source_line IS 'source line of the mapping string, part of the entry''s key';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.source_column IS 'source column of the mapping string, part of the entry''s key';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.position IS 'the entry''s 0-based position within its own argMapping list, completing its key';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.method_source_name IS 'the entry the resolved method was read from, the leading dimension of the parameter''s key';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.method_class_name IS 'the class declaring the method the code reference resolved to';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.method_name IS 'the method the code reference resolved to';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.method_descriptor IS 'that method''s descriptor, which tells overloads apart';
+-- COMMENT ON COLUMN graphitron_argmapping_parameter.parameter_position IS 'the position in the method''s parameter list of the parameter whose name is the entry''s left side; what the parameter takes is the parameter row''s, not copied here';
+
 
 CREATE TABLE graphitron_argmapping_pair_defect (
   graph_name    VARCHAR NOT NULL,
@@ -17517,7 +17523,7 @@ INSERT INTO meta_relation VALUES
    'One accessor of the class a graph names as its session handle, under the property name an author writes after $session.',
    'For example a handle record with components brukerId and sokerId draws two rows, and a class offering getTitle and isTitle draws two rows under one name.',
    'Derived from the configured handle row and the class the classpath corpus read, so what $session.<member> may name is a row an author''s binding can be checked against rather than a reflection result only the generator holds. The members are the slots the class declares itself, not the ones it inherits: a jOOQ record handle offers the two accessors its generated class declares, not the Record API beneath them. Kept as one row per accessor, so two accessors for one property are visible as such and the binding that names it is the defect, instead of the class being refused for a member nobody reads.'),
-  ('graphitron_argmapping_parameter', 'argmapping-parameter', 'derivation',
+  ('graphitron_argmapping_parameter', 'argmapping-parameter', 'graphitron',
    'The Java parameter one written argMapping entry binds: the entry, and the parameter of the method its code reference resolved to that carries the name written on its left.',
    'For example the entry brukerId: $session.brukerId on a @service resolves to the parameter named brukerId of the one method the service names, and an entry whose method is overloaded, missing or compiled without -parameters has no row.',
    'The join a check of an argMapping''s left side needs and every such check used to rebuild: the entry''s string sits under a code reference, the reference resolves to one method, and the method''s parameters carry the names an entry targets. An entry that does not resolve has no row, which is what a defect arm anti-joins on, and a parameter name the class file does not carry resolves nowhere rather than guessing, on the parameter column''s own terms.'),
