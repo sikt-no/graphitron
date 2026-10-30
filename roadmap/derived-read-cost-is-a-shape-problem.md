@@ -290,6 +290,44 @@ branch rather than modelling inputs again. Deferred on 2026-10-22: it starts aft
 * **The argument readers read the target and its walk** `blocked`, on "Arguments and input fields walk from their field's target". The condition, lookup-key, node-id and `argMapping`
   readers move, and `graphitron_field_scope_table`, the argument and input-field step targets and
   the `intent_` relations above go.
+* **A `@referenceFor` the classification never reaches draws no participant defect** `open`.
+  `ReferenceForParticipantDefects` gates its input-field arm only on the input type being consumed
+  somewhere, and `intent_input_occurrence_path` is seeded from every argument with no domain
+  filter, so an input type used only under a type nothing reaches may draw a defect the walk never
+  would. A fact document settles it; if it fires, the arm gains the domain gate the argument arm
+  has, ahead of the nodes below.
+* **Each node-id rule is an entry defect** `open`. The store's checks on `@nodeId` and
+  `@referenceFor` become codes in `graphitron_defect_type` and arms of `graphitron_entry_defect_rule`,
+  each row at the application's written position, so the editor shows them beside the build:
+  * the landing: `PATH_STOPS_SHORT`, `LANDING_TYPE_DISAGREEMENT`;
+  * the participant set: a name no consumer's participants carry, and a consumer returning a single
+    table, at the input-field and the argument site;
+  * the slot: `KEY_COLUMN_TYPE_DISAGREEMENT`, `KEY_ARITY_EXCEEDS_SLOT`, `SLOT_SHAPE_MISMATCH`;
+  * the polymorphic container: `CONTAINER_NOT_AT_A_SLOT`, `SINGLE_TABLE_CONTAINER`,
+    `NO_TABLE_MEMBERS`, `MEMBER_NOT_NODE_TYPE`, `SLOT_NOT_SUPERTYPE_OF_MEMBER`, `SLOT_SHAPE_MISMATCH`;
+  * a `@referenceFor` on a slot without `@nodeId`, which only the walk refuses today.
+
+  The views `intent_node_id_decode_defect`, `intent_node_id_decode_landing_defect`,
+  `intent_node_id_polymorphic_decode_defect` and `intent_record_slot_assignable` go, and
+  `NodeIdDecodeDefects`, `NodeIdPolymorphicDecodeDefects`, `NodeIdLandingDefects` and
+  `ReferenceForParticipantDefects` read the rows. The walk's copies of the same refusals go with
+  them, so an author meets one error rather than two: the four container refusals in
+  `BuildContext` and `NodeIdLeafResolver`, and the refusal of `@referenceFor` without `@nodeId` in
+  `BuildContext` and `FieldBuilder`. Two cases are settled by fact documents on the way: a
+  polymorphic id at a parameter bound through `argMapping`, which only the store may check, and the
+  participant set's single-table message at the argument site, which has no test.
+* **The occurrences are only those a directive ends at** `open`. `intent_input_occurrence_path`
+  enumerates every path through every input type, 18 s of a warm sis capture's 39 s of derivation
+  (7,054 step rows), while its readers ask only about occurrences ending at an input field
+  carrying `@nodeId`, `@referenceFor` or `@reference`. The enumeration prunes an input type none of
+  whose reachable fields carries one. "A chain of input types costs its occurrences, not its paths"
+  bounds the same walk from the other side.
+* **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `blocked`, on "Arguments and input fields walk from their field's target".
+  The landing and participant arms read the walk from the using field's target, and the occurrence,
+  scope, resolving, step-target and decode relations go, with `graphitron_node_id_instruction` once
+  "Encode and decode read the target type, and the old node-id relations go" lands. Neither side
+  checks where a `@referenceFor` route lands today; it becomes a landing arm here.
+  `NodeIdDecodeCoverage` stays, comparing the census with the walk's ledger, until the walk goes.
 
 ### A reference resolves where its directive is decoded `open`
 
