@@ -81,7 +81,8 @@ public final class ProjectionUnitRenderer {
                 builder.addMethod(LookupRows.buildInputRowsMethod(lm.mapping(),
                     lm.inputRowsHelper().methodName(), CatalogRefs.tableClass(lm.terminalTable()),
                     LookupRows.ArgSource.SELECTED_FIELD,
-                    row.unit().simpleName() + "." + contribution.field()));
+                    row.unit().simpleName() + "." + contribution.field(),
+                    NodeIdDecodeFailure.clientException(outputPackage)));
             }
         }
         // The emitted method behind each path: sort key of an inline child list's order; the

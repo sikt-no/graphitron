@@ -81,22 +81,16 @@ final class InputBeanInstantiationEmitter {
     /**
      * Emits {@code private static <Record> decode<TypeName>Record(Object wire)}: decode the base64
      * NodeId to its raw key values and load them positionally into a fresh target record. The body is
-     * {@link RecordDecodeFragments#decodeHelper}'s plain form; a type-mismatch decode is an
-     * authored-input error and throws, mirroring the {@code ThrowOnMismatch} arm.
+     * {@link RecordDecodeFragments#decodeHelper}'s; an id that does not decode is an authored-input
+     * error and throws the client error every other {@code @nodeId} site raises, mirroring the
+     * {@code ThrowOnMismatch} arm.
      */
-    static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec) {
-        return buildRecordDecodeHelper(rec, FetchersHelperNames.bare());
-    }
-
-    static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
+    static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names,
+            String outputPackage) {
         // One body, two hosts: the name stays this class's namespace's to allocate, which is why it
         // is passed in.
-        return RecordDecodeFragments.decodeHelper(
-            names.decodeSingular(rec.typeName()),
-            new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
-                rec.encoderClass(), names.decodeSingular(rec.typeName()), rec.keyColumns(),
-                rec.typeId(), rec.table()),
-            rec.table());
+        return RecordDecodeFragments.decodeHelper(names.decodeSingular(rec.typeName()), rec.encoderClass(),
+            rec.typeId(), rec.typeName(), rec.keyColumns(), rec.table(), outputPackage);
     }
 
     /** {@code private static List<<Record>> decode<TypeName>RecordList(Object wire)}; see {@link InputBeanFragments#recordDecodeListHelper}. */

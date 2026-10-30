@@ -11,12 +11,13 @@ import com.palantir.javapoet.CodeBlock;
  * from a well-formed id of another node type. Statement form rather than an expression so a
  * developer can breakpoint the decode and read a meaningful stack frame.
  *
- * <p>Here rather than on either host because several host families decode a node id and one bad id
- * must fail the same way at every grain: the key helpers {@link CompositeDecodeHelperRegistry} mints,
- * which project a decoded key for a predicate, and the record helpers
- * {@link RecordDecodeFragments} mints for an {@code argMapping} key-column projection. The two read
- * the same wire value at different grains, so a message that differed between them would tell a
- * client that one spelling of a filter validates its ids and another does not.
+ * <p>Here rather than on any one host because every host that decodes a node id must fail the same
+ * way: the key helpers {@link CompositeDecodeHelperRegistry} mints for a predicate, the record helpers
+ * {@link RecordDecodeFragments} mints for an {@code argMapping} projection or a {@code @service}
+ * input-bean member, the lookup rows {@link LookupRows} builds, and the legacy core's DML input
+ * decodes and jOOQ-record {@code @service} decodes. A message that differed between them would tell a
+ * client that one spelling of an id validates and another does not, and a host raising anything but
+ * the client error would have its text redacted where the field has no errors channel.
  *
  * <p>The second base64 walk {@code peekTypeId} performs, re-decoding what the decode already
  * discarded, is deliberate: it runs only on the error path, which is about to throw and abort the
@@ -41,12 +42,46 @@ public final class NodeIdDecodeFailure {
      */
     public static CodeBlock throwStatement(String outputPackage, ClassName encoderClass,
             String expectedTypeId, String displayName, String peekArg, String msgVar) {
-        ClassName clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
         return CodeBlock.builder()
             .addStatement("$T peeked = $T.peekTypeId($L)", String.class, encoderClass, peekArg)
-            .addStatement("throw new $T($L)", clientException,
-                messageExpr(expectedTypeId, displayName, msgVar))
+            .addStatement("throw new $T($L)", clientException(outputPackage),
+                messageExpr(expectedTypeId, displayName, msgVar, "peeked"))
             .build();
+    }
+
+    /**
+     * The single-type throw as statements, for a host that holds the wire value in an {@code Object}
+     * local rather than a {@code String}: it declares {@code <wireLocal>Peeked} off the local's own
+     * name, so two throws in one generated method do not collide, and raises the client error with
+     * the same message {@link #throwStatement} carries, echoing the wire value. A non-string value
+     * peeks to {@code null} and reads as malformed, as in {@link #multiCandidateThrowStatement}.
+     *
+     * <p>The local must not be statically {@code String}: generated code targets Java 17, where
+     * {@code instanceof String s} on a {@code String} expression does not compile. A host that already
+     * holds a {@code String} uses {@link #throwStatement}.
+     *
+     * @param clientException the generated client-error type the throw raises
+     * @param wireLocal       the {@code Object} local holding the wire value
+     */
+    public static CodeBlock throwStatement(ClassName clientException, ClassName encoderClass,
+            String expectedTypeId, String displayName, String wireLocal) {
+        String textLocal = wireLocal + "Text";
+        String peekedLocal = wireLocal + "Peeked";
+        return CodeBlock.builder()
+            .addStatement("$T $L = $T.peekTypeId($L instanceof String $L ? $L : null)",
+                String.class, peekedLocal, encoderClass, wireLocal, textLocal, textLocal)
+            .addStatement("throw new $T($L)", clientException,
+                messageExpr(expectedTypeId, displayName, wireLocal, peekedLocal))
+            .build();
+    }
+
+    /**
+     * The generated client-error type, {@code <outputPackage>.schema.GraphitronClientException}, for a
+     * render-side host. The {@code render} package may not import the plan side's minting of the unit
+     * name, so this is the render side's one copy of the formula.
+     */
+    public static ClassName clientException(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", "GraphitronClientException");
     }
 
     /**
@@ -86,13 +121,12 @@ public final class NodeIdDecodeFailure {
      */
     public static CodeBlock multiCandidateThrowStatement(String outputPackage, ClassName encoderClass,
             java.util.List<String> candidateTypeIds, String candidates, String wireLocal) {
-        ClassName clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
         String textLocal = wireLocal + "Text";
         String peekedLocal = wireLocal + "Peeked";
         return CodeBlock.builder()
             .addStatement("$T $L = $T.peekTypeId($L instanceof String $L ? $L : null)",
                 String.class, peekedLocal, encoderClass, wireLocal, textLocal, textLocal)
-            .addStatement("throw new $T($L)", clientException,
+            .addStatement("throw new $T($L)", clientException(outputPackage),
                 multiCandidateMessage(candidateTypeIds, candidates, wireLocal, peekedLocal))
             .build();
     }
@@ -103,14 +137,15 @@ public final class NodeIdDecodeFailure {
      * "malformed"; any other non-null prefix is a well-formed id of another type and names the type
      * it decoded to.
      */
-    private static CodeBlock messageExpr(String expectedTypeId, String displayName, String msgVar) {
+    private static CodeBlock messageExpr(String expectedTypeId, String displayName, String msgVar,
+            String peekedLocal) {
         return CodeBlock.of(
-            "peeked == null || $S.equals(peeked)\n"
+            "$L == null || $S.equals($L)\n"
           + "    ? $S + $L + $S\n"
-          + "    : $S + $L + $S + peeked + $S",
-            expectedTypeId,
+          + "    : $S + $L + $S + $L + $S",
+            peekedLocal, expectedTypeId, peekedLocal,
             "Invalid node id \"", msgVar, "\" for this argument: not a valid " + displayName + " id",
-            "Invalid node id \"", msgVar, "\" for this argument: decodes to type \"",
+            "Invalid node id \"", msgVar, "\" for this argument: decodes to type \"", peekedLocal,
             "\", expected a " + displayName + " id");
     }
 }

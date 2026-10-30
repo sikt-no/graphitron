@@ -52,9 +52,13 @@ public final class LookupRows {
      * scalar arguments across all rows ({@code n = 1} with no list arg); returns a zero-length
      * array when the list arg is null or empty, and callers short-circuit on
      * {@code rows.length == 0}.
+     *
+     * <p>{@code clientException} is the generated client-error type an id that does not decode
+     * raises, through {@link NodeIdDecodeFailure}.
      */
     public static MethodSpec buildInputRowsMethod(ColumnMapping cm, String methodName,
-            TypeName targetTableClass, ArgSource argSource, String diagnosticName) {
+            TypeName targetTableClass, ArgSource argSource, String diagnosticName,
+            ClassName clientException) {
         List<Slot> slots = requireSlots(cm, diagnosticName);
         Map<String, RootSource> roots = rootSources(slots);
 
@@ -97,7 +101,7 @@ public final class LookupRows {
             }
         }
 
-        addRowBuildingCore(builder, slots, roots);
+        addRowBuildingCore(builder, slots, roots, clientException);
         return builder.build();
     }
 
@@ -236,7 +240,7 @@ public final class LookupRows {
      * VALUES set and trims the array), typed-value loop, return.
      */
     private static void addRowBuildingCore(MethodSpec.Builder builder,
-            List<Slot> slots, Map<String, RootSource> roots) {
+            List<Slot> slots, Map<String, RootSource> roots, ClassName clientException) {
         var primaryList = roots.values().stream().filter(RootSource::list).findFirst().orElse(null);
         if (primaryList == null) {
             builder.addStatement("int n = 1");
@@ -257,7 +261,6 @@ public final class LookupRows {
         }
         builder.beginControlFlow("for (int i = 0; i < n; i++)");
 
-        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         for (var entry : decodeArgs.entrySet()) {
             String argName = entry.getKey();
             DecodeBinding db = entry.getValue();
@@ -266,18 +269,21 @@ public final class LookupRows {
                 ? CodeBlock.of("$L.get(i)", root.localName())
                 : CodeBlock.of("$L", root.localName());
             String recLocal = decodeRecordLocal(root.localName());
-            ClassName encoderClass = db.decodeMethod().encoderClass();
-            String methodName = db.decodeMethod().methodName();
-            TypeName recordType = db.decodeMethod().returnType();
+            String wireLocal = root.localName() + "Wire";
+            var decode = db.decodeMethod();
+            ClassName encoderClass = decode.encoderClass();
+            String methodName = decode.methodName();
+            TypeName recordType = decode.returnType();
+            builder.addStatement("$T $L = $L", Object.class, wireLocal, rawElem);
             builder.addStatement("$T $L = ($L instanceof $T _s) ? $T.$L(_s) : null",
-                recordType, recLocal, rawElem, String.class, encoderClass, methodName);
+                recordType, recLocal, wireLocal, String.class, encoderClass, methodName);
             builder.beginControlFlow("if ($L == null)", recLocal);
             // The only failure mode a lookup key can take: a malformed or wrong-type id is a client
             // mistake and fails the field. The carrier's pruning sibling belongs to a polymorphic
             // root's per-participant branches, where a miss means another branch owns the id; a
             // lookup has one target table and no sibling to hand it to.
-            builder.addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                "Decoded NodeId did not match the expected type for argument '" + argName + "'");
+            builder.addCode(NodeIdDecodeFailure.throwStatement(clientException, encoderClass,
+                decode.typeId(), decode.targetTypeName(), wireLocal));
             builder.endControlFlow();
         }
 

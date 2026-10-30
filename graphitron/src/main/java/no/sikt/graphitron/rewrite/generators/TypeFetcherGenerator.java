@@ -10,6 +10,7 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.NodeIdDecodeFailure;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
@@ -676,7 +677,7 @@ public class TypeFetcherGenerator {
                         builder.addMethod(no.sikt.graphitron.render.LookupRows.buildInputRowsMethod(
                             keyedLookup.mapping(), keyedLookup.inputRows().methodName(),
                             lookupTableClass, no.sikt.graphitron.render.LookupRows.ArgSource.ENV,
-                            qtf.name()));
+                            qtf.name(), clientExceptionClass(outputPackage)));
                         // A list-returning lookup scatters its flat join into one slot per key.
                         // Gated on the list arm because the single arm has one slot by
                         // construction, and emitted once per class however many lookups it holds.
@@ -761,7 +762,7 @@ public class TypeFetcherGenerator {
                         builder.addMethod(no.sikt.graphitron.render.LookupRows.buildInputRowsMethod(
                             lookupChain.mapping(), lookupChain.inputRows().methodName(),
                             lookupTableClass, no.sikt.graphitron.render.LookupRows.ArgSource.ENV,
-                            btf.name()));
+                            btf.name(), clientExceptionClass(outputPackage)));
                     }
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
@@ -1052,7 +1053,8 @@ public class TypeFetcherGenerator {
         // stays the bare create<Record> pair.
         var jooqRecordHelperNames = fetchersHelperNames.jooqRecord();
         for (var jr : jooqRecordHelperNames.distinctShapes()) {
-            builder.addMethod(JooqRecordInstantiationEmitter.buildSingularHelper(jr, jooqRecordHelperNames));
+            builder.addMethod(JooqRecordInstantiationEmitter.buildSingularHelper(jr, jooqRecordHelperNames,
+                clientExceptionClass(outputPackage)));
             builder.addMethod(JooqRecordInstantiationEmitter.buildPluralHelper(jr, jooqRecordHelperNames));
         }
 
@@ -1064,7 +1066,8 @@ public class TypeFetcherGenerator {
         // variants dedup independently by node type; the scalar helper is always emitted because
         // the list variant delegates to it.
         for (var rec : scalarDecoders.values()) {
-            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelper(rec, fetchersHelperNames));
+            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelper(rec, fetchersHelperNames,
+                outputPackage));
         }
         for (var rec : listDecoders.values()) {
             builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelperList(rec, fetchersHelperNames));
@@ -2531,7 +2534,7 @@ public class TypeFetcherGenerator {
         if (inputArg.list()) {
             if (deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast) {
                 var dmlChain = CodeBlock.builder().add(".deleteFrom($L)\n", tableLocal)
-                    .add(".where(").add(buildBulkLookupRowIn(whereGroups, tablesOnly, tableRef)).add(")\n");
+                    .add(".where(").add(buildBulkLookupRowIn(whereGroups, tablesOnly, tableRef, clientExceptionClass(outputPackage))).add(")\n");
                 return buildDmlFetcher(ctx, f, f.returnExpression(),
                     inputArg.name(), tableRef, tablesOnly, tableLocal,
                     outputPackage, new KeyStatement.Chain(dmlChain.build()),
@@ -2542,7 +2545,7 @@ public class TypeFetcherGenerator {
                 new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), returningCols);
             TypeName resultType = ParameterizedTypeName.get(RESULT, recordRowType);
             var perRow = buildBulkRecordPerRowDeleteBody(deleteRows, whereGroups, tableRef, tablesOnly,
-                tableLocal, returningCols, recordRowType);
+                tableLocal, returningCols, recordRowType, clientExceptionClass(outputPackage));
             var loop = perRowLoop(perRow, resultType, "deleted",
                 buildPkFieldList(returningCols, tablesOnly, tableRef), "DELETE", f.qualifiedName(), outputPackage,
                 outboxHook(ctx, f.name(), true, returningCols, outputPackage));
@@ -2555,7 +2558,7 @@ public class TypeFetcherGenerator {
                     .build());
         }
 
-        var chunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in");
+        var chunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in", clientExceptionClass(outputPackage));
         var statement = new KeyStatement.Chain(CodeBlock.builder()
             .add(".deleteFrom($L)\n", tableLocal)
             .add(".where(").add(chunk.whereExpr()).add(")\n")
@@ -2613,8 +2616,8 @@ public class TypeFetcherGenerator {
         String tableLocal = tablesOnly.tableLocalName();
 
         var values = tia.list()
-            ? buildBulkInsertValues(tia.fields(), tableLocal, tablesOnly, tableRef)
-            : buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef);
+            ? buildBulkInsertValues(tia.fields(), tableLocal, tablesOnly, tableRef, clientExceptionClass(outputPackage))
+            : buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef, clientExceptionClass(outputPackage));
 
         return buildDmlFetcher(ctx, f, f.returnExpression(),
             tia.name(), tableRef, tablesOnly, tableLocal,
@@ -2644,12 +2647,13 @@ public class TypeFetcherGenerator {
      * views being the column list and the cells; an all-absent input renders {@code default values}.
      */
     private static InsertValues buildSingleRowInsertValues(List<InputField> fields, String mapLocal,
-            String tableLocal, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+            String tableLocal, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            ClassName clientException) {
         var fieldCn = ClassName.get("org.jooq", "Field");
         var plan = insertColumnPlan(fields);
         var leaves = flattenInsertLeaves(fields, List.of());
         var prep = CodeBlock.builder()
-            .add(buildInsertDecodeLocals(fields, mapLocal, false, tablesOnly, tableRef))
+            .add(buildInsertDecodeLocals(fields, mapLocal, false, tablesOnly, tableRef, clientException))
             .addStatement("$T<$T<?>, $T<?>> insertCols = new $T<>()",
                 MAP, fieldCn, fieldCn, ClassName.get("java.util", "LinkedHashMap"));
         for (int ci = 0; ci < plan.size(); ci++) {
@@ -2680,7 +2684,8 @@ public class TypeFetcherGenerator {
      * bulk UPDATE shares one SET clause across its rows.
      */
     private static InsertValues buildBulkInsertValues(List<InputField> fields,
-            String tableLocal, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+            String tableLocal, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            ClassName clientException) {
         var fieldCn = ClassName.get("org.jooq", "Field");
         var fieldList = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(fieldCn, WildcardTypeName.subtypeOf(Object.class)));
@@ -2711,7 +2716,7 @@ public class TypeFetcherGenerator {
             .endControlFlow();
         prep.addStatement("$T<$T> insertRows = new $T<>()", LIST, ClassName.get("org.jooq", "RowN"), ARRAY_LIST);
         prep.beginControlFlow("for ($T<?, ?> row : in)", MAP);
-        prep.add(buildInsertDecodeLocals(fields, "row", true, tablesOnly, tableRef));
+        prep.add(buildInsertDecodeLocals(fields, "row", true, tablesOnly, tableRef, clientException));
         prep.addStatement("$T cells = new $T<>()", fieldList, ARRAY_LIST);
         for (int ci = 0; ci < plan.size(); ci++) {
             var oc = plan.get(ci);
@@ -2800,7 +2805,8 @@ public class TypeFetcherGenerator {
             List<InputField> fields,
             String mapLocal,
             boolean bulk,
-            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            ClassName clientException) {
         String localPrefix = INSERT_KEY_PREFIX;
         var locals = CodeBlock.builder();
         // Flat leaf order matches insertSetGroupWriters so the decode-local index lines up with the
@@ -2821,7 +2827,7 @@ public class TypeFetcherGenerator {
                 : new OnExplicitNull.Clears();
             appendSetDecodeLocal(locals, localPrefix + "_" + fi, nidk,
                 ArgCallEmitter.nestedMapValueExpr(mapLocal, path), f.name(), rule,
-                nestedContainsKeyExpr(mapLocal, path, "id" + fi));
+                nestedContainsKeyExpr(mapLocal, path, "id" + fi), clientException);
         }
         // For any column written by more than one carrier, emit the value-agreement prep here (in
         // the same scope as the decode locals, before the VALUES cells read them). Empty when there is no
@@ -3286,7 +3292,8 @@ public class TypeFetcherGenerator {
             String valueMapLocal,
             String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly,
-            TableRef tableRef) {
+            TableRef tableRef,
+            ClassName clientException) {
         // emitSetMapPuts is always called with presenceLocal == valueMapLocal (single-row "in" or
         // per-row "row" Map); the nested-descent walk uses that one Map local as both the
         // presence and value root, honoring absent-vs-null at every nesting layer.
@@ -3306,7 +3313,7 @@ public class TypeFetcherGenerator {
                 (innerMap, leafKey) -> {
                     var wireExpr = CodeBlock.of("$L.get($S)", innerMap, leafKey);
                     if (nidk != null) {
-                        appendSetDecodeLocal(block, recLocal, nidk, wireExpr, leafKey, rule, null);
+                        appendSetDecodeLocal(block, recLocal, nidk, wireExpr, leafKey, rule, null, clientException);
                     } else if (rule instanceof OnExplicitNull.RefusedAsIdentity r) {
                         // A plain carrier writes the wire value straight through, so there is no
                         // decode local to hang the refusal on; guard the value itself.
@@ -3405,20 +3412,11 @@ public class TypeFetcherGenerator {
      */
     private static void appendSetDecodeLocal(
             CodeBlock.Builder block, String recLocal, CallSiteExtraction.NodeIdDecodeKeys nidk,
-            CodeBlock wireExpr, String sourceField, OnExplicitNull rule, CodeBlock presenceExpr) {
+            CodeBlock wireExpr, String sourceField, OnExplicitNull rule, CodeBlock presenceExpr,
+            ClassName clientException) {
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
-        if (rule instanceof OnExplicitNull.CannotArrive) {
-            if (presenceExpr == null) {
-                appendDecodeLocal(block, recLocal, nidk, wireExpr, sourceField);
-                return;
-            }
-            block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
-                nidk.decodeMethod().returnType(), recLocal, wireExpr, String.class, recLocal,
-                nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
-            block.beginControlFlow("if ($L && $L == null)", presenceExpr, recLocal)
-                .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                    "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
-                .endControlFlow();
+        if (rule instanceof OnExplicitNull.CannotArrive && presenceExpr == null) {
+            appendDecodeLocal(block, recLocal, nidk, wireExpr, sourceField, clientException);
             return;
         }
         String wireLocal = recLocal + "Wire";
@@ -3426,6 +3424,12 @@ public class TypeFetcherGenerator {
         block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
             nidk.decodeMethod().returnType(), recLocal, wireLocal, String.class, recLocal,
             nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
+        if (rule instanceof OnExplicitNull.CannotArrive) {
+            block.beginControlFlow("if ($L && $L == null)", presenceExpr, recLocal)
+                .add(decodeMismatchThrow(nidk, wireLocal, clientException))
+                .endControlFlow();
+            return;
+        }
         if (rule instanceof OnExplicitNull.RefusedAsIdentity r) {
             var gate = presenceExpr == null
                 ? CodeBlock.of("$L == null", wireLocal)
@@ -3436,9 +3440,27 @@ public class TypeFetcherGenerator {
                 .endControlFlow();
         }
         block.beginControlFlow("if ($L != null && $L == null)", wireLocal, recLocal)
-            .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
+            .add(decodeMismatchThrow(nidk, wireLocal, clientException))
             .endControlFlow();
+    }
+
+    /**
+     * The client error a {@code @nodeId} input field raises when its wire value does not decode to
+     * the field's target type: {@link NodeIdDecodeFailure}'s single-type throw, so a DML input fails
+     * with the text every other {@code @nodeId} site raises. {@code wireLocal} is the {@code Object}
+     * local the decode read.
+     */
+    private static CodeBlock decodeMismatchThrow(CallSiteExtraction.NodeIdDecodeKeys nidk,
+            String wireLocal, ClassName clientException) {
+        var decode = nidk.decodeMethod();
+        return NodeIdDecodeFailure.throwStatement(clientException, decode.encoderClass(),
+            decode.typeId(), decode.targetTypeName(), wireLocal);
+    }
+
+    /** The generated client-error type, as {@link no.sikt.graphitron.plan.GeneratedUnits} mints it. */
+    private static ClassName clientExceptionClass(String outputPackage) {
+        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
+        return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
     /** The refusal a plain (non-decoding) carrier gets when an explicit null would clear a column the
@@ -3852,8 +3874,9 @@ public class TypeFetcherGenerator {
             Set<String> lookupSqlNames,
             String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly,
-            TableRef tableRef) {
-        emitBulkSetDecodeLocals(block, setFields, nullRules, decodeLocalPrefix);
+            TableRef tableRef,
+            ClassName clientException) {
+        emitBulkSetDecodeLocals(block, setFields, nullRules, decodeLocalPrefix, clientException);
         var listCn = ClassName.get("java.util", "List");
         var arrayListCn = ClassName.get("java.util", "ArrayList");
         var plan = setColumnPlan(setFields);
@@ -3925,14 +3948,15 @@ public class TypeFetcherGenerator {
      * {@link SetGroup} carrying a {@code @nodeId}, declared once per row. Like
      * {@link #buildInsertDecodeLocals}, the local is declared unconditionally and goes through
      * {@link #appendSetDecodeLocal} with the leaf's presence expression, so its throws are
-     * presence-gated (a present-but-mismatched id surfaces the same {@code GraphqlErrorException} as
+     * presence-gated (a present-but-mismatched id surfaces the same client error as
      * the single-row path).
      * Declaring it once at the top of the row body lets a composite group's several cells and a
      * shared column's gather all read one decode without re-decoding per writer.
      */
     private static void emitBulkSetDecodeLocals(
             CodeBlock.Builder block, List<SetGroup> setFields,
-            Map<List<String>, OnExplicitNull> nullRules, String decodeLocalPrefix) {
+            Map<List<String>, OnExplicitNull> nullRules, String decodeLocalPrefix,
+            ClassName clientException) {
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         for (int gi = 0; gi < setFields.size(); gi++) {
             var sf = setFields.get(gi);
@@ -3959,7 +3983,7 @@ public class TypeFetcherGenerator {
             // omission rather than becoming a mismatch or a refused clear.
             appendSetDecodeLocal(block, recLocal, nidk,
                 ArgCallEmitter.nestedMapValueExpr("row", path), sf.name(), rule,
-                nestedContainsKeyExpr("row", path, "bsid" + gi));
+                nestedContainsKeyExpr("row", path, "bsid" + gi), clientException);
         }
     }
 
@@ -4143,11 +4167,11 @@ public class TypeFetcherGenerator {
         emitKeySetAgreementPreamble(postInGuard, keySetGroups, setGroups,
             w.updateRows().agreementObligations(), "in", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(postInGuard, setGroups, setNullRules, "sets", "in", "in",
-            "setKey", tablesOnly, tableRef);
+            "setKey", tablesOnly, tableRef, clientExceptionClass(outputPackage));
 
         // An empty `sets` (the caller sent only key fields) is an empty patch: the statement
         // renders as the key read over the same WHERE instead of the UPDATE.
-        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in");
+        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in", clientExceptionClass(outputPackage));
         postInGuard.add(whereChunk.decodeLocals());
         var statement = new KeyStatement.KeyedUpdate(tableLocal, whereChunk.whereExpr());
 
@@ -4246,7 +4270,7 @@ public class TypeFetcherGenerator {
             ClassName.get(List.class), fieldClass, arrayList);
         // Per-row decode locals for any NodeId-decoded groups (composite-PK or arity-1 NodeId
         // ColumnField), shared by all positional bindings of the same source field.
-        emitLookupKeyDecodeLocals(postInGuard, groups, "row");
+        emitLookupKeyDecodeLocals(postInGuard, groups, "row", clientExceptionClass(outputPackage));
         var lookupKeyTuple = new ArrayList<CodeBlock>();
         for (int gi = 0; gi < groups.size(); gi++) {
             var g = groups.get(gi);
@@ -4254,7 +4278,7 @@ public class TypeFetcherGenerator {
         }
         postInGuard.addStatement("seenKeys.add($T.of($L))", ClassName.get(List.class),
             CodeBlock.join(lookupKeyTuple, ", "));
-        emitSetBulkCellAdds(postInGuard, setGroups, setNullRules, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef);
+        emitSetBulkCellAdds(postInGuard, setGroups, setNullRules, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef, clientExceptionClass(outputPackage));
         // WHERE∩SET per-row value agreement (self-FK shared column), reusing the bulkKey / bulkSetKey
         // decode locals declared above this in the loop body. No-op when there is no cross-partition overlap.
         emitBulkKeySetAgreement(postInGuard, groups, setGroups, setNullRules, agreementObligations,
@@ -4373,8 +4397,8 @@ public class TypeFetcherGenerator {
         // The INSERT prep follows the setsUpdate-side guards, keeping the statement order
         // (uniform-shape guard → setsUpdate construction → INSERT columns and cells).
         var values = tia.list()
-            ? buildBulkInsertValues(tia.fields(), tableLocal, tablesOnly, tableRef)
-            : buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef);
+            ? buildBulkInsertValues(tia.fields(), tableLocal, tablesOnly, tableRef, clientExceptionClass(outputPackage))
+            : buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef, clientExceptionClass(outputPackage));
         postInGuard.add(values.prep());
         var dmlChain = CodeBlock.builder().add(values.chain());
         dmlChain.add(".onConflict(").add(conflictCols.build()).add(")\n");
@@ -4519,8 +4543,9 @@ public class TypeFetcherGenerator {
      */
     private static LookupWhereChunk buildLookupWhereSingleRow(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
-            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        return buildLookupWhereSingleRow(tia, tablesOnly, tableRef, "in");
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            ClassName clientException) {
+        return buildLookupWhereSingleRow(tia, tablesOnly, tableRef, "in", clientException);
     }
 
     /**
@@ -4534,8 +4559,9 @@ public class TypeFetcherGenerator {
     private static LookupWhereChunk buildLookupWhereSingleRow(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
-            String mapLocal) {
-        return buildLookupWhereSingleRow(tia.fieldBindings(), tablesOnly, tableRef, mapLocal);
+            String mapLocal,
+            ClassName clientException) {
+        return buildLookupWhereSingleRow(tia.fieldBindings(), tablesOnly, tableRef, mapLocal, clientException);
     }
 
     /**
@@ -4547,7 +4573,8 @@ public class TypeFetcherGenerator {
     private static LookupWhereChunk buildLookupWhereSingleRow(
             List<InputColumnBindingGroup> groups,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
-            String mapLocal) {
+            String mapLocal,
+            ClassName clientException) {
         var locals = CodeBlock.builder();
         var whereExpr = CodeBlock.builder();
         var keyValues = new java.util.LinkedHashMap<String, CodeBlock>();
@@ -4563,7 +4590,7 @@ public class TypeFetcherGenerator {
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                         keyValues.putIfAbsent(binding.targetColumn().sqlName(),
                             appendMapBindingValueExpr(whereExpr, locals, binding, mapLocal,
-                                tablesOnly, tableRef, gi));
+                                tablesOnly, tableRef, gi, clientException));
                         if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) {
                             decodeLocalByPath.putIfAbsent(
                                 accessPathOf(binding.fieldName(), binding.extraction()), "lookupKey" + gi);
@@ -4576,7 +4603,7 @@ public class TypeFetcherGenerator {
                 case InputColumnBindingGroup.DecodedRecordGroup drg -> {
                     String recLocal = "lookupKey" + gi;
                     appendDecodeLocal(locals, recLocal, drg.extraction(),
-                        ArgCallEmitter.nestedMapValueExpr(mapLocal, drg.accessPath()), drg.sourceFieldName());
+                        ArgCallEmitter.nestedMapValueExpr(mapLocal, drg.accessPath()), drg.sourceFieldName(), clientException);
                     decodeLocalByPath.putIfAbsent(drg.accessPath(), recLocal);
                     for (var binding : drg.bindings()) {
                         if (slotIndex > 0) whereExpr.add(".and(");
@@ -4612,12 +4639,13 @@ public class TypeFetcherGenerator {
             InputColumnBinding.MapBinding binding,
             String mapLocal,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
-            int groupIndex) {
+            int groupIndex,
+            ClassName clientException) {
         var path = accessPathOf(binding.fieldName(), binding.extraction());
         var wireValue = ArgCallEmitter.nestedMapValueExpr(mapLocal, path);
         if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
             String recLocal = "lookupKey" + groupIndex;
-            appendDecodeLocal(locals, recLocal, nidk, wireValue, binding.fieldName());
+            appendDecodeLocal(locals, recLocal, nidk, wireValue, binding.fieldName(), clientException);
             whereExpr.add("$T.val($L.value$L(), $T.$L.$L.getDataType())",
                 DSL, recLocal, binding.decodeSlot() + 1,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
@@ -4632,8 +4660,8 @@ public class TypeFetcherGenerator {
 
     /**
      * Declares a per-row decode local {@code recLocal} reading {@code mapLocal.get(sourceField)},
-     * with {@code ThrowOnMismatch} producing a {@code GraphqlErrorException} on a null decode
-     * return: a wrong-type id is an authored-input contract violation. At the single-row mutation
+     * with {@code ThrowOnMismatch} raising {@link #decodeMismatchThrow}'s client error on a null
+     * decode return: a wrong-type id is an authored-input contract violation. At the single-row mutation
      * site a malformed id would surface as a runtime failure in any case, because the SET / DELETE
      * WHERE shape has no per-row skip semantics to fall back on.
      */
@@ -4642,8 +4670,9 @@ public class TypeFetcherGenerator {
             String recLocal,
             CallSiteExtraction.NodeIdDecodeKeys nidk,
             String mapLocal,
-            String sourceField) {
-        appendDecodeLocal(locals, recLocal, nidk, CodeBlock.of("$L.get($S)", mapLocal, sourceField), sourceField);
+            String sourceField,
+            ClassName clientException) {
+        appendDecodeLocal(locals, recLocal, nidk, CodeBlock.of("$L.get($S)", mapLocal, sourceField), sourceField, clientException);
     }
 
     /**
@@ -4658,16 +4687,17 @@ public class TypeFetcherGenerator {
             String recLocal,
             CallSiteExtraction.NodeIdDecodeKeys nidk,
             CodeBlock wireValueExpr,
-            String sourceField) {
+            String sourceField,
+            ClassName clientException) {
         ClassName encoderClass = nidk.decodeMethod().encoderClass();
         String methodName = nidk.decodeMethod().methodName();
         TypeName recordType = nidk.decodeMethod().returnType();
-        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        String wireLocal = recLocal + "Wire";
+        locals.addStatement("$T $L = $L", Object.class, wireLocal, wireValueExpr);
         locals.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
-            recordType, recLocal, wireValueExpr, String.class, recLocal, encoderClass, methodName, recLocal);
+            recordType, recLocal, wireLocal, String.class, recLocal, encoderClass, methodName, recLocal);
         locals.beginControlFlow("if ($L == null)", recLocal)
-            .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
+            .add(decodeMismatchThrow(nidk, wireLocal, clientException))
             .endControlFlow();
     }
 
@@ -4683,7 +4713,8 @@ public class TypeFetcherGenerator {
     private static void emitLookupKeyDecodeLocals(
             CodeBlock.Builder block,
             List<InputColumnBindingGroup> groups,
-            String mapLocal) {
+            String mapLocal,
+            ClassName clientException) {
         for (int gi = 0; gi < groups.size(); gi++) {
             var g = groups.get(gi);
             switch (g) {
@@ -4693,13 +4724,13 @@ public class TypeFetcherGenerator {
                         if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
                             var path = accessPathOf(binding.fieldName(), binding.extraction());
                             appendDecodeLocal(block, "bulkKey" + gi + "_" + bi, nidk,
-                                ArgCallEmitter.nestedMapValueExpr(mapLocal, path), binding.fieldName());
+                                ArgCallEmitter.nestedMapValueExpr(mapLocal, path), binding.fieldName(), clientException);
                         }
                     }
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg ->
                     appendDecodeLocal(block, "bulkKey" + gi, drg.extraction(),
-                        ArgCallEmitter.nestedMapValueExpr(mapLocal, drg.accessPath()), drg.sourceFieldName());
+                        ArgCallEmitter.nestedMapValueExpr(mapLocal, drg.accessPath()), drg.sourceFieldName(), clientException);
             }
         }
     }
@@ -4766,7 +4797,8 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildBulkLookupRowIn(
             List<InputColumnBindingGroup> groups,
-            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            ClassName clientException) {
         var b = CodeBlock.builder().add("$T.row(", DSL);
         boolean first = true;
         for (var g : groups) {
@@ -4793,14 +4825,14 @@ public class TypeFetcherGenerator {
                                 String recLocal = "bulkKey" + gi + "_" + bi;
                                 var path = accessPathOf(binding.fieldName(), binding.extraction());
                                 appendDecodeLocal(lambdaLocals, recLocal, nidk,
-                                    ArgCallEmitter.nestedMapValueExpr("row", path), binding.fieldName());
+                                    ArgCallEmitter.nestedMapValueExpr("row", path), binding.fieldName(), clientException);
                             }
                         }
                     }
                     case InputColumnBindingGroup.DecodedRecordGroup drg -> {
                         String recLocal = "bulkKey" + gi;
                         appendDecodeLocal(lambdaLocals, recLocal, drg.extraction(),
-                            ArgCallEmitter.nestedMapValueExpr("row", drg.accessPath()), drg.sourceFieldName());
+                            ArgCallEmitter.nestedMapValueExpr("row", drg.accessPath()), drg.sourceFieldName(), clientException);
                     }
                 }
             }
@@ -5699,7 +5731,7 @@ public class TypeFetcherGenerator {
                 var input = recordCarrierInput(f.write());
                 yield buildSingleRecordTwoStepFetcher(
                     ctx, f, input.name(), input.inputTable(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
-                    (tablesOnly, tableLocal) -> buildDmlChainForRecord(f.write(), input.inputTable(), tablesOnly, tableLocal),
+                    (tablesOnly, tableLocal) -> buildDmlChainForRecord(f.write(), input.inputTable(), tablesOnly, tableLocal, clientExceptionClass(outputPackage)),
                     outputPackage);
             }
             case OperationMember.Write.Update w -> {
@@ -5712,7 +5744,7 @@ public class TypeFetcherGenerator {
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
                         setGroups, keyGroups, keySetGroups, setNullRules, obligations,
-                        w.inputArg().table(), tablesOnly, tableLocal),
+                        w.inputArg().table(), tablesOnly, tableLocal, clientExceptionClass(outputPackage)),
                     outputPackage);
             }
             case OperationMember.Write.Delete w -> {
@@ -5720,7 +5752,7 @@ public class TypeFetcherGenerator {
                 yield buildSingleRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildRecordDeleteChain(
-                        w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal),
+                        w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal, clientExceptionClass(outputPackage)),
                     outputPackage);
             }
         };
@@ -5913,7 +5945,8 @@ public class TypeFetcherGenerator {
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
             List<SetGroup> keySetGroups, Map<List<String>, OnExplicitNull> setNullRules,
             List<AgreementObligation> agreementObligations,
-            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
+            ClassName clientException) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var preGuard = CodeBlock.builder();
@@ -5924,8 +5957,8 @@ public class TypeFetcherGenerator {
         // walker's obligations is what makes the omission impossible rather than merely fixed.
         emitKeySetAgreementPreamble(preGuard, keySetGroups, setGroups, agreementObligations,
             "in", "keySet", tablesOnly, tableRef);
-        emitSetMapPuts(preGuard, setGroups, setNullRules, "sets", "in", "in", "setKey", tablesOnly, tableRef);
-        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in");
+        emitSetMapPuts(preGuard, setGroups, setNullRules, "sets", "in", "in", "setKey", tablesOnly, tableRef, clientException);
+        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in", clientException);
         preGuard.add(whereChunk.decodeLocals());
         return new DmlChainAndGuards(new KeyStatement.KeyedUpdate(tableLocal, whereChunk.whereExpr()),
             preGuard.build());
@@ -6110,10 +6143,11 @@ public class TypeFetcherGenerator {
             OperationMember.Write.Dml write,
             TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
-            String tableLocal) {
+            String tableLocal,
+            ClassName clientException) {
         return switch (write) {
-            case OperationMember.Write.Insert i -> buildRecordInsertChain(i.input(), tableRef, tablesOnly, tableLocal);
-            case OperationMember.Write.Upsert u -> buildRecordUpsertChain(u.input(), tableRef, tablesOnly, tableLocal);
+            case OperationMember.Write.Insert i -> buildRecordInsertChain(i.input(), tableRef, tablesOnly, tableLocal, clientException);
+            case OperationMember.Write.Upsert u -> buildRecordUpsertChain(u.input(), tableRef, tablesOnly, tableLocal, clientException);
             // Unreachable: MutationDmlRecordField's compact constructor rejects these arms; the
             // payload-returning UPDATE / DELETE ride their walker-carrier leaves.
             case OperationMember.Write.Update _, OperationMember.Write.Delete _ ->
@@ -6141,8 +6175,9 @@ public class TypeFetcherGenerator {
     private static DmlChainAndGuards buildRecordDeleteChain(
             no.sikt.graphitron.rewrite.model.DeleteRows deleteRows,
             List<InputColumnBindingGroup> whereGroups,
-            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
-        var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in");
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
+            ClassName clientException) {
+        var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in", clientException);
         var preGuard = CodeBlock.builder().add(whereChunk.decodeLocals());
         var chain = CodeBlock.builder()
             .add(".deleteFrom($L)\n", tableLocal)
@@ -6155,16 +6190,18 @@ public class TypeFetcherGenerator {
 
     private static DmlChainAndGuards buildRecordInsertChain(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
-            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
+            ClassName clientException) {
         var values = tia.list()
-            ? buildBulkInsertValues(tia.fields(), tableLocal, tablesOnly, tableRef)
-            : buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef);
+            ? buildBulkInsertValues(tia.fields(), tableLocal, tablesOnly, tableRef, clientException)
+            : buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef, clientException);
         return new DmlChainAndGuards(new KeyStatement.Chain(values.chain()), values.prep());
     }
 
     private static DmlChainAndGuards buildRecordUpsertChain(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
-            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
+            ClassName clientException) {
         if (tia.list()) {
             throw new UnsupportedOperationException(
                 "Bulk UPSERT on MutationDmlRecordField is not yet implemented; use single-input "
@@ -6183,7 +6220,7 @@ public class TypeFetcherGenerator {
                         + "only @lookupKey fields were provided")
                 .endControlFlow();
         }
-        var values = buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef);
+        var values = buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef, clientException);
         preGuard.add(values.prep());
         var conflictCols = CodeBlock.builder();
         var conflictTargetColumns = new ArrayList<no.sikt.graphitron.model.jooq.ColumnRef>();
@@ -6254,7 +6291,7 @@ public class TypeFetcherGenerator {
                     ctx, f, input.name(), input.inputTable(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     "INSERT",
                     (tablesOnly, tableLocal, pkCols, recordRowType) ->
-                        buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
+                        buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType, clientExceptionClass(outputPackage)),
                     outputPackage);
             }
             case OperationMember.Write.Update w -> {
@@ -6267,7 +6304,7 @@ public class TypeFetcherGenerator {
                         setGroups, keyGroups, keyColumnsAsSetGroups(w.updateRows().keyColumns()),
                         nullRulesByPath(w.updateRows().nullRules()),
                         w.updateRows().agreementObligations(),
-                        w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
+                        w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType, clientExceptionClass(outputPackage)),
                     outputPackage);
             }
             case OperationMember.Write.Delete w -> {
@@ -6277,7 +6314,7 @@ public class TypeFetcherGenerator {
                     "DELETE",
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
                         w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols,
-                        recordRowType),
+                        recordRowType, clientExceptionClass(outputPackage)),
                     outputPackage);
             }
             case OperationMember.Write.Upsert _ -> throw new IllegalStateException(
@@ -6485,7 +6522,8 @@ public class TypeFetcherGenerator {
             List<SetGroup> keySetGroups, Map<List<String>, OnExplicitNull> setNullRules,
             List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
-            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType) {
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType,
+            ClassName clientException) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
@@ -6495,10 +6533,10 @@ public class TypeFetcherGenerator {
         // its single-payload sibling it shipped without any such check.
         emitKeySetAgreementPreamble(body, keySetGroups, setGroups, agreementObligations,
             "row", "keySet", tablesOnly, tableRef);
-        emitSetMapPuts(body, setGroups, setNullRules, "sets", "row", "row", "setKey", tablesOnly, tableRef);
+        emitSetMapPuts(body, setGroups, setNullRules, "sets", "row", "row", "setKey", tablesOnly, tableRef, clientException);
         // Each row decides on its own: a row whose `sets` is empty is an empty patch and runs the
         // key read in place of its UPDATE, so mixed batches keep input order and per-row no-match.
-        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "row");
+        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "row", clientException);
         body.add(whereChunk.decodeLocals());
         body.add(renderKeyFetch(new KeyStatement.KeyedUpdate(tableLocal, whereChunk.whereExpr()),
             CodeBlock.of("$T rec = ", recordRowType), CodeBlock.of("txd"),
@@ -6519,10 +6557,11 @@ public class TypeFetcherGenerator {
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
-            TypeName recordRowType) {
+            TypeName recordRowType,
+            ClassName clientException) {
         return switch (write) {
             case OperationMember.Write.Insert i -> buildBulkRecordPerRowInsertBody(
-                i.input(), tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
+                i.input(), tableRef, tablesOnly, tableLocal, pkCols, recordRowType, clientException);
             // Unreachable: MutationBulkDmlRecordField's compact constructor rejects these arms
             // (UPSERT under the cardinality-safety regime; UPDATE / DELETE ride their
             // walker-carrier leaves). Drift guards, not dispatch.
@@ -6558,9 +6597,10 @@ public class TypeFetcherGenerator {
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
-            TypeName recordRowType) {
+            TypeName recordRowType,
+            ClassName clientException) {
         var body = CodeBlock.builder();
-        var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "row");
+        var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "row", clientException);
         body.add(whereChunk.decodeLocals());
         body.add("$T rec = txd.deleteFrom($L)\n", recordRowType, tableLocal)
             .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
@@ -6577,10 +6617,11 @@ public class TypeFetcherGenerator {
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
-            TypeName recordRowType) {
+            TypeName recordRowType,
+            ClassName clientException) {
         // One statement per row, so each row takes the single-row shape: its omitted fields leave
         // their columns out, and no DEFAULT is written even when the rows differ.
-        var values = buildSingleRowInsertValues(tia.fields(), "row", tableLocal, tablesOnly, tableRef);
+        var values = buildSingleRowInsertValues(tia.fields(), "row", tableLocal, tablesOnly, tableRef, clientException);
         var body = CodeBlock.builder();
         body.add(values.prep());
         body.add("$T rec = txd", recordRowType).indent().indent().add(values.chain()).unindent().unindent()

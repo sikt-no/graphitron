@@ -178,8 +178,7 @@ class SelfFkNodeIdInsertExecutionTest {
     @Test
     void wrongTypeInReplyTo_stillThrowsAndInsertsNothing() {
         // A Mailbox id where an Email id belongs is a value that fails to decode, not a missing
-        // reference, so it still throws before the INSERT runs. The decode failure reaches the client
-        // redacted today, so this pins the refusal and the absent row rather than the message.
+        // reference, so it still throws before the INSERT runs, with the decode failure's own text.
         int msgNo = 107;
         String mailbox5 = NodeIdEncoder.encode("Mailbox", MAILBOX_ALICE);
         ExecutionResult result = executeRaw(
@@ -187,7 +186,9 @@ class SelfFkNodeIdInsertExecutionTest {
             + ", inReplyTo: \"" + mailbox5 + "\"}) { messageNo } }");
         assertThat(result.getErrors())
             .as("a wrong-type id on the nullable self-FK must still be rejected")
-            .isNotEmpty();
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .contains("Invalid node id")
+                .contains("expected a Email id"));
         assertThat((Map<String, Object>) result.getData()).containsEntry("insertEmailReply", null);
         assertThat(storedReplyPointers(msgNo)).as("nothing is inserted").isEmpty();
     }

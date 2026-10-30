@@ -3,7 +3,6 @@ package no.sikt.graphitron.render;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
-import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 
 import javax.lang.model.element.Modifier;
@@ -15,7 +14,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * a record emits this, and there are two families of them, which is why the derivation is here rather
  * than in either.
  *
- * <p>Three emitted forms come off the one body below: the plain form, the client-error form, and the
+ * <p>Two emitted forms come off the one body below: the client-error form, and the
  * null-returning form a polymorphic slot's per-candidate arm needs. Beside them sits the container
  * helper a polymorphic slot calls, which composes the null-returning form per candidate with the
  * multi-candidate failure {@link NodeIdDecodeFailure} spells.
@@ -36,12 +35,11 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  */
 public final class RecordDecodeFragments {
 
-    private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphqlErrorException");
-
     private RecordDecodeFragments() {}
 
     /**
-     * The decode helper for one node type, under the name its host allocated.
+     * The decode helper for one node type, under the name its host allocated, raising the
+     * client error {@link NodeIdDecodeFailure} spells when the id does not decode.
      *
      * <p>The load is one {@code fromArray} call regardless of key arity, so a composite key just names
      * N fields, and each value is coerced through its column's {@code DataType} and registered
@@ -51,34 +49,24 @@ public final class RecordDecodeFragments {
      *
      * <p>The two failure shapes are told apart on purpose. A wire value that is not a string at all is
      * an absent or wrong-shaped argument, so the helper returns {@code null} and lets its caller decide;
-     * a string that decodes to the wrong arity is a well-formed id of another type, which is a client
-     * error and throws. A caller that wants the first to be an error too raises it at the call site,
-     * where it knows what the value was for.
+     * a string that does not decode is a malformed id or a well-formed id of another type, which is a
+     * client error and throws. A caller that wants the first to be an error too raises it at the call
+     * site, where it knows what the value was for.
      *
-     * @param name        the method name the host allocated for this record type
-     * @param decode      the per-type decoder: its encoder class, wire type id, and key column list
-     * @param nodeTable   the node type's own table, whose record the load materialises
-     */
-    public static MethodSpec decodeHelper(String name, HelperRef.Decode decode, TableRef nodeTable) {
-        return decodeHelper(name, decode.encoderClass(), decode.typeId(),
-            decode.outputColumnShape(), nodeTable);
-    }
-
-    /**
-     * The same body with the client-error failure the key helpers raise, for a host that can reach
-     * the generated error type and knows what to call the node type.
+     * <p>Both hosts raise the same failure. A conditions class hosting an {@code argMapping}
+     * key-column projection sits beside {@link CompositeDecodeHelperRegistry}'s key helpers reading
+     * the same wire value at a different grain, and a {@code <Type>Fetchers} class hosting an
+     * input-bean member decode reads it at a {@code @service} boundary; one bad id fails identically
+     * at every grain, or a client learns that one spelling of an id validates and another does not.
      *
-     * <p>The two failure forms are a parameter rather than a fork inside the body because they
-     * differ in what the host can reach, not in what the decode means. A conditions class hosting an
-     * {@code argMapping} key-column projection sits beside {@link CompositeDecodeHelperRegistry}'s
-     * key helpers reading the same wire value at a different grain, so one bad id has to fail
-     * identically at both or a client learns that one spelling of a filter validates its ids and
-     * another does not. A {@code <Type>Fetchers} class hosting an input-bean member decode is a
-     * different consumer at a different boundary and keeps the plain form above.
-     *
+     * @param name          the method name the host allocated for this record type
+     * @param encoderClass  the generated node-id encoder the decode goes through
+     * @param typeId        the wire type id the encoded id carries
+     * @param nodeTypeName  the node type as the failure message names it to the client
+     * @param keyColumns    the node type's key columns in key order, the shape the load names
+     * @param nodeTable     the node type's own table, whose record the load materialises
      * @param outputPackage the run's output package, which is how the generated client-error type is
      *                      reached
-     * @param nodeTypeName  the node type as the failure message names it to the client
      */
     public static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
             String nodeTypeName, java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
@@ -89,33 +77,10 @@ public final class RecordDecodeFragments {
     }
 
     /**
-     * The same body from the facts themselves rather than from a model reference, which is what a
-     * store-sourced caller has: the encoder class it minted from its own configuration, the wire type
-     * id and key column list off a command row, and the node table beside them. The overload above
-     * unpacks a {@link HelperRef.Decode} into exactly this call, so the two cannot emit different
-     * bodies; it stays for the input-bean family, whose refs the walk still mints.
-     *
-     * @param name         the method name the host allocated for this record type
-     * @param encoderClass the generated node-id encoder the decode goes through
-     * @param typeId       the wire type id the encoded id carries
-     * @param keyColumns   the node type's key columns in key order, the shape the load names
-     * @param nodeTable    the node type's own table, whose record the load materialises
-     */
-    public static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
-            java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
-            TableRef nodeTable) {
-        return decodeHelper(name, encoderClass, typeId, keyColumns, nodeTable,
-            CodeBlock.builder()
-                .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR,
-                    "Decoded NodeId did not match the expected type for this argument")
-                .build());
-    }
-
-    /**
      * The same body whose arity mismatch returns {@code null} instead of failing, for a caller that
      * is about to try another candidate. The one form of this helper that does not raise: a
      * polymorphic slot's per-candidate arm has to be able to tell "this id is not mine" from "this id
-     * is broken", and the three forms above answer both with a throw, so a right-prefix-wrong-arity
+     * is broken", and the form above answers both with a throw, so a right-prefix-wrong-arity
      * id would surface one candidate's own mismatch error instead of the dispatch's message naming
      * every candidate. {@code decodeColumns} already returns {@code null} for a foreign prefix, so one
      * arm answers both misses.
@@ -183,7 +148,6 @@ public final class RecordDecodeFragments {
             ClassName encoderClass, java.util.List<String> candidateTypeIds,
             java.util.List<String> candidateHelpers, java.util.List<ClassName> candidateRecords,
             String candidates, String outputPackage) {
-        ClassName clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
         var body = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(slotType)
@@ -201,7 +165,7 @@ public final class RecordDecodeFragments {
                 .endControlFlow()
                 .endControlFlow();
         }
-        return body.addStatement("throw new $T($L)", clientException,
+        return body.addStatement("throw new $T($L)", NodeIdDecodeFailure.clientException(outputPackage),
                 NodeIdDecodeFailure.multiCandidateMessage(candidateTypeIds, candidates, "wire",
                     "peeked"))
             .build();
@@ -239,9 +203,9 @@ public final class RecordDecodeFragments {
     }
 
     /**
-     * The shared body, with the mismatch failure supplied. Both public forms above route through
-     * here, so the decode, the arity check and the positional load have one spelling and only the
-     * throw differs.
+     * The shared body, with the mismatch failure supplied. The raising and the null-returning forms
+     * above route through here, so the decode, the arity check and the positional load have one
+     * spelling and only the mismatch branch differs.
      */
     private static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
             java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,

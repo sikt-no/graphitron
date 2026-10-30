@@ -980,6 +980,41 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
+    void deleteFilmActorByNodeId_wrongTypeId_failsWithTheDecodeClientErrorAndDeletesNothing() {
+        // The WHERE-identity decode throws before the statement runs. The field has no errors
+        // channel, so the client error is what the client reads, not a redacted reference.
+        inRolledBackTransaction(tx -> {
+            String filmId = NodeIdEncoder.encode("Film", 1);
+
+            graphql.ExecutionResult result = executeRaw(tx, """
+                mutation { deleteFilmActorByNodeId(in: { id: "%s" }) }
+                """.formatted(filmId));
+
+            assertThat(result.getErrors())
+                .singleElement()
+                .satisfies(e -> assertThat(e.getMessage())
+                    .contains("Invalid node id \"" + filmId + "\"")
+                    .contains("decodes to type \"Film\", expected a FilmActor id")
+                    .doesNotContain("Reference:"));
+            assertThat(countFilmActor(tx, 1, 1)).isEqualTo(1);
+        });
+    }
+
+    @Test
+    void deleteFilmActorByNodeId_malformedId_failsWithTheDecodeClientError() {
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { deleteFilmActorByNodeId(in: { id: "not-a-node-id" }) }
+            """);
+
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"not-a-node-id\"")
+                .contains("not a valid FilmActor id")
+                .doesNotContain("Reference:"));
+    }
+
+    @Test
     void deleteFilmActorsByNodeId_missingThenExisting_answersBothCompositeIdsInInputOrder() {
         // Pair (2, 5) is seeded here; (5, 6) is not in the init.sql seed.
         inRolledBackTransaction(tx -> {

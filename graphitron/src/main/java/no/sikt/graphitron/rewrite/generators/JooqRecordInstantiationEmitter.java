@@ -6,6 +6,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.NodeIdDecodeFailure;
 import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
@@ -46,9 +47,6 @@ final class JooqRecordInstantiationEmitter {
     private static final ClassName MAP = ClassName.get(Map.class);
     private static final ClassName LIST = ClassName.get(List.class);
     private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
-    private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphqlErrorException");
-    private static final String DECODE_MISMATCH_MSG =
-        "Decoded NodeId did not match the expected type for this argument";
 
     private JooqRecordInstantiationEmitter() {}
 
@@ -65,7 +63,8 @@ final class JooqRecordInstantiationEmitter {
      * needs no {@code @SuppressWarnings}; the {@code Tables.<T>.<col>} references keep the real
      * compile-tier check that every bound column exists on the record's table.
      */
-    static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names) {
+    static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names,
+            ClassName clientException) {
         ClassName recordType = CatalogRefs.recordClass(jr.table());
         ClassName tablesClass = CatalogRefs.constantsClass(jr.table());
         String tableField = jr.table().javaFieldName();
@@ -98,10 +97,10 @@ final class JooqRecordInstantiationEmitter {
                 emitColumnBinding(b, cb, tablesClass, tableField);
             }
             for (var kd : jr.keyDecodes()) {
-                emitKeyDecode(b, kd, tablesClass, tableField);
+                emitKeyDecode(b, kd, tablesClass, tableField, clientException);
             }
         } else {
-            emitWithAgreement(b, writers, plan, tablesClass, tableField);
+            emitWithAgreement(b, writers, plan, tablesClass, tableField, clientException);
         }
 
         return b.addStatement("return rec").build();
@@ -227,24 +226,23 @@ final class JooqRecordInstantiationEmitter {
      * decode, NULL write survives).
      */
     private static void emitKeyDecode(MethodSpec.Builder b, CallSiteExtraction.RecordKeyDecode kd,
-            ClassName tablesClass, String tableField) {
+            ClassName tablesClass, String tableField, ClassName clientException) {
         CodeBlock cols = targetColumnsExpr(kd, tablesClass, tableField);
         CodeBlock parse = SlotParse.parseClasses(kd.targetColumns());
         String base = localBase(kd.path());
         String leaf = kd.leaf();
         String keyVar = base + "Keys";
+        String rawVar = base + "Raw";
         String parentMap = openDescent(b, kd.path());
         if (kd.nonNull()) {
-            b.addStatement("$T $L = $T.decodeColumns($S, ($T) $L.get($S), $L, $L)",
-                Object[].class, keyVar, kd.encoderClass(), kd.typeId(), String.class, parentMap, leaf, parse, cols);
-            b.beginControlFlow("if ($L == null)", keyVar)
-                .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR, DECODE_MISMATCH_MSG)
-                .endControlFlow();
+            b.addStatement("$T $L = $L.get($S)", Object.class, rawVar, parentMap, leaf);
+            b.addStatement("$T $L = $T.decodeColumns($S, $L, $L, $L)",
+                Object[].class, keyVar, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+            emitDecodeThrow(b, kd, base, clientException);
             b.addStatement("rec.fromArray($L, $L)", keyVar, cols);
             closeDescent(b, kd.path());
             return;
         }
-        String rawVar = base + "Raw";
         b.beginControlFlow("if ($L.containsKey($S))", parentMap, leaf);
         b.addStatement("$T $L = $L.get($S)", Object.class, rawVar, parentMap, leaf);
         b.beginControlFlow("if ($L == null)", rawVar);
@@ -254,11 +252,9 @@ final class JooqRecordInstantiationEmitter {
             b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, col.javaName());
         }
         b.nextControlFlow("else");
-        b.addStatement("$T $L = $T.decodeColumns($S, ($T) $L, $L, $L)",
-            Object[].class, keyVar, kd.encoderClass(), kd.typeId(), String.class, rawVar, parse, cols);
-        b.beginControlFlow("if ($L == null)", keyVar)
-            .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR, DECODE_MISMATCH_MSG)
-            .endControlFlow();
+        b.addStatement("$T $L = $T.decodeColumns($S, $L, $L, $L)",
+            Object[].class, keyVar, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+        emitDecodeThrow(b, kd, base, clientException);
         b.addStatement("rec.fromArray($L, $L)", keyVar, cols);
         b.endControlFlow();
         b.endControlFlow();
@@ -330,9 +326,9 @@ final class JooqRecordInstantiationEmitter {
      * so the load phase can tell whether a cleared reference has anything to defer to on that column.
      */
     private static void emitWithAgreement(MethodSpec.Builder b, List<Writer> writers,
-            List<OverlapColumn> plan, ClassName tablesClass, String tableField) {
+            List<OverlapColumn> plan, ClassName tablesClass, String tableField, ClassName clientException) {
         for (var w : writers) {
-            emitPrepare(b, w, tablesClass, tableField);
+            emitPrepare(b, w, tablesClass, tableField, clientException);
         }
         var agreementLists = new java.util.HashMap<String, String>();
         int ci = 0;
@@ -359,7 +355,8 @@ final class JooqRecordInstantiationEmitter {
      * ({@link #emitMultiPathRead}), so the value a merged alias group contributes to the agreement
      * check is the same first-present value it would write on its own.
      */
-    private static void emitPrepare(MethodSpec.Builder b, Writer w, ClassName tablesClass, String tableField) {
+    private static void emitPrepare(MethodSpec.Builder b, Writer w, ClassName tablesClass, String tableField,
+            ClassName clientException) {
         String base = w.base();
         List<String> path = w.path();
         String leaf = path.get(path.size() - 1);
@@ -374,9 +371,10 @@ final class JooqRecordInstantiationEmitter {
             if (path.size() == 1) {
                 // Top-level non-null id is always present (graphql-java enforces ID! at the boundary).
                 b.addStatement("boolean $LPresent = true", base);
-                b.addStatement("$T $LKeys = $T.decodeColumns($S, ($T) raw.get($S), $L, $L)",
-                    Object[].class, base, kd.encoderClass(), kd.typeId(), String.class, leaf, parse, cols);
-                emitDecodeThrow(b, base);
+                b.addStatement("$T $LRaw = raw.get($S)", Object.class, base, leaf);
+                b.addStatement("$T $LKeys = $T.decodeColumns($S, $L, $L, $L)",
+                    Object[].class, base, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+                emitDecodeThrow(b, kd, base, clientException);
             } else {
                 // Nested non-null id: present iff the enclosing group is present (an absent group skips
                 // the decode and its throw, matching emitKeyDecode).
@@ -384,9 +382,10 @@ final class JooqRecordInstantiationEmitter {
                 b.addStatement("$T $LKeys = null", Object[].class, base);
                 String parentMap = openDescent(b, path);
                 b.addStatement("$LPresent = true", base);
-                b.addStatement("$LKeys = $T.decodeColumns($S, ($T) $L.get($S), $L, $L)",
-                    base, kd.encoderClass(), kd.typeId(), String.class, parentMap, leaf, parse, cols);
-                emitDecodeThrow(b, base);
+                b.addStatement("$T $LRaw = $L.get($S)", Object.class, base, parentMap, leaf);
+                b.addStatement("$LKeys = $T.decodeColumns($S, $L, $L, $L)",
+                    base, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+                emitDecodeThrow(b, kd, base, clientException);
                 closeDescent(b, path);
             }
             return;
@@ -402,22 +401,33 @@ final class JooqRecordInstantiationEmitter {
         b.beginControlFlow("if ($LRaw == null)", base);
         b.addStatement("$LPresentNull = true", base);
         b.nextControlFlow("else");
-        b.addStatement("$LKeys = $T.decodeColumns($S, ($T) $LRaw, $L, $L)",
-            base, kd.encoderClass(), kd.typeId(), String.class, base, parse, cols);
-        emitDecodeThrow(b, base);
+        b.addStatement("$LKeys = $T.decodeColumns($S, $L, $L, $L)",
+            base, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+        emitDecodeThrow(b, kd, base, clientException);
         b.endControlFlow();
         b.endControlFlow();
         closeDescent(b, path);
     }
 
-    /** The {@code if (keys == null) throw …} decode guard shared by the decode prepare arms, reading
+    /** The {@code if (keys == null) throw …} decode guard shared by every decode arm, reading
      *  the {@code <base>Keys} local: {@code decodeColumns} answers {@code null} for a malformed id, a
      *  wrong arity and a key value that is not a value of its column alike, so an id that does not
-     *  decode fails here, before it can agree with another writer or be loaded. */
-    private static void emitDecodeThrow(MethodSpec.Builder b, String base) {
+     *  decode fails here, before it can agree with another writer or be loaded. The throw is
+     *  {@link NodeIdDecodeFailure}'s client error, echoing the {@code <base>Raw} wire local, so a
+     *  {@code @service} argument fails with the text every other {@code @nodeId} site raises. */
+    private static void emitDecodeThrow(MethodSpec.Builder b, CallSiteExtraction.RecordKeyDecode kd,
+            String base, ClassName clientException) {
         b.beginControlFlow("if ($LKeys == null)", base)
-            .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR, DECODE_MISMATCH_MSG)
+            .addCode(NodeIdDecodeFailure.throwStatement(clientException, kd.encoderClass(), kd.typeId(),
+                kd.typeName(), base + "Raw"))
             .endControlFlow();
+    }
+
+    /** The {@code <base>Raw} wire local narrowed to the {@code String} {@code decodeColumns} reads. A
+     *  non-string value narrows to {@code null}, which does not decode and so reaches the client
+     *  error rather than a {@code ClassCastException}. */
+    private static CodeBlock narrowedWire(String base) {
+        return CodeBlock.of("$LRaw instanceof $T $LText ? $LText : null", base, String.class, base, base);
     }
 
     /**
@@ -465,7 +475,7 @@ final class JooqRecordInstantiationEmitter {
 
     /**
      * Agreement phase for one overlapping column: gathers the present writers' values into a list, then
-     * pairwise-checks them against the first present value through {@link #GRAPHQL_ERROR}-throwing
+     * pairwise-checks them against the first present value through {@code GraphqlErrorException}-throwing
      * {@code requireColumnAgreement} (coerced via the column's {@code DataType}). Presence-guarded: only
      * actually-present writers enter the list, so an omitted nullable writer cannot conflict, and the check
      * fires only when two or more are present. The label names the conflicting SDL fields, not the column.

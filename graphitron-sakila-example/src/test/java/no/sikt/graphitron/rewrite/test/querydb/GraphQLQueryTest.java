@@ -3879,6 +3879,17 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void compositeNodeIdLookup_malformedId_failsWithTheDecodeClientError() {
+        graphql.ExecutionResult result = executeRaw("{ filmActorByNodeId(id: [\"not-a-node-id\"]) { filmId } }");
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"not-a-node-id\"")
+                .contains("not a valid FilmActor id")
+                .doesNotContain("Reference:"));
+    }
+
+    @Test
     void compositeNodeIdLookup_emptyInput_returnsEmpty() {
         Map<String, Object> data = execute("{ filmActorByNodeId(id: []) { filmId } }");
         assertThat(data).extractingByKey("filmActorByNodeId", as(LIST)).isEmpty();
@@ -3906,18 +3917,17 @@ class GraphQLQueryTest {
         // ThrowOnMismatch contract: a NodeId encoded for the wrong typeId must surface as an error
         // rather than silently producing degenerate VALUES rows. A Customer-prefixed id reaches
         // decodeFilmActor, which returns null on prefix-mismatch; the lookup VALUES row-builder
-        // (LookupRows) then throws a plain GraphqlErrorException. That throw is NOT the
-        // GraphitronClientException marker the authored-filter path introduced (that work enriched the
-        // CompositeDecodeHelperRegistry filter/lookup-arg helpers, not the separate lookup-values
-        // emitter, mirroring how the record-decode siblings keep their own message), so
-        // surfaceClientErrorOrRedact falls through to redact: a correlation id, not the raw text.
-        // Pins that boundary behaviourally.
+        // (LookupRows) then throws the client error every @nodeId site raises, so the client reads
+        // why rather than a redacted reference.
         String wrongType = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         graphql.ExecutionResult result = executeRaw(
             "{ filmActorByNodeId(id: [\"" + wrongType + "\"]) { filmId actorId } }");
-        assertThat(result.getErrors()).isNotEmpty();
-        assertThat(result.getErrors().get(0).getMessage())
-            .contains("An error occurred. Reference:");
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"" + wrongType + "\"")
+                .contains("decodes to type \"Customer\", expected a FilmActor id")
+                .doesNotContain("Reference:"));
     }
 
     // ===== Record-sourced BatchedTableField: @record parent + DataLoader language batch =====
@@ -8088,32 +8098,38 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void assignFilmRecord_wrongTypeNodeId_throwsDecodeMismatch() {
+    void assignFilmRecord_wrongTypeNodeId_failsWithTheDecodeClientError() {
         // Runtime decode-mismatch: a NodeId whose embedded type id is not "Film" (here a
-        // FilmActor id) fails the decodeValues("Film", …) type check, so decodeFilmRecord throws
-        // instead of materialising a wrong record. The fetcher's catch arm surfaces it as an error
-        // (the message is redacted to a UUID reference, so we assert the failure, not its text) and
-        // the mutation returns no value. Pins the throw-on-mismatch contract behaviourally at the
-        // execution tier; the pipeline tier asserts the decode-record leaf structurally instead of
-        // inspecting the generated body.
+        // FilmActor id) fails the decodeColumns("Film", …) type check, so decodeFilmRecord throws
+        // instead of materialising a wrong record. The throw is the generated client exception
+        // every @nodeId site raises, so the client reads why rather than a redacted reference, and
+        // the mutation returns no value.
         String wrongTypeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
         graphql.ExecutionResult result = executeRaw(
             "mutation { assignFilmRecord(in: {film: \"" + wrongTypeId + "\"}) }");
         assertThat(result.getErrors())
             .as("a wrong-type NodeId in a jOOQ-record member is an authored-input error, not a silent decode")
-            .isNotEmpty();
-        // Privacy-contract proof: the record-decode path throws a plain GraphqlErrorException,
-        // NOT the GraphitronClientException marker, so surfaceClientErrorOrRedact must NOT surface
-        // it — it falls through to redact (correlation id only), leaking no internal detail. This
-        // pins that the surface arm narrows to the client-error type rather than leaking arbitrary
-        // exceptions.
-        assertThat(result.getErrors().get(0).getMessage())
-            .contains("An error occurred. Reference:")
-            .doesNotContain(wrongTypeId);
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"" + wrongTypeId + "\"")
+                .contains("decodes to type \"FilmActor\", expected a Film id")
+                .doesNotContain("Reference:"));
         Map<String, Object> data = result.getData();
         assertThat(data.get("assignFilmRecord"))
             .as("the mutation does not succeed with a wrong-type NodeId")
             .isNull();
+    }
+
+    @Test
+    void assignFilmRecord_malformedNodeId_failsWithTheDecodeClientError() {
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { assignFilmRecord(in: {film: \"not-a-node-id\"}) }");
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"not-a-node-id\"")
+                .contains("not a valid Film id")
+                .doesNotContain("Reference:"));
     }
 
     @Test
@@ -8135,8 +8151,8 @@ class GraphQLQueryTest {
         // The silent half of the shared-helper defect: with one helper checking every id against
         // "LanguageNode", a LanguageNode id handed to the `alias` field was accepted and the
         // mutation succeeded, so a schema mid-rename looked migrated while the mutation was not.
-        // Each field checking its own type turns that into the refusal it always was, redacted per
-        // the privacy contract like every other decode mismatch.
+        // Each field checking its own type turns that into the refusal it always was, naming the
+        // type the field expects.
         String languageNode1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageNode", 1);
         String languageNode2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageNode", 2);
         graphql.ExecutionResult result = executeRaw(
@@ -8146,8 +8162,8 @@ class GraphQLQueryTest {
             .as("a LanguageNode id at a field declared @nodeId(typeName: \"LanguageAlias\") is refused")
             .isNotEmpty();
         assertThat(result.getErrors().get(0).getMessage())
-            .contains("An error occurred. Reference:")
-            .doesNotContain(languageNode2);
+            .contains("Invalid node id \"" + languageNode2 + "\"")
+            .contains("expected a LanguageAlias id");
         Map<String, Object> data = result.getData();
         assertThat(data.get("assignLanguagePair"))
             .as("and the mutation does not succeed")
@@ -8169,7 +8185,8 @@ class GraphQLQueryTest {
             .as("a LanguageAlias id at a field declared @nodeId(typeName: \"LanguageNode\") is refused")
             .isNotEmpty();
         assertThat(result.getErrors().get(0).getMessage())
-            .contains("An error occurred. Reference:");
+            .contains("Invalid node id \"" + languageAlias1 + "\"")
+            .contains("expected a LanguageNode id");
         Map<String, Object> data = result.getData();
         assertThat(data.get("assignLanguagePair")).isNull();
     }
@@ -8385,6 +8402,33 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "mutation { modifyFilmActorRecord(in: {id: \"" + filmActorId + "\"}) }");
         assertThat(data).extractingByKey("modifyFilmActorRecord").isEqualTo("filmActor:1:2");
+    }
+
+    @Test
+    void modifyFilmActorRecord_wrongTypeNodeId_failsWithTheDecodeClientError() {
+        // The jOOQ-record family decodes inline in createFilmActorRecord rather than through a
+        // decode<Type>Record helper, and fails with the same client error.
+        String filmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { modifyFilmActorRecord(in: {id: \"" + filmId + "\"}) }");
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"" + filmId + "\"")
+                .contains("decodes to type \"Film\", expected a FilmActor id")
+                .doesNotContain("Reference:"));
+    }
+
+    @Test
+    void modifyFilmActorRecord_malformedNodeId_failsWithTheDecodeClientError() {
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { modifyFilmActorRecord(in: {id: \"not-a-node-id\"}) }");
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"not-a-node-id\"")
+                .contains("not a valid FilmActor id")
+                .doesNotContain("Reference:"));
     }
 
     // ===== FK-reference @nodeId on a jOOQ-record @service param (cross-table) =====

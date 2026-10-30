@@ -136,7 +136,17 @@ The rewrite materialises `filmIds` as `List<Integer>` (or the typed PK shape) on
 
 == Decode-side errors
 
-Argument and input decoders use the `ThrowOnMismatch` contract: a malformed base64 ID, or an ID whose embedded `typeId` does not match the declared `typeName:`, fails the request as a `GraphqlErrorException` *before any SQL runs*. Clients see a structured GraphQL error pointing at the offending argument; the server never tries to use a half-decoded value as a query parameter.
+Argument and input decoders use the `ThrowOnMismatch` contract: a malformed base64 ID, or an ID whose embedded `typeId` does not match the declared `typeName:`, fails the request as a `GraphitronClientException` *before any SQL runs*. Clients see a structured GraphQL error whose path names the field that received the argument; the server never tries to use a half-decoded value as a query parameter.
+
+The message echoes the ID and names the type the argument expects, telling a malformed ID from a well-formed ID of another type:
+
+[source]
+----
+Invalid node id "bm90LWFuLWlk" for this argument: not a valid Film id
+Invalid node id "Q3VzdG9tZXI6MQ" for this argument: decodes to type "Customer", expected a Film id
+----
+
+Every `@nodeId` site fails with this text: a filter, a lookup argument, a `@service` argument and a `@mutation` input field alike, whether the ID is a node's own identity or a reference to another node. Because it is a client error, a mutation without an errors channel reports it to the client rather than redacting it to a log reference, and a payload whose `@error` handler names `GraphqlErrorException` claims it as it claims any other client error.
 
 This is intentionally different from the dispatcher path. `Query.node(id:)` and `Query.nodes(ids:)` use the `NullOnMismatch` contract: a malformed or wrong-typeId ID returns `null` (per Relay's "if no such object exists, the field returns null"). The asymmetry is the opacity contract: clients should not be able to probe for valid IDs by mining server errors. Argument-typed `@nodeId` *asserts* the IDs are of the expected type; `Query.node(id:)` *queries* whether an ID resolves at all.
 

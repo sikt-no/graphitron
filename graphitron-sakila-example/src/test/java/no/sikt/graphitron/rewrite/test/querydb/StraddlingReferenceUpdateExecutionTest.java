@@ -377,14 +377,14 @@ class StraddlingReferenceUpdateExecutionTest {
             "mutation { shelveCatalogueItem(in: {id: \"" + self + "\", shelfId: \"" + notAShelf
             + "\"}) { itemNo } }");
 
-        // The pair of assertions is what discriminates, since the message itself is redacted to a
-        // correlation id at the wire boundary: a collapsed decode branch would clear the column and
-        // report no error at all, so an error beside an unchanged column can only be the refusal.
-        // The same call with a real shelf id succeeds, two tests up, so the id's type is the only
-        // thing that differs.
+        // A collapsed decode branch would clear the column and report no error at all. The same call
+        // with a real shelf id succeeds, two tests up, so the id's type is the only thing that
+        // differs, and the client reads that from the decode failure's text.
         assertThat(result.getErrors())
             .as("a wrong-type id is a malformed request, not a clear")
-            .isNotEmpty();
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .contains("Invalid node id")
+                .contains("expected a CatalogueShelf id"));
         assertThat(shelfCodeOf(itemNo))
             .as("and nothing is written, least of all the null a clear would have written")
             .isEqualTo("A1");
@@ -402,7 +402,11 @@ class StraddlingReferenceUpdateExecutionTest {
             "mutation { shelveCatalogueItems(in: [{id: \"" + self + "\", shelfId: \"" + notAShelf
             + "\"}]) { itemNo } }");
 
-        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors())
+            .as("a wrong-type id is a malformed request, not a clear")
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .contains("Invalid node id")
+                .contains("expected a CatalogueShelf id"));
         assertThat(shelfCodeOf(142))
             .as("the row keeps its shelf; a collapsed branch would have cleared it silently")
             .isEqualTo("A1");

@@ -95,9 +95,6 @@ Verified byte-identical by hashing every copy:
   discarded (only the first is used). Emit the degenerate shape directly when one alternative
   exists. `typenameForTypeId` also rebuilds `Map.ofEntries` per call in a local named `MAP`;
   emit a `static final` field.
-- NodeId rejection messages span three quality tiers, from value + expected/actual type
-  (excellent) down to "did not match the expected type for this argument" in methods with several
-  NodeId inputs. Standardize on the rich form everywhere.
 - One emitted exception message uses an em dash and a Unicode "less than or equal" sign; reword
   in ASCII for log pipelines.
 

@@ -89,16 +89,17 @@ class TableOnlyNodeIdLeafExecutionTest {
 
     @Test
     void update_withAWrongTypeId_failsAndWritesNothing() {
-        // The UPDATE rail's decode failure is not a client exception, so the error router redacts
-        // its text, for a node type's reference exactly as here; what this pins is that the
-        // statement fails rather than writing the column or matching nothing.
+        // The same id fails the filter below with the same text: the statement fails rather than
+        // writing the column or matching nothing, and the client reads why.
         var result = run("""
             mutation { updateLevelInterval(in: {intervalId: 1, fromLevelId: "%s"}) { intervalId } }
             """.formatted(NodeIdEncoder.encode("XlatParent", "MA")));
 
         assertThat(result.getErrors())
             .as("a wrong-type id is a malformed request, not a silent no-match")
-            .isNotEmpty();
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .contains("Invalid node id")
+                .contains("expected a StudyLevel id"));
         assertThat(levelsOf(1)).containsExactly("BA", "MA");
     }
 

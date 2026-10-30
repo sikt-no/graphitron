@@ -134,6 +134,23 @@ class NodeIdValueAgreementExecutionTest {
     }
 
     @Test
+    void serviceRecord_wrongTypeId_failsWithTheDecodeClientError() {
+        // The overlap path decodes in its own prepare phase, separately from the plain decode arm,
+        // and fails with the same client error every @nodeId site raises.
+        String filmId = NodeIdEncoder.encode("Film", 1);
+        ExecutionResult result = executeRaw(
+            "mutation { agreeStorageBin(in: {binId: \"" + filmId + "\", binIdText: \"1\"}) }");
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"" + filmId + "\"")
+                .contains("decodes to type \"Film\", expected a StorageBin id")
+                .doesNotContain("Reference:"));
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("agreeStorageBin")).isNull();
+    }
+
+    @Test
     void serviceRecord_omittedNullableWriter_leavesLoneDecode_doesNotThrow() {
         // Only the decode is present (binIdText omitted). The presence guard means a single present writer
         // is never a conflict, even though an absent writer's "value" would differ — no agreement check fires.
@@ -217,6 +234,29 @@ class NodeIdValueAgreementExecutionTest {
             assertThat(data.get("insertEndorsementOverlap")).isNull();
             assertThat(dsl.fetchCount(DSL.table("film_endorsement"), DSL.field("note").eq(note)))
                 .as("nothing is inserted when the writers disagree").isZero();
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationInsert_wrongTypeReferenceId_failsWithTheDecodeClientErrorAndInsertsNothing() {
+        // The INSERT arm's decode throws before the statement runs. The field has no errors channel,
+        // so the client reads the decode failure rather than a redacted reference.
+        String note = "R1036-" + UUID.randomUUID();
+        String languageId = NodeIdEncoder.encode("Language", 1);
+        try {
+            ExecutionResult result = executeRaw(
+                "mutation { insertEndorsementOverlap(in: {filmRef: \"" + languageId + "\", note: \""
+                + note + "\"}) { endorsedFilm } }");
+            assertThat(result.getErrors())
+                .singleElement()
+                .satisfies(e -> assertThat(e.getMessage())
+                    .contains("Invalid node id \"" + languageId + "\"")
+                    .contains("decodes to type \"Language\", expected a Film id")
+                    .doesNotContain("Reference:"));
+            assertThat(dsl.fetchCount(DSL.table("film_endorsement"), DSL.field("note").eq(note)))
+                .as("nothing is inserted on a wrong-type reference").isZero();
         } finally {
             dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
         }
