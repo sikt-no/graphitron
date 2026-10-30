@@ -37,6 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R747` | The VALIDATION handler validates what a @service method receives, jOOQ records included | In Progress | 2026-10-30 <sub>created 2026-08-20</sub> | [plan](generated-input-records-carry-no-constraints.md) |
 | `R1098` | A graphitron-jakarta-rest subgraph writes only what is its own | In Review | 2026-10-29 <sub>created 2026-10-23</sub> | [plan](jakarta-rest-request-aware-execution-input.md) |
+| `R1131` | A clean build runs in under five minutes | Spec | 2026-10-30 | [plan](clean-build-under-five-minutes.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -784,6 +785,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R789` [**The annotation enforcement walks skip nested classes, so an annotation on one goes unenforced**](nested-classes-escape-the-annotation-enforcement-walks.md) — Backlog, cleanup
 - `R736` [**The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering**](trace-writer-disabled-for-rest-of-fork.md) — Spec, bug
 - `R761` [**The dependency relation is derived after the store is stamped, so an interrupted boot leaves a warm store ordering alphabetically**](materialize-dependency-derived-before-stamp.md) — Backlog, dx
+- `R1131` [**A clean build runs in under five minutes**](clean-build-under-five-minutes.md) — Spec, dx
 - `R907` [**Active roadmap items render their goal paragraph in the roll-up**](active-items-render-goal-paragraph.md) — Backlog, dx
 - `R748` [**Decouple the roadmap tool from the generator reactor**](roadmap-tool-reactor-decoupling.md) — Spec, dx
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
