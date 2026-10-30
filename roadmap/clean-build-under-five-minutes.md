@@ -194,3 +194,50 @@ The `build-profile` skill owns the method; this item follows it:
   the read-only guarantee without that cost.
 * **Marking the reader's connection read-only through JDBC.** H2 treats
   `Connection.setReadOnly` as a hint and enforces nothing.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready (session_01WkW2JJcostW9nAqBvWsyhd, 2026-10-30)
+
+Verdict: withhold. The goal reads cleanly without the phase list, steps 1 and 2 extend shapes already
+in the tree, and the claims about `StoreReader.read` (ends in `rollback()`), the `check-link-references`
+execution (`javadoc-no-fork`, `doclint` `reference`) and the store URLs check out. Two findings on
+question one (is the goal viable), one on question two (fit).
+
+**Finding 1 (question one: viability). Nothing in the item shows that steps 1 to 7 can reach five
+minutes, and its own diagnosis argues they cannot by rearrangement alone.** The body says the
+`graphitron` phase is CPU-bound (90% of 16 cores) and that "the build projects to about ten minutes"
+after steps 1 to 6. Step 7 then closes the remaining five minutes by overlapping the heavy suites with
+the compile chain. Overlap moves work in time; it does not remove it. The heavy suites already
+saturate the cores, so running them beside the compile chain competes for the same CPU. The item needs
+a CPU budget: total core-seconds of the baseline (test phases at their measured utilisation, plus
+everything else), divided by 16, as the floor on wall clock for any scheduling. If that floor is above
+300 s, the plan must name which steps cut core-seconds (step 1 does; steps 4, 5 and 6 may) and by how
+much, and say that step 7 only reaches five minutes after they have. If the floor is below 300 s the
+item should say so, with the figure. Without it, the goal rests on the one step the spec leaves to a
+future design fork.
+
+**Finding 2 (question one: viability). Step 3 is largely in place and the baseline it prices does not
+match it.** CI already builds with `-T 1C` (`.github/workflows/rewrite-build.yml`), CLAUDE.md says the
+test suite supports module parallelism, and `GraphitronModelStore` already handles two modules reaching
+`openAt` concurrently. "The reactor runs one module at a time" and "up to 150 s" describe a plain local
+`mvn install`, which the goal names as the target. State which build the five minutes is measured on
+(plain `mvn install`, or `-T`), and restate step 3 as what is actually missing: the collision audit the
+body lists (Quarkus port, temp directories, leaf-coverage trace file, store files) for the modules that
+CI's `-T 1C` may not yet exercise together, and making the parallel invocation the documented default.
+Recheck its saving against Finding 1's floor, since the item itself says parallelism competes for the
+same cores.
+
+**Finding 3 (question two: fit). Step 1's reader user is created "when it boots a store", but a warm
+file-backed store is not booted.** `openAt` reuses an existing file under the stamped directory; if the
+`CREATE USER` and `GRANT` run only in the `create(connection)` path, a reopened store has no reader and
+`reader(...)` fails on connect. The spec should say the user is ensured on every open (`CREATE USER IF
+NOT EXISTS` plus the grant, idempotent) and name its credential, since the reader URL will carry one the
+writer's does not. It should also say what `QUERY_CACHE_SIZE` on the reader URL does when the database is
+already open: it is a database-level setting the reader should inherit rather than state, and the
+step's test (second identical read prepares nothing) should run against a reopened file store as well as
+an in-memory one.
+
+Not blocking, a correction the author can make in passing: the Tests bullet names `CorpusStoreTest`'s
+write-inside-a-read case; the class lives under `graphitron-model/src/test/.../model/test/`, so step 1's
+test belongs beside it rather than in `graphitron`.
