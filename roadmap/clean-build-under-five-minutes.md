@@ -241,3 +241,12 @@ an in-memory one.
 Not blocking, a correction the author can make in passing: the Tests bullet names `CorpusStoreTest`'s
 write-inside-a-read case; the class lives under `graphitron-model/src/test/.../model/test/`, so step 1's
 test belongs beside it rather than in `graphitron`.
+
+### Round 2: Spec → Ready (session_01WkW2JJcostW9nAqBvWsyhd, 2026-10-30)
+
+Verdict: approve. Finding 1 is withdrawn: the item prices every step by measurement and lands each on
+its own, so whether five minutes is reachable is settled by doing the steps, and a stretch goal reached
+by iteration is a sound goal. Finding 2 is not a blocker: the implementer states which build the figure
+is measured on when step 3 is priced. Finding 3 is an implementation detail of step 1, not a gap in the
+design: the implementer ensures the reader user on every open (not only at create) and tests the reuse
+against a reopened file store too.
