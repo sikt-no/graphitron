@@ -41,8 +41,12 @@
           build-time codegen driver boots it so jOOQ reads live H2 metadata off the fact schema,
           and the run-time bootstrap boots it so a generator run has somewhere to capture into.
           Pure JVM, no native libraries, so it embeds in the Maven plugin and the LSP alike.
+
+          Held at 2.5.250: 2.5.252 plans joins over INFORMATION_SCHEMA's constraint tables around
+          meta-index probes that each walk every constraint, so jOOQ's foreign-key read of the fact
+          schema takes minutes instead of seconds. https://github.com/h2database/h2database/issues/4523
         -->
-        <version.com.h2database>2.5.252</version.com.h2database>
+        <version.com.h2database>2.5.250</version.com.h2database>
         <!--
           The one glob dialect behind <schemaInputs> patterns: SchemaRecipe.expand in graphitron
           owns the walk (plexus DirectoryScanner includes), so the build's own scan and the

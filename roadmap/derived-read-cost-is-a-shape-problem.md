@@ -1056,10 +1056,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   up"). `RulePlanGateTest` fails a derivation rule whose plan reads a whole partition per row, over
   a scaled fixture whose plans match a large consumer schema's. Its list of known exemptions only
   shrinks.
-* **Changed: the fact store runs on H2 2.5.252** ("the fact store runs on H2 2.5.252, which fixed
-  its compaction race"). The plugin and the model bring H2 2.5.252 in place of 2.4.240. A store an
-  earlier build wrote still opens, the file format being unchanged, and compacting it on close is
-  no longer refused intermittently in a JVM running with assertions on.
+* **Changed: the fact store runs on H2 2.5.250** ("the fact store runs on H2 2.5.252, which fixed
+  its compaction race", then "H2 is held at 2.5.250"). The plugin and the model bring H2 2.5.250 in
+  place of 2.4.240. A store an earlier build wrote still opens, the file format being unchanged, and
+  compacting it on close is no longer refused intermittently in a JVM running with assertions on.
+  2.5.252 was taken first and dropped: its planner made jOOQ's foreign-key read of the fact schema
+  take 168 s instead of 2 s (h2database#4523).
 
 ## Retired vocabulary
 
