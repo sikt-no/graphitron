@@ -49,6 +49,14 @@ class TenantScatterSubstrateTest {
     private static final String PACKAGE = "com.example";
     private static final String SCHEMA_PACKAGE = PACKAGE + ".schema";
 
+    /**
+     * The join deadline for a case where one worker is held past it. Every case that holds a worker
+     * also needs that worker to have pinned its connection, and enlisted on any active field, before
+     * the deadline expires, which a worker started late on a loaded build agent can miss; the held
+     * worker is the only one that waits it out, so a generous deadline costs little.
+     */
+    private static final Duration STRAGGLER_DEADLINE = Duration.ofSeconds(5);
+
     private static EmittedCodeHarness harness;
     private static Class<?> runtimeClass;
     private static Class<?> tenantConnectionsClass;
@@ -156,7 +164,7 @@ class TenantScatterSubstrateTest {
 
     @Test
     void scatter_joinDeadline_yieldsTimedOutForTheStragglerAndSuccessForTheRest() throws Throwable {
-        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(800));
+        Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
         Object tc = newTenantConnections(runtime);
         var hold = new CountDownLatch(1);
 
@@ -267,7 +275,7 @@ class TenantScatterSubstrateTest {
 
     @Test
     void straggler_releaseAllAbortsItsConnection_neverReusesIt_andCompletionLandsHarmlessly() throws Throwable {
-        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(800));
+        Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
         Object tc = newTenantConnections(runtime);
         var hold = new CountDownLatch(1);
         var workerDone = new CountDownLatch(1);
@@ -420,7 +428,7 @@ class TenantScatterSubstrateTest {
 
     @Test
     void mutationField_aTimedOutTenantsScope_isNeverEnded_andFailsTheField() throws Throwable {
-        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(800));
+        Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
         Object tc = newTenantConnections(runtime);
         var hold = new CountDownLatch(1);
         beginField(tc, "m");
@@ -491,7 +499,7 @@ class TenantScatterSubstrateTest {
 
     @Test
     void mutationField_aStragglerEnlistsOnTheFieldThatDispatchedIt_neverOnALaterOne() throws Throwable {
-        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(800));
+        Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
         Object tc = newTenantConnections(runtime);
         var hold = new CountDownLatch(1);
         var workerDone = new CountDownLatch(1);
