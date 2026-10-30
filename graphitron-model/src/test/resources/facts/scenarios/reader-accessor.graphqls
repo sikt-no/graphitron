@@ -1,0 +1,24 @@
+# A field that reads its parent's object through an accessor names the member it reads, off the class
+# the parent's result holds: the member its own name names, or the one @field names.
+
+type FilmBlurb {
+  description: String
+  "The record's description component, under another name."
+  text: String @field(name: "description")
+}
+
+type FilmBlurbHolder {
+  blurb: FilmBlurb
+}
+
+extend type Query {
+  filmBlurbHolder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+}
+
+extend schema @expectEquals(relation: "graphitron_reader_accessor", rows: """
+  type_name,       field_name,  class_name,                                               slot_method_name
+  FilmBlurbHolder, blurb,       no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, blurb
+  FilmBlurb,       description, no.sikt.graphitron.rewrite.test.services.FilmBlurb,       description
+  FilmBlurb,       text,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,       description
+  """)

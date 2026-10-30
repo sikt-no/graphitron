@@ -422,11 +422,11 @@ static method needs no holder.
     of kind `RESULT_MEMBER`, or `RESULT_NODE_ID` ending on a node id over a record of the node's
     table, keeping only its path, each step read as its field's own facts say; a member a payload
     cannot carry is `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`.
-  * **A field that reads an accessor names its member** `open`. `graphitron_reader` says a field
-    reads its parent's object through an `ACCESSOR` but not which; a subtype of it names the
-    `code_read_slot` read, off the class the parent's result holds, by the field's name or
-    `@field(name:)`, one row per field and parent class.
-  * **A service's `$result` is read off its returned value** `blocked`, on "A field that reads an accessor names its member".
+  * **A field that reads an accessor names its member** `done`. `graphitron_reader_accessor`, a
+    subtype of `graphitron_reader` for its `ACCESSOR` reads, names the `code_read_slot` read off each
+    class the parent's result holds (`graphitron_result_class`), by the field's name or
+    `@field(name:)`, one row per field, class and the classpath entry the class was read from.
+  * **A service's `$result` is read off its returned value** `open`.
     The `RESULT_MEMBER` and service `RESULT_NODE_ID` leaves resolve a path step by step over the
     field's result, through `graphitron_carrier_data_channel` where the object passes through a
     payload's data field and the accessor each field names; a step with no stated read stays

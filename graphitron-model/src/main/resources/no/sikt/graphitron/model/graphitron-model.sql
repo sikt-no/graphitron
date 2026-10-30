@@ -8916,6 +8916,8 @@ CREATE TABLE graphitron_reader (
   reads      VARCHAR   NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
+  -- What a subtype naming how the field reads references, so it goes when the field reads otherwise.
+  UNIQUE (graph_name, type_name, field_name, reads),
   FOREIGN KEY (graph_name, type_name, field_name, side)
     REFERENCES graphitron_fetcher (graph_name, type_name, field_name, side) ON DELETE CASCADE,
   CHECK (side = 'READER'),
@@ -8928,6 +8930,36 @@ COMMENT ON COLUMN graphitron_reader.field_name IS 'the field; with the type, a g
 COMMENT ON COLUMN graphitron_reader.side IS 'always READER, carried so the foreign key into graphitron_fetcher holds the side as well as the field';
 COMMENT ON COLUMN graphitron_reader.reads IS 'under a ROW: COLUMN, a column of the row; EXPRESSION, an @externalField projected into its statement; NESTED, a row nested in it, for an object target. Under an OBJECT: ACCESSOR, an outcome''s errors field among them, its type being a value its producer hands back. A node id''s encoding and an outcome are facts of the field and of the producer, graphitron_producer_outcome, not ways of reading';
 COMMENT ON COLUMN graphitron_reader.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_reader_accessor (
+  graph_name       VARCHAR   NOT NULL,
+  type_name        VARCHAR   NOT NULL,
+  field_name       VARCHAR   NOT NULL,
+  reads            VARCHAR   NOT NULL,
+  class_name       VARCHAR   NOT NULL,
+  slot_source_name VARCHAR   NOT NULL,
+  slot_method_name VARCHAR   NOT NULL,
+  slot_descriptor  VARCHAR   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, class_name, slot_source_name),
+  FOREIGN KEY (graph_name, type_name, field_name, reads)
+    REFERENCES graphitron_reader (graph_name, type_name, field_name, reads) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, class_name)
+    REFERENCES graphitron_result_class (graph_name, type_name, class_name) ON DELETE CASCADE,
+  FOREIGN KEY (slot_source_name, class_name, slot_method_name, slot_descriptor)
+    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (reads = 'ACCESSOR')
+);
+COMMENT ON TABLE graphitron_reader_accessor IS 'The member a field reading an ACCESSOR reads off one class its parent''s result holds: one row per field, class and entry the class was read from. For example FilmBlurbHolder.blurb reads blurb() off FilmBlurbHolder, and a field written text @field(name: "description") reads description() off its class.';
+COMMENT ON COLUMN graphitron_reader_accessor.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_reader_accessor.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_reader_accessor.field_name IS 'the field; with the type, a graphitron_reader key';
+COMMENT ON COLUMN graphitron_reader_accessor.reads IS 'always ACCESSOR, carried so the reference into graphitron_reader names how the field reads, and the row goes when it reads otherwise';
+COMMENT ON COLUMN graphitron_reader_accessor.class_name IS 'the class the parent''s result holds that the member is read off, a graphitron_result_class row of the parent type and the class of the code_read_slot row';
+COMMENT ON COLUMN graphitron_reader_accessor.slot_source_name IS 'the classpath entry the class was read from, completing the key: one class name on two entries is two classes, as graphitron_type_backing holds it, so each states its member; with the class, the method and the descriptor, a code_read_slot key';
+COMMENT ON COLUMN graphitron_reader_accessor.slot_method_name IS 'the method that reads the member, as on code_read_slot';
+COMMENT ON COLUMN graphitron_reader_accessor.slot_descriptor IS 'the method''s descriptor, as on code_read_slot';
+COMMENT ON COLUMN graphitron_reader_accessor.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_errors_field (
   graph_name     VARCHAR   NOT NULL,
@@ -12770,6 +12802,33 @@ COMMENT ON VIEW graphitron_reader_rule IS 'One row the reader rule computes, in 
 -- COMMENT ON COLUMN graphitron_reader_rule.type_name IS 'the object type declaring the field';
 -- COMMENT ON COLUMN graphitron_reader_rule.field_name IS 'the field';
 -- COMMENT ON COLUMN graphitron_reader_rule.reads IS 'how it reads, a graphitron_reader reads';
+
+CREATE VIEW graphitron_reader_accessor_rule
+  (graph_name, type_name, field_name, reads, class_name, slot_source_name, slot_method_name,
+   slot_descriptor) AS
+-- A field reading an accessor, on each class its parent's result holds, reads the member that class
+-- offers under the field's own name, or the one @field names.
+SELECT r.graph_name, r.type_name, r.field_name, r.reads, rc.class_name,
+       sl.source_name, sl.method_name, sl.descriptor
+  FROM graphitron_reader r
+  JOIN graphitron_result_class rc
+    ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
+  JOIN store_graph_source g ON g.graph_name = r.graph_name
+  LEFT JOIN graphitron_field_binding_entry b
+    ON b.graph_name = r.graph_name AND b.type_name = r.type_name AND b.field_name = r.field_name
+  JOIN code_read_slot sl
+    ON sl.source_name = g.source_name AND sl.class_name = rc.class_name
+   AND sl.slot_name = COALESCE(b.name_ref, r.field_name)
+ WHERE r.reads = 'ACCESSOR';
+COMMENT ON VIEW graphitron_reader_accessor_rule IS 'One row the reader-accessor rule computes, in the shape graphitron_reader_accessor stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor merges this view''s rows for one graph into graphitron_reader_accessor, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.type_name IS 'the type declaring the field';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.field_name IS 'the field';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.reads IS 'always ACCESSOR';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.class_name IS 'the class the member is read off';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.slot_source_name IS 'as on graphitron_reader_accessor';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.slot_method_name IS 'as on graphitron_reader_accessor';
+-- COMMENT ON COLUMN graphitron_reader_accessor_rule.slot_descriptor IS 'as on graphitron_reader_accessor';
 
 CREATE VIEW graphitron_field_source_table_rule
   (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
@@ -16856,6 +16915,9 @@ INSERT INTO meta_grain VALUES
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
+  ('graph-field-class',
+   'one field one type declares, read off one class its type holds from one classpath entry, in one graph',
+   'graph_name, type_name, field_name, class_name, slot_source_name', 'sdl'),
   ('producer-claim',
    'one kind of producer one field''s written directives claim, in one graph',
    'graph_name, type_name, field_name, kind', 'sdl'),
@@ -18418,6 +18480,14 @@ INSERT INTO meta_relation VALUES
    'One round of the result rule: the results the producers seed and the ones a reader hands on from what graphitron_result already holds, in the shape graphitron_result and its two row subtypes store.',
    'For example the graphitron anchor merges this view''s rows into graphitron_result until a round adds nothing, which is the closure.',
    'The rule as a view beside its tables, so what the closure stores stays checkable against one round of it.'),
+  ('graphitron_reader_accessor', 'graph-field-class', 'graphitron',
+   'The member a field reading an ACCESSOR reads off one class its parent''s result holds: one row per field, class and entry the class was read from.',
+   'For example FilmBlurbHolder.blurb reads blurb() off FilmBlurbHolder, and a field written text @field(name: "description") reads description() off its class.',
+   'graphitron_reader says a field reads its parent''s object through an accessor but not which, so every reader of that read, the generated fetcher and an @outbox $result over a service''s returned value alike, would look the member up again. The member is code_read_slot''s, found by the field''s own name unless @field overrides it, on the class graphitron_result_class says the parent holds, the hop the type backing''s closure takes; a type a class of which offers no such member has no row for that class.'),
+  ('graphitron_reader_accessor_rule', 'graph-field-class', 'graphitron',
+   'One row the reader-accessor rule computes, in the shape graphitron_reader_accessor stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor merges this view''s rows for one graph into graphitron_reader_accessor, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_reader', 'graph-field', 'graphitron',
    'A field whose fetcher reads from the result its parent holds, and how: one row per field.',
    'For example Film.title reads a COLUMN of film''s row, and a connection''s edges reads its page through an ACCESSOR.',
