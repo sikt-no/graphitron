@@ -194,6 +194,22 @@ numbering is the order to take them in, largest and cheapest first.
    open, or capture its graphs in parallel, so the sweeps start immediately. Replace the
    `@Isolated` count assertion in `CorpusCapturedOnceTest` with one that does not need the JVM to
    itself. Expected: about 100 s from `graphitron`.
+
+   Landed in part, and the rest left. The item's premise was off in one respect: the three
+   walk-comparison sweeps read only the bare population, and the second population, the corpus over
+   the module's own test classes, was asked for by `CorpusCapturedOnceTest` alone, so its 43 s capture
+   (the bare one takes 50 s, 63 documents on a quiet 4-core machine) was paid in the `@Isolated` tail
+   for a population no sweep reads. The test now asks for the bare corpus only and asserts the one
+   invariant it exists for, that a population is captured once, from a per-population count that is
+   exact whenever it is read, which is what lets it run beside everything else. Priced: four
+   interleaved pairs of the four classes that use the corpus store (the test and the three sweeps),
+   trunk before and this change after, the first pair discarded: 312, 306, 324 s before and 274, 269,
+   266 s after, a saving of 44 s, spread 37 to 58 s, the discarded pair (66 s) above that range.
+   The bare capture itself is left. A persisted store file needs a build step to write it and a
+   second process to open it, which the store refuses, and a parallel capture needs concurrent
+   writers against a lock timeout of 1 ms; either would save at most 50 s, mostly overlapping other
+   classes on a CPU-bound phase, for a population whose only three readers are the sweeps that retire
+   with their walk side.
 5. **Split `FactExpectationTest`.** Turn its document-driven cases into ones the test pool can
    spread across workers, and make `CorpusExpectations.compare` cheaper. Expected: about 100 s
    from `graphitron-model`.

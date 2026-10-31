@@ -3,46 +3,33 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.CorpusStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.Isolated;
-
-import java.net.URISyntaxException;
-import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The corpus sweeps in this module read one capture per population per JVM rather than one each.
- * {@link CorpusStore} counts the populations it was asked for and the captures it ran, and the two
- * are equal exactly while no population was captured twice.
+ * The corpus sweeps in this module read one capture per JVM rather than one each. {@link CorpusStore}
+ * counts the captures each population has had, and the count is one however many classes have asked
+ * for it.
  *
- * <p>{@code @Isolated} because the equality is only exact at rest: a class still waiting on a
- * population's capture has asked for it and not yet been counted. JUnit runs isolated classes
- * after every concurrent one has finished, so this reads the whole run's counts rather than a
- * fraction of them.
+ * <p>Not {@code @Isolated}, because the count belongs to one population and is exact whenever it is
+ * read: it takes the lock a capture holds, so a class still waiting on the capture is waited out
+ * rather than missed. A JVM-wide tally compared against a count of the populations asked for was
+ * only right at rest, which made this the one class that ran alone, after every other.
  */
 @PipelineTier
-@Isolated("reads CorpusStore's JVM-wide counts, which are exact only while nothing is capturing")
 class CorpusCapturedOnceTest {
 
     @Test
-    void eachPopulationIsCapturedOncePerJvm() {
-        // Both populations this module's sweeps read, so the equality is over at least those.
-        CorpusStore.bare().reader().close();
-        CorpusStore.over(testClassRoot()).reader().close();
-        assertThat(CorpusStore.populations())
-            .as("the bare corpus and the corpus over this module's test classes")
-            .isGreaterThanOrEqualTo(2);
-        assertThat(CorpusStore.initializations())
-            .as("one capture per population asked for; more means a population was captured twice")
-            .isEqualTo(CorpusStore.populations());
-    }
-
-    private static Path testClassRoot() {
-        try {
-            return Path.of(CorpusCapturedOnceTest.class.getProtectionDomain()
-                .getCodeSource().getLocation().toURI());
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("the test classes are not on a file path", e);
-        }
+    void theBareCorpusIsCapturedOncePerJvm() {
+        CorpusStore corpus = CorpusStore.bare();
+        corpus.reader().close();
+        corpus.reader().close();
+        assertThat(corpus.captures())
+            .as("one capture however many readers asked; more means two classes were handed "
+                + "two stores of one population")
+            .isEqualTo(1);
+        assertThat(CorpusStore.bare())
+            .as("every class that asks for the bare corpus is handed the same population")
+            .isSameAs(corpus);
     }
 }

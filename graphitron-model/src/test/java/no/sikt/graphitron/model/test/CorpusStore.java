@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -34,8 +33,8 @@ import java.util.stream.Stream;
  * <p><b>Populations, keyed.</b> {@link #over(Path)} names a population by the class root its first
  * graph reads, which is the one input the sweeps disagree on: a sweep whose relations the code
  * family feeds reads the classpath as well as the census scanned from it. Each key is captured the
- * first time any class asks for it and never again. {@link #initializations()} counts captures and
- * {@link #populations()} counts keys, and a module holds them equal.
+ * first time any class asks for it and never again. {@link #captures()} counts the captures one
+ * population has had, which stays one however many classes ask and from however many threads.
  *
  * <p><b>Readers only.</b> Classes run concurrently and the capturing connection is single-threaded,
  * so neither the {@link CapturedStore} nor its context is handed out. {@link #reader()} mints a
@@ -60,15 +59,16 @@ public final class CorpusStore {
     /** The shared populations, keyed by the class root their first graph reads, or none. */
     private static final Map<Key, CorpusStore> SHARED = new ConcurrentHashMap<>();
 
-    private static final AtomicInteger INITIALIZATIONS = new AtomicInteger();
-
     private record Key(Path classRoot) {}
 
     /** What fills the store; run once, under the lock, on first use. */
     private final Supplier<CapturedStore> fill;
 
-    /** Whether this population is one of the shared ones, which is all {@link #INITIALIZATIONS} counts. */
+    /** Whether this population is one of the shared ones, which live as long as the JVM. */
     private final boolean shared;
+
+    /** How many times {@link #fill} has run; guarded by this object's lock, like the capture. */
+    private int captures;
 
     private CapturedStore captured;
     private Set<String> tables;
@@ -103,14 +103,14 @@ public final class CorpusStore {
         return new CorpusStore(fill, false);
     }
 
-    /** How many shared populations have been captured in this JVM. */
-    public static int initializations() {
-        return INITIALIZATIONS.get();
-    }
-
-    /** How many shared populations have been asked for in this JVM. */
-    public static int populations() {
-        return SHARED.size();
+    /**
+     * How many times this population has been captured: none until the first reader, one from then
+     * on, and a second would mean two classes were handed two stores of what is meant to be one.
+     * Exact whenever it is read, since it takes the lock a capture holds and so waits one out,
+     * which is what lets a test assert it without the JVM to itself.
+     */
+    public synchronized int captures() {
+        return captures;
     }
 
     /**
@@ -159,9 +159,7 @@ public final class CorpusStore {
 
     private void initialize() {
         captured = fill.get();
-        if (shared) {
-            INITIALIZATIONS.incrementAndGet();
-        }
+        captures++;
         DSLContext dsl = captured.dsl();
         tables = new LinkedHashSet<>(ThreadConfinedStore.baseTables(dsl));
         census = ThreadConfinedStore.census(List.copyOf(tables));
