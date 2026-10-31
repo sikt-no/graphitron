@@ -10977,37 +10977,6 @@ COMMENT ON VIEW graphitron_field_target_column_rule IS 'One row the field target
 
 -- The leaves of an @outbox message: one row per payload key, by the source it reads, resolved against
 -- what the store holds. The mapping's own entries and the configured common payload's, merged.
-CREATE TABLE graphitron_outbox_leaf (
-  graph_name  VARCHAR NOT NULL,
-  type_name   VARCHAR NOT NULL,
-  field_name  VARCHAR NOT NULL,
-  ordinal     INT     NOT NULL,
-  key_name    VARCHAR NOT NULL,
-  origin      VARCHAR NOT NULL,
-  position    INT     NOT NULL,
-  source_kind VARCHAR NOT NULL,
-  source_path VARCHAR,
-  column_name VARCHAR,
-  node_type_name VARCHAR,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal, key_name),
-  FOREIGN KEY (graph_name, type_name, field_name, ordinal)
-    REFERENCES graphitron_outbox_entry (graph_name, type_name, field_name, ordinal)
-    ON DELETE CASCADE,
-  CHECK (origin IN ('MESSAGE', 'COMMON')),
-  CHECK (source_kind IN ('ARGUMENT', 'RESULT_ROOT', 'RESULT_NODE_ID', 'RESULT_COLUMN', 'SCOPE', 'SESSION'))
-);
-COMMENT ON TABLE graphitron_outbox_leaf IS 'One key of one @outbox message''s payload, by the source it reads. For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two rows, filmId reading the node id of the result and title the argument path in.title, and a configured common payload entry adds its own row to every message.';
-COMMENT ON COLUMN graphitron_outbox_leaf.graph_name IS 'the owning graph''s partition, carried from the message';
-COMMENT ON COLUMN graphitron_outbox_leaf.type_name IS 'the mutation type declaring the field, carried from the message';
-COMMENT ON COLUMN graphitron_outbox_leaf.field_name IS 'the field carrying the @outbox, carried from the message';
-COMMENT ON COLUMN graphitron_outbox_leaf.ordinal IS 'the message''s place among the field''s @outbox applications, carried from graphitron_outbox_entry';
-COMMENT ON COLUMN graphitron_outbox_leaf.key_name IS 'the JSON key, the left side of the entry as written; one row per key of a message, a message''s own entry winning over a common one of the same name, and the first of two written entries winning over the second, whose pair is the key-conflict defect';
-COMMENT ON COLUMN graphitron_outbox_leaf.origin IS 'MESSAGE where the entry is the directive''s own mapping, COMMON where it is the configured common payload''s';
-COMMENT ON COLUMN graphitron_outbox_leaf.position IS 'the entry''s 0-based position in the mapping it was written in';
-COMMENT ON COLUMN graphitron_outbox_leaf.source_kind IS 'ARGUMENT, RESULT_ROOT (the outcome as a whole), RESULT_NODE_ID (the written type''s node id field), RESULT_COLUMN (a field of the written type that reads one column), SCOPE or SESSION (one member of the session handle); a source that resolves to none of them has no row here and is a defect';
-COMMENT ON COLUMN graphitron_outbox_leaf.source_path IS 'the source without its sigil: the argument path, the result field, the scope member or the session member; NULL for RESULT_ROOT';
-COMMENT ON COLUMN graphitron_outbox_leaf.column_name IS 'the SQL column a RESULT_COLUMN reads, from the written table; NULL for every other kind';
-COMMENT ON COLUMN graphitron_outbox_leaf.node_type_name IS 'the node type whose id a RESULT_ROOT or RESULT_NODE_ID leaf encodes: the one node type bound to the written table; NULL for every other kind, and a result leaf over a table with no single node type has no row';
 
 -- Where the messages of a graph go: the configured outbox table resolved against the catalog.
 CREATE VIEW graphitron_outbox_target
@@ -11100,7 +11069,7 @@ COMMENT ON VIEW graphitron_session_handle_member IS 'One accessor of the class a
 
 -- The outbox leaf rule sits here, after the session handle's members, because it reads them: the view
 -- needs the relation it names to exist when it is created.
-CREATE VIEW graphitron_outbox_leaf_rule
+CREATE VIEW graphitron_outbox_leaf
   (graph_name, type_name, field_name, ordinal, key_name, origin, position, source_kind,
    source_path, column_name, node_type_name) AS
 WITH written (graph_name, type_name, field_name, ordinal, key_name, origin, position, bound_to) AS (
@@ -11218,7 +11187,18 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin,
                               'java.time.OffsetDateTime', 'java.time.Instant',
                               'boolean', 'byte', 'short', 'int', 'long', 'float', 'double', 'char')))
      OR (r.origin = 'MESSAGE' AND r.bound_to NOT LIKE '$%' AND ca.path IS NOT NULL));
-COMMENT ON VIEW graphitron_outbox_leaf_rule IS 'One row the outbox-leaf rule computes, in the shape graphitron_outbox_leaf stores: the rule itself, evaluated on demand rather than read off disk. For example the derivation inserts this view''s rows for one graph into graphitron_outbox_leaf, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_outbox_leaf IS 'One key of one @outbox message''s payload, by the source it reads. For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two rows, filmId reading the node id of the result and title the argument path in.title, and a configured common payload entry adds its own row to every message.';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.graph_name IS 'the owning graph''s partition, carried from the message';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.type_name IS 'the mutation type declaring the field, carried from the message';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.field_name IS 'the field carrying the @outbox, carried from the message';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.ordinal IS 'the message''s place among the field''s @outbox applications, carried from graphitron_outbox_entry';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.key_name IS 'the JSON key, the left side of the entry as written; one row per key of a message, a message''s own entry winning over a common one of the same name, and the first of two written entries winning over the second, whose pair is the key-conflict defect';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.origin IS 'MESSAGE where the entry is the directive''s own mapping, COMMON where it is the configured common payload''s';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.position IS 'the entry''s 0-based position in the mapping it was written in';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.source_kind IS 'ARGUMENT, RESULT_ROOT (the outcome as a whole), RESULT_NODE_ID (the written type''s node id field), RESULT_COLUMN (a field of the written type that reads one column), SCOPE or SESSION (one member of the session handle); a source that resolves to none of them has no row here and is a defect';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.source_path IS 'the source without its sigil: the argument path, the result field, the scope member or the session member; NULL for RESULT_ROOT';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.column_name IS 'the SQL column a RESULT_COLUMN reads, from the written table; NULL for every other kind';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.node_type_name IS 'the node type whose id a RESULT_ROOT or RESULT_NODE_ID leaf encodes: the one node type bound to the written table; NULL for every other kind, and a result leaf over a table with no single node type has no row';
 
 CREATE VIEW graphitron_argmapping_parameter
   (graph_name, source_name, source_line, source_column, position, method_source_name,
@@ -17799,14 +17779,10 @@ INSERT INTO meta_relation VALUES
    'One message of a field: its @outbox application, at its place among the field''s applications in written order.',
    'For example @outbox(event: "FilmCreated") followed by @outbox(argMapping: "filmId: $result.id") on Mutation.createFilm gives two rows, at ordinals 0 and 1, the second with the event Mutation.createFilm.',
    'Derived from the entry beside it and anchored on the field the application was written on. Every application is kept, because a repeated directive is a message each; there is no collision rule to choose, and the ordinal is the written order within the field, which is the order the messages are written in. The effective event is a generated column, so the default is stated once and a reader never recomputes it.'),
-  ('graphitron_outbox_leaf', 'outbox-message-key', 'derivation',
+  ('graphitron_outbox_leaf', 'outbox-message-key', 'graphitron',
    'One key of one @outbox message''s payload, by the source it reads.',
    'For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two rows, filmId reading the node id of the result and title the argument path in.title, and a configured common payload entry adds its own row to every message.',
-   'Derived in the anchoring phase from the mapping pairs the generic writer captured, the configured common payload and what the store already holds about the field: its arguments, the written table and the columns and node ids of the type it returns. A key that resolves to nothing has no row, and the defect relation says why, so the emitter reads leaves it can render and nothing it must judge.'),
-  ('graphitron_outbox_leaf_rule', 'outbox-message-key', 'derivation',
-   'One row the outbox-leaf rule computes, in the shape graphitron_outbox_leaf stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the derivation inserts this view''s rows for one graph into graphitron_outbox_leaf, which is the name every reader spells.',
-   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
+   'A view over the mapping pairs the generic writer captured, the configured common payload and what the store already holds about the field, all read before the graphitron gatherer anchors: its arguments, the written table and the columns and node ids of the type it returns. A key that resolves to nothing has no row, and the defect relation says why, so the emitter reads leaves it can render and nothing it must judge. One leaf per key, which no key enforces on a view, is the rule''s own: a message''s entry before a common one of the same name, and the first written before the second.'),
   ('graphitron_outbox_target', 'graph-outbox', 'graphitron',
    'The outbox table of one graph, resolved: the table the configuration names and the columns each role lands in.',
    'For example <outbox><table>outbox</table></outbox> over a table in Debezium''s layout gives one row naming it and its columns; a configuration that resolves to no one such table has no row and is a defect at each @outbox.',

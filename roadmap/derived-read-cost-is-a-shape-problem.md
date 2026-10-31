@@ -445,8 +445,8 @@ static method needs no holder.
     subtype of `graphitron_reader` for its `ACCESSOR` reads, names the `code_read_slot` read off each
     class the parent's result holds (`graphitron_result_class`), by the field's name or
     `@field(name:)`, one row per field, class and the classpath entry the class was read from.
-  * **A service's `$result` is read off its returned value** `blocked`, on "An outbox message's keys are a view", since it extends the leaf rule and the
-    stratum takes no new step. The `RESULT_MEMBER` and service `RESULT_NODE_ID` leaves resolve a path step by step over the
+  * **A service's `$result` is read off its returned value** `open`.
+    The `RESULT_MEMBER` and service `RESULT_NODE_ID` leaves resolve a path step by step over the
     field's result, through `graphitron_carrier_data_channel` where the object passes through a
     payload's data field and the accessor each field names; a step with no stated read stays
     `OUTBOX_SOURCE_UNRESOLVED`.
@@ -490,15 +490,9 @@ pass and no stratum that clears and recomputes.
   below and on "Nothing resolves a path but the walk".
   * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
     `NodeIdCandidates`, `SpelledTables` and `ResolvedTypeBindings`; the path steps go with the walk.
-* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
+* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the two below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
-  * **An outbox message's keys are a view** `open`. `graphitron_outbox_leaf`'s rule takes the
-    relation's name and `OutboxLeaves` goes, once the entry-defect and outbox-leaf rules are timed
-    on sis before and after; a reader made slower keeps the relation a table until that reader
-    moves. One key per message, which the primary key held, is a fact document's to state: the
-    message's own entry before a common one, and the first written before the second. R1113's
-    phase 1b record, which places the outbox relations with `derivation`, is restated.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
     `CarrierDataFields` first, since a graphitron anchor reader sees the previous capture's rows.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,

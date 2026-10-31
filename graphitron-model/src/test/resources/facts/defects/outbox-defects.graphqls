@@ -5,6 +5,10 @@
 # field, a scope member that is not one) binds nothing. Two @outbox with one event, given or
 # defaulted to the field's coordinate, cannot be told apart by a consumer. Each is one row per
 # @outbox and code, the first offending key as written.
+#
+# A message keeps one leaf per key all the same, so what it emits stays well formed while the
+# defect stands: of two entries with one key the first written is the leaf, and a message's own
+# entry is the leaf where the common payload names its key too.
 
 interface Node { id: ID! }
 
@@ -47,4 +51,13 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   OUTBOX_SOURCE_UNRESOLVED, Mutation.unresolved, "x: nosuch"
   OUTBOX_DUPLICATE_EVENT,   Mutation.sameA,     Same
   OUTBOX_DUPLICATE_EVENT,   Mutation.sameB,     Same
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_leaf", where: """
+  field_name IN ('keyTwice', 'collides')
+  """, rows: """
+  type_name, field_name, ordinal, key_name,  origin,  position, source_kind, source_path,   column_name, node_type_name
+  Mutation,  keyTwice,   0,       k,         MESSAGE, 0,        SCOPE,       alias,         ,
+  Mutation,  keyTwice,   0,       operation, COMMON,  0,        SCOPE,       operationName, ,
+  Mutation,  collides,   0,       operation, MESSAGE, 0,        SCOPE,       alias,         ,
   """)

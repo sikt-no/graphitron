@@ -105,7 +105,6 @@ public final class DerivationStratum {
                 NodeIdDecodeHopColumns::derive),
             step("NodeIdDecodeColumns", "graphitron_node_id_decode_column",
                 NodeIdDecodeColumns::derive),
-            step("OutboxLeaves", "graphitron_outbox_leaf", OutboxLeaves::derive),
             step("EntryDefects", "graphitron_entry_defect", EntryDefects::derive),
             step("ArgMappingPairDefects", "graphitron_argmapping_pair_defect",
                 ArgMappingPairDefects::derive));
