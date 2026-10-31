@@ -11,6 +11,7 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
+import no.sikt.graphitron.model.boot.StoreUse;
 import no.sikt.graphitron.model.boot.UserCacheRoot;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
@@ -451,9 +452,12 @@ public class DevMojo extends AbstractRewriteMojo {
         // first: the store's home is a pure function of the module's base directory and this
         // goal's own parameters, so it needs none of what building a context needs.
         Path storeHome = resolveStoreDirectory(project.getBasedir().toPath());
+        // LONG_LIVED: the dev loop captures this store again on every edit round and reads it
+        // between them, which is the repetition a statement cache pays for. The build goals open
+        // theirs for one capture and keep the default.
         this.sessionStore = storeHome != null
-            ? GraphitronModelStore.openAt(storeHome)
-            : GraphitronModelStore.open();
+            ? GraphitronModelStore.openAt(storeHome, StoreUse.LONG_LIVED)
+            : GraphitronModelStore.open(StoreUse.LONG_LIVED);
         // What the open released from the cache home. The store's sweep runs once per home per JVM,
         // and this open is now always the session's first, so this is where the report surfaces on
         // every startup rather than only on one whose initial run was skipped.
@@ -1275,7 +1279,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     + " back to: a pass that cannot open a store stops rather than producing a"
                     + " result nothing can be read back from.");
         }
-        return GraphitronModelStore.openAt(ctx.storeDirectory());
+        return GraphitronModelStore.openAt(ctx.storeDirectory(), StoreUse.LONG_LIVED);
     }
 
     /** The dev loop's first round, which {@link #runModulePlan} runs in generation's place. */

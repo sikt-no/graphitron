@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.StoreUse;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -58,8 +59,18 @@ public final class FactStores {
      * the handle closes.
      */
     public static GraphitronModelStore inMemory() {
+        return inMemory(StoreUse.ONE_CAPTURE);
+    }
+
+    /**
+     * A private in-memory store as {@link #inMemory()} hands back, for the use {@code use} names. A
+     * case that captures again and again on one store says {@link StoreUse#LONG_LIVED}; a test JVM
+     * holding many stores at once should not, since each one that fills its statement cache costs
+     * about 30 MB.
+     */
+    public static GraphitronModelStore inMemory(StoreUse use) {
         countBoot();
-        return GraphitronModelStore.open();
+        return GraphitronModelStore.open(use);
     }
 
     /**
@@ -73,8 +84,13 @@ public final class FactStores {
      * case's rows into the next one's assertions.
      */
     public static GraphitronModelStore fileBacked(Path home) {
+        return fileBacked(home, StoreUse.ONE_CAPTURE);
+    }
+
+    /** A persisted store as {@link #fileBacked(Path)} hands back, for the use {@code use} names. */
+    public static GraphitronModelStore fileBacked(Path home, StoreUse use) {
         countBoot();
-        return GraphitronModelStore.openAt(home);
+        return GraphitronModelStore.openAt(home, use);
     }
 
     /**

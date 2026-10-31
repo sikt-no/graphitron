@@ -191,25 +191,6 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     static final String READER_USER = "GRAPHITRON_READER";
 
-    /** The system property that overrides {@link #QUERY_CACHE_SIZE} for one JVM. */
-    static final String QUERY_CACHE_SIZE_PROPERTY = "graphitron.queryCacheSize";
-
-    /**
-     * Prepared statements each session of the store keeps, against H2's default of 8. A capture
-     * and the reads over it run roughly six hundred distinct statements, a set the code fixes
-     * rather than the schema captured, in the same order every round, so a cache smaller than the
-     * set evicts each statement just before it comes round again and saves nothing. The size is a
-     * database-level setting: a reader's session inherits it from the open database, so only the
-     * writer's URL states it.
-     *
-     * <p>What it costs is memory, about 50 KB a statement, which a store fills up to the ~600 it
-     * runs and no further: roughly 30 MB more per captured store than the default holds, however
-     * much room is left unused above that. One store or two, as the build and the dev loop hold,
-     * pays that without noticing. A test JVM keeping dozens of stores alive does not, and sets
-     * {@value #QUERY_CACHE_SIZE_PROPERTY} lower in its own surefire configuration.
-     */
-    static final int QUERY_CACHE_SIZE = Integer.getInteger(QUERY_CACHE_SIZE_PROPERTY, 1024);
-
     private final Connection connection;
     private final DSLContext dsl;
     private final Path location;
@@ -283,14 +264,26 @@ public final class GraphitronModelStore implements AutoCloseable {
     }
 
     /**
-     * Opens a fresh store: a private in-memory H2 database with the fact schema created in it.
+     * Opens a fresh store for {@link StoreUse#ONE_CAPTURE}: a private in-memory H2 database with the
+     * fact schema created in it.
      *
      * @throws IllegalStateException if the DDL resource is missing or H2 rejects it, both of
      *         which are build-time defects in this module rather than anything an author caused
      */
     public static GraphitronModelStore open() {
+        return open(StoreUse.ONE_CAPTURE);
+    }
+
+    /**
+     * Opens a fresh store, as {@link #open()}, whose sessions keep the statement cache that
+     * {@code use} names.
+     *
+     * @throws IllegalStateException if the DDL resource is missing or H2 rejects it, both of
+     *         which are build-time defects in this module rather than anything an author caused
+     */
+    public static GraphitronModelStore open(StoreUse use) {
         String url = "jdbc:h2:mem:graphitron-model-" + UUID.randomUUID()
-            + ";DB_CLOSE_DELAY=-1;ANALYZE_AUTO=0;QUERY_CACHE_SIZE=" + QUERY_CACHE_SIZE;
+            + ";DB_CLOSE_DELAY=-1;ANALYZE_AUTO=0;QUERY_CACHE_SIZE=" + use.cacheSize();
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
@@ -345,6 +338,15 @@ public final class GraphitronModelStore implements AutoCloseable {
      * lock probe, since this run holds nothing. {@link #reaped()} reports what was released.
      */
     public static GraphitronModelStore openAt(Path storeDirectory) {
+        return openAt(storeDirectory, StoreUse.ONE_CAPTURE);
+    }
+
+    /**
+     * Opens the persisted store as {@link #openAt(Path)} does, for the use {@code use} names.
+     * The statement cache is a database-level setting the first connection to a file fixes, so a
+     * handle that reopens a file this JVM already holds keeps the size its first opener gave it.
+     */
+    public static GraphitronModelStore openAt(Path storeDirectory, StoreUse use) {
         String segment = stampSegment();
         // Before the open rather than after it, so every arm below carries the same report without
         // each one asking for it. Releasing a directory is a handful of unlinks whatever the file's
@@ -360,7 +362,7 @@ public final class GraphitronModelStore implements AutoCloseable {
                     + ". Make that path writable, or point <storeDirectory> somewhere that is.", e);
         }
         boolean existing = Files.isRegularFile(directory.resolve(DATABASE + ".mv.db"));
-        String url = fileUrl(directory);
+        String url = fileUrl(directory, use);
         // Reserved before the connection exists, for the reason OPEN_HANDLES states. Every exit
         // below that does not hand back a file-backed store releases it again.
         reserve(directory);
@@ -769,10 +771,14 @@ public final class GraphitronModelStore implements AutoCloseable {
      * budget and no narrowing: a capture used to carry two, a short one for the anchor row and a
      * generous one for everything after it, and the difference between them was an argument about
      * which rows are worth waiting out. None of them are.
+     *
+     * <p>The statement cache is the opener's {@link StoreUse}, stated on this URL because it is a
+     * database-level setting H2 reads once, when the first connection opens the database: a reader
+     * inherits it, and a later connection that stated another size would be ignored.
      */
-    private static String fileUrl(Path directory) {
+    private static String fileUrl(Path directory, StoreUse use) {
         return "jdbc:h2:retry:" + directory.toAbsolutePath().resolve(DATABASE)
-            + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS + ";ANALYZE_AUTO=0;QUERY_CACHE_SIZE=" + QUERY_CACHE_SIZE;
+            + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS + ";ANALYZE_AUTO=0;QUERY_CACHE_SIZE=" + use.cacheSize();
     }
 
     /**

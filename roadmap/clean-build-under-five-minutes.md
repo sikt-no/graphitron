@@ -103,12 +103,20 @@ Each step is measured before it starts and priced after it lands, and lands on i
 numbering is the order to take them in, largest and cheapest first.
 
 1. **Stop preparing the same statement twice.** Two changes, both in `GraphitronModelStore` and
-   both production code, so real captures (the sis schema, the consumer modules) and the
-   long-lived stores of `graphitron:dev`, the LSP and MCP gain as well as the tests:
-   * **A statement cache that holds a capture.** Set `QUERY_CACHE_SIZE=1024` on the store's
-     connection URLs (in-memory and file-backed): room for the roughly 600 distinct statements a
-     capture and its reads run, with headroom as the store grows. A larger cache buys nothing,
-     the statement set being bounded by the code.
+   both production code, so the long-lived stores of `graphitron:dev`, the LSP and MCP gain as well
+   as the tests:
+   * **A statement cache that holds a capture, for the callers that capture again.** The caller
+     says what it will do with the store, `StoreUse.ONE_CAPTURE` or `StoreUse.LONG_LIVED`, and the
+     store sets `QUERY_CACHE_SIZE` on its connection URLs (in-memory and file-backed) to match:
+     H2's own 8 for one capture, and 1024 for a connection that captures or reads again and again,
+     room for the roughly 600 distinct statements a capture and its reads run with headroom. The
+     cache is not free (about 50 KB a statement, so roughly 30 MB per session that fills it), and it
+     pays only from a connection's second capture, the first one preparing every statement for the
+     first time, so a global default is too broad: a build running modules in parallel holds one
+     session per module and captures once in each. The build goals and `roadmap-tool` keep the
+     default; the dev loop, the harness's per-thread store and the corpus store say `LONG_LIVED`.
+     The size is a database-level setting H2 reads when the first connection opens the database, so
+     the first handle to open a database decides it for every handle after.
    * **Readers end in a commit, kept read-only by H2's rights.** `GraphitronModelStore` creates a
      reader user with `GRANT SELECT ON SCHEMA PUBLIC` when it boots a store, and
      `GraphitronModelStore.reader` connects as that user, on a URL without the database-level
@@ -126,19 +134,23 @@ numbering is the order to take them in, largest and cheapest first.
    since every statement is new to that store; what it pays is first-time planning, which step 6
    addresses.
 
-   Landed. The size is 1024, and the cost is memory: about 50 KB a cached statement, filled up to
-   the roughly 600 a capture runs, so about 30 MB more per captured store than H2's default of 8
-   (40.7 MB to 70.7 MB measured over six stores held at once); sizes from 700 up cost the same, and
-   64 or 128 cost only 3 to 5 MB but, a capture cycling through its statements in order, should
-   save nothing. A JVM that keeps dozens of stores alive does not afford that: `graphitron-lsp`'s
-   tests ran out of heap at 700 and above and pass at 8, so its surefire configuration sets
-   `graphitron.queryCacheSize=8`. One before-and-after pair on `FactExpectationTest` (forked, load
-   under 2 at the start of each, cache at 2048): 297.0 s before, 235.7 s after, 21% off. A single
-   pair, not yet the interleaved set `## Measuring` asks for, so the spread is still owed.
+   Landed, priced. Four interleaved pairs of `FactExpectationTest` on this 4-core machine, forked,
+   the first pair discarded, the "before" arm at a cache of 8 and the "after" arm on the default
+   path through `StoreUse.LONG_LIVED`: 473.7, 456.8, 473.6 s before and 361.1, 361.1, 358.4 s
+   after, a saving of 108 s (23%), spread 96 to 115 s; the discarded first pair (105 s) agrees. By
+   position in a store, on a ten-type scaled fixture, the first capture gained nothing (2639 ms
+   against 2869 ms, noise) and the second to sixth gained 31% (1967 ms against 1365 ms), which is
+   the reason the use is the caller's to state. The cost is memory, measured over six captured
+   stores held at once: 40.7 MB per store at 8, 44 MB at 64, 46 MB at 128, and 70.5 MB at 700, 1024
+   and 2048 alike, since a capture fills only the statements it runs. Sizes below a capture's
+   statement count cost little and should save nothing, the statements coming round in the same
+   order. `graphitron-lsp`'s tests, which keep dozens of stores alive, ran out of heap at 700 and
+   above and pass at 8; they now take the default, which is 8, with no override.
    Findings from landing it: `QUERY_CACHE_SIZE` has no `SET` form and is not persisted, only a URL
    setting read when the first connection opens the database, so the writer's URL states it and a
-   reader inherits it; and a select-only reader can still create session-local temporary tables,
-   which touch nothing the writer owns.
+   reader inherits it; a select-only reader can still create session-local temporary tables, which
+   touch nothing the writer owns; and `GraphCountGrowthGateTest` can miss its bound by a few
+   milliseconds when it shares this machine with other test classes, passing in 44 to 50 s alone.
 2. **Check `{@link}` references in the compiler.** Replace the `javadoc-no-fork` execution
    (`check-link-references`) with javac's own `-Xdoclint:reference`, excluding the generated jOOQ
    packages that the javadoc sourcepath reads today, so the reference gate costs nothing beyond

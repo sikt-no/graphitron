@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.StoreUse;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 
@@ -252,7 +253,10 @@ public final class ThreadConfinedStore {
     }
 
     private static ThreadConfinedStore boot() {
-        GraphitronModelStore store = FactStores.inMemory();
+        // LONG_LIVED: this store is captured into again and again for the rest of the JVM, which
+        // is the repetition a statement cache pays for, and there is one per test thread, so the
+        // memory is a handful of stores and not one per case.
+        GraphitronModelStore store = FactStores.inMemory(StoreUse.LONG_LIVED);
         DSLContext dsl = store.dsl();
         List<String> baseTables = baseTables(dsl);
         Set<String> stated = statedRelations(dsl);

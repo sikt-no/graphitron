@@ -17,69 +17,94 @@ import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A statement the store has prepared once is not prepared again: H2 keeps it in the session's
- * statement cache and hands the same {@link Command} back for the same text. Preparing is the
- * parser and the optimizer, and over a capture and the reads after it that is most of what the
- * store spends, so a regression to re-preparing fails the build here instead of slowing it.
+ * What a {@link StoreUse} buys: a store opened {@link StoreUse#LONG_LIVED} keeps the statements it
+ * has prepared, and one opened {@link StoreUse#ONE_CAPTURE} keeps only H2's default few. Preparing
+ * is the parser and the optimizer, and over repeated captures and the reads after them it is most of
+ * what the store spends, so a regression to re-preparing fails the build here instead of slowing it,
+ * and a default that quietly grew would put the memory on every caller.
  *
  * <p>The signal is {@code SessionLocal.prepareLocal} answering with the same instance, which H2
- * does for a command that was closed after its last use, as a JDBC statement is. It answers
- * with a fresh one when the cache is too small to have kept the statement, which is H2's default
- * of eight slots against the six hundred or so distinct statements a capture runs, and when
- * something emptied the cache in between, which a rollback does. Each case covers one of the two
- * sessions the store owns, the writer's and a reader's, and each runs on an in-memory store and on
- * a file-backed one opened a second time, the shape a warm build meets.
+ * does for a command that was closed after its last use, as a JDBC statement is. It answers with a
+ * fresh one when the cache is too small to have kept the statement, and when something emptied the
+ * cache in between, which a rollback does. The long-lived cases cover both sessions the store owns,
+ * the writer's and a reader's, on an in-memory store and on a file-backed one opened a second time,
+ * the shape a warm build meets. The cache size is a database-level setting, so the last case pins
+ * who decides it: the first handle to open the database.
  */
 class StoreStatementReuseTest {
 
     private static final ReadBudget UNBOUNDED = new ReadBudget.Unbounded();
 
-    /** More distinct statements than H2's default cache holds, fewer than the store's. */
+    /** More distinct statements than H2's default cache holds, fewer than the long-lived one's. */
     private static final int OTHER_STATEMENTS = 200;
 
     private static final String SUBJECT = "SELECT COUNT(*) FROM store_graph WHERE graph_name = 'subject'";
 
     @Test
-    void theWritersStatementsSurviveOtherStatements() {
+    void aLongLivedWritersStatementsSurviveOtherStatements() {
+        try (var store = FactStores.inMemory(StoreUse.LONG_LIVED)) {
+            assertThat(writerKeeps(store.connection()))
+                .as("the writer's session still holds the statement after %d others", OTHER_STATEMENTS)
+                .isTrue();
+        }
+    }
+
+    @Test
+    void aLongLivedWritersStatementsSurviveOtherStatementsInAReopenedFile(@TempDir Path tmp) {
+        FactStores.fileBacked(tmp, StoreUse.LONG_LIVED).close();
+        try (var store = FactStores.fileBacked(tmp, StoreUse.LONG_LIVED)) {
+            assertThat(writerKeeps(store.connection())).isTrue();
+        }
+    }
+
+    @Test
+    void aLongLivedReaderPreparesNothingForASecondIdenticalRead() {
+        try (var store = FactStores.inMemory(StoreUse.LONG_LIVED)) {
+            assertThat(readerKeeps(() -> store.reader(UNBOUNDED)))
+                .as("the reader ended its first read without emptying its statement cache")
+                .isTrue();
+        }
+    }
+
+    @Test
+    void aLongLivedReaderPreparesNothingForASecondIdenticalReadInAReopenedFile(@TempDir Path tmp) {
+        FactStores.fileBacked(tmp, StoreUse.LONG_LIVED).close();
+        try (var store = FactStores.fileBacked(tmp, StoreUse.LONG_LIVED)) {
+            assertThat(readerKeeps(() -> store.reader(UNBOUNDED))).isTrue();
+        }
+    }
+
+    @Test
+    void aStoreForOneCaptureKeepsOnlyH2sDefault() {
         try (var store = FactStores.inMemory()) {
-            assertWriterKeeps(store.connection());
+            assertThat(writerKeeps(store.connection()))
+                .as("the default must stay small: every session that fills a big cache costs memory "
+                    + "that a caller capturing once never gets back")
+                .isFalse();
         }
     }
 
     @Test
-    void theWritersStatementsSurviveOtherStatementsInAReopenedFile(@TempDir Path tmp) {
-        FactStores.fileBacked(tmp).close();
-        try (var store = FactStores.fileBacked(tmp)) {
-            assertWriterKeeps(store.connection());
+    void theFirstHandleToOpenADatabaseDecidesItsCacheForEveryHandleAfter(@TempDir Path tmp) {
+        try (var first = FactStores.fileBacked(tmp, StoreUse.LONG_LIVED);
+             var second = FactStores.fileBacked(tmp, StoreUse.ONE_CAPTURE)) {
+            assertThat(writerKeeps(second.connection()))
+                .as("a later handle asking for the small cache joins a database that was opened "
+                    + "for the big one, and H2 ignores its setting rather than refusing it")
+                .isTrue();
+            assertThat(first.connection()).isNotSameAs(second.connection());
         }
     }
 
-    @Test
-    void aReaderPreparesNothingForASecondIdenticalRead() {
-        try (var store = FactStores.inMemory()) {
-            assertReaderKeeps(() -> store.reader(UNBOUNDED));
-        }
-    }
-
-    @Test
-    void aReaderPreparesNothingForASecondIdenticalReadInAReopenedFile(@TempDir Path tmp) {
-        FactStores.fileBacked(tmp).close();
-        try (var store = FactStores.fileBacked(tmp)) {
-            assertReaderKeeps(() -> store.reader(UNBOUNDED));
-        }
-    }
-
-    private static void assertWriterKeeps(Connection writer) {
+    private static boolean writerKeeps(Connection writer) {
         SessionLocal session = session(writer);
         Command first = session.prepareLocal(SUBJECT);
         first.close();
         prepareOtherStatements(session);
-        assertThat(session.prepareLocal(SUBJECT))
-            .as("the writer's session still holds the statement after %d others", OTHER_STATEMENTS)
-            .isSameAs(first);
+        return session.prepareLocal(SUBJECT) == first;
     }
 
-    private static void assertReaderKeeps(Supplier<StoreReader> readers) {
+    private static boolean readerKeeps(Supplier<StoreReader> readers) {
         try (var reader = readers.get()) {
             Command first = answered(reader.read(dsl -> {
                 SessionLocal session = session(dsl);
@@ -93,9 +118,7 @@ class StoreStatementReuseTest {
                 command.close();
                 return command;
             }));
-            assertThat(second)
-                .as("the reader ended its first read without emptying its statement cache")
-                .isSameAs(first);
+            return second == first;
         }
     }
 

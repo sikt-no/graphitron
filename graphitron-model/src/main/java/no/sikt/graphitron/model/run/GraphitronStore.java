@@ -4,6 +4,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreUnavailableException;
+import no.sikt.graphitron.model.boot.StoreUse;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import org.jooq.exception.DataAccessException;
 
@@ -35,7 +36,12 @@ public final class GraphitronStore {
      * be delayed by or disagree with another.
      */
     public static GraphitronModelStore inMemory() {
-        return GraphitronModelStore.open();
+        return inMemory(StoreUse.ONE_CAPTURE);
+    }
+
+    /** A private store as {@link #inMemory()} hands back, for the use {@code use} names. */
+    public static GraphitronModelStore inMemory(StoreUse use) {
+        return GraphitronModelStore.open(use);
     }
 
     /**
@@ -49,7 +55,17 @@ public final class GraphitronStore {
      * @throws StoreUnavailableException if the store cannot be opened
      */
     public static GraphitronModelStore at(Path directory) {
-        return GraphitronModelStore.openAt(directory);
+        return at(directory, StoreUse.ONE_CAPTURE);
+    }
+
+    /**
+     * A store on disk as {@link #at(Path)} hands back, for the use {@code use} names. A host that
+     * keeps the store open and captures or reads again and again says {@link StoreUse#LONG_LIVED}.
+     *
+     * @throws StoreUnavailableException if the store cannot be opened
+     */
+    public static GraphitronModelStore at(Path directory, StoreUse use) {
+        return GraphitronModelStore.openAt(directory, use);
     }
 
     /**

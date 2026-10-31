@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
+import no.sikt.graphitron.model.boot.StoreUse;
 import no.sikt.graphitron.model.capture.document.GraphQLSchemaProblems;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.run.GraphIdentity;
@@ -127,9 +128,9 @@ public final class CapturedStore implements AutoCloseable {
         return OWNED.get();
     }
 
-    private static GraphitronModelStore ownedStore() {
+    private static GraphitronModelStore ownedStore(StoreUse use) {
         OWNED.incrementAndGet();
-        return FactStores.inMemory();
+        return FactStores.inMemory(use);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -197,6 +198,18 @@ public final class CapturedStore implements AutoCloseable {
             List.of(ownOutput(classRoot)));
     }
 
+    /**
+     * An own store, as {@link #ownStoreOfCatalog(Path, String, String, CatalogInput)} hands back,
+     * for a caller that will capture many more graphs into it and read it for the rest of the JVM:
+     * its statement cache is the {@link StoreUse#LONG_LIVED} one. {@code classRoot} may be null.
+     */
+    public static CapturedStore ownLongLivedStoreOfCatalog(Path directory, String graphName,
+                                                           String sdl, CatalogInput jooq,
+                                                           Path classRoot) {
+        return ownStoreOfCatalogWith(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
+            classRoot == null ? List.of() : List.of(ownOutput(classRoot)), StoreUse.LONG_LIVED);
+    }
+
     /** {@link #ofWith} on a store of its own. */
     public static CapturedStore ownStoreWith(Path directory, String graphName, String sdl,
                                              List<ClasspathEntry> classpath) {
@@ -207,9 +220,15 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore ownStoreOfCatalogWith(Path directory, String graphName, String sdl,
                                                       CatalogInput jooq,
                                                       List<ClasspathEntry> classpath) {
+        return ownStoreOfCatalogWith(directory, graphName, sdl, jooq, classpath, StoreUse.ONE_CAPTURE);
+    }
+
+    private static CapturedStore ownStoreOfCatalogWith(Path directory, String graphName, String sdl,
+                                                       CatalogInput jooq,
+                                                       List<ClasspathEntry> classpath, StoreUse use) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = ownedStore();
+        var store = ownedStore(use);
         var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, jooq, false,
             classpath);
         return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
@@ -221,7 +240,7 @@ public final class CapturedStore implements AutoCloseable {
         List<Path> files = List.of(write(directory, firstName, firstSdl),
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
-        var store = ownedStore();
+        var store = ownedStore(StoreUse.ONE_CAPTURE);
         var schemas = captureFiles(store.dsl(), files, directory, GRAPH, null, false, List.of());
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, schemas, true);
     }

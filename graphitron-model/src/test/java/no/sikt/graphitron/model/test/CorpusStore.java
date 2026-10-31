@@ -201,10 +201,10 @@ public final class CorpusStore {
         Path directory = directory();
         var documents = CorpusDocuments.documents();
         var first = documents.getFirst();
-        CapturedStore store = classRoot == null
-            ? CapturedStore.ownStoreOfCatalog(directory, first.id(), sdl(first), jooq)
-            : CapturedStore.ownStoreOfCatalog(directory, first.id(), sdl(first), jooq,
-                classRoot);
+        // Long-lived: every document is captured into this one store, and the sweeps then read it
+        // for the rest of the JVM, so its statement cache is the one that pays for itself.
+        CapturedStore store = CapturedStore.ownLongLivedStoreOfCatalog(directory, first.id(),
+            sdl(first), jooq, classRoot);
         for (var document : documents.subList(1, documents.size())) {
             store.andCatalogGraphWith(document.id(), sdl(document), jooq, classpath);
         }
