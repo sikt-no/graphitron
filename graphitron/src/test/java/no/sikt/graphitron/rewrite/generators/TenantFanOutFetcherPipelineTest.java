@@ -104,7 +104,7 @@ class TenantFanOutFetcherPipelineTest {
             // The fanned batched fetcher registers under the bare path name (parents are
             // untenanted; the fan-out happens inside the batch load) and collapses each parent's
             // marker-bearing list against that parent's own env.
-            .contains("fake.code.generated.schema.TenantConnections.loaderName(env)")
+            .contains("fake.code.generated.schema.TenantConnections.loaderName(env, \"Language\")")
             .contains(".thenApply(payload -> fake.code.generated.schema.TenantConnections.collapseFanOut(env, payload))")
             .doesNotContain("tenantLoaderName");
 

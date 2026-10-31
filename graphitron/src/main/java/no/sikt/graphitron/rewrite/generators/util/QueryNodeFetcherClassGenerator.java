@@ -183,10 +183,10 @@ public class QueryNodeFetcherClassGenerator {
             // partitions the batch per decoded tenant downstream, so the batch itself may span
             // tenants safely.
             .addCode(schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured
-                ? CodeBlock.builder().addStatement("$T path = $T.loaderName(env)",
+                ? CodeBlock.builder().addStatement("$T path = $T.loaderName(env, $S)",
                     String.class,
                     ClassName.get(outputPackage + ".schema",
-                        ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME)).build()
+                        ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME), "Query").build()
                 : CodeBlock.builder().addStatement(
                     "$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
                     String.class, String.class, "/").build())

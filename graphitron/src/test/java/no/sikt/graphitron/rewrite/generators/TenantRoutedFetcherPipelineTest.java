@@ -313,7 +313,7 @@ class TenantRoutedFetcherPipelineTest {
             """);
 
         assertThat(render(schema, "FilmFetchers", "inventories"))
-            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.tenantLoaderName(env);")
+            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.tenantLoaderName(env, \"Film\");")
             .doesNotContain("String.join");
     }
 
@@ -344,7 +344,7 @@ class TenantRoutedFetcherPipelineTest {
             """);
 
         assertThat(render(schema, "FilmFetchers", "contents"))
-            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.tenantLoaderName(env);")
+            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.tenantLoaderName(env, \"Film\");")
             .doesNotContain("String.join");
     }
 
@@ -360,7 +360,7 @@ class TenantRoutedFetcherPipelineTest {
             """);
 
         assertThat(render(schema, "CustomerFetchers", "address"))
-            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.loaderName(env);")
+            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.loaderName(env, \"Customer\");")
             .doesNotContain("tenantLoaderName");
     }
 
@@ -378,7 +378,7 @@ class TenantRoutedFetcherPipelineTest {
             """, TestConfiguration.testContext());
 
         assertThat(render(schema, "FilmFetchers", "inventories"))
-            .contains("java.lang.String name = java.lang.String.join(\"/\", env.getExecutionStepInfo().getPath().getKeysOnly());")
+            .contains("java.lang.String name = java.lang.String.join(\"/\", env.getExecutionStepInfo().getPath().getKeysOnly()) + \"@Film\";")
             .doesNotContain("TenantConnections");
     }
 

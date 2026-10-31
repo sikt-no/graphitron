@@ -80,6 +80,53 @@ class MultiTablePolymorphicJoinedCorrelationExecutionTest {
     private static final String COND_SELECTION =
         "{ __typename ... on ActorCondMember { rowId name } ... on InvCondMember { rowId } }";
 
+    // ===== Same-named @splitQuery field on two participants (loader name carries the declaring type) =====
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> memberFilms(String selection) {
+        var film = filmById("1", "membersViaJunction { __typename " + selection + " }");
+        return (List<Map<String, Object>>) film.get("membersViaJunction");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Integer> filmIds(Map<String, Object> member, String field) {
+        return ((List<Map<String, Object>>) member.get(field)).stream()
+            .map(f -> (Integer) f.get("filmId")).toList();
+    }
+
+    @Test
+    void splitFieldOnBothParticipants_eachResolvesFromItsOwnTable_inEitherFragmentOrder() {
+        // ActorMember.films goes through film_actor, FilmInventory.films through inventory.film_id.
+        // With a path-only loader name the second participant reused the first's loader and got
+        // null/empty; per-declaring-type names give each its own batch.
+        for (var fragments : List.of(
+                "... on ActorMember { films { filmId } } ... on FilmInventory { films { filmId } }",
+                "... on FilmInventory { films { filmId } } ... on ActorMember { films { filmId } }")) {
+            var members = memberFilms(fragments);
+            var actors = members.stream().filter(m -> "ActorMember".equals(m.get("__typename"))).toList();
+            var inventories = members.stream().filter(m -> "FilmInventory".equals(m.get("__typename"))).toList();
+            assertThat(actors).hasSize(2);
+            assertThat(inventories).hasSize(1);
+            assertThat(filmIds(inventories.get(0), "films")).as(fragments).containsExactly(1);
+            for (var actor : actors) {
+                assertThat(filmIds(actor, "films")).as(fragments).contains(1);
+            }
+        }
+    }
+
+    @Test
+    void splitFieldOnBothParticipants_matchesAliasedControl() {
+        var shared = memberFilms("... on ActorMember { films { filmId } } ... on FilmInventory { films { filmId } }");
+        var aliased = memberFilms("... on ActorMember { a: films { filmId } } ... on FilmInventory { i: films { filmId } }");
+        for (int n = 0; n < shared.size(); n++) {
+            var sharedMember = shared.get(n);
+            var aliasedMember = aliased.get(n);
+            boolean actor = "ActorMember".equals(sharedMember.get("__typename"));
+            assertThat(filmIds(sharedMember, "films"))
+                .isEqualTo(filmIds(aliasedMember, actor ? "a" : "i"));
+        }
+    }
+
     // ===== Multi-hop FK chain (film -> film_actor -> actor) =====
 
     @SuppressWarnings("unchecked")
