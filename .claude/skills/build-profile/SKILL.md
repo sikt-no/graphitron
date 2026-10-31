@@ -98,11 +98,15 @@ javadoc 144.0 s, `sakila-example` `graphitron:generate` 113.5 s, `graphitron-mod
 its `startTime` inside the `ProjectEvent` windows, and check those windows are disjoint before
 trusting the result. They are here, bar an 8.4 s `capture-only` nested build.
 
-## The javadoc reference gate is 14% of a clean build
+## The javadoc reference gate was 14% of a clean build
 
-`javadoc-no-fork` with `doclint=reference` runs at `verify` in every module. It is not waste: the
-pom documents it as the only check of `{@link}` and `{@see}` reference validity, and its sourcepath
-includes `target/generated-sources/jooq`, so it reads the generated jOOQ sources too.
+Retired: the gate is now javac's `-Xdoclint:reference/protected` in the main compile and costs
+nothing beyond compiling. What follows is the measurement that justified moving it, and the method
+lesson in it still applies.
+
+`javadoc-no-fork` with `doclint=reference` ran at `verify` in every module. It was not waste: it
+was the only check of `{@link}` and `{@see}` reference validity, and its sourcepath included
+`target/generated-sources/jooq`, so it read the generated jOOQ sources too.
 
 Measured on the worst module, `clean verify -pl graphitron-model -DskipTests`:
 
@@ -112,14 +116,10 @@ Measured on the worst module, `clean verify -pl graphitron-model -DskipTests`:
 | `-Dmaven.javadoc.skip=true` | 47 s |
 | **gate** | **121 s** |
 
-**It only costs anything on a clean build.** The plugin is stale-checked, so on a warm `target/` it
-is a no-op; the first attempt to measure this ran without `clean` and showed 48 s against 47 s,
-which reads as "the gate is free" and is wrong. It is a tax on the verification build, not on
-iteration.
-
-So `-Dmaven.javadoc.skip=true` buys about 190 s on a full clean build and is right for iteration,
-but the verification build owed before publishing must keep the gate. `-Pquick` is the wrong lever:
-it drops the tests as well.
+**It only cost anything on a clean build.** The plugin was stale-checked, so on a warm `target/` it
+was a no-op; the first attempt to measure this ran without `clean` and showed 48 s against 47 s,
+which reads as "the gate is free" and is wrong. Anything that is stale-checked has to be measured
+from a clean tree.
 
 ## A long span is not an exclusive cost
 

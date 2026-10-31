@@ -36,13 +36,13 @@ largest module at 7:24, which led to a recommendation to go optimise the wrong o
 Four modules are 18 of the 21 minutes. Everything else is noise.
 
 By goal rather than by module, across one measured 22:26 reactor: tests 696 s (51.5%), the javadoc
-reference gate 190 s (14.0%), `graphitron:generate` 113 s, compilation 98 s. The reactor is
+reference gate 190 s (14.0%, since moved into javac), `graphitron:generate` 113 s, compilation 98 s. The reactor is
 sequential, so a second saved on a goal is a second off the build.
 
-`-Dmaven.javadoc.skip=true` takes the 190 s off, and costs nothing on a non-clean build because the
-gate is stale-checked and does not re-run. Use it while iterating; keep the gate for the
-verification build, since it is the only check of `{@link}` and `{@see}` validity. Do not reach for
-`-Pquick` to get it, which skips the tests too. See the `build-profile` skill for the measurements.
+The 190 s was the javadoc `{@link}` gate, measured when it was a `maven-javadoc-plugin` execution at
+`verify`. It now runs inside the main compile (javac's `-Xdoclint:reference/protected`) and costs
+nothing beyond compiling, so there is nothing left to skip and `-Dmaven.javadoc.skip` does not touch
+it. See the `build-profile` skill for the measurements.
 
 ## The three flags that matter
 
@@ -102,7 +102,7 @@ Knowing which of the two you are asking for is most of the saving.
 
 ## Profiles
 
-- `-Pquick` skips tests and the javadoc reference gate. Compilation only.
+- `-Pquick` skips tests. Compilation only; the `{@link}` reference gate is part of compiling and still runs.
 - `-P!docs` skips the AsciiDoctor render, about 10 s of JRuby startup.
 - `-Plocal-db` is required by the full build in environments that have PostgreSQL. **This
   environment has none**; use plain `clean install`. Passing it to `roadmap-tool,docs` earns a

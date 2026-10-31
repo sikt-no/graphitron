@@ -129,11 +129,8 @@
                 output between codegen and the compile that follows keeps the promise the DDL header
                 makes, that editing the schema and following the compiler is the whole procedure.
 
-                The phase is load-bearing. The javadoc reference gate forks generate-sources at
-                verify, which re-runs everything bound at or before that phase; a clean bound there
-                would fire again after packaging and strip target/classes of the classes the run had
-                already compiled. process-sources is past the fork's reach and still ahead of
-                compile, which recompiles both source roots from scratch.
+                The phase is process-sources: past generate-sources, so codegen has already written
+                its output, and ahead of compile, which recompiles both source roots from scratch.
             -->
             <!--
                 The compile-time surface, generated from the fact schema the DDL states.
@@ -238,32 +235,25 @@
                 </executions>
             </plugin>
             <!--
-                The javadoc reference gate reads the project's source roots, and inside this module
-                the generated tables are a source-only symbol: every other module resolves
-                no.sikt.graphitron.model.Tables off this module's jar, but here it exists only under
-                target/generated-sources until compile. The gate forks generate-sources, which
-                regenerates the tree, yet the source root build-helper adds during that fork does not
-                reach the sourcepath the forked javadoc run is given, so a hand-written class in this
-                module that names a generated relation fails the gate with "cannot find symbol"
-                rather than with a dangling link. Naming both roots here is what lets model code use
-                the compile-checked table constants like every downstream reader does.
-
-                The cost, since it is visible: javadoc parses what it resolves, so the generated
-                tree's own comments are scanned too and the gate's output carries a block of
-                "unknown tag" warnings from DDL prose that reads as a javadoc tag (@field, @enum).
-                Warnings, not errors, and failOnWarnings is deliberately unset on the gate in the
-                parent pom. The alternatives were worse: excluding this module's read-side classes
-                would hollow out the gate exactly where new code lands, and dropping the generated
-                constants for dynamic SQL would trade a compile-checked column name for a string.
+                The {@link} reference gate (see the parent pom's default-compile execution) runs
+                inside this module's own compile, where the generated tables are ordinary sources,
+                so hand-written code naming a generated relation resolves like any other symbol.
+                What the gate must not do is read the generated tree itself: it is four hundred
+                tables of DDL prose, and checking it cost minutes while holding nothing a person
+                wrote. The exclusion names the generated packages and nothing above them, since
+                a plain package name does not reach its subpackages and no.sikt.graphitron.model
+                is also the root of the hand-written ones.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
+                <artifactId>maven-compiler-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>check-link-references</id>
+                        <id>default-compile</id>
                         <configuration>
-                            <sourcepath>${project.basedir}/src/main/java:${model.generated.sources}</sourcepath>
+                            <compilerArgs combine.children="append">
+                                <arg>-Xdoclint/package:-no.sikt.graphitron.model,-no.sikt.graphitron.model.tables,-no.sikt.graphitron.model.tables.records</arg>
+                            </compilerArgs>
                         </configuration>
                     </execution>
                 </executions>

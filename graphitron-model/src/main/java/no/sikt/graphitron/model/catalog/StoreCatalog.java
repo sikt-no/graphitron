@@ -88,7 +88,7 @@ public record StoreCatalog(List<Family> families, List<Exemption> exemptions,
      * Reads the whole catalog from a booted store in one pass. Deliberately plain-name jOOQ
      * rather than the generated table constants: the hand-written half of this module never
      * references its own generated half (the boot and codegen-driver classes for compile-order
-     * reasons, this class so the javadoc reference gate resolves it from source alone), and the
+     * reasons, this class by choice), and the
      * spellings are pinned to the live schema by the gates and the reader's own tests.
      */
     public static StoreCatalog read(DSLContext dsl) {

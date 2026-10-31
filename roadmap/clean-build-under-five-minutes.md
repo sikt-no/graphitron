@@ -144,6 +144,18 @@ numbering is the order to take them in, largest and cheapest first.
    packages that the javadoc sourcepath reads today, so the reference gate costs nothing beyond
    compiling. The gate keeps its meaning: a dangling `{@link}` or `{@see}` fails the build.
    Expected: about 150 s.
+
+   Landed. The gate is `-Xdoclint:reference/protected` on the main compile of every in-scope
+   module: `/protected` because the javadoc run it replaces looked at public and protected members
+   only, and the main compile only because the old gate never read test sources. A module outside
+   the gate sets `graphitron.doclint` to `-Xdoclint:none`, and `graphitron-model` excludes its three
+   generated jOOQ packages by name, which also lets it drop its javadoc `sourcepath` override.
+   Proved by a deliberately dangling `{@link}` failing the compile at its line, then removed; the
+   whole reactor compiles under it, so no module carried a link the old gate was not reading.
+   The saving is not priced yet. The javadoc plugin skips a run whose output is current, so the
+   gate only costs anything on a clean build: in `graphitron-model` it added 220 to 240 s to
+   `verify -DskipTests` on this 4-core machine in the two runs where it executed, and nothing in
+   `graphitron`. The clean paired figure is still owed.
 3. **Build independent modules in parallel.** Run the reactor with `-T` (and say so in CLAUDE.md
    and the `build` skill), after confirming that nothing collides when modules build together:
    the Quarkus test port, temporary directories, the leaf-coverage trace file, and the store

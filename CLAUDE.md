@@ -53,7 +53,7 @@ mvn -pl roadmap-tool exec:java -q
 # Inner loop: generator tests only, no PostgreSQL. Assumes a prior full install
 mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
 
-# Does it compile at all? Skips the tests and the Javadoc reference gate
+# Does it compile at all? Skips the tests; the {@link} reference gate still runs, it is part of compiling
 mvn install -Plocal-db -Pquick
 ```
 
@@ -81,7 +81,7 @@ Reach for the deeper docs only when the task requires it:
 
 **Sub-module gotcha (handled): reactor siblings.** Every graphitron goal, `generate` and `dev` among them, reads a reactor sibling from its own output: its `target/classes`, else its jar in `target`, in the place Maven put the module, falling back to the installed copy only where the sibling has no output. The workspace is every module under the outermost aggregator, so a class added to a sibling since its last `mvn install` is seen rather than refused as undeclared. See the "Multi-module projects" note in `docs/architecture/how-to/dev-loop-internals.adoc`.
 
-**Javadoc `{@link}` reference gate.** The `verify` phase runs a doclint reference check (maven-javadoc-plugin, `reference` group only) across the in-scope modules and fails the build on a dangling `{@link}`/`{@see}`, so a link that names a live symbol is build-enforced. It forks javadoc per module and costs real wall-clock; for a fast inner loop skip it with `-Pquick` (which sets `maven.javadoc.skip`, and also skips tests). When the gate fires, repoint the link to the current symbol; only downgrade to `{@code}` when the target genuinely is not a resolvable symbol (generated-only, or another module's non-dependency internals), never merely to silence the tool.
+**Javadoc `{@link}` reference gate.** The main compile of every in-scope module runs javac's `-Xdoclint:reference/protected` and fails the build on a dangling `{@link}`/`{@see}` in a public or protected member's comment, so a link that names a live symbol is build-enforced. It costs nothing beyond compiling, so there is no switch for it and `-Pquick` keeps it. A module outside its scope sets `graphitron.doclint` to `-Xdoclint:none`; `JavadocReferenceGateTest` pins which do. When the gate fires, repoint the link to the current symbol; only downgrade to `{@code}` when the target genuinely is not a resolvable symbol (generated-only, or another module's non-dependency internals), never merely to silence the tool.
 
 ## Adding a relation to the fact store
 
