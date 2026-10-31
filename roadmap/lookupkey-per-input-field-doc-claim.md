@@ -25,9 +25,14 @@ No consumer changes. Every `@lookupKey` in our subgraphs is on an argument: a pa
 fs-plattform on main (`bef4ae018a`, 225 schema files) finds 74 applications, all on arguments of
 root `Query` fields, and none on an input field; the kreg-g10 worktree has none. The 27 composite
 keys among them put the directive on an input-typed argument, and every field of the input becomes
-a key column; that rule stays. The Graphitron 10 subgraphs read the bundled declaration, not
-fs-plattform's own `graphitron-directives/graphitron.graphqls`, which still lists both locations
-and is fs-plattform's to change.
+a key column; that rule stays. fs-plattform's own `graphitron-directives/graphitron.graphqls` still
+lists both locations, but no Graphitron 10 module reads it, so this item cannot meet a second, wider
+declaration of the directive. Every Graphitron 10 module's `<schemaInputs>` are feature folders under
+its own `src/main/resources/schema/` (tilgangsstyring, utdanningsregisteret, kompetanse and opptak on
+main, kreg in the kreg-g10 worktree, sis on its upgrade branch at `1dcc6ebbf7`), no pom in
+fs-plattform names `graphitron-directives`, and the parser pass finds `directive @lookupKey`
+declared in that one file only. The modules still on Graphitron 9 (sis and fskode on main) read it
+and are not affected by this item. The file is fs-plattform's to change.
 
 ## What changes
 
@@ -56,6 +61,14 @@ and is fs-plattform's to change.
 
 ## Tests
 
+* A fact document under `graphitron-model/src/test/resources/facts/defects/`, with `@lookupKey` on a
+  query input field and on a mutation input field, asserts what the store reports to an author:
+  each application yields a `graphql_schema_problem` row (`ASSEMBLY`,
+  `DirectiveIllegalLocationError`) at the application's line, and no `graphitron_` entry is written
+  for either; `graphitron_argument_lookup_key_entry` holds no row at those input fields. This is
+  the refusal the editor shows and validate reads, written by capture through `DirectiveLegality`,
+  and it holds whatever the classifier does; `facts/defects/authored-claim-undecoded.graphqls`
+  already asserts the same row for `@lookupKey` on a field.
 * A schema with `@lookupKey` on a query input field, and one with it on a mutation input field, are
   refused at schema assembly, and the test pins graphql-java's location error naming the directive
   and the location. These replace the three tests asserting the migration message:
@@ -105,9 +118,17 @@ R866 is the item to discard at Done. Withheld on one finding.
    at the application's line, and that no `graphitron_*` entry is written for them. That is the
    behaviour this item changes for an author, and it survives the classifier going, which the three
    replaced classifier tests do not.
+
+   *Author:* added as the first bullet of Tests: a new fact document under `facts/defects/` with
+   both sites, asserting the `ASSEMBLY` / `DirectiveIllegalLocationError` row at each application's
+   line and no `graphitron_` entry, `graphitron_argument_lookup_key_entry` named.
 2. *How the bundled declaration wins is stated, not shown.* The Goal says the Graphitron 10
    subgraphs read the bundled declaration and not fs-plattform's
    `graphitron-directives/graphitron.graphqls`, which still allows `INPUT_FIELD_DEFINITION`. Say
    how that was established (no Graphitron 10 module lists that file among its schema inputs), so a
    reader can tell this item cannot meet a second, wider declaration of the same directive.
    A wording fix; it does not block on its own.
+
+   *Author:* the Goal now says how: every Graphitron 10 module's `<schemaInputs>` (named per
+   module) are its own feature folders, no fs-plattform pom names `graphitron-directives`, and the
+   parser pass finds `directive @lookupKey` declared in that file only.
