@@ -430,22 +430,29 @@ static method needs no holder.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **The outbox on a service is modelled before it is built** `done`. A top-level `@service` field
-    on the mutation root is a write: `graphitron_producer` and `graphql_root_operation` already say
-    so, and the `OUTBOX_NOT_A_WRITE` arm reads them beside `graphitron_producer_write`, with no new
-    relation. A `$result` over a returned value is a pointer to the result: a `graphitron_outbox_leaf`
-    of kind `RESULT_MEMBER`, or `RESULT_NODE_ID` ending on a node id over a record of the node's
-    table, keeping only its path, each step read as its field's own facts say; a member a payload
-    cannot carry is `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`.
-  * **A field that reads an accessor names its member** `done`. `graphitron_reader_accessor`, a
-    subtype of `graphitron_reader` for its `ACCESSOR` reads, names the `code_read_slot` read off each
-    class the parent's result holds (`graphitron_result_class`), by the field's name or
-    `@field(name:)`, one row per field, class and the classpath entry the class was read from.
-  * **A service's `$result` is read off its returned value** `open`.
-    The `RESULT_MEMBER` and service `RESULT_NODE_ID` leaves resolve a path step by step over the
-    field's result, through `graphitron_carrier_data_channel` where the object passes through a
-    payload's data field and the accessor each field names; a step with no stated read stays
-    `OUTBOX_SOURCE_UNRESOLVED`.
+  * **A service's `$result` is read off its returned value** `blocked`, on "A field's member is stated once".
+    A top-level `@service` field on the mutation root is a write, as `graphitron_producer` and
+    `graphql_root_operation` say, and a `$result` over its returned value is a pointer to the
+    result: a `graphitron_outbox_leaf` keeping only its path, each step read as its field's own
+    facts say. A step passes through a payload's data field (`graphitron_carrier_data_channel`),
+    reads the member a field names on each class its parent holds, or, where the field is
+    table-bound, takes a record of the key row's table (`graphitron_field_key_row`, arity `ONE`);
+    a step through a list is not built. A path ends on a member a payload can carry
+    (`RESULT_MEMBER`), on the `@nodeId` field of a node type reached through a record of its table
+    whose node key is the primary key (`RESULT_NODE_ID`), or, bare, on a scalar return
+    (`RESULT_ROOT`, no node type). A path ending on anything a payload cannot carry is
+    `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`, naming the type; the rest stays
+    `OUTBOX_SOURCE_UNRESOLVED`. The steps are a view, one row per leaf and segment, which the leaf
+    rule and the emitter both read; the types a payload can carry are one list the session and
+    member arms share.
+    * **A field's member is stated once** `blocked`, on "`@sourceRow` dissolves". The member a field
+      reads off each class its parent holds, by its name or `@field(name:)`, is derived today by the
+      type-backing rule (twice), the key-row rule, `FieldKeyRows` for
+      `graphitron_field_key_row_method`, `graphitron_reader_accessor` and the carrier channel's
+      `passes_through`. The type-backing derivation, which finds it on the way to a child type's
+      class, states it once; the others read it, and `graphitron_reader_accessor` and the key-row
+      method relation fold into it. What the derivations resolve today is compared on the six stores
+      before the relation is modelled.
   * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
     `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write
@@ -587,9 +594,10 @@ classified records have no reader left and can go with the walk.
   `@field(name:)` as the backing closure already does; and a bound field under an object starts its
   path on that key row. An OBJECT's class stays at the type grain, an OBJECT may have no class, and
   a service field needs no relation of a field's own result.
-* **`@sourceRow` dissolves** `open`, off the critical path, breaking. No schema in the FS-plattform checkout uses it, so the
+* **`@sourceRow` dissolves** `open`, breaking. No schema in the FS-plattform checkout uses it, so the
   directive, its `SOURCE_ROW` key row and its lifter methods go, an object's key row read off its
-  class and members instead. The directive comes back later, once the model is cleaned up, so the
+  class and members instead. `graphitron_field_key_row_method` keeps its accessor half only, which
+  "A field's member is stated once" then folds into the one binding. The directive comes back later, once the model is cleaned up, so the
   removal is not final.
 * **The backing closure stops at a table-bound type** `open`, off the critical path. The class a
   table-bound type holds is its record class, which `BOUND_TABLE` already states, so the
