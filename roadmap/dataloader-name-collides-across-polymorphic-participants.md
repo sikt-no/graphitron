@@ -157,3 +157,49 @@ so the regression case belongs in the execution tier, with unit-tier pins for th
   production query cannot adopt it.
 
 Provenance: reported by the kreg Graphitron 10 port session (fs-plattform's kreg module on 10.0.0-RC46, branch `worktree-kreg-g10` at `7858137af4`, not pushed), 2026-10-30; the reporter found it present on graphitron `origin/main` the same day.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready (session_01WkW2JEzgQYyoRDRQke2QpU, 2026-10-31)
+
+Verdict: withhold. The goal reads cleanly on its own and the cause holds against the tree: every
+batched fetcher builds its loader name from `getKeysOnly()` alone (`TenantDslEmitter.loaderNameDeclaration`,
+`DataLoaderFetcherEmitter.buildDataLoaderName`, the carrier seam), so two participants at one response
+path share a loader. The emission-site table is accurate. The fork the author asked about turns out to
+rest on a premise the tree does not support, and that changes both the rationale and a test.
+
+**Finding 1 (question two: fit). The open fork is mis-posed, and with it the stated advantage of (a) over
+(b).** A fetcher is only ever emitted in the class of a concrete object type. `GraphitronSchemaBuilder`
+calls `classifyField` only with a `GraphQLObjectType` parent, and `TypeFetcherGenerator.generate` renders a
+class only for `TableType`, `NodeType`, `RootType` and `ResultType` rows. `InterfaceType`, `UnionType` and
+`TableInterfaceType` host no fetcher class, and `FieldBuilder.classifyFieldInner` returns "parent type is
+unclassified" for an interface or union parent. So `ctx.parentTypeName()` is always a participant (or the
+declaring object type) at every site that reaches `loaderNameDeclaration`; the case "field declared on the
+multitable interface itself" never reaches it, and the spec need not leave that to pickup. The same fact
+removes the spec's reason for preferring (a): because each participant's fetcher is emitted in its own
+class with its own `parentTypeName`, (a) also yields one loader per participant on a *single-table*
+interface (`FanAlpha.targetLoaded` and `FanBeta.targetLoaded` get distinct names), which is exactly the
+batch-count change the spec attributes only to (b) and says (a) avoids ("keeps today's single batched
+query", "stays green"). The result stays correct, since each participant's rows method keys its own
+foreign key, but the batch count on `FanItem` does change. The spec should state the rule as it actually
+is (loader identity is the declaring object type plus the path, one per emitted batch function), say that
+single-table participants split too and that this is intended, and settle (a) versus (b) on the ground
+that remains, which is that (a) is a constant at the emission site, rather than on the batch-count claim.
+
+**Finding 2 (question one: the goal is deliverable, but one test bullet cannot test anything).** "A multitable
+interface whose `@splitQuery` field is declared on the interface itself as well as on the participants"
+exercises no emission path: the interface declaration produces no fetcher and no loader name. Either drop
+the bullet, or restate it as pinning that behaviour (what the build does with the directive on an
+interface-declared field, which the author should check rather than assume). The two other execution
+cases, both fragment orders over the new `FilmCastMember` fixture plus the aliased control and the
+`@referenceFor` child shape, are sound and cover the report.
+
+**Finding 3 (question one: a gap in the emitted name).** `TypeFetcherEmissionContext()` builds a context
+with a `null` parent type, and `TenantDslEmitter.routes` already guards on that. The step "single-tenant
+inline form appends the literal `ctx.parentTypeName()`" does not say what a `null` parent emits. Production
+paths always carry the type, but the spec should say which of the two it wants: require a non-null parent at
+this site (and fail loudly), or fall back to the path-only name for out-of-band contexts.
+
+The spec's other claims were checked and hold: the four `TypeFetcherGenerator` sites and the two
+`MultiTablePolymorphicEmitter` sites call `loaderNameDeclaration`, `QueryNodeFetcherClassGenerator`'s parent is
+always `Query`, and the existing `FanItem` test is correct today for the reason the spec gives.
