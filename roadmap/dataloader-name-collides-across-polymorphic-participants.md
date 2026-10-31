@@ -79,17 +79,18 @@ rows of several concrete types. Each emission site, verified against the tree:
 *Fork: where the parent type enters the name.* Two options. (a) Bake the declaring parent type into
 the name at generation time, from `ctx.parentTypeName()`, which `loaderNameDeclaration` already
 holds. (b) Read it at request time with `env.getExecutionStepInfo().getObjectType().getName()`.
-Recommendation: (a). The generated fetcher is emitted per declaring type, so the field coordinate is
-a constant at the emission site. The governing rule is that the name identifies the emitted batch
-function, meaning the table its rows method joins, not the interface. On a single-table interface a
-field declared once on the interface has one batch function, so one loader across its participants
-is correct and keeps today's single batched query. On a multitable interface each participant has
-its own table, so a loader shared across participants brings this bug back. Pickup must therefore
-establish which type `ctx.parentTypeName()` holds when the field is declared on the interface itself
-of a multitable interface (the interface name, or one emission per participant), and make the name
-carry the participant whenever the rows method differs per participant. (b) would split single-table
-interface fields into one loader and one query per concrete participant and change batch counts
-for no correctness gain on them.
+A fetcher is only emitted in the class of a concrete object type (`TableType`, `NodeType`,
+`RootType`, `ResultType`); an interface or union hosts no fetcher class, so `ctx.parentTypeName()` at
+every site that reaches `loaderNameDeclaration` is already a participant or the declaring object
+type. The rule is therefore: loader identity is the declaring object type plus the response path,
+one loader per emitted batch function. That also splits a single-table interface's participants
+(`FanAlpha.targetLoaded` and `FanBeta.targetLoaded` get separate loaders and batches). This stays
+correct, since each participant's rows method keys its own foreign key, and the batch-count change on
+such fields is intended. Recommendation: (a), on the one ground that remains: the declaring type is a
+constant at the emission site, so the name needs no per-request lookup. (b) would give the same names.
+A null `ctx.parentTypeName()` occurs only in out-of-band contexts (`TypeFetcherEmissionContext()`
+builds one, and `TenantDslEmitter.routes` already guards on it); `loaderNameDeclaration` requires a
+non-null parent and fails loudly, so no path-only recipe survives.
 
 Steps:
 
@@ -134,9 +135,9 @@ so the regression case belongs in the execution tier, with unit-tier pins for th
   returns wrong or empty children. If the classifier rejects the list-cardinality parent-holds-FK
   path on `FilmInventory`, fall back to a new pair of small participant tables in `init.sql`
   rather than bending the shape. Assert both orders of the two fragments and an aliased control.
-  Also cover a multitable interface whose `@splitQuery` field is declared on the interface itself as
-  well as on the participants (the kreg schema declares per participant only, so it is no evidence
-  for the interface-declared form); assert the children of each participant come from its own table.
+  Also pin what the build does with `@splitQuery` on a field declared on the interface itself (check
+  the classifier rather than assume): no fetcher or loader name is emitted for it, and the test
+  asserts whatever the build reports, so the fixture's behaviour is stated rather than implied.
   Also add the `@referenceFor` multitable child shape (nested under a parent), since the report
   names both.
 * Unit/pipeline: update the assertions that pin the path-only name: `DataLoaderFetcherEmitterTest`
@@ -149,8 +150,7 @@ so the regression case belongs in the execution tier, with unit-tier pins for th
 
 ## Other solutions we've considered
 
-* Request-time `getObjectType()` (fork (b) above): rejected for splitting single-table interface
-  fields into per-participant queries.
+* Request-time `getObjectType()` (fork (b) above): rejected as the lesser constant: it yields the same names as (a) at the cost of a per-request lookup.
 * Fix only the single-tenant inline form: rejected, the multi-tenant carrier has the same defect and
   one recipe should have one home.
 * Tell consumers to alias: rejected, it is a workaround that changes the response shape and the
@@ -186,6 +186,8 @@ is (loader identity is the declaring object type plus the path, one per emitted 
 single-table participants split too and that this is intended, and settle (a) versus (b) on the ground
 that remains, which is that (a) is a constant at the emission site, rather than on the batch-count claim.
 
+> Response (author): Implementation now states the rule as loader identity = declaring object type plus path, says single-table participants split too and that this is intended, and settles (a) on the constant-at-emission-site ground.
+
 **Finding 2 (question one: the goal is deliverable, but one test bullet cannot test anything).** "A multitable
 interface whose `@splitQuery` field is declared on the interface itself as well as on the participants"
 exercises no emission path: the interface declaration produces no fetcher and no loader name. Either drop
@@ -194,11 +196,15 @@ interface-declared field, which the author should check rather than assume). The
 cases, both fragment orders over the new `FilmCastMember` fixture plus the aliased control and the
 `@referenceFor` child shape, are sound and cover the report.
 
+> Response (author): the interface-declared test bullet is restated as pinning what the build does with the directive on such a field, with a note to check the classifier.
+
 **Finding 3 (question one: a gap in the emitted name).** `TypeFetcherEmissionContext()` builds a context
 with a `null` parent type, and `TenantDslEmitter.routes` already guards on that. The step "single-tenant
 inline form appends the literal `ctx.parentTypeName()`" does not say what a `null` parent emits. Production
 paths always carry the type, but the spec should say which of the two it wants: require a non-null parent at
 this site (and fail loudly), or fall back to the path-only name for out-of-band contexts.
+
+> Response (author): `loaderNameDeclaration` now requires a non-null parent and fails loudly; no path-only fallback survives.
 
 The spec's other claims were checked and hold: the four `TypeFetcherGenerator` sites and the two
 `MultiTablePolymorphicEmitter` sites call `loaderNameDeclaration`, `QueryNodeFetcherClassGenerator`'s parent is
