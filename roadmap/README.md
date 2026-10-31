@@ -47,10 +47,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1136` | A @referenceFor condition that cannot be resolved does not say why | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](referencefor-condition-failure-names-the-reason.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
+| `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it | Ready | 2026-10-31 <sub>created 2026-10-26</sub> | [plan](mutation-field-transaction-scope.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-10-29 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R1131` | A clean build runs in under five minutes | In Progress | 2026-10-30 | [plan](clean-build-under-five-minutes.md) |
-| `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it | In Review | 2026-10-30 <sub>created 2026-10-26</sub> | [plan](mutation-field-transaction-scope.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -615,7 +615,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1130` [**A node id in a query filter does not vote on the tenant when another slot already binds it**](read-filter-nodeid-does-not-vote-on-tenant.md) — Backlog, feature
 - `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — In Progress, feature
-- `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it**](mutation-field-transaction-scope.md) — In Review, feature
+- `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it**](mutation-field-transaction-scope.md) — Ready, feature
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R1108` [**The user manual documents the owned-connection engine as the primary path**](manual-catches-up-with-owned-connection-engine.md) — Backlog, docs
 - `R1129` [**A consumer hook that runs at the start of each mutation field transaction**](mutation-transaction-hook.md) — Backlog, feature, blocked by [mutation-field-transaction-scope](mutation-field-transaction-scope.md)

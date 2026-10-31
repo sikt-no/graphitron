@@ -1,13 +1,13 @@
 ---
 id: R1101
 title: "One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it"
-status: In Review
+status: Ready
 bucket: feature
 priority: 5
 theme: runtime-connection
 depends-on: []
 created: 2026-10-26
-last-updated: 2026-10-30
+last-updated: 2026-10-31
 ---
 
 # One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it
@@ -291,3 +291,21 @@ Reviewed against R1113, R1120 and trunk by the session that then revised the pla
 * **The hook is split out to R1129.** This item is the transaction control; the hook, its types, its registration, its router decline and its tests moved with it, and the design is kept there as written. What stays here is the place it attaches.
 * **Tests lead with the unit tier** that calls generated code, plus the seam guard; Documentation gains the two manual pages.
 * Current behaviour re-verified against the generators on 2026-10-30; the session-identity bullet was the one stale claim and is corrected.
+
+### Round 7 (2026-10-31, In Review -> Done, reviewer session 01WkW2JG1Ms19ppPM44x4t6p)
+
+Verdict: request more work; status goes back to Ready. The implementation reads correct and is the change the spec approved (questions three and four's first half): the seam, the `Joined` scope, the scan-before-commit settle, the fixed message and the null-on-rollback handling match the plan, and the author's two recorded deviations (the WARN set is per process, the composite-key carrier test is not built) are sound and stated. The targeted unit and carrier tier is green (126 tests across the provider, scatter substrate, pipeline, runtime-class, dev-executor, seam-guard and roadmap-reference tests). The item fails question four, how we know it is complete: several behaviours the Ready plan named a test for, and the Goal rests on, have no test, and `Tests as shipped` neither lists nor drops them.
+
+**Finding 1 (question four). Promised tests that are absent and not recorded as dropped.** Checked by grep over `graphitron/src/test` and `graphitron-sakila-example/src/test`:
+
+* The WARN for a consumer's joined scope: no test that it names the field and the service's method, or that a second request through the same service logs none.
+* A field rolled back for an error under its path is `null` with its row gone, and a claimed `@error` payload keeps its value. This is the one consumer-visible value change phase 2 makes beyond the join, and nothing exercises it end to end.
+* Settle before release pinned directly (a recording connection wrapper: the last field's `commit` before its connection's `close`). `theLastFieldsBatchedPayload_neverLosesItsCommitToRelease` is still the only pin, the test the round 4 review found never exercises the race.
+* A query operation runs in autocommit; `ROLLBACK_ONLY` at the execution tier; the router mark off the owned path (escape hatch, and a query failing before it acquires).
+* Multi-tenant at the execution tier with rows read back: the hanging tenant under a mutation payload and the tenant-2-only rejected mount, on the new fixture the plan describes. No mutation field in the tenant fixtures reaches a second tenant.
+* The pipeline-tier check that `instrumentExecutionResult` and `TenantConnections.markFieldFailed` are emitted in every owned build.
+* The seam as the plan tested it: `OwnedScopeSeamGuardTest` is a source guard only; there is no per-coordinate call of the generated fetchers asserting that every own scope joins silently and records no cause, driven by the `graphitron_producer.kind` and `graphql_root_operation` join, and no test pinning that join over the fixture schema. The cases for an own scope that fails (foreign key violation, an `@error` channel that claims it, an `@outbox` emit that fails) are likewise missing.
+
+What would satisfy it: add each, or record in the plan, per item, that the test is dropped and why the behaviour is demonstrated elsewhere (naming that test). The WARN, the null-on-rollback and the settle-before-release pin are the three the Goal's promises depend on and should not be dropped.
+
+Not blocking: the changelog and `Tests as shipped` say the full `mvn install -Plocal-db` was green before a rebase, then "generation and execution checks above were rerun"; the rerun covers only what exists, so it is no evidence for the list above.
