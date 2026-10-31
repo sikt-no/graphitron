@@ -152,10 +152,13 @@ numbering is the order to take them in, largest and cheapest first.
    generated jOOQ packages by name, which also lets it drop its javadoc `sourcepath` override.
    Proved by a deliberately dangling `{@link}` failing the compile at its line, then removed; the
    whole reactor compiles under it, so no module carried a link the old gate was not reading.
-   The saving is not priced yet. The javadoc plugin skips a run whose output is current, so the
-   gate only costs anything on a clean build: in `graphitron-model` it added 220 to 240 s to
-   `verify -DskipTests` on this 4-core machine in the two runs where it executed, and nothing in
-   `graphitron`. The clean paired figure is still owed.
+   Priced: four interleaved pairs of a clean `verify -DskipTests` of `graphitron-model` on this
+   4-core machine (load 1.2 to 2.5 at the start of each), the first pair discarded. Before, with
+   the javadoc gate: 309, 305, 311 s. After: 96, 86, 88 s. A saving of 218 s, spread 213 to 223 s,
+   against the 150 s expected; the discarded first pair (308 s to 100 s) agrees. Only this module
+   is priced. The javadoc plugin skips a run whose output is current, so the gate only ever cost
+   anything on a clean build, and the other modules' share, a smaller one, is part of the whole
+   build's figure rather than measured separately here.
 3. **Build independent modules in parallel.** Run the reactor with `-T` (and say so in CLAUDE.md
    and the `build` skill), after confirming that nothing collides when modules build together:
    the Quarkus test port, temporary directories, the leaf-coverage trace file, and the store
