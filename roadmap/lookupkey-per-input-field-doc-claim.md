@@ -85,3 +85,29 @@ field applies to that field alone, while the query side rejects the shape with a
 mutations. Widened on 2026-10-31 after an inventory of every `@lookupKey` in the fs-plattform
 subgraphs found the input-field location unused, so the declaration, not only the page, is what
 changes.
+
+## Reviewer findings
+
+### Round 1: Spec -> Ready, withheld (session_01WkW2JHe9idtwUqpKsp5KXe, 2026-10-31)
+
+The goal reads on its own and is reachable: the declaration, the three rejection sites, the
+relation with its writer and both readers, and the three tests named all exist as described, and
+R866 is the item to discard at Done. Withheld on one finding.
+
+1. *The refusal an author meets is untested where it is reported.* The Tests section pins the
+   refusal as graphql-java's location error from the classifier's schema assembly. But the store
+   already reports a misplaced graphitron directive itself: `DirectiveLegality` keeps an application
+   the definition does not admit out of the entries, and capture records a positioned
+   `graphql_schema_problem` row (`ASSEMBLY`, `DirectiveIllegalLocationError`), which is what the
+   editor shows and what validate reads. `facts/defects/authored-claim-undecoded.graphqls` asserts
+   that row today for `@lookupKey` on a field. Add a fact document, or an assertion in an existing
+   one, that `@lookupKey` on a query input field and on a mutation input field each yield that row
+   at the application's line, and that no `graphitron_*` entry is written for them. That is the
+   behaviour this item changes for an author, and it survives the classifier going, which the three
+   replaced classifier tests do not.
+2. *How the bundled declaration wins is stated, not shown.* The Goal says the Graphitron 10
+   subgraphs read the bundled declaration and not fs-plattform's
+   `graphitron-directives/graphitron.graphqls`, which still allows `INPUT_FIELD_DEFINITION`. Say
+   how that was established (no Graphitron 10 module lists that file among its schema inputs), so a
+   reader can tell this item cannot meet a second, wider declaration of the same directive.
+   A wording fix; it does not block on its own.
