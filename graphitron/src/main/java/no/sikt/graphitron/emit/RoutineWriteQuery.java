@@ -19,7 +19,6 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
@@ -325,7 +324,6 @@ public final class RoutineWriteQuery {
         var ch = INTENT_CARRIER_ROUTINE_HOP;
         var ct = SQL_TABLE.as("carrier_target");
         var cs = SQL_SCHEMA.as("carrier_schema");
-        var cd = GRAPHITRON_CARRIER_DATA_FIELD;
         var df = GRAPHQL_FIELD.as("carrier_data_field");
         var mf = GRAPHQL_FIELD.as("mutation_field");
         return store.dsl()
@@ -344,12 +342,10 @@ public final class RoutineWriteQuery {
             .join(rt).on(rt.SOURCE_NAME.eq(rm.SOURCE_NAME), rt.TABLE_SCHEMA.eq(rm.TABLE_SCHEMA),
                 rt.TABLE_NAME.eq(rm.ROUTINE_NAME))
             .join(rs).on(rs.SOURCE_NAME.eq(rt.SOURCE_NAME), rs.TABLE_SCHEMA.eq(rt.TABLE_SCHEMA))
-            .leftJoin(cd).on(cd.GRAPH_NAME.eq(s.GRAPH_NAME), cd.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
-                cd.FAMILY.eq("ROUTINE"), cd.DATA_FIELDS.eq(1))
-            .leftJoin(df).on(df.GRAPH_NAME.eq(cd.GRAPH_NAME), df.TYPE_NAME.eq(cd.TYPE_NAME),
-                df.FIELD_NAME.eq(cd.FIELD_NAME))
-            .leftJoin(ch).on(ch.GRAPH_NAME.eq(cd.GRAPH_NAME), ch.TYPE_NAME.eq(cd.TYPE_NAME),
-                ch.FIELD_NAME.eq(cd.FIELD_NAME), ch.CANDIDATES.eq(1))
+            .leftJoin(ch).on(ch.GRAPH_NAME.eq(s.GRAPH_NAME), ch.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
+                ch.CANDIDATES.eq(1))
+            .leftJoin(df).on(df.GRAPH_NAME.eq(ch.GRAPH_NAME), df.TYPE_NAME.eq(ch.TYPE_NAME),
+                df.FIELD_NAME.eq(ch.FIELD_NAME))
             .leftJoin(ct).on(ct.SOURCE_NAME.eq(ch.TO_SOURCE_NAME),
                 ct.TABLE_SCHEMA.eq(ch.TO_SCHEMA), ct.TABLE_NAME.eq(ch.TO_TABLE))
             .leftJoin(cs).on(cs.SOURCE_NAME.eq(ct.SOURCE_NAME), cs.TABLE_SCHEMA.eq(ct.TABLE_SCHEMA))
@@ -544,7 +540,6 @@ public final class RoutineWriteQuery {
      */
     private static Map<Coordinate, List<Pair>> carrierPairs(StoreHandle store) {
         var s = INTENT_MUTATION_ROUTINE_SEAT;
-        var cd = GRAPHITRON_CARRIER_DATA_FIELD;
         var ch = INTENT_CARRIER_ROUTINE_HOP;
         var nm = SQL_NAME_MATCHED_KEY_COLUMN;
         var src = SQL_COLUMN.as("source_column");
@@ -555,10 +550,8 @@ public final class RoutineWriteQuery {
                 src.COLUMN_NAME, src.JOOQ_NAME, src.BINDING_TYPE,
                 tgt.COLUMN_NAME, tgt.JOOQ_NAME, tgt.BINDING_TYPE)
             .from(s)
-            .join(cd).on(cd.GRAPH_NAME.eq(s.GRAPH_NAME), cd.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
-                cd.FAMILY.eq("ROUTINE"), cd.DATA_FIELDS.eq(1))
-            .join(ch).on(ch.GRAPH_NAME.eq(cd.GRAPH_NAME), ch.TYPE_NAME.eq(cd.TYPE_NAME),
-                ch.FIELD_NAME.eq(cd.FIELD_NAME), ch.CANDIDATES.eq(1))
+            .join(ch).on(ch.GRAPH_NAME.eq(s.GRAPH_NAME), ch.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
+                ch.CANDIDATES.eq(1))
             .join(nm).on(nm.SOURCE_NAME.eq(ch.FROM_SOURCE_NAME),
                 nm.TABLE_SCHEMA.eq(ch.FROM_SCHEMA), nm.TABLE_NAME.eq(ch.FROM_TABLE),
                 nm.TO_SOURCE_NAME.eq(ch.TO_SOURCE_NAME), nm.TO_SCHEMA.eq(ch.TO_SCHEMA),

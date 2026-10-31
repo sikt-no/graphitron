@@ -13068,210 +13068,6 @@ COMMENT ON VIEW intent_type_backing_conflict IS 'Deprecated with the whole inten
 -- COMMENT ON COLUMN intent_type_backing_conflict.type_name IS 'the contested SDL type';
 -- COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; distinct, so a class both arms name counts once, and the arity a rejection stands on, on intent_bound_table.candidates'' terms';
 
-CREATE VIEW intent_field_payload_producer
-  (graph_name, type_name, field_name, family, payload_type_name, root_operation) AS
-SELECT f.graph_name, f.type_name, f.field_name, 'SERVICE', f.named_type, ro.operation
-  FROM graphitron_service_entry s
-  JOIN graphitron_field f
-    ON f.graph_name = s.graph_name AND f.type_name = s.type_name
-   AND f.field_name = s.field_name
-  LEFT JOIN (SELECT graph_name, type_name, MIN(operation) AS operation
-               FROM graphql_root_operation GROUP BY graph_name, type_name) ro
-    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
- UNION ALL
-SELECT f.graph_name, f.type_name, f.field_name, 'DML', f.named_type, ro.operation
-  FROM graphitron_mutation_entry m
-  JOIN graphitron_field f
-    ON f.graph_name = m.graph_name AND f.type_name = m.type_name
-   AND f.field_name = m.field_name
-  LEFT JOIN (SELECT graph_name, type_name, MIN(operation) AS operation
-               FROM graphql_root_operation GROUP BY graph_name, type_name) ro
-    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
- UNION ALL
-SELECT DISTINCT f.graph_name, f.type_name, f.field_name, 'ROUTINE', f.named_type, ro.operation
-  FROM graphitron_routine_entry rt
-  JOIN graphitron_field f
-    ON f.graph_name = rt.graph_name AND f.type_name = rt.type_name
-   AND f.field_name = rt.field_name
-  LEFT JOIN (SELECT graph_name, type_name, MIN(operation) AS operation
-               FROM graphql_root_operation GROUP BY graph_name, type_name) ro
-    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name;
-COMMENT ON VIEW intent_field_payload_producer IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which coordinate produces a value and what type it returns: one row per field carrying a producing directive, with the directive''s family and the unwrapped SDL type the field''s value arrives as. The grain is the coordinate, which is what separates this from graphitron_carrier_data_field''s producer reading: that view asks which payload types a mutation root returns and folds the coordinates away, so a payload two fields return is one row there and two here. Both readings are wanted and only this one can key a fact to the field an author is looking at, so the fold is the reader''s and this relation does not perform it. A @routine field is DISTINCT because a chain applies the directive once per hop and the coordinate produces one value however many hops reached it, the hops being the walk''s steps. Where the coordinate sits is a column rather than a filter, for the same reason the family is: a root write and a child @service field are the same fact under different readings, and the two policies that turn on the position (the carrier scan wants root mutations, the error channel''s transport wants root @service) each name what they mean. One column carries it and not two, the operation being the discriminator and its absence the predicate, so a reader asking only whether the field sits at a root writes that as a null test rather than reading a boolean that would have to agree with it. A type serving as two root operations at once reports the alphabetically first, which keeps the grain at the coordinate; nothing in the schema forbids the shape and nothing in the generator has met it. @externalField is deliberately absent: it names a class member that answers an already-produced value rather than a directive that produces one, and intent_field_producer_reference is where the two meet as method references. Absence here means the field carries none of the three directives, not that it has no value.';
--- COMMENT ON COLUMN intent_field_payload_producer.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
--- COMMENT ON COLUMN intent_field_payload_producer.type_name IS 'the type declaring the producing field';
--- COMMENT ON COLUMN intent_field_payload_producer.field_name IS 'the producing field''s name; with the type, the coordinate this row is about';
--- COMMENT ON COLUMN intent_field_payload_producer.family IS 'which producing directive the field carries, a closed three-value domain: SERVICE (@service), DML (@mutation), ROUTINE (@routine). A field carrying two is a row per family rather than a pick, on graphitron_carrier_data_field.family''s terms';
--- COMMENT ON COLUMN intent_field_payload_producer.payload_type_name IS 'the unwrapped SDL type the field returns, carried from graphql_field.named_type; the payload whose shape every carrier and channel reading starts from';
--- COMMENT ON COLUMN intent_field_payload_producer.root_operation IS 'which root operation the declaring type serves, QUERY / MUTATION / SUBSCRIPTION, or NULL where it serves none, which is what a reader asking only whether the field sits at a root tests. The position two policies turn on, and stated here so neither has to join graphql_root_operation to ask. The alphabetically first where a type serves two, which keeps this relation at the coordinate''s grain';
-
-CREATE VIEW graphitron_carrier_data_field_rule
-  (graph_name, type_name, field_name, family, element_kind, data_fields) AS
-WITH
-producer (graph_name, payload_type_name, family) AS (
-  SELECT DISTINCT graph_name, payload_type_name, family
-    FROM intent_field_payload_producer
-   WHERE root_operation = 'MUTATION'
-),
--- The payload types a mutation-rooted producer names, duplicate-free on exactly the two columns
--- the population filter below tests. Taken over the CTE above rather than over
--- intent_field_payload_producer directly so that root_operation = 'MUTATION' is written once and
--- the two terms cannot drift on it. Projected down because producer is unique per family, so
--- joining it as it stands would report a field row per family inside the derivation and double
--- data_fields; the outer join below is where a row per family is wanted.
-producer_type (graph_name, payload_type_name) AS (
-  SELECT DISTINCT graph_name, payload_type_name FROM producer
-),
--- Named exactly once, by the join below. The three disqualification arms deliberately stand on
--- graphql_field and the decoded relations directly rather than on this CTE: H2 inlines a CTE
--- afresh at every naming and a window sees its whole partition whatever the outer correlation
--- says, so an arm correlated into this relation would re-evaluate the window over every driving
--- row where the same arm against the base table is a prunable probe.
-data_channel (graph_name, type_name, field_name, element_kind, data_fields) AS (
-  SELECT f.graph_name, f.type_name, f.field_name,
-         CASE WHEN EXISTS (SELECT 1 FROM intent_bound_table b
-                            WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
-                              AND b.candidates = 1) THEN 'TABLE'
-              WHEN EXISTS (SELECT 1 FROM graphitron_type_backing tb
-                            WHERE tb.graph_name = f.graph_name AND tb.type_name = f.named_type
-                              AND tb.declared_via IN ('PRODUCER', 'ACCESSOR')) THEN 'RECORD'
-              WHEN f.named_type = 'ID' THEN 'ID'
-              ELSE NULL END,
-         CAST(COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name) AS INT)
-    FROM graphql_field f
-    JOIN graphql_type t
-      ON t.graph_name = f.graph_name AND t.type_name = f.type_name AND t.kind = 'OBJECT'
-    JOIN producer_type pt
-      ON pt.graph_name = f.graph_name AND pt.payload_type_name = f.type_name
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
-                      WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
-                        AND e.field_name = f.field_name)
-)
-SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data_fields
-  FROM producer p
-  JOIN data_channel d
-    ON d.graph_name = p.graph_name AND d.type_name = p.payload_type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphql_field u
-                    WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
-                      AND u.named_type <> 'ID'
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
-                                       WHERE e.graph_name = u.graph_name
-                                         AND e.type_name = u.type_name
-                                         AND e.field_name = u.field_name)
-                      AND NOT EXISTS (SELECT 1 FROM intent_bound_table b
-                                       WHERE b.graph_name = u.graph_name
-                                         AND b.type_name = u.named_type AND b.candidates = 1)
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_type_backing tb
-                                       WHERE tb.graph_name = u.graph_name
-                                         AND tb.type_name = u.named_type
-                                         AND tb.declared_via IN ('PRODUCER', 'ACCESSOR')))
-   -- Does any field of this payload carry a reading that routes it out of the carrier mold?
-   -- Asked of the decoded family, one probe per relation, rather than of a name list matched
-   -- against graphql_directive_application. The question is a semantic one and the decode is where the
-   -- semantics are, so a directive this generator learns to read arrives here as a relation name
-   -- the schema declares rather than as a string nothing can check, which is what let the name
-   -- list carry @orderBy: that directive is ARGUMENT_DEFINITION only, so no application of it
-   -- ever reached a field row, and nothing said so. @notGenerated is the one name with no
-   -- decoded relation to ask, not being a graphitron directive at all, so it stays an SDL read
-   -- for the reason the authored-claim views are ones. The probe correlates on the field
-   -- coordinate rather than on a directive row, so a field carrying two of these disqualifies
-   -- once, and the errors-channel exclusion is asked once per field instead of once per
-   -- application.
-   AND NOT EXISTS (SELECT 1 FROM graphql_field g
-                    WHERE g.graph_name = d.graph_name AND g.type_name = d.type_name
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
-                                       WHERE e.graph_name = g.graph_name
-                                         AND e.type_name = g.type_name
-                                         AND e.field_name = g.field_name)
-                      AND (EXISTS (SELECT 1 FROM graphitron_service_entry x
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_field_reference_entry x
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_connection_entry x
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_external_field_entry x
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphql_field_element x
-                                     JOIN graphql_directive_application xd
-                                       ON xd.graph_name = x.graph_name
-                                      AND xd.coordinate = x.coordinate
-                                      AND xd.directive_name = 'condition'
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_field_lookup_key_entry x
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_default_order_entry x
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_multitable_reference_entry x
-                                    WHERE x.graph_name = g.graph_name
-                                      AND x.type_name = g.type_name
-                                      AND x.field_name = g.field_name)
-                        OR EXISTS (SELECT 1 FROM graphitron_method_reference_entry x
-                                    WHERE x.graph_name = g.graph_name AND x.site = 'SOURCE_ROW'
-                                      AND x.use_site = g.type_name || '.' || g.field_name)
-                        OR (p.family <> 'SERVICE'
-                            AND EXISTS (SELECT 1 FROM graphitron_split_query_entry x
-                                         WHERE x.graph_name = g.graph_name
-                                           AND x.type_name = g.type_name
-                                           AND x.field_name = g.field_name))
-                        OR EXISTS (SELECT 1 FROM graphql_directive_application ng
-                                    JOIN graphql_field_element nfe
-                                      ON nfe.graph_name = ng.graph_name
-                                     AND nfe.coordinate = ng.coordinate
-                                    WHERE ng.graph_name = g.graph_name
-                                      AND nfe.type_name = g.type_name
-                                      AND nfe.field_name = g.field_name
-                                      AND ng.directive_name = 'notGenerated')))
-   AND NOT EXISTS (SELECT 1 FROM graphql_field u
-                    WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
-                      AND u.named_type = 'ID'
-                      AND NOT EXISTS (SELECT 1 FROM intent_bound_table b
-                                       WHERE b.graph_name = u.graph_name
-                                         AND b.type_name = u.named_type AND b.candidates = 1)
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_type_backing tb
-                                       WHERE tb.graph_name = u.graph_name
-                                         AND tb.type_name = u.named_type
-                                         AND tb.declared_via IN ('PRODUCER', 'ACCESSOR'))
-                      AND (p.family = 'ROUTINE'
-                           OR (p.family = 'DML' AND u.is_list AND NOT u.item_non_null)));
-COMMENT ON VIEW graphitron_carrier_data_field_rule IS 'One row the carrier data-channel rule computes, in the shape graphitron_carrier_data_field stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_carrier_data_field, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
--- COMMENT ON COLUMN graphitron_carrier_data_field_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_carrier_data_field.graph_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_carrier_data_field_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_carrier_data_field.type_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_carrier_data_field_rule.field_name IS 'the field_name of a row of this rule, which the stage inserts into graphitron_carrier_data_field.field_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_carrier_data_field_rule.family IS 'the family of a row of this rule, which the stage inserts into graphitron_carrier_data_field.family, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_carrier_data_field_rule.element_kind IS 'the element_kind of a row of this rule, which the stage inserts into graphitron_carrier_data_field.element_kind, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_carrier_data_field_rule.data_fields IS 'the data_fields of a row of this rule, which the stage inserts into graphitron_carrier_data_field.data_fields, whose comment carries what the value means';
-
-CREATE TABLE graphitron_carrier_data_field (
-  graph_name   VARCHAR NOT NULL,
-  type_name    VARCHAR NOT NULL,
-  field_name   VARCHAR NOT NULL,
-  family       VARCHAR NOT NULL,
-  element_kind VARCHAR,
-  data_fields  INTEGER NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, family),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphitron_carrier_data_field IS 'Where a mutation payload''s data arrives: for each OBJECT type a mutation-root write field returns, that type''s data channels, one row per channel per producing family, with the shape each element declares and how many channels the type has. For example a payload declaring film: Film beside an errors channel draws one row for film under family DML, its element kind TABLE and its channel count one.';
-COMMENT ON COLUMN graphitron_carrier_data_field.graph_name IS 'the owning graph''s partition, carried from the producing field';
-COMMENT ON COLUMN graphitron_carrier_data_field.type_name IS 'the payload type the producing field returns; the type whose data channels these rows are';
-COMMENT ON COLUMN graphitron_carrier_data_field.field_name IS 'the data channel''s field name within the payload type; the coordinate an author''s cursor sits on';
-COMMENT ON COLUMN graphitron_carrier_data_field.family IS 'which producing directive returns the payload, a closed three-value domain: SERVICE (@service), DML (@mutation), ROUTINE (@routine). Provenance and policy both, the two rejections that differ between families being this column''s; a payload two families return is a row per family, and a reader that means one of them filters on it';
-COMMENT ON COLUMN graphitron_carrier_data_field.element_kind IS 'what the channel''s element is, a closed three-value domain: TABLE (the named type is bound to one catalog table), RECORD (the backing closure reaches a class for it), ID (the ID scalar, the encoded-key echo). Never NULL here, an unrecognized element having dropped its whole payload';
-COMMENT ON COLUMN graphitron_carrier_data_field.data_fields IS 'how many data channels the payload declares, this row being one of them; 1 is what a carrier requires, and a larger number is what the generator''s own "require exactly one" rejection counts. Stated as a column rather than left to each reader''s count, because whether the payload is a carrier at all decides the reading and a reader that counted for itself would be re-deriving the scan''s arity';
-
 CREATE VIEW graphitron_field_key_row_rule
   (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name, arity,
    method_source_name, method_class_name, method_name, method_descriptor) AS
@@ -13469,24 +13265,32 @@ SELECT graph_name, type_name, field_name, basis,
                    AND bt.type_name = nv.navigated_type_name
                    AND bt.candidates = 1
                 UNION ALL
-                SELECT m.graph_name, m.type_name, m.field_name,
+                -- An insert or update returning a type whose one field beside its errors re-reads
+                -- the written row by key.
+                SELECT p.graph_name, p.type_name, p.field_name,
                        'PAYLOAD_TABLE', bt.table_source_name, bt.table_schema,
                        bt.table_name, 1
-                  FROM graphitron_mutation_entry m
-                  JOIN graphitron_field mf
-                    ON mf.graph_name = m.graph_name AND mf.type_name = m.type_name
-                   AND mf.field_name = m.field_name
-                  JOIN graphitron_carrier_data_field cd
-                    ON cd.graph_name = m.graph_name AND cd.type_name = mf.named_type
-                   AND cd.family = 'DML' AND cd.element_kind = 'TABLE'
-                   AND cd.data_fields = 1
+                  FROM graphitron_producer p
+                  JOIN graphitron_field_target pt
+                    ON pt.graph_name = p.graph_name AND pt.type_name = p.type_name
+                   AND pt.field_name = p.field_name
                   JOIN graphitron_field df
-                    ON df.graph_name = cd.graph_name AND df.type_name = cd.type_name
-                   AND df.field_name = cd.field_name
+                    ON df.graph_name = pt.graph_name AND df.type_name = pt.target_type_name
+                  JOIN graphitron_producer rr
+                    ON rr.graph_name = df.graph_name AND rr.type_name = df.type_name
+                   AND rr.field_name = df.field_name AND rr.kind = 'LOOKUP'
                   JOIN graphitron_resolved_type_binding bt
                     ON bt.graph_name = df.graph_name AND bt.type_name = df.named_type
                    AND bt.candidates = 1
-                 WHERE m.operation IN ('INSERT', 'UPDATE')
+                 WHERE p.kind IN ('INSERT', 'UPDATE')
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field d2
+                                    WHERE d2.graph_name = df.graph_name
+                                      AND d2.type_name = df.type_name
+                                      AND d2.field_name <> df.field_name
+                                      AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                                                       WHERE e.graph_name = d2.graph_name
+                                                         AND e.type_name = d2.type_name
+                                                         AND e.field_name = d2.field_name))
                 UNION ALL
                 SELECT m.graph_name, m.type_name, m.field_name,
                        'MUTATION_TABLE', sp.table_source_name, sp.table_schema,
@@ -13712,37 +13516,47 @@ SELECT graph_name, type_name, field_name,
        from_source_name, from_schema, from_table,
        to_source_name, to_schema, to_table,
        CAST(COUNT(*) OVER (PARTITION BY graph_name, type_name, field_name) AS INT)
-  FROM (SELECT DISTINCT cdf.graph_name, cdf.type_name, cdf.field_name,
+  FROM (SELECT DISTINCT df.graph_name, df.type_name, df.field_name,
                fn.source_name AS from_source_name, fn.table_schema AS from_schema,
                fn.table_name AS from_table,
                b.table_source_name AS to_source_name, b.table_schema AS to_schema,
                b.table_name AS to_table
-          FROM graphitron_carrier_data_field cdf
-          JOIN graphql_field pf
-            ON pf.graph_name = cdf.graph_name AND pf.named_type = cdf.type_name
+          FROM graphitron_producer o
           JOIN graphql_root_operation r
-            ON r.graph_name = pf.graph_name AND r.type_name = pf.type_name
+            ON r.graph_name = o.graph_name AND r.type_name = o.type_name
            AND r.operation = 'MUTATION'
+          JOIN graphitron_field_target ot
+            ON ot.graph_name = o.graph_name AND ot.type_name = o.type_name
+           AND ot.field_name = o.field_name
+          JOIN graphql_field df
+            ON df.graph_name = ot.graph_name AND df.type_name = ot.target_type_name
+          JOIN graphitron_producer rr
+            ON rr.graph_name = df.graph_name AND rr.type_name = df.type_name
+           AND rr.field_name = df.field_name AND rr.kind = 'LOOKUP'
           JOIN graphitron_routine_entry rt
-            ON rt.graph_name = pf.graph_name AND rt.type_name = pf.type_name
-           AND rt.field_name = pf.field_name
+            ON rt.graph_name = o.graph_name AND rt.type_name = o.type_name
+           AND rt.field_name = o.field_name
           JOIN graphitron_spelled_table sp
             ON sp.graph_name = rt.graph_name AND sp.spelling = rt.routine_ref
           JOIN sql_table fn
             ON fn.source_name = sp.table_source_name AND fn.table_schema = sp.table_schema
            AND fn.table_name = sp.table_name AND fn.table_type = 'FUNCTION'
-          JOIN graphql_field df
-            ON df.graph_name = cdf.graph_name AND df.type_name = cdf.type_name
-           AND df.field_name = cdf.field_name
           JOIN graphitron_resolved_type_binding b
             ON b.graph_name = df.graph_name AND b.type_name = df.named_type
            AND b.candidates = 1
-         WHERE cdf.family = 'ROUTINE' AND cdf.element_kind = 'TABLE'
+         WHERE o.kind = 'ROUTINE'
+           AND NOT EXISTS (SELECT 1 FROM graphql_field d2
+                            WHERE d2.graph_name = df.graph_name AND d2.type_name = df.type_name
+                              AND d2.field_name <> df.field_name
+                              AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                                               WHERE e.graph_name = d2.graph_name
+                                                 AND e.type_name = d2.type_name
+                                                 AND e.field_name = d2.field_name))
            AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference_entry fr
-                            WHERE fr.graph_name = pf.graph_name
-                              AND fr.type_name = pf.type_name
-                              AND fr.field_name = pf.field_name)) inferred;
-COMMENT ON VIEW intent_carrier_routine_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The hop a routine write''s payload carrier takes to re-read its committed row, for a data field that declares no path. A @routine write on a mutation root may return a payload wrapping one data field beside an error channel; the routine call is the write, and the data field owns the post-commit re-read. That hop is inferred from the payload''s shape rather than written, which is precisely why graphitron_field_reference_step_hop holds no row for it: that relation''s population is authored path elements, and this coordinate authors none. So the same keying rule is reached from two relations, and it lives in neither of them. This one states the two ends and joins sql_name_matched_key_column for the pairing, exactly as the authored arm does, and for the reason the referenced-side discipline gives: the pairs are reachable from the triples this row already carries, and repeating them here would be a denormalisation. The departure is the routine the producing mutation field names, resolved as any written table name is and then required to be FUNCTION-typed. The arrival is the data field''s own named type''s binding, demanded unambiguous, an arrival that is not certain not being the one the re-read would run against. The producing field is required to carry no @reference, which is not a narrowing but the carrier''s own boundary: the chained form returns the terminus table type and has an authored element to resolve through, and @routine with @reference over a carrier return is rejected outright, so a row here would name a hop the generator will not emit. Ambiguity is rows, and here it is a real one the generator currently hides: two mutation fields returning one payload are two candidate departures, where the grounding memo keeps whichever field classified first. Absence covers several things and none of them is "this carrier has no hop": the payload is not a carrier, or its element is not table-backed, or its data field''s type binds ambiguously, or the routine name resolves to nothing FUNCTION-typed. One narrowness is inherited rather than chosen. The element_kind gate is graphitron_carrier_data_field''s, and that relation reads the @table population alone where this one reads the resolved binding, so a data field whose type is bound only by being what a routine returns is excluded upstream of here; the gate follows that relation when it moves, rather than this one reading past it.';
+                            WHERE fr.graph_name = o.graph_name
+                              AND fr.type_name = o.type_name
+                              AND fr.field_name = o.field_name)) inferred;
+COMMENT ON VIEW intent_carrier_routine_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The hop a routine write''s payload carrier takes to re-read its committed row, for a data field that declares no path. A @routine write on a mutation root may return a payload wrapping one data field beside an error channel; the routine call is the write, and the data field owns the post-commit re-read. That hop is inferred from the payload''s shape rather than written, which is precisely why graphitron_field_reference_step_hop holds no row for it: that relation''s population is authored path elements, and this coordinate authors none. So the same keying rule is reached from two relations, and it lives in neither of them. This one states the two ends and joins sql_name_matched_key_column for the pairing, exactly as the authored arm does, and for the reason the referenced-side discipline gives: the pairs are reachable from the triples this row already carries, and repeating them here would be a denormalisation. The departure is the routine the producing mutation field names, resolved as any written table name is and then required to be FUNCTION-typed. The arrival is the data field''s own named type''s binding, demanded unambiguous, an arrival that is not certain not being the one the re-read would run against. The producing field is required to carry no @reference, which is not a narrowing but the carrier''s own boundary: the chained form returns the terminus table type and has an authored element to resolve through, and @routine with @reference over a carrier return is rejected outright, so a row here would name a hop the generator will not emit. Ambiguity is rows, and here it is a real one the generator currently hides: two mutation fields returning one payload are two candidate departures, where the grounding memo keeps whichever field classified first. Absence covers several things and none of them is "this carrier has no hop": the payload is not a carrier, or its element is not table-backed, or its data field''s type binds ambiguously, or the routine name resolves to nothing FUNCTION-typed. The payload is the type the routine field targets, and the data field is its one field beside any errors field where the field is a LOOKUP producer, the re-read by key.';
 -- COMMENT ON COLUMN intent_carrier_routine_hop.graph_name IS 'the owning graph''s partition, carried from the carrier relation';
 -- COMMENT ON COLUMN intent_carrier_routine_hop.type_name IS 'the payload type the producing mutation field returns; the carrier whose data field this hop serves';
 -- COMMENT ON COLUMN intent_carrier_routine_hop.field_name IS 'the data field within that payload: the coordinate the re-read runs at, and the one an author would hang a path on if the data field admitted one';
@@ -13782,6 +13596,29 @@ site (graph_name, type_name, field_name, ordinal, routine_applications, seat, re
               ON nv.graph_name = r.graph_name AND nv.type_name = r.type_name
              AND nv.field_name = r.field_name) app
    WHERE app.ordinal = app.last_ordinal
+),
+-- The type the routine field targets when it holds one field beside any errors field: that field
+-- carries the result, and re-reads the committed row where it is a LOOKUP producer. Coordinates
+-- only: H2 inlines the CTE into each probe and cannot read back a boolean column it inlined.
+carrier (graph_name, type_name, field_name, data_type_name, data_field_name) AS (
+  SELECT o.graph_name, o.type_name, o.field_name, df.type_name, df.field_name
+    FROM graphitron_producer o
+    JOIN graphitron_field_target ot
+      ON ot.graph_name = o.graph_name AND ot.type_name = o.type_name
+     AND ot.field_name = o.field_name
+    JOIN graphql_field df
+      ON df.graph_name = ot.graph_name AND df.type_name = ot.target_type_name
+   WHERE o.kind = 'ROUTINE'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                      WHERE e.graph_name = df.graph_name AND e.type_name = df.type_name
+                        AND e.field_name = df.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphql_field d2
+                      WHERE d2.graph_name = df.graph_name AND d2.type_name = df.type_name
+                        AND d2.field_name <> df.field_name
+                        AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                                         WHERE e.graph_name = d2.graph_name
+                                           AND e.type_name = d2.type_name
+                                           AND e.field_name = d2.field_name))
 )
 SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
        CASE
@@ -13816,10 +13653,9 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
              WHEN NOT EXISTS (SELECT 1 FROM intent_bound_table b
                                WHERE b.graph_name = s.graph_name
                                  AND b.type_name = s.return_type_name)
-              AND EXISTS (SELECT 1 FROM graphitron_carrier_data_field c
-                           WHERE c.graph_name = s.graph_name
-                             AND c.type_name = s.return_type_name
-                             AND c.family = 'ROUTINE' AND c.data_fields = 1)
+              AND EXISTS (SELECT 1 FROM carrier c
+                           WHERE c.graph_name = s.graph_name AND c.type_name = s.type_name
+                             AND c.field_name = s.field_name)
                THEN 'REFERENCE_ON_CARRIER_RETURN'
              WHEN EXISTS (SELECT 1 FROM graphitron_field cf
                            JOIN graphitron_connection_element_type ce
@@ -13876,30 +13712,28 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
                            WHERE b.graph_name = s.graph_name
                              AND b.type_name = s.return_type_name)
                THEN 'TABLE_BOUND_RETURN'
-             WHEN NOT EXISTS (SELECT 1 FROM graphitron_carrier_data_field c
-                               WHERE c.graph_name = s.graph_name
-                                 AND c.type_name = s.return_type_name
-                                 AND c.family = 'ROUTINE' AND c.data_fields = 1)
+             WHEN NOT EXISTS (SELECT 1 FROM carrier c
+                               WHERE c.graph_name = s.graph_name AND c.type_name = s.type_name
+                                 AND c.field_name = s.field_name)
                THEN 'NO_CARRIER'
-             WHEN NOT EXISTS (SELECT 1 FROM graphitron_carrier_data_field c
-                               WHERE c.graph_name = s.graph_name
-                                 AND c.type_name = s.return_type_name
-                                 AND c.family = 'ROUTINE' AND c.data_fields = 1
-                                 AND c.element_kind = 'TABLE')
+             WHEN NOT EXISTS (SELECT 1 FROM carrier c
+                               JOIN graphitron_producer rr
+                                 ON rr.graph_name = c.graph_name AND rr.type_name = c.data_type_name
+                                AND rr.field_name = c.data_field_name AND rr.kind = 'LOOKUP'
+                               WHERE c.graph_name = s.graph_name AND c.type_name = s.type_name
+                                 AND c.field_name = s.field_name)
                THEN 'CARRIER_ELEMENT_NOT_TABLE'
-             WHEN EXISTS (SELECT 1 FROM graphitron_carrier_data_field c
+             WHEN EXISTS (SELECT 1 FROM carrier c
                           JOIN graphql_field df
-                            ON df.graph_name = c.graph_name AND df.type_name = c.type_name
-                           AND df.field_name = c.field_name
-                          WHERE c.graph_name = s.graph_name
-                            AND c.type_name = s.return_type_name
-                            AND c.family = 'ROUTINE' AND c.data_fields = 1
-                            AND NOT df.is_list AND df.non_null)
+                            ON df.graph_name = c.graph_name AND df.type_name = c.data_type_name
+                           AND df.field_name = c.data_field_name
+                          WHERE c.graph_name = s.graph_name AND c.type_name = s.type_name
+                            AND c.field_name = s.field_name AND NOT df.is_list AND df.non_null)
                THEN 'CARRIER_DATA_FIELD_NON_NULL'
-             WHEN NOT EXISTS (SELECT 1 FROM graphitron_carrier_data_field c
+             WHEN NOT EXISTS (SELECT 1 FROM carrier c
                               JOIN intent_carrier_routine_hop h
-                                ON h.graph_name = c.graph_name AND h.type_name = c.type_name
-                               AND h.field_name = c.field_name
+                                ON h.graph_name = c.graph_name AND h.type_name = c.data_type_name
+                               AND h.field_name = c.data_field_name
                               JOIN graphitron_field_path_start_routine cst
                                 ON cst.graph_name = s.graph_name AND cst.type_name = s.type_name
                                AND cst.field_name = s.field_name
@@ -13912,22 +13746,21 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
                                AND p.table_name = h.from_table
                                AND p.to_source_name = h.to_source_name
                                AND p.to_schema = h.to_schema AND p.to_table = h.to_table
-                              WHERE c.graph_name = s.graph_name
-                                AND c.type_name = s.return_type_name
-                                AND c.family = 'ROUTINE' AND c.data_fields = 1)
+                              WHERE c.graph_name = s.graph_name AND c.type_name = s.type_name
+                                AND c.field_name = s.field_name)
                THEN 'CARRIER_HOP_UNRESOLVED'
              ELSE 'ADMITTED' END
        END,
        s.return_type_name, s.source_name, s.source_line, s.source_column
   FROM site s;
-COMMENT ON VIEW intent_mutation_routine_seat IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which seat a mutation root''s @routine occupies, and where it occupies none, which precondition stopped it. A @routine on a mutation root is a write, and there are exactly two shapes the write can take: the chain seat, where @reference elements after the routine say where the committed row is re-read from, and the carrier seat, where the field returns a payload whose one data field re-reads it by the routine result''s name-matched keys. Which of the two the author wrote for is the seat, and whether that seat holds is the verdict, and they are separate columns because a refused coordinate still has a seat and a diagnostic about it has to name the shape the author was aiming at. Population: every mutation-root field carrying @routine, at the application that defines the chain. Total over that population and exactly one row per coordinate, which is the property the whole relation is for: there is no default arm and no coordinate with no row, so a shape this vocabulary cannot name is a build failure here rather than a silent non-member somewhere downstream. A reduction over sibling relations rather than a rule of its own: every fact it turns on is already a relation, graphitron_field_path_landing and the walk from the routine''s start for where the chain goes, graphitron_carrier_data_field and intent_carrier_routine_hop for what the payload is and where its re-read departs from, intent_bound_table for what the author wrote @table for, and the captured directive rows for what was written. What this relation adds is the seat fork and the precedence, and nothing else; a verdict that needed a fact no relation states would be a rule wearing a reduction''s name, and the two the walk distinguishes that no relation states are disclosed below rather than fabricated here. One pass with the verdict picked by a CASE rather than one UNION ALL arm per verdict, which is intent_node_id_decode_defect''s rule for the same reason and additionally for this one: exactly-one-verdict-per-coordinate is what a reader trusts, and one driving row gives it by construction where a union would have to rank arms to get it back. The nesting is the seat fork, so the two seats'' arms cannot reach each other. Precedence is this relation''s own and not a transcription of any evaluation order: a coordinate with two defects gets the more fundamental one, the count of routine nodes before the chain''s head, the head before the surface written on it, the surface before anything about the return, and the return''s shape before where the chain lands. There is no message column, on intent_node_id_decode_defect''s settled terms: the closed vocabulary plus the coordinate and the return type are the fact base, and the prose that renders a verdict as a sentence an author can act on belongs with the consumer that composes it. Nor a severity column, which would be a function of the verdict and nothing else; which verdicts are the author''s to fix and which are shapes the generator owes an emitter is stated per value below. The terminus rule reads intent_bound_table, the @table population, which is what the rule is about. What the rule is actually about is whether the table the author wrote @table for is where the chain lands, which is the @table population''s question alone; this is graphitron_node''s reason for standing on that arm too. A return type carrying no @table therefore draws no disagreement, the derived binding governing there, which is the shipped behaviour and not an omission. One silence is disclosed rather than closed, and one that was is now shut. A first hop that joins by an authored condition alone is a step the walk takes, so the chain reaches it and this relation reads the shape as UNANCHORED_FIRST_HOP, which is the verdict this relation''s own precedence already assigns that shape: the walk''s first step out of the routine''s result written with a condition. It read as CHAIN_UNRESOLVED for as long as such a hop resolved to no hop row at all, which conflated a refusal with a shape the classification walk calls owed an emitter. The one that stays disclosed: a payload whose data field is the ID scalar draws no graphitron_carrier_data_field row at all, that relation refusing an ID element for the ROUTINE family outright, so it reads as NO_CARRIER and CARRIER_ELEMENT_NOT_TABLE names the record element alone.';
+COMMENT ON VIEW intent_mutation_routine_seat IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which seat a mutation root''s @routine occupies, and where it occupies none, which precondition stopped it. A @routine on a mutation root is a write, and there are exactly two shapes the write can take: the chain seat, where @reference elements after the routine say where the committed row is re-read from, and the carrier seat, where the field returns a payload whose one data field re-reads it by the routine result''s name-matched keys. Which of the two the author wrote for is the seat, and whether that seat holds is the verdict, and they are separate columns because a refused coordinate still has a seat and a diagnostic about it has to name the shape the author was aiming at. Population: every mutation-root field carrying @routine, at the application that defines the chain. Total over that population and exactly one row per coordinate, which is the property the whole relation is for: there is no default arm and no coordinate with no row, so a shape this vocabulary cannot name is a build failure here rather than a silent non-member somewhere downstream. A reduction over sibling relations rather than a rule of its own: every fact it turns on is already a relation, graphitron_field_path_landing and the walk from the routine''s start for where the chain goes, the routine field''s target, the LOOKUP producer and intent_carrier_routine_hop for what the payload is and where its re-read departs from, intent_bound_table for what the author wrote @table for, and the captured directive rows for what was written. What this relation adds is the seat fork and the precedence, and nothing else; a verdict that needed a fact no relation states would be a rule wearing a reduction''s name, and the two the walk distinguishes that no relation states are disclosed below rather than fabricated here. One pass with the verdict picked by a CASE rather than one UNION ALL arm per verdict, which is intent_node_id_decode_defect''s rule for the same reason and additionally for this one: exactly-one-verdict-per-coordinate is what a reader trusts, and one driving row gives it by construction where a union would have to rank arms to get it back. The nesting is the seat fork, so the two seats'' arms cannot reach each other. Precedence is this relation''s own and not a transcription of any evaluation order: a coordinate with two defects gets the more fundamental one, the count of routine nodes before the chain''s head, the head before the surface written on it, the surface before anything about the return, and the return''s shape before where the chain lands. There is no message column, on intent_node_id_decode_defect''s settled terms: the closed vocabulary plus the coordinate and the return type are the fact base, and the prose that renders a verdict as a sentence an author can act on belongs with the consumer that composes it. Nor a severity column, which would be a function of the verdict and nothing else; which verdicts are the author''s to fix and which are shapes the generator owes an emitter is stated per value below. The terminus rule reads intent_bound_table, the @table population, which is what the rule is about. What the rule is actually about is whether the table the author wrote @table for is where the chain lands, which is the @table population''s question alone; this is graphitron_node''s reason for standing on that arm too. A return type carrying no @table therefore draws no disagreement, the derived binding governing there, which is the shipped behaviour and not an omission. One silence is disclosed rather than closed, and one that was is now shut. A first hop that joins by an authored condition alone is a step the walk takes, so the chain reaches it and this relation reads the shape as UNANCHORED_FIRST_HOP, which is the verdict this relation''s own precedence already assigns that shape: the walk''s first step out of the routine''s result written with a condition. It read as CHAIN_UNRESOLVED for as long as such a hop resolved to no hop row at all, which conflated a refusal with a shape the classification walk calls owed an emitter. A payload whose data field is no LOOKUP producer, a record or the ID scalar, reads as CARRIER_ELEMENT_NOT_TABLE.';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.graph_name IS 'the owning graph''s partition, carried from the @routine application';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.type_name IS 'the mutation root type the field sits on, bound by graphql_root_operation at MUTATION rather than by the literal name Mutation, on the demand rules'' terms';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.field_name IS 'the mutation field the @routine is written on; with the type above, the coordinate the write runs at and a located refusal attaches to';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.ordinal IS 'the chain-defining @routine application''s own ordinal, which is the greatest on the field; joins back to graphitron_routine_entry on it. The selection is stated here rather than read off graphitron_producer_routine because this population must hold a row where a routine name resolves to nothing, and there that relation has none';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.seat IS 'which shape the field''s applications were written for, a closed two-value domain. CHAIN: the field carries at least one @reference, so the routine call is the write and the chain''s terminus is where the post-commit re-read runs. CARRIER: it carries none, so the return is a payload type whose data field owns the re-read and the hop out of the routine result is inferred rather than written. Decided by the presence of an @reference application and by nothing else, which is why it is a fact about the coordinate rather than a verdict: a refused coordinate has a seat too, and the two seats'' verdicts are disjoint vocabularies below the three shared ones';
--- COMMENT ON COLUMN intent_mutation_routine_seat.verdict IS 'whether the seat holds, and where it does not, which precondition stopped it, in a closed vocabulary of fourteen. ADMITTED is the one emitting value and means the seat''s whole predicate holds; what such a coordinate emits is the seat column''s to say. Three refusals are shared by both seats. MULTIPLE_ROUTINE_NODES: more than one @routine is written on the field, which is a shape owed the multi-lateral emit; it precedes every other verdict because the rules below are stated about the chain''s one routine and there is no one routine here. CHAIN_HEAD_NOT_ROUTINE: an @reference is written before the routine, so the chain would depart from something other than the function result, which at a root there is nothing to be. READ_SURFACE_ON_WRITE: the field or one of its arguments carries @condition or @orderBy, and neither write seat has a filter or an ordering to resolve them against, so admitting the coordinate would classify the directives clean and then silently do nothing. Five are the chain seat''s. REFERENCE_ON_CARRIER_RETURN: the return carries no @table and is a routine payload carrier, so the path is the right fact at the wrong grain and its seat is the payload''s data field. CONNECTION_RETURN: @asConnection rewrote the field''s type expression, and the write''s re-read is keyed by the captured routine columns rather than paginated. CHAIN_UNRESOLVED: the chain does not land on exactly one table, which covers a routine name resolving to no function result, a walk that stopped short of the written tail, and a step reaching its destination by more than one route; which of the three it is is readable on the walk at this row''s own coordinate, as no routine start, or a graphitron_field_path_stop and its moves. UNANCHORED_FIRST_HOP: the first hop out of the routine result carries an authored condition, whose predicate names the routine alias and so cannot appear in the follow-up query, leaving the re-read no anchor. TERMINUS_NOT_RETURN_TABLE: the return type''s @table names a table the chain does not land on, or names one ambiguously. Five are the carrier seat''s. TABLE_BOUND_RETURN: the return is @table-bound with no @reference to walk, which is the chain shape minus its chain and has no re-read anchor either. NO_CARRIER: the return is neither table-bound nor a payload declaring exactly one data channel of the routine family, which is graphitron_carrier_data_field''s arity and its whole set of refusals reported as one. CARRIER_ELEMENT_NOT_TABLE: the one data channel is a record element, and a routine write re-reads its committed row from a catalog table. CARRIER_DATA_FIELD_NON_NULL: the data channel is a non-null single, so a re-read a read policy legitimately returns no row for would null the whole payload through non-null propagation and destroy the errors list beside it. CARRIER_HOP_UNRESOLVED: no hop runs from this field''s own routine result to the data field''s table, or one does and the pairing it would key on comes up short of the arrival''s key, which is sql_name_matched_key_column''s shortfall stated as rows and demanded here as the reader''s own gate, intent_carrier_routine_hop naming the two ends and never claiming they can be keyed. Of the fourteen, the ones an author fixes in their own schema are CHAIN_HEAD_NOT_ROUTINE, REFERENCE_ON_CARRIER_RETURN, TERMINUS_NOT_RETURN_TABLE, CARRIER_ELEMENT_NOT_TABLE, CARRIER_DATA_FIELD_NON_NULL and CARRIER_HOP_UNRESOLVED; MULTIPLE_ROUTINE_NODES, READ_SURFACE_ON_WRITE, CONNECTION_RETURN, UNANCHORED_FIRST_HOP and TABLE_BOUND_RETURN are shapes the generator owes an emitter; CHAIN_UNRESOLVED and NO_CARRIER are each of both kinds and the witness relation tells them apart';
--- COMMENT ON COLUMN intent_mutation_routine_seat.return_type_name IS 'the type the field returns, read off intent_field_navigated_type, so a connection-returning field names its element whether the generator synthesised that connection or the author declared it. On a CHAIN row this is the type the chain''s terminus stands for; on a CARRIER row it is the payload, and the key into graphitron_carrier_data_field for the data channel this seat''s re-read runs at. Never the table: what table stands for the type is intent_bound_table''s and graphitron_field_path_landing''s to say, and repeating it here would be a denormalisation of facts this row''s own columns already reach';
+-- COMMENT ON COLUMN intent_mutation_routine_seat.verdict IS 'whether the seat holds, and where it does not, which precondition stopped it, in a closed vocabulary of fourteen. ADMITTED is the one emitting value and means the seat''s whole predicate holds; what such a coordinate emits is the seat column''s to say. Three refusals are shared by both seats. MULTIPLE_ROUTINE_NODES: more than one @routine is written on the field, which is a shape owed the multi-lateral emit; it precedes every other verdict because the rules below are stated about the chain''s one routine and there is no one routine here. CHAIN_HEAD_NOT_ROUTINE: an @reference is written before the routine, so the chain would depart from something other than the function result, which at a root there is nothing to be. READ_SURFACE_ON_WRITE: the field or one of its arguments carries @condition or @orderBy, and neither write seat has a filter or an ordering to resolve them against, so admitting the coordinate would classify the directives clean and then silently do nothing. Five are the chain seat''s. REFERENCE_ON_CARRIER_RETURN: the return carries no @table and is a routine payload carrier, so the path is the right fact at the wrong grain and its seat is the payload''s data field. CONNECTION_RETURN: @asConnection rewrote the field''s type expression, and the write''s re-read is keyed by the captured routine columns rather than paginated. CHAIN_UNRESOLVED: the chain does not land on exactly one table, which covers a routine name resolving to no function result, a walk that stopped short of the written tail, and a step reaching its destination by more than one route; which of the three it is is readable on the walk at this row''s own coordinate, as no routine start, or a graphitron_field_path_stop and its moves. UNANCHORED_FIRST_HOP: the first hop out of the routine result carries an authored condition, whose predicate names the routine alias and so cannot appear in the follow-up query, leaving the re-read no anchor. TERMINUS_NOT_RETURN_TABLE: the return type''s @table names a table the chain does not land on, or names one ambiguously. Five are the carrier seat''s. TABLE_BOUND_RETURN: the return is @table-bound with no @reference to walk, which is the chain shape minus its chain and has no re-read anchor either. NO_CARRIER: the return is neither table-bound nor a type holding one field beside any errors field. CARRIER_ELEMENT_NOT_TABLE: that field is no LOOKUP producer, and a routine write re-reads its committed row from a catalog table. CARRIER_DATA_FIELD_NON_NULL: the data channel is a non-null single, so a re-read a read policy legitimately returns no row for would null the whole payload through non-null propagation and destroy the errors list beside it. CARRIER_HOP_UNRESOLVED: no hop runs from this field''s own routine result to the data field''s table, or one does and the pairing it would key on comes up short of the arrival''s key, which is sql_name_matched_key_column''s shortfall stated as rows and demanded here as the reader''s own gate, intent_carrier_routine_hop naming the two ends and never claiming they can be keyed. Of the fourteen, the ones an author fixes in their own schema are CHAIN_HEAD_NOT_ROUTINE, REFERENCE_ON_CARRIER_RETURN, TERMINUS_NOT_RETURN_TABLE, CARRIER_ELEMENT_NOT_TABLE, CARRIER_DATA_FIELD_NON_NULL and CARRIER_HOP_UNRESOLVED; MULTIPLE_ROUTINE_NODES, READ_SURFACE_ON_WRITE, CONNECTION_RETURN, UNANCHORED_FIRST_HOP and TABLE_BOUND_RETURN are shapes the generator owes an emitter; CHAIN_UNRESOLVED and NO_CARRIER are each of both kinds and the witness relation tells them apart';
+-- COMMENT ON COLUMN intent_mutation_routine_seat.return_type_name IS 'the type the field returns, read off intent_field_navigated_type, so a connection-returning field names its element whether the generator synthesised that connection or the author declared it. On a CHAIN row this is the type the chain''s terminus stands for; on a CARRIER row it is the payload. Never the table: what table stands for the type is intent_bound_table''s and graphitron_field_path_landing''s to say, and repeating it here would be a denormalisation of facts this row''s own columns already reach';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.source_name IS 'the schema document the @routine application is written in, carried from graphitron_routine_entry so a located refusal needs no join back to the population';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.source_line IS 'source line, 1-based per the graphql-java convention';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.source_column IS 'source column, 1-based per the graphql-java convention. With the line and the document name, the site a refusal points an author at, which is the directive and not the field, every verdict here being about what the @routine composes with';
@@ -16922,9 +16755,6 @@ INSERT INTO meta_grain VALUES
    'one table one input field is classified against, in one graph',
    'graph_name, type_name, field_name, table_source_name, table_schema, table_name',
    'catalog'),
-  ('carrier-data-channel',
-   'one data channel of one mutation payload type, under one producing family, in one graph',
-   'graph_name, type_name, field_name, family', 'sdl'),
   ('graph-schema-problem',
    'one problem raised while creating one graph''s schema, at its place in the order its own stage raised them',
    'graph_name, stage, ordinal', 'sdl'),
@@ -18440,23 +18270,15 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_target', 'graph-field', 'graphitron',
    'A field''s target type, unwrapped from a connection where the field returns one, with the connection beside it: one row per field.',
    'For example films: [Film!]! @asConnection has the target Film and the wrapper the macro minted, and title: String has the target String and no wrapper.',
-   'A field has a target type, and a target type is what is bound to a table. Five rules spelled the same COALESCE over the synthesis record, and all five navigated a connection only where the generator had built it, so an author-declared connection fell through to its wrapper and bound nothing. Stated once here, the wrapper''s name and not a flag, so a reader asking about the connection joins it. Total over graphitron_field, minted fields and scalar returns included, so a reader joins this rather than left-joining it. Kind, participants and table are each a join on the target''s name rather than columns here: graphql_type, graphql_poly_member and graphitron_resolved_type_binding. A mutation''s target is its payload type; the refetch is graphitron_carrier_data_field''s and the data field''s own target. Stored rather than left to its rule view because readers join on the target''s name, which as a column an index can lead with.'),
+   'A field has a target type, and a target type is what is bound to a table. Five rules spelled the same COALESCE over the synthesis record, and all five navigated a connection only where the generator had built it, so an author-declared connection fell through to its wrapper and bound nothing. Stated once here, the wrapper''s name and not a flag, so a reader asking about the connection joins it. Total over graphitron_field, minted fields and scalar returns included, so a reader joins this rather than left-joining it. Kind, participants and table are each a join on the target''s name rather than columns here: graphql_type, graphql_poly_member and graphitron_resolved_type_binding. A mutation''s target is its payload type; the refetch is the outcome''s LOOKUP field and that field''s own target. Stored rather than left to its rule view because readers join on the target''s name, which as a column an index can lead with.'),
   ('graphitron_field_target_rule', 'graph-field', 'graphitron',
    'One row the field target rule computes, in the shape graphitron_field_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
-  ('graphitron_carrier_data_field', 'carrier-data-channel', 'graphitron',
-   'Where a mutation payload''s data arrives: for each OBJECT type a mutation-root write field returns, that type''s data channels, one row per channel per producing family, with the shape each element declares and how many channels the type has.',
-   'For example a payload declaring film: Film beside an errors channel draws one row for film under family DML, its element kind TABLE and its channel count one.',
-   'The coordinate a carrier''s produced value lands at, stated once for every surface that offers or judges the $source sigil. The producing directive decides the family and the family decides two policies, so it is a column and not a filter, and a payload two families both return is a row per family rather than a pick. Errors fields are never data channels, which graphitron_errors_field says rather than a condition spelled here. What an element declares is one of three kinds, tried in the walk''s own order: a named type bound unambiguously to a table is TABLE, a named type the backing closure reaches is RECORD, and the ID scalar is ID; the closure arm reads declared_via, so a @table type''s own record class cannot answer here and a two-level carrier is that closure''s departure to close rather than a reading taken here. An element of any other kind rejects the whole payload rather than its own coordinate, as does a directive routing the type out of the carrier mold. The arity is a column and the refusal is the reader''s: a payload declaring two channels is two rows counting two, and a reader demanding one transcribes that refusal without re-counting. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence. No index beside the key: on the two coordinates its readers spell no reader moves at all, to the scan, the table being a dozen rows reached through joins the planner already orders.'),
-  ('graphitron_carrier_data_field_rule', 'carrier-data-channel', 'graphitron',
-   'One row the carrier data-channel rule computes, in the shape graphitron_carrier_data_field stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_carrier_data_field, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
-   'The rule, kept in the catalog rather than moved into the stage that runs it. The stage is INSERT INTO graphitron_carrier_data_field SELECT * FROM this view WHERE graph_name = ?, so the rule is stated once in one language and what the stage adds is who evaluates it and when. Keeping it a stored view is what leaves ViewReferences, the declared-view ownership gate and the stage-order gate a read set to parse, and what keeps the EXCEPT oracle between rule and table runnable for as long as both exist rather than for the one commit that converts. It was a registered rule until then, refilled into the canonical name by the register on the same cadence: three view bodies name the relation and one of them, the decode slot, names it twice through a local alias that is itself named twice, so a single read of that relation expanded this rule several times over. The stage pays one evaluation per capture where the register paid one too; what goes is the row that scheduled it.'),
   ('graphitron_field_scope_table', 'field-scope-table', 'graphitron',
    'Which table a field''s own generated SQL binds against: the table the field selects from, the table a predicate built at this coordinate correlates on, and the table a @nodeId or @reference path written here departs from, one row per table where several answer.',
    'For example Mutation.deleteFilm over @mutation(typeName: DELETE, table: "film") draws one row naming film, and a field returning a multi-table container draws one row per branch table it is rooted in.',
-   'The field-grain correction of a rule that used to live at an argument''s. The coordinate and the table together are the grain: a field returning a multi-table container is several statements, one per branch, each rooted in its own table. Three ranked rungs and one arm disjoint from all of them. The navigated type''s own binding is the ordinary case, read through intent_field_navigated_type so a connection field navigates as its element type. Below it the write payload''s data channel, where an INSERT or UPDATE returns a carrier wrapping the written row, read off graphitron_carrier_data_field so that relation''s arity refusal is transcribed rather than restated. Below that a @mutation(table:) spelling, for where the return names no table at all. The rungs are a precedence rather than a union, by DENSE_RANK and not ROW_NUMBER, so an ambiguity stays visible as rows. Beside them and outside that window sits the participant rows, the distinct tables of the target''s table-bound members under PARTICIPANT_TABLE: they contend with neither rung, the target binding no table at all. Nothing here says anything is column-shaped: where a name written at the site resolves is intent_field_column_table''s question, which agrees with this one only on an object-typed field. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence.'),
+   'The field-grain correction of a rule that used to live at an argument''s. The coordinate and the table together are the grain: a field returning a multi-table container is several statements, one per branch, each rooted in its own table. Three ranked rungs and one arm disjoint from all of them. The navigated type''s own binding is the ordinary case, read through intent_field_navigated_type so a connection field navigates as its element type. Below it the write payload''s data channel, where an INSERT or UPDATE returns a carrier wrapping the written row, read off the write''s target where it holds one field beside any errors field and that field is a LOOKUP producer. Below that a @mutation(table:) spelling, for where the return names no table at all. The rungs are a precedence rather than a union, by DENSE_RANK and not ROW_NUMBER, so an ambiguity stays visible as rows. Beside them and outside that window sits the participant rows, the distinct tables of the target''s table-bound members under PARTICIPANT_TABLE: they contend with neither rung, the target binding no table at all. Nothing here says anything is column-shaped: where a name written at the site resolves is intent_field_column_table''s question, which agrees with this one only on an object-typed field. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence.'),
   ('graphitron_field_scope_table_rule', 'field-scope-table', 'graphitron',
    'One row the field-site scope rule computes, in the shape graphitron_field_scope_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_scope_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',

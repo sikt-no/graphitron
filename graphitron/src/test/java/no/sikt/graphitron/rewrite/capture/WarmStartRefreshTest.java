@@ -195,8 +195,6 @@ class WarmStartRefreshTest {
             .hasEntrySatisfying("GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET_KEYED",
                 rows -> assertThat(rows).isPositive())
             .hasEntrySatisfying("GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET_KEYED",
-                rows -> assertThat(rows).isPositive())
-            .hasEntrySatisfying("GRAPHITRON_CARRIER_DATA_FIELD",
                 rows -> assertThat(rows).isPositive());
 
         Map<String, Integer> twice;

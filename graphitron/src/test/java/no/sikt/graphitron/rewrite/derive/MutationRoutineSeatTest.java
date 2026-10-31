@@ -27,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * at each seat and the thirteen refusals are a case each, which is what makes the vocabulary closed
  * in fact and not only in the comment.
  *
- * <p>Every case captures real SDL against the test catalog rather than seeding rows, for the reason
- * {@code CarrierDataFieldTest} states: a seeded fixture is free to declare a shape capture never
- * writes, and the case then pins behaviour no build can produce. The catalog supplies the routine
+ * <p>Every case captures real SDL against the test catalog rather than seeding rows: a seeded
+ * fixture is free to declare a shape capture never writes, and the case then pins behaviour no
+ * build can produce. The catalog supplies the routine
  * whose result the writes depart from ({@code rent_film}) and the table its name-matched keys reach
  * ({@code rental}).
  */
@@ -318,9 +318,8 @@ class MutationRoutineSeatTest {
     }
 
     /**
-     * A return that is neither table-bound nor a payload declaring exactly one data channel is no
-     * carrier at all. Here the payload declares two, which is the arity
-     * {@code graphitron_carrier_data_field} counts and this verdict reports.
+     * A return that is neither table-bound nor a type holding one field beside any errors field is
+     * no carrier at all. Here the payload declares two.
      */
     @Test
     void aPayloadWithTwoDataChannelsIsNoCarrier() {

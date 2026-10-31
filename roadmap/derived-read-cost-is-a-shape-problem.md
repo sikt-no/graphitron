@@ -94,10 +94,6 @@ A service call is emitted from the store
 ├── A service's holder is its one widest buildable constructor
 │   └── A service class's construction is stated
 └── A producer's carrier is its one data channel
-    ├── A `@service` payload's one data field is stated
-    ├── Every producer's one data field is stated
-    ├── A payload field's role is stated
-    ├── The carrier's readers read the channel
     └── A field's source is its parent's result
         └── The result and path model is stated before it is built
 ```
@@ -519,21 +515,10 @@ classified records have no reader left and can go with the walk.
 
 * **A write's re-read reads what was committed, for every write shape** `open`. An execution test
   pins the update, delete and service re-reads, as the routine and insert ones already are.
-* **A producer's carrier is its one data channel** `open`. `graphitron_payload_channel` and
-  `graphitron_carrier_data_channel` state each payload field's role and the one data field per
-  producer, what stops a payload being a carrier is a defect at its site, and the carrier's
-  readers move onto them while `graphitron_carrier_data_field` goes.
-  * **A `@service` payload's one data field is stated** `done`. `graphitron_carrier_data_channel`
-    holds, per `@service` field whose payload has exactly one object data field bound to no table,
-    that field and whether the service's object passes through it, the generator's
-    `BindsDataFieldElement` read off the method and its read slots alone.
-  * **Every producer's one data field is stated** `open`. `graphitron_carrier_data_channel` holds a
-    row per producing field of every family, `@mutation` and `@routine` beside `@service`, with the
-    family read off the producer the field claims.
-  * **A payload field's role is stated** `open`. `graphitron_payload_channel` holds each payload
-    field's role, data, errors or neither, keyed by the payload's own coordinate, and a payload with
-    more than one data field is a defect at its site rather than a count a reader filters on.
-  * **The carrier's readers read the channel** `blocked`, on "Every producer's one data field is stated" and on "A payload field's role is stated". The routine write's re-read, the `$source` sigil and the scope ladder's payload rung read the two channels, the `intent_` carrier views go or are restated over them, and `graphitron_carrier_data_field` goes with its step.
+* **A producer's carrier is its one data channel** `open`. The carrier's readers read the
+  producer's target and the field that re-reads or reads its result, `graphitron_carrier_data_field`
+  is gone, and `graphitron_carrier_data_channel` goes once `$result` and the type-backing seed read
+  the member relation instead.
 * **The matched key is stated** `open`. `graphitron_producer_matched_key` holds one row per `ONE`
   write and each key its input columns cover, keyed to the producer and `sql_constraint`.
 * **The DataLoader's key is read from the key row** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". The fetcher's batch key and its lift are
@@ -814,9 +799,6 @@ someone to profile.
     whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
     what still grows is its two column-match parts, 2 to 32 ms, which read
     `graphitron_field_target_column_match`. Inside the backstop's slack, so not on its known list.
-  * **The carrier data fields do not grow with the graphs in the store** `open`, unowned.
-    `graphitron_carrier_data_field` 10 to 59 ms from one graph to eight at 20 units; it passes the
-    backstop's slack.
   * **An upsert finds the row it updates through one key** `done`.
   * **An upsert into a table with an independent unique key is decided per table** `open`.
     `graphitron_federation_definition` is unique by local name, `graphitron_field_participant_path`

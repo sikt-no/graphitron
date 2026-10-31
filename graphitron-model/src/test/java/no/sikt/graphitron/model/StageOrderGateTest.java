@@ -99,8 +99,6 @@ class StageOrderGateTest {
             Set.of("graphitron_argmapping_candidate")),
         new Step("AuthoredClaimRejectionRows", null,
             Set.of("intent_authored_claim_rejection")),
-        new Step("CarrierDataFields", "graphitron_carrier_data_field_rule",
-            Set.of("graphitron_carrier_data_field")),
         new Step("FieldScopeTables", "graphitron_field_scope_table_rule",
             Set.of("graphitron_field_scope_table")),
         new Step("ArgumentScopeTables", "graphitron_argument_scope_table_rule",

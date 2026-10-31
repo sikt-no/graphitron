@@ -34,7 +34,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
@@ -1062,13 +1061,13 @@ final class DiagnosticFacts {
     private static Field<List<FieldCoord>> sigilSiteArm(
         StoreHandle store, Collection<FieldCoord> sites
     ) {
-        var carrier = GRAPHITRON_CARRIER_DATA_FIELD;
-        return multiset(selectDistinct(carrier.TYPE_NAME, carrier.FIELD_NAME)
-            .from(carrier)
-            .where(carrier.GRAPH_NAME.eq(store.graphName()))
-            .and(coordinateIn(carrier.TYPE_NAME, carrier.FIELD_NAME, sites))
-            .and(CarrierDataField.sigilSite())
-            .orderBy(carrier.TYPE_NAME, carrier.FIELD_NAME))
+        var site = GRAPHQL_FIELD;
+        return multiset(selectDistinct(site.TYPE_NAME, site.FIELD_NAME)
+            .from(site)
+            .where(site.GRAPH_NAME.eq(store.graphName()))
+            .and(coordinateIn(site.TYPE_NAME, site.FIELD_NAME, sites))
+            .and(CarrierDataField.sigilSite(site.GRAPH_NAME, site.TYPE_NAME, site.FIELD_NAME))
+            .orderBy(site.TYPE_NAME, site.FIELD_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(FieldCoord::new)));
     }
 

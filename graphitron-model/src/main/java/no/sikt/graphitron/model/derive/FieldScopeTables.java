@@ -12,10 +12,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SCOPE_TABLE_RULE;
  * <p>One statement over the rule view beside the target, which is what a stage is here. The rule
  * stays stated once, in SQL, in the catalog where {@link ViewReferences} can read what it reads;
  * what this class adds is who evaluates it and when.
- *
- * <p>After {@link CarrierDataFields} in the stratum, and that is a dependency rather than a
- * preference: the payload rung reads {@code graphitron_carrier_data_field}, so a stage ahead of the
- * one that writes it would read the previous capture's rows.
  */
 public final class FieldScopeTables {
 

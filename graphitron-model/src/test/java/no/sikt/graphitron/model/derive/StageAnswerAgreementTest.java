@@ -63,7 +63,6 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_path_element_method", "graphitron_path_element_method_rule"),
         new Stage("graphitron_field_source_table", "graphitron_field_source_table_rule"),
         new Stage("graphitron_field_target_column", "graphitron_field_target_column_rule"),
-        new Stage("graphitron_carrier_data_field", "graphitron_carrier_data_field_rule"),
         new Stage("graphitron_field_scope_table", "graphitron_field_scope_table_rule"),
         new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
         new Stage("graphitron_input_field_resolving_table",
@@ -115,25 +114,6 @@ class StageAnswerAgreementTest {
         assertThat(STAGES.stream().map(Stage::target).filter(t -> !populated.contains(t)).toList())
             .as("stage-written tables no fixture populates; extend a fixture until one does")
             .isEmpty();
-    }
-
-    /**
-     * The carrier stage's own non-vacuity case, on the axes its rule actually branches on: the
-     * producing family, which decides two of the rule's refusals, and the element kind, which is
-     * the three-armed walk the rule performs per channel. A comparison over an empty relation
-     * passes while asserting nothing, and one over a single family asserts one family's refusals.
-     */
-    @Test
-    @DisplayName("the fixture reaches two families and two element kinds of the carrier channel")
-    void theFixtureReachesMoreThanOneCarrierFamily() {
-        withCapturedStore(dsl -> assertThat(dsl
-                .select(org.jooq.impl.DSL.field(name("FAMILY"), String.class),
-                    org.jooq.impl.DSL.field(name("ELEMENT_KIND"), String.class))
-                .from(table(name("GRAPHITRON_CARRIER_DATA_FIELD")))
-                .fetch().map(row -> row.value1() + " " + row.value2()))
-            .as("the family and element kind pairs the fixture reaches; an agreement over one"
-                + " family asserts one family's refusals and passes all the same")
-            .containsExactlyInAnyOrder("SERVICE TABLE", "DML TABLE", "DML ID"));
     }
 
     /**
@@ -308,9 +288,8 @@ class StageAnswerAgreementTest {
      * One schema reaching every arm each stage above branches on. For the field-site column scope,
      * all three navigation rules: an authored {@code @reference} path whose terminal element names
      * a table (PATH_TERMINAL) and one a condition method routes, an object-typed field whose named type carries its own binding
-     * (NAMED_TYPE_TABLE), and leaf fields resolving in their parent's binding (PARENT_BINDING). For
-     * the carrier data channel, two of the three producing families and two of the three element
-     * kinds: a {@code @service} carrier wrapping a bound type, an INSERT carrier wrapping the same,
+     * (NAMED_TYPE_TABLE), and leaf fields resolving in their parent's binding (PARENT_BINDING).
+     * Three outcomes: a {@code @service} one wrapping a bound type, an INSERT one wrapping the same,
      * and a DELETE echo wrapping the {@code ID} scalar. For the field-site scope, all four bases:
      * the INSERT carrier is the payload rung, the DELETE echo the {@code @mutation(table:)} rung,
      * every object-typed field into a bound type the named-type rung, and the interface over two

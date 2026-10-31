@@ -155,11 +155,6 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       catalog's own functions without scoping by graph, the relation carrying no graph partition,
  *       and half of both halves pins what the relations refuse to hold, a rule pairing every
  *       function against every keyed table being mostly boundary;
- *       {@code no.sikt.graphitron.rewrite.derive.CarrierDataFieldTest} binds
- *       {@code graphitron_carrier_data_field}, where a mutation payload's data arrives, over captured
- *       SDL against that same catalog and the test classes' own census, half its cases pinning the
- *       payload shapes that name nothing because a carrier's boundary is most of what the relation
- *       claims;
  *       the fact document {@code field-column-table.graphqls} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, and
  *       {@code graphitron_field_target_column}, the column a scalar reads, over real SDL and the

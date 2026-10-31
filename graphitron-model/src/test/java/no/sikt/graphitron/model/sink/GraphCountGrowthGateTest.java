@@ -49,10 +49,7 @@ class GraphCountGrowthGateTest {
      * ends it. Not a ratchet: a known table can dip under the bound on a quiet run, so one that stops
      * growing comes off by hand.
      */
-    private static final Map<String, String> KNOWN = Map.of(
-        "WRITE GRAPHITRON_CARRIER_DATA_FIELD", "grows with the graphs and sits near the bound, so "
-            + "load tips it over; ends when \"The carrier data fields do not grow with the graphs "
-            + "in the store\" lands");
+    private static final Map<String, String> KNOWN = Map.of();
 
     @Test
     @DisplayName("one graph's time per relation, written or read, does not grow with the other graphs")

@@ -431,10 +431,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_argmapping_key_column_candidate", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_projection", Arm.DERIVED);
         registrations.put("intent_argmapping_projection_defect", Arm.DERIVED);
-        registrations.put("intent_field_payload_producer", Arm.DERIVED);
         registrations.put("intent_poly_member", Arm.DERIVED);
-        registrations.put("graphitron_carrier_data_field", Arm.DERIVED);
-        registrations.put("graphitron_carrier_data_field_rule", Arm.DERIVED);
         registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
         registrations.put("intent_mutation_routine_seat", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
