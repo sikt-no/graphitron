@@ -175,6 +175,21 @@ numbering is the order to take them in, largest and cheapest first.
    and the `build` skill), after confirming that nothing collides when modules build together:
    the Quarkus test port, temporary directories, the leaf-coverage trace file, and the store
    files tests write. Expected: up to 150 s, less while the test phases stay CPU-bound.
+
+   Parked after the audit, not done. The audit found no collision: tests bind ephemeral ports and
+   the Quarkus tests live in one module behind a lock; temporary directories are unique; the
+   leaf-coverage traces are written per module and read by a separate step after the reactor; a
+   build's store lives under each module's own `target/graphitron-model`; and the two modules that
+   open the shared PostgreSQL under `-Plocal-db` cannot overlap, the example depending on the plugin
+   and the plugin on `graphitron`. What the audit also found is that the premise was off: CI
+   already builds with `-T 1C` and `mvnd` is module-parallel by default, so only a plain
+   `mvn install` is sequential, and the 23:09 baseline is that sequential build. What is left is
+   making plain `mvn` parallel (a `.mvn/maven.config` carrying `-T 1C`, with the release deploy
+   pinned back to one thread, or documentation alone) and pricing it. Pricing it on a 4-core
+   machine says little about a 16-core one: after `graphitron-model` only four modules are
+   independent, the `graphitron` test phase is about 21 minutes of CPU-bound work, the
+   `graphitron-lsp` phase took 172 s alone and 11:28 inside the reactor, and identical trees
+   varied between 28 and 40 minutes, so one sequential-against-parallel pair proves nothing.
 4. **Shorten the corpus chain.** Capture the corpus once per build into a store file the tests
    open, or capture its graphs in parallel, so the sweeps start immediately. Replace the
    `@Isolated` count assertion in `CorpusCapturedOnceTest` with one that does not need the JVM to
