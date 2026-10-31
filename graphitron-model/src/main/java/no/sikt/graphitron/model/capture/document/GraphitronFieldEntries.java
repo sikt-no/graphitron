@@ -25,7 +25,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SOURCE_ROW_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
@@ -83,7 +82,6 @@ final class GraphitronFieldEntries {
         serviceContextArguments(dsl, graph, touchedAt, services);
 
         externalFields(dsl, graph, touchedAt, naming(applied(applications, "externalField"), "reference"));
-        sourceRows(dsl, graph, touchedAt, wrote(applied(applications, "sourceRow"), "className"));
         connections(dsl, graph, touchedAt, applied(applications, "asConnection"));
         nodeIds(dsl, graph, touchedAt, applied(applications, "nodeId"));
         mutations(dsl, graph, touchedAt, token(applied(applications, "mutation"), "typeName"));
@@ -108,7 +106,7 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
         GRAPHITRON_AST_SERVICE_ENTRY,
         GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY, GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY,
-        GRAPHITRON_AST_SOURCE_ROW_ENTRY, GRAPHITRON_AST_CONNECTION_ENTRY,
+        GRAPHITRON_AST_CONNECTION_ENTRY,
         GRAPHITRON_AST_FIELD_NODE_ID_ENTRY, GRAPHITRON_AST_MUTATION_ENTRY,
         GRAPHITRON_AST_PIVOT_ENTRY, GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
         GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY,
@@ -249,28 +247,6 @@ final class GraphitronFieldEntries {
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
                 .set(t.METHOD, excluded(t.METHOD))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
-    }
-
-    /** Two flat arguments, this being the one site that names a class and a method directly. */
-    private static void sourceRows(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                   List<Directive> applications) {
-        var t = GRAPHITRON_AST_SOURCE_ROW_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "className"), t.CLASS_NAME),
-            application -> val(string(application, "method"), t.METHOD)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-                .set(t.METHOD, excluded(t.METHOD)));
     }
 
     private static void connections(DSLContext dsl, String graph, LocalDateTime touchedAt,

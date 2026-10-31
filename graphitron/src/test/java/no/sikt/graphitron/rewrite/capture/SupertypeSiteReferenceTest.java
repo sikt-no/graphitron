@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>{@code graphitron_method_reference_entry} holds a fact several kinds of site spell, and reached
  * that shape by absorbing a relation that carried nothing of its own. The absorbed relation had a
- * foreign key into the directive that owned its rows, and no foreign key can span the eleven parents
+ * foreign key into the directive that owned its rows, and no foreign key can span the ten parents
  * a discriminator column chooses between, so that edge is not enforced by the schema any more. They are still true, because capture writes the shared row
  * inside the branch that has just written the owning directive's own row, and this is the test that
  * says so. Losing an enforced edge is the price of the collapse and the price is only worth paying
@@ -36,15 +36,14 @@ class SupertypeSiteReferenceTest {
 
     /**
      * One schema reaching every site the relation admits and that a schema can legally spell. One
-     * of the eleven sites is absent by construction rather than by omission: the argument-site
+     * of the ten sites is absent by construction rather than by omission: the argument-site
      * {@code @referenceFor} step has a coordinate the validator rejects, so no captured store has
      * one.
      */
     private static final String FIXTURE = """
         type Film @table(name: "film") {
           title: String
-          language: Language @sourceRow(
-            className: "com.example.Rows", method: "language")
+          language: Language
         }
 
         input FilmFilter {
@@ -88,10 +87,7 @@ class SupertypeSiteReferenceTest {
 
     /**
      * Each site of {@code graphitron_method_reference_entry} against the relation that owns its rows,
-     * as the predicate joining the shared row {@code s} to an owner {@code d}. {@code SOURCE_ROW} is absent by design and
-     * not by oversight: its subtype is the one that collapsed, so there is no owning relation left
-     * to point at and nothing for an orphan scan to check. That site's correctness is the
-     * population assertion's alone.
+     * as the predicate joining the shared row {@code s} to an owner {@code d}.
      */
     private static final Map<String, String> METHOD_OWNERS = new LinkedHashMap<>(Map.of(
         "SERVICE",
@@ -149,7 +145,7 @@ class SupertypeSiteReferenceTest {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             assertThat(sites(store.dsl(), "graphitron_method_reference_entry"))
                 .as("method reference sites this fixture reaches")
-                .contains("SERVICE", "EXTERNAL_FIELD", "SOURCE_ROW", "FIELD_CONDITION",
+                .contains("SERVICE", "EXTERNAL_FIELD", "FIELD_CONDITION",
                     "INPUT_FIELD_CONDITION", "ARGUMENT_CONDITION", "FIELD_REFERENCE_STEP");
         }
     }

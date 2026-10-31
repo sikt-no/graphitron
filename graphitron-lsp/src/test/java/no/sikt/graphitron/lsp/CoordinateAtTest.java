@@ -36,24 +36,6 @@ class CoordinateAtTest {
     }
 
     @Test
-    void cursorOnSourceRowFlatArgReturnsDirectiveArgCoordinate() {
-        // Today's hand-coded DirectiveDefinitions does not list @sourceRow;
-        // coordinateAt resolves it from the parsed registry.
-        String source = """
-            type Foo {
-                bar: Int @sourceRow(className: "com.example.Lifter", method: "lift")
-            }
-            """;
-        var lines = source.split("\n");
-        int line = 1;
-        int col = lines[line].indexOf("com") + 1;
-
-        var coord = resolveCoordinate(source, new Point(line, col));
-
-        assertThat(coord).isEqualTo(new SchemaCoordinate.DirectiveArg("sourceRow", "className"));
-    }
-
-    @Test
     void cursorOnSingleLevelNestedFieldReturnsInputFieldCoordinate() {
         // @service(service: { className: "..." }) — cursor inside className value.
         String source = """

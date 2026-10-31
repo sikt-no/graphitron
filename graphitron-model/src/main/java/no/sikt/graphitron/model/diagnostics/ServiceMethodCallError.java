@@ -143,8 +143,7 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
     /**
      * A {@code @service} SOURCES parameter is a {@code List<DTO>} / {@code Set<DTO>} whose element
      * is not backed by a jOOQ {@code TableRecord} (free-form DTO sources are unsupported). Carries
-     * the parameter and method names plus the classifier's {@code reason} (the {@code @sourceRow}
-     * hint).
+     * the parameter and method names plus the classifier's {@code reason}.
      */
     record DtoSourcesUnsupported(
         String paramName,

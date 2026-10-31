@@ -25,9 +25,7 @@ import static org.jooq.impl.DSL.when;
  * is a {@code ClassNameBinding}, this provider offers the graph's class census.
  *
  * <p>Coordinate-driven dispatch: every coordinate the canonical overlay
- * binds as a class-name slot fires this provider, including the flat
- * {@code @sourceRow(className:)} that was left silent
- * under the previous hand-coded directive registry.
+ * binds as a class-name slot fires this provider.
  *
  * <p>Carve-out: {@code @record} is deprecated and ignored, so its
  * {@code className} slot binds no Java class. Its

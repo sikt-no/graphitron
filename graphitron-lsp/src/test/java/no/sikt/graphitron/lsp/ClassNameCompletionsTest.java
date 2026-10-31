@@ -22,8 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Class-name completion against the actual {@code ExternalCodeReference}
  * shape in {@code directives.graphqls}: {@code @service} / {@code @condition} /
- * {@code @enum} (and the flat {@code @sourceRow}) each
- * carry a className slot whose value is an FQN, completed from the catalog.
+ * {@code @enum} each carry a className slot whose value is an FQN, completed from the catalog.
  * {@code @record} shares the same {@code ExternalCodeReference.className}
  * coordinate but is deprecated and ignored, so its className slot is
  * carved out and offers no completion.
@@ -128,20 +127,6 @@ class ClassNameCompletionsTest {
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
         var items = run(source, cursor, "enum");
-
-        assertThat(labels(items)).isEqualTo(serviceLabels());
-    }
-
-    @Test
-    void sourceRowClassNameCompletesFqns() {
-        // The @sourceRow gap closes here. Today's hand-coded DirectiveDefinitions
-        // doesn't list @sourceRow; the canonical overlay declares both
-        // @sourceRow(className:) and @sourceRow(method:) as ECR-shaped
-        // bindings, so completions now fire on either.
-        String source = "type Foo { x: Int @sourceRow(className: \"\", method: \"foo\") }\n";
-        Point cursor = new Point(0, source.indexOf("className: \"") + "className: \"".length());
-
-        var items = run(source, cursor, "sourceRow");
 
         assertThat(labels(items)).isEqualTo(serviceLabels());
     }

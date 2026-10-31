@@ -30,9 +30,6 @@ import static org.jooq.impl.DSL.val;
  * a site the vocabulary gains writes rows here without a writer of its own, which is the failure a
  * per-site list has, each site a decode nobody else shares.
  *
- * <p>{@code @sourceRow} is the one exception, spelling its reference as two arguments of its own
- * rather than as the input type, so it is named here and its row sits at the directive.
- *
  * <p>The reference only: a class and the method where it names one. Its {@code argMapping} is the
  * application's fact and not the reference's, and a default a site applies to an omitted method is
  * a resolution, so neither is written here.
@@ -57,13 +54,6 @@ final class GraphitronCodeReferenceEntries {
         var written = new ArrayList<Written>();
         for (var nested : applications) {
             Directive application = nested.node();
-            if (application.getName().equals("sourceRow")) {
-                var className = string(application, "className");
-                if (className != null) {
-                    written.add(new Written(application, className, string(application, "method")));
-                }
-                continue;
-            }
             VocabularyWalk.walk(application, (name, value, declared) -> {
                 if (declared.getName().equals(REFERENCE_TYPE) && value instanceof ObjectValue object) {
                     var className = stringOf(inside(object, "className"));

@@ -70,9 +70,9 @@ and no `CallSiteExtraction` switch is needed.
 Precedent: `LookupRows.addRowBuildingCore` (search for `DSL.val` with two arguments).
 
 For DTO-parent batching ; where the parent's backing class is a plain POJO or Java record without
-a jOOQ FK to the child's `@table` ; see <<dto-parent-batching,DTO-parent batching>> below; the
-lifter contract is how the schema author hands the framework a typed key when the catalog can't
-supply one.
+a jOOQ FK to the child's `@table` ; see <<dto-parent-batching,DTO-parent batching>> below; a
+typed record accessor on the parent's class is how the framework gets a typed key when the catalog
+can't supply one.
 
 [#column-to-column-comparison]
 == Column-to-column comparison: `ColumnComparison`
@@ -129,18 +129,17 @@ as it does.
 
 When a record-backed parent's backing class (reflected from its producer) is not a jOOQ
 `TableRecord`, the catalog cannot supply the FK columns the column-keyed DataLoader path needs to
-batch a child `@table` field. The `@sourceRow` directive closes that gap: the schema author
-supplies a static Java method that lifts a `RowN<...>` batch key out of the parent DTO, plus the
-`targetColumns` (column names on the child table) the key positions match. The classifier reflects
-on the lifter once at build time, validates the per-position column-class match, and produces a
-`KeyLift.Lifter(LifterRef)` verdict, the `LifterRef` carrying the declaring class + method name.
-The residue `SourceKey` derives its `Wrap.Row` from that lift arm, and the correlation is a
-`ParentCorrelation.OnLiftedSlots` (target table + column tuple, single-hop by construction). Each
-lifted slot folds source-side and target-side onto a single `ColumnRef` by construction (DataLoader
-key tuple IS target-column tuple as a type fact, not a prose precondition). The emitter feeds that into the existing `SplitRowsMethodEmitter.buildListMethod`
-path with no identity branching: target accessors come from `ParentCorrelation.OnLiftedSlots.columns()`, key extraction
-from the lifter call. The lifter is the *single place* where the DTO → key mapping lives; if a
-schema author needs a different key, they author a new lifter method, not a new emitter arm.
+batch a child `@table` field. The parent's class closes that gap itself: a typed zero-arg accessor
+returning the child table's record (or a collection of them) is the key's source. The classifier
+reflects on the accessor once at build time and produces a `KeyLift.Accessor(AccessorRef, Arity)`
+verdict. The residue `SourceKey` derives its `Wrap.Record` from that lift arm, and the correlation
+is a `ParentCorrelation.OnLiftedSlots` over the target's primary key (target table + column tuple,
+single-hop by construction), so the DataLoader key tuple is the target-column tuple as a type fact.
+The emitter feeds that into the existing `SplitRowsMethodEmitter.buildListMethod` path with no
+identity branching: target accessors come from `ParentCorrelation.OnLiftedSlots.columns()`, key
+extraction from the accessor call. The parent's class is the single place where the DTO to key
+mapping lives; a parent that carries only a key's value carries a record with just its primary key
+set.
 
 [#helper-locality]
 == Helper-locality

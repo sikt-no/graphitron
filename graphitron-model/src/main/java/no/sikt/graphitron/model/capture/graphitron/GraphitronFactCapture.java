@@ -273,15 +273,6 @@ public final class GraphitronFactCapture {
                     type, field, null, null, null,
                     reference.className(), reference.method(), directive);
             }
-            case "sourceRow" -> {
-                // No relation of its own: this site carried the class and the method and nothing
-                // else, so it is rows of the shared relation rather than a table beside it.
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "SOURCE_ROW",
-                        useSite(type, field, null, null, null))) return;
-                methodReference("SOURCE_ROW", useSite(type, field, null, null, null),
-                    type, field, null, null, null,
-                    string(directive, "className"), string(directive, "method"), directive);
-            }
             case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY_ENTRY, type, field, directive);
             case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT_ENTRY, type, field, directive);
             case "multitableReference" -> marker(GRAPHITRON_MULTITABLE_REFERENCE_ENTRY, type, field, directive);

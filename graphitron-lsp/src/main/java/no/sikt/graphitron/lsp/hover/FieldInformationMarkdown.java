@@ -114,7 +114,6 @@ final class FieldInformationMarkdown {
             case "SOURCE_TYPE" -> "the parent type's table";
             case "INHERITED" -> "inherited through `" + type + "`, which has no table of its own";
             case "RECORD_CLASS" -> "the table whose record class backs `" + type + "`";
-            case "SOURCE_ROW" -> "the table of the key its `@sourceRow` lifter returns";
             default -> basis;
         };
     }

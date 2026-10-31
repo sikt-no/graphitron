@@ -82,8 +82,8 @@ directives: one decode per application, with each element at its index within it
 in `graphitron_ast_reference_element_entry`. No entry stated where an element sits in the field's
 path. So every reader that needed that position rebuilt it:
 
-* the forward walk, the chain defects and the `@sourceRow` source all needed the field's first
-  element, or the one after the element they stood on;
+* the forward walk and the chain defects both needed the field's first element, or the one after
+  the element they stood on;
 * the inherited-table check, the column match and hover needed to know whether the field wrote a
   path at all.
 

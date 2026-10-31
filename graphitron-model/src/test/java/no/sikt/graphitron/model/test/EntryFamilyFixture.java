@@ -170,7 +170,6 @@ public final class EntryFamilyFixture {
         type Actor @table(name: "actor") @node(typeId: "A") {
           id: ID! @nodeId(typeName: "Actor")
           fullName: String @field(name: "full_name")
-          agency: Agency @sourceRow(className: "no.example.ActorRows", method: "agencyKey")
         }
 
         type Agency @record(record: {className: "no.example.AgencyRecord"}) {

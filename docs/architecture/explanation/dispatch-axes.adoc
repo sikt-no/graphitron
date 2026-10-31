@@ -26,7 +26,6 @@ record SourceKey(
 ----
 KeyLift
 ├─ FkColumns()                    ← project the key columns off the held jOOQ record, per column
-├─ Lifter(LifterRef)              ← @sourceRow static lifter (authored provenance)
 ├─ Accessor(AccessorRef, Arity)   ← typed zero-arg accessor; arity = the accessor's return arity
 └─ ProducedRecords(Arity)         ← source=target re-fetch; arity = the produced wrapper
 ----
@@ -60,11 +59,11 @@ Wrap
 
 The `TableRecord` arm carries the developer-declared subtype as a payload because the column-tuple arms (`Row`, `Record`) have no use for it; an enum with a nullable `recordClass` field would be the conflated alternative. `SourceKey.keyElementType()` is total over the three arms without an extra nullable field on `SourceKey` itself.
 
-The wrap is *stored where it is authored, derived where it is inferred*: the `@splitQuery` source-shape choice and the `@service` `Sources` signature store it on the residue directly; the record-sourced mints construct their residue through `KeyLift.wrap()`, a total derivation of the lift arm (`FkColumns`/`Lifter`/`ProducedRecords` pin `Row`; `Accessor` pins `Record`). Either way the batched leaves' compact constructors assert lift/residue agreement via `KeyLift.checkResidueAgreement` (the Table-sourced arm's `FkColumns`/`Row` pairing satisfies it by construction).
+The wrap is *stored where it is authored, derived where it is inferred*: the `@splitQuery` source-shape choice and the `@service` `Sources` signature store it on the residue directly; the record-sourced mints construct their residue through `KeyLift.wrap()`, a total derivation of the lift arm (`FkColumns`/`ProducedRecords` pin `Row`; `Accessor` pins `Record`). Either way the batched leaves' compact constructors assert lift/residue agreement via `KeyLift.checkResidueAgreement` (the Table-sourced arm's `FkColumns`/`Row` pairing satisfies it by construction).
 
 === `KeyLift`: how the key tuple is lifted off the held object
 
-The four arms name how the batch key is lifted off the parent's held object, and nothing else. `FkColumns` is the column-projection mechanism (a jOOQ record — the parent's own table row on the Table-sourced arm, a record-backed result on the Record-sourced arm); the member-read arms (`Lifter` / `Accessor` / `ProducedRecords`) are class-backed-parent mechanisms, which is why the merged leaves' constructors pin `sourceShape == Table ⟹ FkColumns`. Where the key points is the leaf's `returnType.table()` / `ParentCorrelation`; what shape the parent arrived in is the leaf's stored `SourceShape` (and, for class-backed parents, the enclosing `GraphitronType.ResultType`); the two arity-bearing arms carry the `Arity` of the endpoint that owns it (the accessor's return arity, the produced wrapper). Adding a new arm breaks the one exhaustive switch (`GeneratorUtils.buildRecordParentKeyExtraction`) at compile time until it is handled.
+The three arms name how the batch key is lifted off the parent's held object, and nothing else. `FkColumns` is the column-projection mechanism (a jOOQ record — the parent's own table row on the Table-sourced arm, a record-backed result on the Record-sourced arm); the member-read arms (`Accessor` / `ProducedRecords`) are class-backed-parent mechanisms, which is why the merged leaves' constructors pin `sourceShape == Table ⟹ FkColumns`. Where the key points is the leaf's `returnType.table()` / `ParentCorrelation`; what shape the parent arrived in is the leaf's stored `SourceShape` (and, for class-backed parents, the enclosing `GraphitronType.ResultType`); the two arity-bearing arms carry the `Arity` of the endpoint that owns it (the accessor's return arity, the produced wrapper). Adding a new arm breaks the one exhaustive switch (`GeneratorUtils.buildRecordParentKeyExtraction`) at compile time until it is handled.
 
 === `SourceEnvelope`: carrier read-site fork
 
@@ -86,8 +85,6 @@ Cross-axis pairings that are structurally illegal are unrepresentable or rejecte
 [cols="1,3"]
 |===
 | Invariant | Why load-bearing
-
-| `Lifter ⇒ Wrap.Row` | The `@sourceRow` lifter contract pins output to entry-point columns shaped as `RowN<...>`. `GeneratorUtils.buildLifterRowKey` emits `$T key = Lifters.method((BackingClass) env.getSource())` where `$T` is `sourceKey.keyElementType()`; the local must be `RowN<...>` for the assignment to type-check. Unrepresentable by construction: the residue's wrap is `KeyLift.wrap()`'s derivation, and `KeyLift.checkResidueAgreement` trips on a hand-built disagreement.
 
 | `Accessor ⇒ Wrap.Record` | The rows-method body's parent-input VALUES loop emits `DSL.val(k.value$L())` to extract the scalar payload off the per-key `RecordN<...>`. `value$L()` exists on `RecordN<...>` but not on `RowN<...>`. Same enforcement as above.
 

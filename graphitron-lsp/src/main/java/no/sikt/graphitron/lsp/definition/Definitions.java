@@ -45,8 +45,7 @@ import java.util.Optional;
  *       rides the {@code .java} source cadence.</li>
  *   <li><b>service half</b> ({@link Behavior.ClassNameBinding} /
  *       {@link Behavior.MethodNameBinding}: {@code @service},
- *       {@code @externalField}, {@code @enum}, {@code @condition},
- *       {@code @sourceRow}): jumps to the consumer's
+ *       {@code @externalField}, {@code @enum}, {@code @condition}): jumps to the consumer's
  *       Java class or method declaration via {@link LspVocabulary#siblingStringAt}.</li>
  * </ul>
  *

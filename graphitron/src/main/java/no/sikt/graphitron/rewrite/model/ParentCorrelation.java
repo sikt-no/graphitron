@@ -176,8 +176,7 @@ public sealed interface ParentCorrelation
     /**
      * The pre-keyed correlation: the DataLoader key tuple <em>is</em> the target-column tuple;
      * no foreign key, no traversal, no source side distinct from the target side. Carried by the
-     * {@code @sourceRows} lifter-leaf, the class-backed-parent accessor arm, and the
-     * source=target carrier re-fetch, whose correlation is PK self-identity (the
+     * class-backed-parent accessor arm and the source=target carrier re-fetch, whose correlation is PK self-identity (the
      * degenerate case of the FK pairing). The rows-method JOIN predicate is
      * {@code target.<col> = parentInput.field(col)} per column, identical in shape to the FK
      * case with both sides the same column.
@@ -196,7 +195,7 @@ public sealed interface ParentCorrelation
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException(
                     "ParentCorrelation.OnLiftedSlots requires a non-empty column tuple — every "
-                    + "arm delegating its key columns through this correlation (KeyLift.Lifter, "
+                    + "arm delegating its key columns through this correlation ("
                     + "KeyLift.Accessor, KeyLift.ProducedRecords) needs at least one column.");
             }
             columns = List.copyOf(columns);

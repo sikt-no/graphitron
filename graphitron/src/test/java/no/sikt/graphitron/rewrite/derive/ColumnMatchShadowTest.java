@@ -67,8 +67,8 @@ class ColumnMatchShadowTest {
      * classified through the column-match arm has exactly one masked claim naming the walk's
      * resolved table and column. Soundness: every masked claim at a walked-domain coordinate is
      * such a classification. The mask is the authored anti-join (the reduction's rule) plus the
-     * transitional-residue anti-join against the diverting applications ({@code @reference},
-     * {@code @pivot}, {@code @sourceRow} divert the walk ahead of the column arm but are not
+     * transitional-residue anti-join against the diverting applications ({@code @reference} and
+     * {@code @pivot} divert the walk ahead of the column arm but are not
      * authored claims until their arms migrate); expressed against the store's own application
      * rows so a new diverting directive announces itself as a sweep failure here, not as silent
      * drift in a Java skip-list.
@@ -238,7 +238,7 @@ class ColumnMatchShadowTest {
                 .join(fe).on(fe.GRAPH_NAME.eq(d.GRAPH_NAME), fe.COORDINATE.eq(d.COORDINATE))
                 .where(d.GRAPH_NAME.eq(i.GRAPH_NAME)).and(fe.TYPE_NAME.eq(i.TYPE_NAME))
                 .and(fe.FIELD_NAME.eq(i.FIELD_NAME))
-                .and(d.DIRECTIVE_NAME.in("reference", "pivot", "sourceRow")))
+                .and(d.DIRECTIVE_NAME.in("reference", "pivot")))
             .fetchGroups(i.GRAPH_NAME, r -> new MaskedClaim(r.get(i.TYPE_NAME),
                 r.get(i.FIELD_NAME), r.get(i.TABLE_NAME), r.get(i.COLUMN_NAME)));
     }

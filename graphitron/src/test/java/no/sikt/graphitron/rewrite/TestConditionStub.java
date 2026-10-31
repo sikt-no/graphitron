@@ -110,8 +110,7 @@ class TestConditionStub {
 
     /**
      * Field-level {@code @condition} method on a field with no GraphQL arguments: receives the
-     * target table only. Used by the {@code @sourceRow} + {@code @condition} interaction
-     * test where the carrier field is a record-parent table-bound field with no extra args.
+     * target table only, on a record-parent table-bound field with no extra args.
      */
     public static Condition lifterFieldCondition(org.jooq.Table<?> table) {
         throw new UnsupportedOperationException();

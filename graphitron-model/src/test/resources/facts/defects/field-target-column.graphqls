@@ -109,10 +109,9 @@ type FilmDetailsCarrier {
   filmId: Int @field(name: "film_id")
 }
 
-# Backed by a plain class with no table: read off the object, no column.
-type CustomerAddressSummary {
-  customerId: Int!
-}
+# Backed by plain classes with no table: read off the object, no column.
+type FilmBlurb { description: String }
+type FilmBlurbHolder { blurb: FilmBlurb }
 
 extend type Query {
   films: [Film!]!
@@ -123,8 +122,8 @@ extend type Query {
   twins: [Twins!]!
   filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
-  customerAddressSummary(customerId: Int!): CustomerAddressSummary
-    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryService", method: "lookup"})
+  filmBlurbHolder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
 }
 
 extend schema @expectEquals(relation: "graphitron_field_target_column", rows: """

@@ -350,7 +350,7 @@ A directive naming Java code or a routine is resolved once, by the graphitron an
 classpath and catalog, and every reader reads that resolution rather than a view of its own.
 
 * **A condition reference names an overload set** `open`. `graphitron_code_reference` holds every
-  matching overload, and needing exactly one is the rule of `@externalField` and `@sourceRow` alone;
+  matching overload, and needing exactly one is the rule of `@externalField` alone;
   a service picks among its overloads by what binds.
 * **Every producer reader reads `graphitron_code_reference`** `open`. `SchemaQueries`,
   `DeclarationFacts` and the other readers of `intent_field_producer_method` are rewritten against
@@ -445,7 +445,7 @@ static method needs no holder.
     `OUTBOX_SOURCE_UNRESOLVED`. The steps are a view, one row per leaf and segment, which the leaf
     rule and the emitter both read; the types a payload can carry are one list the session and
     member arms share.
-    * **A field's member is stated once** `blocked`, on "`@sourceRow` dissolves". The member a field
+    * **A field's member is stated once** `open`. The member a field
       reads off each class its parent holds, by its name or `@field(name:)`, is derived today by the
       type-backing rule (twice), the key-row rule, `FieldKeyRows` for
       `graphitron_field_key_row_method`, `graphitron_reader_accessor` and the carrier channel's
@@ -541,7 +541,7 @@ classified records have no reader left and can go with the walk.
 * **The DataLoader's key is read from the key row** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". The fetcher's batch key and its lift are
   generated from the stored row, not from the leaf's `KeyLift`.
 * **A field's key row is stated** `open`. `graphitron_field_key_row` holds, per field
-  taking keys from its parent's object, how it takes them (`COLUMNS`, `SOURCE_ROW`, `ACCESSOR`) and
+  taking keys from its parent's object, how it takes them (`COLUMNS`, `ACCESSOR`) and
   whose columns they are, pinned against the classifier's key lift over sakila but for the gaps below.
   * **A table with no record class says so** `open`. `sql_table.record_class_fqn` is NULL where jOOQ
     generated no record class, so a generic record names no table: sakila's `recordless_note`, none
@@ -567,14 +567,13 @@ classified records have no reader left and can go with the walk.
   `graphitron_field_source_table`'s inherited rule today.
 * **An object result is lifted onto a key row** `blocked`, on "`graphitron_field_source_table` dissolves into the results". Under an
   object parent a path starts at the key row's table, and `graphitron_field_source_table`
-  dissolves into `graphitron_result_table` with its interim record and source-row rules. Only a key
-  on the source side starts one, a `SOURCE_ROW` key or a `COLUMNS` key on the parent's record
-  table: a path is written from the source, so a field whose key re-fetches its own target gets no
+  dissolves into `graphitron_result_table` with its interim record rule. Only a key on the source
+  side starts one, a `COLUMNS` key on the parent's record table: a path is written from the source, so a field whose key re-fetches its own target gets no
   start. The hover's departing table for an input type's record binding is kept, not dropped.
   * **A field under an object starts its path on its key row** `done`. `graphitron_field_path_start`
     gains `LIFTED` and its subtype `graphitron_field_path_start_lifted`, referencing the key row, so
-    `FilmDetailsCarrier.language` starts on film and the `@sourceRow` fields on customer; an
-    `ACCESSOR` key row, the target's own record, starts none.
+    `FilmDetailsCarrier.language` starts on film; an `ACCESSOR` key row, the target's own record,
+    starts none.
   * **`graphitron_field_source_table` dissolves into the results** `open`. The column match and
     the hover read the parent's result and the key row where they read the source table's interim
     rules, and the source table, its rule and its stage go.
@@ -594,11 +593,6 @@ classified records have no reader left and can go with the walk.
   `@field(name:)` as the backing closure already does; and a bound field under an object starts its
   path on that key row. An OBJECT's class stays at the type grain, an OBJECT may have no class, and
   a service field needs no relation of a field's own result.
-* **`@sourceRow` dissolves** `open`, breaking. No schema in the FS-plattform checkout uses it, so the
-  directive, its `SOURCE_ROW` key row and its lifter methods go, an object's key row read off its
-  class and members instead. `graphitron_field_key_row_method` keeps its accessor half only, which
-  "A field's member is stated once" then folds into the one binding. The directive comes back later, once the model is cleaned up, so the
-  removal is not final.
 * **The backing closure stops at a table-bound type** `open`, off the critical path. The class a
   table-bound type holds is its record class, which `BOUND_TABLE` already states, so the
   `graphitron_type_backing` closure need not walk on from it; since a service's object passes
@@ -1469,6 +1463,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   compacting it on close is no longer refused intermittently in a JVM running with assertions on.
   2.5.252 was taken first and dropped: its planner made jOOQ's foreign-key read of the fact schema
   take 168 s instead of 2 s (h2database#4523).
+* **Breaking: `@sourceRow` is removed** ("breaking: @sourceRow is removed, unused in FS-plattform").
+  A schema writing it stops building, the directive being unknown. A class-backed parent gives a
+  child its key through a typed accessor returning the child table's record, a record with only its
+  primary key set where the parent carries only the key's value; a child `@service` keys off the
+  parent being that record or having exactly one accessor returning it. The directive comes back
+  once the model is cleaned up.
 
 ## Retired vocabulary
 
@@ -1523,6 +1523,13 @@ run held, which the `store_` family's charter keeps.
 **Dissolved into the target, the source and the target type.** `graphitron_field_table`, its
 grain `field-target-table`, its `target_basis` values `NAMED_TYPE_TABLE`, `PARTICIPANT_TABLE` and
 `ROUTINE_RESULT`, `FieldEndpoints` and `FieldEndpointsTest`.
+
+**Removed with `@sourceRow`.** The directive, `graphitron_ast_source_row_entry`, the `SOURCE_ROW`
+values of `graphitron_field_key_row.kind`, `graphitron_field_key_row_method.kind`,
+`graphitron_field_path_start_lifted.key_kind`, `graphitron_field_source_table.basis` and
+`graphitron_method_reference_entry.site`, `SourceRowDirectiveResolver`, `SourceRowDeclaration`,
+`LifterMethodResolver`, `LifterRef`, `StaticProducerRef`, `KeyLift.Lifter`,
+`ServiceKeySource.FromLifter` and `Rejection.AttemptKind.LIFTER_METHOD`.
 
 **Dissolved for want of a reader**, resurrectable from `ab6b49c34`. `graphitron_type_reach`,
 `graphitron_type_arrival`, `graphitron_field_source` and their `_rule` views, `TypeReaches`,

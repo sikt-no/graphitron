@@ -231,34 +231,9 @@ public static Integer filmCount(DSLContext dsl) {
 
 When the return type is a non-table GraphQL scalar (or list of scalars), the Java return must be a value graphql-java can coerce. The framework wraps the result in a `DataFetcherResult` and lets graphql-java apply scalar coercion (e.g. `Integer` → `Int!`, `BigDecimal` → `Float`). No projection or batching is involved.
 
-=== Class-backed payload: accessor-derived or lifter-driven
+=== Class-backed payload: accessor-derived
 
-When the return type is a class-backed type (a custom payload whose backing class is reflected from this `@service` method's return type), each row in the service's result has children that the framework still resolves. Two paths drive the child-fetch dispatch:
-
-* *Auto-derived from accessor.* If the payload's canonical record-component accessor returns the right shape (a `TableRecord` subclass, `List<TableRecord>`, or `Set<TableRecord>` whose element matches the child field's `@table`), the classifier auto-derives an accessor-keyed batch key for the field, single or list to match the accessor's cardinality. No extra directive is needed.
-* *Explicit `@sourceRow`.* When the catalog cannot derive the key (e.g. the payload carries a raw FK column instead of a typed record), declare a lifter that takes the parent and returns a `RowN` of the FK column values.
-
-The `recentlyCreatedFilms` example exercises the lifter path:
-
-[source,graphql]
-----
-# backed by ...CreateFilmPayload via the recentlyCreatedFilms @service producer's return type
-type CreateFilmPayload {
-    languageId: Int!
-    language: [Language!]!
-        @sourceRow(
-            className: "...CreateFilmPayloadLifter",
-            method: "liftLanguageId"
-        )
-}
-
-type Query {
-    recentlyCreatedFilms: [CreateFilmPayload!]!
-        @service(service: {className: "...CreateFilmPayloadService", method: "recentlyCreatedFilms"})
-}
-----
-
-The service hand-rolls three payloads with `languageId`s `(1, 2, 1)`. The framework's lifter-driven `DataLoader` dispatches one batched language lookup with the deduplicated key set `{1, 2}`, not three. The full decision tree for which path applies (and the four backing-class variants) lives in xref:result-types.adoc[How-to: Result-type variants].
+When the return type is a class-backed type (a custom payload whose backing class is reflected from this `@service` method's return type), each row in the service's result has children that the framework still resolves. If the payload's canonical record-component accessor returns the right shape (a `TableRecord` subclass, `List<TableRecord>`, or `Set<TableRecord>` whose element matches the child field's `@table`), the classifier auto-derives an accessor-keyed batch key for the field, single or list to match the accessor's cardinality. No extra directive is needed. A payload that carries only a key's value gives the accessor a record with just its primary key set. The full decision tree (and the four backing-class variants) lives in xref:result-types.adoc[How-to: Result-type variants].
 
 === `Map<Key, Value>`: child `@service` with the mapped-batch shape
 
@@ -371,50 +346,23 @@ public static Map<AktivitetRecord, String> hentBeskrivelser(
         Set<AktivitetRecord> keys, DSLContext ctx) { ... }
 ----
 
-`AktivitetRecord` names the key: the framework resolves it to the `aktivitet` table and keys the batch on that table's primary key. For the parent to supply it, one of three things must hold:
+`AktivitetRecord` names the key: the framework resolves it to the `aktivitet` table and keys the batch on that table's primary key. For the parent to supply it, one of two things must hold:
 
 * the parent's backing class *is* an `AktivitetRecord`, or
-* the parent's backing class exposes exactly one zero-arg accessor returning `AktivitetRecord`, or
-* the field declares `@sourceRow(className: ..., method: ...)` naming a public static method that takes the parent and returns an `AktivitetRecord`.
+* the parent's backing class exposes exactly one zero-arg accessor returning `AktivitetRecord`.
 
-Reach for the third when the parent class is not yours to edit, or when more than one accessor returns the declared record and the build asks you to break the tie:
+As everywhere else on the `@service` path, the records the framework hands you carry the key columns and nothing else, even when the accessor it read them from returned a fully populated record. Fetch the rest through the injected `DSLContext`, in one query for the batch.
 
-[source,graphql]
-----
-    beskrivelse: String @service(
-        service: {className: "no.example.TekstService", method: "hentBeskrivelser"}
-    ) @sourceRow(className: "no.example.AktivitetKeyLifter", method: "key")
-----
-
-[source,java]
-----
-public final class AktivitetKeyLifter {
-    public static AktivitetRecord key(Aktivitet parent) {
-        var r = new AktivitetRecord();
-        r.setAktivitetId(parent.aktivitetId());
-        return r;
-    }
-}
-----
-
-The declared producer wins over accessor inference wherever both would apply: writing it is how you say which record is the key, and inference does not run under it.
-
-As everywhere else on the `@service` path, the records the framework hands you carry the key columns and nothing else, even when the accessor or producer it read them from returned a fully populated record. Fetch the rest through the injected `DSLContext`, in one query for the batch.
-
-If none of the three holds, the build fails:
+If neither holds, the build fails:
 
 ....
 @service on 'Aktivitet.beskrivelse' declares a batch key of 'AktivitetRecord'
 (table 'aktivitet'), but the parent type's backing class 'no.example.Aktivitet'
 cannot produce one. Either be that record, or expose a zero-arg accessor
-returning 'AktivitetRecord' on that class, or declare
-@sourceRow(className: ..., method: ...) on the field naming a public static
-method that takes the parent and returns 'AktivitetRecord'. The third route is
-the one for a class that is not yours to edit, or a parent that carries only
-scalar key columns.
+returning 'AktivitetRecord' on that class.
 ....
 
-Two shapes are rejected by name rather than guessed at: more than one accessor returning the declared record (which of them produces the key is not determined by the element type alone, so declare the producer to break the tie), and an accessor or producer returning many of them (a child `@service` batches one key per parent, which is what its `Map<Key, Value>` return means).
+Two shapes are rejected by name rather than guessed at: more than one accessor returning the declared record (which of them produces the key is not determined by the element type alone, so leave exactly one), and an accessor returning many of them (a child `@service` batches one key per parent, which is what its `Map<Key, Value>` return means).
 
 === One DataLoader per request, per field
 

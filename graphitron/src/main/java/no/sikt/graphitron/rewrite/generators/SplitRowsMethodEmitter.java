@@ -60,10 +60,9 @@ public final class SplitRowsMethodEmitter {
      * scalar value out of a {@code RowN}-shaped DataLoader key's cell. {@code RowN} keys are
      * constructed via {@code DSL.row(value, ...)}, which wraps each scalar in a bind
      * {@code Param}; jOOQ's {@code Row} exposes cells only as {@code Field}s, so the value is
-     * recovered through the {@code Param} narrowing. For generator-built keys the cast always
-     * holds; for {@code @sourceRow} lifter keys it is a documented contract: a lifter that
-     * builds its {@code RowN} from column references (not scalar values) gets this diagnostic
-     * instead of a silently mistyped bind. Emitted once per fetcher class that has any
+     * recovered through the {@code Param} narrowing. Every key is generator-built, so the cast
+     * holds; a key built from column references would get this diagnostic instead of a silently
+     * mistyped bind. Emitted once per fetcher class that has any
      * Row-keyed parent-input rows method (gate in {@link TypeFetcherGenerator}).
      */
     public static MethodSpec buildParentKeyCellValueHelper() {

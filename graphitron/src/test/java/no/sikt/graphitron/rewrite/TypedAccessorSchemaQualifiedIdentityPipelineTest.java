@@ -107,7 +107,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
         var reason = ((UnclassifiedField) field).rejection().message();
         assertThat(reason)
             .contains("BatchedTableField")
-            .contains("requires a typed accessor or @sourceRow")
+            .contains("requires a typed accessor to lift the batch key")
             .contains("no FK metadata for the parent class");
     }
 }

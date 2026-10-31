@@ -1094,7 +1094,6 @@ not currently generate:
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | Return `@table` with `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`, keyed lookup arm) | *Nothing.* Single cardinality is rejected at validate time (single-cardinality `@lookupKey` is not supported); the list spelling passes validation and reaches no emission, because the batched-lookup cell has no producer. Pinned as the corpus's one recorded launcher-production gap by the `record-method` example
-| Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `BatchedTableField` (Record-sourced, `KeyLift.Lifter`; keyed lookup arm when `@lookupKey` is present) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
 |===
 
 === Input Fields (resolved against the consuming field's table)

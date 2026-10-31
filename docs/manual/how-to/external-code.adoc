@@ -17,7 +17,7 @@ The recipe is one ordinary `<dependency>` block on the consumer module:
 ----
 <dependencies>
     <!-- Carries the @service / @externalField / @condition /
-         @sourceRow / @enum target classes, plus the Java classes that back
+         @enum target classes, plus the Java classes that back
          class-backed types (reflected from their producers). -->
     <dependency>
         <groupId>com.example</groupId>

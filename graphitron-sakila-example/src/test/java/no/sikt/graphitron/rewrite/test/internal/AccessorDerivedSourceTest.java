@@ -20,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * End-to-end execution test for the accessor-derived source path.
  *
- * <p>Cousin of {@link MutationPayloadLifterTest}: instead of the {@code @sourceRow}
- * directive, the parent record-backed type {@code CreateFilmsPayload} carries a typed
+ * <p>The parent record-backed type {@code CreateFilmsPayload} carries a typed
  * zero-arg accessor returning {@code List<FilmRecord>}, and the classifier auto-derives a
  * {@link no.sikt.graphitron.rewrite.model.KeyLift.Accessor} lift ({@code Arity.MANY}) without any
  * directive. The DataFetcher dispatches via {@code DataLoader.loadMany}; the rows-method

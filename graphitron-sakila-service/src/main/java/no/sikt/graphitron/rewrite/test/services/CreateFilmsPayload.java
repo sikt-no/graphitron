@@ -8,7 +8,7 @@ import java.util.List;
  * Fixture: free-form {@code @record} payload exposing a typed zero-arg accessor returning
  * {@code List<FilmRecord>}. The classifier auto-derives an accessor-derived batch key
  * from the {@code films()} accessor (record-canonical) and the {@code FilmRecord}'s mapped
- * jOOQ table; no {@code @sourceRow} directive needed.
+ * jOOQ table.
  *
  * <p>Used by {@code AccessorDerivedSourceTest} alongside {@link CreateFilmsPayloadService}.
  * The schema's {@code CreateFilmsPayload.films: [Film!]!} field has no batching directive; the

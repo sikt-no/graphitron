@@ -1,6 +1,6 @@
 # Every Java code reference an author can write, one row per reference at the position it was
 # written. The vocabulary decides what a reference is: a value it types ExternalCodeReference,
-# wherever that value sits, and @sourceRow, which names a class and a method without the input type.
+# wherever that value sits.
 # Nothing here is resolved, so the class names need not exist; each method is named for its site so
 # the rows below say which site wrote them.
 #
@@ -16,7 +16,6 @@ type Film @table(name: "film") {
   lengthBand: String
     @externalField(reference: {className: "example.Ref"})
   language: Language
-    @sourceRow(className: "example.Ref", method: "sourceRowOnField")
   # A condition at each of the three places @condition may sit.
   actors(name: String @condition(condition: {className: "example.Ref", method: "conditionOnArgument"})): [Actor!]!
     @condition(condition: {className: "example.Ref", method: "conditionOnField"})
@@ -70,7 +69,6 @@ extend schema @expectEquals(relation: "graphitron_ast_code_reference_entry", row
   class_name,         method
   example.Ref,        serviceOnField
   example.Ref,
-  example.Ref,        sourceRowOnField
   example.Ref,        conditionOnArgument
   example.Ref,        conditionOnField
   example.Ref,        conditionOnInputField

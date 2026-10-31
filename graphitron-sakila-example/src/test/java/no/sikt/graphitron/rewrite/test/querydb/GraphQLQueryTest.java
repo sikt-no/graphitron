@@ -3037,7 +3037,7 @@ class GraphQLQueryTest {
                     .isNull());
     }
 
-    // ===== @splitQuery / @sourceRow over a converter-backed domain key =====
+    // ===== @splitQuery over a converter-backed domain key =====
     //
     // converter_campus.org_code -> converter_org.org_code is a BIGINT domain (org_code_domain)
     // whose jOOQ columns carry Converter<Long, String> (OrgCodeStringConverter), so the DataLoader
@@ -3082,30 +3082,6 @@ class GraphQLQueryTest {
             .extractingByKey("campuses", as(list(Map.class)))
             .extracting(c -> c.get("campusName"))
             .containsExactly("Trondheim", "Gjøvik");
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void sourceRowLifter_converterBackedLeafPkKey_extractsParamValueAndBinds() {
-        // @sourceRow leaf-PK arm: the lifter's Row1<String> cells are DSL.row(value) bind Params;
-        // the generated parentKeyCellValue helper extracts the scalar and rebinds it at
-        // converter_org.org_code's Converter DataType. Live pin for the Param contract — a lifter
-        // building its RowN from column references would throw the helper's IllegalStateException
-        // instead of silently mistyping the bind.
-        QUERY_COUNT.set(0);
-        Map<String, Object> data = execute(
-            "{ converterOrgSummaries { orgCode org { orgName } } }");
-        // 1 round-trip: the service hand-rolls the payloads; only the batched org fetch hits JDBC
-        // (three parents dedup to two distinct keys in one query).
-        assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        assertThat(data).extractingByKey("converterOrgSummaries", as(list(Map.class)))
-            .extracting(s -> s.get("orgCode"),
-                s -> ((List<Map<String, Object>>) s.get("org")).stream()
-                    .map(o -> o.get("orgName")).toList())
-            .containsExactly(
-                tuple("1120", List.of("NTNU")),
-                tuple("186", List.of("UiT")),
-                tuple("1120", List.of("NTNU")));
     }
 
     // ===== Converter-diverged foreign key =====
@@ -3527,25 +3503,6 @@ class GraphQLQueryTest {
         List<Map<String, Object>> cities = (List<Map<String, Object>>) data.get("citiesByCountryName");
         assertThat(cities).extracting(c -> c.get("cityName"))
             .containsExactlyInAnyOrder("Lethbridge", "Rome", "Tokyo");
-    }
-
-    /**
-     * The {@code @sourceRow}-declared batch key on a child {@code @service}: the parent carries
-     * only scalar key columns, so neither producer inference can serve it and the directive's
-     * static producer is the only route to a key. Three parents share two languages, and the
-     * service encodes the batch's own size into each value, so a regression to per-parent dispatch
-     * reports {@code @1} rather than {@code @2} and this test names it.
-     */
-    @Test
-    void languageSummaries_declaredKeyProducer_batchesThreeParentsIntoOneCall() {
-        Map<String, Object> data = execute("{ languageSummaries { languageId label languageName } }");
-        assertThat(data).extractingByKey("languageSummaries", as(list(Map.class)))
-            .as("one batched call over the two distinct keys the three parents dedup to")
-            .extracting(s -> s.get("label"), s -> s.get("languageName"))
-            .containsExactly(
-                tuple("first", "English@2"),
-                tuple("second", "Italian@2"),
-                tuple("third", "English@2"));
     }
 
     // ===== Unmasked @service-child SourceKey projection =====
@@ -9833,8 +9790,8 @@ class GraphQLQueryTest {
     // ===== Arm-switch: @table DataLoader data field under a root @service Outcome payload =====
     //
     // submitFilmReviewWithFilm returns a FilmReviewWithFilmPayload whose `film` field is a
-    // @table-bound DataLoader lookup (record-sourced BatchedTableField, @sourceRow leaf-PK keyed off the payload's
-    // filmId) sibling to the WrapperArm errors field. Both arms run
+    // @table-bound DataLoader lookup (record-sourced BatchedTableField keyed off the primary key of the
+    // FilmRecord the payload carries) sibling to the WrapperArm errors field. Both arms run
     // against the real generated fetchers: the success arm batch-loads the Film off
     // Outcome.Success.value(); the error arm narrows Success, sees the ErrorList arm, and returns
     // completedFuture(null) before key extraction (no NPE on a missing key), rendering film: null
@@ -9843,8 +9800,8 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void submitFilmReviewWithFilm_validInput_armSwitchLoadsFilmAndNullErrors() {
-        // Happy path: service returns the payload (reviewId = 5 * 10000 + 1 = 50001, filmId = 1).
-        // The film fetcher narrows Outcome.Success, lifts filmId off success.value(), and
+        // Happy path: service returns the payload (reviewId = 5 * 10000 + 1 = 50001, film 1's key).
+        // The film fetcher narrows Outcome.Success, takes the key off success.value()'s film, and
         // batch-loads film 1 (ACADEMY DINOSAUR); errors resolves null on the Success arm
         // (null, not [], so the wire honours the nullable errors field's SDL nullability).
         Map<String, Object> data = execute("""
@@ -9859,11 +9816,9 @@ class GraphQLQueryTest {
         var payload = assertThat(data).extractingByKey("submitFilmReviewWithFilm", as(MAP));
         payload.containsEntry("reviewId", 50001);
         payload.containsEntry("errors", null);
-        var only = payload.extractingByKey("film", as(list(Map.class)))
-            .hasSize(1)
-            .element(0, as(MAP));
-        only.containsEntry("filmId", 1);
-        only.containsEntry("title", "ACADEMY DINOSAUR");
+        var film = payload.extractingByKey("film", as(MAP));
+        film.containsEntry("filmId", 1);
+        film.containsEntry("title", "ACADEMY DINOSAUR");
     }
 
     @Test

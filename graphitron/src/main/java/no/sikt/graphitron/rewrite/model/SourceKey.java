@@ -23,8 +23,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  *
  * <ul>
  *   <li>{@link #columns()}: entry-point columns for the rows-method's parent-input VALUES
- *       table: target-side columns for the catalog-FK / accessor arms, first-hop source-side
- *       columns for the {@code @sourceRow + @reference} chain.</li>
+ *       table: target-side columns for the catalog-FK / accessor arms.</li>
  *   <li>{@link #wrap()}: the Java shape of one key row (see {@link Wrap}). Stored where the
  *       shape is authored (the {@code @splitQuery} source-shape choice, the {@code @service}
  *       {@code Sources} signature); derived from the lift arm ({@link KeyLift#wrap()}) where it

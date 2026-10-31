@@ -119,7 +119,6 @@ class FieldKeyRowPinTest {
             out.put(cf.parentTypeName() + "." + cf.name(), switch (lift) {
                 case KeyLift.FkColumns x -> "COLUMNS ONE";
                 case KeyLift.ProducedRecords x -> "COLUMNS " + x.arity();
-                case KeyLift.Lifter x -> "SOURCE_ROW ONE " + x.lifter().methodName();
                 case KeyLift.Accessor x -> "ACCESSOR " + x.arity() + " " + x.accessor().methodName();
             });
         }

@@ -16,7 +16,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * the {@link KeyLift#checkResidueAgreement} construction rule.
  *
  * <p>These are the migrated homes of the retired {@code SourceKey} compact-constructor pairings
- * ({@code SourceRowsCall} ⇒ {@code Wrap.Row}, {@code AccessorCall} ⇒ {@code Wrap.Record}): the
+ * ({@code AccessorCall} ⇒ {@code Wrap.Record}): the
  * shape is now a total function of the lift arm, so a disagreeing stored wrap is
  * unrepresentable when the residue is constructed through the derivation — and
  * {@code checkResidueAgreement}, called from every lift-carrying {@link ChildField} compact
@@ -33,14 +33,9 @@ class KeyLiftTest {
         "getOwner",
         ClassName.bestGuess("com.example.jooq.tables.records.LanguageRecord"));
 
-    private static final LifterRef LIFTER = new LifterRef(
-        ClassName.bestGuess("com.example.lifters.PayloadLifters"),
-        "filmKey");
-
     @Test
     void wrapIsATotalDerivationOfTheArm() {
         assertThat(new KeyLift.FkColumns().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(new KeyLift.Lifter(LIFTER).wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(new KeyLift.Accessor(ACCESSOR, Arity.ONE).wrap())
             .isInstanceOf(SourceKey.Wrap.Record.class);
         assertThat(new KeyLift.ProducedRecords(Arity.MANY).wrap())
@@ -64,15 +59,5 @@ class KeyLiftTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("TestVariant")
             .hasMessageContaining("Accessor");
-    }
-
-    @Test
-    void residueAgreementRejectsLifterWithNonRowWrap() {
-        // The retired SourceRowsCall => Wrap.Row rejection, re-expressed.
-        var lift = new KeyLift.Lifter(LIFTER);
-        var key = new SourceKey(List.of(FILM_ID), new SourceKey.Wrap.Record());
-        assertThatThrownBy(() -> KeyLift.checkResidueAgreement(lift, key, "TestVariant"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Lifter");
     }
 }

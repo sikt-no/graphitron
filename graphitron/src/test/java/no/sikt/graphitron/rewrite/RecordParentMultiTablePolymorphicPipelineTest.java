@@ -318,8 +318,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(unc.rejection().message())
             .contains("polymorphic child field 'films'")
             .contains("requires a typed accessor")
-            .contains("HubRecord")
-            .contains("@sourceRow is not yet supported for polymorphic returns");
+            .contains("HubRecord");
     }
 
     // ===== Asymmetric-fragment fixture =====

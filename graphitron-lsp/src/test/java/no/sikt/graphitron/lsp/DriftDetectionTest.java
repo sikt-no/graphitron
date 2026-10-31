@@ -47,7 +47,6 @@ class DriftDetectionTest {
         assertThat(vocab.overlay()).containsKeys(
             new SchemaCoordinate.InputField("ExternalCodeReference", "className"),
             new SchemaCoordinate.InputField("ExternalCodeReference", "method"),
-            new SchemaCoordinate.DirectiveArg("sourceRow", "className"),
             new SchemaCoordinate.DirectiveArg("table", "name"),
             new SchemaCoordinate.DirectiveArg("field", "name")
         );

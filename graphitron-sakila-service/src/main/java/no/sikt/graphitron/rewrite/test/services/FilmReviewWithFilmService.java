@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+
 /**
  * Fixture for the {@code @service} behind
  * {@code Mutation.submitFilmReviewWithFilm}. Mirrors {@link FilmReviewService#submit}'s three-way
@@ -29,7 +31,10 @@ public final class FilmReviewWithFilmService {
         if (filmId == 999) {
             throw new FilmReviewMissingFilmException("film " + filmId + " not found");
         }
-        return new FilmReviewWithFilmPayload(rating * 10000 + filmId, filmId, java.util.List.of());
+        // A key-only record: the film field reads its key row off it, so only the primary key is set.
+        var film = new FilmRecord();
+        film.setFilmId(filmId);
+        return new FilmReviewWithFilmPayload(rating * 10000 + filmId, film, java.util.List.of());
     }
 
     /**

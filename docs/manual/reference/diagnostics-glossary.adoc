@@ -2,7 +2,7 @@
 :description: Every closed-set diagnostic code the rewrite validator emits, with a sample message line and the next concrete step for each one.
 :!toc:
 
-You probably arrived here because the build failed with a `[<kind>] <message>` line and you searched for it. The rest of this page is organised so the line you saw is the entry point: top-level kinds first, then the nine `unknown-name` attempt kinds (the most common shape), then the four `deferred` emit-block reasons, and finally the handful of structural errors common enough to be worth naming individually. Each entry leads with a sample line you can grep for.
+You probably arrived here because the build failed with a `[<kind>] <message>` line and you searched for it. The rest of this page is organised so the line you saw is the entry point: top-level kinds first, then the eight `unknown-name` attempt kinds (the most common shape), then the four `deferred` emit-block reasons, and finally the handful of structural errors common enough to be worth naming individually. Each entry leads with a sample line you can grep for.
 
 == Reading an error line
 
@@ -15,7 +15,7 @@ Every emitted error takes one of three forms. Pattern-match by prefix:
 [deferred] <message>
 ----
 
-The `did you mean: ...` suffix only appears for `UnknownName` variants (the nine attempt-kinds in this page); a structural `[author-error]` carries no candidate list. A `[deferred]` message is a self-contained statement that the feature is recognised but not yet generated; it carries no further suffix.
+The `did you mean: ...` suffix only appears for `UnknownName` variants (the eight attempt-kinds in this page); a structural `[author-error]` carries no candidate list. A `[deferred]` message is a self-contained statement that the feature is recognised but not yet generated; it carries no further suffix.
 
 Watch-mode (`mvn graphitron:dev`) groups errors by file and coordinate, then prints them under one heading per element; the `[<kind>]` prefix is preserved through the grouping so the typed signal is still legible.
 
@@ -94,15 +94,6 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 *Cause.* The `@service` (or `@externalField`) directive's `methodName:` argument (or the field-name default) did not match any static method on the resolved class. Candidates are the public static methods on that class with matching arity.
 
 *Next step.* Correct the method name or rebind via `argMapping:` if the parameter list shifted. xref:../how-to/external-code.adoc[How-to: Wire external Java code] covers the FQCN + method-name contract.
-
-[#attempt-lifter-method]
-=== lifter-method
-
-*Sample line.* `[author-error] @sourceRow method 'liftKeys' not found on com.example.Lifters; did you mean: liftKey`.
-
-*Cause.* The `@sourceRow` directive's `methodName:` argument did not match any static method on the resolved class. Candidates are the lifter-shape static methods (`(Set<Key>) -> Map<Key, Value>`) on that class.
-
-*Next step.* Correct the method name. The lifter must be a static method with the `(Set<Key>) -> Map<Key, Value>` shape.
 
 [#attempt-enum-constant]
 === enum-constant

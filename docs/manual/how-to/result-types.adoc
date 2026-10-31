@@ -10,10 +10,10 @@ include::../_generator-internals-note.adoc[]
 
 The sealed `GraphitronType.ResultType` hierarchy has four permits (`GraphitronType.java:89-141`). The classifier picks among them by reflecting on the backing class the producer yields (`TypeBuilder.buildResultType:513-546`):
 
-* *`JooqTableRecordType`*: backing class extends `org.jooq.TableRecord`. The catalog supplies FK metadata; child `@table` fields use xref:../reference/directives/reference.adoc[`@reference`] paths driven by the catalog, and `@sourceRow` is rejected (the path is already known).
+* *`JooqTableRecordType`*: backing class extends `org.jooq.TableRecord`. The catalog supplies FK metadata; child `@table` fields use xref:../reference/directives/reference.adoc[`@reference`] paths driven by the catalog.
 * *`JooqRecordType`*: backing class extends `org.jooq.Record` but not `TableRecord`. Same FK availability as table-records via the carried row type; the variant exists because a generic `Record` isn't bound to one canonical table.
-* *`JavaRecordType`*: backing class is a Java `record` (`cls.isRecord()`). The catalog has no FK metadata for the hand-written class. Child `@table` fields fall back to either accessor inference (a record component returning a typed jOOQ `TableRecord`) or `@sourceRow`.
-* *`PojoResultType`*: anything else (plain POJO, DTO, hand-rolled class with setters). Same accessor-vs-lifter contract as `JavaRecordType`.
+* *`JavaRecordType`*: backing class is a Java `record` (`cls.isRecord()`). The catalog has no FK metadata for the hand-written class. Child `@table` fields fall back to accessor inference (a record component returning a typed jOOQ `TableRecord`).
+* *`PojoResultType`*: anything else (plain POJO, DTO, hand-rolled class with setters). Same accessor contract as `JavaRecordType`.
 
 The classification check order is `isRecord` → `TableRecord` → `Record` → fallback to `PojoResultType`. `TableRecord` is checked before `Record` because every `TableRecord` is also a `Record`; the more specific match wins.
 
@@ -36,7 +36,7 @@ type FilmDetails {
 }
 ----
 
-Because `FilmRecord` is a jOOQ `TableRecord`, the rewrite reads `film_language_id_fkey` from the catalog and emits a column-keyed DataLoader for the `language` child. `@sourceRow` would be redundant here and is rejected at classify time. xref:split-vs-inline.adoc[`@splitQuery`] is also unnecessary on these fields: `classifyChildFieldOnResultType` never inspects it on record-parent table-bound fields, which are DataLoader-batched unconditionally.
+Because `FilmRecord` is a jOOQ `TableRecord`, the rewrite reads `film_language_id_fkey` from the catalog and emits a column-keyed DataLoader for the `language` child. xref:split-vs-inline.adoc[`@splitQuery`] is also unnecessary on these fields: `classifyChildFieldOnResultType` never inspects it on record-parent table-bound fields, which are DataLoader-batched unconditionally.
 
 Smallest jOOQ-record fixture: `FilmCard` (backed by `FilmRecord`, reflected from its producer) with a single scalar projection `filmId: Int @field(name: "film_id")`. Read-paths into and out of `FilmCard` flow through `FilmRecord` instances; only the PK is set when the parent is constructed via xref:../reference/directives/externalField.adoc[`@externalField`]'s `Field<FilmRecord>` shape, and other columns are batch-fetched on demand.
 
@@ -71,7 +71,7 @@ Backing class:
 public record CreateFilmsPayload(List<FilmRecord> films) {}
 ----
 
-The canonical record-component accessor `films(): List<FilmRecord>` is what the classifier picks up. No `@sourceRow`, no `@reference`; per request the framework gathers all parents' film keys and dispatches one batched lookup keyed on `film.film_id`.
+The canonical record-component accessor `films(): List<FilmRecord>` is what the classifier picks up. No directive, no `@reference`; per request the framework gathers all parents' film keys and dispatches one batched lookup keyed on `film.film_id`.
 
 The `Single` shape lives at `FilmCardWrapper`:
 
@@ -90,52 +90,29 @@ public record FilmCardData(FilmRecord film) {}
 
 The `film()` accessor returns one `FilmRecord` matching the child field's `Film` table. The classifier auto-derives the single-record accessor key; per request, all parents' single keys batch through `loader.load`, returning one `Film` row per distinct PK.
 
-== When to reach for `@sourceRow`
+== A parent that carries only the key's value
 
-Accessor inference works only when the backing class already carries a typed jOOQ record. If the parent only has the FK column as a primitive scalar (e.g., `Integer languageId` rather than `LanguageRecord language`), there is nothing for the classifier to reflect on and accessor inference fails. That's the `@sourceRow` case.
-
-The example schema's `CreateFilmPayload` is the canonical shape; its `@service` producer returns the backing class:
-
-[source,graphql]
-----
-# backed by no.sikt.graphitron.rewrite.test.services.CreateFilmPayload via its @service producer's return type
-type CreateFilmPayload {
-    languageId: Int!
-    language: [Language!]!
-        @sourceRow(
-            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
-            method: "liftLanguageId"
-        )
-}
-----
-
-Backing class and lifter:
+Accessor inference needs the backing class to carry a typed jOOQ record. A parent that carries only the key as a scalar (`Integer languageId` rather than `LanguageRecord language`) gives the classifier nothing to reflect on, so give the class the record instead. A record with only its primary key set is enough: the batch key is read off the record's primary key, and the child's rows are fetched by it.
 
 [source,java]
 ----
-public record CreateFilmPayload(Integer languageId) {}
+public record FilmReviewWithFilmPayload(Integer reviewId, FilmRecord film, List<?> errors) {}
 
-public final class CreateFilmPayloadLifter {
-    public static Row1<Integer> liftLanguageId(CreateFilmPayload p) {
-        return DSL.row(p.languageId());
-    }
-}
+var film = new FilmRecord();
+film.setFilmId(filmId);
+return new FilmReviewWithFilmPayload(reviewId, film, List.of());
 ----
 
-Per request the framework calls `liftLanguageId` once per parent, gathers the resulting `Row1<Integer>` keys, and dispatches a single `language_id IN (...)` batch. The lifter's `Row1<Integer>` matches the leaf table's primary key (`language.language_id`) by default; the per-position Java type is checked against the column's column class at build time.
+== Diagnostic when no accessor is available
 
-For multi-hop paths, compose with xref:join-with-references.adoc[`@reference`]: the lifter's `RowN` then matches the first FK hop's source-side columns rather than the leaf PK. Multi-column lifts use `Row2..RowN` (`ValuesJoinRowBuilder.MAX_ARITY = 22` is the upper bound). A mismatch between the lifter's arity and the derived parent-side tuple fails the build with the offending arity in the message.
-
-== Diagnostic when neither path is available
-
-A bare child `@table` reference on a `JavaRecordType` or `PojoResultType` parent — no accessor matching the field name, no `@sourceRow` — fails classification with:
+A bare child `@table` reference on a `JavaRecordType` or `PojoResultType` parent with no accessor matching the field name fails classification with:
 
 [quote]
-on a free-form DTO parent requires a typed accessor or @sourceRow to lift the batch key; the catalog has no FK metadata for the parent class. Either expose a typed accessor on the parent returning `List<...Record>`, `Set<...Record>`, or `...Record` (where `...Record` is the element type's jOOQ TableRecord); or add `@sourceRow(className: ..., method: ...)` optionally composed with `@reference`; or back the parent with a typed jOOQ TableRecord so the FK can be derived.
+on a free-form DTO parent requires a typed accessor to lift the batch key; the catalog has no FK metadata for the parent class. Either expose a typed accessor on the parent returning `List<...Record>`, `Set<...Record>`, or `...Record` (where `...Record` is the element type's jOOQ TableRecord); or back the parent with a typed jOOQ TableRecord so the FK can be derived.
 
 (`FieldBuilder.java:2765`.)
 
-The diagnostic is the entry point to the decision tree: pick whichever route fits the parent's shape best. If the backing class already carries a typed `TableRecord` (or `List<TableRecord>`), expose it as a public accessor matching the child field's name and inference takes over. If the parent only carries scalar FK columns, write a `@sourceRow`. If the parent is genuinely table-backed, add xref:../reference/directives/table.adoc[`@table`] so the type is table-bound and let the catalog drive the path.
+The diagnostic is the entry point to the decision tree: pick whichever route fits the parent's shape best. If the backing class already carries a typed `TableRecord` (or `List<TableRecord>`), expose it as a public accessor matching the child field's name and inference takes over. If the parent only carries scalar key columns, give it a key-only record as above. If the parent is genuinely table-backed, add xref:../reference/directives/table.adoc[`@table`] so the type is table-bound and let the catalog drive the path.
 
 == Picking a variant: a quick decision tree
 
@@ -143,14 +120,12 @@ The producer's return type determines the backing class. The only authoring choi
 
 * *Is the type already a jOOQ table?* Add xref:../reference/directives/table.adoc[`@table`]. Catalog-driven joins and column projection apply directly; you avoid the per-field lifting question.
 * *Is the type a hand-rolled wrapper around one or more jOOQ records?* Leave it class-backed; the producer returns the wrapper class. The classifier picks `JooqTableRecordType` (if the class extends `TableRecord`), `JooqRecordType` (generic `Record`), or `JavaRecordType` / `PojoResultType` for hand-rolled classes; child `@table` fields use accessor inference when the wrapper exposes typed accessors.
-* *Is the type a service-result DTO with only scalar fields?* Leave it class-backed (the producer returns the DTO), plus `@sourceRow` on each child `@table` field. The lifter extracts the FK column(s) the DTO carries and feeds them into the batched join.
-* *Mixing the two on the same parent?* Yes; different children can mix accessor inference and `@sourceRow` on the same parent class, because the per-field classification runs once per child. The same backing class can carry typed accessors for some fields and primitive scalars (lifted into batch keys) for others.
-* *Is the child resolved by a `@service` rather than by a join?* Leave it class-backed and let the service signature name the key: the `Sources` element type (`Set<XRecord>`) says which table the batch keys on, and the parent must be able to produce an `XRecord`. Accessor inference does not apply (it matches by the child field's name, and the `@service` key is name-free), but the parent's three producer routes do: *be* an `XRecord`, expose exactly one zero-arg accessor returning one, or declare `@sourceRow` naming a static method that returns one. On this path the directive returns the `Sources` element record itself, not the `RowN` tuple it returns on a join-resolved child. See xref:handle-services.adoc#batching-class-backed[How-to: Handle services].
+* *Is the type a service-result DTO with only scalar fields?* Leave it class-backed (the producer returns the DTO), and give the DTO a typed record for each child `@table` field to key off, a key-only record where that is all it has.
+* *Is the child resolved by a `@service` rather than by a join?* Leave it class-backed and let the service signature name the key: the `Sources` element type (`Set<XRecord>`) says which table the batch keys on, and the parent must be able to produce an `XRecord`. Accessor inference does not apply (it matches by the child field's name, and the `@service` key is name-free), but the parent's two producer routes do: *be* an `XRecord`, or expose exactly one zero-arg accessor returning one. See xref:handle-services.adoc#batching-class-backed[How-to: Handle services].
 
 == Constraints and gotchas
 
 * *Table-bound and class-backed are exclusive on an output type.* The type is either jOOQ-table-bound (`TableType`, via `@table`) or backed by a Java class reflected from its producer (`ResultType`). *Input* types are never table-bound (`@table` on an input is a deprecated location and is ignored): an input is class-backed when a consuming method parameter reflects to a class, otherwise its fields resolve against each consuming field's table.
-* *`@sourceRow` is rejected on `JooqTableRecordType` and `JooqRecordType` parents.* The catalog already supplies the path; use `@reference`. The diagnostic names the directive that's redundant.
 * *Accessor inference rejects bridge and synthetic methods.* If a backing class has a generic-typed accessor that the compiler erases through a bridge method, the bridge is filtered out before name matching. The user-visible accessor (the canonical declared method) is what the classifier sees.
 * *`@splitQuery` on record-parent table-bound fields is redundant but not rejected.* `classifyChildFieldOnResultType` never inspects the directive on these fields; record-parent children are DataLoader-batched unconditionally.
 * *Service methods returning a class-backed type feed straight into the resolver.* The xref:../reference/directives/service.adoc[`@service`] return type *is* the binding, and the framework projects through it without an extra round trip.

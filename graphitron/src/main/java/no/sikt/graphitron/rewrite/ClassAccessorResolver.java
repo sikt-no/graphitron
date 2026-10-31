@@ -39,7 +39,7 @@ import java.util.Set;
  * no SDL field name to match against, so it shares the member filter and none of the name rules.
  *
  * <p>Part of the rewrite's reflection roster ({@code ServiceCatalog}, {@code FieldBuilder}'s
- * payload-errors path, {@code SourceRowDirectiveResolver}); see
+ * payload-errors path); see
  * {@code docs/architecture/principles/development-principles.adoc} ("The parse boundary is a
  * containment invariant") for the boundary rule.
  */

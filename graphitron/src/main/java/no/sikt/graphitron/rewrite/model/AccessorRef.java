@@ -11,12 +11,8 @@ import com.palantir.javapoet.ClassName;
  * parent's backing class exposes a single matching accessor (name-and-shape rule documented in
  * that classifier method). Carried by {@link KeyLift.Accessor}.
  *
- * <p>Sibling of {@link LifterRef}: a lifter is a developer-supplied static method on a separate
- * utility class returning the batch-key tuple directly; an accessor is an instance method on the
- * parent's backing class returning one or many {@code TableRecord}s, from whose PK columns the
- * batch-key tuple is projected at emit time. {@link StaticProducerRef} is this record's static
- * twin on the batched child {@code @service} path, where the author declares the producing method
- * instead of the classifier inferring one.
+ * <p>An accessor is an instance method on the parent's backing class returning one or many
+ * {@code TableRecord}s, from whose PK columns the batch-key tuple is projected at emit time.
  *
  * <p>{@code parentBackingClass} is the javapoet {@link ClassName} of the parent's backing class,
  * the cast target on {@code env.getSource()} in the emitted fetcher; resolved at the classifier

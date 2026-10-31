@@ -11,7 +11,6 @@ import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.KeyLift;
-import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.model.jooq.TableRef;
@@ -196,10 +195,6 @@ class GeneratorUtils {
      * with the arity-bearing arms forking on their own {@link Arity}; the emit shape per arm
      * lives in the private helpers below.
      *
-     * <p>On the {@link KeyLift.Lifter} arm, leaf-PK and {@code @reference}-composed shapes share
-     * emit logic; the path identity is carried first-class on the leaf's {@code joinPath} but not
-     * consumed here.
-     *
      * <p>{@code sourceExpr} is the Java expression the backing object is read from before the
      * cast, stated by every caller (there is deliberately no {@code env.getSource()}-defaulting
      * overload): callers obtain it from a {@link ParentSourceBinding}, whose prelude has already
@@ -223,8 +218,6 @@ class GeneratorUtils {
         return switch (lift) {
             case KeyLift.FkColumns ignored ->
                 buildFkRowKey(sourceKey.columns(), keyType, resultType, sourceExpr);
-            case KeyLift.Lifter l ->
-                buildLifterRowKey(l.lifter(), keyType, resultType, sourceExpr);
             case KeyLift.Accessor ac ->
                 ac.arity() == Arity.MANY
                     ? buildAccessorKeyMany(sourceKey, keyOwnerTable, ac.accessor(), keyType, sourceExpr)
@@ -305,16 +298,6 @@ class GeneratorUtils {
             .build();
     }
 
-    private static CodeBlock buildLifterRowKey(
-            LifterRef lifter, TypeName keyType,
-            GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
-        ClassName backingClass = backingClassOf(resultType);
-        return CodeBlock.builder()
-            .addStatement("$T key = $T.$L(($T) $L)",
-                keyType, lifter.declaringClass(), lifter.methodName(), backingClass, sourceExpr)
-            .build();
-    }
-
     private static CodeBlock buildAccessorKeySingle(
             SourceKey sourceKey, TableRef elementTable, AccessorRef accessor,
             TypeName keyType, CodeBlock sourceExpr) {
@@ -389,18 +372,6 @@ class GeneratorUtils {
             .endControlFlow()
             .endControlFlow();
         return b.build();
-    }
-
-    private static ClassName backingClassOf(GraphitronType.ResultType resultType) {
-        if (resultType instanceof GraphitronType.PojoResultType.Backed b) {
-            return ClassName.bestGuess(b.fqClassName());
-        }
-        if (resultType instanceof GraphitronType.JavaRecordType jrt) {
-            return ClassName.bestGuess(jrt.fqClassName());
-        }
-        throw new IllegalStateException(
-            "KeyLift.Lifter must come from a PojoResultType.Backed or JavaRecordType parent; got "
-            + resultType.getClass().getSimpleName());
     }
 
     /**
@@ -599,11 +570,6 @@ class GeneratorUtils {
      * extraction, not in the pre-registration prelude, so a throwing developer accessor routes
      * through the same disposition as the rest of the synchronous key read instead of escaping
      * {@code DataFetcher.get()} unrouted.
-     *
-     * <p>The lifter arm is that arm verbatim with a static call in place of the instance one: the
-     * author-declared producer can return {@code null} for the same reasons, and what follows the
-     * call is the same PK copy into a fresh record by jOOQ field identity, so "the keys carry the
-     * key columns, and nothing else" holds even when the producer populated more.
      */
     static CodeBlock buildServiceKeyExtraction(SourceKey sourceKey, ServiceKeySource keySource) {
         return switch (keySource) {
@@ -620,18 +586,6 @@ class GeneratorUtils {
                     ClassName.get("java.util.concurrent", "CompletableFuture"))
                 .endControlFlow()
                 .add(buildKeyExtraction(sourceKey, acc.keyOwner(), CodeBlock.of("keyRecord")))
-                .build();
-            case ServiceKeySource.FromLifter lifted -> CodeBlock.builder()
-                .addStatement("$T keyRecord = $T.$L(($T) env.getSource())",
-                    ClassName.bestGuess(lifted.producer().elementClass()),
-                    ClassName.bestGuess(lifted.producer().declaringClass()),
-                    lifted.producer().methodName(),
-                    ClassName.bestGuess(lifted.producer().parentBackingClass()))
-                .beginControlFlow("if (keyRecord == null)")
-                .addStatement("return $T.completedFuture(null)",
-                    ClassName.get("java.util.concurrent", "CompletableFuture"))
-                .endControlFlow()
-                .add(buildKeyExtraction(sourceKey, lifted.keyOwner(), CodeBlock.of("keyRecord")))
                 .build();
         };
     }

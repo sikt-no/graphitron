@@ -169,7 +169,7 @@ class RelationRegistrationGateTest {
             "graphitron_ast_field_binding_entry", "graphitron_ast_field_condition_entry",
             "graphitron_ast_field_condition_context_arg_entry",
             "graphitron_ast_service_entry", "graphitron_ast_service_context_arg_entry",
-            "graphitron_ast_external_field_entry", "graphitron_ast_source_row_entry",
+            "graphitron_ast_external_field_entry",
             "graphitron_ast_connection_entry", "graphitron_ast_field_node_id_entry",
             "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
             "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",

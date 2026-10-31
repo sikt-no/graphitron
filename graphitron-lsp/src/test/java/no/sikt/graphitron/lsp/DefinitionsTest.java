@@ -281,18 +281,6 @@ class DefinitionsTest {
     }
 
     @Test
-    void sourceRowFlatClassNameJumpsToClassDeclaration() {
-        var file = file("""
-            type Foo {
-                bar: Int @sourceRow(className: "no.sikt.graphitron.rewrite.test.services.PriceService", method: "price")
-            }
-            """);
-        var pos = pointAt(file, 1, "no.sikt.graphitron.rewrite.test.services.PriceService");
-        var loc = compute(file, pos).orElseThrow();
-        assertThat(loc.getUri()).endsWith("PriceService.java");
-    }
-
-    @Test
     void recordClassNameReturnsEmptyByCarveOut() {
         // @record is deprecated/ignored; its className binds no class even though the coordinate is
         // shared with @enum.

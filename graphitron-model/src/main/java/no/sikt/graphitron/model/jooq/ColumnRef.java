@@ -10,8 +10,8 @@ package no.sikt.graphitron.model.jooq;
  * {@code Field.getType().getName()}. For a scalar column this is a source-form FQCN
  * (e.g. {@code "java.lang.Integer"}); for an array-typed column it is the JVM <em>binary</em>
  * descriptor (e.g. {@code "[Ljava.lang.Boolean;"}). Both forms are retained verbatim because both
- * are recoverable: consumers such as {@code EnumMappingResolver} ({@code Class.forName}) and
- * {@code SourceRowDirectiveResolver} ({@code Class.getName()} compares) read the name directly, and
+ * are recoverable: consumers such as {@code EnumMappingResolver} ({@code Class.forName}) read the
+ * name directly, and
  * a consumer that wants the type as the emit library spells it lifts it through
  * {@code CatalogRefs.columnType}.
  *

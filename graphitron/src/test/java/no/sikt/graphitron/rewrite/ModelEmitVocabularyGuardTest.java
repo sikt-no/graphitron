@@ -49,7 +49,6 @@ class ModelEmitVocabularyGuardTest {
         "DomainReturnType.java",
         "HelperRef.java",
         "InputRecordShape.java",
-        "LifterRef.java",
         "MappingEntry.java",
         "MethodRef.java",
         "OutputField.java",

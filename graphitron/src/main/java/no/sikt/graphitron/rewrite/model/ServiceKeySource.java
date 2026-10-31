@@ -55,7 +55,6 @@ public sealed interface ServiceKeySource {
             case FromTableRow ignored -> SourceShape.Table;
             case FromHeldRecord ignored -> SourceShape.Record;
             case FromAccessor ignored -> SourceShape.Record;
-            case FromLifter ignored -> SourceShape.Record;
         };
     }
 
@@ -91,22 +90,6 @@ public sealed interface ServiceKeySource {
         public FromAccessor {
             Objects.requireNonNull(keyOwner, "keyOwner");
             Objects.requireNonNull(accessor, "accessor");
-        }
-    }
-
-    /**
-     * A class-backed parent whose {@code @sourceRow}-declared static method produces the key
-     * record from the parent. The accessor arm's static twin: the author names a producer the
-     * class does not itself expose, which is what lets a parent carrying only scalar key columns,
-     * or one whose class is not the author's to edit, host a batched child.
-     *
-     * <p>The declared method may return {@code null} for the same reason an accessor may, so the
-     * emitted fetcher guards the produced record before extracting.
-     */
-    record FromLifter(TableRef keyOwner, StaticProducerRef producer) implements ServiceKeySource {
-        public FromLifter {
-            Objects.requireNonNull(keyOwner, "keyOwner");
-            Objects.requireNonNull(producer, "producer");
         }
     }
 }

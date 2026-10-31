@@ -487,16 +487,12 @@ public record LspVocabulary(
 
         public static Map<SchemaCoordinate, Behavior> overlay() {
             var ecrClassName = new SchemaCoordinate.InputField("ExternalCodeReference", "className");
-            var sourceRowClassName = new SchemaCoordinate.DirectiveArg("sourceRow", "className");
             var out = new LinkedHashMap<SchemaCoordinate, Behavior>();
             out.put(ecrClassName, new Behavior.ClassNameBinding());
             out.put(new SchemaCoordinate.InputField("ExternalCodeReference", "method"),
                 new Behavior.MethodNameBinding(ecrClassName));
             out.put(new SchemaCoordinate.InputField("ExternalCodeReference", "argMapping"),
                 new Behavior.ArgMappingBinding());
-            out.put(sourceRowClassName, new Behavior.ClassNameBinding());
-            out.put(new SchemaCoordinate.DirectiveArg("sourceRow", "method"),
-                new Behavior.MethodNameBinding(sourceRowClassName));
             out.put(new SchemaCoordinate.DirectiveArg("table", "name"),
                 new Behavior.CatalogTableBinding());
             out.put(new SchemaCoordinate.DirectiveArg("field", "name"),

@@ -883,23 +883,6 @@ class DiagnosticsTest {
     }
 
     @Test
-    void unknownSourceRowClassProducesError() {
-        // @sourceRow has flat className/method directive args; the canonical
-        // overlay binds @sourceRow(className:) → ClassNameBinding so the
-        // same validator that fires inside ExternalCodeReference fires here too.
-        var file = file("""
-            type Foo {
-                bar: Int @sourceRow(className: "com.example.Missing", method: "foo")
-            }
-            """);
-
-        var diags = compute(file, withClasses);
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("Missing");
-    }
-
-    @Test
     void unknownReferencePathConditionClassProducesError() {
         var file = file("""
             type Foo {

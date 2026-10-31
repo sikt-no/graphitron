@@ -87,21 +87,6 @@ class MethodCompletionsTest {
     }
 
     @Test
-    void sourceRowMethodCompletesMethodsOfSiblingClassName() {
-        // The @sourceRow gap closes here on the method-binding side. @sourceRow's
-        // className: and method: are flat directive args, not nested in an
-        // ExternalCodeReference object. The canonical overlay's
-        // MethodNameBinding(@sourceRow(className:)) reads the sibling
-        // value off the directive's argument list directly.
-        String source = "type Foo { x: Int @sourceRow(className: \"" + SERVICE + "\", method: \"\") }\n";
-        Point cursor = new Point(0, source.lastIndexOf('"'));
-
-        var items = run(source, cursor, "sourceRow");
-
-        assertThat(items).extracting(i -> i.getLabel()).containsExactlyInAnyOrder("filmsByIds", "filmById");
-    }
-
-    @Test
     void cursorOutsideMethodReturnsEmpty() {
         // Cursor inside className:, not method:.
         String source = "type Query { x: Int @service(service: {className: \"" + SERVICE + "\", method: \"foo\"}) }\n";

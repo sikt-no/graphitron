@@ -33,20 +33,11 @@ type City @table(name: "city") {
       method: "stepCondition"}}])
 }
 
-# A @sourceRow has no relation of its own. It carried the class, the method and nothing else, so it
-# is rows of this relation told apart by the discriminator, which is the whole of the rule that
-# decides whether a site keeps a table.
 extend type Query {
   languages: [Language!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
     method: "getFilms"})
   cities: [City!]!
-}
-
-extend type Film {
-  language: Language @sourceRow(
-    className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
-    method: "sourceRow")
 }
 
 extend schema @assertContains(relation: "graphitron_method_reference_entry", rows: """
@@ -55,5 +46,4 @@ extend schema @assertContains(relation: "graphitron_method_reference_entry", row
   FIELD_CONDITION,       Language.films,    Language,  films,      ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   fieldCondition
   INPUT_FIELD_CONDITION, FilmFilter.title,  FilmFilter, title,     ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   inputFieldCondition
   FIELD_REFERENCE_STEP,  City.films#0[0],   City,      films,      0,       0,             no.sikt.graphitron.rewrite.generators.TestFilmService,   stepCondition
-  SOURCE_ROW,            Film.language,     Film,      language,   ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   sourceRow
   """)

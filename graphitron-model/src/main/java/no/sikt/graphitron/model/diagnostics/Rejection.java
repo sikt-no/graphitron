@@ -588,7 +588,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * tag for downstream tooling rather than an arm split.
      */
     enum AttemptKind {
-        COLUMN, TABLE, FOREIGN_KEY, SERVICE_METHOD, LIFTER_METHOD,
+        COLUMN, TABLE, FOREIGN_KEY, SERVICE_METHOD,
         ENUM_CONSTANT, TYPE_NAME, NODEID_KEY_COLUMN, DML_KIND
     }
 
@@ -750,11 +750,6 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /** {@link AuthorError.UnknownName} factory for service-method lookups. */
     static Rejection unknownServiceMethod(String summary, String attempt, List<String> candidates) {
         return new AuthorError.UnknownName(summary, AttemptKind.SERVICE_METHOD, attempt, candidates);
-    }
-
-    /** {@link AuthorError.UnknownName} factory for lifter-method lookups. */
-    static Rejection unknownLifterMethod(String summary, String attempt, List<String> candidates) {
-        return new AuthorError.UnknownName(summary, AttemptKind.LIFTER_METHOD, attempt, candidates);
     }
 
     /** {@link AuthorError.UnknownName} factory for type-name lookups (typename in {@code @nodeId}, refType lookups). */

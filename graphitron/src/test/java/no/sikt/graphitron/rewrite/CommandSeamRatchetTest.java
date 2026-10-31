@@ -108,8 +108,10 @@ class CommandSeamRatchetTest {
      * existing leaf. Lowered 67 to 64 when an errors field became an outcome's alone: the three
      * probes that read an {@code ErrorsField}'s transport went with the transport. Lowered 64 to
      * 63 when the same-row table child retired, its fetcher read in {@code bindRaw} with it.
+     * Lowered 63 to 61 when {@code @sourceRow} was removed: the lifter arms of the record-parent
+     * key extraction and the child service's key source went with it.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 63;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 61;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.

@@ -127,7 +127,6 @@ class BuildContext {
     // The pagination fact's gather owns this directive's read; the name has one home there.
     static final String DIR_AS_CONNECTION       = no.sikt.graphitron.facts.PaginationFactVisitor.DIR_AS_CONNECTION;
     static final String DIR_AS_FACET            = "asFacet";
-    static final String DIR_SOURCE_ROW          = "sourceRow";
     static final String DIR_PIVOT               = "pivot";
 
     // ===== Argument names =====
@@ -808,7 +807,7 @@ class BuildContext {
      * The scan is referentially transparent given a frozen schema and types.
      */
     private static final java.util.Set<String> FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES = java.util.Set.of(
-        DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_AS_CONNECTION, DIR_SPLIT_QUERY,
+        DIR_SERVICE, DIR_REFERENCE, DIR_AS_CONNECTION, DIR_SPLIT_QUERY,
         DIR_EXTERNAL_FIELD, DIR_CONDITION, DIR_LOOKUP_KEY, DIR_NOT_GENERATED,
         DIR_DEFAULT_ORDER, DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
 
@@ -1872,15 +1871,14 @@ class BuildContext {
      *       comparison is tautological. The hop's method parameters are validated by Check 2,
      *       not here.</li>
      *   <li>{@link JoinStep.LiftedHop} — unreachable; {@code @reference} path parsing never
-     *       produces a {@code LiftedHop} (single-hop terminal only, from the {@code @sourceRow}
-     *       leaf-PK arm, which passes a null start and so never reaches this gate).</li>
+     *       produces a {@code LiftedHop}.</li>
      * </ul>
      *
      * <p>Returns {@link TerminalTargetVerdict.NotApplicable} when {@code startSqlTableName} or
      * {@code returnTableRef} is null, or the path is empty: the check fires only for the
-     * inline/split output projection off a table-backed parent. The {@code @sourceRow} composition
-     * (null start) and input-field sites (null return table) are excluded — their paths are not the
-     * {@code $project(terminalAlias)} projection this invariant protects.
+     * inline/split output projection off a table-backed parent. Input-field sites (null return
+     * table) are excluded: their paths are not the {@code $project(terminalAlias)} projection this
+     * invariant protects.
      *
      * <p>The FK-derived arm compares the terminal hop's target against {@code returnTableRef}
      * by jOOQ table-class identity ({@link TableRef#denotesSameTableAs}), not the verbatim

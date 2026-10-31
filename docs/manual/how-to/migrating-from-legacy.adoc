@@ -305,7 +305,7 @@ Step 1 is non-optional and comes first (the schema does not load at all). Step 2
 * xref:../reference/directives/notGenerated.adoc[`@notGenerated`] is the directive surface this recipe expands; it carries the abridged migration matrix in tabular form.
 * xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the `@condition` cascade divergence end-to-end.
 * xref:handle-services.adoc[How-to: Handle services] is the destination for most `@notGenerated` migrations on root and split-query fields.
-* xref:result-types.adoc[How-to: Result-type variants] covers the class-backed-parent migration path (accessor inference vs `@sourceRow`), including the reflected backing-class shapes the retired `@record` directive used to declare.
+* xref:result-types.adoc[How-to: Result-type variants] covers the class-backed-parent migration path (accessor inference), including the reflected backing-class shapes the retired `@record` directive used to declare.
 * xref:global-id.adoc[How-to: Global object IDs] covers the `@node` / `@nodeId` declaration shapes this recipe migrates to.
 
 xref:index.adoc[← How-to index]

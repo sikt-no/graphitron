@@ -23,10 +23,9 @@ import no.sikt.graphitron.model.diagnostics.Arity;
  * totality fact ({@link #checkResidueAgreement}), not an emit input. {@code @service}-backed
  * fields never carry a lift: their key extraction is authored by the {@code Sources} signature.
  *
- * <p>The emitted key-row shape is a total derivation of the arm ({@link #wrap()}): the two
- * member-read arms pin their shape by contract (the accessor returns a {@code TableRecord}
- * projected to {@code RecordN<...>} keys; the {@code @sourceRows} lifter contract emits a
- * {@code RowN<...>}), and the column-read arms build {@code RowN<...>} tuples. Residue
+ * <p>The emitted key-row shape is a total derivation of the arm ({@link #wrap()}): the member-read
+ * arm pins its shape by contract (the accessor returns a {@code TableRecord} projected to
+ * {@code RecordN<...>} keys), and the column-read arms build {@code RowN<...>} tuples. Residue
  * {@link SourceKey}s on lift-carrying leaves are constructed through this derivation; the leaf
  * constructors pin the rule via {@link #checkResidueAgreement}.
  */
@@ -42,18 +41,6 @@ public sealed interface KeyLift {
      * source and the key is its PK tuple.
      */
     record FkColumns() implements KeyLift {}
-
-    /**
-     * {@code @sourceRow} static lifter producing the {@code RowN<...>} batch key from the
-     * parent's backing class: authored provenance for the member read the catalog cannot
-     * infer. Leaf-PK and {@code @reference}-composed shapes share this arm; the path identity
-     * lives on the leaf's {@code joinPath} / {@link ParentCorrelation.OnLiftedSlots}.
-     */
-    record Lifter(LifterRef lifter) implements KeyLift {
-        public Lifter {
-            Objects.requireNonNull(lifter, "lifter");
-        }
-    }
 
     /**
      * Typed zero-arg instance accessor on the parent's backing class returning a concrete jOOQ
@@ -93,7 +80,6 @@ public sealed interface KeyLift {
     default SourceKey.Wrap wrap() {
         return switch (this) {
             case FkColumns ignored       -> new SourceKey.Wrap.Row();
-            case Lifter ignored          -> new SourceKey.Wrap.Row();
             case Accessor ignored        -> new SourceKey.Wrap.Record();
             case ProducedRecords ignored -> new SourceKey.Wrap.Row();
         };
