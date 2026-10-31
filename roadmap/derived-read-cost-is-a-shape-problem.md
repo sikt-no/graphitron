@@ -486,11 +486,21 @@ pass and no stratum that clears and recomputes.
   below and on "Nothing resolves a path but the walk".
   * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
     `NodeIdCandidates`, `SpelledTables` and `ResolvedTypeBindings`; the path steps go with the walk.
-* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the two below.
+* **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
+  * **A defect is written by the gatherer whose facts it judges, marked and swept by its owner** `open`.
+    `graphitron_entry_defect` is owned by `derivation` and has one writer, `EntryDefects`, which
+    deletes a graph's rows and refills them from `graphitron_entry_defect_rule`, one view of some
+    fifty SELECTs. So no gatherer can write a defect about its own facts, every new rule grows a
+    derivation view, and a defect is judged after every gatherer rather than as early as its inputs
+    allow. Each `graphitron_defect_type` code names the gatherer that owns it; each gatherer writes
+    its own codes' rows in its anchor phase, marks them and sweeps only its own codes; the rule view
+    splits by owner, and `EntryDefects` leaves the stratum, lowering both ceilings. The relation, its
+    key and `graphitron_entry_defect_site` stay, so the editor and validate read one place. The first
+    owners beside the moved rules are the condition step's `CONDITION_NO_OVERLOAD_FOR_PAIR` and
+    `CONDITION_OVERLOAD_TIE` in the graphitron gatherer, and the routine seat's refusals.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
-    `CarrierDataFields` first, since a graphitron anchor reader sees the previous capture's rows.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
     `InputOccurrencePaths` and `AuthoredClaimRejectionRows` go with the relations they write.
 * **`FactSink` and `FactWrites` are gone, each writer stating its own insert** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". A capture site builds a generated record, sets one column at a time and hands it to a sink that assembles the insert at run time, with `FactWrites` overriding that for thirteen relations; the statement a writer issues is nowhere in its source. Twenty-nine relations still arrive that way: the legacy `graphitron_*_entry` decodes from `GraphitronFactCapture`, which leave with their node, then the schema inputs and extensions from `SdlFactCapture` and `SdlCoordinates`, the configuration from `StoredRecipe`, the Java declarations from `EmittedRegistry`, the build warnings, rejections, lint findings and javac diagnostics, and the `sql_` catalog from `JooqFactCapture`. Each writes through its own statement instead, set-based where it reads the store and bound once per row through `BindBatch` where it reads a corpus, the shape `GraphQLAstEntries` writes in. It absorbs R701, which stated the same end from the column side.
