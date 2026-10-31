@@ -1362,12 +1362,15 @@ is the paths themselves, keyed for members and occurrences, with inference and i
   a member a `@referenceFor` names on a single-table interface). The landing type is part of the key,
   so `MediaItem` and `ShortItem` landing on `film` are two needs.
 * `graphitron_path`, anchoring: one path a holder has. The need's key plus the target table, with its
-  origin (`WRITTEN`, `INHERITED`, `INFERRED`), the written anchor it follows (none where inferred), the
-  implementing type that inherited it, and for an argument or input field the step of its field's
-  path it starts from, by name. An inherited path is a row per implementation, so no reader joins
-  through implementations.
-* `graphitron_path_step`: one step a path takes, per path and place, with its from and to table and the
-  element it resolved (none where inferred), and the element's `as:` name.
+  origin (`WRITTEN`, `INHERITED`, `INFERRED`), the written anchor it follows by name (none where
+  inferred: the coordinate it was written on, `Person.homeAddress`, and the member a `@referenceFor`
+  names), the implementing type that inherited it, and for an argument or input field the step of its
+  field's path it starts from, by name. An inherited path is a row per implementation, so no reader
+  joins through implementations.
+* `graphitron_path_step`: one step a path takes, per path and place, with its from and to table, the
+  element it resolved as the written anchor by name and the element's place in its list (none where
+  inferred), and the element's `as:` name. The element's resolution in `graphitron_path_element_*`,
+  keyed by its position in its own file, is reached through the written element at that place.
 * One row per step and joined column pair, foreign key, condition overload, routine and routine
   parameter: `graphitron_path_step_column`, `_key`, `_method`, `_routine`, `_parameter`. The method is
   the one overload whose two table parameters take the step's from and to table.
@@ -1393,10 +1396,14 @@ segment carries, and two segments of one path under one name (R1099's).
 
 The element resolutions `graphitron_path_element_*` stay as they are.
 
-**Decided.** Inheritance is a row per implementation. A holder is keyed by its spelled coordinate,
-since a column per part of an occurrence would need a placeholder for the parts an output field's own
-path lacks. The landing type is a key column of a path. A path's start is a named step, so an inserted
-step moves nothing.
+**Decided.** A written position, a file's line and column, keys a fact only within that file; a
+reference that can cross files is anchored to names or to an element's place in its list, which an
+author chose and which do not move when the file around them is edited. So a holder is keyed by its
+coordinate spelled from names, a path names the written anchor it follows and a step the element's
+place, and a path's start is a step's `as:` name, so an inserted step moves nothing. This is not the
+use-site ordinal "A use site is identified by position" refuses: that ordinal counts applications
+on a field, which no author chose. Inheritance is a row per implementation, its written anchor
+possibly in another file. The landing type is a key column of a path.
 
 **Open.** A lifted parent's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How the
