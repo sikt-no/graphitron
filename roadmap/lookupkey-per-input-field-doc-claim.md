@@ -1,7 +1,7 @@
 ---
 id: R614
 title: "@lookupKey is declared for arguments only"
-status: Spec
+status: Ready
 bucket: docs
 priority: 4
 theme: docs
@@ -132,3 +132,10 @@ R866 is the item to discard at Done. Withheld on one finding.
    *Author:* the Goal now says how: every Graphitron 10 module's `<schemaInputs>` (named per
    module) are its own feature folders, no fs-plattform pom names `graphitron-directives`, and the
    parser pass finds `directive @lookupKey` declared in that file only.
+
+### Round 2: Spec -> Ready, approved (session_01WkW2JHe9idtwUqpKsp5KXe, 2026-10-31)
+
+Both round 1 findings are addressed. The Tests section now opens with the store's refusal as a
+fact document, which is the behaviour this item changes for an author and outlives the classifier,
+and the Goal shows how the bundled declaration is the only one a Graphitron 10 module reads.
+Approved.
