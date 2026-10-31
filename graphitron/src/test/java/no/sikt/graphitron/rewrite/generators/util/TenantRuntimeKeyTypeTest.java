@@ -271,7 +271,7 @@ class TenantRuntimeKeyTypeTest {
             // whose opaque segment keeps inherited-tenant batches tenant-homogeneous.
             .contains("static java.lang.String loaderName(")
             .contains("static java.lang.String tenantLoaderName(")
-            .contains("loaderName(env) + \" tenant:\"");
+            .contains("loaderName(env, parentType) + \" tenant:\"");
     }
 
     @Test

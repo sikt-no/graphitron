@@ -38,6 +38,10 @@ class DataLoaderFetcherEmitterTest {
         .addStatement("$T<Integer> keys = java.util.List.of()", LIST)
         .build();
     private static final CodeBlock TRIVIAL_TAIL = CodeBlock.of(".thenApply(java.util.function.Function.identity())");
+    private static final CodeBlock LOADER_NAME = CodeBlock.builder()
+        .addStatement("$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S",
+            String.class, String.class, "/", "@Film")
+        .build();
     private static final CodeBlock CATCH_BODY = CodeBlock.of("return $T.completedFuture(null);\n", CF);
 
     @Test
@@ -49,12 +53,12 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
+            LAMBDA, CodeBlock.of(""), KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY, LOADER_NAME);
 
         String src = spec.toString();
         assertThat(src).contains("public static java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>> films(");
         assertThat(src).contains("graphql.schema.DataFetchingEnvironment env");
-        assertThat(src).contains("name = java.lang.String.join(\"/\", env.getExecutionStepInfo().getPath().getKeysOnly())");
+        assertThat(src).contains("name = java.lang.String.join(\"/\", env.getExecutionStepInfo().getPath().getKeysOnly()) + \"@Film\"");
         assertThat(src).contains("org.dataloader.DataLoaderFactory.newDataLoader(");
         assertThat(src).contains("return loader.load(key, env)");
     }
@@ -68,7 +72,7 @@ class DataLoaderFetcherEmitterTest {
             "filmsByActor",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
+            LAMBDA, CodeBlock.of(""), KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY, LOADER_NAME);
 
         String src = spec.toString();
         assertThat(src).contains("org.dataloader.DataLoaderFactory.newMappedDataLoader(");
@@ -84,7 +88,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEYS_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
+            LAMBDA, CodeBlock.of(""), KEYS_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY, LOADER_NAME);
 
         String src = spec.toString();
         assertThat(src).contains("return loader.loadMany(keys, java.util.Collections.nCopies(keys.size(), env))");
@@ -99,7 +103,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
+            LAMBDA, CodeBlock.of(""), KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY, LOADER_NAME);
 
         // DataLoader<Integer, List<Record>> — first generic = key, second = loader's per-key V.
         assertThat(spec.toString())
@@ -116,7 +120,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, customTail, CATCH_BODY);
+            LAMBDA, CodeBlock.of(""), KEY_EXTRACTION, customTail, CATCH_BODY, LOADER_NAME);
 
         String src = spec.toString();
         assertThat(src).contains("return loader.load(key, env)");
@@ -135,7 +139,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
+            LAMBDA, CodeBlock.of(""), KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY, LOADER_NAME);
 
         String src = spec.toString();
         // Loader registration is outside the guard; the key extraction is inside it.

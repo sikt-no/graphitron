@@ -3190,9 +3190,13 @@ interface FilmCastMember { rowId: Int }
 type ActorMember implements FilmCastMember @table(name: "actor") {
     rowId: Int @field(name: "actor_id")
     name:  String @field(name: "first_name")
+    # Same-named @splitQuery field on both participants, each over its own table: the loader name
+    # carries the declaring type, so the two never share a loader.
+    films: [Film!]! @splitQuery @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}])
 }
 type FilmInventory implements FilmCastMember @table(name: "inventory") {
     rowId: Int @field(name: "inventory_id")
+    films: [Film!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
 }
 
 # R458 slice-3 fixture types (see Film.castByCondition / firstByCondition). ActorCondMember is

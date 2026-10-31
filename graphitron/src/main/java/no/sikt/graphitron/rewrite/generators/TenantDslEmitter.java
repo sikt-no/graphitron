@@ -355,8 +355,12 @@ final class TenantDslEmitter {
     }
 
     /**
-     * The DataLoader-name declaration for a batched field's registration site. Single-tenant
-     * builds and schema-free contexts keep the exact inline path join. Multi-tenant builds route
+     * The DataLoader-name declaration for a batched field's registration site. The name is the
+     * response path plus the declaring object type, so the same field name on two participants of
+     * one polymorphic field gets one loader per participant (each participant's rows method joins
+     * its own table). The parent type is a constant at the emission site; a context without one
+     * is a generator bug and fails loudly. Single-tenant builds and schema-free contexts emit the
+     * inline path join. Multi-tenant builds route
      * the recipe through the generated carrier's single naming seam: {@link TenantBinding.Inherited} fields read the
      * tenant-partitioned name (the handed-down tenant joins the path as an opaque segment, so
      * every loader batch is tenant-homogeneous and its captured environment routes the right
@@ -365,27 +369,29 @@ final class TenantDslEmitter {
      */
     static CodeBlock loaderNameDeclaration(TypeFetcherEmissionContext ctx, String fieldName,
                                            String localName, String outputPackage) {
+        String parentType = java.util.Objects.requireNonNull(ctx.parentTypeName(),
+            () -> "DataLoader name for field '" + fieldName + "' needs the declaring parent type");
         TenantBinding binding = routes(ctx) ? requireBinding(ctx, fieldName) : null;
         if (binding == null) {
             return CodeBlock.builder()
-                .addStatement("$T $L = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                    String.class, localName, String.class, "/")
+                .addStatement("$T $L = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S",
+                    String.class, localName, String.class, "/", "@" + parentType)
                 .build();
         }
         var tenantConnections = tenantConnectionsClass(outputPackage);
         var tenantPartitioned = CodeBlock.builder()
-            .addStatement("$T $L = $T.tenantLoaderName(env)", String.class, localName, tenantConnections)
+            .addStatement("$T $L = $T.tenantLoaderName(env, $S)", String.class, localName, tenantConnections, parentType)
             .build();
         var barePath = CodeBlock.builder()
-            .addStatement("$T $L = $T.loaderName(env)", String.class, localName, tenantConnections)
+            .addStatement("$T $L = $T.loaderName(env, $S)", String.class, localName, tenantConnections, parentType)
             .build();
         return switch (binding) {
             case TenantBinding.Inherited ignored -> tenantPartitioned;
             // The tenant is the parent row's value, declared by the key extraction ahead of the
             // name (the fetcher's key-first framing), so each loader batch is one tenant's.
             case TenantBinding.ParentRowBound ignored -> CodeBlock.builder()
-                .addStatement("$T $L = $T.tenantLoaderName(env, $L)",
-                    String.class, localName, tenantConnections, TENANT_KEY_LOCAL)
+                .addStatement("$T $L = $T.tenantLoaderName(env, $S, $L)",
+                    String.class, localName, tenantConnections, parentType, TENANT_KEY_LOCAL)
                 .build();
             // A fanned field's own loader batches its (untenanted) parents; the fan-out happens
             // inside the batch load, and children partition per tenant through the per-element

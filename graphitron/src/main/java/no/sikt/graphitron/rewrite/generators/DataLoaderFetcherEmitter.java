@@ -42,7 +42,14 @@ public final class DataLoaderFetcherEmitter {
      * Builds the DataFetcher MethodSpec. The fetcher's name is the GraphQL field name; its
      * declared return type is {@code CompletableFuture<DataFetcherResult<resultValueType>>}
      * (constructed by the caller via the same {@code asyncResultType} helper that wraps
-     * sync fetcher returns).
+     * sync fetcher returns). {@code preRegistrationPrelude} is emitted before the loader-name and
+     * {@code computeIfAbsent} registration, so a fetcher that is an immediate child of a flipped
+     * {@code Outcome} payload can narrow {@code env.getSource()} to {@code Outcome.Success} and
+     * {@code return CompletableFuture.completedFuture(null)} on the {@code ErrorList} arm
+     * <em>before</em> touching the loader registry (an empty prelude is the non-outcome path).
+     * {@code loaderNameDeclaration} is the loader-name statement, resolved per the field's tenant
+     * binding by {@code TenantDslEmitter.loaderNameDeclaration}; the name is the response path
+     * plus the declaring parent type.
      *
      * @param fieldName             the GraphQL field name; becomes the fetcher method's name.
      * @param keyType               the per-key element type, derived from
@@ -70,31 +77,7 @@ public final class DataLoaderFetcherEmitter {
      *                              {@code loader.loadMany(...)}; lifts the per-key value into a
      *                              {@code DataFetcherResult<P>} via {@code .thenApply(...)} and
      *                              routes any escaped throw via {@code .exceptionally(...)}.
-     */
-    public static MethodSpec build(
-            String fieldName,
-            TypeName keyType,
-            TypeName loaderValueType,
-            TypeName outerReturnType,
-            LoaderRegistration registration,
-            CodeBlock batchLoaderLambda,
-            CodeBlock keyExtraction,
-            CodeBlock asyncWrapTail,
-            CodeBlock syncCatchBody) {
-        return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
-            batchLoaderLambda, CodeBlock.of(""), keyExtraction, asyncWrapTail, syncCatchBody,
-            buildDataLoaderName());
-    }
-
-    /**
-     * Canonical form. {@code preRegistrationPrelude} is emitted before the loader-name and
-     * {@code computeIfAbsent} registration, so a fetcher that is an immediate child of a flipped
-     * {@code Outcome} payload can narrow {@code env.getSource()} to {@code Outcome.Success} and
-     * {@code return CompletableFuture.completedFuture(null)} on the {@code ErrorList} arm
-     * <em>before</em> touching the loader registry (an empty prelude is the non-outcome path).
-     * {@code loaderNameDeclaration} is the loader-name statement, resolved per the field's tenant
-     * binding by {@code TenantDslEmitter.loaderNameDeclaration}; the convenience overload
-     * defaults to the inline path join.
+     * @param loaderNameDeclaration the pre-built loader-name statement declaring {@code name}.
      */
     public static MethodSpec build(
             String fieldName,
@@ -192,20 +175,6 @@ public final class DataLoaderFetcherEmitter {
             .endControlFlow();
 
         return b.build();
-    }
-
-    /**
-     * Emits the path-scoped DataLoader name local: path keys joined by slash.
-     * {@code ResultPath.getKeysOnly()} returns named segments only (list indices stripped),
-     * so {@code /films/0/actors} and {@code /films/1/actors} share a key list and route to the
-     * same DataLoader; aliased uses of the same field get distinct path segments and distinct
-     * loaders.
-     */
-    private static CodeBlock buildDataLoaderName() {
-        return CodeBlock.builder()
-            .addStatement("$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                String.class, String.class, "/")
-            .build();
     }
 
     /**

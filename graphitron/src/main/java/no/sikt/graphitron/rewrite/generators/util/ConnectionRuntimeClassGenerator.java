@@ -2935,61 +2935,69 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static String loaderName(DataFetchingEnvironment env)}: the path-derived DataLoader
-     * name every multi-tenant registration site reads, so the naming recipe cannot drift between
-     * sites. Path keys only (list indices stripped), joined by {@code "/"}, exactly the
-     * single-tenant inline form.
+     * {@code static String loaderName(DataFetchingEnvironment env, String parentType)}: the
+     * DataLoader name every multi-tenant registration site reads, so the naming recipe cannot
+     * drift between sites. Path keys only (list indices stripped), joined by {@code "/"}, then
+     * {@code "@"} and the declaring parent type, exactly the single-tenant inline form. The
+     * parent type keeps same-named fields on different participants of one polymorphic field in
+     * separate loaders; {@code "@"} cannot occur in a GraphQL name or alias.
      */
     private static MethodSpec loaderName() {
         return MethodSpec.methodBuilder("loaderName")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addStatement("return String.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())", "/")
-            .addJavadoc("The path-derived DataLoader name: named path segments joined by {@code \"/\"}.\n"
-                + "The single naming seam for every multi-tenant loader registration site.\n")
+            .addParameter(String.class, "parentType")
+            .addStatement("return String.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S + parentType",
+                "/", "@")
+            .addJavadoc("The DataLoader name: named path segments joined by {@code \"/\"}, then\n"
+                + "{@code \"@\"} and the declaring parent type. The single naming seam for every\n"
+                + "multi-tenant loader registration site.\n")
             .build();
     }
 
     /**
-     * {@code static String tenantLoaderName(DataFetchingEnvironment env)}: the tenant-partitioned
-     * loader name for fields inheriting a divined tenant. Load-bearing, not cosmetic: a batch
-     * loader resolves one {@code DSLContext} from the environment captured at loader creation,
-     * so a tenant-mixed loader would execute every key against the first key's tenant. The
-     * tenant segment is an opaque partition key, never parsed back (the captured environment
-     * carries the typed tenant).
+     * {@code static String tenantLoaderName(DataFetchingEnvironment env, String parentType)}: the
+     * tenant-partitioned loader name for fields inheriting a divined tenant. Load-bearing, not
+     * cosmetic: a batch loader resolves one {@code DSLContext} from the environment captured at
+     * loader creation, so a tenant-mixed loader would execute every key against the first key's
+     * tenant. The tenant segment is an opaque partition key, never parsed back (the captured
+     * environment carries the typed tenant).
      */
     private static MethodSpec tenantLoaderName() {
         return MethodSpec.methodBuilder("tenantLoaderName")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addStatement("return tenantLoaderName(env, env.getLocalContext())")
+            .addParameter(String.class, "parentType")
+            .addStatement("return tenantLoaderName(env, parentType, env.getLocalContext())")
             .addJavadoc("The tenant-partitioned DataLoader name for a field inheriting a divined tenant:\n"
-                + "{@link #tenantLoaderName(DataFetchingEnvironment, Object)} over the handed-down\n"
-                + "tenant.\n")
+                + "{@link #tenantLoaderName(DataFetchingEnvironment, String, Object)} over the\n"
+                + "handed-down tenant.\n")
             .build();
     }
 
     /**
-     * {@code static String tenantLoaderName(DataFetchingEnvironment env, Object tenant)}: the
-     * naming recipe's one home. The one-argument form passes the handed-down tenant; a field that
-     * reads its tenant off the parent row passes that value, so its loaders partition per parent
-     * tenant the same way.
+     * {@code static String tenantLoaderName(DataFetchingEnvironment env, String parentType, Object tenant)}:
+     * the tenant-partitioned naming recipe's one home. The two-argument form passes the
+     * handed-down tenant; a field that reads its tenant off the parent row passes that value, so
+     * its loaders partition per parent tenant the same way.
      */
     private static MethodSpec tenantLoaderNameFor() {
         return MethodSpec.methodBuilder("tenantLoaderName")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(String.class, "parentType")
             .addParameter(Object.class, "tenant")
-            .addStatement("return loaderName(env) + $S + tenant", " tenant:")
+            .addStatement("return loaderName(env, parentType) + $S + tenant", " tenant:")
             .addJavadoc("The tenant-partitioned DataLoader name: {@link #loaderName} plus an opaque\n"
                 + "tenant segment (never parsed back), so each loader batch stays tenant-homogeneous\n"
                 + "and its captured environment routes the right source. The separator contains\n"
                 + "characters no GraphQL path segment can, so the segment cannot collide with a path\n"
                 + "suffix.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
+                + "@param parentType the declaring object type of the field\n"
                 + "@param tenant the tenant the loader's batch runs against\n")
             .build();
     }
