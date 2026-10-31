@@ -14,17 +14,19 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_LANDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.upper;
 
 /**
- * The anchor for the two relations behind a hop that leaves a table-valued function's result:
- * {@code sql_name_matched_key_column}, which states how such a hop is keyed, and
- * {@code intent_carrier_routine_hop}, the population that reaches that rule from a coordinate no
- * author wrote a path at.
+ * The anchor for the relation behind a hop that leaves a table-valued function's result,
+ * {@code sql_name_matched_key_column}, which states how such a hop is keyed, and for the two ends a
+ * routine write's carrier reaches it from at a coordinate no author wrote a path at: where the
+ * routine field's own path lands, and the table its payload data field's key row names.
  *
  * <p>The pairing relation is catalog only, so its cases assert against the test catalog's own
  * functions and tables and never scope by graph: {@code films_for_actor} exposes {@code film_id} and
@@ -110,12 +112,13 @@ class NameMatchedKeyPairTest {
         withCaptured(ANY_GRAPH, dsl -> assertThat(pairs(dsl, "films_for_actor", "film_list")).isEmpty());
     }
 
-    // ===== The carrier's inferred hop =====
+    // ===== The carrier's two ends =====
 
     /**
-     * The population the authored hop view cannot reach: the data field carries no {@code @reference}
-     * and the hop is inferred from the payload's shape, which is why the pairing rule is a relation
-     * of its own rather than an arm of a view keyed on the elements an author wrote.
+     * The population the authored hop view cannot reach: the data field carries no {@code @reference},
+     * so the hop runs from where the routine field's path lands to the table the data field's key row
+     * names, which is why the pairing rule is a relation of its own rather than an arm of a view keyed
+     * on the elements an author wrote.
      */
     @Test
     void aRoutineCarrierNamesTheHopItsDataFieldWillTake() {
@@ -133,7 +136,7 @@ class NameMatchedKeyPairTest {
             }
             """, dsl -> {
             assertThat(carrierHops(dsl))
-                .containsExactly("RentFilmPayload.rental rent_film->rental candidates=1");
+                .containsExactly("Mutation.rentFilm RentFilmPayload.rental rent_film->rental");
             assertThat(pairs(dsl, "rent_film", "rental"))
                 .containsExactly("0 rental_id=rental_id");
         });
@@ -181,12 +184,11 @@ class NameMatchedKeyPairTest {
     }
 
     /**
-     * Ambiguity is rows, and this one is real rather than hypothetical: the grounding memo keeps
-     * whichever producing field classified first, so a payload two routines return has one of its two
-     * departures silently dropped there and both of them stated here.
+     * A payload two routines return is two hops, one per producing field: each departs from its own
+     * routine's result, so neither is a candidate for the other's coordinate.
      */
     @Test
-    void twoProducersOfOnePayloadAreTwoCandidates() {
+    void twoProducersOfOnePayloadAreTwoHops() {
         withCaptured(ERRORS + """
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
             type RentFilmPayload {
@@ -202,14 +204,14 @@ class NameMatchedKeyPairTest {
                     @routine(name: "create_secure_note", argMapping: "pBody: body")
             }
             """, dsl -> assertThat(carrierHops(dsl)).containsExactly(
-                "RentFilmPayload.rental create_secure_note->rental candidates=2",
-                "RentFilmPayload.rental rent_film->rental candidates=2"));
+                "Mutation.noteFilm RentFilmPayload.rental create_secure_note->rental",
+                "Mutation.rentFilm RentFilmPayload.rental rent_film->rental"));
     }
 
     /**
-     * The hop is stated even where the pairing comes up short, which is where the carrier's rule
-     * parts company with the pairing's. The hop's departure is the one the producing field names,
-     * so the hop exists at a coordinate; the pairing exists only where the whole key is there.
+     * The two ends are stated even where the pairing comes up short, which is where the carrier
+     * parts company with the pairing's rule. The departure is the one the producing field names, so
+     * the ends exist at a coordinate; the pairing exists only where the whole key is there.
      *
      * <p>That split is what puts the refusal where it can be reported. The pairing says nothing,
      * because a catalog has nothing to say about two tables nobody asked to connect, and the hop
@@ -231,7 +233,7 @@ class NameMatchedKeyPairTest {
             }
             """, dsl -> {
             assertThat(carrierHops(dsl))
-                .containsExactly("NotePayload.rental create_secure_note->rental candidates=1");
+                .containsExactly("Mutation.noteFilm NotePayload.rental create_secure_note->rental");
             assertThat(pairs(dsl, "create_secure_note", "rental"))
                 .isEmpty();
         });
@@ -258,19 +260,26 @@ class NameMatchedKeyPairTest {
     }
 
     /**
-     * Every carrier hop the fixture graph holds, one string per row. Asserted whole so a payload that
-     * should name no hop cannot hide behind a filter.
+     * Every carrier hop the fixture graph holds, one string per row: the producing field, the data
+     * field, where the producing field's routine path lands and the table the data field's key row
+     * names. Asserted whole so a payload that should name no hop cannot hide behind a filter.
      */
     private static List<String> carrierHops(DSLContext dsl) {
-        var h = INTENT_CARRIER_ROUTINE_HOP;
-        return dsl.select(h.TYPE_NAME, h.FIELD_NAME, h.FROM_TABLE, h.TO_TABLE, h.CANDIDATES)
-            .from(h)
-            .where(h.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .orderBy(h.TYPE_NAME, h.FIELD_NAME, h.FROM_TABLE)
+        var l = GRAPHITRON_FIELD_PATH_LANDING;
+        var t = GRAPHITRON_FIELD_TARGET;
+        var k = GRAPHITRON_FIELD_KEY_ROW;
+        return dsl.select(l.TYPE_NAME, l.FIELD_NAME, k.TYPE_NAME, k.FIELD_NAME, l.TABLE_NAME,
+                k.TABLE_NAME)
+            .from(l)
+            .join(t).on(t.GRAPH_NAME.eq(l.GRAPH_NAME), t.TYPE_NAME.eq(l.TYPE_NAME),
+                t.FIELD_NAME.eq(l.FIELD_NAME))
+            .join(k).on(k.GRAPH_NAME.eq(t.GRAPH_NAME), k.TYPE_NAME.eq(t.TARGET_TYPE_NAME),
+                k.KIND.eq("COLUMNS"))
+            .where(l.GRAPH_NAME.eq(CapturedStore.GRAPH), l.KIND.eq("ROUTINE"))
+            .orderBy(l.TYPE_NAME, l.FIELD_NAME)
             .fetch()
-            .map(row -> row.get(h.TYPE_NAME) + "." + row.get(h.FIELD_NAME) + " "
-                + lower(row.get(h.FROM_TABLE)) + "->" + lower(row.get(h.TO_TABLE))
-                + " candidates=" + row.get(h.CANDIDATES));
+            .map(row -> row.value1() + "." + row.value2() + " " + row.value3() + "." + row.value4()
+                + " " + lower(row.value5()) + "->" + lower(row.value6()));
     }
 
     /** The authored view's name-matched rows, so a case can say which of the two relations answered. */

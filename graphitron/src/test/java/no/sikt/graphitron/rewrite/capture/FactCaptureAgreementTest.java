@@ -150,8 +150,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       relation claims;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedKeyPairTest} binds the pair behind a hop
  *       out of a table-valued function's result, {@code sql_name_matched_key_column} stating how
- *       such a hop is keyed and {@code intent_carrier_routine_hop} the population that reaches that
- *       rule from a coordinate no author wrote a path at; the pairing half asserts against the test
+ *       such a hop is keyed, and a routine write's landing and key row the two ends that reach
+ *       that rule from a coordinate no author wrote a path at; the pairing half asserts against the test
  *       catalog's own functions without scoping by graph, the relation carrying no graph partition,
  *       and half of both halves pins what the relations refuse to hold, a rule pairing every
  *       function against every keyed table being mostly boundary;

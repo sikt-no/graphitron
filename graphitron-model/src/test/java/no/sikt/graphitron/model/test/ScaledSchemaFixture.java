@@ -28,7 +28,7 @@ public final class ScaledSchemaFixture {
      * payload type that wraps one nullable data field beside an errors channel, the channel a union
      * whose one member carries {@code @error}. That shape is what populates
      * {@code graphitron_errors_field} and the relations over it ({@code graphitron_producer_outcome},
-     * {@code intent_mutation_routine_seat}, {@code intent_carrier_routine_hop}), all of which held
+     * {@code intent_mutation_routine_seat}), all of which held
      * no rows here before it: the fixture's
      * only other {@code @routine} sits on the Query root, so the seat relation was empty, and
      * {@code Film0}'s {@code @reference} fields disqualify it from the carrier view. Scaled with the

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.emit;
 
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.tables.IntentFieldRoutineMethod;
+import no.sikt.graphitron.model.tables.GraphitronProducerRoutine;
 import no.sikt.graphitron.model.tables.IntentMutationRoutineSeat;
 import org.jooq.Field;
 import org.jooq.Record;
@@ -21,16 +21,18 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_LANDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_ROUTINE_SEAT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -314,14 +316,16 @@ public final class RoutineWriteQuery {
      * <p>The call surface, the routine's result table and its constants class are inner joins: an
      * admitted seat resolves a unique call surface by the verdict's own construction, so a missing
      * row means the verdict and the resolution disagree, and dropping the coordinate silently is
-     * worse. The carrier joins are left joins because a chain-seated coordinate has no carrier hop.
+     * worse. The carrier joins are left joins because a chain-seated coordinate has no carrier: its
+     * data field is the one of the payload with a key row, which names the table it re-reads.
      */
     private static List<RawRow> coordinateRows(StoreHandle store) {
         var s = INTENT_MUTATION_ROUTINE_SEAT;
-        var rm = INTENT_FIELD_ROUTINE_METHOD;
+        var pr = GRAPHITRON_PRODUCER_ROUTINE;
+        var sr = SQL_ROUTINE;
         var rt = SQL_TABLE.as("routine_result");
         var rs = SQL_SCHEMA.as("routine_schema");
-        var ch = INTENT_CARRIER_ROUTINE_HOP;
+        var k = GRAPHITRON_FIELD_KEY_ROW;
         var ct = SQL_TABLE.as("carrier_target");
         var cs = SQL_SCHEMA.as("carrier_schema");
         var df = GRAPHQL_FIELD.as("carrier_data_field");
@@ -329,25 +333,28 @@ public final class RoutineWriteQuery {
         return store.dsl()
             .select(s.TYPE_NAME, s.FIELD_NAME, s.SEAT, s.RETURN_TYPE_NAME,
                 mf.IS_LIST, df.IS_LIST,
-                rm.CLASS_NAME, rm.METHOD_NAME,
+                sr.ROUTINES_CLASS_FQN, sr.ROUTINES_METHOD_NAME,
                 rt.TABLE_NAME, rt.JOOQ_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN,
-                arguments(s, rm),
+                arguments(s, pr),
                 hops(s),
                 ct.TABLE_NAME, ct.JOOQ_NAME, ct.CLASS_FQN, cs.TABLES_CLASS_FQN)
             .from(s)
             .join(mf).on(mf.GRAPH_NAME.eq(s.GRAPH_NAME), mf.TYPE_NAME.eq(s.TYPE_NAME),
                 mf.FIELD_NAME.eq(s.FIELD_NAME))
-            .join(rm).on(rm.GRAPH_NAME.eq(s.GRAPH_NAME), rm.TYPE_NAME.eq(s.TYPE_NAME),
-                rm.FIELD_NAME.eq(s.FIELD_NAME), rm.ORDINAL.eq(s.ORDINAL), rm.CANDIDATES.eq(1))
-            .join(rt).on(rt.SOURCE_NAME.eq(rm.SOURCE_NAME), rt.TABLE_SCHEMA.eq(rm.TABLE_SCHEMA),
-                rt.TABLE_NAME.eq(rm.ROUTINE_NAME))
+            .join(pr).on(pr.GRAPH_NAME.eq(s.GRAPH_NAME), pr.TYPE_NAME.eq(s.TYPE_NAME),
+                pr.FIELD_NAME.eq(s.FIELD_NAME))
+            .join(sr).on(sr.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME),
+                sr.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA), sr.ROUTINE_NAME.eq(pr.ROUTINE_NAME),
+                sr.ROUTINES_CLASS_FQN.isNotNull())
+            .join(rt).on(rt.SOURCE_NAME.eq(sr.SOURCE_NAME), rt.TABLE_SCHEMA.eq(sr.TABLE_SCHEMA),
+                rt.TABLE_NAME.eq(sr.ROUTINE_NAME))
             .join(rs).on(rs.SOURCE_NAME.eq(rt.SOURCE_NAME), rs.TABLE_SCHEMA.eq(rt.TABLE_SCHEMA))
-            .leftJoin(ch).on(ch.GRAPH_NAME.eq(s.GRAPH_NAME), ch.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
-                ch.CANDIDATES.eq(1))
-            .leftJoin(df).on(df.GRAPH_NAME.eq(ch.GRAPH_NAME), df.TYPE_NAME.eq(ch.TYPE_NAME),
-                df.FIELD_NAME.eq(ch.FIELD_NAME))
-            .leftJoin(ct).on(ct.SOURCE_NAME.eq(ch.TO_SOURCE_NAME),
-                ct.TABLE_SCHEMA.eq(ch.TO_SCHEMA), ct.TABLE_NAME.eq(ch.TO_TABLE))
+            .leftJoin(k).on(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
+                k.KIND.eq("COLUMNS"), s.SEAT.eq("CARRIER"))
+            .leftJoin(df).on(df.GRAPH_NAME.eq(k.GRAPH_NAME), df.TYPE_NAME.eq(k.TYPE_NAME),
+                df.FIELD_NAME.eq(k.FIELD_NAME))
+            .leftJoin(ct).on(ct.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME),
+                ct.TABLE_SCHEMA.eq(k.TABLE_SCHEMA), ct.TABLE_NAME.eq(k.TABLE_NAME))
             .leftJoin(cs).on(cs.SOURCE_NAME.eq(ct.SOURCE_NAME), cs.TABLE_SCHEMA.eq(ct.TABLE_SCHEMA))
             .where(s.GRAPH_NAME.eq(store.graphName()), s.VERDICT.eq("ADMITTED"))
             .orderBy(s.TYPE_NAME, s.FIELD_NAME)
@@ -376,7 +383,7 @@ public final class RoutineWriteQuery {
      * runs.
      */
     private static Field<List<Argument>> arguments(IntentMutationRoutineSeat s,
-            IntentFieldRoutineMethod rm) {
+            GraphitronProducerRoutine pr) {
         var p = SQL_ROUTINE_PARAMETER;
         var m = GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
         var ms = GRAPHITRON_ARGMAPPING_SITE;
@@ -398,8 +405,8 @@ public final class RoutineWriteQuery {
                         .limit(1)),
                     p.JOOQ_NAME))
                 .from(p)
-                .where(p.SOURCE_NAME.eq(rm.SOURCE_NAME), p.TABLE_SCHEMA.eq(rm.TABLE_SCHEMA),
-                    p.ROUTINE_NAME.eq(rm.ROUTINE_NAME))
+                .where(p.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME), p.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA),
+                    p.ROUTINE_NAME.eq(pr.ROUTINE_NAME))
                 .orderBy(p.POSITION))
             .convertFrom(r -> r.map(Records.mapping(Argument::new)));
     }
@@ -536,11 +543,13 @@ public final class RoutineWriteQuery {
      * The carrier seat's captured key pairing: the routine result's column of each name beside the
      * arriving table's primary-key column of that name, in key order. The relation holds only total
      * pairings, since a capture missing one key column filters on a partial key and re-reads a row
-     * the write did not commit.
+     * the write did not commit. The routine result is where the field's own path lands, and the
+     * arriving table is the one the payload data field's key row names.
      */
     private static Map<Coordinate, List<Pair>> carrierPairs(StoreHandle store) {
         var s = INTENT_MUTATION_ROUTINE_SEAT;
-        var ch = INTENT_CARRIER_ROUTINE_HOP;
+        var l = GRAPHITRON_FIELD_PATH_LANDING;
+        var k = GRAPHITRON_FIELD_KEY_ROW;
         var nm = SQL_NAME_MATCHED_KEY_COLUMN;
         var src = SQL_COLUMN.as("source_column");
         var tgt = SQL_COLUMN.as("target_column");
@@ -550,17 +559,19 @@ public final class RoutineWriteQuery {
                 src.COLUMN_NAME, src.JOOQ_NAME, src.BINDING_TYPE,
                 tgt.COLUMN_NAME, tgt.JOOQ_NAME, tgt.BINDING_TYPE)
             .from(s)
-            .join(ch).on(ch.GRAPH_NAME.eq(s.GRAPH_NAME), ch.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
-                ch.CANDIDATES.eq(1))
-            .join(nm).on(nm.SOURCE_NAME.eq(ch.FROM_SOURCE_NAME),
-                nm.TABLE_SCHEMA.eq(ch.FROM_SCHEMA), nm.TABLE_NAME.eq(ch.FROM_TABLE),
-                nm.TO_SOURCE_NAME.eq(ch.TO_SOURCE_NAME), nm.TO_SCHEMA.eq(ch.TO_SCHEMA),
-                nm.TO_TABLE.eq(ch.TO_TABLE))
-            .join(src).on(src.SOURCE_NAME.eq(ch.FROM_SOURCE_NAME),
-                src.TABLE_SCHEMA.eq(ch.FROM_SCHEMA), src.TABLE_NAME.eq(ch.FROM_TABLE),
+            .join(l).on(l.GRAPH_NAME.eq(s.GRAPH_NAME), l.TYPE_NAME.eq(s.TYPE_NAME),
+                l.FIELD_NAME.eq(s.FIELD_NAME), l.KIND.eq("ROUTINE"))
+            .join(k).on(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.TYPE_NAME.eq(s.RETURN_TYPE_NAME),
+                k.KIND.eq("COLUMNS"))
+            .join(nm).on(nm.SOURCE_NAME.eq(l.TABLE_SOURCE_NAME),
+                nm.TABLE_SCHEMA.eq(l.TABLE_SCHEMA), nm.TABLE_NAME.eq(l.TABLE_NAME),
+                nm.TO_SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), nm.TO_SCHEMA.eq(k.TABLE_SCHEMA),
+                nm.TO_TABLE.eq(k.TABLE_NAME))
+            .join(src).on(src.SOURCE_NAME.eq(l.TABLE_SOURCE_NAME),
+                src.TABLE_SCHEMA.eq(l.TABLE_SCHEMA), src.TABLE_NAME.eq(l.TABLE_NAME),
                 src.COLUMN_NAME.eq(nm.COLUMN_NAME))
-            .join(tgt).on(tgt.SOURCE_NAME.eq(ch.TO_SOURCE_NAME),
-                tgt.TABLE_SCHEMA.eq(ch.TO_SCHEMA), tgt.TABLE_NAME.eq(ch.TO_TABLE),
+            .join(tgt).on(tgt.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME),
+                tgt.TABLE_SCHEMA.eq(k.TABLE_SCHEMA), tgt.TABLE_NAME.eq(k.TABLE_NAME),
                 tgt.COLUMN_NAME.eq(nm.TO_COLUMN))
             .where(s.GRAPH_NAME.eq(store.graphName()), s.VERDICT.eq("ADMITTED"),
                 s.SEAT.eq("CARRIER"))
