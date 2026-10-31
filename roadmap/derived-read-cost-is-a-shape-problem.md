@@ -111,8 +111,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `graphitron_path_element_*` beside the step hops. Ends at "Nothing resolves a path but the walk".
 * A routine-ended field's function in `graphitron_routine_result` and in
   `graphitron_field_path_landing`'s row with no place. Ends at "A routine's result is an object of its function's record class".
-* Argument and input-field walks from `graphitron_field_scope_table` beside the target. Ends at
-  "The argument readers read the target and its walk".
+* Argument and input-field paths from `graphitron_field_scope_table` beside the path relations. Ends at
+  "The readers read the paths, and the old path relations go".
 * `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
@@ -260,7 +260,7 @@ resolutions and links built beside it are gone.
   Applications compose in written order, a path the walk stops on has no column and only the path's
   defect, and an object field's directives resolve against `graphitron_field_target_table`.
   `graphitron_field_column_scope` is gone.
-* **Nothing resolves a path but the walk** `blocked`, on "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
+* **Nothing resolves a path but the walk** `blocked`, on "Arguments and input fields have paths from their field's path". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
   page says a path is read from source to target only.
 * **Every field has a path, the written one or the one discovery implies** `open`. Where nothing is written the one key between source and target
   is stated as path rows, so no reader falls back to discovery for itself, and the editor's
@@ -268,34 +268,62 @@ resolutions and links built beside it are gone.
 
 ### Arguments and input fields are resolved as fields are, from a target model `open`
 
-An argument or input field binds the way a field does: to a target table, the column or key it
-names there, and the path from its holder's target to it. Today `graphitron_field_scope_table`,
-`intent_input_occurrence_path`, `intent_input_occurrence_path_step`,
-`intent_argument_reference_step_hop` and the argument and input-field step targets derive that at
-read time; the `intent_argmapping_` relations go with "An argument path through input types is stored". The target model is the path model fields
-already have: every path is a row of one supertype, an output field's path is its one named subtype,
-and an input field's or argument's path is anonymous, walked by the same rules from the target of
-each field that uses it. R1099, the author-facing navigation over output fields, builds on this
-branch rather than modelling inputs again. Deferred on 2026-10-22: it starts after the work in hand.
+Every path a schema states or implies is a row in the store, and a field left without one is a
+defect at the field. A path belongs to an output field: its own path runs from the table of the type
+it is declared on to the type it returns, one path per pair of tables from its two ends; an
+argument's path is anchored at the argument; an input field's exists only per occurrence under an
+output field; both start on a step of their field's path, the one an author named with `as:`, or at
+its landing. The rules are stated in "User documentation (first-client check): paths" below, the
+relations in "Path model (draft)", and `scenarios/path-rules` asserts both. Today
+`graphitron_field_scope_table`, `intent_input_occurrence_path`, `intent_input_occurrence_path_step`,
+`intent_argument_reference_step_hop` and the argument and input-field step targets derive part of
+this at read time, keyed by field alone; the `intent_argmapping_` relations go with "An argument path through input types is stored". R1099, the
+author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
+this branch rather than modelling inputs again. Taken up on 2026-10-31.
 
-* **An argument's and an input field's target is modelled first, as tables** `open`.
-  `graphitron_path`, one row per path keyed by its holder's definition site with a kind (field,
-  input field, argument), and one subtype naming a path by the output field it is rooted in, the
-  only way a path is reused or addressed by name; declared with keys and grains before anything
-  writes them. Retires, through the nodes below, the argument and input-field walks from
-  `graphitron_field_scope_table`.
-* **The walk is keyed by the path** `blocked`, on "An argument's and an input field's target is modelled first, as tables". Start, steps, keys, columns, methods, routines, parameters and
-  stops move from (type, field) to the path, their readers with them, with a sis timing before and
-  after.
-* **The corpus is written against the target model** `blocked`, on "The walk is keyed by the path". Fact documents state each occurrence's walk:
-  an input type reused across fields and targets, nested inputs, interface and union targets, and
-  defects at the writing site naming the using field.
-* **Arguments and input fields walk from their field's target** `blocked`, on "The corpus is written against the target model". An input field's or argument's `@reference` is
-  captured as an anonymous path and started at the target table of each field that uses it, one
-  walk per occurrence, with no step relations of its own.
-* **The argument readers read the target and its walk** `blocked`, on "Arguments and input fields walk from their field's target". The condition, lookup-key, node-id and `argMapping`
-  readers move, and `graphitron_field_scope_table`, the argument and input-field step targets and
-  the `intent_` relations above go.
+* **The path relations are declared** `open`. `graphitron_ast_path_entry`, `graphitron_path_holder`,
+  `graphitron_path_need`, `graphitron_path`, `graphitron_path_step` with its column, key, method,
+  routine and parameter children, and `graphitron_path_stop`, declared with keys, grains and owners
+  before anything writes them, as "Path model (draft)" lists them. A key that can point into another
+  file names its target by coordinate or by an element's place in its list, never by line and
+  column.
+* **A condition step picks its overload by the step's two tables** `open`. A `{condition:}` step
+  keeps the overload of the method its element names whose two table parameters take the step's from
+  and to table, where `FieldPaths.methods` keeps every overload by name today; none is
+  `CONDITION_NO_OVERLOAD_FOR_PAIR` and two is `CONDITION_OVERLOAD_TIE`, entry defects at the element.
+  In kreg, removing one `barnCondition` overload passed classification and failed in javac on
+  generated code with no schema coordinate. Lands on today's field paths, which already carry both
+  tables per step.
+* **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "The path relations are declared".
+  `graphitron_path_holder` and `graphitron_path_need` are derived: each end expanded to its tables,
+  an interface with its own `@table` taken as one table, a member a `@referenceFor` names on a
+  single-table interface a need of its own. A need no path meets is `NO_ROUTE_TO_TARGET` or
+  `ROUTE_AMBIGUOUS` at the field that lacks it, and `@reference` on a target with no table of its
+  own is `REFERENCE_WITHOUT_TARGET_TABLE`.
+* **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
+  The one foreign key between two tables is a path of origin `INFERRED`, and a path written on an
+  interface's field is a row per implementation of origin `INHERITED`, resolved from the
+  implementation's own table; an implementation's own path overrides it. This settles
+  "Every field has a path, the written one or the one discovery implies".
+* **A path is keyed per pair of tables** `blocked`, on "Inference and inheritance are written into the store".
+  Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
+  to `graphitron_path`, their readers with them, with a sis timing before and after. A
+  `@referenceFor` application is a path to its member, and `graphitron_field_participant_path`,
+  written and read by nothing, goes.
+* **Arguments and input fields have paths from their field's path** `blocked`, on "A path is keyed per pair of tables".
+  An argument's path is anchored at the argument; an input field's written elements become a path
+  per occurrence, one holder per output field, argument and chain of input fields down to it. Both
+  start on the step of their field's path an author named with `as:`, or at its landing, and land on
+  their target type, the `@nodeId` type where one decodes.
+* **`scenarios/path-rules` runs** `blocked`, on "Arguments and input fields have paths from their field's path".
+  The draft below becomes a fact document, its `PathRulesFixtures` and defect codes added, and the
+  condition cases of the six documents it lists move into it.
+* **The readers read the paths, and the old path relations go** `blocked`, on "`scenarios/path-rules` runs".
+  The condition, lookup-key, node-id and `argMapping` readers move, and the relations
+  "Path model (draft)" lists as replaced go.
+* **The manual states the path rules** `blocked`, on "The readers read the paths, and the old path relations go" and "A manual example is a query over a fact document".
+  `reference.adoc`, `referenceFor.adoc` and `how-to/polymorphic-types.adoc` take the docs draft below,
+  its examples rendered from query files over `scenarios/path-rules`.
 * **A `@referenceFor` the classification never reaches draws no participant defect** `open`.
   `ReferenceForParticipantDefects` gates its input-field arm only on the input type being consumed
   somewhere, and `intent_input_occurrence_path` is seeded from every argument with no domain
@@ -328,7 +356,7 @@ branch rather than modelling inputs again. Deferred on 2026-10-22: it starts aft
   carrying `@nodeId`, `@referenceFor` or `@reference`. The enumeration prunes an input type none of
   whose reachable fields carries one. "A chain of input types costs its occurrences, not its paths"
   bounds the same walk from the other side.
-* **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `blocked`, on "Arguments and input fields walk from their field's target".
+* **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `blocked`, on "Arguments and input fields have paths from their field's path".
   The landing and participant arms read the walk from the using field's target, and the occurrence,
   scope, resolving, step-target and decode relations go, with `graphitron_node_id_instruction` once
   "Encode and decode read the target type, and the old node-id relations go" lands. Neither side
@@ -675,7 +703,7 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
   * **A generating harness captures the run's output coordinates** `done`.
   * **The output package is read from the store** `done`.
-  * **The tenant column and the session hook signature are captured** `blocked`, on "An argument's and an input field's target is modelled first, as tables" and "The generator builds no schema".
+  * **The tenant column and the session hook signature are captured** `blocked`, on "The path relations are declared" and "The generator builds no schema".
     `<tenantColumn>` is one pattern, matched against database names as jOOQ matches them: a Java
     regular expression, case-insensitive, whole-name against `column`, `table.column` or
     `schema.table.column`, so a plain name matches what it matched before. The fact is per matched
@@ -923,7 +951,7 @@ relations keep a private model of the route; both are replaced from scratch, rea
   `TABLE_NODE`), and a shape the manual refuses is a defect row, never a capture failure.
 * **An input field's use site is a graphitron_ relation** `open`. A definition joined to the
   consumer that uses it is modelled in the store rather than read from an `intent_` view.
-* **The chain reaches the target type** `blocked`, on "Arguments and input fields walk from their field's target". A `@nodeId` coordinate's forward walk ends at a table checked against its target type,
+* **The chain reaches the target type** `blocked`, on "Arguments and input fields have paths from their field's path". A `@nodeId` coordinate's forward walk ends at a table checked against its target type,
   or, when bare, the table its `TABLE_NODE` type is read from.
 * **Encode and decode read the target type, and the old node-id relations go** `blocked`, on "The chain reaches the target type". The generator, filter and carrier roles read the new relations,
   and `graphitron_node_id_instruction` and the `graphitron_node_id_decode_*` relations are deleted.
@@ -1163,8 +1191,8 @@ targets, `Store`. `@nodeId` says only how to read the id.
 ### Draft fact document: `scenarios/path-rules.graphqls`
 
 One document covers the rules, one field per rule, so the manual's examples select from it through
-query files beside the pages rather than carrying SDL of their own. It cannot run before "The walk is keyed by the path"
-lands; it is the document "The corpus is written against the target model" asks for, and the
+query files beside the pages rather than carrying SDL of their own. It cannot run before "A path is keyed per pair of tables"
+lands; it is the document "`scenarios/path-rules` runs" asks for, and the
 condition parts of `undecided/field-path-and-participant-path`, `undecided/condition-method-route`,
 `undecided/condition-method-route-departures`, `undecided/field-path-condition`,
 `defects/reference-step-target-refused` and `defects/argument-reference-step-target-chain` move into
