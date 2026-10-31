@@ -1,13 +1,13 @@
 ---
 id: R1134
 title: "An argument @condition(override: true) is rejected as an unbound column before the override is considered"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-30
+last-updated: 2026-10-31
 ---
 
 # An argument @condition(override: true) is rejected as an unbound column before the override is considered

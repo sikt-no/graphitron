@@ -1,13 +1,13 @@
 ---
 id: R1136
 title: "A @referenceFor condition that cannot be resolved does not say why"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: diagnostics
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-30
+last-updated: 2026-10-31
 ---
 
 # A @referenceFor condition that cannot be resolved does not say why

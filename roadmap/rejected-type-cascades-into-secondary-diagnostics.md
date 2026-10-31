@@ -1,13 +1,13 @@
 ---
 id: R1137
 title: "A rejected @error type cascades into misleading diagnostics on the types around it"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: diagnostics
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-30
+last-updated: 2026-10-31
 ---
 
 # A rejected @error type cascades into misleading diagnostics on the types around it

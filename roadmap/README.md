@@ -32,20 +32,20 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1135` | A custom scalar coercing an array or a parameterized list has no valid shape | Spec | 2026-10-30 | [plan](custom-scalar-over-array-column.md) |
-| `R1134` | An argument @condition(override: true) is rejected as an unbound column before the override is considered | Spec | 2026-10-30 | [plan](argument-condition-override-rejected-as-unbound.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1136` | A @referenceFor condition that cannot be resolved does not say why | Spec | 2026-10-30 | [plan](referencefor-condition-failure-names-the-reason.md) |
+| `R1135` | A custom scalar coercing an array or a parameterized list has no valid shape | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](custom-scalar-over-array-column.md) |
+| `R1134` | An argument @condition(override: true) is rejected as an unbound column before the override is considered | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](argument-condition-override-rejected-as-unbound.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
-| `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Spec | 2026-10-30 | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
+| `R1136` | A @referenceFor condition that cannot be resolved does not say why | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](referencefor-condition-failure-names-the-reason.md) |
+| `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-10-29 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
@@ -430,7 +430,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R851` [**Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves**](corpus-directives-to-expect-equals.md) — Spec, testing, blocked by [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)
 - `R1139` [**A field-level @condition(override: true) over an argument that matches no column is rejected as unbound**](field-condition-override-over-unbound-argument.md) — Backlog, bug, blocked by [argument-condition-override-rejected-as-unbound](argument-condition-override-rejected-as-unbound.md)
-- `R1134` [**An argument @condition(override: true) is rejected as an unbound column before the override is considered**](argument-condition-override-rejected-as-unbound.md) — Spec, bug
+- `R1134` [**An argument @condition(override: true) is rejected as an unbound column before the override is considered**](argument-condition-override-rejected-as-unbound.md) — Ready, bug
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
@@ -485,8 +485,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R931` [**Reject a synthesised Connection or Edge name that exactly collides with another registered type**](synthesised-type-exact-name-collision.md) — Backlog, bug
-- `R1136` [**A @referenceFor condition that cannot be resolved does not say why**](referencefor-condition-failure-names-the-reason.md) — Spec, bug
-- `R1137` [**A rejected @error type cascades into misleading diagnostics on the types around it**](rejected-type-cascades-into-secondary-diagnostics.md) — Spec, bug
+- `R1136` [**A @referenceFor condition that cannot be resolved does not say why**](referencefor-condition-failure-names-the-reason.md) — Ready, bug
+- `R1137` [**A rejected @error type cascades into misleading diagnostics on the types around it**](rejected-type-cascades-into-secondary-diagnostics.md) — Ready, bug
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R557` [**Completeness sweep for @splitQuery applications: every marker consumed, inert-by-construction, or rejected**](split-query-marker-sweep.md) — Backlog, validation
 - `R655` [**Residue from the @service phase split: unpinned Scalar trigger, dropped Table filter, stale catalog test names**](service-phase-split-residue.md) — Backlog, cleanup
@@ -676,7 +676,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R1076` [**_entities answers a representation with an unknown __typename with an error, not a silent null**](entities-unknown-typename-is-an-error.md) — Backlog, bug
-- `R1135` [**A custom scalar coercing an array or a parameterized list has no valid shape**](custom-scalar-over-array-column.md) — Spec, bug
+- `R1135` [**A custom scalar coercing an array or a parameterized list has no valid shape**](custom-scalar-over-array-column.md) — Ready, bug
 - `R1111` [**A routine argument mapped from a computed $source column looks up a parentInput field typed with its generator**](routine-source-column-strips-generator.md) — Backlog, bug
 - `R1078` [**An enum-typed output field over a jOOQ-enum column is not checked against the Java enum constants**](enum-output-over-jooq-enum-column-unchecked.md) — Backlog, bug
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture
