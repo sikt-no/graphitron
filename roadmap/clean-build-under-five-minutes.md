@@ -97,6 +97,52 @@ The module graph bounds what reactor parallelism can do. After `graphitron-model
 `graphitron-sakila-db`, `graphitron-model`, `graphitron`, `graphitron-maven-plugin`,
 `graphitron-sakila-example`: about 1200 s today, most of it the two big test phases.
 
+### Re-profile after steps 1, 2 and 4
+
+The table above predates the steps and a good deal of trunk movement, so one clean recorded build
+was taken again: plain `mvn clean install -Plocal-db` (sequential, the build the 23:09 came from) on
+a 4-core, 16 GB machine at trunk, `settings=default`, load 1.1 at the start, `BUILD SUCCESS` with
+every test passing, 37:15 wall (2,238 s). The mojo times sum to 2,231 s and the project windows are
+disjoint, so the reactor is sequential and the split below is exclusive. This is not the 16-core
+reference machine, and its numbers are about twice those where a phase is CPU-bound and about the
+same where the test pool is the limit; the shape is the finding.
+
+[cols="3,1,1,4"]
+|===
+| Module | Seconds | Share | Largest goals
+
+| `graphitron` | 924 | 41% | tests 774, `generate-test-schemas` exec 109, test compile 30
+| `graphitron-model` | 452 | 20% | tests 367, compile 58, jOOQ codegen 20
+| `graphitron-sakila-example` | 255 | 11% | tests 136, `graphitron:generate` 75, compile 25
+| `graphitron-lsp` | 224 | 10% | tests 218
+| `graphitron-maven-plugin` | 184 | 8% | invoker 103, tests 59, descriptor 18
+| `graphitron-mcp` | 64 | 3% | tests 57
+| `roadmap-tool`, `docs`, `sakila-db`, the rest | about 130 | 6% | tests 33, asciidoctor 27, jOOQ codegen 25
+|===
+
+By goal, surefire is 1,644 s (74%), `compiler:compile` 123 s, the `graphitron` test-schema exec 109 s,
+the plugin's invoker run 103 s, `graphitron:generate` 75 s, test compile 48 s. The module critical
+path, `sakila-db`, `graphitron-model`, `graphitron`, `graphitron-maven-plugin`,
+`graphitron-sakila-example`, is 1,845 s of the 2,238, and the other four modules overlap only if the
+reactor is parallel and the cores are free.
+
+Two things in it were not in the plan. The javadoc gate is gone from the table, and the `graphitron`
+test-schema exec, 52 s in the first profile, is now the largest goal that is not a test, at 109 s of a
+single sequential process. And the test pool runs far more classes at once than its configured four:
+the surefire class times sum to 14,367 s in `graphitron` against a 774 s phase (an average of about
+19 classes in flight), 3,517 s against 367 s in `graphitron-model` (about 10) and 3,255 s against
+218 s in `graphitron-lsp` (about 15), and a tally of cold boots in the `graphitron` run found 30
+distinct threads that booted the per-thread store, where four were meant. A pool that grows past
+its parallelism when tasks block holds more stores, more heap and more garbage-collection work than
+the fixed setting suggests, which fits the 3.1 s of wall time per 0.39 s of CPU a boot took.
+
+`GraphCountGrowthGateTest` failed two of the full builds taken while this was measured, on a
+different relation each time (0 ms alone against 46 ms as one of eight, and 3 ms against 59 ms,
+each past a bound of four times the first plus 40 ms) and passed in the others; alone it takes about
+45 s and in the full build up to 200 s. A garbage-collection pause or a stalled thread inside a
+millisecond-scale measurement is enough to fail it, and the bound has hundreds of relations to
+fail on, so it fails a verification build for a reason that is not in the code under test.
+
 ## Implementation
 
 Each step is measured before it starts and priced after it lands, and lands on its own; the
