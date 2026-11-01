@@ -2,23 +2,31 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.Table;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
+import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.select;
 
 /**
- * The graphitron gatherer's writer of {@code graphitron_entry_defect}: the written graphitron
- * directives the generator will not emit for, at the positions they were written, as the last step of
- * the gatherer's anchor phase.
+ * The writer of {@code graphitron_entry_defect} from an owner gatherer's rule view: the defects that
+ * gatherer's facts break, at the positions they were written, as the last step of its anchor phase.
  *
- * <p>One statement over the rule view beside the target, which is what a stage is here, and a sweep
- * scoped to the codes the gatherer owns in {@code graphitron_defect_type.owner_gatherer}. What this
- * class adds is who evaluates the rule and when.
+ * <p>Each owner has its own rule view, named in a {@link Rule} beside the gatherer that runs it, and
+ * the writer is one statement over that view and a sweep scoped to the codes the owner holds in
+ * {@code graphitron_defect_type.owner_gatherer}. A next owner adds its view and a {@link Rule} to
+ * {@link #RULES} and calls {@link #derive} and {@link #sweep} from its own anchor phase, touching no
+ * other owner's. What this class adds is who evaluates a rule and when.
+ *
+ * <p>The graphitron gatherer's rule view is {@code graphitron_entry_defect_rule}, its prefix being
+ * that family's. What follows is about that rule.
  *
  * <p><b>Stored because it is read interactively and costs a walk.</b> Most of the rule is cheap,
  * the write arms reading entries the gatherer already anchored. The chain arms were not: they
@@ -41,28 +49,40 @@ public final class EntryDefects {
 
     private EntryDefects() {}
 
-    /** The gatherer that runs this class and owns the codes its rule produces. */
-    public static final String GATHERER = "graphitron";
+    /**
+     * One owner's rule: the gatherer that owns the codes {@code view} emits and runs its writer, and
+     * the view, which has {@code graphitron_entry_defect}'s columns but the mark.
+     */
+    public record Rule(String gatherer, Table<?> view) {}
+
+    /** The graphitron gatherer's rule. */
+    public static final Rule GRAPHITRON = new Rule("graphitron", GRAPHITRON_ENTRY_DEFECT_RULE);
+
+    /** Every owner's rule, one per owner gatherer. */
+    public static final List<Rule> RULES = List.of(GRAPHITRON);
 
     /**
-     * Writes the graph's rule rows, each marked with {@code readAt}: a row already stored under the
-     * same position and code takes the reading's mark and detail, a new one is inserted. Nothing is
-     * deleted here; {@link #sweep} does that once every writer of the gatherer has run.
+     * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already
+     * stored under the same position and code takes the reading's mark and detail, a new one is
+     * inserted. Nothing is deleted here; {@link #sweep} does that once every writer of the owner
+     * has run.
      */
-    public static void derive(DSLContext dsl, String graphName, LocalDateTime readAt) {
+    public static void derive(DSLContext dsl, String graphName, LocalDateTime readAt, Rule rule) {
         var target = GRAPHITRON_ENTRY_DEFECT;
-        var rule = GRAPHITRON_ENTRY_DEFECT_RULE;
-        var source = dsl.select(rule.GRAPH_NAME, rule.SOURCE_NAME, rule.SOURCE_LINE,
-                rule.SOURCE_COLUMN, rule.CODE, rule.DETAIL)
-            .from(rule)
-            .where(rule.GRAPH_NAME.eq(graphName))
+        var view = rule.view();
+        var source = dsl.select(column(view, "GRAPH_NAME", String.class),
+                column(view, "SOURCE_NAME", String.class), column(view, "SOURCE_LINE", Integer.class),
+                column(view, "SOURCE_COLUMN", Integer.class), column(view, "CODE", String.class),
+                column(view, "DETAIL", String.class))
+            .from(view)
+            .where(column(view, "GRAPH_NAME", String.class).eq(graphName))
             .asTable("r");
-        Field<String> graph = source.field(rule.GRAPH_NAME);
-        Field<String> file = source.field(rule.SOURCE_NAME);
-        Field<Integer> line = source.field(rule.SOURCE_LINE);
-        Field<Integer> column = source.field(rule.SOURCE_COLUMN);
-        Field<String> code = source.field(rule.CODE);
-        Field<String> detail = source.field(rule.DETAIL);
+        Field<String> graph = column(source, "GRAPH_NAME", String.class);
+        Field<String> file = column(source, "SOURCE_NAME", String.class);
+        Field<Integer> line = column(source, "SOURCE_LINE", Integer.class);
+        Field<Integer> column = column(source, "SOURCE_COLUMN", Integer.class);
+        Field<String> code = column(source, "CODE", String.class);
+        Field<String> detail = column(source, "DETAIL", String.class);
         dsl.mergeInto(target).using(source)
             .on(target.GRAPH_NAME.eq(graph), target.SOURCE_NAME.eq(file),
                 target.SOURCE_LINE.eq(line), target.SOURCE_COLUMN.eq(column), target.CODE.eq(code))
@@ -89,5 +109,9 @@ public final class EntryDefects {
             .and(target.TOUCHED_AT.ne(readAt))
             .and(target.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
             .execute();
+    }
+
+    private static <T> Field<T> column(Table<?> t, String column, Class<T> type) {
+        return field(name(t.getName(), column), type);
     }
 }

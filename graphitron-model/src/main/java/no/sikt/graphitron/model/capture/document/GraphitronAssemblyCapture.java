@@ -109,9 +109,9 @@ public final class GraphitronAssemblyCapture {
         // Last, the defects this gatherer's facts break, off everything above: the rule's rows
         // marked with this reading, then the argMapping entries under the strings they fault, then
         // the sweep of this gatherer's codes the reading did not mark.
-        EntryDefects.derive(dsl, graph, readAt);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
         ArgMappingPairDefects.derive(dsl, graph);
-        EntryDefects.sweep(dsl, graph, readAt, EntryDefects.GATHERER);
+        EntryDefects.sweep(dsl, graph, readAt, EntryDefects.GRAPHITRON.gatherer());
     }
 
     /**

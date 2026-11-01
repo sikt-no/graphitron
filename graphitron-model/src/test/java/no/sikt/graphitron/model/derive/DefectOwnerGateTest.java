@@ -28,16 +28,17 @@ import static org.jooq.impl.DSL.table;
  * only its own codes, so a code written by another gatherer would be swept by nobody, or by the
  * wrong one.
  *
- * <p>Read off the store's own definitions rather than a roster kept here. A stored writer is a rule
- * view: the codes it emits are the code literals in the view bodies its read expands, and the
- * {@code CHECK} lists of the tables it reaches that carry a code column, which is how a defect
- * relation of its own feeds a rule. A Java writer states its codes as a constant beside the
- * statement that writes them, and is listed here by the gatherer that runs it.
+ * <p>Read off the store's own definitions rather than a roster kept here. A stored writer is an
+ * owner's rule view, one per owner in {@link EntryDefects#RULES}: the codes it emits are the code
+ * literals in the view bodies its read expands, and the {@code CHECK} lists of the tables it reaches
+ * that carry a code column, which is how a defect relation of its own feeds a rule. A Java writer
+ * states its codes as a constant beside the statement that writes them, and is listed here by the
+ * gatherer that runs it.
  */
 class DefectOwnerGateTest {
 
-    /** The rule view {@link EntryDefects} writes from. */
-    private static final String RULE = "graphitron_entry_defect_rule";
+    /** The suffix an owner's rule view is named with, after its family's prefix. */
+    private static final String RULE_SUFFIX = "_ENTRY_DEFECT_RULE";
 
     private static final Pattern LITERAL = Pattern.compile("'([A-Z][A-Z0-9_]*)'");
 
@@ -54,19 +55,46 @@ class DefectOwnerGateTest {
     }
 
     @Test
-    @DisplayName("the rule view emits only codes its owner owns, and its writer is that owner")
-    void theRuleEmitsOnlyItsOwnersCodes() {
+    @DisplayName("every owner's rule view is a rule EntryDefects writes, one per owner")
+    void everyRuleViewIsWritten() {
         ThreadConfinedStore.run(dsl -> {
-            String owner = ownerOf(dsl, RULE);
-            assertThat(EntryDefects.GATHERER)
-                .as("the gatherer running EntryDefects is the rule view's owner")
-                .isEqualTo(owner);
-            var emitted = codesEmittedBy(dsl, RULE);
-            assertThat(emitted).as("the rule emits codes, or this gate checks nothing").isNotEmpty();
-            assertThat(foreignCodes(dsl, emitted, owner))
-                .as("codes " + RULE + " emits whose owner_gatherer is not " + owner
-                    + ", which its sweep would leave or another owner's sweep would take")
-                .isEmpty();
+            var declared = new TreeSet<String>(dsl.select(field(name("TABLE_NAME"), String.class))
+                .from(table(name("INFORMATION_SCHEMA", "VIEWS")))
+                .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+                .and(field(name("TABLE_NAME"), String.class).endsWith(RULE_SUFFIX))
+                .fetch(0, String.class));
+            var written = new TreeSet<String>();
+            for (var rule : EntryDefects.RULES) {
+                written.add(rule.view().getName().toUpperCase(java.util.Locale.ROOT));
+            }
+            assertThat(written).as("the rule views EntryDefects.RULES names, against the views"
+                    + " named *" + RULE_SUFFIX.toLowerCase() + " in the store; a view no Rule names"
+                    + " is a rule nobody writes")
+                .isEqualTo(declared);
+            assertThat(EntryDefects.RULES.stream().map(EntryDefects.Rule::gatherer).distinct().count())
+                .as("one rule per owner gatherer")
+                .isEqualTo(EntryDefects.RULES.size());
+        });
+    }
+
+    @Test
+    @DisplayName("each rule view emits only codes its owner owns, and its writer is that owner")
+    void eachRuleEmitsOnlyItsOwnersCodes() {
+        ThreadConfinedStore.run(dsl -> {
+            for (var rule : EntryDefects.RULES) {
+                String view = rule.view().getName().toLowerCase(java.util.Locale.ROOT);
+                String owner = ownerOf(dsl, view);
+                assertThat(rule.gatherer())
+                    .as("the gatherer running " + view + "'s writer is the view's owner")
+                    .isEqualTo(owner);
+                var emitted = codesEmittedBy(dsl, view);
+                assertThat(emitted).as(view + " emits codes, or this gate checks nothing")
+                    .isNotEmpty();
+                assertThat(foreignCodes(dsl, emitted, owner))
+                    .as("codes " + view + " emits whose owner_gatherer is not " + owner
+                        + ", which its sweep would leave or another owner's sweep would take")
+                    .isEmpty();
+            }
         });
     }
 
@@ -82,23 +110,27 @@ class DefectOwnerGateTest {
     }
 
     @Test
-    @DisplayName("the rule's owner may read every table the rule reaches")
-    void theRulesOwnerCanReadItsInputs() {
+    @DisplayName("each rule's owner may read every table its rule reaches")
+    void eachRulesOwnerCanReadItsInputs() {
         ThreadConfinedStore.run(dsl -> {
-            String owner = ownerOf(dsl, RULE);
-            var readable = readableBy(dsl, owner);
-            var unreadable = new TreeSet<String>();
-            for (String table : ViewReferences.tablesReachedBy(dsl, RULE)) {
-                String tableOwner = dsl.select(META_RELATION.OWNER_NAME).from(META_RELATION)
-                    .where(META_RELATION.RELATION_NAME.eq(table)).fetchOne(META_RELATION.OWNER_NAME);
-                if (tableOwner != null && !readable.contains(tableOwner)) {
-                    unreadable.add(table + " (" + tableOwner + ")");
+            for (var rule : EntryDefects.RULES) {
+                String view = rule.view().getName().toLowerCase(java.util.Locale.ROOT);
+                String owner = ownerOf(dsl, view);
+                var readable = readableBy(dsl, owner);
+                var unreadable = new TreeSet<String>();
+                for (String table : ViewReferences.tablesReachedBy(dsl, view)) {
+                    String tableOwner = dsl.select(META_RELATION.OWNER_NAME).from(META_RELATION)
+                        .where(META_RELATION.RELATION_NAME.eq(table))
+                        .fetchOne(META_RELATION.OWNER_NAME);
+                    if (tableOwner != null && !readable.contains(tableOwner)) {
+                        unreadable.add(table + " (" + tableOwner + ")");
+                    }
                 }
+                assertThat(unreadable)
+                    .as("tables " + view + " reaches whose owner " + owner
+                        + " neither owns nor declares a dependency on in meta_gatherer_dependency")
+                    .isEmpty();
             }
-            assertThat(unreadable)
-                .as("tables " + RULE + " reaches whose owner " + owner
-                    + " neither owns nor declares a dependency on in meta_gatherer_dependency")
-                .isEmpty();
         });
     }
 

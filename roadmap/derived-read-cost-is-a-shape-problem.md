@@ -515,8 +515,12 @@ pass and no stratum that clears and recomputes.
     its anchor phase, `EntryDefects` upserting the rule's rows beside `FieldPaths`' condition codes,
     and sweeps only its own codes once; `ArgMappingCandidates`, `EntryDefects` and
     `ArgMappingPairDefects` left the stratum, and `DefectOwnerGateTest` holds each code to its
-    writer's gatherer. Every code is graphitron's today, so the rule view has one owner and
-    `meta_relation` names it. What remains is the routine seat's refusals, which
+    writer's gatherer. Each owner has its own rule view, which `EntryDefects` writes for it;
+    every code is graphitron's today, so `graphitron_entry_defect_rule` is the only one.
+    `graphitron_entry_defect` is a supertype, one row per defect at its written position; a
+    gatherer is encouraged to add subtype and other detail relations where a defect has more to
+    say than its code and detail, each keyed by the defect's key with a foreign key to it
+    `ON DELETE CASCADE`, so a swept defect takes its details with it. What remains is the routine seat's refusals, which
     `intent_mutation_routine_seat` and the walk's routine classification still make, becoming codes
     the graphitron gatherer writes.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
