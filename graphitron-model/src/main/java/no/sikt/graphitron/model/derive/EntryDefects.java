@@ -1,15 +1,23 @@
 package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
+import org.jooq.Field;
 
+import java.time.LocalDateTime;
+
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.select;
 
 /**
- * The capture-cadence writer of {@code graphitron_entry_defect}: the written graphitron directives
- * the generator will not emit for, at the positions they were written.
+ * The graphitron gatherer's writer of {@code graphitron_entry_defect}: the written graphitron
+ * directives the generator will not emit for, at the positions they were written, as the last step of
+ * the gatherer's anchor phase.
  *
- * <p>One statement over the rule view beside the target, which is what a stage is here. What this
+ * <p>One statement over the rule view beside the target, which is what a stage is here, and a sweep
+ * scoped to the codes the gatherer owns in {@code graphitron_defect_type.owner_gatherer}. What this
  * class adds is who evaluates the rule and when.
  *
  * <p><b>Stored because it is read interactively and costs a walk.</b> Most of the rule is cheap,
@@ -33,26 +41,53 @@ public final class EntryDefects {
 
     private EntryDefects() {}
 
-    /** Reconciles the graph's entry defects: clears the partition, then re-derives it. */
-    public static void derive(DSLContext dsl, String graphName) {
+    /** The gatherer that runs this class and owns the codes its rule produces. */
+    public static final String GATHERER = "graphitron";
+
+    /**
+     * Writes the graph's rule rows, each marked with {@code readAt}: a row already stored under the
+     * same position and code takes the reading's mark and detail, a new one is inserted. Nothing is
+     * deleted here; {@link #sweep} does that once every writer of the gatherer has run.
+     */
+    public static void derive(DSLContext dsl, String graphName, LocalDateTime readAt) {
         var target = GRAPHITRON_ENTRY_DEFECT;
         var rule = GRAPHITRON_ENTRY_DEFECT_RULE;
+        var source = dsl.select(rule.GRAPH_NAME, rule.SOURCE_NAME, rule.SOURCE_LINE,
+                rule.SOURCE_COLUMN, rule.CODE, rule.DETAIL)
+            .from(rule)
+            .where(rule.GRAPH_NAME.eq(graphName))
+            .asTable("r");
+        Field<String> graph = source.field(rule.GRAPH_NAME);
+        Field<String> file = source.field(rule.SOURCE_NAME);
+        Field<Integer> line = source.field(rule.SOURCE_LINE);
+        Field<Integer> column = source.field(rule.SOURCE_COLUMN);
+        Field<String> code = source.field(rule.CODE);
+        Field<String> detail = source.field(rule.DETAIL);
+        dsl.mergeInto(target).using(source)
+            .on(target.GRAPH_NAME.eq(graph), target.SOURCE_NAME.eq(file),
+                target.SOURCE_LINE.eq(line), target.SOURCE_COLUMN.eq(column), target.CODE.eq(code))
+            .whenMatchedThenUpdate()
+            .set(target.DETAIL, detail)
+            .set(target.TOUCHED_AT, inline(readAt))
+            .whenNotMatchedThenInsert(target.GRAPH_NAME, target.SOURCE_NAME, target.SOURCE_LINE,
+                target.SOURCE_COLUMN, target.CODE, target.DETAIL, target.TOUCHED_AT)
+            .values(graph, file, line, column, code, detail, inline(readAt))
+            .execute();
+    }
 
-        // Reconcile rather than append: the store persists across graphitron:dev rounds, so a
-        // second capture of one graph is the ordinary case and an appending stage would fail on
-        // the target's primary key.
-        dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
-
-        dsl.insertInto(target)
-            .columns(
-                target.GRAPH_NAME, target.SOURCE_NAME, target.SOURCE_LINE, target.SOURCE_COLUMN,
-                target.CODE, target.DETAIL)
-            .select(dsl
-                .select(
-                    rule.GRAPH_NAME, rule.SOURCE_NAME, rule.SOURCE_LINE, rule.SOURCE_COLUMN,
-                    rule.CODE, rule.DETAIL)
-                .from(rule)
-                .where(rule.GRAPH_NAME.eq(graphName)))
+    /**
+     * Deletes the graph's defects of the codes {@code gatherer} owns that the reading at
+     * {@code readAt} did not mark. Another gatherer's codes are not touched, so each owner sweeps
+     * only what it writes; an argMapping entry's rows under a swept string go with it by their
+     * foreign key.
+     */
+    public static void sweep(DSLContext dsl, String graphName, LocalDateTime readAt, String gatherer) {
+        var target = GRAPHITRON_ENTRY_DEFECT;
+        var type = GRAPHITRON_DEFECT_TYPE;
+        dsl.deleteFrom(target)
+            .where(target.GRAPH_NAME.eq(graphName))
+            .and(target.TOUCHED_AT.ne(readAt))
+            .and(target.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
             .execute();
     }
 }

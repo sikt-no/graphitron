@@ -1,5 +1,8 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
+import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetColumns;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
@@ -59,6 +62,9 @@ public final class GraphitronAssemblyCapture {
      * sweep tell this reading's rows from the last one's by it.
      */
     public static void resolve(DSLContext dsl, String graph, LocalDateTime readAt) {
+        // What each argMapping may write at its site, off the sites the anchor just wrote and the
+        // transcription; the views the defects below read over it see this reading's rows.
+        ArgMappingCandidates.derive(dsl, graph);
         // Over the nodes the anchor settled.
         NodeKeyColumns.derive(dsl, graph);
         // The legacy key shape each type id answers to, against the current keys just written.
@@ -100,6 +106,12 @@ public final class GraphitronAssemblyCapture {
         FieldPaths.derive(dsl, graph, readAt);
         // The column each scalar reads: on a table its read departs from, or where its walk arrives.
         FieldTargetColumns.derive(dsl, graph, readAt);
+        // Last, the defects this gatherer's facts break, off everything above: the rule's rows
+        // marked with this reading, then the argMapping entries under the strings they fault, then
+        // the sweep of this gatherer's codes the reading did not mark.
+        EntryDefects.derive(dsl, graph, readAt);
+        ArgMappingPairDefects.derive(dsl, graph);
+        EntryDefects.sweep(dsl, graph, readAt, EntryDefects.GATHERER);
     }
 
     /**

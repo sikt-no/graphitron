@@ -80,8 +80,6 @@ public final class DerivationStratum {
             new Step("InputOccurrencePaths",
                 Set.of("intent_input_occurrence_path", "intent_input_occurrence_path_step"),
                 InputOccurrencePaths::derive),
-            step("ArgMappingCandidates", "graphitron_argmapping_candidate",
-                ArgMappingCandidates::derive),
             step("AuthoredClaimRejectionRows", "intent_authored_claim_rejection",
                 AuthoredClaimRejectionRows::derive),
             step("FieldScopeTables", "graphitron_field_scope_table", FieldScopeTables::derive),
@@ -103,10 +101,7 @@ public final class DerivationStratum {
             step("NodeIdDecodeHopColumns", "graphitron_node_id_decode_hop_column",
                 NodeIdDecodeHopColumns::derive),
             step("NodeIdDecodeColumns", "graphitron_node_id_decode_column",
-                NodeIdDecodeColumns::derive),
-            step("EntryDefects", "graphitron_entry_defect", EntryDefects::derive),
-            step("ArgMappingPairDefects", "graphitron_argmapping_pair_defect",
-                ArgMappingPairDefects::derive));
+                NodeIdDecodeColumns::derive));
     }
 
     /**

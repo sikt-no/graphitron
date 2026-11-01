@@ -95,8 +95,6 @@ class StageOrderGateTest {
             Set.of("intent_type_domain")),
         new Step("InputOccurrencePaths", null,
             Set.of("intent_input_occurrence_path", "intent_input_occurrence_path_step")),
-        new Step("ArgMappingCandidates", null,
-            Set.of("graphitron_argmapping_candidate")),
         new Step("AuthoredClaimRejectionRows", null,
             Set.of("intent_authored_claim_rejection")),
         new Step("FieldScopeTables", "graphitron_field_scope_table_rule",
@@ -119,11 +117,7 @@ class StageOrderGateTest {
         new Step("NodeIdDecodeHopColumns", "graphitron_node_id_decode_hop_column_rule",
             Set.of("graphitron_node_id_decode_hop_column")),
         new Step("NodeIdDecodeColumns", "graphitron_node_id_decode_column_rule",
-            Set.of("graphitron_node_id_decode_column")),
-        new Step("EntryDefects", "graphitron_entry_defect_rule",
-            Set.of("graphitron_entry_defect")),
-        new Step("ArgMappingPairDefects", "graphitron_argmapping_pair_defect_rule",
-            Set.of("graphitron_argmapping_pair_defect")));
+            Set.of("graphitron_node_id_decode_column")));
 
     /**
      * The roster is the stratum, name for name and write set for write set, in order. Without this
