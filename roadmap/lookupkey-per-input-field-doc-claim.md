@@ -1,13 +1,13 @@
 ---
 id: R614
 title: "@lookupKey is declared for arguments only"
-status: Ready
+status: In Progress
 bucket: docs
 priority: 4
 theme: docs
 depends-on: []
 created: 2026-08-09
-last-updated: 2026-10-31
+last-updated: 2026-11-01
 ---
 
 # @lookupKey is declared for arguments only
