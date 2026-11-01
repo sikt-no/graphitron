@@ -510,16 +510,15 @@ pass and no stratum that clears and recomputes.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
   * **A defect is written by the gatherer whose facts it judges, marked and swept by its owner** `open`.
-    `graphitron_entry_defect` is owned by `derivation` and has one writer, `EntryDefects`, which
-    deletes a graph's rows and refills them from `graphitron_entry_defect_rule`, one view of some
-    fifty SELECTs. So no gatherer can write a defect about its own facts, every new rule grows a
-    derivation view, and a defect is judged after every gatherer rather than as early as its inputs
-    allow. Each `graphitron_defect_type` code names the gatherer that owns it; each gatherer writes
-    its own codes' rows in its anchor phase, marks them and sweeps only its own codes; the rule view
-    splits by owner, and `EntryDefects` leaves the stratum, lowering both ceilings. The relation, its
-    key and `graphitron_entry_defect_site` stay, so the editor and validate read one place. The first
-    owners beside the moved rules are the condition step's `CONDITION_NO_OVERLOAD_FOR_PAIR` and
-    `CONDITION_OVERLOAD_TIE` in the graphitron gatherer, and the routine seat's refusals.
+    The mechanism has landed: each `graphitron_defect_type` code names its `owner_gatherer`;
+    `graphitron_entry_defect` carries `touched_at`; the graphitron gatherer writes its codes' rows in
+    its anchor phase, `EntryDefects` upserting the rule's rows beside `FieldPaths`' condition codes,
+    and sweeps only its own codes once; `ArgMappingCandidates`, `EntryDefects` and
+    `ArgMappingPairDefects` left the stratum, and `DefectOwnerGateTest` holds each code to its
+    writer's gatherer. Every code is graphitron's today, so the rule view has one owner and
+    `meta_relation` names it. What remains is the routine seat's refusals, which
+    `intent_mutation_routine_seat` and the walk's routine classification still make, becoming codes
+    the graphitron gatherer writes.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
     `InputOccurrencePaths` and `AuthoredClaimRejectionRows` go with the relations they write.
