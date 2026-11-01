@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.diagnostics;
 
 import no.sikt.graphitron.lsp.facts.CarrierDataField;
+import no.sikt.graphitron.lsp.facts.NodeContainerMember;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
@@ -883,9 +884,9 @@ final class DiagnosticFacts {
      * the polymorphic containers with at least one table-bound node-type member, which a
      * {@code @service} slot may name to take the id of any implementation.
      *
-     * <p>A union of two populations rather than the node declarations alone, so completion and the
-     * diagnostic move with the build from one relation: a walk-side rule admitting a container while
-     * this arm still refused it would fork the two views, and the author would be offered no
+     * <p>A union of two populations rather than the node declarations alone, the container half
+     * under {@link NodeContainerMember#tableBoundNodeType}, which completion reads too: a rule
+     * admitting a container while this arm still refused it would fork the two views, and the author would be offered no
      * completion for a value the build accepts and a squiggle under the value they wrote. The keyset
      * is keyed on the type name and not on the coordinate, so it says a container is a legal value
      * for {@code typeName:} and never that this is a coordinate the polymorphic rule reaches; that
@@ -894,7 +895,7 @@ final class DiagnosticFacts {
      */
     private static org.jooq.Field<List<String>> nodeTypeBindingArm(
             StoreHandle store, java.util.Set<String> asked) {
-        var m = no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
+        var m = no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
         return multiset(selectDistinct(GRAPHITRON_NODE_ENTRY.TYPE_NAME)
             .from(GRAPHITRON_NODE_ENTRY)
             .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
@@ -903,8 +904,7 @@ final class DiagnosticFacts {
                 .from(m)
                 .where(m.GRAPH_NAME.eq(store.graphName()))
                 .and(m.CONTAINER_NAME.in(asked))
-                .and(m.IS_TABLE_BOUND.isTrue())
-                .and(m.IS_NODE_TYPE.isTrue())))
+                .and(NodeContainerMember.tableBoundNodeType(m.GRAPH_NAME, m.MEMBER_TYPE_NAME))))
             .convertFrom(rows -> rows.map(Record1::value1));
     }
 

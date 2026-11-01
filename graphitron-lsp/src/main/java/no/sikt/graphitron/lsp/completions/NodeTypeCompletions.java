@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.facts.NodeContainerMember;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -11,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 
 /**
  * Catalog GraphQL-type-name completions for any coordinate the
@@ -22,9 +23,10 @@ import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
  * member, which a {@code @service} slot may name to take the id of any
  * implementation.
  *
- * <p>The container half reads {@code intent_node_container_member}, the same
- * relation the build's own resolution reads, so completion and the build move
- * together rather than one offering a value the other refuses. What the keyset
+ * <p>The container half reads {@code graphql_poly_member} under
+ * {@link NodeContainerMember#tableBoundNodeType}, the condition the diagnostic
+ * judges a written value by, so completion and the diagnostic move together
+ * rather than one offering a value the other refuses. What the keyset
  * says is that a container is a legal <em>value</em> for {@code typeName:}; it
  * says nothing about whether the polymorphic rule reaches the coordinate the
  * directive was written at, which is the store's
@@ -66,14 +68,14 @@ public final class NodeTypeCompletions {
         }
         // The containers, each detailed with the implementations an id at such a slot may belong to,
         // which is the fact an author reaching for this value is choosing on. Table-bound node-type
-        // members only, on the relation's own two flags: a member that binds no table has no record
-        // to decode into and one that is not a node type refuses the whole container.
-        var m = INTENT_NODE_CONTAINER_MEMBER;
+        // members only: a member that binds no table has no record to decode into, and one that is
+        // not a node type has no id.
+        var m = GRAPHQL_POLY_MEMBER;
         var containers = store.dsl()
             .select(m.CONTAINER_NAME, m.MEMBER_TYPE_NAME)
             .from(m)
             .where(m.GRAPH_NAME.eq(store.graphName()),
-                m.IS_TABLE_BOUND.isTrue(), m.IS_NODE_TYPE.isTrue())
+                NodeContainerMember.tableBoundNodeType(m.GRAPH_NAME, m.MEMBER_TYPE_NAME))
             .orderBy(m.CONTAINER_NAME, m.MEMBER_TYPE_NAME)
             .fetch();
         var membersByContainer = new LinkedHashMap<String, List<String>>();

@@ -23,8 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Coverage for {@code @nodeId(typeName: "...")} GraphQL-type-name
  * completion. The candidate set is two populations: {@code graphitron_node_entry}, every type whose
  * SDL carries {@code @node} regardless of whether the author filled in {@code typeId} or
- * {@code keyColumns}, and the polymorphic containers {@code intent_node_container_member} reports at
- * least one table-bound node-type member for, which a {@code @service} slot may name to take the id
+ * {@code keyColumns}, and the polymorphic containers {@code graphql_poly_member} holds at least one
+ * table-bound node-type member for, which a {@code @service} slot may name to take the id
  * of any implementation.
  *
  * <p>The container half is offered wherever the directive is written, including at a read-side
