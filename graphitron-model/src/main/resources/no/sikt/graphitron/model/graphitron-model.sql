@@ -11419,20 +11419,35 @@ UNION ALL
 -- classpath holds under the names. No class, a class without the method, or more than one method;
 -- exclusive by construction, a single match being the resolution's row. One arm for every site,
 -- the reference being one fact wherever it is written.
+--
+-- More than one method is a defect only where the generator calls exactly one: @service,
+-- @externalField and a FieldSort.method under @order or @defaultOrder. A @condition, and a
+-- condition a path element names, take an overload set, whose rules are their own codes. Under
+-- @order and @defaultOrder a reference is a FieldSort.method or a FieldSort.path[].condition, told
+-- apart by the object field it is written at. Counted by descriptor, so one class two entries
+-- declare is one method.
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
        CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
             WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
             ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
        CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
   FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
-               c.type_name, c.field_name, c.class_name, c.method_name,
+               c.type_name, c.field_name, c.class_name, c.method_name, c.directive_name,
                (SELECT COUNT(*) FROM store_graph_source g
                   JOIN code_class k ON k.source_name = g.source_name
                  WHERE g.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
                (SELECT COUNT(*) FROM store_graph_source g
                   JOIN code_method m ON m.source_name = g.source_name
                  WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
-                   AND m.method_name = c.method_name) AS methods
+                   AND m.method_name = c.method_name) AS methods,
+               (SELECT COUNT(DISTINCT m.descriptor) FROM store_graph_source g
+                  JOIN code_method m ON m.source_name = g.source_name
+                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
+                   AND m.method_name = c.method_name) AS descriptors,
+               (SELECT v.object_field_name FROM graphql_ast_value_entry v
+                 WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
+                   AND v.source_line = c.source_line
+                   AND v.source_column = c.source_column) AS written_at
           FROM graphitron_code_reference_site c
          WHERE c.method_name IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
@@ -11445,6 +11460,10 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
            AND EXISTS (SELECT 1 FROM store_graph_source g
                          JOIN code_class k ON k.source_name = g.source_name
                         WHERE g.graph_name = c.graph_name)) s
+ WHERE s.classes = 0 OR s.methods = 0
+    OR (s.descriptors > 1
+        AND (s.directive_name IN ('service', 'externalField')
+             OR (s.directive_name IN ('order', 'defaultOrder') AND s.written_at = 'method')))
 UNION ALL
 -- A @table naming a table-valued function. A type is not bound to a function: the field carrying
 -- @routine binds its return type to the routine's result, so the directive names something a type
@@ -16766,7 +16785,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('CODE_REFERENCE_METHOD_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_NOT_FOUND',
    'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.', 'graphitron'),
   ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
-   'A code reference names a method the classpath answers more than once, as overloads or as one class two entries declare, and nothing says which of them is meant.', 'graphitron'),
+   'A code reference where the generator calls exactly one method, a @service, an @externalField or a FieldSort.method, names a method the classpath declares as several overloads, and nothing says which of them is meant.', 'graphitron'),
   ('NODE_WITHOUT_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_NODE_INTERFACE',
    'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node.', 'graphitron'),
   ('NODE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_TABLE',

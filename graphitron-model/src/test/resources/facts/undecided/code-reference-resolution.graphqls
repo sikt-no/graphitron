@@ -18,7 +18,10 @@ type City @table(name: "city") {
 
 # An @externalField naming no method names its field, so isEnglish resolves with no method written
 # and missing is a defect for the same reason. A condition is resolved like any other reference,
-# and a name two public overloads answer resolves to neither.
+# and a name two public overloads answer resolves to neither. Only where the generator calls one
+# method is that a defect: the @service topRated names FilmService's two overloads and draws
+# CODE_REFERENCE_METHOD_AMBIGUOUS, while the @condition on overloaded names an overload set, which
+# is what a condition takes, and draws nothing here.
 type Film @table(name: "film") {
   filmId: ID @field(name: "FILM_ID")
   isEnglish: Boolean
@@ -27,6 +30,19 @@ type Film @table(name: "film") {
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
   overloaded: [City!]!
     @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures", method: "occupantTypedNamePrefix"})
+  topRated: [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})
+}
+
+# A FieldSort.method is called as exactly one method too, so naming the two overloads draws the
+# defect; a condition a FieldSort.path element names is an element's condition, which takes an
+# overload set, and draws nothing here, the agreeingOnBoth pair notwithstanding.
+type Language @table(name: "language") {
+  name: String
+  filmsByTopRated: [Film!]!
+    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"}}])
+  filmsByPathCondition: [Film!]!
+    @defaultOrder(fields: [{name: "title", path: [{table: "language", condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "agreeingOnBoth"}}]}])
 }
 
 # A class reference names no method, so it is neither resolved here nor a defect.
@@ -37,6 +53,7 @@ enum Rating @enum(enumReference: {className: "no.example.RatingEnum"}) {
 extend type Query {
   cities: [City!]!
   films: [Film!]!
+  languages: [Language!]!
 }
 
 extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
@@ -50,5 +67,12 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   CODE_REFERENCE_METHOD_NOT_FOUND, City,      misspelt,   no.sikt.graphitron.rewrite.test.services.CityService.cityUpercase
   CODE_REFERENCE_CLASS_NOT_READ,   City,      unread,     no.example.Absent
   CODE_REFERENCE_METHOD_NOT_FOUND, Film,      missing,    no.sikt.graphitron.rewrite.test.extensions.FilmExtensions.missing
-  CODE_REFERENCE_METHOD_AMBIGUOUS, Film,      overloaded, no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures.occupantTypedNamePrefix
+  CODE_REFERENCE_METHOD_AMBIGUOUS, Film,      topRated,   no.sikt.graphitron.rewrite.test.services.FilmService.topRated
+  CODE_REFERENCE_METHOD_AMBIGUOUS, Language,  filmsByTopRated, no.sikt.graphitron.rewrite.test.services.FilmService.topRated
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                            type_name, field_name
+  CODE_REFERENCE_METHOD_AMBIGUOUS, Film,      overloaded
+  CODE_REFERENCE_METHOD_AMBIGUOUS, Language,  filmsByPathCondition
   """)
