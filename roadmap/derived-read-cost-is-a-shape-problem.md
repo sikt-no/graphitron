@@ -430,7 +430,7 @@ static method needs no holder.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **A service's `$result` is read off its returned value** `blocked`, on "A field reads its parent's member by its bound name".
+  * **A service's `$result` is read off its returned value** `open`.
     A top-level `@service` field on the mutation root is a write, as `graphitron_producer` and
     `graphql_root_operation` say, and a `$result` over its returned value is a pointer to the
     result: a `graphitron_outbox_leaf` keeping only its path, each step read as its field's own
@@ -446,17 +446,6 @@ static method needs no holder.
     `OUTBOX_SOURCE_UNRESOLVED`. The steps are a view, one row per leaf and segment, which the leaf
     rule and the emitter both read; the types a payload can carry are one list the session and
     member arms share.
-    * **A field reads its parent's member by its bound name** `open`.
-      The members are the result's, not the field's: a class the parent's result holds
-      (`graphitron_result_class`) offers them (`code_read_slot`), and a field only names one. So a
-      field's read is that join, read where it is asked, and nothing stores it: the readers join
-      the field's bound name onto the members of its parent's classes. `graphitron_reader_accessor`
-      and `graphitron_field_key_row_method` go, the key-row rule and the type-backing hop reading the
-      join instead. A field whose name finds no member, and whose result holds its parent's class,
-      passes the object through, which on the six stores (2026-11-01) is exactly every
-      `passes_through` row of `graphitron_carrier_data_channel`; the channel goes, the backing seed
-      reading the same rule. Both stored relations were found to be subsets of the join there, with
-      nothing either one resolves differently.
   * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
     `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write
@@ -538,8 +527,8 @@ classified records have no reader left and can go with the walk.
   pins the update, delete and service re-reads, as the routine and insert ones already are.
 * **A producer's carrier is its one data channel** `open`. The carrier's readers read the
   producer's target and the field that re-reads or reads its result, `graphitron_carrier_data_field`
-  is gone, and `graphitron_carrier_data_channel` goes once `$result` and the type-backing seed read
-  the member relation instead.
+  is gone, and so is `graphitron_carrier_data_channel`: the type-backing seed states the pass-through
+  itself, a data field whose bound name finds no member on the producer's class.
 * **The matched key is stated** `open`. `graphitron_producer_matched_key` holds one row per `ONE`
   write and each key its input columns cover, keyed to the producer and `sql_constraint`.
 * **The DataLoader's key is read from the key row** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". The fetcher's batch key and its lift are
@@ -1534,6 +1523,11 @@ values of `graphitron_field_key_row.kind`, `graphitron_field_key_row_method.kind
 `graphitron_method_reference_entry.site`, `SourceRowDirectiveResolver`, `SourceRowDeclaration`,
 `LifterMethodResolver`, `LifterRef`, `StaticProducerRef`, `KeyLift.Lifter`,
 `ServiceKeySource.FromLifter` and `Rejection.AttemptKind.LIFTER_METHOD`.
+
+**Dissolved into the member join.** A field's read is the member its bound name finds on the class
+its parent's result holds, read where it is asked: `graphitron_reader_accessor` and its rule, the
+grain `graph-field-class`, `graphitron_field_key_row_method`, `graphitron_carrier_data_channel` and
+its rule, and `CarrierDataChannels`.
 
 **Dissolved for want of a reader**, resurrectable from `ab6b49c34`. `graphitron_type_reach`,
 `graphitron_type_arrival`, `graphitron_field_source` and their `_rule` views, `TypeReaches`,

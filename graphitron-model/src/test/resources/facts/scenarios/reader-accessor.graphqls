@@ -1,5 +1,5 @@
-# A field that reads its parent's object through an accessor names the member it reads, off the class
-# the parent's result holds: the member its own name names, or the one @field names.
+# A field reads by its bound name: its own name, or the one @field names. The member it reads off the
+# class its parent's result holds is the one that name finds, which nothing stores.
 
 type FilmBlurb {
   description: String
@@ -15,13 +15,6 @@ extend type Query {
   filmBlurbHolder(filmId: Int!): FilmBlurbHolder
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
 }
-
-extend schema @expectEquals(relation: "graphitron_reader_accessor", rows: """
-  type_name,       field_name,  class_name,                                               slot_method_name
-  FilmBlurbHolder, blurb,       no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, blurb
-  FilmBlurb,       description, no.sikt.graphitron.rewrite.test.services.FilmBlurb,       description
-  FilmBlurb,       text,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,       description
-  """)
 
 # The name a field reads by is anchored on the field: its @field(name:) where written, else its own.
 extend schema @expectEquals(relation: "graphitron_field", where: """

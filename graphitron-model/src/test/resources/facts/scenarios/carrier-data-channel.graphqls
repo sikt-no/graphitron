@@ -31,12 +31,6 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
 }
 
-extend schema @expectEquals(relation: "graphitron_carrier_data_channel", rows: """
-  type_name, field_name,            payload_type_name,      data_field_name, passes_through
-  Query,     createFilmsWithActors, FilmsWithActorsPayload, results,         TRUE
-  Query,     filmBlurbHolder,       FilmBlurbHolder,        blurb,           FALSE
-  """)
-
 extend schema @expectEquals(relation: "graphitron_type_backing", where: """
   type_name IN ('FilmsWithActorsPayload', 'FilmWithActorsResult', 'FilmBlurbHolder', 'FilmBlurb')
   """, rows: """

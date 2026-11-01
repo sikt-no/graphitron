@@ -8802,34 +8802,6 @@ COMMENT ON COLUMN graphitron_field_key_row.table_name IS 'the table whose column
 COMMENT ON COLUMN graphitron_field_key_row.arity IS 'ONE where one parent object yields one key, MANY where it yields several: a list of produced records, or an accessor returning a collection';
 COMMENT ON COLUMN graphitron_field_key_row.touched_at IS 'when the reading that derived this row ran; the stage sweeps the graph''s rows carrying another instant';
 
-CREATE TABLE graphitron_field_key_row_method (
-  graph_name         VARCHAR   NOT NULL,
-  type_name          VARCHAR   NOT NULL,
-  field_name         VARCHAR   NOT NULL,
-  kind               VARCHAR   NOT NULL,
-  method_source_name VARCHAR   NOT NULL,
-  method_class_name  VARCHAR   NOT NULL,
-  method_name        VARCHAR   NOT NULL,
-  method_descriptor  VARCHAR   NOT NULL,
-  touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name, kind)
-    REFERENCES graphitron_field_key_row (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
-  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
-    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
-  CHECK (kind = 'ACCESSOR')
-);
-COMMENT ON TABLE graphitron_field_key_row_method IS 'The method a key row is taken by, where one is: one row per field whose keys an accessor of the parent''s object yields. For example FilmWithActorsResult.actors'' keys are FilmWithActors.actorRecords().';
-COMMENT ON COLUMN graphitron_field_key_row_method.graph_name IS 'the owning graph''s partition, carried from the key';
-COMMENT ON COLUMN graphitron_field_key_row_method.type_name IS 'the type owning the field';
-COMMENT ON COLUMN graphitron_field_key_row_method.field_name IS 'the field; with the columns above a reference into graphitron_field_key_row';
-COMMENT ON COLUMN graphitron_field_key_row_method.kind IS 'always ACCESSOR, carried so the reference into the key names the kind that has a method';
-COMMENT ON COLUMN graphitron_field_key_row_method.method_source_name IS 'the classpath entry the method was read from';
-COMMENT ON COLUMN graphitron_field_key_row_method.method_class_name IS 'the class declaring it, the parent object''s class';
-COMMENT ON COLUMN graphitron_field_key_row_method.method_name IS 'the method''s name';
-COMMENT ON COLUMN graphitron_field_key_row_method.method_descriptor IS 'its descriptor, telling overloads apart';
-COMMENT ON COLUMN graphitron_field_key_row_method.touched_at IS 'when the reading that derived this row ran, as on the key';
-
 CREATE INDEX graphql_ast_field_definition_entry_coordinate_ix
   ON graphql_ast_field_definition_entry (graph_name, type_name, name);
 COMMENT ON INDEX graphql_ast_field_definition_entry_coordinate_ix IS 'The coordinate side''s probe: graphitron_field_key_row_rule reaches a producing field''s definition site from its type and name, where the primary key leads with the site.';
@@ -8845,8 +8817,6 @@ CREATE TABLE graphitron_reader (
   reads      VARCHAR   NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
-  -- What a subtype naming how the field reads references, so it goes when the field reads otherwise.
-  UNIQUE (graph_name, type_name, field_name, reads),
   FOREIGN KEY (graph_name, type_name, field_name, side)
     REFERENCES graphitron_fetcher (graph_name, type_name, field_name, side) ON DELETE CASCADE,
   CHECK (side = 'READER'),
@@ -8859,36 +8829,6 @@ COMMENT ON COLUMN graphitron_reader.field_name IS 'the field; with the type, a g
 COMMENT ON COLUMN graphitron_reader.side IS 'always READER, carried so the foreign key into graphitron_fetcher holds the side as well as the field';
 COMMENT ON COLUMN graphitron_reader.reads IS 'under a ROW: COLUMN, a column of the row; EXPRESSION, an @externalField projected into its statement; NESTED, a row nested in it, for an object target. Under an OBJECT: ACCESSOR, an outcome''s errors field among them, its type being a value its producer hands back. A node id''s encoding and an outcome are facts of the field and of the producer, graphitron_producer_outcome, not ways of reading';
 COMMENT ON COLUMN graphitron_reader.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
-CREATE TABLE graphitron_reader_accessor (
-  graph_name       VARCHAR   NOT NULL,
-  type_name        VARCHAR   NOT NULL,
-  field_name       VARCHAR   NOT NULL,
-  reads            VARCHAR   NOT NULL,
-  class_name       VARCHAR   NOT NULL,
-  slot_source_name VARCHAR   NOT NULL,
-  slot_method_name VARCHAR   NOT NULL,
-  slot_descriptor  VARCHAR   NOT NULL,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, class_name, slot_source_name),
-  FOREIGN KEY (graph_name, type_name, field_name, reads)
-    REFERENCES graphitron_reader (graph_name, type_name, field_name, reads) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, class_name)
-    REFERENCES graphitron_result_class (graph_name, type_name, class_name) ON DELETE CASCADE,
-  FOREIGN KEY (slot_source_name, class_name, slot_method_name, slot_descriptor)
-    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
-  CHECK (reads = 'ACCESSOR')
-);
-COMMENT ON TABLE graphitron_reader_accessor IS 'The member a field reading an ACCESSOR reads off one class its parent''s result holds: one row per field, class and entry the class was read from. For example FilmBlurbHolder.blurb reads blurb() off FilmBlurbHolder, and a field written text @field(name: "description") reads description() off its class.';
-COMMENT ON COLUMN graphitron_reader_accessor.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_reader_accessor.type_name IS 'the type declaring the field';
-COMMENT ON COLUMN graphitron_reader_accessor.field_name IS 'the field; with the type, a graphitron_reader key';
-COMMENT ON COLUMN graphitron_reader_accessor.reads IS 'always ACCESSOR, carried so the reference into graphitron_reader names how the field reads, and the row goes when it reads otherwise';
-COMMENT ON COLUMN graphitron_reader_accessor.class_name IS 'the class the parent''s result holds that the member is read off, a graphitron_result_class row of the parent type and the class of the code_read_slot row';
-COMMENT ON COLUMN graphitron_reader_accessor.slot_source_name IS 'the classpath entry the class was read from, completing the key: one class name on two entries is two classes, as graphitron_type_backing holds it, so each states its member; with the class, the method and the descriptor, a code_read_slot key';
-COMMENT ON COLUMN graphitron_reader_accessor.slot_method_name IS 'the method that reads the member, as on code_read_slot';
-COMMENT ON COLUMN graphitron_reader_accessor.slot_descriptor IS 'the method''s descriptor, as on code_read_slot';
-COMMENT ON COLUMN graphitron_reader_accessor.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_errors_field (
   graph_name     VARCHAR   NOT NULL,
@@ -8930,85 +8870,6 @@ COMMENT ON COLUMN graphitron_producer_outcome.kind IS 'the producer''s kind, car
 COMMENT ON COLUMN graphitron_producer_outcome.outcome_type_name IS 'the type the field returns, which holds the value on success and the errors on failure';
 COMMENT ON COLUMN graphitron_producer_outcome.errors_field_name IS 'the outcome type''s one errors field; with the outcome type, a graphitron_errors_field key';
 COMMENT ON COLUMN graphitron_producer_outcome.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
-CREATE TABLE graphitron_carrier_data_channel (
-  graph_name        VARCHAR   NOT NULL,
-  type_name         VARCHAR   NOT NULL,
-  field_name        VARCHAR   NOT NULL,
-  payload_type_name VARCHAR   NOT NULL,
-  data_field_name   VARCHAR   NOT NULL,
-  passes_through    BOOLEAN   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, payload_type_name, data_field_name)
-    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_carrier_data_channel IS 'The one object data field a @service field''s payload holds its value in, and whether the producer''s object passes through it: one row per @service field whose payload has exactly one object data field bound to no table. For example Mutation.createFilmsWithActors returns FilmsWithActorsPayload, whose one data field results names no member of the service''s FilmWithActors, so each FilmWithActors passes through to FilmWithActorsResult.';
-COMMENT ON COLUMN graphitron_carrier_data_channel.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_carrier_data_channel.type_name IS 'the type declaring the @service field';
-COMMENT ON COLUMN graphitron_carrier_data_channel.field_name IS 'the @service field';
-COMMENT ON COLUMN graphitron_carrier_data_channel.payload_type_name IS 'the type the field returns, the payload holding the data field';
-COMMENT ON COLUMN graphitron_carrier_data_channel.data_field_name IS 'the payload''s one object data field bound to no table; with the payload, a graphitron_field key';
-COMMENT ON COLUMN graphitron_carrier_data_channel.passes_through IS 'true where the class the service returns has no read slot the data field names, its own name unless @field overrides it, so the producer''s object is the data element itself; false where the data field reads that member';
-COMMENT ON COLUMN graphitron_carrier_data_channel.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
-CREATE VIEW graphitron_carrier_data_channel_rule
-  (graph_name, type_name, field_name, payload_type_name, data_field_name, passes_through) AS
--- The class a @service method delivers, for each field it is written on whose payload is an object
--- carrying no @table and no connection, the same class the type backing's producer seed reads.
-WITH producer (graph_name, type_name, field_name, payload_type_name, class_name) AS (
-  SELECT s.graph_name, s.type_name, s.field_name, f.target_type_name, m.result_element_class
-    FROM graphitron_code_reference_site s
-    JOIN graphitron_code_reference r
-      ON r.graph_name = s.graph_name AND r.source_name = s.source_name
-     AND r.source_line = s.source_line AND r.source_column = s.source_column
-    JOIN code_method m
-      ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
-     AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
-    JOIN graphitron_field_target f
-      ON f.graph_name = s.graph_name AND f.type_name = s.type_name AND f.field_name = s.field_name
-     AND f.wrapper_type_name IS NULL
-    JOIN graphitron_type t
-      ON t.graph_name = f.graph_name AND t.type_name = f.target_type_name AND t.kind = 'OBJECT'
-   WHERE s.directive_name = 'service' AND m.result_element_class IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
-                      WHERE te.graph_name = f.graph_name AND te.type_name = f.target_type_name)
-),
--- A payload field whose type is an object carrying no @table: a data field. An errors field is a
--- list of a union or an interface, so it is never one.
-data_field (graph_name, payload_type_name, field_name, slot_name) AS (
-  SELECT df.graph_name, df.type_name, df.field_name, bf.bound_name
-    FROM graphitron_field_target df
-    JOIN graphitron_type dt
-      ON dt.graph_name = df.graph_name AND dt.type_name = df.target_type_name AND dt.kind = 'OBJECT'
-    JOIN graphitron_field bf
-      ON bf.graph_name = df.graph_name AND bf.type_name = df.type_name AND bf.field_name = df.field_name
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
-                      WHERE te.graph_name = df.graph_name AND te.type_name = df.target_type_name)
-)
--- The payload's only data field, and whether the class has a member it reads: none means the
--- producer's object is the data element, as the generator binds it.
-SELECT p.graph_name, p.type_name, p.field_name, p.payload_type_name, d.field_name,
-       NOT EXISTS (SELECT 1 FROM store_graph_source g
-                     JOIN code_read_slot sl
-                       ON sl.source_name = g.source_name AND sl.class_name = p.class_name
-                      AND sl.slot_name = d.slot_name
-                    WHERE g.graph_name = p.graph_name)
-  FROM producer p
-  JOIN data_field d
-    ON d.graph_name = p.graph_name AND d.payload_type_name = p.payload_type_name
- WHERE NOT EXISTS (SELECT 1 FROM data_field o
-                    WHERE o.graph_name = d.graph_name AND o.payload_type_name = d.payload_type_name
-                      AND o.field_name <> d.field_name);
-COMMENT ON VIEW graphitron_carrier_data_channel_rule IS 'One row the carrier data-channel rule computes, in the shape graphitron_carrier_data_channel stores: the rule itself, evaluated on demand rather than read off disk. For example a capture merges this view''s rows for one graph into graphitron_carrier_data_channel, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_carrier_data_channel_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_carrier_data_channel_rule.type_name IS 'the type declaring the @service field';
--- COMMENT ON COLUMN graphitron_carrier_data_channel_rule.field_name IS 'the @service field';
--- COMMENT ON COLUMN graphitron_carrier_data_channel_rule.payload_type_name IS 'the payload the field returns';
--- COMMENT ON COLUMN graphitron_carrier_data_channel_rule.data_field_name IS 'the payload''s one object data field bound to no table';
--- COMMENT ON COLUMN graphitron_carrier_data_channel_rule.passes_through IS 'as graphitron_carrier_data_channel.passes_through states';
 
 CREATE TABLE graphitron_producer_routine (
   graph_name        VARCHAR   NOT NULL,
@@ -12641,33 +12502,6 @@ COMMENT ON VIEW graphitron_reader_rule IS 'One row the reader rule computes, in 
 -- COMMENT ON COLUMN graphitron_reader_rule.field_name IS 'the field';
 -- COMMENT ON COLUMN graphitron_reader_rule.reads IS 'how it reads, a graphitron_reader reads';
 
-CREATE VIEW graphitron_reader_accessor_rule
-  (graph_name, type_name, field_name, reads, class_name, slot_source_name, slot_method_name,
-   slot_descriptor) AS
--- A field reading an accessor, on each class its parent's result holds, reads the member that class
--- offers under the field's own name, or the one @field names.
-SELECT r.graph_name, r.type_name, r.field_name, r.reads, rc.class_name,
-       sl.source_name, sl.method_name, sl.descriptor
-  FROM graphitron_reader r
-  JOIN graphitron_result_class rc
-    ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
-  JOIN store_graph_source g ON g.graph_name = r.graph_name
-  JOIN graphitron_field bf
-    ON bf.graph_name = r.graph_name AND bf.type_name = r.type_name AND bf.field_name = r.field_name
-  JOIN code_read_slot sl
-    ON sl.source_name = g.source_name AND sl.class_name = rc.class_name
-   AND sl.slot_name = bf.bound_name
- WHERE r.reads = 'ACCESSOR';
-COMMENT ON VIEW graphitron_reader_accessor_rule IS 'One row the reader-accessor rule computes, in the shape graphitron_reader_accessor stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor merges this view''s rows for one graph into graphitron_reader_accessor, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.type_name IS 'the type declaring the field';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.field_name IS 'the field';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.reads IS 'always ACCESSOR';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.class_name IS 'the class the member is read off';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.slot_source_name IS 'as on graphitron_reader_accessor';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.slot_method_name IS 'as on graphitron_reader_accessor';
--- COMMENT ON COLUMN graphitron_reader_accessor_rule.slot_descriptor IS 'as on graphitron_reader_accessor';
-
 CREATE VIEW graphitron_field_source_table_rule
   (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
 -- An object type with no rows of its own is read on the table the field reaching it departs from,
@@ -12807,7 +12641,10 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
       OR (s.directive_name = 'externalField' AND m.result_first_argument_class IS NOT NULL)
   UNION
   -- A payload the service's object passes through to its one data field: the class backs the data
-  -- element too, the type its fields are read off, as the generator binds it.
+  -- element too, the type its fields are read off, as the generator binds it. The payload is an
+  -- object carrying no @table and no connection; its data field is its one field whose type is an
+  -- object carrying no @table, an errors field being a list of a union or an interface; and the
+  -- object passes through where the class has no member the data field's bound name finds.
   SELECT s.graph_name, d.target_type_name, m.result_element_class
     FROM graphitron_code_reference_site s
     JOIN graphitron_code_reference r
@@ -12816,13 +12653,36 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     JOIN code_method m
       ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
      AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
-    JOIN graphitron_carrier_data_channel c
-      ON c.graph_name = s.graph_name AND c.type_name = s.type_name AND c.field_name = s.field_name
-     AND c.passes_through
+    JOIN graphitron_field_target pf
+      ON pf.graph_name = s.graph_name AND pf.type_name = s.type_name AND pf.field_name = s.field_name
+     AND pf.wrapper_type_name IS NULL
+    JOIN graphitron_type pt
+      ON pt.graph_name = pf.graph_name AND pt.type_name = pf.target_type_name AND pt.kind = 'OBJECT'
     JOIN graphitron_field_target d
-      ON d.graph_name = c.graph_name AND d.type_name = c.payload_type_name
-     AND d.field_name = c.data_field_name
+      ON d.graph_name = pf.graph_name AND d.type_name = pf.target_type_name
+    JOIN graphitron_type dt
+      ON dt.graph_name = d.graph_name AND dt.type_name = d.target_type_name AND dt.kind = 'OBJECT'
+    JOIN graphitron_field df
+      ON df.graph_name = d.graph_name AND df.type_name = d.type_name AND df.field_name = d.field_name
    WHERE s.directive_name = 'service' AND m.result_element_class IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
+                      WHERE te.graph_name = pf.graph_name AND te.type_name = pf.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
+                      WHERE te.graph_name = d.graph_name AND te.type_name = d.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target o
+                       JOIN graphitron_type ot
+                         ON ot.graph_name = o.graph_name AND ot.type_name = o.target_type_name
+                        AND ot.kind = 'OBJECT'
+                      WHERE o.graph_name = d.graph_name AND o.type_name = d.type_name
+                        AND o.field_name <> d.field_name
+                        AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
+                                         WHERE te.graph_name = o.graph_name
+                                           AND te.type_name = o.target_type_name))
+     AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                       JOIN code_read_slot sl
+                         ON sl.source_name = g.source_name AND sl.class_name = m.result_element_class
+                        AND sl.slot_name = df.bound_name
+                      WHERE g.graph_name = s.graph_name)
   UNION
   SELECT s.graph_name, a.named_type, mp.element_class
     FROM graphitron_code_reference_site s
@@ -12943,8 +12803,7 @@ COMMENT ON VIEW intent_type_backing_conflict IS 'Deprecated with the whole inten
 -- COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; distinct, so a class both arms name counts once, and the arity a rejection stands on, on intent_bound_table.candidates'' terms';
 
 CREATE VIEW graphitron_field_key_row_rule
-  (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name, arity,
-   method_source_name, method_class_name, method_name, method_descriptor) AS
+  (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name, arity) AS
 -- The fields that fetch their own rows under a parent holding an OBJECT, with what the parent holds
 -- and what the field reads. A parent holding several classes takes no part: which one arrives is the
 -- producer's, so no one key is the field's.
@@ -13030,8 +12889,7 @@ accessor (graph_name, type_name, field_name, source_name, class_name, method_nam
 -- A re-fetch: the parent is the payload a write hands back, or a record of the target's own table
 -- a service produced, so the target's key is read straight off it.
 SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.table_schema,
-       t.table_name, CASE WHEN fa.many THEN 'MANY' ELSE 'ONE' END,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+       t.table_name, CASE WHEN fa.many THEN 'MANY' ELSE 'ONE' END
   FROM field_at fa
   JOIN target t
     ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
@@ -13042,8 +12900,7 @@ SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.t
 UNION ALL
 -- A table record the path departs from, by its first key or, to several tables, by its own key.
 SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', fa.record_source_name,
-       fa.record_schema, fa.record_table, 'ONE',
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+       fa.record_schema, fa.record_table, 'ONE'
   FROM field_at fa
  WHERE fa.record_table IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM target t WHERE t.graph_name = fa.graph_name
@@ -13055,7 +12912,7 @@ SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', fa.record_source_n
 UNION ALL
 -- An accessor of the parent's class, where nothing above took the keys and exactly one matches.
 SELECT a.graph_name, a.type_name, a.field_name, 'ACCESSOR', a.table_source_name, a.table_schema,
-       a.table_name, a.arity, a.source_name, a.class_name, a.method_name, a.descriptor
+       a.table_name, a.arity
   FROM accessor a
  WHERE (SELECT COUNT(*) FROM accessor a2 WHERE a2.graph_name = a.graph_name
           AND a2.type_name = a.type_name AND a2.field_name = a.field_name) = 1;
@@ -16472,9 +16329,6 @@ INSERT INTO meta_grain VALUES
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
-  ('graph-field-class',
-   'one field one type declares, read off one class its type holds from one classpath entry, in one graph',
-   'graph_name, type_name, field_name, class_name, slot_source_name', 'sdl'),
   ('producer-claim',
    'one kind of producer one field''s written directives claim, in one graph',
    'graph_name, type_name, field_name, kind', 'sdl'),
@@ -17882,10 +17736,6 @@ INSERT INTO meta_relation VALUES
    'How a field takes the keys its rows are fetched by off the object its parent holds: one row per field whose parent holds an OBJECT and that fetches its own rows.',
    'For example FilmDetailsCarrier.language, under a FilmRecord, takes film''s columns off the record, and CreateFilmsPayload.films takes the film records its films() accessor returns.',
    'A field under a held object fetches its rows by keys only that object can give, so how the keys are taken is a fact about the field and its parent''s class, stated once here, not worked out again by the generator from the class at build time. The kind names the generator''s key lift and the table says whose columns the keys are, so the walk can depart from it.'),
-  ('graphitron_field_key_row_method', 'graph-field', 'graphitron',
-   'The method a key row is taken by, where one is: one row per field whose keys an accessor of the parent''s object yields.',
-   'For example FilmWithActorsResult.actors'' keys are FilmWithActors.actorRecords().',
-   'A subtype of graphitron_field_key_row for the one kind that names a method, so the key carries no column that is NULL by kind; its reference into the key names the kind, so a COLUMNS key can hold no method.'),
   ('graphitron_field_key_row_rule', 'graph-field', 'graphitron',
    'One row the key-row rule computes, in the shape graphitron_field_key_row and its method subtype store together: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture writes this view''s rows for one graph into the two relations, which are the names every reader spells.',
@@ -17966,14 +17816,6 @@ INSERT INTO meta_relation VALUES
    'A field whose value is a list of errors: one row per nullable list of a union or an interface whose every member is @error.',
    'For example FilmLookupPayload.errors: [FilmLookupError], the union of FilmLookupNotFound, FilmLookupInvalid and FilmLookupClientFacing.',
    'A fact of the field, stated once whoever returns its type: the outcome a producer catches into reads it, and so do the defects a misshapen one raises.'),
-  ('graphitron_carrier_data_channel', 'graph-field', 'graphitron',
-   'The one object data field a @service field''s payload holds its value in, and whether the producer''s object passes through it: one row per @service field whose payload has exactly one object data field bound to no table.',
-   'For example Mutation.createFilmsWithActors returns FilmsWithActorsPayload, whose one data field results names no member of the service''s FilmWithActors, so each FilmWithActors passes through to FilmWithActorsResult.',
-   'The generator decides this once, binding a service''s class to the data element instead of the payload where the class has no member the data field names. The store''s backing closure looked for that member and stopped, so the element held no class and its fields no key rows. Read off the method and its read slots alone, never the element''s class, so the type backing can read it.'),
-  ('graphitron_carrier_data_channel_rule', 'graph-field', 'graphitron',
-   'One row the carrier data-channel rule computes, in the shape graphitron_carrier_data_channel stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture merges this view''s rows for one graph into graphitron_carrier_data_channel, which is the name every reader spells.',
-   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_producer_outcome', 'graph-field', 'graphitron',
    'A producer whose result is an outcome, and the field its errors arrive at: one row per service, write or routine whose target declares exactly one errors field.',
    'For example Query.filmLookup @service returning FilmLookupPayload, whose one errors field is errors: [FilmLookupError], catches what the service throws and hands it to errors.',
@@ -18018,14 +17860,6 @@ INSERT INTO meta_relation VALUES
    'One round of the result rule: the results the producers seed and the ones a reader hands on from what graphitron_result already holds, in the shape graphitron_result and its two row subtypes store.',
    'For example the graphitron anchor merges this view''s rows into graphitron_result until a round adds nothing, which is the closure.',
    'The rule as a view beside its tables, so what the closure stores stays checkable against one round of it.'),
-  ('graphitron_reader_accessor', 'graph-field-class', 'graphitron',
-   'The member a field reading an ACCESSOR reads off one class its parent''s result holds: one row per field, class and entry the class was read from.',
-   'For example FilmBlurbHolder.blurb reads blurb() off FilmBlurbHolder, and a field written text @field(name: "description") reads description() off its class.',
-   'graphitron_reader says a field reads its parent''s object through an accessor but not which, so every reader of that read, the generated fetcher and an @outbox $result over a service''s returned value alike, would look the member up again. The member is code_read_slot''s, found by the field''s own name unless @field overrides it, on the class graphitron_result_class says the parent holds, the hop the type backing''s closure takes; a type a class of which offers no such member has no row for that class.'),
-  ('graphitron_reader_accessor_rule', 'graph-field-class', 'graphitron',
-   'One row the reader-accessor rule computes, in the shape graphitron_reader_accessor stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the graphitron anchor merges this view''s rows for one graph into graphitron_reader_accessor, which is the name every reader spells.',
-   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_reader', 'graph-field', 'graphitron',
    'A field whose fetcher reads from the result its parent holds, and how: one row per field.',
    'For example Film.title reads a COLUMN of film''s row, and a connection''s edges reads its page through an ACCESSOR.',

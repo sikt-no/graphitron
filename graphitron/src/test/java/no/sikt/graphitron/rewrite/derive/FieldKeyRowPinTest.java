@@ -20,7 +20,9 @@ import java.util.TreeMap;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -59,12 +61,19 @@ class FieldKeyRowPinTest {
                 CatalogInput.of(testContext()), sakilaClasspath())) {
             var dsl = store.dsl();
             var k = GRAPHITRON_FIELD_KEY_ROW;
-            var m = GRAPHITRON_FIELD_KEY_ROW_METHOD;
+            var f = GRAPHITRON_FIELD;
+            var rc = GRAPHITRON_RESULT_CLASS;
+            var slot = CODE_READ_SLOT;
             var stored = new TreeMap<String, String>();
-            dsl.select(k.TYPE_NAME, k.FIELD_NAME, k.KIND, k.ARITY, m.METHOD_NAME)
+            // An accessor key reads the member the field's bound name finds on the class its
+            // parent's result holds; nothing stores which, so the pin reads it as the join.
+            dsl.select(k.TYPE_NAME, k.FIELD_NAME, k.KIND, k.ARITY, slot.METHOD_NAME)
                 .from(k)
-                .leftJoin(m).on(m.GRAPH_NAME.eq(k.GRAPH_NAME), m.TYPE_NAME.eq(k.TYPE_NAME),
-                    m.FIELD_NAME.eq(k.FIELD_NAME))
+                .join(f).on(f.GRAPH_NAME.eq(k.GRAPH_NAME), f.TYPE_NAME.eq(k.TYPE_NAME),
+                    f.FIELD_NAME.eq(k.FIELD_NAME))
+                .leftJoin(rc).on(rc.GRAPH_NAME.eq(k.GRAPH_NAME), rc.TYPE_NAME.eq(k.TYPE_NAME),
+                    k.KIND.eq("ACCESSOR"))
+                .leftJoin(slot).on(slot.CLASS_NAME.eq(rc.CLASS_NAME), slot.SLOT_NAME.eq(f.BOUND_NAME))
                 .fetch()
                 .forEach(r -> stored.put(r.value1() + "." + r.value2(),
                     r.value3() + " " + r.value4() + (r.value5() == null ? "" : " " + r.value5())));

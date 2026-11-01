@@ -51,8 +51,3 @@ extend schema @expectEquals(relation: "graphitron_field_key_row", rows: """
   OccupantsBatchPayload, occupants,  ACCESSOR, address,    MANY
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_key_row_method", rows: """
-  type_name,             field_name, kind,     method_class_name,                                               method_name
-  CreateFilmsPayload,    films,      ACCESSOR, no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,     films
-  OccupantsBatchPayload, occupants,  ACCESSOR, no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload,  addresses
-  """)

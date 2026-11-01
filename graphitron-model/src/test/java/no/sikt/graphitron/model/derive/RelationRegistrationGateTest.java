@@ -328,11 +328,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_parameter", Arm.DERIVED);
         registrations.put("graphitron_field_path_parameter_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path_parameter_binding", Arm.DERIVED);
-        registrations.put("graphitron_carrier_data_channel", Arm.DERIVED);
-        registrations.put("graphitron_carrier_data_channel_rule", Arm.DERIVED);
         registrations.put("graphitron_field_key_row", Arm.DERIVED);
         registrations.put("graphitron_field_path_start_lifted", Arm.DERIVED);
-        registrations.put("graphitron_field_key_row_method", Arm.DERIVED);
         registrations.put("graphitron_field_key_row_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_path_fanout", Arm.DERIVED);
@@ -445,8 +442,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_result_class", Arm.DERIVED);
         registrations.put("graphitron_result_rule", Arm.DERIVED);
         registrations.put("graphitron_reader", Arm.DERIVED);
-        registrations.put("graphitron_reader_accessor", Arm.DERIVED);
-        registrations.put("graphitron_reader_accessor_rule", Arm.DERIVED);
         registrations.put("graphitron_reader_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_write", Arm.DERIVED);
         registrations.put("graphitron_producer_write_rule", Arm.DERIVED);

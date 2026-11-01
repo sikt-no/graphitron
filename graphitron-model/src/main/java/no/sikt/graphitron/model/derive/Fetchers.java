@@ -26,8 +26,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER_ACCESSOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER_ACCESSOR_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
@@ -149,16 +147,6 @@ public final class Fetchers {
             .set(fetcher.SIDE, excluded(fetcher.SIDE))
             .set(fetcher.TOUCHED_AT, excluded(fetcher.TOUCHED_AT))
             .execute();
-        // A field that reads otherwise now: its accessor row names the read it is about to leave.
-        var accessor = GRAPHITRON_READER_ACCESSOR;
-        dsl.deleteFrom(accessor)
-            .where(accessor.GRAPH_NAME.eq(graph))
-            .andNotExists(dsl.selectOne().from(readerRule)
-                .where(readerRule.GRAPH_NAME.eq(accessor.GRAPH_NAME))
-                .and(readerRule.TYPE_NAME.eq(accessor.TYPE_NAME))
-                .and(readerRule.FIELD_NAME.eq(accessor.FIELD_NAME))
-                .and(readerRule.READS.eq(accessor.READS)))
-            .execute();
         dsl.insertInto(reader)
             .columns(reader.GRAPH_NAME, reader.TYPE_NAME, reader.FIELD_NAME, reader.SIDE,
                 reader.READS, reader.TOUCHED_AT)
@@ -179,9 +167,6 @@ public final class Fetchers {
             .where(reader.GRAPH_NAME.eq(graph))
             .and(reader.TOUCHED_AT.ne(touchedAt))
             .execute();
-        // The member each accessor read reads, off the readers just written.
-        refresh(dsl, GRAPHITRON_READER_ACCESSOR, GRAPHITRON_READER_ACCESSOR_RULE,
-            GRAPHITRON_READER_ACCESSOR.GRAPH_NAME, GRAPHITRON_READER_ACCESSOR.TOUCHED_AT, graph, touchedAt);
 
         // A field that stopped being fetched at all.
         dsl.deleteFrom(fetcher)
