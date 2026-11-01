@@ -460,18 +460,18 @@ static method needs no holder.
     A top-level `@service` field on the mutation root is a write, as `graphitron_producer` and
     `graphql_root_operation` say, and a `$result` over its returned value is a pointer to the
     result: a `graphitron_outbox_leaf` keeping only its path, each step read as its field's own
-    facts say. A step reads the member the field's bound name finds on each class its parent's
-    result holds, passes the object through where it finds none and the field's result holds the
-    parent's class, or, where the field is
-    table-bound, takes a record of the key row's table (`graphitron_field_key_row`, arity `ONE`);
-    a step through a list is not built. A path ends on a member a payload can carry
+    facts say. A step reads the member the field's bound name finds on the one class its parent's
+    result holds, passes the object through where it finds none and the field's type holds the
+    parent's class, or, where the member returns records of the field's table-bound target, takes
+    that record (`graphitron_field_key_row`, `ACCESSOR`, arity `ONE`); a type whose result holds
+    several classes takes no part, and a step through a list is not built. A path ends on a member a payload can carry
     (`RESULT_MEMBER`), on the `@nodeId` field of a node type reached through a record of its table
     whose node key is the primary key (`RESULT_NODE_ID`), or, bare, on a scalar return
     (`RESULT_ROOT`, no node type). A path ending on anything a payload cannot carry is
     `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`, naming the type; the rest stays
-    `OUTBOX_SOURCE_UNRESOLVED`. The steps are a view, one row per leaf and segment, which the leaf
-    rule and the emitter both read; the types a payload can carry are one list the session and
-    member arms share.
+    `OUTBOX_SOURCE_UNRESOLVED`. The steps are a view, `graphitron_outbox_result_step`, one row per
+    leaf and segment, which the leaf rule and the emitter both read; the types a payload can carry
+    are one list the session and member arms share.
   * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
     `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write
