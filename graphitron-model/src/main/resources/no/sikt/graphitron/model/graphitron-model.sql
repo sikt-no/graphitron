@@ -8470,7 +8470,7 @@ COMMENT ON COLUMN graphitron_entry_defect_method.graph_name IS 'the owning graph
 COMMENT ON COLUMN graphitron_entry_defect_method.source_name IS 'the file the defect is written in, the first of the five columns that are the defect''s key in graphitron_entry_defect';
 COMMENT ON COLUMN graphitron_entry_defect_method.source_line IS 'the defect''s source line, part of its key';
 COMMENT ON COLUMN graphitron_entry_defect_method.source_column IS 'the defect''s source column, part of its key';
-COMMENT ON COLUMN graphitron_entry_defect_method.code IS 'the defect''s code, completing its key. It also says what the method is to the defect: a declaration that ties under CONDITION_OVERLOAD_TIE, and one the step considered and none of which took its pair under CONDITION_NO_OVERLOAD_FOR_PAIR, so no role column is needed';
+COMMENT ON COLUMN graphitron_entry_defect_method.code IS 'the defect''s code, completing its key. It also says what the method is to the defect: a declaration that ties under CONDITION_OVERLOAD_TIE, one the step considered and none of which took its pair under CONDITION_NO_OVERLOAD_FOR_PAIR, and one of the declarations whose shapes disagree under CONDITION_OVERLOAD_SHAPE_DISAGREES, so no role column is needed';
 COMMENT ON COLUMN graphitron_entry_defect_method.method_source_name IS 'the classpath entry the declaration was read from, the first of the four columns that are its key in code_method';
 COMMENT ON COLUMN graphitron_entry_defect_method.method_class_name IS 'the class declaring it';
 COMMENT ON COLUMN graphitron_entry_defect_method.method_name IS 'the method''s name';
@@ -11464,6 +11464,79 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
     OR (s.descriptors > 1
         AND (s.directive_name IN ('service', 'externalField')
              OR (s.directive_name IN ('order', 'defaultOrder') AND s.written_at = 'method')))
+UNION ALL
+-- A @condition whose overloads disagree in shape, at the reference. The declarations of one name are
+-- one condition where they differ only in their jOOQ table parameters, the generated call being the
+-- same for each and javac picking among them; otherwise the name stands for more than one call. The
+-- axes are compared in order and the first that disagrees is the detail: the parameter count, the
+-- static modifier, the return type, the throws clause, then the first position that is a table in
+-- some declarations and not others, or is no table and differs in name or declared type. A position
+-- is a table where its role is one of the two table roles, which is the assignability the
+-- classpath reading decided. Every declaration is the class's public methods of the name in the
+-- graph's classpath, one per descriptor.
+SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
+       'CONDITION_OVERLOAD_SHAPE_DISAGREES',
+       CASE WHEN y.arities > 1 THEN 'parameter count'
+            WHEN y.statics > 1 THEN 'static modifier'
+            WHEN y.results > 1 THEN 'return type'
+            WHEN y.clauses > 1 THEN 'throws clause'
+            ELSE 'parameter ' || y.first_position END
+  FROM (SELECT x.graph_name, x.source_name, x.source_line, x.source_column,
+               x.arities, x.statics, x.results,
+               -- Two throws clauses disagree where an exception one overload declares is missing
+               -- from another's; compared as sets, row by row.
+               CASE WHEN EXISTS (
+                      SELECT 1 FROM store_graph_source g
+                        JOIN code_method m ON m.source_name = g.source_name
+                        JOIN store_graph_source ge ON ge.graph_name = g.graph_name
+                        JOIN code_method_exception e
+                          ON e.source_name = ge.source_name AND e.class_name = m.class_name
+                         AND e.method_name = m.method_name
+                       WHERE g.graph_name = x.graph_name AND m.class_name = x.class_name
+                         AND m.method_name = x.method_name
+                         AND NOT EXISTS (SELECT 1 FROM code_method_exception f
+                                          WHERE f.source_name = m.source_name
+                                            AND f.class_name = m.class_name
+                                            AND f.method_name = m.method_name
+                                            AND f.descriptor = m.descriptor
+                                            AND f.exception_class = e.exception_class))
+                    THEN 2 ELSE 1 END AS clauses,
+               (SELECT p.position FROM store_graph_source g
+                  JOIN code_method m ON m.source_name = g.source_name
+                  JOIN code_method_parameter p
+                    ON p.source_name = m.source_name AND p.class_name = m.class_name
+                   AND p.method_name = m.method_name AND p.descriptor = m.descriptor
+                 WHERE g.graph_name = x.graph_name AND m.class_name = x.class_name
+                   AND m.method_name = x.method_name
+                 GROUP BY p.position
+                HAVING COUNT(DISTINCT CASE WHEN p.role IN ('TABLE_CONCRETE', 'TABLE_ANY') THEN 1 ELSE 0 END) > 1
+                    OR (MAX(CASE WHEN p.role IN ('TABLE_CONCRETE', 'TABLE_ANY') THEN 1 ELSE 0 END) = 0
+                        AND COUNT(DISTINCT COALESCE(p.parameter_name, '') || '|' || p.parameter_type) > 1)
+                 ORDER BY p.position
+                 FETCH FIRST 1 ROW ONLY) AS first_position
+          FROM (SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+                       d.class_name, d.method_name,
+                       COUNT(DISTINCT d.arity) AS arities,
+                       COUNT(DISTINCT d.is_static) AS statics,
+                       COUNT(DISTINCT d.result_class) AS results
+                  FROM (SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column,
+                               c.class_name, c.method_name, m.descriptor, m.is_static,
+                               COALESCE(m.result_erased_class, m.result_type) AS result_class,
+                               (SELECT COUNT(*) FROM code_method_parameter p
+                                 WHERE p.source_name = m.source_name AND p.class_name = m.class_name
+                                   AND p.method_name = m.method_name
+                                   AND p.descriptor = m.descriptor) AS arity
+                          FROM graphitron_code_reference_site c
+                          JOIN store_graph_source g ON g.graph_name = c.graph_name
+                          JOIN code_method m
+                            ON m.source_name = g.source_name AND m.class_name = c.class_name
+                           AND m.method_name = c.method_name
+                         WHERE c.directive_name = 'condition') d
+                 GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column,
+                          d.class_name, d.method_name
+                HAVING COUNT(DISTINCT d.descriptor) > 1) x) y
+ WHERE y.arities > 1 OR y.statics > 1 OR y.results > 1 OR y.clauses > 1
+    OR y.first_position IS NOT NULL
 UNION ALL
 -- A @table naming a table-valued function. A type is not bound to a function: the field carrying
 -- @routine binds its return type to the routine's result, so the directive names something a type
@@ -16772,6 +16845,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.', 'graphitron'),
   ('CONDITION_NO_OVERLOAD_FOR_PAIR', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_NO_OVERLOAD_FOR_PAIR',
    'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.', 'graphitron'),
+  ('CONDITION_OVERLOAD_SHAPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_SHAPE_DISAGREES',
+   'A @condition names a method whose overloads differ in more than their jOOQ table parameters, on the static modifier, the return type, the parameter count, the throws clause or a parameter that is a table in some and not others or differs in name or type, so the name stands for more than one call.', 'graphitron'),
   ('CONDITION_OVERLOAD_TIE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_TIE',
    'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'graphitron'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',

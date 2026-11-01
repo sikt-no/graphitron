@@ -1,0 +1,50 @@
+# A @condition names a method, and the declarations of that name are one condition where they
+# differ only in their jOOQ table parameters: the generated call is the same for each and javac
+# picks among them. A set differing in anything else stands for more than one call and draws
+# CONDITION_OVERLOAD_SHAPE_DISAGREES at the reference, its detail naming the first axis that
+# disagrees, in the order parameter count, static modifier, return type, throws clause, parameter
+# position. Each name in ConditionShapeFixtures disagrees on one axis and agrees on the ones before
+# it; agreeing differs only in its table and draws nothing. The defect is the same at a field, an
+# argument and an input field.
+
+type Customer @table(name: "customer") { customerId: Int @field(name: "customer_id") }
+
+input CustomerFilter {
+  name: String @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "nameAtPosition"})
+}
+
+extend type Query {
+  byCount: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "parameterCount"})
+  byStatic: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "staticModifier"})
+  byReturn: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "returnType"})
+  byThrows: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "throwsClause"})
+  byTablePosition: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "tableAtPosition"})
+  byArgument(value: String @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "typeAtPosition"})): [Customer!]!
+  byInput(filter: CustomerFilter): [Customer!]!
+  byAgreeing: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "agreeing"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code = 'CONDITION_OVERLOAD_SHAPE_DISAGREES'
+  """, rows: """
+  coordinate,                detail
+  Query.byCount,             parameter count
+  Query.byStatic,            static modifier
+  Query.byReturn,            return type
+  Query.byThrows,            throws clause
+  Query.byTablePosition,     parameter 0
+  "Query.byArgument(value:)", parameter 1
+  CustomerFilter.name,       parameter 1
+  """)
+
+# The declarations each defect is about, one row each under it: here the two of parameterCount.
+extend schema @assertContains(relation: "graphitron_entry_defect_method", rows: """
+  code,                               method_name,    method_descriptor
+  CONDITION_OVERLOAD_SHAPE_DISAGREES, parameterCount, (Lorg/jooq/Table;)Lorg/jooq/Condition;
+  CONDITION_OVERLOAD_SHAPE_DISAGREES, parameterCount, (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_method", rows: """
+  method_name
+  agreeing
+  """)
