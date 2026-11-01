@@ -287,13 +287,6 @@ this branch rather than modelling inputs again. Taken up on 2026-10-31.
   before anything writes them, as "Path model (draft)" lists them. A key that can point into another
   file names its target by coordinate or by an element's place in its list, never by line and
   column.
-* **A condition step picks its overload by the step's two tables** `open`. A `{condition:}` step
-  keeps the overload of the method its element names whose two table parameters take the step's from
-  and to table, where `FieldPaths.methods` keeps every overload by name today; none is
-  `CONDITION_NO_OVERLOAD_FOR_PAIR` and two is `CONDITION_OVERLOAD_TIE`, entry defects at the element.
-  In kreg, removing one `barnCondition` overload passed classification and failed in javac on
-  generated code with no schema coordinate. Lands on today's field paths, which already carry both
-  tables per step.
 * **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "The path relations are declared".
   `graphitron_path_holder` and `graphitron_path_need` are derived: each end expanded to its tables,
   an interface with its own `@table` taken as one table, a member a `@referenceFor` names on a
