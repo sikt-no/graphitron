@@ -63,6 +63,10 @@ import java.util.Set;
  * <p>{@link #sessionIdentity} judges the {@code $session} bindings and the configured handle
  * class against the build's {@code <sessionState>} and the classpath, which no other family reads.
  *
+ * <p>{@link #conditionOverloads} judges a path element's condition method against the step it
+ * joins or filters: the generated call passes the step's two tables, and the consumer's javac has to
+ * find exactly one declaration taking them, which no other family reads.
+ *
  * <p>{@link #nodeIdDecodeCoverage} is the second member that is not a detection, and it is not one
  * for a different reason than {@link #keyProjections}: it is half of a rule whose other half the
  * store does not hold at all. What the generator did about each decoding {@code @nodeId} coordinate
@@ -91,6 +95,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               SessionIdentityDefects.Detection sessionIdentity,
                               NodeLegacyKeyDefects.Detection nodeLegacyKeys,
                               OutboxDefects.Detection outboxes,
+                              ConditionOverloadDefects.Detection conditionOverloads,
                               ResolvedKeyProjections.Projections keyProjections,
                               NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage,
                               StoreLegacyKeyShapes.Shapes legacyKeyShapes) {
@@ -122,6 +127,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("SessionIdentityDefects", SessionIdentityDefects.READS);
         roster.put("NodeLegacyKeyDefects", NodeLegacyKeyDefects.READS);
         roster.put("OutboxDefects", OutboxDefects.READS);
+        roster.put("ConditionOverloadDefects", ConditionOverloadDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
         roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
         roster.put("StoreLegacyKeyShapes", StoreLegacyKeyShapes.READS);
@@ -150,6 +156,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                     SessionIdentityDefects.detect(dsl, graphName),
                     NodeLegacyKeyDefects.detect(dsl, graphName),
                     OutboxDefects.detect(dsl, graphName),
+                    ConditionOverloadDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
                     NodeIdDecodeCoverageFacts.read(dsl, graphName),
                     StoreLegacyKeyShapes.read(dsl, graphName));
@@ -170,6 +177,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             SessionIdentityDefects.Detection.empty(),
             NodeLegacyKeyDefects.Detection.empty(),
             OutboxDefects.Detection.empty(),
+            ConditionOverloadDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
             NodeIdDecodeCoverageFacts.Facts.empty(),
             StoreLegacyKeyShapes.Shapes.empty());
@@ -188,6 +196,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(sessionIdentity.violations());
         out.addAll(nodeLegacyKeys.violations());
         out.addAll(outboxes.violations());
+        out.addAll(conditionOverloads.violations());
         return List.copyOf(out);
     }
 

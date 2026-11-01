@@ -1,0 +1,31 @@
+# The second reading names the foreign key on Film.language and drops the condition from
+# Staff.address, so neither defect is found again and the gatherer's sweep takes both rows, the
+# walk's as well as the rule's. Customer.address still ties, and its row stays, marked again with
+# this reading's instant.
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+type Language @table(name: "language") { name: String }
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Staff @table(name: "staff") {
+  staffId: Int @field(name: "staff_id")
+  address: Address @reference(path: [{table: "address"}])
+}
+type Customer @table(name: "customer") {
+  customerId: Int @field(name: "customer_id")
+  address: Address @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "ambiguousPair"
+  }}])
+}
+
+extend type Query { films: [Film!]! staffs: [Staff!]! customers: [Customer!]! }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: """
+  code IN ('ROUTE_AMBIGUOUS', 'CONDITION_NO_OVERLOAD_FOR_PAIR', 'CONDITION_OVERLOAD_TIE')
+  """, rows: """
+  code,                   touched_at
+  CONDITION_OVERLOAD_TIE, 1000000060
+  """)

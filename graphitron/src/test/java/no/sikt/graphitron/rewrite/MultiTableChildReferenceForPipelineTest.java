@@ -402,6 +402,56 @@ class MultiTableChildReferenceForPipelineTest {
         assertThat(correlation).isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
     }
 
+    private static final String ROUTE_FIXTURES =
+        "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures";
+
+    @Test
+    void conditionRoute_noOverloadTakesThePair_rejectedNamingPair() {
+        // pairOnly is declared (Customer, Address) and (Staff, City). The AddressP route calls it
+        // pairOnly(staffAlias, addressAlias): staff is covered at parameter 0 by one declaration and
+        // address at parameter 1 by the other, so each position passes on its own, and javac still
+        // finds no declaration taking the pair.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Located { rowId: Int }
+            type AddressP implements Located @table(name: "address") { rowId: Int @field(name: "address_id") }
+            type CityP implements Located @table(name: "city") { rowId: Int @field(name: "city_id") }
+            type Staff @table(name: "staff") {
+              located: Located
+                @referenceFor(type: "AddressP", path: [{condition: {className: "%s", method: "pairOnly"}}])
+                @referenceFor(type: "CityP", path: [{condition: {className: "%s", method: "pairOnly"}}])
+            }
+            type Query { staff: Staff }
+            """.formatted(ROUTE_FIXTURES, ROUTE_FIXTURES));
+        var field = schema.field("Staff", "located");
+        assertThat(field.qualifiedName()).isEqualTo("Staff.located");
+        var rejection = rejectionOf(field);
+        assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(rejection.message())
+            .contains("AddressP")
+            .contains("pairOnly")
+            .contains("no overload taking this hop's source table 'staff' and target table 'address'");
+    }
+
+    @Test
+    void conditionRoute_overloadTakesThePair_classifies() {
+        // The control: the same overload set on the CityP route, where (Staff, City) takes the pair,
+        // beside an AddressP route riding the foreign key.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Located { rowId: Int }
+            type AddressP implements Located @table(name: "address") { rowId: Int @field(name: "address_id") }
+            type CityP implements Located @table(name: "city") { rowId: Int @field(name: "city_id") }
+            type Staff @table(name: "staff") {
+              located: Located
+                @referenceFor(type: "AddressP", path: [{key: "staff_address_id_fkey"}])
+                @referenceFor(type: "CityP", path: [{condition: {className: "%s", method: "pairOnly"}}])
+            }
+            type Query { staff: Staff }
+            """.formatted(ROUTE_FIXTURES));
+        var field = (ChildField.InterfaceField) schema.field("Staff", "located");
+        assertThat(field.participantJoinPaths().get("CityP"))
+            .isInstanceOf(ParticipantCorrelation.JoinedCorrelation.class);
+    }
+
     private static Rejection rejectionOf(no.sikt.graphitron.rewrite.model.GraphitronField field) {
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         return ((UnclassifiedField) field).rejection();

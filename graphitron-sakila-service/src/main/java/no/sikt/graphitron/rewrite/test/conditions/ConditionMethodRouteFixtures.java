@@ -2,8 +2,10 @@ package no.sikt.graphitron.rewrite.test.conditions;
 
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Address;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.City;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Staff;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -115,6 +117,33 @@ public final class ConditionMethodRouteFixtures {
     /** Not a condition, its return type being no {@link Condition}: routes nothing. */
     public static Object notACondition(Customer customer, Address address) {
         return null;
+    }
+
+    /**
+     * Two declarations each covering one end of staff to address and neither the pair: a step from
+     * staff to address finds staff at parameter 0 of one and address at parameter 1 of the other, and
+     * no declaration javac could call with both.
+     */
+    public static Condition pairOnly(Customer customer, Address address) {
+        return DSL.noCondition();
+    }
+
+    /** The second declaration of {@link #pairOnly(Customer, Address)}. */
+    public static Condition pairOnly(Staff staff, City city) {
+        return DSL.noCondition();
+    }
+
+    /**
+     * Two declarations both taking customer to address, each exact at one end and a wildcard at the
+     * other: neither is more specific than the other, so javac refuses the call as ambiguous.
+     */
+    public static Condition ambiguousPair(Customer customer, Table<?> target) {
+        return DSL.noCondition();
+    }
+
+    /** The second declaration of {@link #ambiguousPair(Customer, Table)}. */
+    public static Condition ambiguousPair(Table<?> source, Address address) {
+        return DSL.noCondition();
     }
 
     /** Concrete, and named beside a key, where the key is the route: asked nothing. */

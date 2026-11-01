@@ -9253,7 +9253,7 @@ CREATE TABLE graphitron_field_path_method (
     REFERENCES code_condition_method (source_name, class_name, method_name, descriptor)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_path_method IS 'The condition method a step of a field''s path joins or filters by: one row per step and overload. For example {condition: {className: "…Conditions", method: "filmActors"}} alone is the step''s join; beside a key or a table it filters the step its columns join.';
+COMMENT ON TABLE graphitron_field_path_method IS 'The condition method a step of a field''s path joins or filters by: one row per step, the overload a call with the step''s two tables resolves to. For example {condition: {className: "…Conditions", method: "filmActors"}} alone is the step''s join; beside a key or a table it filters the step its columns join.';
 COMMENT ON COLUMN graphitron_field_path_method.graph_name IS 'the owning graph''s partition, carried from the step';
 COMMENT ON COLUMN graphitron_field_path_method.type_name IS 'the type owning the field, as on the step';
 COMMENT ON COLUMN graphitron_field_path_method.field_name IS 'the field, as on the step';
@@ -9266,6 +9266,60 @@ COMMENT ON COLUMN graphitron_field_path_method.method_class_name IS 'the class d
 COMMENT ON COLUMN graphitron_field_path_method.method_name IS 'the method';
 COMMENT ON COLUMN graphitron_field_path_method.method_descriptor IS 'the method''s descriptor; with the three columns before it, code_condition_method''s key';
 COMMENT ON COLUMN graphitron_field_path_method.touched_at IS 'when the walk that last took the step ran, as on the step';
+
+CREATE VIEW graphitron_field_path_method_candidate
+  (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+   method_source_name, method_class_name, method_name, method_descriptor,
+   from_exact, to_exact, from_parameter_type, to_parameter_type) AS
+-- The emitter calls a step's condition method(sourceAlias, targetAlias), so only a declaration with
+-- exactly two parameters is a candidate, and it is applicable where each position takes its end: the
+-- end's own generated class, or the bare jOOQ table interface. The ends are the step's own tables,
+-- which already sit in the graph's sources, so the class match needs no scoping of its own.
+SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema,
+       p.start_table, p.position,
+       pm.method_source_name, pm.method_class_name, pm.method_name, pm.method_descriptor,
+       CASE WHEN dp.erased_class = ft.class_fqn THEN TRUE ELSE FALSE END,
+       CASE WHEN ap.erased_class = tt.class_fqn THEN TRUE ELSE FALSE END,
+       dp.parameter_type, ap.parameter_type
+  FROM graphitron_field_path p
+  JOIN graphitron_path_element_method pm
+    ON pm.graph_name = p.graph_name AND pm.source_name = p.element_source_name
+   AND pm.source_line = p.element_source_line AND pm.source_column = p.element_source_column
+  JOIN sql_table ft
+    ON ft.source_name = p.from_source_name AND ft.table_schema = p.from_schema
+   AND ft.table_name = p.from_table
+  JOIN sql_table tt
+    ON tt.source_name = p.to_source_name AND tt.table_schema = p.to_schema
+   AND tt.table_name = p.to_table
+  JOIN code_method_parameter dp
+    ON dp.source_name = pm.method_source_name AND dp.class_name = pm.method_class_name
+   AND dp.method_name = pm.method_name AND dp.descriptor = pm.method_descriptor AND dp.position = 0
+  JOIN code_method_parameter ap
+    ON ap.source_name = pm.method_source_name AND ap.class_name = pm.method_class_name
+   AND ap.method_name = pm.method_name AND ap.descriptor = pm.method_descriptor AND ap.position = 1
+ WHERE (dp.erased_class = ft.class_fqn OR dp.role = 'TABLE_ANY')
+   AND (ap.erased_class = tt.class_fqn OR ap.role = 'TABLE_ANY')
+   AND NOT EXISTS (SELECT 1 FROM code_method_parameter xp
+                    WHERE xp.source_name = pm.method_source_name
+                      AND xp.class_name = pm.method_class_name
+                      AND xp.method_name = pm.method_name
+                      AND xp.descriptor = pm.method_descriptor AND xp.position = 2);
+COMMENT ON VIEW graphitron_field_path_method_candidate IS 'An overload a step of a field''s path could call its condition method by: one row per step and declaration whose two parameters take the step''s two tables. For example a step from customer to address naming a method declared (Customer, Address) and (Customer, Table<?>) draws both, the first exact at both ends and the second exact at its departure only.';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.graph_name IS 'the owning graph''s partition, carried from the step';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.type_name IS 'the type owning the field, as on the step';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.field_name IS 'the field, as on the step';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.start_source_name IS 'the start''s catalog partition, as on the step';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.start_schema IS 'the start''s SQL schema, as on the step';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.start_table IS 'the start table, as on the step';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.position IS 'the step''s position; with the columns before it, the step';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.method_source_name IS 'the classpath entry the declaration was read from';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.method_class_name IS 'the class declaring it';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.method_name IS 'the method';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.method_descriptor IS 'the declaration''s descriptor; with the three columns before it, code_condition_method''s key';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.from_exact IS 'whether parameter 0 is the departing table''s own generated class rather than the bare table interface; an exact parameter is the more specific one, which is what javac picks by';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.to_exact IS 'whether parameter 1 is the arriving table''s own generated class rather than the bare table interface';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.from_parameter_type IS 'parameter 0''s declared type, which a message naming the declaration quotes';
+-- COMMENT ON COLUMN graphitron_field_path_method_candidate.to_parameter_type IS 'parameter 1''s declared type, on the same terms';
 
 CREATE TABLE graphitron_field_path_routine (
   graph_name          VARCHAR NOT NULL,
@@ -16155,6 +16209,9 @@ INSERT INTO meta_grain VALUES
   ('field-path-method',
    'one condition method one step of a field''s path joins or filters by, in one graph',
    'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
+  ('field-path-method-candidate',
+   'one overload one step of a field''s path could call its condition method by, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('field-path-routine',
    'the routine one step of a field''s path calls, in one graph',
    'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position', 'sdl'),
@@ -16657,6 +16714,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.', 'graphitron'),
   ('NO_ROUTE_TO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
    'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.', 'graphitron'),
+  ('CONDITION_NO_OVERLOAD_FOR_PAIR', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_NO_OVERLOAD_FOR_PAIR',
+   'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.', 'graphitron'),
+  ('CONDITION_OVERLOAD_TIE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_TIE',
+   'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'graphitron'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
    'A @routine parameter binds nothing: its name is no argument of the field, or its $source.<column> names no column of the table the routine is applied to, so the call has no value for it.', 'graphitron'),
   ('TABLE_NAMES_ROUTINE', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_NAMES_ROUTINE',
@@ -16812,9 +16873,13 @@ INSERT INTO meta_relation VALUES
    'For example Film.sameRow over @reference(path: [{key: "film_pkey"}]) is one step from film back to film on film_pkey, reading the parent''s own row.',
    'Provenance for the editor and the MCP server, which name the key a step rode; the columns, each primary-key column paired with itself, are the join. A sibling of graphitron_field_path_key, whose foreign key to sql_referential_constraint would refuse a primary key.'),
   ('graphitron_field_path_method', 'field-path-method', 'graphitron',
-   'The condition method a step of a field''s path joins or filters by: one row per step and overload.',
+   'The condition method a step of a field''s path joins or filters by: one row per step, the overload a call with the step''s two tables resolves to.',
    'For example {condition: {className: "…Conditions", method: "filmActors"}} alone is the step''s join; beside a key or a table it filters the step its columns join.',
-   'A method alone is the step''s join and beside a key or a table a filter on it, read from whether the step has column rows rather than stated twice; one row per overload, the generator choosing by the arguments it maps.'),
+   'A method alone is the step''s join and beside a key or a table a filter on it, read from whether the step has column rows rather than stated twice. The generator calls it method(sourceAlias, targetAlias) and javac picks the declaration, so the row is the one javac would pick: among the declarations graphitron_field_path_method_candidate finds applicable, the one exact at every end any of them is exact at. A step no declaration takes, or two take with neither more specific, keeps no row here and draws a defect at its element instead.'),
+  ('graphitron_field_path_method_candidate', 'field-path-method-candidate', 'graphitron',
+   'An overload a step of a field''s path could call its condition method by: one row per step and declaration whose two parameters take the step''s two tables.',
+   'For example a step from customer to address naming a method declared (Customer, Address) and (Customer, Table<?>) draws both, the first exact at both ends and the second exact at its departure only.',
+   'The generator emits the call method(sourceAlias, targetAlias) and the consumer''s javac picks the declaration, so which declaration a step calls, and whether any, is decided by applicability and specificity rather than by graphitron. A parameter takes a table where it is that table''s generated class or the bare jOOQ table interface, the exact class being the more specific. Stated once so the step''s method and the two defects a step can draw, no declaration taking the pair and two taking it with no winner, all read the same candidates.'),
   ('graphitron_field_path_routine', 'field-path-routine', 'graphitron',
    'The routine a step of a field''s path calls: one row per step a @routine element took.',
    'For example Actor.films over @routine(name: "films_for_actor") is one step from actor to films_for_actor, calling public.films_for_actor.',

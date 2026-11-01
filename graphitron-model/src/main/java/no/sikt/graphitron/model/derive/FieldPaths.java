@@ -12,10 +12,12 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
@@ -40,8 +42,13 @@ import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.listAgg;
+import static org.jooq.impl.DSL.listAggDistinct;
+import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.notExists;
+import static org.jooq.impl.DSL.regexpReplaceAll;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
@@ -69,6 +76,15 @@ public final class FieldPaths {
 
     private FieldPaths() {}
 
+    /** A step no two-parameter declaration of its condition method takes. */
+    public static final String NO_OVERLOAD_FOR_PAIR = "CONDITION_NO_OVERLOAD_FOR_PAIR";
+
+    /** A step several declarations take with none more specific than every other. */
+    public static final String OVERLOAD_TIE = "CONDITION_OVERLOAD_TIE";
+
+    /** The {@code graphitron_entry_defect} codes this stage writes, and no other stage. */
+    public static final List<String> ENTRY_DEFECT_CODES = List.of(NO_OVERLOAD_FOR_PAIR, OVERLOAD_TIE);
+
     /** Far more rounds than any path is long; reaching it means the rule stopped converging. */
     private static final int ROUND_LIMIT = 1000;
 
@@ -86,6 +102,9 @@ public final class FieldPaths {
         "METHOD_NAME", "METHOD_DESCRIPTOR");
     private static final List<String> ROUTINE = List.of("ROUTINE_SOURCE_NAME", "TABLE_SCHEMA",
         "ROUTINE_NAME");
+    /** The key of a {@code graphitron_entry_defect} row: the written position and the code. */
+    private static final List<String> DEFECT = List.of("GRAPH_NAME", "SOURCE_NAME", "SOURCE_LINE",
+        "SOURCE_COLUMN", "CODE");
     private static final List<String> PARAMETER = List.of("PARAMETER_NAME", "FROM_SOURCE_NAME",
         "FROM_SCHEMA", "FROM_TABLE", "FROM_COLUMN", "ARGUMENT");
 
@@ -103,6 +122,7 @@ public final class FieldPaths {
         primaryKeys(dsl, counted, graph, touchedAt);
         columns(dsl, counted, graph, touchedAt);
         methods(dsl, graph, touchedAt);
+        methodDefects(dsl, graph, touchedAt);
         routines(dsl, graph, touchedAt);
         parameters(dsl, graph, touchedAt);
         stops(dsl, counted, touchedAt);
@@ -277,20 +297,109 @@ public final class FieldPaths {
                 List.of("TO_SOURCE_NAME", "TO_SCHEMA", "TO_TABLE", "TO_COLUMN")), touchedAt);
     }
 
-    /** The methods each step joins or filters by: every overload its element names. */
+    /**
+     * The method each step joins or filters by: of the declarations its element names, the one javac
+     * picks for the call the generator emits with the step's two tables. A declaration is a candidate
+     * where it takes both, which {@code graphitron_field_path_method_candidate} states; the pick is the
+     * candidate exact at every end any candidate is exact at, so a step none takes, or two take with
+     * neither more specific, keeps no row and the entry-defect rule reports it.
+     */
     private static void methods(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var keys = STEP;
         var p = GRAPHITRON_FIELD_PATH;
-        var m = GRAPHITRON_PATH_ELEMENT_METHOD;
-        var source = dsl.select(cols(p, keys)).select(m.METHOD_SOURCE_NAME, m.METHOD_CLASS_NAME,
-                m.METHOD_NAME, m.METHOD_DESCRIPTOR)
-            .from(p)
-            .join(m).on(m.GRAPH_NAME.eq(str(p, "GRAPH_NAME")), m.SOURCE_NAME.eq(str(p, "ELEMENT_SOURCE_NAME")),
-                m.SOURCE_LINE.eq(f(p, "ELEMENT_SOURCE_LINE", Integer.class)),
-                m.SOURCE_COLUMN.eq(f(p, "ELEMENT_SOURCE_COLUMN", Integer.class)))
-            .where(f(p, "GRAPH_NAME").eq(graph)).and(f(p, "TOUCHED_AT", LocalDateTime.class).eq(touchedAt))
+        var c = GRAPHITRON_FIELD_PATH_METHOD_CANDIDATE;
+        var step = STEP.stream().map(k -> (Field<?>) f(c, k)).toList();
+        Field<Integer> fromExact = when(c.FROM_EXACT, inline(1)).otherwise(inline(0));
+        Field<Integer> toExact = when(c.TO_EXACT, inline(1)).otherwise(inline(0));
+        var fields = new ArrayList<Field<?>>(cols(c, concat(keys, METHOD)));
+        fields.add(fromExact.as("FROM_EXACT"));
+        fields.add(toExact.as("TO_EXACT"));
+        fields.add(max(fromExact).over(partitionBy(step)).as("MOST_FROM_EXACT"));
+        fields.add(max(toExact).over(partitionBy(step)).as("MOST_TO_EXACT"));
+        var ranked = dsl.select(fields).from(c)
+            .join(p).on(p.GRAPH_NAME.eq(c.GRAPH_NAME), p.TYPE_NAME.eq(c.TYPE_NAME),
+                p.FIELD_NAME.eq(c.FIELD_NAME), p.START_SOURCE_NAME.eq(c.START_SOURCE_NAME),
+                p.START_SCHEMA.eq(c.START_SCHEMA), p.START_TABLE.eq(c.START_TABLE),
+                p.POSITION.eq(c.POSITION))
+            .where(c.GRAPH_NAME.eq(graph)).and(p.TOUCHED_AT.eq(touchedAt))
+            .asTable("ranked");
+        var source = dsl.select(cols(ranked, concat(keys, METHOD))).from(ranked)
+            .where(f(ranked, "FROM_EXACT").eq(f(ranked, "MOST_FROM_EXACT")))
+            .and(f(ranked, "TO_EXACT").eq(f(ranked, "MOST_TO_EXACT")))
             .asTable("m");
         merge(dsl, GRAPHITRON_FIELD_PATH_METHOD, source, concat(keys, METHOD), List.of(), touchedAt);
+    }
+
+    /**
+     * The steps {@link #methods} found no one declaration for, written to {@code graphitron_entry_defect}
+     * at the {@code {condition:}} element: no candidate at all, or candidates with none exact at every
+     * end any of them is exact at. One row per element and code, its detail naming each pair the
+     * element's walks stepped between and, for a tie, the competing declarations. Each row is marked
+     * with the reading's instant; the graphitron gatherer's defect sweep, {@link EntryDefects#sweep},
+     * takes the rows of its codes a reading did not mark, these two among them.
+     */
+    private static void methodDefects(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var p = GRAPHITRON_FIELD_PATH;
+        var m = GRAPHITRON_PATH_ELEMENT_METHOD;
+        var c = GRAPHITRON_FIELD_PATH_METHOD_CANDIDATE;
+        Condition sameStep = c.GRAPH_NAME.eq(p.GRAPH_NAME).and(c.TYPE_NAME.eq(p.TYPE_NAME))
+            .and(c.FIELD_NAME.eq(p.FIELD_NAME)).and(c.START_SOURCE_NAME.eq(p.START_SOURCE_NAME))
+            .and(c.START_SCHEMA.eq(p.START_SCHEMA)).and(c.START_TABLE.eq(p.START_TABLE))
+            .and(c.POSITION.eq(p.POSITION));
+        Field<String> pair = p.FROM_TABLE.concat(inline(" to ")).concat(p.TO_TABLE);
+
+        var noOverload = dsl.select(p.GRAPH_NAME.as("GRAPH_NAME"),
+                    p.ELEMENT_SOURCE_NAME.as("SOURCE_NAME"), p.ELEMENT_SOURCE_LINE.as("SOURCE_LINE"),
+                    p.ELEMENT_SOURCE_COLUMN.as("SOURCE_COLUMN"), inline(NO_OVERLOAD_FOR_PAIR).as("CODE"),
+                    listAggDistinct(pair, "; ").withinGroupOrderBy(pair).as("DETAIL"))
+                .from(p)
+                .where(p.GRAPH_NAME.eq(graph)).and(p.TOUCHED_AT.eq(touchedAt))
+                .and(exists(selectOne().from(m).where(m.GRAPH_NAME.eq(p.GRAPH_NAME),
+                    m.SOURCE_NAME.eq(p.ELEMENT_SOURCE_NAME), m.SOURCE_LINE.eq(p.ELEMENT_SOURCE_LINE),
+                    m.SOURCE_COLUMN.eq(p.ELEMENT_SOURCE_COLUMN))))
+                .and(notExists(selectOne().from(c).where(sameStep)))
+                .groupBy(p.GRAPH_NAME, p.ELEMENT_SOURCE_NAME, p.ELEMENT_SOURCE_LINE,
+                    p.ELEMENT_SOURCE_COLUMN)
+                .asTable("no_overload");
+        merge(dsl, GRAPHITRON_ENTRY_DEFECT, noOverload, DEFECT, List.of("DETAIL"), touchedAt);
+
+        // A declaration quoted by its simple parameter types, the packages being noise in a message.
+        String packages = "([A-Za-z_$][A-Za-z0-9_$]*\\.)+";
+        Field<String> declaration = c.METHOD_NAME.concat(inline("("))
+            .concat(regexpReplaceAll(c.FROM_PARAMETER_TYPE, packages, ""))
+            .concat(inline(", "))
+            .concat(regexpReplaceAll(c.TO_PARAMETER_TYPE, packages, ""))
+            .concat(inline(")"));
+        Field<String> competing = listAgg(
+                when(c.FROM_EXACT.isTrue().or(c.TO_EXACT.isTrue()), declaration), ", ")
+            .withinGroupOrderBy(c.METHOD_DESCRIPTOR);
+        Field<Integer> fromExact = when(c.FROM_EXACT.isTrue(), inline(1)).otherwise(inline(0));
+        Field<Integer> toExact = when(c.TO_EXACT.isTrue(), inline(1)).otherwise(inline(0));
+        Field<Integer> bothExact = when(c.FROM_EXACT.isTrue().and(c.TO_EXACT.isTrue()), inline(1))
+            .otherwise(inline(0));
+        var tied = dsl.select(p.GRAPH_NAME, p.ELEMENT_SOURCE_NAME, p.ELEMENT_SOURCE_LINE,
+                p.ELEMENT_SOURCE_COLUMN, pair.concat(inline(": ")).concat(competing).as("DETAIL"))
+            .from(p)
+            .join(c).on(sameStep)
+            .where(p.GRAPH_NAME.eq(graph)).and(p.TOUCHED_AT.eq(touchedAt))
+            .groupBy(p.GRAPH_NAME, p.TYPE_NAME, p.FIELD_NAME, p.START_SOURCE_NAME, p.START_SCHEMA,
+                p.START_TABLE, p.POSITION, p.ELEMENT_SOURCE_NAME, p.ELEMENT_SOURCE_LINE,
+                p.ELEMENT_SOURCE_COLUMN, p.FROM_TABLE, p.TO_TABLE)
+            .having(max(fromExact).eq(inline(1)), max(toExact).eq(inline(1)),
+                max(bothExact).eq(inline(0)))
+            .asTable("tied");
+        Field<String> detail = f(tied, "DETAIL", String.class);
+        var tie = dsl.select(str(tied, "GRAPH_NAME").as("GRAPH_NAME"),
+                    str(tied, "ELEMENT_SOURCE_NAME").as("SOURCE_NAME"),
+                    f(tied, "ELEMENT_SOURCE_LINE", Integer.class).as("SOURCE_LINE"),
+                    f(tied, "ELEMENT_SOURCE_COLUMN", Integer.class).as("SOURCE_COLUMN"),
+                    inline(OVERLOAD_TIE).as("CODE"),
+                    listAggDistinct(detail, "; ").withinGroupOrderBy(detail).as("DETAIL"))
+                .from(tied)
+                .groupBy(f(tied, "GRAPH_NAME"), f(tied, "ELEMENT_SOURCE_NAME"),
+                    f(tied, "ELEMENT_SOURCE_LINE"), f(tied, "ELEMENT_SOURCE_COLUMN"))
+                .asTable("tie");
+        merge(dsl, GRAPHITRON_ENTRY_DEFECT, tie, DEFECT, List.of("DETAIL"), touchedAt);
     }
 
     /** The routine each step a {@code @routine} element took calls: the one its element names. */

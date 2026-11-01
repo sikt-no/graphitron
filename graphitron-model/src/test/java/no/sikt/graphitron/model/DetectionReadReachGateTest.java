@@ -166,6 +166,10 @@ class DetectionReadReachGateTest {
         // Every relation it names is a table: the stored defect rows, the code vocabulary and the
         // outbox anchor the rows sit at.
         REACH.put("OutboxDefects", Set.of());
+
+        // Every relation it names is a table: the stored condition-overload defects, the condition
+        // element and path entry they sit at, and the field the path belongs to.
+        REACH.put("ConditionOverloadDefects", Set.of());
         REACH.put("StoreLegacyKeyShapes", Set.of());
 
         // The decode-coverage rule's store operand. Its census side costs nothing here: every

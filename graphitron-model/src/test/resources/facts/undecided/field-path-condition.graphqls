@@ -13,28 +13,90 @@ type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "las
 
 # Two declarations of one name that agree on both slots, agreeingOnBoth(Customer, Address) and the
 # same with a third parameter beside: two overloads and one route, so the walk takes one step.
+#
+# The step keeps the one declaration the generated call method(sourceAlias, targetAlias) resolves to
+# for its two tables, as javac picks it: a declaration takes the pair where each parameter is that
+# end's generated class or Table<?>, and of those the one exact wherever any is wins. So the
+# agreeingOnBoth step keeps the two-parameter declaration and not the three-parameter one the call
+# cannot reach; agreeingOnArrival keeps (Customer, Address) and not (FilmActor, Address), which does
+# not take customer; and wildcardBesideConcrete keeps (Customer, Address) over (Customer, Table<?>),
+# javac picking the exact one, which is no defect. ambiguousPair takes customer to address both as
+# (Customer, Table<?>) and as (Table<?>, Address), each exact at one end only, so javac has no winner
+# and the step keeps no method and draws CONDITION_OVERLOAD_TIE.
 type Customer @table(name: "customer") {
   customerId: Int @field(name: "customer_id")
   addressByOverloads: Address @reference(path: [{condition: {
     className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
     method: "agreeingOnBoth"
   }}])
+  addressPerDeparture: Address @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "agreeingOnArrival"
+  }}])
+  addressBesideWildcard: Address @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "wildcardBesideConcrete"
+  }}])
+  addressAmbiguous: Address @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "ambiguousPair"
+  }}])
 }
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
 
-extend type Query { films: [Film!]! customers: [Customer!]! }
+# A condition filtering the key step from staff to address, whose declarations are (Customer, Address)
+# and (Staff, City): staff stands at parameter 0 of one and address at parameter 1 of the other, and no
+# declaration takes the pair, so the step keeps no method and draws CONDITION_NO_OVERLOAD_FOR_PAIR.
+type Staff @table(name: "staff") {
+  staffId: Int @field(name: "staff_id")
+  addressByPair: Address @reference(path: [{table: "address", condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "pairOnly"
+  }}])
+}
+
+extend type Query { films: [Film!]! customers: [Customer!]! staffs: [Staff!]! }
 
 # The walk takes a condition alone as the step its method's signature routes, joined by the method
 # and no column, and a condition beside nothing else whose overloads agree as one step.
 extend schema @assertContains(relation: "graphitron_field_path", rows: """
-  type_name, field_name,         start_table, position, from_table, to_table
-  Film,      filmActors,         film,        0,        film,       film_actor
-  Customer,  addressByOverloads, customer,    0,        customer,   address
+  type_name, field_name,            start_table, position, from_table, to_table
+  Film,      filmActors,            film,        0,        film,       film_actor
+  Customer,  addressByOverloads,    customer,    0,        customer,   address
+  Customer,  addressPerDeparture,   customer,    0,        customer,   address
+  Customer,  addressBesideWildcard, customer,    0,        customer,   address
+  Customer,  addressAmbiguous,      customer,    0,        customer,   address
+  Staff,     addressByPair,         staff,       0,        staff,      address
   """)
 
-extend schema @assertContains(relation: "graphitron_field_path_method", rows: """
-  type_name, field_name, position, method_class_name,                                                         method_name
-  Film,      filmActors, 0,        no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures, filmToFilmActor
+extend schema @expectEquals(relation: "graphitron_field_path_method", rows: """
+  type_name, field_name,            position, method_name,            method_descriptor
+  Film,      filmActors,            0,        filmToFilmActor,        (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Film;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/FilmActor;)Lorg/jooq/Condition;
+  Customer,  addressByOverloads,    0,        agreeingOnBoth,         (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  Customer,  addressPerDeparture,   0,        agreeingOnArrival,      (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  Customer,  addressBesideWildcard, 0,        wildcardBesideConcrete, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  """)
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                           coordinate,                detail
+  CONDITION_OVERLOAD_TIE,         Customer.addressAmbiguous, "customer to address: ambiguousPair(Customer, Table<?>), ambiguousPair(Table<?>, Address)"
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Staff.addressByPair,       staff to address
+  """)
+
+# Each step javac resolves to one declaration draws neither, the exact declaration beside a wildcard
+# one included; nor does a step its overloads tie on draw the no-overload defect, or the reverse.
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                           coordinate
+  CONDITION_OVERLOAD_TIE,         Film.filmActors
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Film.filmActors
+  CONDITION_OVERLOAD_TIE,         Customer.addressByOverloads
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressByOverloads
+  CONDITION_OVERLOAD_TIE,         Customer.addressPerDeparture
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressPerDeparture
+  CONDITION_OVERLOAD_TIE,         Customer.addressBesideWildcard
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressBesideWildcard
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressAmbiguous
+  CONDITION_OVERLOAD_TIE,         Staff.addressByPair
   """)
 
 extend schema @assertAbsent(relation: "graphitron_field_path_column", rows: """

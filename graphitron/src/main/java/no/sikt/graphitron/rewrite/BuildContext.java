@@ -2704,6 +2704,10 @@ class BuildContext {
      * absent from the codegen loader) is likewise skipped: this check validates a constraint the
      * author opted into by naming a concrete jOOQ table, it imposes no new signature requirement.
      *
+     * <p>Each position is checked on its own first, so a position no declaration covers is named by
+     * its index. Where both positions pass, {@link #checkConcreteParamPair} asks the question javac
+     * asks at the call: whether one declaration takes the source and the target together.
+     *
      * <p>Reads the slot facts the reflected {@link MethodRef} carries and the resolved source/target
      * tables already in scope at the call site; it never re-inspects the directive element nor
      * re-walks the path.
@@ -2711,8 +2715,54 @@ class BuildContext {
     private void validateConditionParamTables(
             MethodRef method, TableRef source, TableRef target, List<String> errors) {
         var params = method.params();
+        int before = errors.size();
         checkConcreteParamTable(method, params, 0, source, "source", errors);
         checkConcreteParamTable(method, params, 1, target, "target", errors);
+        if (errors.size() == before) {
+            checkConcreteParamPair(method, params, source, target, errors);
+        }
+    }
+
+    /**
+     * The pair half of check 2: the emitter passes the source and the target alias to one call, so
+     * javac needs one declaration taking both, and a set whose declarations cover each position
+     * separately (some declaration takes the source at parameter 0, another the target at parameter
+     * 1) still fails to compile. Asked only where both slots are {@link
+     * ParamSource.Table.TableSlot.Bound}: there every admitted declaration resolved at both positions,
+     * so the two slots' tables are listed in the same declaration order and index {@code i} of each is
+     * declaration {@code i}. Every such declaration is exact at both ends, so at most one takes a given
+     * pair and javac's specificity has nothing to decide; the finding is only that none does.
+     *
+     * <p>Where either slot is a wildcard or unresolved, the slot keeps no per-declaration tables and
+     * the pair is not asked here; the store's {@code CONDITION_NO_OVERLOAD_FOR_PAIR} and
+     * {@code CONDITION_OVERLOAD_TIE} defects, read per declaration from the classpath, judge those
+     * sets for {@code @reference} paths.
+     */
+    private void checkConcreteParamPair(MethodRef method, List<MethodRef.Param> params,
+            TableRef source, TableRef target, List<String> errors) {
+        if (source == null || target == null || params.size() < 2) return;
+        if (!(params.get(0).source() instanceof ParamSource.Table t0
+                && t0.slot() instanceof ParamSource.Table.TableSlot.Bound from)) return;
+        if (!(params.get(1).source() instanceof ParamSource.Table t1
+                && t1.slot() instanceof ParamSource.Table.TableSlot.Bound to)) return;
+        if (from.tables().size() != to.tables().size()) return;
+        for (int i = 0; i < from.tables().size(); i++) {
+            if (from.tables().get(i).table().denotesSameTableAs(source)
+                    && to.tables().get(i).table().denotesSameTableAs(target)) {
+                return;
+            }
+        }
+        var declared = new ArrayList<String>();
+        for (int i = 0; i < from.tables().size(); i++) {
+            declared.add("(" + from.tables().get(i).qualifiedName() + ", "
+                + to.tables().get(i).qualifiedName() + ")");
+        }
+        errors.add("condition method '" + method.className() + "." + method.methodName()
+            + "' has no overload taking this hop's source table '" + source.tableName()
+            + "' and target table '" + target.tableName() + "' together: its declarations take "
+            + String.join(", ", declared) + ". The emitter passes both aliases positionally to one"
+            + " call, so one declaration must take the pair; declare an overload for it, or use a"
+            + " wildcard `Table<?>`.");
     }
 
     /**
@@ -2723,11 +2773,11 @@ class BuildContext {
      * those is the slot's own catalog answer, decided in {@code ServiceCatalog} at reflection time
      * (see {@link ParamSource.Table.TableSlot}) rather than re-decoded from a type-name string here.
      *
-     * <p>Where the {@code @condition} names an admitted set of same-named declarations, the check is
-     * per-anchor <em>applicability</em>: at least one declaration whose slot accepts this anchor, the
-     * most-specific selection among the applicable ones being javac's at the emitted call site. A set
+     * <p>Where the {@code @condition} names an admitted set of same-named declarations, this check is
+     * per-anchor <em>applicability</em>: at least one declaration whose slot accepts this anchor. A set
      * covering some anchors and not others is therefore this check's finding only where <em>no</em>
-     * declaration covers the anchor.
+     * declaration covers the anchor; whether one declaration covers both anchors together is
+     * {@link #checkConcreteParamPair}'s question.
      *
      * <p>The compare is jOOQ class identity via {@link TableRef#denotesSameTableAs}: both operands
      * are catalog-built refs, so schema-qualified {@code @table} echoes match their unqualified jOOQ
