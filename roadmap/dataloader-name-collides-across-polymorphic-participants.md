@@ -76,6 +76,8 @@ rows of several concrete types. Each emission site, verified against the tree:
 
 ## Implementation
 
+Shipped: the emission sites, the carrier seam, the removal of the convenience overload and its path-only recipe, the unit-tier pins, the `FilmCastMember` execution fixture (`ActorMember.films` and `FilmInventory.films`, both fragment orders plus the aliased control, in `MultiTablePolymorphicJoinedCorrelationExecutionTest`) and the manual section. The `@referenceFor` multitable child shape and the pin for a `@splitQuery` directive on an interface-declared field are not covered by a test yet; the reviewer decides whether that blocks Done. Verification note: `GraphCountGrowthGateTest` in `graphitron-model` (a wall-clock gate unrelated to this change) failed under load in this sandbox and passes alone, so `graphitron-model` was installed without its tests and every downstream module ran in full.
+
 *Fork: where the parent type enters the name.* Two options. (a) Bake the declaring parent type into
 the name at generation time, from `ctx.parentTypeName()`, which `loaderNameDeclaration` already
 holds. (b) Read it at request time with `env.getExecutionStepInfo().getObjectType().getName()`.
