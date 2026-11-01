@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 6
 theme: runtime-connection
-depends-on: [mutation-field-transaction-scope]
+depends-on: []
 created: 2026-10-29
 last-updated: 2026-10-29
 ---
