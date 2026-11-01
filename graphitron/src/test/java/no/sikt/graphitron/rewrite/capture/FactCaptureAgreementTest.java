@@ -173,10 +173,10 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       decide (an overloaded name is rows and an arity, never a pick) and two pin what survives it,
  *       a reference the census matched nothing for still being a reference;
  *       the fact document {@code field-routine-method.graphqls} binds
- *       {@code intent_field_routine_method}, the generated call surface a {@code @routine}
- *       application resolves to, over the real catalog, with the two causes of absence a catalog
- *       can produce told apart by the spelling (a name matching no catalog object, and one
- *       matching a stored table rather than a callable);
+ *       {@code graphitron_path_element_routine}, the routine with a generated call a
+ *       {@code @routine} application resolves to, over the real catalog, with the two causes of
+ *       absence a catalog can produce told apart by the spelling (a name matching no catalog
+ *       object, and one matching a stored table rather than a callable);
  *       {@code graphitron_type_backing}, which class backs a type and by which population, is
  *       bound by the fact documents {@code type-backing.graphqls},
  *       {@code type-backing-conflict.graphqls} and

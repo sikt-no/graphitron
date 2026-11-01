@@ -8,6 +8,8 @@ import org.jooq.Record;
 import org.jooq.Record1;
 import org.jooq.Records;
 import org.jooq.Select;
+import org.jooq.SelectConditionStep;
+import org.jooq.SelectSelectStep;
 import org.jooq.TableField;
 
 import java.util.ArrayList;
@@ -22,13 +24,16 @@ import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
@@ -644,18 +649,19 @@ public final class DeclarationFacts {
 
     /**
      * The call surfaces the coordinate's {@code @routine} applications resolve to, in written order
-     * and then in schema order within one application. The class, the method and the arity all come
-     * from the one relation, so the pair a routine-backed field binds to is a row like every other and
-     * nothing has to be handed in from outside the statement.
+     * and then in schema order within one application. The class and the method are the routine's
+     * generated call and the arity its parameter count, so the pair a routine-backed field binds to
+     * is a row like every other and nothing has to be handed in from outside the statement.
      */
     private static Field<List<RoutineMethod>> routineMethodArm(StoreHandle store, Coord coord) {
         if (coord.memberName() == null) return null;
-        return multiset(select(INTENT_FIELD_ROUTINE_METHOD.CLASS_NAME,
-                INTENT_FIELD_ROUTINE_METHOD.METHOD_NAME, INTENT_FIELD_ROUTINE_METHOD.PARAMETERS)
-            .from(INTENT_FIELD_ROUTINE_METHOD)
-            .where(routineCoordinate(store, coord))
-            .orderBy(INTENT_FIELD_ROUTINE_METHOD.ORDINAL, INTENT_FIELD_ROUTINE_METHOD.TABLE_SCHEMA,
-                INTENT_FIELD_ROUTINE_METHOD.ROUTINE_NAME))
+        var sr = SQL_ROUTINE;
+        var rp = SQL_ROUTINE_PARAMETER;
+        return multiset(routineCalls(select(sr.ROUTINES_CLASS_FQN, sr.ROUTINES_METHOD_NAME,
+                    field(selectCount().from(rp).where(rp.SOURCE_NAME.eq(sr.SOURCE_NAME),
+                        rp.TABLE_SCHEMA.eq(sr.TABLE_SCHEMA), rp.ROUTINE_NAME.eq(sr.ROUTINE_NAME)))),
+                store, coord)
+            .orderBy(GRAPHITRON_ROUTINE_ENTRY.ORDINAL, sr.TABLE_SCHEMA, sr.ROUTINE_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(RoutineMethod::new)));
     }
 
@@ -689,9 +695,7 @@ public final class DeclarationFacts {
             .where(coordinate(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()),
                 INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(coord.typeName()),
                 INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(coord.memberName()))))
-            .union(select(INTENT_FIELD_ROUTINE_METHOD.CLASS_NAME)
-                .from(INTENT_FIELD_ROUTINE_METHOD)
-                .where(routineCoordinate(store, coord)));
+            .union(routineCalls(select(SQL_ROUTINE.ROUTINES_CLASS_FQN), store, coord));
     }
 
     /** Both backing populations, which is what a class-keyed arm asks about without choosing between them. */
@@ -731,9 +735,7 @@ public final class DeclarationFacts {
                 .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
                 .and(CODE_READ_SLOT.SLOT_NAME.eq(coord.memberName()))
                 .and(CODE_READ_SLOT.CLASS_NAME.in(backingCandidates(store, coord))))
-            .union(select(INTENT_FIELD_ROUTINE_METHOD.METHOD_NAME)
-                .from(INTENT_FIELD_ROUTINE_METHOD)
-                .where(routineCoordinate(store, coord)));
+            .union(routineCalls(select(SQL_ROUTINE.ROUTINES_METHOD_NAME), store, coord));
     }
 
     /**
@@ -780,11 +782,22 @@ public final class DeclarationFacts {
         return graph.and(type).and(field);
     }
 
-    /** That coordinate on the routine relation, whose fourth key part the field grain does not name. */
-    private static Condition routineCoordinate(StoreHandle store, Coord coord) {
-        return coordinate(INTENT_FIELD_ROUTINE_METHOD.GRAPH_NAME.eq(store.graphName()),
-            INTENT_FIELD_ROUTINE_METHOD.TYPE_NAME.eq(coord.typeName()),
-            INTENT_FIELD_ROUTINE_METHOD.FIELD_NAME.eq(coord.memberName()));
+    /**
+     * The generated calls the coordinate's {@code @routine} applications name: each application at
+     * its written place, the routine that place resolves to, and that routine's catalog row.
+     */
+    private static <R extends Record> SelectConditionStep<R> routineCalls(
+            SelectSelectStep<R> select, StoreHandle store, Coord coord) {
+        var r = GRAPHITRON_ROUTINE_ENTRY;
+        var pe = GRAPHITRON_PATH_ELEMENT_ROUTINE;
+        var sr = SQL_ROUTINE;
+        return select.from(r)
+            .join(pe).on(pe.GRAPH_NAME.eq(r.GRAPH_NAME), pe.SOURCE_NAME.eq(r.SOURCE_NAME),
+                pe.SOURCE_LINE.eq(r.SOURCE_LINE), pe.SOURCE_COLUMN.eq(r.SOURCE_COLUMN))
+            .join(sr).on(sr.SOURCE_NAME.eq(pe.ROUTINE_SOURCE_NAME),
+                sr.TABLE_SCHEMA.eq(pe.TABLE_SCHEMA), sr.ROUTINE_NAME.eq(pe.ROUTINE_NAME))
+            .where(coordinate(r.GRAPH_NAME.eq(store.graphName()), r.TYPE_NAME.eq(coord.typeName()),
+                r.FIELD_NAME.eq(coord.memberName())));
     }
 
     private static String text(String value) {

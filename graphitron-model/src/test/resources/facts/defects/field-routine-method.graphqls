@@ -1,0 +1,85 @@
+# What a @routine application resolves to: the routine with a generated call that the name it
+# spells meets in the catalog, one row per application and candidate. Absence is as much the claim
+# as presence: a name matching no catalog object, and one matching a stored table rather than a
+# callable, both resolve to nothing, and which of the two happened is the spelling's own answer. A
+# name two schemas declare is two rows that say so, and a qualified name picks its schema.
+
+extend type Query {
+  films: [String] @routine(name: "films_for_actor")
+  chained: [String] @routine(name: "films_for_actor") @routine(name: "rent_film")
+  missing: [String] @routine(name: "no_such_routine")
+  notCallable: [String] @routine(name: "film")
+  ambiguous: [String] @routine(name: "ms_ping")
+  qualified: [String] @routine(name: "multischema_b.ms_ping")
+}
+
+extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_routine_entry WHERE field_name = 'films')
+  """, rows: """
+  table_schema, routine_name
+  public,       films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_routine_entry WHERE field_name = 'chained' AND ordinal = 0)
+  """, rows: """
+  table_schema, routine_name
+  public,       films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_routine_entry WHERE field_name = 'chained' AND ordinal = 1)
+  """, rows: """
+  table_schema, routine_name
+  public,       rent_film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_routine_entry WHERE field_name = 'ambiguous')
+  """, rows: """
+  table_schema,  routine_name
+  multischema_a, ms_ping
+  multischema_b, ms_ping
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_routine_entry WHERE field_name = 'qualified')
+  """, rows: """
+  table_schema,  routine_name
+  multischema_b, ms_ping
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_path_element_routine", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_routine_entry WHERE field_name IN ('missing', 'notCallable'))
+  """)
+
+# The two absences, told apart by the spelling: film names a catalog object, no_such_routine none.
+extend schema @assertContains(relation: "graphitron_spelled_table", rows: """
+  spelling, table_name
+  film,     film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_spelled_table", rows: """
+  spelling
+  no_such_routine
+  """)
+
+# What stops the graph generating: the chain's second routine, rent_film, departs from
+# films_for_actor's result and finds no value there for its parameters. The names that resolve to
+# nothing state no defect of their own.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                      coordinate
+  ROUTINE_PARAMETER_UNBOUND, Query.chained
+  """)

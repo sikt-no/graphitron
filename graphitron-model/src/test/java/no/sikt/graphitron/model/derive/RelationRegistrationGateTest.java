@@ -493,7 +493,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
-        registrations.put("intent_field_routine_method", Arm.DERIVED);
         registrations.put("intent_delivery_container", Arm.DERIVED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);

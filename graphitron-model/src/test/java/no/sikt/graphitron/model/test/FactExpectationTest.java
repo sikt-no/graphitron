@@ -58,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FactExpectationTest {
 
     /** The undecided folder's size, lowered as documents leave it and never raised. */
-    private static final int UNDECIDED_CEILING = 42;
+    private static final int UNDECIDED_CEILING = 41;
 
     /** Each document's claim, by its id, which is also its graph's name or its stepped graph's. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();

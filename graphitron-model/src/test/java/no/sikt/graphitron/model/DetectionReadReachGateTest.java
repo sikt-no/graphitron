@@ -84,7 +84,6 @@ class DetectionReadReachGateTest {
             "intent_argmapping_bound_parameter_type",
             "intent_argmapping_key_column_candidate",
             "intent_argmapping_projection_defect",
-            "intent_field_routine_method",
             "intent_resolved_node_key_projection",
             "intent_resolved_node_key_shape"));
 
@@ -94,7 +93,6 @@ class DetectionReadReachGateTest {
             "intent_argmapping_bound_parameter_type",
             "intent_field_producer_method",
             "intent_field_producer_reference",
-            "intent_field_routine_method",
             "intent_node_id_decode_defect",
             "intent_node_id_decode_slot",
             "intent_resolved_node_key_shape"));
@@ -105,7 +103,6 @@ class DetectionReadReachGateTest {
             "intent_argmapping_bound_parameter_type",
             "intent_field_producer_method",
             "intent_field_producer_reference",
-            "intent_field_routine_method",
             // Expanded here once per container by memberNames.
             "intent_node_container_member",
             "intent_node_id_decode_slot",
@@ -186,7 +183,6 @@ class DetectionReadReachGateTest {
             "graphql_element_field",
             "intent_argmapping_bound_parameter_type",
             "intent_argmapping_key_column_candidate",
-            "intent_field_routine_method",
             "intent_resolved_node_key_projection",
             "intent_resolved_node_key_shape"));
 
@@ -195,7 +191,6 @@ class DetectionReadReachGateTest {
             "graphql_element_field",
             "intent_argmapping_bound_parameter_type",
             "intent_argmapping_key_column_candidate",
-            "intent_field_routine_method",
             // Three relations left this set when the view implementation of nodehood went. The
             // node identity a projection needs is read off graphitron_node now, which is a table,
             // so the seek costs nothing here and the tiered union behind it is not re-expanded per
@@ -214,7 +209,7 @@ class DetectionReadReachGateTest {
             // would satisfy an equality against sets nobody had filled in.
             assertThat(observed.values().stream().mapToInt(Set::size).sum())
                 .as("view bodies the detection pass expands, across every component")
-                .isGreaterThan(50);
+                .isGreaterThan(45);
             assertThat(observed)
                 .as("what the detection pass evaluates on every read, per component. A relation "
                     + "arriving here is a rule a dev round re-expands at boot and after every "
