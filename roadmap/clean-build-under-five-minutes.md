@@ -213,6 +213,24 @@ numbering is the order to take them in, largest and cheapest first.
 5. **Split `FactExpectationTest`.** Turn its document-driven cases into ones the test pool can
    spread across workers, and make `CorpusExpectations.compare` cheaper. Expected: about 100 s
    from `graphitron-model`.
+
+   Not done, and the premise has gone stale. The class's seven methods take 0.0 s each: its whole
+   cost is one `@BeforeAll` that captures every document in sequence into one shared store and
+   checks each reading, so there was never anything at method level for the test pool to spread,
+   and no class split is called for. On a quiet 4-core machine that setup split as 155 s capturing
+   154 plain documents, 230 s in one `divergences` check over all their blocks, and 33 s for 14
+   stepped graphs. Asking each graph's blocks separately, for relations that carry a graph column,
+   was tried and read as 230 s down to 95 s in a single run, but trunk had moved between the two
+   runs: derivation changes under another item landed in between and the class fell from 360 to 420 s
+   to about 170 s without it. Interleaved pairs against the same trunk, the first pair discarded,
+   found no effect: 178.6, 161.8, 167.3 s before and 161.6, 174.4, 177.8 s after, a mean of 2 s the
+   wrong way against noise of about 15 s. So the change was not shipped, and this item's figures for
+   the class are those of a trunk that no longer exists; its phases on current trunk are not
+   measured. A single large capture of all the documents was considered and would need the
+   derivation steps to run set-based over many graphs, each step running for one graph today,
+   which is production code another item is rewriting. A query over the one shared store that
+   fingerprints each document's rows would find duplicate documents, and belongs in an item of its
+   own.
 6. **Boot test stores from a template.** `GraphitronModelStore.create` replays the creation
    statements of all 442 relations for each store (7.7% of `graphitron`'s samples). Boot once and
    copy, or reuse a booted store through the reset `ThreadConfinedStore` already performs in
