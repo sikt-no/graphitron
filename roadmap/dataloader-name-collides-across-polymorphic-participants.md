@@ -1,13 +1,13 @@
 ---
 id: R1132
 title: "Same-named split child fields on different polymorphic participants share one DataLoader and resolve to null"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-31
+last-updated: 2026-11-01
 ---
 
 # Same-named split child fields on different polymorphic participants share one DataLoader and resolve to null
