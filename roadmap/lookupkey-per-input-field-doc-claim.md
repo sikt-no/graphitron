@@ -1,7 +1,7 @@
 ---
 id: R614
 title: "@lookupKey is declared for arguments only"
-status: In Review
+status: Ready
 bucket: docs
 priority: 4
 theme: docs
@@ -163,3 +163,27 @@ Both round 1 findings are addressed. The Tests section now opens with the store'
 fact document, which is the behaviour this item changes for an author and outlives the classifier,
 and the Goal shows how the bundled declaration is the only one a Graphitron 10 module reads.
 Approved.
+
+### Round 3: In Review -> Done, withheld (session_01WkW2JHe9idtwUqpKsp5KXe, 2026-11-01)
+
+The change is the one approved and it is correct: the declaration is argument-only, the three
+rejections, the relation, its writer and the closure in `intent_authored_field_claim` and in
+`LookupFacts` are gone, and `facts/defects/lookup-key-on-input-field.graphqls` shows the goal
+delivered where an author meets it, both refusals at their lines and only the marked argument
+decoded. The implementation notes account for every departure from the plan. Withheld on the
+retirement sweep, which finds the retired site still described in main sources:
+
+1. *Emitted into consumers' code.* `TypeFetcherGenerator` throws "@mutation(typeName: UPSERT) call
+   has no settable fields present; only @lookupKey fields were provided" from generated UPSERT
+   fetchers (two emit sites). A mutation input can no longer carry `@lookupKey`, so the message
+   names a shape the author cannot have written. State the fields as what they are now, the input
+   fields bound to the conflict key, and the javadoc on the same emitter ("`@lookupKey` fields
+   included so the user-supplied PK lands on the insert branch") with it.
+2. *Javadoc describing the retired shape.* `InputColumnBindingGroup.MapGroup` ("today's standard
+   `@lookupKey`-on-scalar-input-field shape", "an input type carries multiple separate `@lookupKey`
+   fields") and `LookupMappingResolver`'s class comment ("a `TableInputArg` with no
+   `@lookupKey`-bearing input fields"). Restate them as an input-typed `@lookupKey` argument whose
+   fields are each a key column, as the two `InputColumnBinding` comments already were.
+
+Left alone on purpose: `roadmap-tool/src/main/resources/legacy-directives.graphqls`, which declares
+the legacy directive set as it was, and test prose that cites the retirement as history.
