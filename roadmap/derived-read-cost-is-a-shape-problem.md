@@ -430,12 +430,13 @@ static method needs no holder.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **A service's `$result` is read off its returned value** `blocked`, on "A field's member is stated once".
+  * **A service's `$result` is read off its returned value** `blocked`, on "A field reads its parent's member by its bound name".
     A top-level `@service` field on the mutation root is a write, as `graphitron_producer` and
     `graphql_root_operation` say, and a `$result` over its returned value is a pointer to the
     result: a `graphitron_outbox_leaf` keeping only its path, each step read as its field's own
-    facts say. A step passes through a payload's data field (`graphitron_carrier_data_channel`),
-    reads the member a field names on each class its parent holds, or, where the field is
+    facts say. A step reads the member the field's bound name finds on each class its parent's
+    result holds, passes the object through where it finds none and the field's result holds the
+    parent's class, or, where the field is
     table-bound, takes a record of the key row's table (`graphitron_field_key_row`, arity `ONE`);
     a step through a list is not built. A path ends on a member a payload can carry
     (`RESULT_MEMBER`), on the `@nodeId` field of a node type reached through a record of its table
@@ -445,14 +446,23 @@ static method needs no holder.
     `OUTBOX_SOURCE_UNRESOLVED`. The steps are a view, one row per leaf and segment, which the leaf
     rule and the emitter both read; the types a payload can carry are one list the session and
     member arms share.
-    * **A field's member is stated once** `open`. The member a field
-      reads off each class its parent holds, by its name or `@field(name:)`, is derived today by the
-      type-backing rule (twice), the key-row rule, `FieldKeyRows` for
-      `graphitron_field_key_row_method`, `graphitron_reader_accessor` and the carrier channel's
-      `passes_through`. The type-backing derivation, which finds it on the way to a child type's
-      class, states it once; the others read it, and `graphitron_reader_accessor` and the key-row
-      method relation fold into it. What the derivations resolve today is compared on the six stores
-      before the relation is modelled.
+    * **A field reads its parent's member by its bound name** `blocked`, on "A field's bound name is anchored".
+      The members are the result's, not the field's: a class the parent's result holds
+      (`graphitron_result_class`) offers them (`code_read_slot`), and a field only names one. So a
+      field's read is that join, read where it is asked, and nothing stores it: the readers join
+      the field's bound name onto the members of its parent's classes. `graphitron_reader_accessor`
+      and `graphitron_field_key_row_method` go, the key-row rule and the type-backing hop reading the
+      join instead. A field whose name finds no member, and whose result holds its parent's class,
+      passes the object through, which on the six stores (2026-11-01) is exactly every
+      `passes_through` row of `graphitron_carrier_data_channel`; the channel goes, the backing seed
+      reading the same rule. Both stored relations were found to be subsets of the join there, with
+      nothing either one resolves differently.
+      * **A field's bound name is anchored** `open`. The name a field reads by, `@field(name:)`
+        where written and the field's own name otherwise, is a column of `graphitron_field`, stated
+        once where the anchor writes the field. `graphitron_field_binding_entry` keeps what was
+        written and where; the readers that each coalesce it with the field's name (the
+        type-backing rule twice, the reader, the key-row rule) read the column, and the key-row rule
+        stops reading the positional `graphitron_ast_field_binding_entry`.
   * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
     `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write
