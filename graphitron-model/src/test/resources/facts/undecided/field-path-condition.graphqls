@@ -55,6 +55,21 @@ type Staff @table(name: "staff") {
   }}])
 }
 
+# A condition filtering the key step from customer to address. tableLikeArrival takes the arrival
+# as TableLike<?>, which takes any table as Table<?> does, so the step keeps it. objectArrival takes
+# it as Object, which accepts a table and names no table type, so no declaration takes the pair
+# and the step draws CONDITION_NO_OVERLOAD_FOR_PAIR.
+extend type Customer {
+  addressByTableLike: Address @reference(path: [{table: "address", condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "tableLikeArrival"
+  }}])
+  addressByObject: Address @reference(path: [{table: "address", condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "objectArrival"
+  }}])
+}
+
 extend type Query { films: [Film!]! customers: [Customer!]! staffs: [Staff!]! }
 
 # The walk takes a condition alone as the step its method's signature routes, joined by the method
@@ -75,23 +90,27 @@ extend schema @expectEquals(relation: "graphitron_field_path_method", rows: """
   Customer,  addressByOverloads,    0,        agreeingOnBoth,         (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
   Customer,  addressPerDeparture,   0,        agreeingOnArrival,      (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
   Customer,  addressBesideWildcard, 0,        wildcardBesideConcrete, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  Customer,  addressByTableLike,    0,        tableLikeArrival,       (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lorg/jooq/TableLike;)Lorg/jooq/Condition;
   """)
 
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                           coordinate,                detail
   CONDITION_OVERLOAD_TIE,         Customer.addressAmbiguous, "customer to address: ambiguousPair(Customer, Table<?>), ambiguousPair(Table<?>, Address)"
   CONDITION_NO_OVERLOAD_FOR_PAIR, Staff.addressByPair,       staff to address
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressByObject,  customer to address
   """)
 
 # Each defect names the declarations it is about, one row each under it: the tie the two overloads
-# that compete for customer to address, and the no-overload defect every declaration of pairOnly, so
-# the author sees what exists. The step's other condition elements name methods under no defect.
+# that compete for customer to address, and each no-overload defect every declaration its element
+# names, pairOnly's two and objectArrival, so the author sees what exists. The other condition
+# elements name methods under no defect.
 extend schema @expectEquals(relation: "graphitron_entry_defect_method", rows: """
   code,                           method_name,   method_descriptor
   CONDITION_OVERLOAD_TIE,         ambiguousPair, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lorg/jooq/Table;)Lorg/jooq/Condition;
   CONDITION_OVERLOAD_TIE,         ambiguousPair, (Lorg/jooq/Table;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
   CONDITION_NO_OVERLOAD_FOR_PAIR, pairOnly,      (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
   CONDITION_NO_OVERLOAD_FOR_PAIR, pairOnly,      (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Staff;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/City;)Lorg/jooq/Condition;
+  CONDITION_NO_OVERLOAD_FOR_PAIR, objectArrival, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/Object;)Lorg/jooq/Condition;
   """)
 
 # Each step javac resolves to one declaration draws neither, the exact declaration beside a wildcard
@@ -108,6 +127,8 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressBesideWildcard
   CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressAmbiguous
   CONDITION_OVERLOAD_TIE,         Staff.addressByPair
+  CONDITION_OVERLOAD_TIE,         Customer.addressByTableLike
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressByTableLike
   """)
 
 extend schema @assertAbsent(relation: "graphitron_field_path_column", rows: """

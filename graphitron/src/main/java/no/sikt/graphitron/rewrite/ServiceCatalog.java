@@ -903,9 +903,9 @@ class ServiceCatalog {
         for (int position = 0; position < arity; position++) {
             int at = position;
             boolean tableEverywhere = declarations.stream()
-                .allMatch(m -> org.jooq.Table.class.isAssignableFrom(m.getParameters()[at].getType()));
+                .allMatch(m -> takesTable(m.getParameters()[at].getType()));
             boolean tableNowhere = declarations.stream()
-                .noneMatch(m -> org.jooq.Table.class.isAssignableFrom(m.getParameters()[at].getType()));
+                .noneMatch(m -> takesTable(m.getParameters()[at].getType()));
             if (!tableEverywhere && !tableNowhere) {
                 return new ConditionAdmission.Refused(
                     new ReflectionError.AmbiguousMethod.Ambiguity.ParameterPosition(position));
@@ -930,8 +930,7 @@ class ServiceCatalog {
         boolean allNamesPresent = true;
         for (int position = 0; position < arity; position++) {
             int at = position;
-            boolean tableEverywhere = org.jooq.Table.class
-                .isAssignableFrom(first.getParameters()[at].getType());
+            boolean tableEverywhere = takesTable(first.getParameters()[at].getType());
             for (var m : declarations) {
                 if (!m.getParameters()[at].isNamePresent()) allNamesPresent = false;
             }
@@ -1011,12 +1010,23 @@ class ServiceCatalog {
     }
 
     /**
-     * True when a declared parameter type is the bare jOOQ table interface: a wildcard
-     * {@code Table<?>} (the literal type name jOOQ reflection yields) or a raw {@code org.jooq.Table}.
-     * The one home of a predicate two path-step readers each spelled for themselves.
+     * True when a declared parameter type names no one table: a wildcard {@code Table<?>} or
+     * {@code TableLike<?>} (the literal type names reflection yields), or a raw {@code org.jooq.Table}
+     * or {@code org.jooq.TableLike}. The one home of a predicate two path-step readers each spelled
+     * for themselves.
      */
     private static boolean namesNoTable(String typeName) {
-        return typeName.contains("<?>") || typeName.equals(org.jooq.Table.class.getName());
+        return typeName.contains("<?>") || typeName.equals(org.jooq.Table.class.getName())
+            || typeName.equals(org.jooq.TableLike.class.getName());
+    }
+
+    /**
+     * True when a {@code @condition} parameter of this type takes a table: a {@code Table} or a
+     * subtype of it, or {@code TableLike}, which every table is and which therefore takes any.
+     * {@code Object} also accepts a table and is not a table parameter: it names no table type.
+     */
+    private static boolean takesTable(Class<?> type) {
+        return org.jooq.Table.class.isAssignableFrom(type) || type == org.jooq.TableLike.class;
     }
 
     /**

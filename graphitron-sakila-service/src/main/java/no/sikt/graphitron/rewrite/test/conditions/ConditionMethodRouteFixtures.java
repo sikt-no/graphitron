@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Staff;
 import org.jooq.Condition;
 import org.jooq.Table;
+import org.jooq.TableLike;
 import org.jooq.impl.DSL;
 
 /**
@@ -143,6 +144,16 @@ public final class ConditionMethodRouteFixtures {
 
     /** The second declaration of {@link #ambiguousPair(Customer, Table)}. */
     public static Condition ambiguousPair(Table<?> source, Address address) {
+        return DSL.noCondition();
+    }
+
+    /** A {@code TableLike<?>} arrival, which takes any table as {@code Table<?>} does. */
+    public static Condition tableLikeArrival(Customer customer, TableLike<?> target) {
+        return DSL.noCondition();
+    }
+
+    /** An {@code Object} arrival, which accepts a table but names no table type. */
+    public static Condition objectArrival(Customer customer, Object target) {
         return DSL.noCondition();
     }
 

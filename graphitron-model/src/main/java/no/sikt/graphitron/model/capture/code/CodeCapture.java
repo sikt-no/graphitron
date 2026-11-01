@@ -89,6 +89,7 @@ public final class CodeCapture {
 
     /** The type that lifter's sole parameter must be, which is the table it lifts from. */
     private static final String JOOQ_TABLE = "org.jooq.Table";
+    private static final String JOOQ_TABLE_LIKE = "org.jooq.TableLike";
 
     /** The type a {@code @service} parameter has when the run's own jOOQ context is passed to it. */
     private static final String JOOQ_DSL_CONTEXT = "org.jooq.DSLContext";
@@ -1187,7 +1188,9 @@ public final class CodeCapture {
      * asks and the one a generated table class answers through a chain the census does not hold.
      * Concrete or not is then the declaration's own answer: a position written as
      * {@code org.jooq.Table} itself, raw or wildcarded, names no table, and neither does one written
-     * as a type variable, whose erasure is a bound the source never wrote.
+     * as a type variable, whose erasure is a bound the source never wrote. A position written as
+     * {@code org.jooq.TableLike}, which every table is, takes any table too and is the same role;
+     * {@code Object} takes a table as well but is no table type, and stays {@code OTHER}.
      *
      * <p>The jOOQ context is matched by exact type, not by assignability: a position declared as a
      * class implementing {@code DSLContext} asks for a value of that class, which the run does not
@@ -1200,6 +1203,9 @@ public final class CodeCapture {
         }
         if (JOOQ_CONFIGURATION.equals(at.type())) {
             return "CONFIGURATION";
+        }
+        if (JOOQ_TABLE_LIKE.equals(at.type())) {
+            return "TABLE_ANY";
         }
         if (!ancestry.isA(at.type(), JOOQ_TABLE)) {
             return "OTHER";
