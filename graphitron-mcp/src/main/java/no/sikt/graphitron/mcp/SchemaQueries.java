@@ -14,9 +14,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Stream;
 
-import static java.util.Comparator.comparing;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
@@ -33,7 +32,6 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
@@ -45,7 +43,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KE
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
-import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static org.jooq.impl.DSL.coalesce;
@@ -108,14 +105,9 @@ final class SchemaQueries {
      */
     private static final String TABLE_COLUMN = "TABLE_COLUMN";
 
-    /**
-     * The provenance this module's own {@code @condition} read stamps on a method binding, beside the
-     * two {@code intent_field_producer_method} carries. A third value in the wire's vocabulary and
-     * deliberately not a third arm on that view; see {@link #methods}.
-     */
-    private static final String CONDITION = "CONDITION";
-
-    /** The directive a {@code @condition} reference is written under, as the reference site names it. */
+    /** The directives a method binding is written under, as the reference site names them. */
+    private static final String SERVICE_DIRECTIVE = "service";
+    private static final String EXTERNAL_FIELD_DIRECTIVE = "externalField";
     private static final String CONDITION_DIRECTIVE = "condition";
 
     // ---- the answer ----
@@ -155,30 +147,8 @@ final class SchemaQueries {
         Optional<Conflict> conflict,
         List<Hop> joinPath,
         List<PathStop> pathStops,
-        List<MethodBinding> producerMethods,
-        List<MethodBinding> conditionMethods
-    ) {
-
-        /**
-         * Every method the coordinate's authored Java references name, which is what the wire carries as
-         * one list.
-         *
-         * <p>Two components rather than one because H2 will not correlate an outer column into a
-         * {@code UNION ALL} nested inside a {@code MULTISET}: jOOQ wraps the union in a derived table and
-         * the reference to the driving field row no longer resolves. So the two populations are two
-         * projections at one grain instead, and joining them is a concatenation and nothing more. Both
-         * lists already belong to this row, having each been correlated to it, so there is no key to
-         * match and nothing that can be mispaired.
-         */
-        List<MethodBinding> methods() {
-            return Stream.concat(producerMethods.stream(), conditionMethods.stream())
-                .sorted(comparing(MethodBinding::declaredVia)
-                    .thenComparing(MethodBinding::className)
-                    .thenComparing(MethodBinding::methodName)
-                    .thenComparing(MethodBinding::arity))
-                .toList();
-        }
-    }
+        List<MethodBinding> methods
+    ) {}
 
     /**
      * One authored claim on a type: which classification the author asked for, through which directive.
@@ -336,18 +306,12 @@ final class SchemaQueries {
     record PathStop(int position, String fromTable, int moves) {}
 
     /**
-     * One census method a field's authored Java reference names.
+     * The one census method a field's authored Java reference resolves to.
      *
      * @param declaredVia {@code SERVICE}, {@code EXTERNAL_FIELD} or {@code CONDITION}: which directive
-     *     named the method. The first two are {@code intent_field_producer_method}'s own two arms; the
-     *     third is this module's read, that view's population being scoped to the directives whose
-     *     method produces a field's value
-     * @param candidates how many census methods the reference matches, this row being one of them;
-     *     above one the reference names an overload set and the store declines to pick
+     *     named the method
      */
-    record MethodBinding(
-        String className, String methodName, int arity, String declaredVia, int candidates
-    ) {}
+    record MethodBinding(String className, String methodName, int arity, String declaredVia) {}
 
     /**
      * A page of type entries, the size of the population it was drawn from, and the cursor for the next
@@ -682,8 +646,7 @@ final class SchemaQueries {
         var claims = claims(store, typeNames);
         var rows = store.dsl()
             .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_SDL,
-                fieldConflict(), joinPath(), pathStops(), producerMethods(),
-                conditionMethods(store))
+                fieldConflict(), joinPath(), pathStops(), methods())
             .from(GRAPHQL_FIELD)
             .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName())
                 .and(GRAPHQL_FIELD.TYPE_NAME.in(typeNames)))
@@ -706,12 +669,12 @@ final class SchemaQueries {
     private record FieldRow(
         String typeName, String fieldName, String typeSdl,
         Optional<Conflict> conflict, List<Hop> joinPath, List<PathStop> pathStops,
-        List<MethodBinding> producerMethods, List<MethodBinding> conditionMethods
+        List<MethodBinding> methods
     ) {
 
         FieldEntry withClaims(ClaimSet claims) {
             return new FieldEntry(typeName, fieldName, typeSdl, claims, conflict, joinPath,
-                pathStops, producerMethods, conditionMethods);
+                pathStops, methods);
         }
     }
 
@@ -913,82 +876,36 @@ final class SchemaQueries {
     }
 
     /**
-     * The census methods a {@code @service} or an {@code @externalField} on this coordinate names, as
-     * the store's producer view resolves them.
-     *
-     * <p>Ambiguity arrives as rows with the arity on each, which is the view's own shape: a reference
-     * matching two overloads is two rows and {@code candidates} says so, where the walk this replaces
-     * takes whichever method reflection hands back first.
+     * The methods the coordinate's {@code @service}, {@code @externalField} and {@code @condition}
+     * references resolve to, each a written reference beside the one method the classpath settled it
+     * on. A reference naming no method or an overload set has no settled method and no row here; the
+     * code-reference defects say which, at the place it was written.
      */
-    private static Field<List<MethodBinding>> producerMethods() {
+    private static Field<List<MethodBinding>> methods() {
+        var site = GRAPHITRON_CODE_REFERENCE_SITE;
+        var r = GRAPHITRON_CODE_REFERENCE;
+        var declaredVia = when(site.DIRECTIVE_NAME.eq(SERVICE_DIRECTIVE), inline("SERVICE"))
+            .when(site.DIRECTIVE_NAME.eq(EXTERNAL_FIELD_DIRECTIVE), inline("EXTERNAL_FIELD"))
+            .otherwise(inline("CONDITION"));
         return multiset(
-            select(INTENT_FIELD_PRODUCER_METHOD.CLASS_NAME, INTENT_FIELD_PRODUCER_METHOD.METHOD_NAME,
-                arity(INTENT_FIELD_PRODUCER_METHOD.SOURCE_NAME,
-                    INTENT_FIELD_PRODUCER_METHOD.CLASS_NAME,
-                    INTENT_FIELD_PRODUCER_METHOD.METHOD_NAME,
-                    INTENT_FIELD_PRODUCER_METHOD.DESCRIPTOR),
-                INTENT_FIELD_PRODUCER_METHOD.DECLARED_VIA, INTENT_FIELD_PRODUCER_METHOD.CANDIDATES)
-                .from(INTENT_FIELD_PRODUCER_METHOD)
-                .where(ofField(INTENT_FIELD_PRODUCER_METHOD.GRAPH_NAME,
-                    INTENT_FIELD_PRODUCER_METHOD.TYPE_NAME,
-                    INTENT_FIELD_PRODUCER_METHOD.FIELD_NAME)))
-            .convertFrom(r -> r.map(Records.mapping(MethodBinding::new)));
-    }
-
-    /**
-     * The census methods a {@code @condition} on this coordinate names, which the producer view does not
-     * carry.
-     *
-     * <p>That view's population is scoped to the two directives whose method produces a field's value,
-     * {@code @service} and {@code @externalField}, and its own comment says so. A {@code @condition}
-     * names a class and a method too, so reading only the view would drop every condition-carrying
-     * coordinate's method slot silently, without any sign on the wire that a slot had been dropped
-     * rather than left empty.
-     *
-     * <p>A read here rather than a third arm on that view, which is the escalation rule applied rather
-     * than dodged. A rule graduates to a shared relation where it genuinely must be shared, and this one
-     * is not: no other surface in the workspace resolves a condition's method pair at all, so widening a
-     * closed two-value provenance vocabulary would be putting this module's requirement into the model's.
-     * What the read does is what that view does for its own arms: match the reference's class and method
-     * against the census under this graph's sources, and report ambiguity as an arity rather than resolve
-     * it by a pick.
-     */
-    private static Field<List<MethodBinding>> conditionMethods(StoreHandle store) {
-        return multiset(
-            select(CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME,
-                arity(CODE_METHOD.SOURCE_NAME, CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME,
-                    CODE_METHOD.DESCRIPTOR),
-                inline(CONDITION), conditionCandidates(store))
-                .from(GRAPHITRON_CODE_REFERENCE_SITE)
-                // The field coordinates alone: a condition on an argument is the argument's.
+            select(r.METHOD_CLASS_NAME, r.METHOD_NAME,
+                arity(r.METHOD_SOURCE_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME, r.METHOD_DESCRIPTOR),
+                declaredVia)
+                .from(site)
+                // The field coordinates alone: a reference on an argument is the argument's.
                 .join(GRAPHQL_FIELD_ELEMENT)
-                .on(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.GRAPH_NAME)
-                    .and(GRAPHQL_FIELD_ELEMENT.COORDINATE.eq(GRAPHITRON_CODE_REFERENCE_SITE.COORDINATE)))
-                .join(CODE_METHOD)
-                .on(CODE_METHOD.CLASS_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.CLASS_NAME)
-                    .and(CODE_METHOD.METHOD_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.METHOD_NAME)))
-                .where(GRAPHITRON_CODE_REFERENCE_SITE.DIRECTIVE_NAME.eq(CONDITION_DIRECTIVE)
+                .on(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(site.GRAPH_NAME)
+                    .and(GRAPHQL_FIELD_ELEMENT.COORDINATE.eq(site.COORDINATE)))
+                .join(r)
+                .on(r.GRAPH_NAME.eq(site.GRAPH_NAME).and(r.SOURCE_NAME.eq(site.SOURCE_NAME))
+                    .and(r.SOURCE_LINE.eq(site.SOURCE_LINE))
+                    .and(r.SOURCE_COLUMN.eq(site.SOURCE_COLUMN)))
+                .where(site.DIRECTIVE_NAME.in(SERVICE_DIRECTIVE, EXTERNAL_FIELD_DIRECTIVE,
+                        CONDITION_DIRECTIVE)
                     .and(ofField(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME, GRAPHQL_FIELD_ELEMENT.TYPE_NAME,
-                        GRAPHQL_FIELD_ELEMENT.FIELD_NAME))
-                    .and(store.reads(CODE_METHOD.SOURCE_NAME))))
-            .convertFrom(r -> r.map(Records.mapping(MethodBinding::new)));
-    }
-
-    /**
-     * How many census methods the {@code @condition} reference being projected matches.
-     *
-     * <p>A scalar subquery rather than a window count over the arm's own rows, which is what the store's
-     * producer view uses and what this read cannot: the {@code MULTISET} emulation wraps a projection
-     * inside an aggregate, and a window function is not allowed there. The count is the same either way,
-     * being the size of the match set the row is one of.
-     */
-    private static Field<Integer> conditionCandidates(StoreHandle store) {
-        var match = CODE_METHOD.as("condition_match");
-        return field(selectCount()
-            .from(match)
-            .where(match.CLASS_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.CLASS_NAME)
-                .and(match.METHOD_NAME.eq(GRAPHITRON_CODE_REFERENCE_SITE.METHOD_NAME))
-                .and(store.reads(match.SOURCE_NAME))));
+                        GRAPHQL_FIELD_ELEMENT.FIELD_NAME)))
+                .orderBy(declaredVia, r.METHOD_CLASS_NAME, r.METHOD_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(MethodBinding::new)));
     }
 
     /**

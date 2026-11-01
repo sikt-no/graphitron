@@ -1153,8 +1153,7 @@ class GraphitronMcpServerTest {
                 .containsKey("location"));
         assertThat((List<Map<String, Object>>) summary.get("methods")).containsExactly(Map.of(
             "methodRef", SCHEMA_FIXTURES + "CardService#summary/1",
-            "declaredVia", "SERVICE",
-            "candidates", 1));
+            "declaredVia", "SERVICE"));
         assertThat(summary).doesNotContainKey("column");
     }
 
@@ -1185,8 +1184,7 @@ class GraphitronMcpServerTest {
 
         assertThat((List<Map<String, Object>>) title.get("methods")).containsExactly(Map.of(
             "methodRef", SCHEMA_FIXTURES + "FilmConditions#titled/1",
-            "declaredVia", "CONDITION",
-            "candidates", 1));
+            "declaredVia", "CONDITION"));
         // @condition claims no classification, so the structural reading still wins the coordinate
         // and the column binding stands beside the method rather than being masked by it.
         assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()

@@ -9,6 +9,7 @@ import org.jooq.Record1;
 import org.jooq.Records;
 import org.jooq.Select;
 import org.jooq.SelectConditionStep;
+import org.jooq.SelectJoinStep;
 import org.jooq.SelectSelectStep;
 import org.jooq.TableField;
 
@@ -22,8 +23,8 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
@@ -539,29 +540,20 @@ public final class DeclarationFacts {
         StoreHandle store, Coord coord
     ) {
         if (coord.memberName() == null) return null;
+        var site = GRAPHITRON_CODE_REFERENCE_SITE;
+        var r = GRAPHITRON_CODE_REFERENCE;
         var arity = field(selectCount()
             .from(CODE_METHOD_PARAMETER)
-            .where(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.SOURCE_NAME))
-            .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.CLASS_NAME))
-            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.METHOD_NAME))
-            .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(INTENT_FIELD_PRODUCER_METHOD.DESCRIPTOR)));
-        return multiset(select(INTENT_FIELD_PRODUCER_REFERENCE.CLASS_NAME,
-                INTENT_FIELD_PRODUCER_REFERENCE.METHOD_NAME, arity)
-            .from(INTENT_FIELD_PRODUCER_REFERENCE)
-            .leftJoin(INTENT_FIELD_PRODUCER_METHOD)
-            .on(INTENT_FIELD_PRODUCER_METHOD.GRAPH_NAME
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME))
-            .and(INTENT_FIELD_PRODUCER_METHOD.TYPE_NAME
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME))
-            .and(INTENT_FIELD_PRODUCER_METHOD.FIELD_NAME
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME))
-            .and(INTENT_FIELD_PRODUCER_METHOD.DECLARED_VIA
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.DECLARED_VIA))
-            .where(coordinate(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()),
-                INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(coord.typeName()),
-                INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(coord.memberName())))
-            .orderBy(INTENT_FIELD_PRODUCER_REFERENCE.DECLARED_VIA,
-                INTENT_FIELD_PRODUCER_METHOD.DESCRIPTOR))
+            .where(CODE_METHOD_PARAMETER.SOURCE_NAME.eq(r.METHOD_SOURCE_NAME))
+            .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(r.METHOD_CLASS_NAME))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(r.METHOD_NAME))
+            .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(r.METHOD_DESCRIPTOR)));
+        return multiset(producerReferences(select(site.CLASS_NAME, site.METHOD_NAME, arity)
+                .from(site)
+                .leftJoin(r).on(r.GRAPH_NAME.eq(site.GRAPH_NAME), r.SOURCE_NAME.eq(site.SOURCE_NAME),
+                    r.SOURCE_LINE.eq(site.SOURCE_LINE), r.SOURCE_COLUMN.eq(site.SOURCE_COLUMN)),
+                store, coord)
+            .orderBy(site.DIRECTIVE_NAME, r.METHOD_DESCRIPTOR))
             .convertFrom(rows -> rows.map(Records.mapping(FieldProducerMethods.Reference::new)));
     }
 
@@ -690,11 +682,9 @@ public final class DeclarationFacts {
                 .and(store.reads(SQL_TABLE.SOURCE_NAME)))
             .union(backingCandidates(store, coord));
         if (coord.memberName() == null) return classes;
-        return classes.union(select(INTENT_FIELD_PRODUCER_REFERENCE.CLASS_NAME)
-            .from(INTENT_FIELD_PRODUCER_REFERENCE)
-            .where(coordinate(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()),
-                INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(coord.typeName()),
-                INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(coord.memberName()))))
+        return classes.union(producerReferences(
+                select(GRAPHITRON_CODE_REFERENCE_SITE.CLASS_NAME).from(GRAPHITRON_CODE_REFERENCE_SITE),
+                store, coord))
             .union(routineCalls(select(SQL_ROUTINE.ROUTINES_CLASS_FQN), store, coord));
     }
 
@@ -725,11 +715,9 @@ public final class DeclarationFacts {
      * application resolves to.
      */
     private static Select<Record1<String>> candidateMethodNames(StoreHandle store, Coord coord) {
-        return select(INTENT_FIELD_PRODUCER_REFERENCE.METHOD_NAME)
-            .from(INTENT_FIELD_PRODUCER_REFERENCE)
-            .where(coordinate(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()),
-                INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(coord.typeName()),
-                INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(coord.memberName())))
+        return producerReferences(
+                select(GRAPHITRON_CODE_REFERENCE_SITE.METHOD_NAME).from(GRAPHITRON_CODE_REFERENCE_SITE),
+                store, coord)
             .union(select(CODE_READ_SLOT.METHOD_NAME)
                 .from(CODE_READ_SLOT)
                 .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
@@ -781,6 +769,24 @@ public final class DeclarationFacts {
     private static Condition coordinate(Condition graph, Condition type, Condition field) {
         return graph.and(type).and(field);
     }
+
+    /**
+     * The coordinate's producer references as written: each {@code @service} and
+     * {@code @externalField} naming a class and a method, the latter's omitted method being the field's
+     * own name.
+     */
+    private static <R extends Record> SelectConditionStep<R> producerReferences(
+            SelectJoinStep<R> select, StoreHandle store, Coord coord) {
+        var site = GRAPHITRON_CODE_REFERENCE_SITE;
+        return select.where(coordinate(site.GRAPH_NAME.eq(store.graphName()),
+                site.TYPE_NAME.eq(coord.typeName()), site.FIELD_NAME.eq(coord.memberName())))
+            .and(site.DIRECTIVE_NAME.in(SERVICE_DIRECTIVE, EXTERNAL_FIELD_DIRECTIVE))
+            .and(site.METHOD_NAME.isNotNull());
+    }
+
+    /** The two directives whose method produces a field's value, as the reference site names them. */
+    private static final String SERVICE_DIRECTIVE = "service";
+    private static final String EXTERNAL_FIELD_DIRECTIVE = "externalField";
 
     /**
      * The generated calls the coordinate's {@code @routine} applications name: each application at

@@ -238,7 +238,6 @@ final class SchemaView {
         map.put("methodRef",
             McpWire.methodRef(method.className(), method.methodName(), method.arity()));
         map.put("declaredVia", method.declaredVia());
-        map.put("candidates", method.candidates());
         return map;
     }
 
