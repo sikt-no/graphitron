@@ -211,3 +211,41 @@ this site (and fail loudly), or fall back to the path-only name for out-of-band 
 The spec's other claims were checked and hold: the four `TypeFetcherGenerator` sites and the two
 `MultiTablePolymorphicEmitter` sites call `loaderNameDeclaration`, `QueryNodeFetcherClassGenerator`'s parent is
 always `Query`, and the existing `FanItem` test is correct today for the reason the spec gives.
+
+### Round 2: In Review → Done (session_01WkW2JEzgQYyoRDRQke2QpU, 2026-11-01)
+
+Verdict: withhold. The change is correct and is the change the spec approved; the evidence for the
+reported shape is sound; three things the spec named are not delivered. Question three (correct and the
+approved change): the name is the response path, `"@"` and the declaring object type at every registration
+site. All four `getDataLoaderRegistry()` sites read it through `loaderNameDeclaration` or the
+`loaderName` / `tenantLoaderName` seam, `Query.nodes` passes the literal `Query`, a null parent fails
+loudly, and the convenience overload and its path-only recipe are gone. The manual section is accurate and
+states the type-scoped rule. Question four (how do we know it is complete) is where the gaps are.
+
+**Finding 1 (question four). The `@referenceFor` multitable-child shape has no test.** The spec's Goal names
+it ("The same happens under a `@referenceFor` multitable child") and its Tests section lists it; the kreg
+production query that blocks the port selects the fields under `barn`, which is that shape. The new tests
+reach the participants through `Film.membersViaJunction` only. The mechanism is shared, since the
+participants' split fields are emitted by the same `TypeFetcherGenerator` class per participant, so this is
+a coverage gap and not a suspected defect, but nothing named shows the second shape the goal promises. Add
+the execution case, or have the spec drop the claim.
+
+**Finding 2 (question four). The pin for `@splitQuery` on an interface-declared field is not written.**
+Round 1 asked for it to be restated rather than dropped, and the spec carries it as a test. The author's
+note says the reviewer decides whether it blocks; it does not need to be a long test, but it is the one
+place the build's behaviour for that directive is stated, so either write it or remove it from the spec.
+
+**Finding 3 (question three: the approved change, prose half). Prose still describes the path-only name.**
+The spec's step "update the javadoc on `DataLoaderFetcherEmitter` (the class summary ...)" is only half done:
+the `build` javadoc was updated but the class summary (line 19, "resolve the path-scoped DataLoader name via")
+was not. The same stale wording remains in `LoaderRegistration` (line 31, "The path-scoped DataLoader name"),
+in `MultiTablePolymorphicEmitter` (line 1658, "the path-derived form") and in `DataLoaderFetcherEmitterTest`
+(line 16). `TypeFetcherGeneratorTest` (line 1313) still points at the deleted `buildDataLoaderName`. The item
+declared no `Retired vocabulary`, which is what the sweep would otherwise have caught; the path-only name is
+the retired mechanism here.
+
+Evidence the reviewer produced, so the author does not redo it: with the four generator sources reverted to
+their pre-fix state and the same schema and tests, `splitFieldOnBothParticipants_eachResolvesFromItsOwnTable_inEitherFragmentOrder`
+and `splitFieldOnBothParticipants_matchesAliasedControl` both fail and the five existing tests in the class
+pass; with the fix all seven pass. That answers the red-run gap the author raised. The `graphitron-model`
+`-DskipTests` install is accepted: the diff is not upstream of that module.
