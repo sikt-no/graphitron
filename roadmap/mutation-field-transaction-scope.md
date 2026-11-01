@@ -1,13 +1,13 @@
 ---
 id: R1101
 title: "One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 5
 theme: runtime-connection
 depends-on: []
 created: 2026-10-26
-last-updated: 2026-10-31
+last-updated: 2026-11-01
 ---
 
 # One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it
