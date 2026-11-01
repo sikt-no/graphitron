@@ -142,12 +142,6 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       present one;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedStepHopTest} binds the hop view's
  *       name-matched arm, which only a chain departing a function result reaches;
- *       {@code no.sikt.graphitron.rewrite.derive.ReferenceDiscoveryTest} binds
- *       {@code intent_field_reference_discovery}, what an omitted path finds between a field's two
- *       endpoints, over captured SDL against that same catalog for the same reason and because each
- *       shape it has to answer for is a shape the catalog already declares, half its cases pinning
- *       the coordinates that discover nothing because the boundary of a discovery is what the
- *       relation claims;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedKeyPairTest} binds the pair behind a hop
  *       out of a table-valued function's result, {@code sql_name_matched_key_column} stating how
  *       such a hop is keyed, and a routine write's landing and key row the two ends that reach

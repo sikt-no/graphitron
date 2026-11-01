@@ -5380,7 +5380,7 @@ COMMENT ON COLUMN sql_table.record_class_fqn IS 'the fully qualified name of the
 COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
 COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, when present';
 COMMENT ON COLUMN sql_table.table_schema_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the namespace half of an authored table or routine reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view';
-COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against graphitron_table_entry.type_name_upper where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view. intent_field_reference_discovery is the worked example of that second sentence: both of its table names are catalog values, so it joins this relation twice on its key to compare them here';
+COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against graphitron_table_entry.type_name_upper where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view.';
 COMMENT ON COLUMN sql_table.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 CREATE INDEX ix_sql_table_record_class_fqn ON sql_table (record_class_fqn, source_name);
 COMMENT ON INDEX ix_sql_table_record_class_fqn IS 'Serves the match of a class to the table whose record class it is, which graphitron_field_source_table_rule''s RECORD_CLASS rule makes for every type a class backs and intent_record_slot_assignable for a node key''s record. Measured on a sis capture: the source-table rule at 1.6 s without it and 0.2 s with it, the RECORD_CLASS rule alone from 1.4 s to 18 ms.';
@@ -9743,90 +9743,6 @@ COMMENT ON VIEW intent_field_column_table IS 'Deprecated with the whole intent_ 
 -- COMMENT ON COLUMN intent_field_column_table.table_schema IS 'the resolved table''s SQL schema; NULL on every SILENT row';
 -- COMMENT ON COLUMN intent_field_column_table.table_name IS 'the resolved table''s SQL name; NULL on every SILENT row. With the two columns above this is sql_table''s full key, so the columns themselves are one join away';
 
-CREATE VIEW intent_field_reference_discovery
-  (graph_name, type_name, field_name,
-   from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table,
-   constraint_name, fk_on_from, candidates) AS
-SELECT graph_name, type_name, field_name,
-       from_source_name, from_schema, from_table,
-       to_source_name, to_schema, to_table,
-       constraint_name, fk_on_from,
-       CAST(COUNT(*) OVER (
-         PARTITION BY graph_name, type_name, field_name) AS INT)
-  FROM (SELECT sc.graph_name, sc.type_name, sc.field_name,
-               bt.table_source_name AS from_source_name,
-               bt.table_schema      AS from_schema,
-               bt.table_name        AS from_table,
-               sc.table_source_name AS to_source_name,
-               sc.table_schema      AS to_schema,
-               sc.table_name        AS to_table,
-               rc.constraint_name,
-               CASE WHEN rc.source_name = bt.table_source_name
-                     AND rc.table_schema = bt.table_schema
-                     AND rc.table_name = bt.table_name
-                    THEN TRUE ELSE FALSE END AS fk_on_from
-          FROM (SELECT tt.graph_name, tt.type_name, tt.field_name, tb.table_source_name,
-                       tb.table_schema, tb.table_name
-                  FROM graphitron_field_target_table tt
-                  JOIN graphitron_resolved_type_binding tb
-                    ON tb.graph_name = tt.graph_name AND tb.type_name = tt.arriving_type_name
-                   AND tb.candidates = 1
-                 WHERE tt.basis = 'TARGET'
-                   AND tt.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-                   AND EXISTS (SELECT 1 FROM graphitron_type nt
-                                WHERE nt.graph_name = tt.graph_name
-                                  AND nt.type_name = tt.arriving_type_name AND nt.kind = 'OBJECT')
-                   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application ad
-                                   WHERE ad.graph_name = tt.graph_name
-                                     AND ad.coordinate = tt.type_name || '.' || tt.field_name
-                                     AND ad.directive_name IN ('service', 'externalField', 'nodeId', 'routine'))
-                   AND NOT EXISTS (SELECT 1 FROM graphitron_pivot_entry pv
-                                    WHERE pv.graph_name = tt.graph_name AND pv.type_name = tt.type_name
-                                      AND pv.field_name = tt.field_name)
-                   AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
-                        JOIN graphitron_ast_field_path_entry pe
-                          ON pe.graph_name = fe.graph_name AND pe.source_name = fe.source_name
-                         AND pe.field_line = fe.source_line AND pe.field_column = fe.source_column
-                       WHERE fe.graph_name = tt.graph_name AND fe.coordinate = tt.type_name || '.' || tt.field_name)) sc
-          JOIN graphitron_resolved_type_binding bt
-            ON bt.graph_name = sc.graph_name AND bt.type_name = sc.type_name
-           AND bt.candidates = 1
-          JOIN sql_referential_constraint rc
-            ON (rc.source_name = bt.table_source_name
-                AND rc.table_schema = bt.table_schema
-                AND rc.table_name = bt.table_name
-                AND rc.referenced_source_name = sc.table_source_name
-                AND rc.referenced_schema = sc.table_schema
-                AND rc.referenced_table = sc.table_name)
-            OR (rc.source_name = sc.table_source_name
-                AND rc.table_schema = sc.table_schema
-                AND rc.table_name = sc.table_name
-                AND rc.referenced_source_name = bt.table_source_name
-                AND rc.referenced_schema = bt.table_schema
-                AND rc.referenced_table = bt.table_name)
-          JOIN sql_table arriving
-            ON arriving.source_name = sc.table_source_name
-           AND arriving.table_schema = sc.table_schema
-           AND arriving.table_name = sc.table_name
-          JOIN sql_table departing
-            ON departing.source_name = bt.table_source_name
-           AND departing.table_schema = bt.table_schema
-           AND departing.table_name = bt.table_name
-         WHERE arriving.table_name_upper <> departing.table_name_upper) endpoints;
-COMMENT ON VIEW intent_field_reference_discovery IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The foreign key an omitted @reference path discovers: for a field whose parent type and named type are each bound to a table, every foreign key connecting those two tables in either direction. This is the resolution the walk runs where a field carries no path element, and sql_referential_constraint''s own comment defers it here, "exactly one foreign key between these two tables" being a derivation over that relation rather than a captured fact. Separate from graphitron_field_reference_step_hop because that view resolves what an author wrote and this one answers where nothing was written; the hop view names this as a resolution it deliberately does not perform, so its silence is not the absence of a discovery. Neither endpoint is re-derived here. The arriving table is the field''s target table, graphitron_field_target_table''s TARGET row, which reads the navigation so a synthesised connection field navigates as its element type, through an unambiguous binding, at a field with no path written, demanding an OBJECT named type and excluding roots and the coordinates a claiming directive or a @pivot diverts; restating any of that would be a second spelling of the navigation that relation exists to state once. The departing table is the parent''s own binding, demanded unambiguous for the reason the arriving one is: a discovery between endpoints that are not certain is not the pair the walk would have had in hand. One row per connecting key and not two, a foreign key connecting a pair once whichever end declares it, and fk_on_from says which end that is; a self-referential key therefore needs no special case, the same-table pair being excluded outright. Excluded because the walk excludes it, comparing the two table names case-insensitively and nothing else, so two like-named tables in different schemas are one table to this rule as they are to the walk. Both names are catalog values reached through derived views, and a derived view does not forward a fold, so the comparison joins sql_table on its key at each end and reads the fold there; that costs two lookups on a primary key and keeps the fold a property of the relation that owns the spelling. The self-referencing field states its key explicitly or is rejected with that advice. Absence covers several things and none of them is "the discovery found nothing in particular": no foreign key connects the endpoints, or an endpoint is unbound or ambiguously bound, or the coordinate is one the named-type rule excludes. The walk''s other element-less arm needs no exclusion here: where the departing table is a table-valued function the walk name-matches instead of discovering, and a routine result declares no foreign keys, so such a coordinate contributes no rows on its own. The departing endpoint reads graphitron_resolved_type_binding, as the arriving one already does through the navigation view, so a parent bound by a @routine chain''s return rather than by a written @table is the same endpoint here; where that chain landed on a function result the sentence above is why the pair still finds nothing, and where it landed on a stored table through a hop the discovery is the ordinary one.';
--- COMMENT ON COLUMN intent_field_reference_discovery.graph_name IS 'the owning graph''s partition, carried from the navigation view';
--- COMMENT ON COLUMN intent_field_reference_discovery.type_name IS 'the type owning the field the path was omitted on; also the type whose binding is the departing end';
--- COMMENT ON COLUMN intent_field_reference_discovery.field_name IS 'the field name within the owning type';
--- COMMENT ON COLUMN intent_field_reference_discovery.from_source_name IS 'the departing table''s catalog partition, first column of its sql_table key';
--- COMMENT ON COLUMN intent_field_reference_discovery.from_schema IS 'the departing table''s SQL schema';
--- COMMENT ON COLUMN intent_field_reference_discovery.from_table IS 'the departing table''s SQL name; the parent type''s own binding';
--- COMMENT ON COLUMN intent_field_reference_discovery.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
--- COMMENT ON COLUMN intent_field_reference_discovery.to_schema IS 'the arriving table''s SQL schema';
--- COMMENT ON COLUMN intent_field_reference_discovery.to_table IS 'the arriving table''s SQL name; the binding of the type the field names';
--- COMMENT ON COLUMN intent_field_reference_discovery.constraint_name IS 'the foreign key connecting the two tables, which is what an author would write into a {key:} element. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says';
--- COMMENT ON COLUMN intent_field_reference_discovery.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what completes the constraint''s key from the two endpoint triples';
--- COMMENT ON COLUMN intent_field_reference_discovery.candidates IS 'how many foreign keys connect the two tables, this row being one of them; 1 is what the walk requires of a discovery, and a larger number is what its own "which foreign key did you mean" rejection counts. Stated as a column rather than left to each reader''s count, because whether the discovery is certain decides the reading and a reader that counted for itself would be re-deriving the resolution''s arity';
 
 CREATE VIEW intent_field_producer_reference
   (graph_name, type_name, field_name, declared_via, class_name, method_name) AS
@@ -9873,7 +9789,17 @@ COMMENT ON VIEW intent_field_producer_method IS 'Deprecated with the whole inten
 -- COMMENT ON COLUMN intent_field_producer_method.descriptor IS 'the resolved method''s raw JVM descriptor, code_method''s overload discriminator and the whole of what tells two rows of one reference apart. The column a reader carries forward to reach the method''s parameters and the classes its declared return type names';
 -- COMMENT ON COLUMN intent_field_producer_method.candidates IS 'how many methods the reading read that this reference matches, this row being one of them; 1 on an unambiguous reference. Partitioned by the reference and not by the coordinate, so a field carrying both directives does not report one arm''s overloads as the other''s. Two overloads and one class declared by two classpath entries both raise it, which is one fact from a reader''s side: the reference names more than one method. Stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms, whether a reference is unique being what decides the reading';
 
-CREATE VIEW intent_delivery_container (container_class, element_index, multiplies) AS VALUES
+CREATE TABLE code_delivery_container (
+  container_class VARCHAR NOT NULL,
+  element_index   VARCHAR NOT NULL,
+  multiplies      BOOLEAN NOT NULL,
+  PRIMARY KEY (container_class)
+);
+COMMENT ON TABLE code_delivery_container IS 'One class a declared type delivers something through, with the type-argument position its element sits at and whether passing through it makes the delivery many. For example java.util.List delivers its argument at position 0, many.';
+COMMENT ON COLUMN code_delivery_container.container_class IS 'the fully-qualified binary name of the container class, spelled as the census spells a class name';
+COMMENT ON COLUMN code_delivery_container.element_index IS 'the 0-based type-argument position the delivered element sits at, as a type_path step: 0 for the single-argument containers, 1 for a map, whose key is not what it delivers';
+COMMENT ON COLUMN code_delivery_container.multiplies IS 'whether passing through this container makes the delivery many rather than one. A collection multiplies and a wrapper does not, which is why the two live in one relation rather than two: both are stepped through by the same descent, and only what the step means to cardinality differs. A map is the case worth stating, and it is FALSE: a map from a key to one value delivers one, and a map from a key to a list delivers many because of the list, so the map itself is transparent and the descent through it decides nothing.';
+INSERT INTO code_delivery_container VALUES
   ('java.util.List', '0', TRUE),
   ('java.util.Set', '0', TRUE),
   ('java.util.Collection', '0', TRUE),
@@ -9881,10 +9807,6 @@ CREATE VIEW intent_delivery_container (container_class, element_index, multiplie
   ('java.util.concurrent.CompletableFuture', '0', FALSE),
   ('org.jooq.Result', '0', TRUE),
   ('java.util.Map', '1', FALSE);
-COMMENT ON VIEW intent_delivery_container IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The classes a declared type delivers something through rather than delivers: the container vocabulary the peel descends, one row per class with the type-argument position its element sits at. Named data rather than a predicate spelled inside its reader, and its own relation because the peel reads it twice, once to descend and once to ask whether a position can descend at all. A rule that decides which classes are containers is exactly the kind that must have one home. They are named rather than recognised through a closure over the declared supertype relation because such a closure cannot answer here: nothing ships the JDK as a classpath entry, so java.util.List declares nothing the census holds and standing in for it is unreachable from below. The set is closed by what a generator meets rather than by what Java offers, so a consumer returning its own collection type is not a container here and delivers itself; widening it is adding a row.';
--- COMMENT ON COLUMN intent_delivery_container.container_class IS 'the fully-qualified binary name of the container class, spelled as the census spells a class name';
--- COMMENT ON COLUMN intent_delivery_container.element_index IS 'the 0-based type-argument position the delivered element sits at, as a type_path step: 0 for the single-argument containers, 1 for a map, whose key is not what it delivers';
--- COMMENT ON COLUMN intent_delivery_container.multiplies IS 'whether passing through this container makes the delivery many rather than one. A collection multiplies and a wrapper does not, which is why the two live in one relation rather than two: both are stepped through by the same descent, and only what the step means to cardinality differs. A map is the case worth stating, and it is FALSE: a map from a key to one value delivers one, and a map from a key to a list delivers many because of the list, so the map itself is transparent and the descent through it decides nothing.';
 
 CREATE TABLE graphitron_type_backing (
   graph_name   VARCHAR NOT NULL,
@@ -15311,6 +15233,10 @@ COMMENT ON COLUMN meta_stated_relation.example IS 'one concrete row, on meta_rel
 COMMENT ON COLUMN meta_stated_relation.rationale IS 'why the rows are the file''s rather than a gatherer''s. The bar is not that the rows change rarely: a gathered relation whose corpus never changes is still gathered. It is that no corpus outside the store could be read to produce them, because they are the vocabulary this file itself declares, so a refresh has nothing to re-read and a gate has nothing to compare against but the DDL';
 
 INSERT INTO meta_stated_relation VALUES
+  ('code_delivery_container',
+   'One class a declared type delivers something through, with the type-argument position its element sits at and whether passing through it makes the delivery many.',
+   'For example java.util.List delivers its argument at position 0, many.',
+   'The vocabulary the code capture peels a declared type with, stated here because no classpath it reads declares it: nothing ships the JDK as a classpath entry, so java.util.List declares nothing the census holds and a container cannot be recognised through a closure over the declared supertypes. The set is closed by what a generator meets rather than by what Java offers, so a consumer returning its own collection type is not a container here and delivers itself; widening it is adding a row.'),
   ('meta_stated_relation',
    'One relation whose rows this file supplies: what one of its rows is, an example of one, and why it is stated rather than gathered.',
    'For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.',

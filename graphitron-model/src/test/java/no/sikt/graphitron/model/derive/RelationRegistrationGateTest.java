@@ -390,7 +390,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_input_field_reference_step_target_keyless", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
         registrations.put("graphitron_argument_reference_step_target", Arm.DERIVED);
-        registrations.put("intent_field_reference_discovery", Arm.DERIVED);
         registrations.put("graphitron_connection_element_type", Arm.DERIVED);
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
         registrations.put("graphitron_resolved_type_binding", Arm.DERIVED);
@@ -488,7 +487,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
-        registrations.put("intent_delivery_container", Arm.DERIVED);
+        registrations.put("code_delivery_container", Arm.UNSHADOWED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);

@@ -38,7 +38,7 @@ import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
+import static no.sikt.graphitron.model.Tables.CODE_DELIVERY_CONTAINER;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HANDLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.excluded;
@@ -1258,15 +1258,11 @@ public final class CodeCapture {
     private record Container(String elementIndex, boolean multiplies) {}
 
     /**
-     * The container vocabulary, read from the relation that states it rather than spelled again.
-     *
-     * <p>It is a constant with no declared owner, so reading it crosses no ownership and waits on
-     * no gatherer; what it buys is that the list of containers exists once. When the view that
-     * peels them at read time retires, the vocabulary moves with the decision rather than being
-     * copied to follow it.
+     * The container vocabulary, read from the code family's stated relation rather than spelled
+     * again, so the list of containers exists once.
      */
     private static Map<String, Container> deliveryContainers(DSLContext dsl) {
-        var c = INTENT_DELIVERY_CONTAINER;
+        var c = CODE_DELIVERY_CONTAINER;
         return dsl.select(c.CONTAINER_CLASS, c.ELEMENT_INDEX, c.MULTIPLIES)
             .from(c)
             .fetchMap(Record3::value1, row -> new Container(row.value2(), row.value3()));
