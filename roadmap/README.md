@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1135` | A custom scalar coercing an array or a parameterized list has no valid shape | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](custom-scalar-over-array-column.md) |
 | `R1134` | An argument @condition(override: true) is rejected as an unbound column before the override is considered | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](argument-condition-override-rejected-as-unbound.md) |
-| `R614` | @lookupKey is declared for arguments only | In Progress | 2026-11-01 <sub>created 2026-08-09</sub> | [plan](lookupkey-per-input-field-doc-claim.md) |
+| `R614` | @lookupKey is declared for arguments only | In Review | 2026-11-01 <sub>created 2026-08-09</sub> | [plan](lookupkey-per-input-field-doc-claim.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -744,7 +744,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R600` [**Retire the roadmap markdown-to-AsciiDoc translator by authoring plans in AsciiDoc**](roadmap-plans-authored-as-asciidoc.md) — Backlog, cleanup
 - `R836` [**The fact schema's prose is written for its author, not its reader**](fact-schema-prose-plain-language.md) — Spec, dx
-- `R614` [**@lookupKey is declared for arguments only**](lookupkey-per-input-field-doc-claim.md) — In Progress, docs
+- `R614` [**@lookupKey is declared for arguments only**](lookupkey-per-input-field-doc-claim.md) — In Review, docs
 - `R842` [**Refused patterns gather in one section instead of a residue in every table**](refused-patterns-gather-in-one-section.md) — Spec, architecture
 - `R758` [**The fact model page never learns the materialization registry**](fact-model-page-learns-the-registry.md) — Backlog, dx
 - `R845` [**The reference tables still state live generating patterns as hand-maintained rows**](live-trigger-rows-become-worked-examples.md) — Backlog, architecture

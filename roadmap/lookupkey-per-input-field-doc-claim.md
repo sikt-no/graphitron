@@ -1,7 +1,7 @@
 ---
 id: R614
 title: "@lookupKey is declared for arguments only"
-status: In Progress
+status: In Review
 bucket: docs
 priority: 4
 theme: docs
@@ -85,6 +85,30 @@ and are not affected by this item. The file is fs-plattform's to change.
 * `graphitron_field_lookup_key_entry`, `GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY`.
 * The message "@lookupKey on a mutation input field is no longer supported".
 * `INPUT_FIELD_DEFINITION` beside `@lookupKey`, in the declaration, its description and the manual.
+
+## Implementation notes
+
+Where the landing differs from the plan above, for the In Review → Done reviewer:
+
+* *One SQL reader, not two.* `graphitron_carrier_data_field_rule` had already lost its
+  `graphitron_field_lookup_key_entry` term on trunk before implementation, so only
+  `intent_authored_field_claim` changed. Its lookup branch is now an inner join on the marked
+  argument, the closure CTEs (`input_object_field_edge`, `lookup_bearing`) are gone, and
+  `transcription-readers.txt` loses the view's `graphql_type` line, which only the closure read.
+* *The Java mirror went too.* `LookupFactVisitor` and `LookupFacts` carried the same input-field rows
+  and type closure for `LookupFacts.triggersFor`. With the location gone both were always empty, so
+  the trigger is now the marked argument alone, under the Goal's "code that existed only to explain
+  that site". `TriggerFactPopulationPinTest` and `AuthoredClaimConflictsTest`'s agreement anchor pin
+  the argument-only trigger.
+* *Further tests built on the retired site* were rewritten or dropped beyond the three the plan
+  named: `facts/defects/authored-claim-decoded.graphqls` loses its closure cases,
+  `TableOnInputIgnoredNestingTest` loses its `@lookupKey` case, `EntryFamilyFixture` loses an
+  input-field `@lookupKey` nothing asserted on, and `DecodeClearScopeGuardTest`'s floor drops by the
+  one relation removed.
+* *Two more doc sites.* `docs/manual/how-to/migrating-from-legacy.adoc` now says to remove
+  `@lookupKey` from mutation input fields, and `docs/architecture/explanation/fact-model.adoc` keeps
+  its recurse-over-pairs rule without citing the removed closure as its example. A stale see-also in
+  `lookupKey.adoc` claiming tutorial page 5 uses the directive is gone.
 
 ## Related items
 
