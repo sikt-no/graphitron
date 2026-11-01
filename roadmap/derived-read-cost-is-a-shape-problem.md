@@ -117,6 +117,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
 * The walk's unknown-method rejections beside the stored code-reference defects. Ends at "The walk's unknown-method rejections go".
+* The walk's `@condition` shape refusals beside `CONDITION_OVERLOAD_SHAPE_DISAGREES`. Ends at "The walk's condition shape refusals go".
 * The name-match join in `sql_name_matched_key_column` and in
   `BuildContext.synthesizeNameMatchedJoin`. Ends at "`sql_name_matched_key_column` is gone".
 * Clear-and-recompute in `DerivationStratum` and the assembly steps beside mark and sweep. Ends at
@@ -369,9 +370,14 @@ this branch rather than modelling inputs again. Taken up on 2026-10-31.
 A directive naming Java code or a routine is resolved once, by the graphitron anchor against the
 classpath and catalog, and every reader reads that resolution rather than a view of its own.
 
-* **A condition reference names an overload set** `open`. `graphitron_code_reference` holds every
-  matching overload, and needing exactly one is the rule of `@externalField` alone;
-  a service picks among its overloads by what binds.
+* **A condition reference names an overload set** `open`. `graphitron_code_reference` resolves a
+  `@condition` to every overload of its name, as `graphitron_path_element_method` does for a path
+  element, where today an overloaded name has no row. Needing exactly one is the rule of
+  `@service`, `@externalField` and `FieldSort.method`, which refuse any overload.
+* **The walk's condition shape refusals go** `blocked`, on "Entry defects fail validate".
+  `ServiceCatalog.admitConditionShape` refuses a `@condition` set with `AmbiguousMethod` where
+  `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same, and at a path step it refuses on
+  axes the generated call never reaches, as for `agreeingOnBoth`.
 * **Every producer reader reads `graphitron_code_reference`** `open`. `SchemaQueries`,
   `DeclarationFacts` and the other readers of `intent_field_producer_method` are rewritten against
   the resolution, each with an SDL test passing before and after, and the view goes.
