@@ -1,0 +1,95 @@
+= Defects as facts
+
+A schema that breaks a rule should say so in one place, at the spot the author edits to fix it, and
+every tool should read the same verdict. So a defect is a fact in the store: a row, written once by
+the gatherer whose facts it judges, at the written position of the offending directive. This page
+says how that relation is shaped, who writes it, and how to add a defect.
+
+== Why a defect is a fact
+
+A defect is stored, not computed on each read. It sits at a written position, a file, line and
+column that `graphql_ast_entry` holds, so an editor can underline it and the row goes when the
+document stops writing that position. Everything that reports defects reads one relation,
+`graphitron_entry_defect_site`, which adds the coordinate, type and field the position is about:
+
+* the editor, through the `diagnostic` view;
+* the MCP server, through the same view;
+* the build, through the readers `StoreDetections` gathers, each of which turns the rows of its
+  codes into located build errors.
+
+One relation and one verdict means the three cannot drift apart.
+
+== The supertype
+
+`graphitron_entry_defect` holds one row per defect at its written position: the position, the
+code, and a detail string a message quotes. Its key is the position and the code, so one directive
+breaking two rules is two rows.
+
+`graphitron_defect_type` declares each code once:
+
+[cols="1,3"]
+|===
+| Column | What it says
+
+| `severity` | `error` or `warning`.
+| `basis` | Whether the rule comes from the GraphQL specification, from graphitron, or marks something
+graphitron does not support yet.
+| `lsp_code` | The code the editor shows.
+| `statement` | One sentence an author reads to understand the rule.
+| `owner_gatherer` | The gatherer that writes and sweeps the code's rows.
+|===
+
+== Ownership
+
+Each code is owned by the gatherer whose facts it judges. That gatherer writes its codes in its
+anchor phase, after the facts they judge are in: from its own rule view, a view named
+`<family>_entry_defect_rule` that `EntryDefects` writes for it, or by a stage that writes the rows
+itself where the rule needs work a view cannot state. Every row carries `touched_at`, the instant
+of the reading that found it. When its writers have run, the owner sweeps its own codes once,
+deleting the rows of those codes the reading did not mark. Another owner's rows are never touched.
+
+`DefectOwnerGateTest` holds this together: every code names a gatherer, every owner's rule view
+emits only that owner's codes and is written by that owner, the owner may read what its view
+reaches, and each Java writer writes only its gatherer's codes.
+
+== Detail and subtype relations
+
+A defect often has more to say than a code and a string. Where it does, its owner adds a relation
+keyed by the defect's key plus whatever the detail is about, with a foreign key to
+`graphitron_entry_defect` `ON DELETE CASCADE`. When the owner sweeps a defect, its details go with
+it. A detail no longer found under a defect still found is the owner's to remove as well, by
+marking and sweeping the detail rows or by rewriting them each reading.
+
+The condition overload defects are the example. `CONDITION_OVERLOAD_TIE` names the overloads that
+tie for a path step, `CONDITION_NO_OVERLOAD_FOR_PAIR` every overload the step considered, and
+`CONDITION_OVERLOAD_SHAPE_DISAGREES` the declarations whose shapes disagree. Each declaration is a
+row of `graphitron_entry_defect_method` under its defect, keyed to the method in `code_method`, so
+a reader lists them without parsing the detail.
+
+== Adding a defect
+
+. Declare the code in `graphitron_defect_type`: severity, basis, `lsp_code`, a one-sentence
+  statement.
+. Choose its owner: the gatherer whose facts the rule reads. That gatherer must own or declare a
+  dependency on every relation the rule reads.
+. Write it in the owner's anchor phase, as a branch of the owner's rule view or as a stage, marked
+  with the reading's instant and swept by the owner.
+. Add a detail relation where the defect has more to say, keyed and cascaded as above.
+. Add a build reader to `StoreDetections` if the defect must fail the build, not only show in the
+  editor.
+. Pin it in a fact document: the rows it draws and, beside them, a near miss that draws nothing.
+
+See xref:modeling-discipline.adoc[The modeling discipline] for what any stored relation owes.
+
+== What is not a defect
+
+The classification walk still refuses schemas on its own, with typed rejections that reach the
+build as validation errors; xref:typed-rejection.adoc[Typed rejection] describes them. Those are
+not rows here. Where a rule has both a stored defect and a walk rejection, both report it until the
+walk's rejection goes.
+
+Nor does every stored defect fail a build today. A defect fails the build only where a
+`StoreDetections` reader reads its code; the rest show in the editor and MCP. Making every error
+code stop a build is planned, and until then the build reader is a step of its own.
+
+xref:index.adoc[← Explanation index]

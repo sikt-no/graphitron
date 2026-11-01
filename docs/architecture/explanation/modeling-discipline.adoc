@@ -235,7 +235,8 @@ load-bearing at run time.
 == Where to go next
 
 xref:fact-model.adoc[The fact model] for the strict statement with each rule's enforcing test named,
-xref:naming-the-row.adoc[Naming the row] for the sentence a grain is written as, and
+xref:naming-the-row.adoc[Naming the row] for the sentence a grain is written as,
+xref:defects-as-facts.adoc[Defects as facts] for the discipline applied to the defect relation, and
 xref:pipeline-overview.adoc[Pipeline overview] for where gathering and anchoring sit in a run.
 
 xref:index.adoc[← Explanation index]
