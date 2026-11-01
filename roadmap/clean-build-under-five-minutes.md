@@ -235,6 +235,23 @@ numbering is the order to take them in, largest and cheapest first.
    statements of all 442 relations for each store (7.7% of `graphitron`'s samples). Boot once and
    copy, or reuse a booted store through the reset `ThreadConfinedStore` already performs in
    `graphitron-model`. Expected: about 30 s.
+
+   Not done, closed on measurement. Copying a booted store does not pay: a warm in-memory boot takes
+   about 0.4 s, and reopening a copied, already-booted file through `openAt` took about 1.8 s,
+   because H2 re-parses every stored definition on open and a copy skips only the cheap part, the
+   execution of the creation statements (the file is 884 KB and copies in milliseconds). Reuse
+   through the reset is already how most of the harness runs. What is left is small: a full
+   `graphitron` test phase on a 4-core machine (4,683 tests, 963 s) did 476 cold boots, 182 of them
+   through `CapturedStore`'s own-store arms, 43 through the production facade in
+   `OutcomeBlockRenderer`, 30 through the per-thread store and the rest spread over about thirty
+   classes, several of which test boot and warm start themselves. Their thread CPU time summed to
+   183.6 s, 0.39 s a boot, against 3,078.5 s of CPU for the whole test JVM, which averaged 3.7 of its
+   4 cores: 6.0% of the phase's CPU. The wall time of those boots summed to 1,463 s, 3.1 s a boot,
+   almost all of it waiting for a core, so wall time is the wrong thing to price them by. Removing
+   every boot would save at most that 6%, about 57 s of wall clock here, and the pool that could be
+   removed without changing what a test does is the own-store arm, 72.6 s of CPU, about 23 s of
+   wall, which needs a shared fixture to be reset between uses and so carries the leakage risks
+   `ThreadConfinedStore` documents. Not worth that.
 7. **Take the slow test suites off the critical path.** With steps 1 to 6 the build projects to
    about ten minutes: the compile chain still waits for each module's tests before the next
    module starts. Moving the heaviest suites into test modules of their own (or adopting Maven 4's
