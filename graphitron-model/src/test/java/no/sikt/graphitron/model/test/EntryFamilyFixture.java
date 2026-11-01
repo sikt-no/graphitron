@@ -227,7 +227,6 @@ public final class EntryFamilyFixture {
           title: String @field(name: "title") @asFacet
           category: String @field(name: "category") @asFacet
           actorId: ID @nodeId(typeName: "Actor")
-          rentalKey: ID @lookupKey
           joined: String @reference(path: [{table: "film_actor"}])
           guarded: String @condition(condition: {className: "no.example.Conditions", method: "guard"})
         }

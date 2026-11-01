@@ -2306,19 +2306,6 @@ class FieldBuilder {
                         "input field '" + rejected.get().getName()
                         + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
                 }
-                var retiredLookupKey = iot.getFieldDefinitions().stream()
-                    .filter(f -> f.hasAppliedDirective(DIR_LOOKUP_KEY))
-                    .findFirst();
-                if (retiredLookupKey.isPresent()) {
-                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        Rejection.directiveConflict(List.of(BuildContext.DIR_LOOKUP_KEY),
-                        "input field '" + retiredLookupKey.get().getName()
-                        + "': @lookupKey on a mutation input field is no longer supported; "
-                        + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
-                        + "partition is derived from the catalog by the walker). On Query-side "
-                        + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
-                        + "instead."));
-                }
                 // Arg-level @lookupKey on a plain (non-@table) input: re-derive the input's fields
                 // against the consuming field's return table and build the lookup binding set from
                 // them, producing the same TableInputArg the @table bridge does. The table is the
@@ -7312,13 +7299,11 @@ class FieldBuilder {
     }
 
     /**
-     * Returns {@code true} when {@code @lookupKey} appears on any direct argument of the field,
-     * or on any field within an input-type argument (transitively). This is the field-level
-     * classification signal; which specific argument carries it has no semantic significance.
-     * Read off the gathered lookup-trigger relation
+     * Returns {@code true} when {@code @lookupKey} appears on an argument of the field. This is
+     * the field-level classification signal; which specific argument carries it has no semantic
+     * significance. Read off the gathered lookup-trigger relation
      * ({@link no.sikt.graphitron.facts.LookupFacts#triggersFor}), whose visitor is the
-     * directive name's single lexical home and whose type-grain closure replaces the recursive
-     * walk this method used to own.
+     * directive name's single lexical home.
      */
     private boolean hasLookupKeyAnywhere(GraphQLFieldDefinition fieldDef) {
         return ctx.facts.lookup().triggersFor(fieldDef);

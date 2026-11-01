@@ -1,0 +1,35 @@
+# @lookupKey is declared on arguments only, so assembly refuses it on an input field, on the query
+# side and the mutation side alike, at the application's own line. Nothing is decoded from either:
+# the lookup key relation holds the argument that carries the directive and nothing else.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmKey {
+  title: String @lookupKey
+}
+
+input FilmInput {
+  title: String @lookupKey
+}
+
+extend type Query {
+  filmsByKey(key: [FilmKey]): [Film]
+  filmsByTitle(title: [String] @lookupKey): [Film]
+}
+
+type Mutation {
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+}
+
+extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
+  stage,    error_class,                    source_line
+  ASSEMBLY, DirectiveIllegalLocationError,  81
+  ASSEMBLY, DirectiveIllegalLocationError,  85
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argument_lookup_key_entry", rows: """
+  type_name, field_name,   argument_name
+  Query,     filmsByTitle, title
+  """)

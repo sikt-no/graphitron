@@ -4,12 +4,12 @@ import java.util.List;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
- * One {@code @lookupKey}-bearing input field's contribution to a {@code TableInputArg}'s
+ * One key field's contribution to a {@code TableInputArg}'s
  * column bindings. Sibling sealed root to {@link LookupMapping.ColumnMapping.LookupArg}: shares
  * the binding-arity axis (scalar vs decoded-record) but is rooted at an input-field cluster
  * inside a {@code TableInputArg} rather than an outer GraphQL argument.
  *
- * <p>One group per {@code @lookupKey}-bearing input field on a {@code TableInputArg}'s
+ * <p>One group per key field on a {@code TableInputArg}'s
  * resolved field list: {@link InputField.ColumnBackedField} (whether
  * {@link CallSiteExtraction.Direct} or {@link CallSiteExtraction.NodeIdDecodeKeys}) produces a
  * {@link MapGroup} with one {@link InputColumnBinding.MapBinding}; {@link InputField.ColumnBackedField}

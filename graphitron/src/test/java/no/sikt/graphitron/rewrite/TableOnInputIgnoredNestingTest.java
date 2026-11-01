@@ -94,25 +94,6 @@ class TableOnInputIgnoredNestingTest {
             .contains("mutations write values");
     }
 
-    @Test
-    void nestedTableGroupOnMutationInput_stillRejectsLookupKeyOnItsFields() {
-        // The other admission rule, for completeness rather than as a pin: @lookupKey inside a
-        // nested @table group is also caught downstream of rejectInputFieldDirectives, so unlike
-        // the @condition case above this one stays green even with the recursion gated. Kept
-        // because the rule is part of the contract, not because it guards the deletion.
-        var reason = insertRejectionReason("""
-            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
-            type Query { x: String }
-            input FilmInsertInput { nested: NestedTableGroup }
-            input NestedTableGroup @table(name: "language") {
-                title: String @field(name: "title") @lookupKey
-            }
-            type Mutation { createFilm(in: FilmInsertInput!): Film @mutation(typeName: INSERT) }
-            """);
-
-        assertThat(reason).contains("@lookupKey");
-    }
-
     /**
      * The rejection an INSERT on {@code createFilm} produces, as the consuming field's own reason
      * plus every build-time diagnostic. Causes that the classifier mints at the input field carrying

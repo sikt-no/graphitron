@@ -87,7 +87,7 @@ class RelationRegistrationGateTest {
             "graphitron_order_by_entry", "graphitron_default_order_entry", "graphitron_default_order_field_entry", "graphitron_mutation_entry",
             "graphitron_error_entry", "graphitron_error_handler_entry", "graphitron_node_entry", "graphitron_node_keycolumn_entry",
             "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry", "graphitron_argument_lookup_key_entry",
-            "graphitron_field_lookup_key_entry", "graphitron_split_query_entry", "graphitron_tenant_fan_out_entry",
+            "graphitron_split_query_entry", "graphitron_tenant_fan_out_entry",
             "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_outbox_entry",
             "graphitron_multitable_reference_entry",
             "graphitron_undecoded_argument_entry",

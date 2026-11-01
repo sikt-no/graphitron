@@ -45,7 +45,7 @@ The argument-level `@lookupKey` shape is right when the keys are scalar lists at
 
 == Composite keys via an input type
 
-An input type with `@lookupKey` on each leaf scalar lets the schema enforce that the keys travel together as one record. The input needs no directive of its own; its fields resolve against the consuming field's return-type table (`film_actor` here). Each input element is one row of the lookup; the generator materialises `VALUES(idx, film_id, actor_id)` and joins on the full composite key.
+An input-typed argument marked `@lookupKey` lets the schema enforce that the keys travel together as one record. The input type itself carries no directive; its fields resolve against the consuming field's return-type table (`film_actor` here). Each input element is one row of the lookup; the generator materialises `VALUES(idx, film_id, actor_id)` and joins on the full composite key.
 
 [source,graphql]
 ----
@@ -54,14 +54,14 @@ type Query {
 }
 
 input FilmActorKey {
-    filmId:  Int! @field(name: "film_id")  @lookupKey
-    actorId: Int! @field(name: "actor_id") @lookupKey
+    filmId:  Int! @field(name: "film_id")
+    actorId: Int! @field(name: "actor_id")
 }
 ----
 
-The contract: each `FilmActorKey` is one row of the `VALUES` table, the join is on the full key set, and the output preserves input order. `@lookupKey` on the argument itself (`key: [FilmActorKey!]! @lookupKey`) is the carrier marker; the per-leaf `@lookupKey` annotations are what bind individual fields into the key tuple. A leaf without `@lookupKey` is excluded from the key set and resolves like any other column-bound input field.
+The contract: each `FilmActorKey` is one row of the `VALUES` table, the join is on the full key set, and the output preserves input order. `@lookupKey` on the argument (`key: [FilmActorKey!]! @lookupKey`) makes every field of the input a key column; a field that binds no column on `film_actor` is rejected.
 
-Mutation row identification is different: `@mutation`'s `UPDATE`/`DELETE` identify rows by primary-key or unique-key coverage read from the catalog, and `@lookupKey` on a mutation input field is no longer supported; see xref:../reference/directives/mutation.adoc[`@mutation`].
+Mutation row identification is different: `@mutation`'s `UPDATE`/`DELETE` identify rows by primary-key or unique-key coverage read from the catalog, with no directive; see xref:../reference/directives/mutation.adoc[`@mutation`].
 
 == NodeId-encoded keys
 
@@ -152,7 +152,7 @@ The same VALUES-pair join applies; the difference is purely on the parent side, 
 * A key must identify at most one row, since it is answered in one output slot. That is a property of the key's *columns*, not of the values sent: repeating a value is always fine, binding a key to a non-unique column is not. Several rows matching one key collapses to one returned row (driver-dependent which); use `@condition` for non-uniquely-keyed filtering, not `@lookupKey`.
 * `@lookupKey` args are exempt from the implicit `column = ?` predicate path. The cascade in xref:condition-cascade.adoc[Stacking and overriding conditions] excludes `@lookupKey`-bound names from `walkInputFieldConditions`, so a lookup arg doesn't double-filter via VALUES join AND a redundant `column IN (...)`. The exemption covers the key argument only. A non-key filterable argument on the same field keeps its implicit predicate and lands in the `WHERE` beside the lookup join, which is how a lookup narrows on something other than its keys. Such a filter narrows *rows*, not keys: a key whose row fails the predicate keeps its position and holds `null` there, exactly as an unmatched key does.
 * A *root* lookup field's list elements must be nullable. `[Film]!` and `[Film]` are accepted, `[Film!]!` and `[Film!]` are rejected with a build error, since a miss has to be able to occupy its output position. The rule is root-only: a child lookup coordinate narrows a per-parent list instead of holding positions, so `[Actor!]!` is right there and nothing rejects it.
-* Only arguments on root-level fields (or on their referenced input types) and on child fields with arguments may be keys. xref:../reference/directives/mutation.adoc[`@mutation`] uses `@lookupKey` separately to identify the target row for `UPDATE`/`DELETE`/`UPSERT`; that's a distinct use of the same directive on `INPUT_FIELD_DEFINITION`.
+* Only arguments on root-level fields (or on their referenced input types) and on child fields with arguments may be keys.
 
 == See also
 

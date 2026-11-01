@@ -40,7 +40,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
@@ -276,7 +275,6 @@ public final class GraphitronFactCapture {
             case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY_ENTRY, type, field, directive);
             case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT_ENTRY, type, field, directive);
             case "multitableReference" -> marker(GRAPHITRON_MULTITABLE_REFERENCE_ENTRY, type, field, directive);
-            case "lookupKey" -> marker(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY, type, field, directive);
             case "nodeId" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_NODE_ID_ENTRY, type, field)) return;
                 var record = sink.dsl().newRecord(GRAPHITRON_FIELD_NODE_ID_ENTRY);
@@ -757,7 +755,6 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
-        GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY,
         GRAPHITRON_FIELD_NODE_ID_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY,

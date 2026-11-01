@@ -29,7 +29,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
@@ -473,8 +472,8 @@ final class MutationInputResolver {
     }
 
     /**
-     * Rejects {@code @lookupKey} and non-override {@code @condition} (a filter shape that
-     * competes with the verb's WHERE) on any mutation input field, recursing into nested
+     * Rejects non-override {@code @condition} (a filter shape that competes with the verb's
+     * WHERE) on any mutation input field, recursing into nested
      * non-{@code @table} grouping inputs so a buried leaf is held to the same rule. The
      * {@code @condition(override: true)} case is left to {@link #admitMutationInputFields}.
      * Returns the first rejection, or {@code null}. Called from
@@ -483,12 +482,6 @@ final class MutationInputResolver {
     static Rejection rejectInputFieldDirectives(
             graphql.schema.GraphQLInputObjectType iot, String argTypeName) {
         for (var sdlField : iot.getFieldDefinitions()) {
-            if (sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) {
-                return Rejection.directiveConflict(List.of(DIR_LOOKUP_KEY),
-                    "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
-                    + "': @lookupKey on a mutation input field is no longer supported; "
-                    + "remove it (the field is a filter by default)");
-            }
             if (sdlField.hasAppliedDirective(DIR_CONDITION)) {
                 var condDir = sdlField.getAppliedDirective(DIR_CONDITION);
                 var overrideArg = condDir != null ? condDir.getArgument(ARG_OVERRIDE) : null;
@@ -501,7 +494,7 @@ final class MutationInputResolver {
                 }
             }
             // Descends into every nested input. @table on one is deprecated and inert, so it does
-            // not gate the scan: without this a @lookupKey / @condition buried inside a nested
+            // not gate the scan: without this a @condition buried inside a nested
             // @table grouping input would escape the admission rules its directiveless twin is
             // held to, failing open.
             var base = GraphQLTypeUtil.unwrapAll(sdlField.getType());

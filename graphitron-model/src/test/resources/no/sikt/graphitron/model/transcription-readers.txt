@@ -20,7 +20,6 @@
 
 intent_authored_claim_conflict graphql_field
 intent_authored_field_claim graphql_field
-intent_authored_field_claim graphql_type
 intent_column_match_claim graphql_field
 intent_column_match_claim graphql_type
 graphitron_facet_binding graphql_field

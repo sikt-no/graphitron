@@ -3057,14 +3057,6 @@ class BuildContext {
             return unresolved(field, name, Rejection.directiveConflict(List.of(DIR_NOT_GENERATED),
                 "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
         }
-        if (field.hasAppliedDirective(DIR_LOOKUP_KEY)) {
-            return unresolved(field, name, Rejection.directiveConflict(List.of(DIR_LOOKUP_KEY),
-                "@lookupKey on a mutation input field is no longer supported; "
-                + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
-                + "partition is derived from the catalog by the walker). On Query-side "
-                + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
-                + "instead."));
-        }
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
         boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;

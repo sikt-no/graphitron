@@ -3769,28 +3769,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
             }),
 
-        LOOKUP_KEY_ON_INPUT_FIELD_RETIRED_R144(
-            "@lookupKey on any INPUT_FIELD_DEFINITION → classify-time retirement error (R144); the diagnostic names the migration path",
-            """
-            input FilmKey {
-                languageName: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name") @lookupKey
-            }
-            type Film @table(name: "film") { title: String }
-            type Query {
-                filmByKey(key: FilmKey): [Film!]!
-            }
-            """,
-            schema -> {
-                // @lookupKey on INPUT_FIELD_DEFINITION is rejected on both mutation and query
-                // surfaces. The diagnostic mentions the migration target (filter-by-default on
-                // mutation inputs; the UPDATE SET/WHERE partition is catalog-derived by the walker).
-                // For Query, the @lookupKey moves to the arg if lookup behavior is intended;
-                // see LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED for that shape.
-                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
-                assertThat(f.reason())
-                    .contains("@lookupKey on a mutation input field is no longer supported");
-            }),
-
         LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED(
             "R130 + R144: @lookupKey on the ARGUMENT_DEFINITION of a same-table singular "
                 + "`id: ID! @nodeId` plain input arg → admitted via the extraction-propagation "
@@ -4394,8 +4372,8 @@ class GraphitronSchemaBuilderTest {
 
     /**
      * The validator-mirror obligation for the consumer-derived {@code @lookupKey} path: a plain
-     * input whose {@code @lookupKey} field does not resolve to a column on the consuming field's
-     * table is a classify-time rejection naming that table, never a silent no-op (the lookup is a
+     * input consumed by a {@code @lookupKey} argument, one of whose fields does not resolve to a
+     * column on the consuming field's table, is a classify-time rejection naming that table, never a silent no-op (the lookup is a
      * VALUES-join over exactly these columns, so an unbound carrier has no binding to emit).
      */
     @Test
@@ -6542,20 +6520,6 @@ class GraphitronSchemaBuilderTest {
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
         },
-
-        LOOKUP_NESTED_IN_INPUT(
-            "@lookupKey on a plain input type's scalar field → UnclassifiedField (R144 retirement diagnostic)",
-            """
-            input FilmKey { id: ID @lookupKey }
-            type Film @table(name: "film") { title: String }
-            type Query { filmByKey(key: [FilmKey]): [Film!]! }
-            """,
-            schema -> {
-                var f = (UnclassifiedField) schema.field("Query", "filmByKey");
-                assertThat(f.reason())
-                    .contains("@lookupKey on a mutation input field is no longer supported")
-                    .contains("ARGUMENT_DEFINITION");
-            }),
 
         LOOKUP_FIELD_COLUMN_ARG(
             "lookup field list arg whose column exists → resolved ScalarLookupArg in LookupMapping",

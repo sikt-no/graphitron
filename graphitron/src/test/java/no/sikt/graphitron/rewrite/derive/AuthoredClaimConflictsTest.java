@@ -471,20 +471,14 @@ class AuthoredClaimConflictsTest {
     @Test
     void lookupArmAgreesWithTheWalkedTriggerPredicate() {
         // The trigger predicate has two homes until the arm-by-arm migration: the walk's
-        // LookupFacts.triggersFor and the view's lookup arm. This anchor binds them over the
-        // trigger populations (direct argument, input field, transitive closure, a cyclic input
-        // pair the path guard must terminate on, and an untouched control).
+        // LookupFacts.triggersFor and the view's lookup arm. This anchor binds them over a marked
+        // argument, an input-typed argument without the directive, and an untouched control.
         var sdl = """
             type Language @table(name: "language") { name: String }
-            input LookupInput { language_id: Int @lookupKey }
-            input LookupOuter { nested: LookupInput }
-            input CycleA { partner: CycleB, key: Int @lookupKey }
-            input CycleB { back: CycleA }
+            input LookupInput { language_id: Int }
             type Query {
                 direct(language_id: [Int] @lookupKey): [Language!]!
                 byInput(in: LookupInput): [Language!]!
-                byOuter(in: LookupOuter): [Language!]!
-                byCycle(in: CycleB): [Language!]!
                 untouched: [Language!]!
             }
             """;
@@ -495,7 +489,7 @@ class AuthoredClaimConflictsTest {
             .filter(f -> facts.lookup().triggersFor(f))
             .map(GraphQLFieldDefinition::getName)
             .collect(Collectors.toSet());
-        assertThat(triggered).containsExactlyInAnyOrder("direct", "byInput", "byOuter", "byCycle");
+        assertThat(triggered).containsExactlyInAnyOrder("direct");
 
         withCapturedStore(tmp, sdl, dsl -> {
             var claimed = dsl.selectDistinct(INTENT_AUTHORED_FIELD_CLAIM.FIELD_NAME)

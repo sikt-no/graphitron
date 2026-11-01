@@ -375,20 +375,6 @@ class MutationTableArgClassificationTest {
     }
 
     @Test
-    void insert_lookupKeyOnInputField_rejects() {
-        // The INSERT admission set (rejectInputFieldDirectives) runs over the resolved fields.
-        var schema = TestSchemaHelper.buildSchema("""
-            type Film @table(name: "film") { title: String }
-            type Query { x: String }
-            input FilmInput { title: String @lookupKey }
-            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
-            """);
-        assertThat(validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("@lookupKey on a mutation input field is no longer supported"));
-    }
-
-    @Test
     void insert_plainColumnCollision_rejects() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }

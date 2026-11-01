@@ -4015,25 +4015,6 @@ COMMENT ON COLUMN graphitron_argument_lookup_key_entry.source_name IS 'the SDL f
 COMMENT ON COLUMN graphitron_argument_lookup_key_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_lookup_key_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 
-CREATE TABLE graphitron_field_lookup_key_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_field_lookup_key_entry IS '@lookupKey on an input field: the retired site; the sole consumer is the located migration rejection. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_field_lookup_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_lookup_key_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_lookup_key_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_lookup_key_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_field_lookup_key_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_lookup_key_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-
 CREATE TABLE graphitron_split_query_entry (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -6746,22 +6727,6 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 CREATE VIEW intent_authored_field_claim
   (graph_name, type_name, field_name, classifier, trigger, decoded,
    source_name, source_line, source_column) AS
-WITH RECURSIVE input_object_field_edge(graph_name, type_name, named_type) AS (
-  SELECT DISTINCT f.graph_name, f.type_name, f.named_type
-    FROM graphql_field f
-    JOIN graphql_type pt
-      ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name AND pt.kind = 'INPUT_OBJECT'
-),
-lookup_bearing(graph_name, type_name, path) AS (
-  SELECT DISTINCT graph_name, type_name, '/' || type_name || '/'
-    FROM graphitron_field_lookup_key_entry
-  UNION ALL
-  SELECT e.graph_name, e.type_name, b.path || e.type_name || '/'
-    FROM input_object_field_edge e
-    JOIN lookup_bearing b
-      ON b.graph_name = e.graph_name AND b.type_name = e.named_type
-   WHERE POSITION('/' || e.type_name || '/' IN b.path) = 0
-)
 SELECT s.graph_name, s.type_name, s.field_name, 'SERVICE', 'service', TRUE,
        s.source_name, s.source_line, s.source_column
   FROM graphitron_service_entry s
@@ -6811,7 +6776,7 @@ UNION ALL
 SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP_KEY', 'lookupKey', TRUE,
        direct.source_name, direct.source_line, direct.source_column
   FROM graphql_field f
-  LEFT JOIN (SELECT k.graph_name, k.type_name, k.field_name,
+  JOIN (SELECT k.graph_name, k.type_name, k.field_name,
                     k.source_name, k.source_line, k.source_column,
                     ROW_NUMBER() OVER (PARTITION BY k.graph_name, k.type_name, k.field_name
                                        ORDER BY a.ordinal) AS rn
@@ -6822,13 +6787,6 @@ SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP_KEY', 'lookupKey', TRUE,
     ON direct.graph_name = f.graph_name AND direct.type_name = f.type_name
    AND direct.field_name = f.field_name AND direct.rn = 1
  WHERE f.type_name = 'Query'
-   AND (direct.graph_name IS NOT NULL
-        OR EXISTS (SELECT 1 FROM graphql_argument a
-                    WHERE a.graph_name = f.graph_name AND a.type_name = f.type_name
-                      AND a.field_name = f.field_name
-                      AND EXISTS (SELECT 1 FROM lookup_bearing b
-                                   WHERE b.graph_name = a.graph_name
-                                     AND b.type_name = a.named_type)))
 UNION ALL
 SELECT picked.graph_name, picked.type_name, picked.field_name, 'ROUTINE', 'routine', TRUE,
        picked.source_name, picked.source_line, picked.source_column
@@ -6869,14 +6827,14 @@ SELECT d.graph_name, fe.type_name, fe.field_name, 'MUTATION', 'mutation', FALSE,
    AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry m
                     WHERE m.graph_name = d.graph_name AND m.type_name = fe.type_name
                       AND m.field_name = fe.field_name);
-COMMENT ON VIEW intent_authored_field_claim IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The author''s field-grain classification claims. One arm pair per claiming directive (@service, @externalField, @nodeId, @lookupKey, @routine, @mutation): the decoded arm reads the semantic relation, the presence arm falls back to the raw application where the decode declined. The per-arm type_name masks transcribe the walk''s per-position detector gates: @service claims at every position, @externalField and @nodeId nowhere on a root, @routine not on Mutation or Subscription (a Mutation @routine is the walk''s own typed deferral, never a conflict slot), @lookupKey only on Query, @mutation only on Mutation. The @lookupKey arm fires on the whole argument surface, matching LookupFacts.triggersFor: a directly marked argument, or an argument whose named type is in the transitive lookup-bearing input closure (the recursive path-guarded closure above, seeded from the retired input-field site, so on accepted schemas the recursion never expands). That closure recurses over input_object_field_edge, the field edges deduplicated to the pairs they denote, and not over graphql_field: the hop joins on the named type and projects the declaring type, so two fields of one named type are identical output rows that UNION ALL keeps and re-expands at the next hop, doubling the frontier per level of input-object nesting. Consumption is through EXISTS, so deduplicating the edges changes no answer. The @routine arms collapse the repeatable ordinal grain to the minimum-ordinal application''s row.';
+COMMENT ON VIEW intent_authored_field_claim IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The author''s field-grain classification claims. One arm pair per claiming directive (@service, @externalField, @nodeId, @lookupKey, @routine, @mutation): the decoded arm reads the semantic relation, the presence arm falls back to the raw application where the decode declined. The per-arm type_name masks transcribe the walk''s per-position detector gates: @service claims at every position, @externalField and @nodeId nowhere on a root, @routine not on Mutation or Subscription (a Mutation @routine is the walk''s own typed deferral, never a conflict slot), @lookupKey only on Query, @mutation only on Mutation. The @lookupKey arm fires on a field with a marked argument, matching LookupFacts.triggersFor, and carries the first marked argument''s position. The @routine arms collapse the repeatable ordinal grain to the minimum-ordinal application''s row.';
 -- COMMENT ON COLUMN intent_authored_field_claim.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
 -- COMMENT ON COLUMN intent_authored_field_claim.type_name IS 'the claimed field''s owning type';
 -- COMMENT ON COLUMN intent_authored_field_claim.field_name IS 'the claimed field''s name within the owning type';
 -- COMMENT ON COLUMN intent_authored_field_claim.classifier IS 'the classification kind the claim is for; a closed vocabulary the reading side decodes into a typed value (SERVICE, EXTERNAL_FIELD, NODE_ID, LOOKUP_KEY, ROUTINE, MUTATION), separate from the trigger because a derived claim may have no directive at all';
 -- COMMENT ON COLUMN intent_authored_field_claim.trigger IS 'the claiming directive''s name, without the leading @; what a conflict message names';
 -- COMMENT ON COLUMN intent_authored_field_claim.decoded IS 'TRUE from a semantic-relation arm; FALSE from a presence arm, meaning the application exists but its decode declined';
--- COMMENT ON COLUMN intent_authored_field_claim.source_name IS 'the claiming application''s own position; NULL on a closure-triggered @lookupKey claim, whose application sits on a remote input field';
+-- COMMENT ON COLUMN intent_authored_field_claim.source_name IS 'the claiming application''s own position';
 -- COMMENT ON COLUMN intent_authored_field_claim.source_line IS 'source line of the claiming application, 1-based';
 -- COMMENT ON COLUMN intent_authored_field_claim.source_column IS 'source column of the claiming application, 1-based';
 

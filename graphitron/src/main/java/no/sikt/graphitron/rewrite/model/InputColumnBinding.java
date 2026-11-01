@@ -6,7 +6,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * Maps one slot of a composite-key input source to a target jOOQ column.
  *
  * <p>Sealed split on the source-shape axis: callers either reach the slot through a Map key
- * (a GraphQL input field name, the canonical {@code @lookupKey}-on-input-field shape) or through
+ * (a GraphQL input field name, the shape of an input-typed {@code @lookupKey} argument) or through
  * a positional index into a decoded jOOQ {@code Record<N>} (the composite-PK NodeId shape, where
  * the wire-to-typed translation runs once at the arg layer via
  * {@link CallSiteExtraction.NodeIdDecodeKeys}).
