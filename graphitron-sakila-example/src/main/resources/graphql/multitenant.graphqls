@@ -443,6 +443,15 @@ type Mutation {
     updateFilmActorNoteByNodeId(in: UpdateFilmActorNoteByNodeIdInput!): ID @mutation(typeName: UPDATE, table: "film_actor_note")
     updateFilmSceneParent(in: UpdateFilmSceneParentInput!): ID @mutation(typeName: UPDATE, table: "film_scene")
     updateFilmSceneParents(in: [UpdateFilmSceneParentInput!]!): [ID!]! @mutation(typeName: UPDATE, table: "film_scene")
+    # A write on the default source (language is global) whose payload fans out over the tenants: the
+    # one field then holds a transaction on the default source and one on each tenant it reads, and
+    # fails, on all of them, when a tenant does not answer in time (the field-transaction execution tests).
+    renameLanguage(in: LanguageRenameInput!): Language @mutation(typeName: UPDATE, table: "language")
+}
+
+input LanguageRenameInput {
+    languageId: Int! @field(name: "language_id")
+    name: String! @field(name: "name")
 }
 
 # The $session.<member> per-key proof, beside Film.mountedPrincipal: the member form of the same
