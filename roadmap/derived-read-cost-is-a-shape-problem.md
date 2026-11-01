@@ -93,9 +93,8 @@ A service call is emitted from the store
 │       └── `$tenant` in argMapping routes a service call
 ├── A service's holder is its one widest buildable constructor
 │   └── A service class's construction is stated
-└── A producer's carrier is its one data channel
-    └── A field's source is its parent's result
-        └── The result and path model is stated before it is built
+└── A field's source is its parent's result
+    └── The result and path model is stated before it is built
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -124,8 +123,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
   "`DerivationStratum` is gone, each step anchored by its owner".
 * A field's departure table in `graphitron_field_source_table`'s interim rules and in
   `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
-* A payload's producer in `graphitron_carrier_data_field` and the `intent_` carrier relations. Ends
-  at "A producer's carrier is its one data channel".
+* A routine write's carrier refusals in `intent_mutation_routine_seat` and in the walk's routine
+  classification. Ends at "A defect is written by the gatherer whose facts it judges, marked and swept by its owner".
 * A field's column picked by `intent_column_match_claim` and stated by
   `graphitron_field_target_column`. Ends at "The claims go".
 * An `id: ID` without `@nodeId`, a node id to the generator and a column to the store. Ends at "The generator reads an `id: ID` without `@nodeId` as a column".
@@ -525,10 +524,6 @@ classified records have no reader left and can go with the walk.
 
 * **A write's re-read reads what was committed, for every write shape** `open`. An execution test
   pins the update, delete and service re-reads, as the routine and insert ones already are.
-* **A producer's carrier is its one data channel** `open`. The carrier's readers read the
-  producer's target and the field that re-reads or reads its result, `graphitron_carrier_data_field`
-  is gone, and so is `graphitron_carrier_data_channel`: the type-backing seed states the pass-through
-  itself, a data field whose bound name finds no member on the producer's class.
 * **The matched key is stated** `open`. `graphitron_producer_matched_key` holds one row per `ONE`
   write and each key its input columns cover, keyed to the producer and `sql_constraint`.
 * **The DataLoader's key is read from the key row** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". The fetcher's batch key and its lift are
