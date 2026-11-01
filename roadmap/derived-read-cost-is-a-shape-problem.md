@@ -451,27 +451,11 @@ static method needs no holder.
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
 * **A service call is emitted from the store** `blocked`, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
   `ServiceCatalog`'s decode, claim and bind phases go.
-* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "A service's `$result` is read off its returned value" and "The outbox on a service is emitted where the service call is".
+* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **A service's `$result` is read off its returned value** `open`.
-    A top-level `@service` field on the mutation root is a write, as `graphitron_producer` and
-    `graphql_root_operation` say, and a `$result` over its returned value is a pointer to the
-    result: a `graphitron_outbox_leaf` keeping only its path, each step read as its field's own
-    facts say. A step reads the member the field's bound name finds on the one class its parent's
-    result holds, passes the object through where it finds none and the field's type holds the
-    parent's class, or, where the member returns records of the field's table-bound target, takes
-    that record (`graphitron_field_key_row`, `ACCESSOR`, arity `ONE`); a type whose result holds
-    several classes takes no part, and a step through a list is not built. A path ends on a member a payload can carry
-    (`RESULT_MEMBER`), on the `@nodeId` field of a node type reached through a record of its table
-    whose node key is the primary key (`RESULT_NODE_ID`), or, bare, on a scalar return
-    (`RESULT_ROOT`, no node type). A path ending on anything a payload cannot carry is
-    `OUTBOX_RESULT_MEMBER_UNSERIALIZABLE`, naming the type; the rest stays
-    `OUTBOX_SOURCE_UNRESOLVED`. The steps are a view, `graphitron_outbox_result_step`, one row per
-    leaf and segment, which the leaf rule and the emitter both read; the types a payload can carry
-    are one list the session and member arms share.
   * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
     `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write

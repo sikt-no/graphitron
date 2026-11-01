@@ -1,0 +1,74 @@
+# A $result over a service's returned value is a pointer: a path read step by step off the result, each
+# step as its field's own facts say. A field reads the member its bound name finds on the one class its
+# parent's result holds; where it finds none and its type holds that class, the object passes through;
+# where the member returns a record of the field's table-bound type, the step takes that record, whose
+# @nodeId can end the path. A path ends on a member a payload can carry, on a node id, or, bare, on a
+# scalar return. A path that resolves to something a payload cannot carry is unserializable, naming the
+# type; one through a list, or through a field with no read, is unresolved.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+type FilmBlurb { description: String }
+
+# FilmBlurbHolder has no holder member, so the service's object passes through to HolderView.
+type HolderView { blurb: FilmBlurb }
+type BlurbPayload { holder: HolderView }
+
+# FilmCardData's film() returns the FilmRecord of film.
+type FilmCardWrapper { film: Film }
+
+type FilmWithActorsResult { film: Film! @field(name: "filmRecord") }
+type FilmsWithActorsPayload { results: [FilmWithActorsResult] }
+
+extend schema @withConfiguration(outboxTable: "outbox")
+
+type Mutation {
+  blurb(filmId: Int!): BlurbPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+    @outbox(argMapping: "text: $result.holder.blurb.description, whole: $result.holder.blurb")
+  blurbMissing(filmId: Int!): BlurbPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+    @outbox(argMapping: "missing: $result.nosuch")
+  card(filmId: Int!): FilmCardWrapper
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardFactoryService", method: "create"})
+    @outbox(argMapping: "filmId: $result.film.id")
+  marker(marker: String!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "writeOne"})
+    @outbox(argMapping: "value: $result")
+  films(filmIds: [Int!]!): FilmsWithActorsPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
+    @outbox(argMapping: "first: $result.results.film.id")
+}
+
+extend schema @expectEquals(relation: "graphitron_outbox_result_step", rows: """
+  field_name, key_name, position, segments, step_type_name, step_field_name, step
+  blurb,      text,     0,        3,        BlurbPayload,   holder,          PASSES_THROUGH
+  blurb,      text,     1,        3,        HolderView,     blurb,           MEMBER
+  blurb,      text,     2,        3,        FilmBlurb,      description,     MEMBER
+  blurb,      whole,    0,        2,        BlurbPayload,   holder,          PASSES_THROUGH
+  blurb,      whole,    1,        2,        HolderView,     blurb,           MEMBER
+  card,       filmId,   0,        2,        FilmCardWrapper, film,           RECORD
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_leaf", where: """
+  type_name = 'Mutation'
+  """, rows: """
+  field_name, ordinal, key_name, origin,  position, source_kind,   source_path,             column_name, node_type_name
+  blurb,      0,       text,     MESSAGE, 0,        RESULT_MEMBER, holder.blurb.description, ,
+  card,       0,       filmId,   MESSAGE, 0,        RESULT_NODE_ID, film.id,                ,            Film
+  marker,     0,       value,    MESSAGE, 0,        RESULT_ROOT,   ,                        ,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('OUTBOX_RESULT_MEMBER_UNSERIALIZABLE', 'OUTBOX_SOURCE_UNRESOLVED')
+  """, rows: """
+  code,                                coordinate,           detail
+  OUTBOX_RESULT_MEMBER_UNSERIALIZABLE, Mutation.blurb,       "whole: $result.holder.blurb (no.sikt.graphitron.rewrite.test.services.FilmBlurb)"
+  OUTBOX_SOURCE_UNRESOLVED,            Mutation.blurbMissing, "missing: $result.nosuch"
+  OUTBOX_SOURCE_UNRESOLVED,            Mutation.films,       "first: $result.results.film.id"
+  """)
