@@ -248,7 +248,6 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_node_entry", "sql_node_metadata"),
         Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
         Set.of("graphitron_element", "graphql_element"),
-        Set.of("graphitron_argument", "graphitron_field"),
 
         // The rest of this roster is the decode migration, and it reads as one thing rather than
         // as eleven. A position-keyed entry relation and the coordinate-keyed relation it will be
@@ -367,29 +366,8 @@ class SupertypeSignatureGateTest {
         // The ordering defect asking the scope rule's two questions for the same reason: whether the
         // target's members bind tables, and whether a @mutation(table:) spelling roots the
         // statement instead.
-        "graphitron_entry_defect_rule|graphitron_resolved_type_binding,graphitron_spelled_table",
-        // Two arms that never meet, which name matching over one view definition cannot tell from
-        // a union of twins. The ordering arm asks whether a field is list-shaped, of
-        // graphitron_field; the page-size arm reads one argument's default, a carrier's first, of
-        // graphitron_argument. No row of either arm says what the other's does about a different
-        // site, so there is no supertype here to owe.
-        "graphitron_entry_defect_rule|graphitron_argument,graphitron_field",
-        // The condition membership fold, which reads both scope relations at the grain each is
-        // keyed at: a @condition on a field with no arguments has a table to filter and no argument
-        // to carry it, so the fold names the field-site relation, and one with arguments names the
-        // argument-site one. It is a reconstruction of the set above by this gate's reading and a
-        // rule with two cases by its own, and it arrived with that set rather than being written.
-        // The reachability closure's two arms, which are its seed and its step rather than two
-        // answers to one question: an argument names the input type a reach starts from, and an
-        // input field names the one it continues to. A supertype here would have to carry every
-        // typed element in the schema in order to state a rule that reads one column of two of
-        // them, and the recursion would still want the arms apart, a reach seeding from arguments
-        // alone and never from the fields it steps through.
-        "graphitron_argument_reachable_input|graphitron_argument,graphitron_field",
-        // The producer claims, every arm of which answers at the field: a @lookupKey is written on
-        // an argument and claims the field it belongs to, so the argument is a hop to its field and
-        // not a member of a set the view rebuilds.
-        "graphitron_producer_claim|graphitron_argument,graphitron_field");
+        "graphitron_entry_defect_rule|graphitron_resolved_type_binding,graphitron_spelled_table");
+
 
     @Test
     @DisplayName("the capture tables sharing a payload are exactly the recorded subtype sets")

@@ -112,7 +112,10 @@ class CoordinateSpellingGateTest {
             assertThat(row).isNotNull();
             row.delete();
             row.setFieldName("year");
-            assertRefused(() -> dsl.insertInto(t).set(row.intoMap()).execute());
+            // The generated column is the database's to write, so the copy leaves it out.
+            var values = row.intoMap();
+            values.remove(t.BOUND_NAME_UPPER.getName());
+            assertRefused(() -> dsl.insertInto(t).set(values).execute());
         });
     }
 

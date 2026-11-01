@@ -35,6 +35,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_AUTHORED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE;
@@ -55,6 +56,7 @@ import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.argumentCo
 import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.fieldCoordinate;
 import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.typeCoordinate;
 import static org.jooq.impl.DSL.castNull;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.exists;
@@ -446,25 +448,35 @@ public final class EmittedAnchor {
     private static void fields(DSLContext dsl, String graphName) {
         var authored = GRAPHITRON_FIELD_AUTHORED;
         var minted = GRAPHITRON_FIELD_MINTED;
+        // The name a field reads by: the @field(name:) the binding anchor holds for it, else its own
+        // name. Joined in each arm, on the binding's key, rather than read per row.
+        var b = GRAPHITRON_FIELD_BINDING_ENTRY;
         dsl.insertInto(GRAPHITRON_FIELD)
             .columns(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
                 GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.COORDINATE, GRAPHITRON_FIELD.ORDINAL,
                 GRAPHITRON_FIELD.TYPE_SDL, GRAPHITRON_FIELD.NAMED_TYPE, GRAPHITRON_FIELD.NON_NULL,
                 GRAPHITRON_FIELD.IS_LIST, GRAPHITRON_FIELD.ITEM_NON_NULL,
-                GRAPHITRON_FIELD.DEFAULT_VALUE_SDL, GRAPHITRON_FIELD.DESCRIPTION)
+                GRAPHITRON_FIELD.DEFAULT_VALUE_SDL, GRAPHITRON_FIELD.DESCRIPTION,
+                GRAPHITRON_FIELD.BOUND_NAME)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.FIELD_NAME,
                     authored.COORDINATE, authored.ORDINAL, authored.TYPE_SDL, authored.NAMED_TYPE,
                     authored.NON_NULL, authored.IS_LIST, authored.ITEM_NON_NULL,
-                    authored.DEFAULT_VALUE_SDL, mintedDescription(authored.DESCRIPTION, authored.NOTE))
+                    authored.DEFAULT_VALUE_SDL, mintedDescription(authored.DESCRIPTION, authored.NOTE),
+                    coalesce(b.NAME_REF, authored.FIELD_NAME))
                 .from(authored)
+                .leftJoin(b).on(b.GRAPH_NAME.eq(authored.GRAPH_NAME),
+                    b.TYPE_NAME.eq(authored.TYPE_NAME), b.FIELD_NAME.eq(authored.FIELD_NAME))
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.FIELD_NAME,
                         minted.COORDINATE, minted.ORDINAL, minted.TYPE_SDL, minted.NAMED_TYPE,
                         minted.NON_NULL, minted.IS_LIST, minted.ITEM_NON_NULL,
-                        minted.DEFAULT_VALUE_SDL, mintedDescription(minted.DESCRIPTION, minted.NOTE))
+                        minted.DEFAULT_VALUE_SDL, mintedDescription(minted.DESCRIPTION, minted.NOTE),
+                        coalesce(b.NAME_REF, minted.FIELD_NAME))
                     .from(minted)
+                    .leftJoin(b).on(b.GRAPH_NAME.eq(minted.GRAPH_NAME),
+                        b.TYPE_NAME.eq(minted.TYPE_NAME), b.FIELD_NAME.eq(minted.FIELD_NAME))
                     .where(minted.GRAPH_NAME.eq(graphName))))
             // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
             // renders H2's MERGE ON as key-or-coordinate, which no index serves. The CHECK that
@@ -481,6 +493,7 @@ public final class EmittedAnchor {
             .set(GRAPHITRON_FIELD.ITEM_NON_NULL, excluded(GRAPHITRON_FIELD.ITEM_NON_NULL))
             .set(GRAPHITRON_FIELD.DEFAULT_VALUE_SDL, excluded(GRAPHITRON_FIELD.DEFAULT_VALUE_SDL))
             .set(GRAPHITRON_FIELD.DESCRIPTION, excluded(GRAPHITRON_FIELD.DESCRIPTION))
+            .set(GRAPHITRON_FIELD.BOUND_NAME, excluded(GRAPHITRON_FIELD.BOUND_NAME))
             .execute();
     }
 

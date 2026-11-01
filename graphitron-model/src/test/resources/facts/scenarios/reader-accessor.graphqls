@@ -22,3 +22,13 @@ extend schema @expectEquals(relation: "graphitron_reader_accessor", rows: """
   FilmBlurb,       description, no.sikt.graphitron.rewrite.test.services.FilmBlurb,       description
   FilmBlurb,       text,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,       description
   """)
+
+# The name a field reads by is anchored on the field: its @field(name:) where written, else its own.
+extend schema @expectEquals(relation: "graphitron_field", where: """
+  type_name IN ('FilmBlurb', 'FilmBlurbHolder')
+  """, rows: """
+  type_name,       field_name,  bound_name
+  FilmBlurb,       description, description
+  FilmBlurb,       text,        description
+  FilmBlurbHolder, blurb,       blurb
+  """)

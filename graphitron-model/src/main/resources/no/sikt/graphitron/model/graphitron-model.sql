@@ -4273,6 +4273,8 @@ CREATE TABLE graphitron_field (
   item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,
   description       VARCHAR,
+  bound_name        VARCHAR NOT NULL,
+  bound_name_upper  VARCHAR GENERATED ALWAYS AS (UPPER(bound_name)),
   PRIMARY KEY (graph_name, type_name, field_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name),
@@ -4294,6 +4296,8 @@ COMMENT ON COLUMN graphitron_field.is_list IS 'whether the expression is a list'
 COMMENT ON COLUMN graphitron_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_field.default_value_sdl IS 'the default literal where the coordinate is an input field with one; display material, never a dimension';
 COMMENT ON COLUMN graphitron_field.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it, or macro-written; display material, never a dimension';
+COMMENT ON COLUMN graphitron_field.bound_name IS 'the name the field reads by: its @field(name:) where graphitron_field_binding_entry holds one, else the field''s own name. Stated once here so that no reader joins the binding and falls back to the field name itself; what a name finds, a column or a member of a class, is the reader''s question';
+COMMENT ON COLUMN graphitron_field.bound_name_upper IS 'the upper-cased form of bound_name, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper. Generated, so nothing writes it';
 
 CREATE TABLE graphitron_enum_value (
   graph_name  VARCHAR NOT NULL,
@@ -8975,12 +8979,12 @@ WITH producer (graph_name, type_name, field_name, payload_type_name, class_name)
 -- A payload field whose type is an object carrying no @table: a data field. An errors field is a
 -- list of a union or an interface, so it is never one.
 data_field (graph_name, payload_type_name, field_name, slot_name) AS (
-  SELECT df.graph_name, df.type_name, df.field_name, COALESCE(b.name_ref, df.field_name)
+  SELECT df.graph_name, df.type_name, df.field_name, bf.bound_name
     FROM graphitron_field_target df
     JOIN graphitron_type dt
       ON dt.graph_name = df.graph_name AND dt.type_name = df.target_type_name AND dt.kind = 'OBJECT'
-    LEFT JOIN graphitron_field_binding_entry b
-      ON b.graph_name = df.graph_name AND b.type_name = df.type_name AND b.field_name = df.field_name
+    JOIN graphitron_field bf
+      ON bf.graph_name = df.graph_name AND bf.type_name = df.type_name AND bf.field_name = df.field_name
    WHERE NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
                       WHERE te.graph_name = df.graph_name AND te.type_name = df.target_type_name)
 )
@@ -10752,7 +10756,7 @@ CREATE VIEW graphitron_field_target_column_match
 -- read here, and neither is an id: ID with no @field on a type implementing Node, which is the node's
 -- identity, a nesting type's included. Any other id matches a column.
 WITH leaf_field (graph_name, type_name, field_name, spelling) AS (
-  SELECT ft.graph_name, ft.type_name, ft.field_name, COALESCE(fb.name_ref, ft.field_name)
+  SELECT ft.graph_name, ft.type_name, ft.field_name, bf.bound_name
     FROM graphitron_field_target ft
     JOIN graphitron_type leaf
       ON leaf.graph_name = ft.graph_name AND leaf.type_name = ft.target_type_name
@@ -10760,6 +10764,10 @@ WITH leaf_field (graph_name, type_name, field_name, spelling) AS (
     JOIN graphitron_type parent
       ON parent.graph_name = ft.graph_name AND parent.type_name = ft.type_name
      AND parent.kind IN ('OBJECT', 'INTERFACE')
+    JOIN graphitron_field bf
+      ON bf.graph_name = ft.graph_name AND bf.type_name = ft.type_name AND bf.field_name = ft.field_name
+    -- Whether @field was written at all, which the bound name cannot say: an id with none is the
+    -- node's identity.
     LEFT JOIN graphitron_field_binding_entry fb
       ON fb.graph_name = ft.graph_name AND fb.type_name = ft.type_name AND fb.field_name = ft.field_name
    WHERE NOT EXISTS (SELECT 1 FROM graphql_directive_application a
@@ -12644,11 +12652,11 @@ SELECT r.graph_name, r.type_name, r.field_name, r.reads, rc.class_name,
   JOIN graphitron_result_class rc
     ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
   JOIN store_graph_source g ON g.graph_name = r.graph_name
-  LEFT JOIN graphitron_field_binding_entry b
-    ON b.graph_name = r.graph_name AND b.type_name = r.type_name AND b.field_name = r.field_name
+  JOIN graphitron_field bf
+    ON bf.graph_name = r.graph_name AND bf.type_name = r.type_name AND bf.field_name = r.field_name
   JOIN code_read_slot sl
     ON sl.source_name = g.source_name AND sl.class_name = rc.class_name
-   AND sl.slot_name = COALESCE(b.name_ref, r.field_name)
+   AND sl.slot_name = bf.bound_name
  WHERE r.reads = 'ACCESSOR';
 COMMENT ON VIEW graphitron_reader_accessor_rule IS 'One row the reader-accessor rule computes, in the shape graphitron_reader_accessor stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor merges this view''s rows for one graph into graphitron_reader_accessor, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_reader_accessor_rule.graph_name IS 'the owning graph''s partition';
@@ -12862,10 +12870,10 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
       ON child.graph_name = f.graph_name AND child.type_name = f.named_type
      AND child.kind IN ('OBJECT', 'INPUT_OBJECT')
     JOIN store_graph_source g ON g.graph_name = f.graph_name
-    LEFT JOIN graphitron_field_binding_entry b
-      ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.field_name = f.field_name
+    JOIN graphitron_field bf
+      ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
     JOIN code_read_slot sl
-      ON sl.source_name = g.source_name AND sl.slot_name = COALESCE(b.name_ref, f.field_name)
+      ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
    WHERE sl.element_class IS NOT NULL
      -- Read off the stored applications rather than the reference sites: H2 evaluates a view
      -- again for every hop row, and on a consumer schema that was most of the rule's time.
@@ -12883,10 +12891,10 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
       ON child.graph_name = f.graph_name AND child.type_name = f.named_type
      AND child.kind IN ('OBJECT', 'INPUT_OBJECT')
     JOIN store_graph_source g ON g.graph_name = f.graph_name
-    LEFT JOIN graphitron_field_binding_entry b
-      ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.field_name = f.field_name
+    JOIN graphitron_field bf
+      ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
     JOIN code_write_slot sl
-      ON sl.source_name = g.source_name AND sl.slot_name = COALESCE(b.name_ref, f.field_name)
+      ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
    WHERE sl.element_class IS NOT NULL
 ),
 -- The closure from the seeds over the hops. H2 has no CYCLE clause and its UNION does not discard
@@ -12948,13 +12956,7 @@ WITH field_at (graph_name, type_name, field_name, class_name, record_source_name
          ft.target_type_name,
          f.is_list OR ft.wrapper_type_name IS NOT NULL,
          tt.kind IN ('INTERFACE', 'UNION'),
-         COALESCE((SELECT be.name_ref FROM graphql_ast_entry fd
-                     JOIN graphitron_ast_field_binding_entry be
-                       ON be.graph_name = fd.graph_name AND be.source_name = fd.source_name
-                      AND be.source_line = fd.source_line AND be.source_column = fd.source_column
-                    WHERE fd.graph_name = d.graph_name AND fd.source_name = d.source_name
-                      AND fd.parent_line = d.source_line AND fd.parent_column = d.source_column
-                    LIMIT 1), p.field_name),
+         f.bound_name,
          d.source_name, d.source_line, d.source_column
     FROM graphitron_producer p
     JOIN graphitron_result r
