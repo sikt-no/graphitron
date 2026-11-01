@@ -504,6 +504,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_entry_defect", Arm.UNSHADOWED);
         // The entry-grain detail of the same collapse, on the same terms.
         registrations.put("graphitron_argmapping_pair_defect", Arm.UNSHADOWED);
+        // The methods a condition overload defect names, on the same terms.
+        registrations.put("graphitron_entry_defect_method", Arm.UNSHADOWED);
         registrations.put("graphitron_argmapping_pair_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);

@@ -13,6 +13,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
@@ -105,6 +106,9 @@ public final class FieldPaths {
     /** The key of a {@code graphitron_entry_defect} row: the written position and the code. */
     private static final List<String> DEFECT = List.of("GRAPH_NAME", "SOURCE_NAME", "SOURCE_LINE",
         "SOURCE_COLUMN", "CODE");
+    /** The method columns of a {@code graphitron_entry_defect_method} row, after the defect's key. */
+    private static final List<String> DEFECT_METHOD = List.of("METHOD_SOURCE_NAME",
+        "METHOD_CLASS_NAME", "METHOD_NAME", "METHOD_DESCRIPTOR");
     private static final List<String> PARAMETER = List.of("PARAMETER_NAME", "FROM_SOURCE_NAME",
         "FROM_SCHEMA", "FROM_TABLE", "FROM_COLUMN", "ARGUMENT");
 
@@ -334,9 +338,11 @@ public final class FieldPaths {
      * The steps {@link #methods} found no one declaration for, written to {@code graphitron_entry_defect}
      * at the {@code {condition:}} element: no candidate at all, or candidates with none exact at every
      * end any of them is exact at. One row per element and code, its detail naming each pair the
-     * element's walks stepped between and, for a tie, the competing declarations. Each row is marked
-     * with the reading's instant; the graphitron gatherer's defect sweep, {@link EntryDefects#sweep},
-     * takes the rows of its codes a reading did not mark, these two among them.
+     * element's walks stepped between and, for a tie, the competing declarations. Under each, in
+     * {@code graphitron_entry_defect_method}, the declarations it is about: for a tie the ones that
+     * compete, for no overload every one the element names. Each row is marked with the reading's
+     * instant; the graphitron gatherer's defect sweep, {@link EntryDefects#sweep}, takes the rows of
+     * its codes a reading did not mark, these two and their methods among them.
      */
     private static void methodDefects(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var p = GRAPHITRON_FIELD_PATH;
@@ -362,6 +368,19 @@ public final class FieldPaths {
                     p.ELEMENT_SOURCE_COLUMN)
                 .asTable("no_overload");
         merge(dsl, GRAPHITRON_ENTRY_DEFECT, noOverload, DEFECT, List.of("DETAIL"), touchedAt);
+        // Every declaration the element names, under each no-overload defect just marked.
+        var d = GRAPHITRON_ENTRY_DEFECT;
+        var noOverloadMethods = dsl.selectDistinct(d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE,
+                    d.SOURCE_COLUMN, d.CODE, m.METHOD_SOURCE_NAME, m.METHOD_CLASS_NAME,
+                    m.METHOD_NAME, m.METHOD_DESCRIPTOR)
+                .from(d)
+                .join(m).on(m.GRAPH_NAME.eq(d.GRAPH_NAME), m.SOURCE_NAME.eq(d.SOURCE_NAME),
+                    m.SOURCE_LINE.eq(d.SOURCE_LINE), m.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
+                .where(d.GRAPH_NAME.eq(graph), d.CODE.eq(NO_OVERLOAD_FOR_PAIR),
+                    d.TOUCHED_AT.eq(touchedAt))
+                .asTable("no_overload_method");
+        merge(dsl, GRAPHITRON_ENTRY_DEFECT_METHOD, noOverloadMethods,
+            concat(DEFECT, DEFECT_METHOD), List.of(), touchedAt);
 
         // A declaration quoted by its simple parameter types, the packages being noise in a message.
         String packages = "([A-Za-z_$][A-Za-z0-9_$]*\\.)+";
@@ -400,6 +419,41 @@ public final class FieldPaths {
                     f(tied, "ELEMENT_SOURCE_LINE"), f(tied, "ELEMENT_SOURCE_COLUMN"))
                 .asTable("tie");
         merge(dsl, GRAPHITRON_ENTRY_DEFECT, tie, DEFECT, List.of("DETAIL"), touchedAt);
+
+        // The competing declarations of each tied step, the ones the detail quotes, under the
+        // element's tie defect.
+        var tiedStep = dsl.select(p.GRAPH_NAME, p.TYPE_NAME, p.FIELD_NAME, p.START_SOURCE_NAME,
+                p.START_SCHEMA, p.START_TABLE, p.POSITION, p.ELEMENT_SOURCE_NAME,
+                p.ELEMENT_SOURCE_LINE, p.ELEMENT_SOURCE_COLUMN)
+            .from(p)
+            .join(c).on(sameStep)
+            .where(p.GRAPH_NAME.eq(graph)).and(p.TOUCHED_AT.eq(touchedAt))
+            .groupBy(p.GRAPH_NAME, p.TYPE_NAME, p.FIELD_NAME, p.START_SOURCE_NAME, p.START_SCHEMA,
+                p.START_TABLE, p.POSITION, p.ELEMENT_SOURCE_NAME, p.ELEMENT_SOURCE_LINE,
+                p.ELEMENT_SOURCE_COLUMN)
+            .having(max(fromExact).eq(inline(1)), max(toExact).eq(inline(1)),
+                max(bothExact).eq(inline(0)))
+            .asTable("tied_step");
+        var tieMethods = dsl.selectDistinct(str(tiedStep, "GRAPH_NAME").as("GRAPH_NAME"),
+                    str(tiedStep, "ELEMENT_SOURCE_NAME").as("SOURCE_NAME"),
+                    f(tiedStep, "ELEMENT_SOURCE_LINE", Integer.class).as("SOURCE_LINE"),
+                    f(tiedStep, "ELEMENT_SOURCE_COLUMN", Integer.class).as("SOURCE_COLUMN"),
+                    inline(OVERLOAD_TIE).as("CODE"),
+                    c.METHOD_SOURCE_NAME.as("METHOD_SOURCE_NAME"),
+                    c.METHOD_CLASS_NAME.as("METHOD_CLASS_NAME"),
+                    c.METHOD_NAME.as("METHOD_NAME"), c.METHOD_DESCRIPTOR.as("METHOD_DESCRIPTOR"))
+                .from(tiedStep)
+                .join(c).on(c.GRAPH_NAME.eq(str(tiedStep, "GRAPH_NAME")),
+                    c.TYPE_NAME.eq(str(tiedStep, "TYPE_NAME")),
+                    c.FIELD_NAME.eq(str(tiedStep, "FIELD_NAME")),
+                    c.START_SOURCE_NAME.eq(str(tiedStep, "START_SOURCE_NAME")),
+                    c.START_SCHEMA.eq(str(tiedStep, "START_SCHEMA")),
+                    c.START_TABLE.eq(str(tiedStep, "START_TABLE")),
+                    c.POSITION.eq(f(tiedStep, "POSITION", Integer.class)))
+                .where(c.FROM_EXACT.isTrue().or(c.TO_EXACT.isTrue()))
+                .asTable("tie_method");
+        merge(dsl, GRAPHITRON_ENTRY_DEFECT_METHOD, tieMethods, concat(DEFECT, DEFECT_METHOD),
+            List.of(), touchedAt);
     }
 
     /** The routine each step a {@code @routine} element took calls: the one its element names. */

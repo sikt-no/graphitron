@@ -8443,6 +8443,40 @@ COMMENT ON COLUMN graphitron_entry_defect.code IS 'which defect, a graphitron_de
 COMMENT ON COLUMN graphitron_entry_defect.detail IS 'the specific a rendered message quotes back, null where the code says everything';
 COMMENT ON COLUMN graphitron_entry_defect.touched_at IS 'when the reading that last found this defect ran: the mark the sweep reads. The owner of the row''s code, graphitron_defect_type.owner_gatherer, deletes its own codes'' rows a reading did not mark, so a defect the schema no longer has goes and another owner''s rows stay';
 
+CREATE TABLE graphitron_entry_defect_method (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  code               VARCHAR NOT NULL,
+  method_source_name VARCHAR NOT NULL,
+  method_class_name  VARCHAR NOT NULL,
+  method_name        VARCHAR NOT NULL,
+  method_descriptor  VARCHAR NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code,
+               method_source_name, method_class_name, method_name, method_descriptor),
+  -- The defect it details, so a swept defect takes its methods with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE,
+  -- The declaration, so a method the classpath no longer has is named by nothing.
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_entry_defect_method IS 'One method a defect names, under the defect: for a condition overload defect, each declaration it is about. For example a step from customer to address whose condition ambiguousPair ties draws two rows under its CONDITION_OVERLOAD_TIE defect, ambiguousPair(Customer, Table<?>) and ambiguousPair(Table<?>, Address).';
+COMMENT ON COLUMN graphitron_entry_defect_method.graph_name IS 'the owning graph''s partition, carried from the defect';
+COMMENT ON COLUMN graphitron_entry_defect_method.source_name IS 'the file the defect is written in, the first of the five columns that are the defect''s key in graphitron_entry_defect';
+COMMENT ON COLUMN graphitron_entry_defect_method.source_line IS 'the defect''s source line, part of its key';
+COMMENT ON COLUMN graphitron_entry_defect_method.source_column IS 'the defect''s source column, part of its key';
+COMMENT ON COLUMN graphitron_entry_defect_method.code IS 'the defect''s code, completing its key. It also says what the method is to the defect: a declaration that ties under CONDITION_OVERLOAD_TIE, and one the step considered and none of which took its pair under CONDITION_NO_OVERLOAD_FOR_PAIR, so no role column is needed';
+COMMENT ON COLUMN graphitron_entry_defect_method.method_source_name IS 'the classpath entry the declaration was read from, the first of the four columns that are its key in code_method';
+COMMENT ON COLUMN graphitron_entry_defect_method.method_class_name IS 'the class declaring it';
+COMMENT ON COLUMN graphitron_entry_defect_method.method_name IS 'the method''s name';
+COMMENT ON COLUMN graphitron_entry_defect_method.method_descriptor IS 'the declaration''s descriptor, completing the method''s key and telling one overload from another';
+COMMENT ON COLUMN graphitron_entry_defect_method.touched_at IS 'when the reading that last named this method under this defect ran: the mark the owner''s defect sweep reads, so a method no longer named under a defect still found goes, as a defect no longer found takes its rows by the foreign key';
+
 CREATE VIEW graphitron_entry_defect_site
   (graph_name, source_name, source_line, source_column, code, detail,
    coordinate, type_name, field_name) AS
@@ -16311,6 +16345,9 @@ INSERT INTO meta_grain VALUES
   ('reachable-input-type',
    'one input type some field argument reaches, in one graph',
    'graph_name, type_name', 'sdl'),
+  ('entry-defect-method',
+   'one method one defect names, in one graph',
+   'graph_name, source_name, source_line, source_column, code, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('graphitron-entry-defect',
    'one defect one written graphitron directive carries, in one graph',
    'graph_name, source_name, source_line, source_column, code', 'sdl'),
@@ -17225,6 +17262,10 @@ INSERT INTO meta_relation VALUES
    'A defect a schema has, one row per defect at the written position an author edits to fix it under the code that names the rule: the supertype, which a gatherer is encouraged to extend with subtype and other detail relations where a defect has more to say than its code and detail.',
    'For example an @orderBy on a @routine mutation field draws one row at the @orderBy''s line, reading READ_SURFACE_ON_WRITE; a detail relation such as graphitron_argmapping_pair_defect is keyed by this key, with a foreign key to it ON DELETE CASCADE, so a swept defect takes its details with it.',
    'The key is the entry, not the coordinate. A coordinate is an aggregate over the sites that declare it, so keying a defect there loses which of two offending applications to fix and reintroduces by the key the ranking this relation exists without. The entry is what the author edits. One relation and not one per defect: eleven sibling relations differed almost only in payload, and every payload column went into a rendered sentence, a prose coordinate or a file position, with nothing computing on them. The family follows the grain rather than being chosen: a defect registers at an entry, this family owns those entries, so it is filed here. A defect at a grain this family does not own belongs with whoever owns it, which is why a generated class publishing malformed constants is not in this population. What the position is about is not stored: graphitron_entry_defect_site reaches the element in fixed hops. Several gatherers write it, each its own codes, and what one defect has to say beyond its code and detail is a relation of its writer''s keyed by this key, whose foreign key collects it when the owner sweeps the defect.'),
+  ('graphitron_entry_defect_method', 'entry-defect-method', 'graphitron',
+   'One method a defect names, under the defect: for a condition overload defect, each declaration it is about.',
+   'For example a step from customer to address whose condition ambiguousPair ties draws two rows under its CONDITION_OVERLOAD_TIE defect, ambiguousPair(Customer, Table<?>) and ambiguousPair(Table<?>, Address).',
+   'A defect''s detail is one string, and a condition overload defect is about a set of declarations an author has to see to fix it. A set held in a string is unreadable to anything but a person, so each declaration is a row under the defect, keyed by the defect''s key with a foreign key to it, the shape graphitron_entry_defect asks of every detail relation. Written by FieldPaths in the pass that writes the defects, and keyed to code_method so the declaration is a fact rather than its spelling.'),
   ('graphitron_entry_defect_site', 'graphitron-entry-defect', 'graphitron',
    'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
