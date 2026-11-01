@@ -130,6 +130,31 @@ public final class MutationScopeService {
         });
     }
 
+    /**
+     * Writes a marker row, then another inside a nested transaction that succeeds. Used by the
+     * warning test alone, so the calling method it is reported under is this one and no other
+     * test has used it first.
+     */
+    public static String nestedScopeForWarning(DSLContext dsl, String marker) {
+        insert(dsl, marker);
+        dsl.transaction(tx -> insert(DSL.using(tx), marker));
+        return marker;
+    }
+
+    /**
+     * Writes a marker row and returns a payload whose {@code failing} field throws when it is
+     * read, so the failure lands under the field's path after the service has returned.
+     */
+    public static MutationScopeWrittenPayload writeThenReturnAFailingPayload(DSLContext dsl, String marker) {
+        insert(dsl, marker);
+        return new MutationScopeWrittenPayload(marker, null);
+    }
+
+    /** A Query field's service that takes no {@code DSLContext} and fails before it could use one. */
+    public static String queryFailsWithoutDatabase(String marker) {
+        throw new IllegalStateException("mutation-scope fixture: failing without a database");
+    }
+
     /** Touches no database. */
     public static String noDatabase(String marker) {
         return marker;

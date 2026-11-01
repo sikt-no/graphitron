@@ -6320,6 +6320,16 @@ type Mutation {
             className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
             method: "nestedScopeFailsUncaught"
         })
+    scopeNestedForWarning(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "nestedScopeForWarning"
+        })
+    scopeWriteThenFailingPayload(marker: String!): MutationScopeWrittenPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeThenReturnAFailingPayload"
+        })
 }
 
 # The @error channel of Mutation.scopeWriteTwiceThenRefuse: the claimed exception becomes payload data,
@@ -6334,6 +6344,12 @@ type MutationScopeRefused @error(handlers: [{
 
 union MutationScopeRefusedError = MutationScopeRefused
 
+# A payload whose `failing` field throws when it is read: the write has committed nowhere yet when
+# the error lands under the field's path, so the field must roll back and answer null.
+type MutationScopeWrittenPayload {
+    marker: String
+    failing: String
+}
 type MutationScopeRefusedPayload {
     marker: String
     errors: [MutationScopeRefusedError]
@@ -6547,6 +6563,12 @@ extend type Query {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
             method: "queryNestedFailureIsCaught"
+        })
+    # A @service that takes no DSLContext and fails: the field fails before any connection is acquired.
+    scopeQueryFailsWithoutDatabase(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "queryFailsWithoutDatabase"
         })
 }
 

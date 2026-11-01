@@ -7,7 +7,9 @@ import graphql.GraphQL;
 import graphql.GraphQLError;
 import graphql.execution.AsyncExecutionStrategy;
 import no.sikt.graphitron.generated.Graphitron;
+import no.sikt.graphitron.generated.schema.GraphitronConnectionInstrumentation;
 import no.sikt.graphitron.generated.schema.GraphitronRuntime;
+import no.sikt.graphitron.generated.schema.GraphitronTransactionProvider;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -209,6 +211,140 @@ class MutationScopeExecutionTest {
         assertThat(CONNECTION_EVENTS).doesNotContain("setSavepoint");
     }
 
+    // ===== the value a rolled-back field shows =====
+
+    @Test
+    void aFieldThatRolledBackForAnErrorUnderItsPath_isNull_andItsWriteIsGone() {
+        String marker = marker();
+
+        ExecutionResult result = execute(
+            "mutation { w: scopeWriteThenFailingPayload(marker: \"%s\") { marker failing } }".formatted(marker));
+
+        assertThat(errorPaths(result)).containsExactly(List.of("w", "failing"));
+        assertThat(data(result).get("w"))
+            .as("no value describes writes that are gone, not even the part that read fine")
+            .isNull();
+        assertThat(rows(marker)).isZero();
+    }
+
+    @Test
+    void theSamePayload_withoutTheFailingSelection_commitsAndKeepsItsValue() {
+        String marker = marker();
+
+        ExecutionResult result = execute(
+            "mutation { w: scopeWriteThenFailingPayload(marker: \"%s\") { marker } }".formatted(marker));
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat((Map<String, Object>) data(result).get("w")).containsEntry("marker", marker);
+        assertThat(rows(marker)).isEqualTo(1);
+    }
+
+    // ===== a service's nested scope is warned about, once per method =====
+
+    private static final org.jboss.logmanager.formatters.PatternFormatter MESSAGE_ONLY =
+        new org.jboss.logmanager.formatters.PatternFormatter("%s");
+
+    @Test
+    void aServiceThatNestsATransaction_isWarnedOncePerMethod_namingTheFieldAndTheMethod() {
+        // The test classpath logs through slf4j-jboss-logmanager, so the carrier's logger is the
+        // JBoss LogManager's, and the line is read off a handler attached to it.
+        var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.TenantConnections");
+        var warnings = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var handler = new org.jboss.logmanager.ExtHandler() {
+            @Override
+            protected void doPublish(org.jboss.logmanager.ExtLogRecord record) {
+                if (record.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()) {
+                    warnings.add(MESSAGE_ONLY.format(record));
+                }
+            }
+        };
+        logger.addHandler(handler);
+        try {
+            execute("mutation { w: scopeNestedForWarning(marker: \"%s\") }".formatted(marker()));
+            execute("mutation { w: scopeNestedForWarning(marker: \"%s\") }".formatted(marker()));
+        } finally {
+            logger.removeHandler(handler);
+        }
+
+        assertThat(warnings)
+            .as("one line for the method, not one per request")
+            .filteredOn(m -> m.contains("joined the enclosing transaction"))
+            .singleElement()
+            .satisfies(m -> assertThat(m)
+                .contains("MutationScopeService#nestedScopeForWarning")
+                .contains("mutation field: [w]"));
+    }
+
+    // ===== what is not a mutation field transaction =====
+
+    @Test
+    void aQueryOperation_runsInAutocommit_neverOpeningATransaction() {
+        CONNECTION_EVENTS.clear();
+
+        ExecutionResult result = graphql.execute(ownedInput("{ sessionStores { storeId } }").build());
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(CONNECTION_EVENTS)
+            .as("no setAutoCommit(false) and no commit: reads stay in autocommit")
+            .doesNotContain("setAutoCommit:false", "commit", "setSavepoint");
+    }
+
+    @Test
+    void underRollbackOnly_eachFieldIsOneSavepoint_nestedScopesJoinWithNone_andNothingIsLeft() {
+        GraphQL devEngine = GraphQL.newGraphQL(Graphitron.buildSchema(b -> {}))
+            .instrumentation(new GraphitronConnectionInstrumentation(
+                runtime, GraphitronTransactionProvider.CommitPolicy.ROLLBACK_ONLY))
+            .build();
+        String one = marker(), nested = marker();
+        CONNECTION_EVENTS.clear();
+
+        ExecutionResult result = devEngine.execute(ownedInput("""
+            mutation {
+                a: scopeWriteOne(marker: "%s")
+                b: scopeNestedSucceeds(marker: "%s")
+            }
+            """.formatted(one, nested)).build());
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(CONNECTION_EVENTS.stream().filter("setSavepoint"::equals).count())
+            .as("one savepoint per field, none for the nested scope")
+            .isEqualTo(2);
+        assertThat(CONNECTION_EVENTS).as("nothing is committed").doesNotContain("commit");
+        assertThat(rows(one)).as("the operation transaction was discarded at release").isZero();
+        assertThat(rows(nested)).isZero();
+    }
+
+    @Test
+    void offTheOwnedPath_aFetcherThatThrows_answersAsItAlwaysDid_withAndWithoutAnErrorChannel() {
+        GraphQL escapeHatch = GraphQL.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        String thrown = marker(), refused = marker();
+
+        ExecutionResult unclaimed = escapeHatch.execute(Graphitron
+            .newExecutionInput(dsl, "{\"sub\":\"test-user\"}", "test-user")
+            .query("mutation { t: scopeWriteTwiceThenThrow(marker: \"%s\") }".formatted(thrown)).build());
+        ExecutionResult claimed = escapeHatch.execute(Graphitron
+            .newExecutionInput(dsl, "{\"sub\":\"test-user\"}", "test-user")
+            .query("mutation { r: scopeWriteTwiceThenRefuse(marker: \"%s\") { errors { __typename } } }"
+                .formatted(refused)).build());
+
+        assertThat(errorPaths(unclaimed)).containsExactly(List.of("t"));
+        assertThat(unclaimed.getErrors().get(0).getMessage()).startsWith("An error occurred. Reference: ");
+        assertThat(claimed.getErrors()).isEmpty();
+        assertThat((Map<String, Object>) data(claimed).get("r")).containsKey("errors");
+    }
+
+    @Test
+    void onTheOwnedPath_aQueryThatFailsBeforeItAcquiresAConnection_answersAsItAlwaysDid() {
+        int before = CONNECTIONS_OPENED.get();
+
+        ExecutionResult result = graphql.execute(ownedInput(
+            "{ scopeQueryFailsWithoutDatabase(marker: \"x\") }").build());
+
+        assertThat(errorPaths(result)).containsExactly(List.of("scopeQueryFailsWithoutDatabase"));
+        assertRedacted(result.getErrors().get(0));
+        assertThat(CONNECTIONS_OPENED.get()).as("it never took a connection").isEqualTo(before);
+    }
+
     // ===== a field reported as successful has committed =====
 
     @Test
@@ -288,12 +424,15 @@ class MutationScopeExecutionTest {
     // ===== the field's value, payload included, is inside its transaction =====
 
     @Test
-    void theLastFieldsBatchedPayload_neverLosesItsCommitToRelease() {
-        // The payload's batched sub-field completes the root future off the dispatch thread often
-        // enough that a release racing the last field's settle would roll it back some of the time.
-        for (int i = 0; i < 20; i++) {
+    void theLastFieldsCommit_comesBeforeItsConnectionIsReleased_whateverThreadCompletesTheOperation() {
+        // The payload's batched sub-field completes the root future off the dispatch thread, the
+        // case where a release racing the last field's settle would roll the write back. The order
+        // is by construction (the operation callback settles, then releases), so it is pinned
+        // directly: the recording wrapper sees the commit before the close, every time.
+        for (int i = 0; i < 5; i++) {
             String title = "MUTATION-SCOPE-" + UUID.randomUUID();
             filmTitles.add(title);
+            CONNECTION_EVENTS.clear();
 
             ExecutionResult result = execute("""
                 mutation {
@@ -305,6 +444,10 @@ class MutationScopeExecutionTest {
                 """.formatted(title));
 
             assertThat(result.getErrors()).isEmpty();
+            assertThat(CONNECTION_EVENTS).as("run %d", i).contains("commit", "close");
+            assertThat(CONNECTION_EVENTS.indexOf("commit"))
+                .as("run %d: the field committed before its connection was closed", i)
+                .isLessThan(CONNECTION_EVENTS.lastIndexOf("close"));
             assertThat(dsl.fetchCount(DSL.table("film"), DSL.field("title").eq(title)))
                 .as("run %d: the field reported as created is committed", i)
                 .isEqualTo(1);
