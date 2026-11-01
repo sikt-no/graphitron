@@ -2543,7 +2543,7 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits a fetcher for the Delete write arm: a synchronous static method that runs
-     * {@code dsl.deleteFrom(table).where(<lookupKey predicates>).returningResult(<keys>)} and
+     * {@code dsl.deleteFrom(table).where(<key predicates>).returningResult(<keys>)} and
      * encodes the returned keys as the field's {@code ID} or {@code [ID!]}.
      *
      * <p>Empty-match semantics follow the carrier arm ({@link #deleteMissPolicy}), the same reading
@@ -2661,8 +2661,8 @@ public class TypeFetcherGenerator {
      * <p>The columns are the ones the input supplies, each value bound via
      * {@code DSL.val(<value>, Tables.T.COL.getDataType())} (the two-argument form delegates
      * coercion to the column's registered jOOQ {@code Converter}); see
-     * {@link #buildSingleRowInsertValues} and {@link #buildBulkInsertValues}. {@code @lookupKey}
-     * fields are included verbatim; INSERT does not treat them specially.
+     * {@link #buildSingleRowInsertValues} and {@link #buildBulkInsertValues}. Fields bound to the
+     * table's key are included verbatim; INSERT does not treat them specially.
      */
     private static MethodSpec buildMutationInsertFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
                                                           OperationMember.Write.Insert w,
@@ -4170,12 +4170,12 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits a fetcher for the Update write arm: a synchronous static
-     * method that runs {@code dsl.update(table).set(col, val)... .where(<lookupKey predicates>)
+     * method that runs {@code dsl.update(table).set(col, val)... .where(<key predicates>)
      * .returningResult(<keys or $project>).fetchOne(...)}.
      *
-     * <p>SET clause is {@code tia.setFields()} (the typed non-{@code @lookupKey}
+     * <p>SET clause is {@code tia.setFields()} (the typed non-key
      * {@code ColumnField} projection on {@code TableInputArg}). Invariant #4 guarantees this
-     * projection is non-empty. WHERE clause is the {@code @lookupKey} fieldBindings, chained
+     * projection is non-empty. WHERE clause is the key fieldBindings, chained
      * with {@code .and(...)} via the shared {@link #buildLookupWhereSingleRow} helper. Empty-match
      * semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause matches no
      * row, same as DELETE. A request whose SET map comes out empty is an empty patch: it runs
@@ -4358,7 +4358,7 @@ public class TypeFetcherGenerator {
         postInGuard.beginControlFlow("if (seenKeys.size() != in.size())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) bulk input contains rows with duplicate "
-                    + "@lookupKey tuples; one statement can join each parent row to at most "
+                    + "key tuples; one statement can join each parent row to at most "
                     + "one input row")
             .endControlFlow();
 
@@ -4390,8 +4390,8 @@ public class TypeFetcherGenerator {
      * .doUpdate().set(col, val)... .returningResult(<keys or $project>).fetchOne(...)}.
      *
      * <p>Column/values lists are identical to INSERT (every {@code InputField.ColumnBackedField} in
-     * declaration order, {@code @lookupKey} fields included so the user-supplied PK lands on the
-     * insert branch). Conflict keys come from {@code tia.fieldBindings()}. Conflict action: when
+     * declaration order, the fields bound to the conflict key included so the user-supplied key lands
+     * on the insert branch). Conflict keys come from {@code tia.fieldBindings()}. Conflict action: when
      * {@code tia.setFields()} is non-empty, emit {@code .doUpdate().set(...)} over those fields;
      * otherwise emit {@code .doNothing()} (jOOQ rejects {@code .doUpdate()} with an empty SET).
      *
@@ -4439,7 +4439,7 @@ public class TypeFetcherGenerator {
             postInGuard.beginControlFlow("if (setsUpdate.isEmpty())")
                 .addStatement("throw new $T($S)", IllegalArgumentException.class,
                     "@mutation(typeName: UPSERT) call has no settable fields present; "
-                        + "only @lookupKey fields were provided")
+                        + "only the fields bound to the conflict key were provided")
                 .endControlFlow();
         }
 
@@ -6278,7 +6278,7 @@ public class TypeFetcherGenerator {
             preGuard.beginControlFlow("if (setsUpdate.isEmpty())")
                 .addStatement("throw new $T($S)", IllegalArgumentException.class,
                     "@mutation(typeName: UPSERT) call has no settable fields present; "
-                        + "only @lookupKey fields were provided")
+                        + "only the fields bound to the conflict key were provided")
                 .endControlFlow();
         }
         var values = buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef, clientException);
@@ -6535,7 +6535,7 @@ public class TypeFetcherGenerator {
             case MissPolicy.FailFast _ -> tx
                 .beginControlFlow("if (rec == null)")
                 .addStatement("throw new $T($S + rowIndex + $S)", IllegalStateException.class,
-                    "@mutation(typeName: " + verb + ") bulk row matched zero rows; @lookupKey filter "
+                    "@mutation(typeName: " + verb + ") bulk row matched zero rows; the key filter "
                         + "found no target for input row at index ",
                     " of " + qualifiedName)
                 .endControlFlow()

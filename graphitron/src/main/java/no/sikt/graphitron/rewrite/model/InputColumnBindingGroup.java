@@ -31,13 +31,13 @@ public sealed interface InputColumnBindingGroup permits InputColumnBindingGroup.
     List<ColumnRef> targetColumns();
 
     /**
-     * Scalar Map-keyed group: today's standard {@code @lookupKey}-on-scalar-input-field shape,
+     * Scalar Map-keyed group: one scalar field of an input-typed {@code @lookupKey} argument,
      * widened to carry the per-binding {@link CallSiteExtraction} (including
      * {@link CallSiteExtraction.NodeIdDecodeKeys} for an arity-1 NodeId-decoded carrier).
      *
      * <p>Single-binding lists are the canonical shape: one input field, one
      * {@link InputColumnBinding.MapBinding}. Multi-binding lists exist when an input type
-     * carries multiple separate {@code @lookupKey} fields; each contributes one binding.
+     * carries several key fields; each contributes one binding.
      */
     record MapGroup(List<InputColumnBinding.MapBinding> bindings) implements InputColumnBindingGroup {
         public MapGroup {

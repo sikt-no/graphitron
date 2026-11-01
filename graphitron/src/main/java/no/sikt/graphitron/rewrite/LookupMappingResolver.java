@@ -32,8 +32,8 @@ import java.util.List;
  * {@link ColumnMapping.LookupArg.MapInput}, list cardinality lives on the outer arg and
  * individual input fields are guaranteed scalar by {@code FieldBuilder#buildLookupBindings}.
  *
- * <p>A {@link ArgumentRef.InputTypeArg.TableInputArg} with no {@code @lookupKey}-bearing input
- * fields contributes nothing here, but the field still validates and generates correctly via
+ * <p>A {@link ArgumentRef.InputTypeArg.TableInputArg} not carried by a {@code @lookupKey}
+ * argument contributes nothing here, but the field still validates and generates correctly via
  * {@link no.sikt.graphitron.rewrite.model.GeneratedConditionFilter} or the standard filter
  * path.
  */

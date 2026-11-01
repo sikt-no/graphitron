@@ -1,7 +1,7 @@
 ---
 id: R614
 title: "@lookupKey is declared for arguments only"
-status: Ready
+status: In Progress
 bucket: docs
 priority: 4
 theme: docs
@@ -109,6 +109,13 @@ Where the landing differs from the plan above, for the In Review → Done review
   `@lookupKey` from mutation input fields, and `docs/architecture/explanation/fact-model.adoc` keeps
   its recurse-over-pairs rule without citing the removed closure as its example. A stale see-also in
   `lookupKey.adoc` claiming tutorial page 5 uses the directive is gone.
+
+* *Round 3's sweep.* The mutation paths in `TypeFetcherGenerator` named the key fields
+  `@lookupKey`, a mutation input's retired meaning. They now say what those fields are: the fields
+  bound to the table's or conflict's key. Four of them are messages emitted into consumers' code
+  (the UPSERT guard at two sites, the bulk UPDATE duplicate-key guard and the bulk miss); the
+  execution tests match only "matched zero rows", which stays. `InputColumnBindingGroup.MapGroup`
+  and `LookupMappingResolver` describe the fields of an input-typed `@lookupKey` argument instead.
 
 ## Related items
 
