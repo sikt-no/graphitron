@@ -17,6 +17,8 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
@@ -273,6 +275,113 @@ class MutationScopeExecutionTest {
             .satisfies(m -> assertThat(m)
                 .contains("MutationScopeService#nestedScopeForWarning")
                 .contains("mutation field: [w]"));
+    }
+
+    // ===== every place graphitron opens its own scope, inside a field =====
+
+    /**
+     * One mutation per site that renders a generated transaction: the re-select arm, the bulk loop,
+     * the ID-returning arm, the {@code @outbox} write, and the two routine writes. Each opens its
+     * own scope inside the field's, which must join without a savepoint and without the warning a
+     * consumer's nested scope draws, and the field commits once.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"reSelect", "bulkLoop", "idReturning", "outbox", "routineChain", "routineCarrier"})
+    void aGeneratedWrite_opensAnOwnScopeThatJoinsSilently_andTheFieldCommitsOnce(String site) {
+        int rentalsBefore = maxRentalId();
+        String title = "MUTATION-SCOPE-" + UUID.randomUUID();
+        filmTitles.add(title);
+        String document = switch (site) {
+            case "reSelect" -> "mutation { w: createFilm(in: { title: \"%s\", languageId: 1 }) { filmId } }"
+                .formatted(title);
+            case "bulkLoop" -> "mutation { w: createFilms(in: [{ title: \"%s\", languageId: 1 }]) { filmId } }"
+                .formatted(title);
+            case "idReturning" -> {
+                int filmId = dsl.insertInto(DSL.table("film"), DSL.field("title"), DSL.field("language_id"))
+                    .values(title, 1).returningResult(DSL.field("film_id", Integer.class))
+                    .fetchOne(0, Integer.class);
+                yield "mutation { w: deleteFilms(in: [{ filmId: %d }]) }".formatted(filmId);
+            }
+            case "outbox" -> "mutation { w: createFilmOutbox(in: { title: \"%s\", languageId: 1 }) { filmId } }"
+                .formatted(title);
+            case "routineChain" -> "mutation { w: rentFilm(inventoryId: 2, customerId: 3) { rentalId } }";
+            case "routineCarrier" -> "mutation { w: rentFilmPayload(inventoryId: 2, customerId: 3) {"
+                + " rental { rentalId } errors { __typename } } }";
+            default -> throw new IllegalArgumentException(site);
+        };
+        CONNECTION_EVENTS.clear();
+        ExecutionResult result;
+        List<String> warnings;
+        try {
+            var captured = warningsDuring(() -> execute(document));
+            result = captured.result();
+            warnings = captured.warnings();
+
+            assertThat(result.getErrors()).as(site).isEmpty();
+            assertThat(CONNECTION_EVENTS).as(site + ": a joined own scope takes no savepoint")
+                .doesNotContain("setSavepoint")
+                .filteredOn("commit"::equals).as(site + ": one commit, at the field's settle").hasSize(1);
+            assertThat(warnings).as(site + ": graphitron's own scope draws no consumer-scope warning")
+                .noneMatch(m -> m.contains("joined the enclosing transaction"));
+        } finally {
+            dsl.deleteFrom(DSL.table("rental")).where(DSL.field("rental_id", Integer.class).gt(rentalsBefore)).execute();
+            dsl.execute("delete from outbox where payload ->> 'requested' = ?", title);
+        }
+    }
+
+    @Test
+    void aGeneratedWriteWhoseFailureAnErrorChannelClaims_keepsItsPayload_andAddsNoNestedFailureReport() {
+        String title = "MUTATION-SCOPE-" + UUID.randomUUID();
+        filmTitles.add(title);
+        CONNECTION_EVENTS.clear();
+
+        ExecutionResult result = execute("""
+            mutation {
+                c: createFilmWithErrors(in: { title: "%s", languageId: 999 }) {
+                    film { title }
+                    errors { __typename }
+                }
+            }
+            """.formatted(title));
+
+        assertThat(result.getErrors())
+            .as("the claimed failure is business data: no top-level error, and no second, misleading one"
+                + " from graphitron's own scope failing underneath it")
+            .isEmpty();
+        Map<String, Object> payload = (Map<String, Object>) data(result).get("c");
+        assertThat(payload).containsEntry("film", null);
+        assertThat((List<Map<String, Object>>) payload.get("errors")).hasSize(1);
+        assertThat(dsl.fetchCount(DSL.table("film"), DSL.field("title").eq(title)))
+            .as("the field still rolled back").isZero();
+        assertThat(CONNECTION_EVENTS).doesNotContain("setSavepoint", "commit");
+    }
+
+    private record Captured(ExecutionResult result, List<String> warnings) {}
+
+    /** Runs {@code body}, collecting what the carrier logs at WARN or above meanwhile. */
+    private Captured warningsDuring(java.util.function.Supplier<ExecutionResult> body) {
+        var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.TenantConnections");
+        var warnings = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var handler = new org.jboss.logmanager.ExtHandler() {
+            @Override
+            protected void doPublish(org.jboss.logmanager.ExtLogRecord record) {
+                if (record.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()) {
+                    warnings.add(MESSAGE_ONLY.format(record));
+                }
+            }
+        };
+        logger.addHandler(handler);
+        try {
+            return new Captured(body.get(), List.copyOf(warnings));
+        } finally {
+            logger.removeHandler(handler);
+        }
+    }
+
+    private int maxRentalId() {
+        Integer max = dsl.select(DSL.max(DSL.field("rental_id", Integer.class))).from(DSL.table("rental"))
+            .fetchOne(0, Integer.class);
+        return max == null ? 0 : max;
     }
 
     // ===== what is not a mutation field transaction =====
