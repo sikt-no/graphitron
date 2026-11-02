@@ -276,7 +276,10 @@ relations in "Path model (draft)", and `scenarios/path-rules` asserts both. Toda
 `intent_argument_reference_step_hop` and the argument and input-field step targets derive part of
 this at read time, keyed by field alone; the `intent_argmapping_` relations go with "An argument path through input types is stored". R1099, the
 author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
-this branch rather than modelling inputs again. Taken up on 2026-10-31.
+this branch rather than modelling inputs again. Taken up on 2026-10-31. The relations it retires
+are among the costliest statements the build plans: the argument step targets, `graphitron_field_path`
+with its methods, and the field reference step hops hold about 265 CPU-seconds of preparation over a
+`graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 
 * **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "A field's path needs are stated per coordinate" and "An argument's path needs are stated where its consumer takes a table".
   Every output field, argument and input-field occurrence whose consumer takes a table has its
@@ -649,7 +652,9 @@ classified records have no reader left and can go with the walk.
   `graphitron_type_backing` closure need not walk on from it; since a service's object passes
   through to its payload's data element, the rule takes about 0.9 s to 1.4 s on sis at load 9 to 10
   (2026-10-29), its new seed arm 7 ms of that and the rest the walk from the 18 new seed classes into
-  the table-bound types their members return, a cost accepted until this lands.
+  the table-bound types their members return, a cost accepted until this lands. Its merge is the
+  build's second costliest statement to plan, 235 ms a prepare and 221 CPU-seconds over a
+  `graphitron` test phase, reaching 29 relations through 3 views (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 * **The bindings are resolved before the targets** `open`, off the critical path. `ResolvedTypeBindings` reads only the
   written `@table`, so its place after the hops is accidental; it runs before
   `graphitron_field_target` and is marked and swept rather than cleared and rewritten.
@@ -865,10 +870,24 @@ someone to profile.
     driver answers each entry without a count, as JDBC's `SUCCESS_NO_INFO` does, adds nothing; the
     cause is to be confirmed before the fix. Until then the column is wrong for every relation
     `BindBatch` writes, and a rows-per-millisecond comparison over it misleads.
+  * **A capture's instant is bound, not inlined** `open`, unowned. Every writer's merge and sweep
+    passes `touched_at` as a bind parameter rather than a timestamp literal, so a statement's text
+    repeats from one capture to the next and its plan is reused. Nineteen statements inline it
+    today and hold 598 of a cold capture's 1,405 ms of preparation; the entry-defect merge had 2,817
+    texts over 2,820 calls in one `graphitron` test phase, and a long-lived cache took a repeat
+    capture's preparation from 1,231 to 50 ms (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
+  * **The growth gate fails only on growth** `open`, unowned. `GraphCountGrowthGateTest` failed two
+    of about nine full builds in the CPU audit, each on a different relation and 6 to 7 ms past its
+    bound, and once in the R876 harvest builds, where a collection pause or a stalled thread inside
+    a measurement of a few milliseconds crosses it. A verification build that fails for that is not
+    one; the gate takes a margin or repeated samples a pause cannot cross, and still fails a
+    relation that reads across graphs.
   * **The entry defect rule reads one graph's rows** `open`, unowned. After the chain-break fix the
     whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
     what still grows is its two column-match parts, 2 to 32 ms, which read
     `graphitron_field_target_column_match`. Inside the backstop's slack, so not on its known list.
+    Its merge is also the costliest statement to plan in the build: the rule reaches 116 relations
+    through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
   * **An upsert finds the row it updates through one key** `done`.
   * **An upsert into a table with an independent unique key is decided per table** `open`.
     `graphitron_federation_definition` is unique by local name, `graphitron_field_participant_path`
@@ -981,7 +1000,8 @@ A `@nodeId` field, argument or input field has a target type like any other, the
 says only that the value is that type's ID; the route to it is the ordinary forward walk. Today
 `graphitron_node_id_instruction` blends what was written with what was inferred and the node-id
 relations keep a private model of the route; both are replaced from scratch, reading nothing from
-`intent_`.
+`intent_`. `graphitron_node_id_instruction`'s insert costs 23 CPU-seconds of preparation over a
+`graphitron` test phase, reaching 24 relations through 4 views (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 
 * **The model comes first, as tables** `open`. The new node-id relations are declared with keys,
   foreign keys and grain sentences before anything writes them.
