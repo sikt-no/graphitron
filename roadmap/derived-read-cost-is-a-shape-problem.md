@@ -370,7 +370,7 @@ this branch rather than modelling inputs again. Taken up on 2026-10-31.
 A directive naming Java code or a routine is resolved once, by the graphitron anchor against the
 classpath and catalog, and every reader reads that resolution rather than a view of its own.
 
-* **A condition reference names an overload set** `open`. `graphitron_code_reference` resolves a
+* **A condition reference names an overload set** `open`, E's. `graphitron_code_reference` resolves a
   `@condition` to every overload of its name, as `graphitron_path_element_method` does for a path
   element, where today an overloaded name has no row. Needing exactly one is the rule of
   `@service`, `@externalField` and `FieldSort.method`, which refuse any overload.
@@ -416,7 +416,7 @@ each parameter, so the generator reads it and `ServiceCatalog` resolves nothing.
 one whose instances graphitron can build; its public methods are service methods, and a public
 static method needs no holder.
 
-* **The generated jOOQ classes are read with their members** `open`. The census's header-only
+* **The generated jOOQ classes are read with their members** `open`, E's. The census's header-only
   package goes, so tables, records, `Routines`, package classes and DAOs are read like any other
   class, with a sis capture timed before and after.
 * **A service class's construction is stated** `done`. `code_constructor` and
@@ -429,27 +429,27 @@ static method needs no holder.
   `Set<List<FilmRecord>>` without parsing a spelling.
 * **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
-* **A service's holder is its one widest buildable constructor** `open`. Every
+* **A service's holder is its one widest buildable constructor** `open`, E's. Every
   parameter is jOOQ context or a context key; two of the widest, or none buildable, is a defect.
-* **An argument path through input types is stored** `open`. This is R1099's step 2,
+* **An argument path through input types is stored** `open`, E's. This is R1099's step 2,
   `graphitron_argmapping_binding`, and is done when that step lands; R1099 owns what it retires.
-* **A parameter's fill states how its value is built** `blocked`, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
+* **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives.
-* **`$context` names a context value** `open`. A context argument is an argMapping source as
+* **`$context` names a context value** `open`, E's. A context argument is an argMapping source as
   `$session` is, so `contextArguments` reads as the pairs it implies and a parameter row names the key.
-* **Every call's parameter states what fills it** `blocked`, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+* **Every call's parameter states what fills it** `blocked`, E's, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
   claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
   `graphitron_field_path_parameter` rows become its rows.
-* **A service call is the one overload every parameter of which is filled** `blocked`, on "Every call's parameter states what fills it". Every argMapping left side names one of its parameters;
+* **A service call is the one overload every parameter of which is filled** `blocked`, E's, on "Every call's parameter states what fills it". Every argMapping left side names one of its parameters;
   none is an unclaimed parameter and several an ambiguous call, defects beside facts in the corpus.
-* **`$tenant` in argMapping routes a service call** `open`. The sigil on a pair's left side names
+* **`$tenant` in argMapping routes a service call** `open`, E's. The sigil on a pair's left side names
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
-* **A service call is emitted from the store** `blocked`, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
+* **A service call is emitted from the store** `blocked`, E's, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
   `ServiceCatalog`'s decode, claim and bind phases go.
 * **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
@@ -542,7 +542,7 @@ classified records have no reader left and can go with the walk.
   write and each key its input columns cover, keyed to the producer and `sql_constraint`.
 * **The DataLoader's key is read from the key row** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". The fetcher's batch key and its lift are
   generated from the stored row, not from the leaf's `KeyLift`.
-* **A field's key row is stated** `open`. `graphitron_field_key_row` holds, per field
+* **A field's key row is stated** `open`, E's. `graphitron_field_key_row` holds, per field
   taking keys from its parent's object, how it takes them (`COLUMNS`, `ACCESSOR`) and
   whose columns they are, pinned against the classifier's key lift over sakila but for the gaps below.
   * **A table with no record class says so** `open`. `sql_table.record_class_fqn` is NULL where jOOQ
@@ -560,7 +560,7 @@ classified records have no reader left and can go with the walk.
     rows off its members; on sis, the 19 payloads that do so.
   * **A nested class is read** `open`. The code family skips `NestedFilmsPayloadHolder$Payload` and
     its kind, so their accessors are unknown.
-  * **A plain object's first key is read off its members** `open`. The classifier's `FkColumns`
+  * **A plain object's first key is read off its members** `open`, E's. The classifier's `FkColumns`
     reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
@@ -569,10 +569,10 @@ classified records have no reader left and can go with the walk.
   such as `Emne.navn.en` or `Query.films(filter:).cast.firstName`, so it departs from one table and
   `graphitron_field_target_table` holds one row per coordinate, scalars included. The column
   relation then carries only the column, and the editor's column scope reads the target table alone.
-* **A field's source is its parent's result** `open`. A field's source is a join on its parent
+* **A field's source is its parent's result** `open`, E's. A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
-* **An object result is lifted onto a key row** `blocked`, on "`graphitron_field_source_table` dissolves into the results". Under an
+* **An object result is lifted onto a key row** `blocked`, E's, on "`graphitron_field_source_table` dissolves into the results". Under an
   object parent a path starts at the key row's table, and `graphitron_field_source_table`
   dissolves into `graphitron_result_table` with its interim record rule. Only a key on the source
   side starts one, a `COLUMNS` key on the parent's record table: a path is written from the source, so a field whose key re-fetches its own target gets no
@@ -581,7 +581,7 @@ classified records have no reader left and can go with the walk.
     gains `LIFTED` and its subtype `graphitron_field_path_start_lifted`, referencing the key row, so
     `FilmDetailsCarrier.language` starts on film; an `ACCESSOR` key row, the target's own record,
     starts none.
-  * **`graphitron_field_source_table` dissolves into the results** `open`. The column match and
+  * **`graphitron_field_source_table` dissolves into the results** `open`, E's. The column match and
     the hover read the parent's result and the key row where they read the source table's interim
     rules, and the source table, its rule and its stage go.
   * **A binding that names several tables is a row of none of them** `done`. The result rule took a
