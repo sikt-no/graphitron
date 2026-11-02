@@ -459,6 +459,43 @@ static method needs no holder.
 * **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
   flag and where it is computed, so a client-side computed column is told from a stored one.
 
+### An argument a call consumes generates nothing `open`
+
+An SDL argument or input field has exactly one kind of consumer: a call that takes its value as a
+parameter, or else the generator, which writes a column predicate, a lookup, an ordering or
+pagination from it. One with neither is an author error. This replaces `@condition(override:)`,
+whose default of `false` (the method's condition ANDed with the generated predicates) is the wrong
+default by fs-plattform's own usage: 443 applications write `override: true`, 5 compose on purpose,
+and one omission is a likely bug. The census, the 18 omissions and the reasoning are in
+`roadmap/audits/2026-11-02-condition-override-is-argument-consumption.md`. Decided with Alf on
+2026-11-02.
+
+* **The rule reproduces fs-plattform's intent** `open`. Over captured fs-plattform subgraphs, list
+  every argument or input field `override: true` switches off that no call consumes, and every
+  `@lookupKey` or `@orderBy` argument a call does consume. Both lists empty, or only author errors,
+  is the evidence the flag can go; anything else comes to Alf before the nodes below.
+* **An argument's consumer is stated** `blocked`, on "Every call's parameter states what fills it".
+  A relation over every argument and input-field occurrence, derived from the parameter fills: the
+  calls that consume it, or the generator, or none. Consuming an input-typed argument consumes every
+  field inside it; consuming one input field leaves its siblings to the generator. None is the entry
+  defect `ARGUMENT_WITHOUT_CONSUMER` at the argument's written position.
+* **The generator emits from an argument only when no call consumes it** `blocked`, on "An argument's consumer is stated".
+  `override:` is no longer read. What goes: the `enclosingOverride` cascade in `ClassifyContext`,
+  `InputFieldResolver` and `FieldBuilder`, `suppressedByFieldOverride` on `ArgumentRef`,
+  the `override` axis of `ConditionFactVisitor` and `ArgConditionRef`, and the walk's refusals that
+  turn on it (the `override: false` column miss in `BuildContext`, the mutation-input and `@nodeId`
+  carrier refusals that require `override: true`), each replaced by the consumer relation or by
+  `ARGUMENT_WITHOUT_CONSUMER`. The sakila fixtures `filmsOuterOverrideFilterInput` and
+  `filmsOuterOverridePlainInput` are re-asserted as behaviour under the rule.
+* **A written `override:` is a deprecation warning** `blocked`, on "The generator emits from an argument only when no call consumes it".
+  Accepted for a transition, deprecated in `directives.graphqls`, and a lint detection where the
+  written value disagrees with what consumption implies, so an author sees the sites whose behaviour
+  changed.
+* **The manual states the rule in one sentence** `blocked`, on "The generator emits from an argument only when no call consumes it".
+  `reference/directives/condition.adoc`, `how-to/condition-cascade.adoc` and
+  `how-to/migrating-from-legacy.adoc` lose the override, cascade and legacy-divergence prose; the
+  rule and its consequences replace them.
+
 ### The graphitron family completes its flip and subtract `open`
 
 Every replacement this family built has had its readers moved and its predecessor deleted, so the
