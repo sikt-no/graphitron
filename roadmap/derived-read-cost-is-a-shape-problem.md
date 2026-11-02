@@ -425,7 +425,8 @@ static method needs no holder.
 * **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
 * **A service's holder is its one widest buildable constructor** `open`, E's. Every
-  parameter is jOOQ context or a context key; two of the widest, or none buildable, is a defect.
+  parameter is the jOOQ context, at most once; two of the widest, or none buildable, is a defect. A
+  context key no longer fills a constructor parameter, which no fs-plattform subgraph does, so that goes, breaking.
 * **An argument path through input types is stored** `open`, E's. This is R1099's step 2,
   `graphitron_argmapping_binding`, owned here since a service call's fills read it; R1099 keeps its other steps.
 * **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
@@ -433,6 +434,7 @@ static method needs no holder.
   replacing the delivery `intent_argmapping_bound_parameter_type` derives.
 * **`$context` names a context value** `open`, E's. A context argument is an argMapping source as
   `$session` is, so `contextArguments` reads as the pairs it implies and a parameter row names the key.
+  Every argMapping site admits it, and a site whose emitter does not read it yet refuses it as a deferral.
 * **Every call's parameter states what fills it** `blocked`, E's, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
