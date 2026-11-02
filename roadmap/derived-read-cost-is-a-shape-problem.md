@@ -1447,10 +1447,12 @@ reference spellings. 34 state a fact that depends on the parent. Of these, the
 `graphitron_argument_scope_table` and its step targets, and `graphitron_input_field_resolving_table`
 and its step targets do not re-key: they dissolve into the path model's family below, whose need
 lands where they answer today, and re-keying them first would be a pass the dissolution throws away.
-The rest re-key onto the nested coordinate: `graphitron_field_source_table`,
-`graphitron_field_target_column`, `graphitron_field_target_table` for scalars,
-`graphitron_field_key_row`, the `graphitron_node_id_decode_*` family, and `graphitron_producer`,
-`graphitron_reader` and `graphitron_fetcher`, whose rules already decide per parent (a nested field
+`graphitron_field_source_table` dissolves into the results by its own node, and the
+`graphitron_node_id_decode_*` family is written by `DerivationStratum`, which is going, so its owner
+anchors it on the occurrence when it moves; neither re-keys first. The rest re-key onto the nested
+coordinate: `graphitron_field_target_column`, `graphitron_field_target_table` for scalars,
+`graphitron_field_key_row`, and `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`,
+whose rules already decide per parent (a nested field
 is a re-read producer where a write, routine or service returns its parent; a reader only where its
 parent has one result shape). The path model's family, declared and not yet written
 (`graphitron_path_need`, `graphitron_path`, `graphitron_path_step` and its children,
@@ -1522,9 +1524,10 @@ two tables holds both; they follow the coordinate too.
      as `graphitron_argmapping_candidate.closes_cycle` does today.
   ** An argument has an occurrence of its own, under the field occurrence it is written on, and the
      input fields under it hang beneath it.
-* The parent-dependent relations key on `(graph_name, coordinate)` with a foreign key to the
-  occurrence, and the table they carried in their key becomes an attribute: one target table, one
-  source table, one path start per coordinate. `graphitron_field_target_table` holds a row for a
+* The parent-dependent relations that re-key key on `(graph_name, coordinate)` with a foreign key to
+  the occurrence, and the table they carried in their key becomes an attribute: one target table and
+  one key row per coordinate, as the path family has one path start per coordinate from the start.
+  `graphitron_field_target_table` holds a row for a
   scalar's coordinate as well as an object's, and `graphitron_field_target_column` carries the column
   only.
 * `intent_input_occurrence_path` and its steps dissolve into the input occurrences, and
@@ -1538,8 +1541,8 @@ occurrence, so nothing changes on the wire for those. The generator reads one fa
 where it rebuilds them per edge today.
 
 **Order.** The occurrence relation and its spelling first; then the target table and column, which
-unblocks moving the editor's column scope off `intent_field_column_table`; then the source table and
-the key row; then the input occurrences, which retire `intent_input_occurrence_path`; then the
+unblocks moving the editor's column scope off `intent_field_column_table`; then the key row, while
+the source table dissolves into the results on the occurrence; then the input occurrences, which retire `intent_input_occurrence_path`; then the
 readers. Beside it, the path anchor keyed by coordinate and target type and the output-field needs
 follow the occurrence directly, and the argMapping binding keys on the written entry and the field
 occurrence it sits under.
