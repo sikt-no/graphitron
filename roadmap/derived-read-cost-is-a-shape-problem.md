@@ -81,7 +81,6 @@ A service call is emitted from the store
 │       ├── A `Configuration` parameter is the jOOQ context
 │       ├── An argument path through input types is stored
 │       ├── A parameter's fill states how its value is built
-│       │   └── The generated jOOQ classes are read with their members
 │       ├── An object result is lifted onto a key row
 │       │   ├── The result and path model is stated before it is built
 │       │   ├── An error-carrying payload's data element holds its class
@@ -419,7 +418,7 @@ each parameter, so the generator reads it and `ServiceCatalog` resolves nothing.
 one whose instances graphitron can build; its public methods are service methods, and a public
 static method needs no holder.
 
-* **The generated jOOQ classes are read with their members** `open`, E's. The census's header-only
+* **The generated jOOQ classes are read with their members** `open`, off the critical path. The census's header-only
   package goes, so tables, records, `Routines`, package classes and DAOs are read like any other
   class, with a sis capture timed before and after.
 * **A service class's construction is stated** `done`. `code_constructor` and
@@ -434,9 +433,10 @@ static method needs no holder.
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
 * **An argument path through input types is stored** `open`, E's. This is R1099's step 2,
   `graphitron_argmapping_binding`, owned here since a service call's fills read it; R1099 keeps its other steps.
-* **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
+* **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
-  replacing the delivery `intent_argmapping_bound_parameter_type` derives.
+  replacing the delivery `intent_argmapping_bound_parameter_type` derives. A jOOQ record's settable
+  columns are the catalog's, `sql_table.record_class_fqn` to `sql_column`, not its class's members.
 * **Every call's parameter states what fills it** `blocked`, E's, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
