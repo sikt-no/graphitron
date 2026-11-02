@@ -1368,11 +1368,11 @@ nothing writes them yet.
   none for the step a `@routine` takes to its `@table`), and the element's `as:` name. Steps hang
   off the need rather than the path: a met need has its path row and its steps, a stopped need its
   steps and its stop row.
-* One row per step and joined column pair, foreign key, condition overload, routine and routine
-  parameter: `graphitron_path_step_column`, `_key`, `_method`, `_routine`, `_parameter`. The method is
-  the one overload whose two table parameters take the step's from and to table. A step riding a
-  primary key gets no child of its own: `graphitron_field_path_primary_key` dissolves later and has
-  no successor.
+* One row per step and joined column pair, foreign key, primary key, condition overload, routine and
+  routine parameter: `graphitron_path_step_column`, `_key`, `_primary_key`, `_method`, `_routine`,
+  `_parameter`. The method is the one overload whose two table parameters take the step's from and to
+  table. The primary key is the step a `{key:}` naming its table's own primary key rides, joining a
+  row to itself, the successor of `graphitron_field_path_primary_key`.
 * `graphitron_path_stop`: one need whose path stopped short, keyed by the need, with the position
   of the first step not taken, the element's place and the moves it met there. Landing stays a view
   over steps and stops.

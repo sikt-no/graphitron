@@ -10024,6 +10024,44 @@ COMMENT ON COLUMN graphitron_path_step_key.constraint_table IS 'the table holdin
 COMMENT ON COLUMN graphitron_path_step_key.constraint_name IS 'the key''s SQL name, with the three columns before it sql_referential_constraint''s key';
 COMMENT ON COLUMN graphitron_path_step_key.touched_at IS 'when the reading that last took the step ran, as on the step';
 
+CREATE TABLE graphitron_path_step_primary_key (
+  graph_name        VARCHAR NOT NULL,
+  holder            VARCHAR NOT NULL,
+  start_source_name VARCHAR NOT NULL,
+  start_schema      VARCHAR NOT NULL,
+  start_table       VARCHAR NOT NULL,
+  landing_kind      VARCHAR NOT NULL,
+  landing           VARCHAR NOT NULL,
+  position          INT     NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+               landing, position),
+  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+               landing, position)
+    REFERENCES graphitron_path_step (graph_name, holder, start_source_name, start_schema,
+                                     start_table, landing_kind, landing, position)
+    ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_primary_key (source_name, table_schema, table_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_path_step_primary_key IS 'The primary key a step of a path rode to join a row to itself: one row per step whose {key:} names its table''s own primary key. For example Film.sameRow over @reference(path: [{key: "film_pkey"}]) is one step from film back to film on film_pkey, reading the parent''s own row.';
+COMMENT ON COLUMN graphitron_path_step_primary_key.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.holder IS 'the holder, as on the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.start_source_name IS 'the start''s catalog partition, as on the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.start_schema IS 'the start''s SQL schema, as on the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.start_table IS 'the start table, as on the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.landing_kind IS 'the landing kind, as on the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.landing IS 'the landing, as on the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.position IS 'the step''s position; with the columns before it, the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.table_source_name IS 'the catalog partition of the table whose primary key the step rode';
+COMMENT ON COLUMN graphitron_path_step_primary_key.table_schema IS 'the SQL schema of that table';
+COMMENT ON COLUMN graphitron_path_step_primary_key.table_name IS 'the table whose primary key the step rode, with the two columns before it sql_primary_key''s key';
+COMMENT ON COLUMN graphitron_path_step_primary_key.touched_at IS 'when the reading that last took the step ran, as on the step';
+
 CREATE TABLE graphitron_path_step_method (
   graph_name         VARCHAR NOT NULL,
   holder             VARCHAR NOT NULL,
@@ -17949,6 +17987,10 @@ INSERT INTO meta_relation VALUES
    'The foreign key a step of a path rode: one row per step that rode one, written or inferred.',
    'For example {key: "customer_address_id_fkey"} from customer rides customer_address_id_fkey, and so does the inferred step from customer to address.',
    'Provenance for the editor and the messages, which name the key a step rode whether the author wrote it or it was inferred; the columns are the join.'),
+  ('graphitron_path_step_primary_key', 'path-step-key', 'graphitron',
+   'The primary key a step of a path rode to join a row to itself: one row per step whose {key:} names its table''s own primary key.',
+   'For example Film.sameRow over @reference(path: [{key: "film_pkey"}]) is one step from film back to film on film_pkey, reading the parent''s own row.',
+   'Provenance for the editor and the messages, which name the key a step rode; the columns, each primary-key column paired with itself, are the join. A sibling of graphitron_path_step_key, whose foreign key to sql_referential_constraint would refuse a primary key.'),
   ('graphitron_path_step_method', 'path-step-method', 'graphitron',
    'The condition method a step of a path joins or filters by: one row per step, the one overload whose two table parameters take the step''s from and to table.',
    'For example Customer.homeAddress, inherited from Person.homeAddress, calls homeAddress(Customer, Address) where Staff.homeAddress calls homeAddress(Staff, Address).',
