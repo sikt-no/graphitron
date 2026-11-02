@@ -809,6 +809,13 @@ someone to profile.
     on a large schema unseen. `store_graph_read` records, per capture, each relation a gatherer
     read for a millisecond or more, beside `store_graph_write`, and MCP `status`, the `graphitron:dev`
     line and the backstop rank both.
+  * **A stage's rows written count every row a batch writes** `open`. `store_graph_write.rows_written`
+    undercounts writes that bind one row per batch entry: on sis it records 22 rows for
+    `graphitron_ast_field_path_entry`, which holds 828, and 23 for `graphitron_ast_path_entry`, which
+    holds 1,244. `WriteTimes` sums `batchRows()` with negative counts read as zero, so a batch whose
+    driver answers each entry without a count, as JDBC's `SUCCESS_NO_INFO` does, adds nothing; the
+    cause is to be confirmed before the fix. Until then the column is wrong for every relation
+    `BindBatch` writes, and a rows-per-millisecond comparison over it misleads.
   * **The entry defect rule reads one graph's rows** `open`, unowned. After the chain-break fix the
     whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
     what still grows is its two column-match parts, 2 to 32 ms, which read
