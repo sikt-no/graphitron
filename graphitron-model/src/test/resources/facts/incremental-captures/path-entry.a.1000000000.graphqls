@@ -1,0 +1,69 @@
+# Every written path is captured at the anchor that wrote it, one row per element at its place: a
+# field declaration's @reference, a @referenceFor application, an argument's @reference and an input
+# field's. The second reading shortens the field's path and drops the argument's, so its rows go.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Staff @table(name: "staff") { staffId: Int @field(name: "staff_id") }
+
+type Customer @table(name: "customer") {
+  city: String @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}])
+}
+
+union Person = Customer | Staff
+
+input CustomerFilter @table(name: "customer") {
+  addressId: Int @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+type Store @table(name: "store") {
+  people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+  customers(
+    filter: CustomerFilter
+    cityId: Int @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}])
+  ): [Customer!]!
+}
+
+extend type Query { stores: [Store!]! }
+
+# The field declaration anchors its @reference's two elements, in the order written.
+extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Customer' AND name = 'city')
+  """, rows: """
+  place, element_column, touched_at
+  0,     34,             1000000000
+  1,     69,             1000000000
+  """)
+
+# The @referenceFor application anchors its own path, at its at sign, and is no place in the field's.
+extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_for_entry WHERE participant_type_ref = 'Staff')
+  """, rows: """
+  place, element_column, touched_at
+  0,     58,             1000000000
+  """)
+
+# The argument anchors its @reference's elements.
+extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_argument_entry
+     WHERE type_name = 'Store' AND field_name = 'customers' AND name = 'cityId')
+  """, rows: """
+  place, element_column, touched_at
+  0,     35,             1000000000
+  1,     70,             1000000000
+  """)
+
+# The input field anchors its @reference's element.
+extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_input_field_entry WHERE type_name = 'CustomerFilter' AND name = 'addressId')
+  """, rows: """
+  place, element_column, touched_at
+  0,     36,             1000000000
+  """)

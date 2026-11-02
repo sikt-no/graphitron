@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
 import graphql.language.FieldDefinition;
+import graphql.language.InputValueDefinition;
 import graphql.language.Node;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.sink.BindBatch;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ENTRY;
@@ -74,6 +76,7 @@ final class GraphitronReferencePathEntries {
         conditionSteps(dsl, graph, touchedAt, conditioned(steps));
         referencesFor(dsl, graph, touchedAt, referenceFor);
         fieldPaths(dsl, graph, source, touchedAt, composed(applications));
+        paths(dsl, graph, source, touchedAt, anchored(applications));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -82,6 +85,7 @@ final class GraphitronReferencePathEntries {
      * prefix: a relation added above and not here would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
+        GRAPHITRON_AST_PATH_ENTRY,
         GRAPHITRON_AST_FIELD_PATH_ENTRY,
         GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY,
         GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY,
@@ -285,6 +289,91 @@ final class GraphitronReferencePathEntries {
                     t.POSITION, t.ELEMENT_LINE, t.ELEMENT_COLUMN, t.TOUCHED_AT)
                 .values(markers)
                 .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.FIELD_LINE, t.FIELD_COLUMN, t.POSITION)
+                .doUpdate()
+                .set(t.ELEMENT_LINE, excluded(t.ELEMENT_LINE))
+                .set(t.ELEMENT_COLUMN, excluded(t.ELEMENT_COLUMN))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /** One element of one written path: the node anchoring it, its place, and what was written there. */
+    private record AnchoredElement(Node<?> anchor, int place, Node<?> element) {}
+
+    /**
+     * Every written path at the node anchoring it, each composed in the order written. A field
+     * declaration anchors its {@code @routine} and {@code @reference} applications together, a
+     * {@code @routine} taking one place and a {@code @reference} one per element, as
+     * {@link #composed} composes them; an argument or an input field anchors its {@code @reference}
+     * elements the same way; and each {@code @referenceFor} application anchors its own path, at its
+     * at sign, so it is no part of the path of the declaration it is written on.
+     */
+    private static List<AnchoredElement> anchored(List<GraphQLAstEntries.Nested<Directive>> applications) {
+        // Keyed by the anchoring node itself, in the order the anchors were met.
+        Map<Node<?>, List<Node<?>>> byAnchor = new LinkedHashMap<>();
+        for (var application : applications) {
+            var directive = application.node();
+            switch (directive.getName()) {
+                case "routine" -> {
+                    if (application.parent() instanceof FieldDefinition field) {
+                        byAnchor.computeIfAbsent(field, f -> new ArrayList<>()).add(directive);
+                    }
+                }
+                case "reference" -> {
+                    if (application.parent() instanceof FieldDefinition
+                        || application.parent() instanceof InputValueDefinition) {
+                        var path = byAnchor.computeIfAbsent(application.parent(), a -> new ArrayList<>());
+                        listedIn(List.of(directive), "path").forEach(element -> path.add(element.node()));
+                    }
+                }
+                case "referenceFor" -> {
+                    var path = byAnchor.computeIfAbsent(directive, a -> new ArrayList<>());
+                    listedIn(List.of(directive), "path").forEach(element -> path.add(element.node()));
+                }
+                default -> { }
+            }
+        }
+        var anchored = new ArrayList<AnchoredElement>();
+        for (var entry : byAnchor.entrySet()) {
+            var path = entry.getValue();
+            for (int place = 0; place < path.size(); place++) {
+                anchored.add(new AnchoredElement(entry.getKey(), place, path.get(place)));
+            }
+        }
+        return anchored;
+    }
+
+    /**
+     * Each element sits at one place under one anchor, so a path whose order changed is rewritten
+     * whole, on {@link #fieldPaths}'s terms: the rows that no longer say what is written go first.
+     * No {@code as:} name is written yet, the directive declaring none.
+     */
+    private static void paths(DSLContext dsl, String graph, String source, LocalDateTime touchedAt,
+                              List<AnchoredElement> elements) {
+        var t = GRAPHITRON_AST_PATH_ENTRY;
+        var written = elements.stream()
+            .map(element -> row(element.anchor().getSourceLocation().getLine(),
+                element.anchor().getSourceLocation().getColumn(), element.place(),
+                element.element().getSourceLocation().getLine(),
+                element.element().getSourceLocation().getColumn()))
+            .toList();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(source))
+            .and(row(t.ANCHOR_LINE, t.ANCHOR_COLUMN, t.PLACE, t.ELEMENT_LINE, t.ELEMENT_COLUMN)
+                .notIn(written))
+            .execute();
+        var rows = elements.stream().collect(Rows.toRowList(
+            element -> val(graph, t.GRAPH_NAME),
+            element -> GraphQLAstEntries.sourceName(element.anchor()),
+            element -> GraphQLAstEntries.sourceLine(element.anchor()),
+            element -> GraphQLAstEntries.sourceColumn(element.anchor()),
+            element -> val(element.place(), t.PLACE),
+            element -> GraphQLAstEntries.sourceLine(element.element()),
+            element -> GraphQLAstEntries.sourceColumn(element.element()),
+            element -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.ANCHOR_LINE, t.ANCHOR_COLUMN,
+                    t.PLACE, t.ELEMENT_LINE, t.ELEMENT_COLUMN, t.TOUCHED_AT)
+                .values(markers)
+                .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.ANCHOR_LINE, t.ANCHOR_COLUMN, t.PLACE)
                 .doUpdate()
                 .set(t.ELEMENT_LINE, excluded(t.ELEMENT_LINE))
                 .set(t.ELEMENT_COLUMN, excluded(t.ELEMENT_COLUMN))

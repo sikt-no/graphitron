@@ -1,0 +1,63 @@
+# The second reading: the field's path loses its second element and the argument its @reference.
+# The rows that still say what is written are marked again; the others go.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Staff @table(name: "staff") { staffId: Int @field(name: "staff_id") }
+
+type Customer @table(name: "customer") {
+  city: String @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+union Person = Customer | Staff
+
+input CustomerFilter @table(name: "customer") {
+  addressId: Int @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+type Store @table(name: "store") {
+  people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+  customers(
+    filter: CustomerFilter
+    cityId: Int
+  ): [Customer!]!
+}
+
+extend type Query { stores: [Store!]! }
+
+# The field's path is one element now, rewritten at this reading.
+extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Customer' AND name = 'city')
+  """, rows: """
+  place, element_column, touched_at
+  0,     34,             1000000060
+  """)
+
+# The @referenceFor application's row, unchanged and marked again.
+extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_for_entry WHERE participant_type_ref = 'Staff')
+  """, rows: """
+  place, element_column, touched_at
+  0,     58,             1000000060
+  """)
+
+# The argument wrote no path at this reading, so its rows are swept.
+extend schema @assertEmpty(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_argument_entry
+     WHERE type_name = 'Store' AND field_name = 'customers' AND name = 'cityId')
+  """)
+
+# The input field's row, marked again.
+extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
+  (graph_name, source_name, anchor_line, anchor_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_input_field_entry WHERE type_name = 'CustomerFilter' AND name = 'addressId')
+  """, rows: """
+  place, element_column, touched_at
+  0,     36,             1000000060
+  """)

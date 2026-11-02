@@ -210,6 +210,12 @@ class SupertypeSignatureGateTest {
         // routine start is not here only because it is keyed by its producer alone.
         Set.of("graphitron_field_path_start", "graphitron_field_path_start_binding",
                "graphitron_field_path_start_result"),
+        // The per-need path relations declared beside the per-field ones they replace: a step's
+        // column pairs and a routine step's parameters say what they said, keyed by the need rather
+        // than by the field and its start. Successor and incumbent, not siblings; each pair goes to
+        // one member when the field-path relations do.
+        Set.of("graphitron_field_path_column", "graphitron_path_step_column"),
+        Set.of("graphitron_field_path_parameter", "graphitron_path_step_parameter"),
         // Two members where there were six. The five that left were the argument relations of the
         // five application sites, and they shared a payload because they were one fact keyed five
         // ways; they are one relation now, keyed at the coordinate, so the sharing they were

@@ -193,6 +193,8 @@ class RelationRegistrationGateTest {
             "graphitron_ast_reference_for_entry",
             // The same paths composed per field in written order, which capture sees whole.
             "graphitron_ast_field_path_entry",
+            // Every written path at its anchor, a field declaration's among them, on the same terms.
+            "graphitron_ast_path_entry",
             // Deprecation, which the walk this replaces never captured at all: it recognised the
             // two markers on a parsed registry at the moment a reader asked. GraphitronSchema has
             // no counterpart because there was nothing to shadow, and the docstring convention is
@@ -335,6 +337,19 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_path_fanout", Arm.DERIVED);
         registrations.put("graphitron_field_path_landing", Arm.DERIVED);
+        // The paths keyed per need, derived from the entries and the catalog like the field paths
+        // above; what pins them is the schema's own keys and checks, PathRelationConstraintTest.
+        registrations.put("graphitron_path_anchor", Arm.DERIVED);
+        registrations.put("graphitron_path_holder", Arm.DERIVED);
+        registrations.put("graphitron_path_need", Arm.DERIVED);
+        registrations.put("graphitron_path", Arm.DERIVED);
+        registrations.put("graphitron_path_step", Arm.DERIVED);
+        registrations.put("graphitron_path_step_column", Arm.DERIVED);
+        registrations.put("graphitron_path_step_key", Arm.DERIVED);
+        registrations.put("graphitron_path_step_method", Arm.DERIVED);
+        registrations.put("graphitron_path_step_routine", Arm.DERIVED);
+        registrations.put("graphitron_path_step_parameter", Arm.DERIVED);
+        registrations.put("graphitron_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_participant_path", Arm.DERIVED);
         registrations.put("graphitron_element", Arm.DERIVED);
         registrations.put("graphitron_type", Arm.DERIVED);
