@@ -32,7 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R1142` | A newly issued cursor is byte-identical to the one Graphitron 9 issued for the same row | Ready | 2026-11-02 | [plan](cursor-encoding-matches-graphitron-9-bytes.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1077` | Apply @feature(flags:) to the elements a <schemaInput> entry's files declare, replacing Graphitron 9's features/<flag>/ directories | Ready | 2026-11-02 <sub>created 2026-10-20</sub> | [plan](feature-flags-from-schema-directories.md) |
+| `R1077` | Apply @feature(flags:) to the elements a <schemaInput> entry's files declare, replacing Graphitron 9's features/<flag>/ directories | In Progress | 2026-11-02 <sub>created 2026-10-20</sub> | [plan](feature-flags-from-schema-directories.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -768,7 +768,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
 - `R917` [**A store too large to service is discarded rather than cleared**](store-too-large-to-service.md) — Backlog, dx
-- `R1077` [**Apply @feature(flags:) to the elements a <schemaInput> entry's files declare, replacing Graphitron 9's features/<flag>/ directories**](feature-flags-from-schema-directories.md) — Ready, feature
+- `R1077` [**Apply @feature(flags:) to the elements a <schemaInput> entry's files declare, replacing Graphitron 9's features/<flag>/ directories**](feature-flags-from-schema-directories.md) — In Progress, feature
 - `R779` [**Did findings-not-fixes cut the bounce loop? Measure the plan-body blame fraction over three bounced items**](findings-convention-round-count-measurement.md) — Backlog, dx
 - `R766` [**Five generate executions run one after another on the last node of the critical path**](sakila-example-generate-executions-serialize.md) — Backlog, dx
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
