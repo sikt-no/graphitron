@@ -1330,24 +1330,24 @@ extend type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_path", rows: """
-  type_name, field_name,        member,   start_table, target_table, origin
-  Customer,  address,           -,        customer,    address,      INFERRED
-  Customer,  city,              -,        customer,    city,         WRITTEN
-  Customer,  customerAddress,   -,        customer,    address,      INHERITED
-  Customer,  homeAddress,       -,        customer,    address,      INHERITED
-  Customer,  store,             -,        customer,    store,        INFERRED
-  Language,  media,             -,        language,    film,         WRITTEN
-  Language,  media,             ShortItem, language,   film,         WRITTEN
-  Query,     people(storeId:),  Customer, customer,    store,        INFERRED
-  Query,     people(storeId:),  Staff,    staff,       store,        WRITTEN
-  Staff,     address,           -,        staff,       address,      INFERRED
-  Staff,     customerAddress,   -,        staff,       address,      INHERITED
-  Staff,     homeAddress,       -,        staff,       address,      INHERITED
-  Staff,     store,             -,        staff,       store,        WRITTEN
-  Store,     people,            Customer, store,       customer,     INFERRED
-  Store,     people,            Staff,    store,       staff,        WRITTEN
-  Store,     peopleByCondition, Customer, store,       customer,     WRITTEN
-  Store,     peopleByCondition, Staff,    store,       staff,        WRITTEN
+  coordinate,                member,     start_table,  target_table,  origin
+  Customer.address,          -,          customer,     address,       INFERRED
+  Customer.city,             -,          customer,     city,          WRITTEN
+  Customer.customerAddress,  -,          customer,     address,       INHERITED
+  Customer.homeAddress,      -,          customer,     address,       INHERITED
+  Customer.store,            -,          customer,     store,         INFERRED
+  Language.media,            -,          language,     film,          WRITTEN
+  Language.media,            ShortItem,  language,     film,          WRITTEN
+  Query.people(storeId:),    Customer,   customer,     store,         INFERRED
+  Query.people(storeId:),    Staff,      staff,        store,         WRITTEN
+  Staff.address,             -,          staff,        address,       INFERRED
+  Staff.customerAddress,     -,          staff,        address,       INHERITED
+  Staff.homeAddress,         -,          staff,        address,       INHERITED
+  Staff.store,               -,          staff,        store,         WRITTEN
+  Store.people,              Customer,   store,        customer,      INFERRED
+  Store.people,              Staff,      store,        staff,         WRITTEN
+  Store.peopleByCondition,   Customer,   store,        customer,      WRITTEN
+  Store.peopleByCondition,   Staff,      store,        staff,         WRITTEN
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
