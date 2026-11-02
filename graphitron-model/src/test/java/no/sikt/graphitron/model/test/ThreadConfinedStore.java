@@ -254,8 +254,8 @@ public final class ThreadConfinedStore {
 
     private static ThreadConfinedStore boot() {
         // LONG_LIVED: this store is captured into again and again for the rest of the JVM, which
-        // is the repetition a statement cache pays for, and there is one per test thread, so the
-        // memory is a handful of stores and not one per case.
+        // is the repetition a statement cache pays for, and there is one per test thread, which the
+        // pool's maximum size holds at four, so the memory is four stores and not one per case.
         GraphitronModelStore store = FactStores.inMemory(StoreUse.LONG_LIVED);
         DSLContext dsl = store.dsl();
         List<String> baseTables = baseTables(dsl);

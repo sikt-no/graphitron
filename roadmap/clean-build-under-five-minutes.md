@@ -306,6 +306,25 @@ numbering is the order to take them in, largest and cheapest first.
    five minutes, and it moves where the testing tiers live, so its shape is decided at this
    step's design fork with `docs/architecture/how-to/testing.adoc` updated to match.
 
+8. **Hold the test pool at its parallelism.** Found by the re-profile after steps 1 to 4, not in
+   the original plan. JUnit's pool compensates for a worker that blocks by starting another, up to
+   the parallelism plus 256 by default, so the configured four was not what ran: about 19 classes
+   in flight in `graphitron`, 10 in `graphitron-model`, 15 in `graphitron-lsp`, and 30 distinct
+   threads that booted the per-thread store in `graphitron`. Setting
+   `junit.jupiter.execution.parallel.config.fixed.max-pool-size=4` in the two property files
+   whose modules were measured, `graphitron`'s and the model's (which rides in the test-jar to
+   `graphitron-lsp` and `graphitron-mcp`), holds it there. Priced by interleaved runs on a 4-core
+   machine, every test passing and no run hanging, switching the cap on from the command line as a
+   system property: `graphitron-model` 397, 394, 388 s by default against 329, 340, 342 s capped
+   (the first pair discarded), a saving of 56 s, spread 46 to 68 s, 14% of the command; boots
+   from about 88 to 70. `graphitron-lsp` 217, 220 s against 147, 142 s (first pair discarded), 74 s,
+   34%, boots from about 67 to 47. `graphitron` 904, 886 s against 784, 715 s, 146 s, 16%, two
+   pairs and no warm-up discarded, so the spread of 120 to 171 s is the whole of it, boots from
+   about 260 to 238. No capped arm started at a lower load than its default arm. `sakila-example`
+   averages about 3 classes in flight against its four, so a cap would not bite there and its file
+   is unchanged; the plugin and `roadmap-tool` configure no parallelism. A cap risks starving a
+   task that needed the compensating thread, and none of the runs in three modules did.
+
 The walk-comparison sweeps (`InputOccurrenceShadowTest`, `ColumnMatchShadowTest`,
 `RoutineSpentInputShadowTest` and their kin, which compare the store against the classification
 walk) retire with the walk under R876; that removal counts toward step 4 when it lands, and this
