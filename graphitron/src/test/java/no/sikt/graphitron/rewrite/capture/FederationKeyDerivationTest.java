@@ -322,7 +322,7 @@ class FederationKeyDerivationTest {
         Path file = dir.resolve("schema.graphqls");
         Files.writeString(file, sdl);
         return new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty())),
+            List.of(new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty(), Optional.empty())),
             dir, "FederationKeyDerivationTest", dir.resolve("out"),
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
     }

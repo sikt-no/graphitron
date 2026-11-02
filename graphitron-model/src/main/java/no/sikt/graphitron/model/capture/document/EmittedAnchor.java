@@ -14,6 +14,8 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_FEATURE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_FEATURE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
@@ -240,7 +242,9 @@ public final class EmittedAnchor {
     /**
      * What the federation directives of the minted types are read from, stored rather than left as
      * views: the tags the configuration applies, which application coined each minted type, and the
-     * tags and {@code @shareable} each such carrier carries. H2 evaluates a view again for every row
+     * tags and {@code @shareable} each such carrier carries. The features the configuration applies
+     * are stored here too, beside the tags and for the same reason, though no carrier reads them:
+     * {@code @feature} admits no type, so a minted type has nothing to inherit. H2 evaluates a view again for every row
      * joined to it, and the directive grain below joins these to each other, so on a consumer schema
      * configuring thousands of tags left as views they cost the reading its directive anchor.
      *
@@ -249,6 +253,8 @@ public final class EmittedAnchor {
      */
     private static void federation(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         store(dsl, graphName, touchedAt, GRAPHITRON_CONFIGURED_TAG, GRAPHITRON_CONFIGURED_TAG_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONFIGURED_FEATURE,
+            GRAPHITRON_CONFIGURED_FEATURE_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_COINAGE, GRAPHITRON_MINTED_COINAGE_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_CARRIER_DIRECTIVE,
             GRAPHITRON_CARRIER_DIRECTIVE_RULE);

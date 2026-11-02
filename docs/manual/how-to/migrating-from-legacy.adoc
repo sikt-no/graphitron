@@ -262,6 +262,20 @@ In Graphitron 9 a `@splitQuery` list data field on a payload with an errors fiel
 
 Graphitron 9 left null placement to the database, so under a descending order on a nullable column PostgreSQL put the `NULL` rows first, and its keyset seek could not step past a `NULL` key: a page that ended on one, or passed the last non-null key under an ascending order, ended the walk and the remaining rows were never returned. The rewrite sorts `NULL` last in both directions and pages through them; see xref:sort-results.adoc#where-null-sorts[How-to: Sort results] under "Where `NULL` sorts". A client that expected the `NULL` rows at the front of a descending list finds them at the end. Cursors keep their format, so a client mid-way through a descending list across the upgrade can see the `NULL` rows again at the end.
 
+== Configuration that moved: `features/<flag>/` directories
+
+Graphitron 9 flagged files by where they sat: with `<addFeatureFlags>` on, a file under `features/beta/` got `@feature(flags: ["beta"])` on its elements. Graphitron 10 flags files by the entry that matches them. Give each feature directory its own `<schemaInput>` with `<feature>beta</feature>`, and make sure the entry for the rest of your schema does not also match it, since a file belongs to one entry. If your v9 build also wrote `@tag` from the directories, add `<tag>beta</tag>` to the same entry. If it read a `description-suffix.md`, put its text in `<descriptionNote>`.
+
+[source,xml]
+----
+<schemaInput>
+    <pattern>src/main/resources/schema/features/beta/**/*.graphqls</pattern>
+    <feature>beta</feature>
+</schemaInput>
+----
+
+Graphitron 9 supplied the `@feature` definition itself; Graphitron 10 does not, so declare it in your schema: `directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE`. The build fails and shows that line if a configured feature has no definition to apply. See the `feature` row of the xref:../reference/mojo-configuration.adoc#schemainput-binding[`<schemaInput>` binding].
+
 == Things that didn't change
 
 Every other directive on the legacy surface reads under the rewrite the same way, with one nuance per directive worth flagging:

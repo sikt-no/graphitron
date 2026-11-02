@@ -1,0 +1,17 @@
+# Feature-flagged fixture, matched by the federated execution's second <schemaInput>, which
+# configures <feature>beta</feature>: every field, argument and enum value declared here carries
+# @feature(flags: ["beta"]) in the runtime schema and in the served _service { sdl }, and nothing
+# federated-schema.graphqls declares does (FederationBuildSmokeTest). The @feature definition is the
+# consumer's, declared in federated-schema.graphqls.
+
+extend type Query {
+    filmsByRating(rating: MpaaRating @field(name: "RATING")): [Film!]!
+}
+
+enum MpaaRating {
+    G
+    PG
+    PG_13
+    R
+    NC_17
+}

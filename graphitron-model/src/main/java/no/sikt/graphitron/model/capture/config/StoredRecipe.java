@@ -62,6 +62,7 @@ public final class StoredRecipe {
             }
             row.setTag(binding.tag().orElse(null));
             row.setDescriptionNote(binding.descriptionNote().orElse(null));
+            row.setFeature(binding.feature().orElse(null));
             sink.add(row);
         }
         int position = 0;
@@ -90,14 +91,16 @@ public final class StoredRecipe {
         String buildFilePath = anchor.get().value1();
         var bindings = new ArrayList<SchemaRecipe.Binding>();
         dsl.select(STORE_GRAPH_SCHEMA_INPUT.KIND, STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE,
-                STORE_GRAPH_SCHEMA_INPUT.TAG, STORE_GRAPH_SCHEMA_INPUT.DESCRIPTION_NOTE)
+                STORE_GRAPH_SCHEMA_INPUT.TAG, STORE_GRAPH_SCHEMA_INPUT.DESCRIPTION_NOTE,
+                STORE_GRAPH_SCHEMA_INPUT.FEATURE)
             .from(STORE_GRAPH_SCHEMA_INPUT)
             .where(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME.eq(graphName))
             .orderBy(STORE_GRAPH_SCHEMA_INPUT.ORDINAL)
             .forEach(row -> bindings.add(new SchemaRecipe.Binding(
                 entryOf(row.value1(), row.value2()),
                 Optional.ofNullable(row.value3()),
-                Optional.ofNullable(row.value4()))));
+                Optional.ofNullable(row.value4()),
+                Optional.ofNullable(row.value5()))));
         List<String> extensions = dsl.select(STORE_GRAPH_SCHEMA_EXTENSION.EXTENSION)
             .from(STORE_GRAPH_SCHEMA_EXTENSION)
             .where(STORE_GRAPH_SCHEMA_EXTENSION.GRAPH_NAME.eq(graphName))

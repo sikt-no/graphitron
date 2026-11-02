@@ -98,15 +98,28 @@ class SchemaInputExpansionRenderingTest {
     }
 
     @Test
-    void configuredTagAndNoteReachTheExpandedInputs(@TempDir Path dir) throws Exception {
+    void emptyStringFeature_normalisesToAbsent(@TempDir Path dir) throws Exception {
         Files.createFile(dir.resolve("schema.graphqls"));
-        var mojo = mojoWith(binding("schema.graphqls", "mytag", "my note"));
+        var b = binding("schema.graphqls", null, null);
+        b.feature = "";
+        var mojo = mojoWith(b);
+
+        assertThat(expand(mojo, dir, Set.of(".graphqls")).getFirst().feature()).isEmpty();
+    }
+
+    @Test
+    void configuredTagNoteAndFeatureReachTheExpandedInputs(@TempDir Path dir) throws Exception {
+        Files.createFile(dir.resolve("schema.graphqls"));
+        var b = binding("schema.graphqls", "mytag", "my note");
+        b.feature = "beta";
+        var mojo = mojoWith(b);
 
         var inputs = expand(mojo, dir, Set.of(".graphqls"));
 
         assertThat(inputs).hasSize(1);
         assertThat(inputs.getFirst().tag()).isEqualTo(Optional.of("mytag"));
         assertThat(inputs.getFirst().descriptionNote()).isEqualTo(Optional.of("my note"));
+        assertThat(inputs.getFirst().feature()).isEqualTo(Optional.of("beta"));
     }
 
     @Test

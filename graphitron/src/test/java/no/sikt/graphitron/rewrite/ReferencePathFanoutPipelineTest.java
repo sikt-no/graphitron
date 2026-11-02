@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,7 +14,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -198,7 +196,7 @@ class ReferencePathFanoutPipelineTest {
         Path schema = Files.createTempFile(tmp, "schema", ".graphqls");
         Files.writeString(schema, sdl);
         var ctx = new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
+            List.of(SchemaInput.file(schema)),
             tmp, "ReferencePathFanoutPipelineTest", tmp,
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lint);

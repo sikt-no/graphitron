@@ -95,6 +95,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               SessionIdentityDefects.Detection sessionIdentity,
                               NodeLegacyKeyDefects.Detection nodeLegacyKeys,
                               OutboxDefects.Detection outboxes,
+                              ConfiguredFeatureDefects.Detection configuredFeatures,
                               ConditionOverloadDefects.Detection conditionOverloads,
                               ResolvedKeyProjections.Projections keyProjections,
                               NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage,
@@ -127,6 +128,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("SessionIdentityDefects", SessionIdentityDefects.READS);
         roster.put("NodeLegacyKeyDefects", NodeLegacyKeyDefects.READS);
         roster.put("OutboxDefects", OutboxDefects.READS);
+        roster.put("ConfiguredFeatureDefects", ConfiguredFeatureDefects.READS);
         roster.put("ConditionOverloadDefects", ConditionOverloadDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
         roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
@@ -156,6 +158,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                     SessionIdentityDefects.detect(dsl, graphName),
                     NodeLegacyKeyDefects.detect(dsl, graphName),
                     OutboxDefects.detect(dsl, graphName),
+                    ConfiguredFeatureDefects.detect(dsl, graphName),
                     ConditionOverloadDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
                     NodeIdDecodeCoverageFacts.read(dsl, graphName),
@@ -177,6 +180,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             SessionIdentityDefects.Detection.empty(),
             NodeLegacyKeyDefects.Detection.empty(),
             OutboxDefects.Detection.empty(),
+            ConfiguredFeatureDefects.Detection.empty(),
             ConditionOverloadDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
             NodeIdDecodeCoverageFacts.Facts.empty(),
@@ -196,6 +200,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(sessionIdentity.violations());
         out.addAll(nodeLegacyKeys.violations());
         out.addAll(outboxes.violations());
+        out.addAll(configuredFeatures.violations());
         out.addAll(conditionOverloads.violations());
         return List.copyOf(out);
     }

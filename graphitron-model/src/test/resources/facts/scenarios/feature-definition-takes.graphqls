@@ -1,0 +1,18 @@
+# The near misses of the @feature definition check, which draw nothing: a definition without
+# ENUM_VALUE over a configured file that declares no enum value, and arguments beyond flags that
+# are nullable or have a default. Every field the configured file declares is flagged.
+
+directive @feature(flags: [String!]!, owner: String, since: Int! = 1) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+extend schema @withConfiguration(feature: "beta")
+
+extend schema @expectEquals(relation: "graphitron_configured_feature", rows: """
+  coordinate,           flag
+  Query.anchor,         beta
+  FactAnchor.paymentId, beta
+  """)
+
+extend schema @assertContains(relation: "graphitron_directive_application_arg", rows: """
+  coordinate,   directive_name, directive_argument_name, value_sdl
+  Query.anchor, feature,        flags,                   "[""beta""]"
+  """)

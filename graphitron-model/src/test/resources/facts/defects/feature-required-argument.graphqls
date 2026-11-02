@@ -1,0 +1,20 @@
+# A @feature that requires an argument the configured application does not supply, owner: here,
+# cannot be applied as flags: ["beta"] alone: every element the feature reaches draws
+# FEATURE_ARGUMENTS, and none is flagged. The same argument nullable, or with a default, is a near
+# miss, in the feature-definition-takes scenario.
+
+directive @feature(flags: [String!]!, owner: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
+extend schema @withConfiguration(feature: "beta")
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'FEATURE%'", rows: """
+  code,              coordinate,           detail
+  FEATURE_ARGUMENTS, Query.anchor,         feature beta
+  FEATURE_ARGUMENTS, FactAnchor.paymentId, feature beta
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_configured_feature", rows: """
+  coordinate
+  Query.anchor
+  FactAnchor.paymentId
+  """)

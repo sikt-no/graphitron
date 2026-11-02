@@ -538,7 +538,7 @@ class WarmStartRefreshTest {
 
         var revised = new SchemaRecipe(null,
             List.of(new SchemaRecipe.Binding(new SchemaRecipe.Entry.Pattern("sdl/**"),
-                Optional.of("v2"), Optional.empty())),
+                Optional.of("v2"), Optional.empty(), Optional.empty())),
             List.of(".graphqls"));
         CapturedStore.registryOf(siblingDir, SIBLING_SDL);
         GraphitronStore.captured(directory, new GraphIdentity("sibling", siblingDir),

@@ -5,13 +5,11 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.test.internal.CapturedGenerator;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.lint.LintRule;
@@ -63,7 +61,7 @@ class FixtureWarningsGateTest {
 
     private static List<BuildWarning> buildAllWarnings() {
         var ctx = new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
+            List.of(SchemaInput.file(FIXTURE_SCHEMA)),
             FIXTURE_SCHEMA.getParent(), "FixtureWarningsGateTest",
             FIXTURE_SCHEMA.getParent(),
             OUTPUT_PACKAGE,

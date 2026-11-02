@@ -407,6 +407,11 @@
                                 <schemaInput>
                                     <pattern>src/main/resources/graphql/federated-schema.graphqls</pattern>
                                 </schemaInput>
+                                <!-- One entry per feature directory, as a Graphitron 9 features/<flag>/ layout migrates. -->
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/features/beta/**/*.graphqls</pattern>
+                                    <feature>beta</feature>
+                                </schemaInput>
                             </schemaInputs>
                             <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.federated</outputPackage>

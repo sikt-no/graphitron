@@ -182,7 +182,7 @@ public final class StoreEntries {
      * the reason the three entry kinds share one relation rather than taking one each: splitting
      * them would shatter the one ordering the recipe has.
      *
-     * <p>The tag and the description note are transcribed rather than treated as decoration. A run
+     * <p>The tag, the description note and the feature are transcribed rather than treated as decoration. A run
      * stamps them onto every element of the source they bind, so a replay that dropped them would
      * mint different rows than the graph's own build did.
      */
@@ -199,16 +199,18 @@ public final class StoreEntries {
                 entry -> val(entry.value(), t.ENTRY_VALUE),
                 entry -> val(entry.binding().tag().orElse(null), t.TAG),
                 entry -> val(entry.binding().descriptionNote().orElse(null), t.DESCRIPTION_NOTE),
+                entry -> val(entry.binding().feature().orElse(null), t.FEATURE),
                 entry -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.KIND, t.ENTRY_VALUE, t.TAG, t.DESCRIPTION_NOTE,
-                    t.TOUCHED_AT)
+                    t.FEATURE, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.KIND, excluded(t.KIND))
                 .set(t.ENTRY_VALUE, excluded(t.ENTRY_VALUE))
                 .set(t.TAG, excluded(t.TAG))
                 .set(t.DESCRIPTION_NOTE, excluded(t.DESCRIPTION_NOTE))
+                .set(t.FEATURE, excluded(t.FEATURE))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 

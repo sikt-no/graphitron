@@ -11,6 +11,10 @@ extend schema
 # (no.sikt.graphitron.rewrite.test.jooq) used by the shared fixture, so the same
 # init.sql data populates both schemas.
 
+# The consumer's own @feature, which the features/beta/ entry's <feature> applies; graphitron supplies
+# no definition of it.
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
 interface Node { id: ID! }
 
 # An interface implementing an interface. Like Node, it is returned by no field and reached only

@@ -229,7 +229,7 @@ Set `quarkus.live-reload.instrumentation=false` in `application.properties` to d
 [#schemainput-binding]
 == `<schemaInput>` binding
 
-Each `<schemaInput>` carries three optional children. The `pattern` is the only one most consumers need:
+Each `<schemaInput>` carries four optional children. The `pattern` is the only one most consumers need:
 
 [cols="1,1,3",options="header"]
 |===
@@ -241,11 +241,15 @@ Each `<schemaInput>` carries three optional children. The `pattern` is the only 
 
 | `tag`
 | `String`
-| Optional tag applied to every type, field, argument, and enum value defined in matched files. Emitted as a `@tag(name: "...")` directive on each element. The plugin treats this as an implicit Federation 2 opt-in: when set without an `@link` in the SDL, the plugin adds one importing what the generator applies; when set with an `@link`, the generator adds `"@tag"` to its imports if you left it out. xref:../how-to/apollo-federation.adoc[How-to: Apollo Federation transport] covers the federation interaction.
+| Optional tag applied to every field, input field, argument, enum value and union defined in matched files; other types are never tagged. Emitted as a `@tag(name: "...")` directive on each element. The plugin treats this as an implicit Federation 2 opt-in: when set without an `@link` in the SDL, the plugin adds one importing what the generator applies; when set with an `@link`, the generator adds `"@tag"` to its imports if you left it out. xref:../how-to/apollo-federation.adoc[How-to: Apollo Federation transport] covers the federation interaction.
 
 | `descriptionNote`
 | `String`
 | Optional sentence appended to every element's description. Useful for marking a subgraph's elements with a provenance hint (e.g. `"From the orders subgraph"`) without editing the SDL by hand.
+
+| `feature`
+| `String`
+| Optional feature flag applied to every field, input field, argument and enum value defined in matched files, as `@feature(flags: ["<flag>"])`. An element that already carries `@feature` keeps its own. Your schema must declare the directive, `directive @feature(flags: [String!]!) on FIELD_DEFINITION \| ARGUMENT_DEFINITION \| INPUT_FIELD_DEFINITION \| ENUM_VALUE`; the build fails and shows that line if it does not. Fields added with `extend type` take the feature of the file holding the extension. Unlike `tag`, this has nothing to do with federation and does not add an `@link`.
 |===
 
 The minimum useful entry is one `pattern`:

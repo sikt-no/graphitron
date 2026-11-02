@@ -1,0 +1,31 @@
+# A <schemaInput> that configures a feature over a schema declaring no @feature has nothing to
+# apply: every element the feature reaches draws FEATURE_UNDEFINED at its own declaration, the
+# configuration having no position of its own, and none is flagged, so the emitted schema still
+# assembles while the defect is shown. The prelude's elements are in the configured file too.
+
+extend schema @withConfiguration(feature: "beta")
+
+input FilmFilter { title: String }
+
+extend type FactAnchor { films(filter: FilmFilter): Int @field(name: "amount") }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'FEATURE%'", rows: """
+  code,              coordinate,                 detail
+  FEATURE_UNDEFINED, Query.anchor,               feature beta
+  FEATURE_UNDEFINED, FactAnchor.paymentId,       feature beta
+  FEATURE_UNDEFINED, FilmFilter.title,           feature beta
+  FEATURE_UNDEFINED, FactAnchor.films,           feature beta
+  FEATURE_UNDEFINED, FactAnchor.films(filter:),  feature beta
+  """)
+
+extend schema @assertContains(relation: "diagnostic", rows: """
+  lsp_code,                     coordinate,           severity
+  GRAPHITRON_FEATURE_UNDEFINED, Query.anchor,         error
+  GRAPHITRON_FEATURE_UNDEFINED, FilmFilter.title,     error
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_configured_feature", rows: """
+  coordinate
+  Query.anchor
+  FactAnchor.paymentId
+  """)

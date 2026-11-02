@@ -7,7 +7,6 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -17,7 +16,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -224,7 +222,7 @@ class UnlowerableOrderingRejectionPipelineTest {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
         var ctx = new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
+            List.of(SchemaInput.file(schema)),
             tmp, "UnlowerableOrderingRejectionPipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,

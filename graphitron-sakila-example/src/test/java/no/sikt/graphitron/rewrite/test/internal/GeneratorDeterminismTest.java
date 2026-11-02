@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -19,7 +18,6 @@ import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -213,7 +211,7 @@ class GeneratorDeterminismTest {
         // context needs the same <sessionState> handle and <outbox> block the example pom configures
         // for the default execution.
         return new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
+            List.of(SchemaInput.file(FIXTURE_SCHEMA)),
             FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
             outputDir,
             OUTPUT_PACKAGE,

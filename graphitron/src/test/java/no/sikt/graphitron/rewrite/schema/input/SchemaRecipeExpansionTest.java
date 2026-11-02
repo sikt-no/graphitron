@@ -41,7 +41,7 @@ class SchemaRecipeExpansionTest {
     }
 
     @Test
-    void globPattern_multipleMatches_carryTagAndNote(@TempDir Path dir) throws Exception {
+    void globPattern_multipleMatches_carryTagNoteAndFeature(@TempDir Path dir) throws Exception {
         var sub = Files.createDirectory(dir.resolve("graphql"));
         Files.createFile(sub.resolve("a.graphqls"));
         Files.createFile(sub.resolve("b.graphqls"));
@@ -49,12 +49,13 @@ class SchemaRecipeExpansionTest {
 
         var resolved = resolve(recipe(BOTH, new SchemaRecipe.Binding(
             new SchemaRecipe.Entry.Pattern("graphql/**"),
-            Optional.of("mytag"), Optional.of("my note"))), dir);
+            Optional.of("mytag"), Optional.of("my note"), Optional.of("beta"))), dir);
 
         assertThat(resolved.matches()).hasSize(3);
         resolved.matches().forEach(match -> {
             assertThat(match.input().tag()).isEqualTo(Optional.of("mytag"));
             assertThat(match.input().descriptionNote()).isEqualTo(Optional.of("my note"));
+            assertThat(match.input().feature()).isEqualTo(Optional.of("beta"));
         });
     }
 
@@ -194,7 +195,8 @@ class SchemaRecipeExpansionTest {
     void literalOverAnInputListRoundTripsThroughExpansion(@TempDir Path dir) throws Exception {
         Path file = Files.createFile(dir.resolve("one.graphqls"));
         var inputs = List.of(
-            new SchemaInput(SchemaSource.file(file), Optional.of("t"), Optional.of("n")),
+            new SchemaInput(SchemaSource.file(file), Optional.of("t"), Optional.of("n"),
+                Optional.of("f")),
             SchemaInput.named("label"));
 
         var resolved = resolve(SchemaRecipe.literalOver(inputs, Set.copyOf(BOTH)), dir);

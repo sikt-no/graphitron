@@ -40,6 +40,7 @@ public final class SchemaInputAttribution {
 
     private static String describe(SchemaInput input) {
         return "tag=" + input.tag().orElse("<none>")
-            + "/note=" + input.descriptionNote().map(n -> "<present>").orElse("<none>");
+            + "/note=" + input.descriptionNote().map(n -> "<present>").orElse("<none>")
+            + "/feature=" + input.feature().orElse("<none>");
     }
 }

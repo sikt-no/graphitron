@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -12,7 +11,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -495,7 +493,7 @@ class ArgmappingProjectionRejectionPipelineTest {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
         var ctx = new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
+            List.of(SchemaInput.file(schema)),
             tmp, "ArgmappingProjectionRejectionPipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,

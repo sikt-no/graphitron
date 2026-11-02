@@ -44,26 +44,30 @@ import java.util.Optional;
 public record SchemaRecipe(Path buildFile, List<Binding> bindings, List<String> extensions) {
 
     /**
-     * One resolved recipe entry. The tag and description note are not optional
+     * One resolved recipe entry. The tag, description note and feature are not optional
      * fidelity: the capture's assembly composes the corpus with them, as the generator does, so
      * replaying a graph's SDL capture without them would judge a different schema than the graph's
      * own build.
      */
-    public record Binding(Entry entry, Optional<String> tag, Optional<String> descriptionNote) {
+    public record Binding(Entry entry, Optional<String> tag, Optional<String> descriptionNote,
+                          Optional<String> feature) {
         public Binding {
             Objects.requireNonNull(entry, "entry");
             Objects.requireNonNull(tag, "tag");
             Objects.requireNonNull(descriptionNote, "descriptionNote");
+            Objects.requireNonNull(feature, "feature");
         }
 
         /** An unattributed glob-pattern entry. */
         public static Binding pattern(String glob) {
-            return new Binding(new Entry.Pattern(glob), Optional.empty(), Optional.empty());
+            return new Binding(new Entry.Pattern(glob), Optional.empty(), Optional.empty(),
+                Optional.empty());
         }
 
         /** An unattributed literal entry over the source a programmatic caller handed over. */
         public static Binding literal(SchemaSource source) {
-            return new Binding(new Entry.Literal(source), Optional.empty(), Optional.empty());
+            return new Binding(new Entry.Literal(source), Optional.empty(), Optional.empty(),
+                Optional.empty());
         }
     }
 
@@ -207,7 +211,7 @@ public record SchemaRecipe(Path buildFile, List<Binding> bindings, List<String> 
         var bindings = new ArrayList<Binding>(inputs.size());
         for (SchemaInput input : inputs) {
             bindings.add(new Binding(new Entry.Literal(input.source()),
-                input.tag(), input.descriptionNote()));
+                input.tag(), input.descriptionNote(), input.feature()));
         }
         return new SchemaRecipe(null, bindings, List.copyOf(extensions));
     }
@@ -265,7 +269,7 @@ public record SchemaRecipe(Path buildFile, List<Binding> bindings, List<String> 
                     for (String rel : relative) {
                         matches.add(new Expansion.Match(i, new SchemaInput(
                             SchemaSource.file(baseDir.resolve(rel)),
-                            binding.tag(), binding.descriptionNote())));
+                            binding.tag(), binding.descriptionNote(), binding.feature())));
                     }
                 }
                 case Entry.Literal literal -> resolveLiteral(i, binding, literal, matches);
@@ -289,11 +293,13 @@ public record SchemaRecipe(Path buildFile, List<Binding> bindings, List<String> 
             case SchemaSource.File file -> {
                 if (java.nio.file.Files.isRegularFile(file.path())) {
                     matches.add(new Expansion.Match(index,
-                        new SchemaInput(file, binding.tag(), binding.descriptionNote())));
+                        new SchemaInput(file, binding.tag(), binding.descriptionNote(),
+                        binding.feature())));
                 }
             }
             case SchemaSource.Named named -> matches.add(new Expansion.Match(index,
-                new SchemaInput(named, binding.tag(), binding.descriptionNote())));
+                new SchemaInput(named, binding.tag(), binding.descriptionNote(),
+                binding.feature())));
         }
     }
 

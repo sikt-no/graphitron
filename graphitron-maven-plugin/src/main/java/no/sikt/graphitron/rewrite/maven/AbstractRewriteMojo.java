@@ -357,7 +357,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * The graph's SDL recipe: the {@code <schemaInputs>} bindings as configured (patterns, tags,
-     * description notes), the effective extension filter, and the pom they were resolved from.
+     * description notes, features), the effective extension filter, and the pom they were resolved from.
      * Capture persists it beside the graph, which is what lets a currency check re-expand the
      * globs over the module's base directory without building the module.
      */
@@ -368,7 +368,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                 bindings.add(new SchemaRecipe.Binding(
                     new SchemaRecipe.Entry.Pattern(binding.pattern),
                     Optional.ofNullable(binding.tag).filter(s -> !s.isEmpty()),
-                    Optional.ofNullable(binding.descriptionNote).filter(s -> !s.isEmpty())));
+                    Optional.ofNullable(binding.descriptionNote).filter(s -> !s.isEmpty()),
+                    Optional.ofNullable(binding.feature).filter(s -> !s.isEmpty())));
             }
         }
         var buildFile = project != null && project.getFile() != null ? project.getFile().toPath() : null;

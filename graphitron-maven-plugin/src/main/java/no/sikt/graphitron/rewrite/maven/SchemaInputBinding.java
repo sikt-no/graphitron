@@ -17,4 +17,10 @@ public class SchemaInputBinding {
     String tag;
     /** Optional description note appended to all elements defined in matched files. */
     String descriptionNote;
+    /**
+     * Optional feature flag applied, as {@code @feature(flags: ["<feature>"])}, to every field,
+     * input field, argument and enum value defined in matched files that carries no
+     * {@code @feature} of its own.
+     */
+    String feature;
 }

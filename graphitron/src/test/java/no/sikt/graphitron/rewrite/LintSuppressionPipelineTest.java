@@ -7,7 +7,6 @@ import no.sikt.graphitron.model.config.WatchedDependency;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,7 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -48,7 +46,7 @@ class LintSuppressionPipelineTest {
     ) throws IOException {
         Files.writeString(schema, sdl);
         var ctx = new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
+            List.of(SchemaInput.file(schema)),
             schema.getParent(), "LintSuppressionPipelineTest", schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lintConfig).withDependencyVersions(versions);
         try (var store = GraphitronStore.captured(ctx)) {

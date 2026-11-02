@@ -394,12 +394,14 @@ public final class GraphQLSourceCapture {
             if (!claimed.contains(input.sourceName())) {
                 continue;
             }
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.TAG, t.DESCRIPTION_NOTE, t.TOUCHED_AT)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.TAG, t.DESCRIPTION_NOTE, t.FEATURE,
+                    t.TOUCHED_AT)
                 .values(graph, input.sourceName(), input.tag().orElse(null),
-                    input.descriptionNote().orElse(null), readAt)
+                    input.descriptionNote().orElse(null), input.feature().orElse(null), readAt)
                 .onDuplicateKeyUpdate()
                 .set(t.TAG, input.tag().orElse(null))
                 .set(t.DESCRIPTION_NOTE, input.descriptionNote().orElse(null))
+                .set(t.FEATURE, input.feature().orElse(null))
                 .set(t.TOUCHED_AT, readAt)
                 .execute();
         }

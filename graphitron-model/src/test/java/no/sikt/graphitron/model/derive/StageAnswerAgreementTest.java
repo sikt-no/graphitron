@@ -53,6 +53,7 @@ class StageAnswerAgreementTest {
     private static final List<Stage> STAGES = List.of(
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
         new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
+        new Stage("graphitron_configured_feature", "graphitron_configured_feature_rule"),
         new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),
         new Stage("graphitron_carrier_directive", "graphitron_carrier_directive_rule"),
         new Stage("graphitron_field_target", "graphitron_field_target_rule"),
@@ -221,7 +222,7 @@ class StageAnswerAgreementTest {
         // The arms fixture reads the classpath corpus as well, its condition path being routed by
         // a method there.
         try (var store = switch (fixture) {
-                case FEDERATION -> CapturedStore.tagged(directory, schema, "catalog");
+                case FEDERATION -> CapturedStore.featured(directory, schema, "beta", "catalog");
                 case ARMS -> CapturedStore.ownStoreOfCatalogWith(directory, CapturedStore.GRAPH,
                     schema, jooq, ClasspathCorpus.entries());
                 default -> CapturedStore.ownStoreOfCatalog(directory, schema, jooq);
@@ -233,10 +234,12 @@ class StageAnswerAgreementTest {
     /**
      * A connection carrier tagged by its author, in a file the configuration tags: the carrier coins
      * the connection, its edge and the page info, carries its own tag, and every field it does not
-     * tag itself takes the configured one.
+     * tag itself takes the configured one. The same entry configures a feature, which every field
+     * the file declares takes and nothing the carrier coins does.
      */
     private static String federationSdl() {
         return """
+            directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
             type Query { films: [Film!]! @asConnection @tag(name: "public") }
             type Film { title: String }
             """;

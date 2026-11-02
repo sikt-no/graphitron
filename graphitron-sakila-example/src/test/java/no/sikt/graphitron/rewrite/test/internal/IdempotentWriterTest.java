@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.test.internal;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -12,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -38,7 +36,7 @@ class IdempotentWriterTest {
 
     private static RunContext contextFor(Path schemaFile, Path outputDir) {
         return new RunContext(
-            List.of(new SchemaInput(SchemaSource.file(schemaFile), Optional.empty(), Optional.empty())),
+            List.of(SchemaInput.file(schemaFile)),
             schemaFile.getParent(), "IdempotentWriterTest",
             outputDir,
             DEFAULT_OUTPUT_PACKAGE,
