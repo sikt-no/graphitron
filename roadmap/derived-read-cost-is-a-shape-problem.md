@@ -279,13 +279,24 @@ this at read time, keyed by field alone; the `intent_argmapping_` relations go w
 author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
 this branch rather than modelling inputs again. Taken up on 2026-10-31.
 
-* **Every path a field needs is a need, and a need without a path is a defect** `open`.
-  `graphitron_path_holder` and `graphitron_path_need` are derived: each end expanded to its tables,
-  an interface with its own `@table` taken as one table, a member a `@referenceFor` names on a
-  single-table interface a need of its own. A need no path meets is `NO_ROUTE_TO_TARGET` or
-  `ROUTE_AMBIGUOUS` at the field that lacks it, and `@reference` on a target with no table of its
-  own is `REFERENCE_WITHOUT_TARGET_TABLE`. A `@nodeId` holder whose need lands on a `TABLE`
-  rather than its node type is a defect too, its code named here.
+* **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "A field's path needs are stated per coordinate" and "An argument's path needs are stated where its consumer takes a table".
+  Every output field, argument and input-field occurrence whose consumer takes a table has its
+  needs in `graphitron_path_need`, and one no written, inherited or single inferred path meets is a
+  defect at its anchor.
+  * **The path anchor is keyed by coordinate and target type** `blocked`, on "A nested field is a field of each parent, at a nested coordinate".
+    `graphitron_path_anchor` re-keys on (graph, coordinate, target type) and `graphitron_path_holder`
+    goes, its holders being the occurrences; two `@referenceFor` naming one type on one field are
+    `REFERENCE_FOR_DUPLICATE_TYPE` at the second.
+  * **A field's path needs are stated per coordinate** `blocked`, on "The path anchor is keyed by coordinate and target type".
+    Each output field's occurrence needs its landings from each starting table, and one with nothing
+    written and no single foreign key is `PATH_NO_FOREIGN_KEY` or `PATH_SEVERAL_FOREIGN_KEYS`. A
+    `@reference` on a target with no one table is `REFERENCE_WITHOUT_TARGET_TABLE`, and a scalar
+    path whose last element names no table is `PATH_LANDING_UNKNOWN`.
+  * **An argument's path needs are stated where its consumer takes a table** `blocked`, on "A field's path needs are stated per coordinate" and "An argument's consumer is stated".
+    An argument or input-field occurrence the generator consumes, or a call consumes into a
+    table-typed parameter, needs a path from its field's landing or `as:` step; a `@nodeId` one lands
+    on its node type or is `NODE_ID_LANDS_ON_TABLE`. A path on an occurrence whose consumer takes no
+    table is `PATH_NOT_TAKEN`.
 * **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
   The one foreign key between two tables is a path of origin `INFERRED`, and a path written on an
   interface's field is a row per implementation of origin `INHERITED`, resolved from the
@@ -473,7 +484,9 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
   A relation over every argument and input-field occurrence, derived from the parameter fills: the
   calls that consume it, or the generator, or none. Consuming an input-typed argument consumes every
   field inside it; consuming one input field leaves its siblings to the generator. None is the entry
-  defect `ARGUMENT_WITHOUT_CONSUMER` at the argument's written position.
+  defect `ARGUMENT_WITHOUT_CONSUMER` at the argument's written position. The generator is a
+  candidate only under a producer it composes with, `@condition`, `@routine` or a table read, so
+  under `@service` and `@externalField` an occurrence the call does not take is that defect.
   `ARGUMENT_WITHOUT_CONSUMER` is a code whose `graphitron_defect_type` row names its
   `owner_gatherer`, written and swept through that owner's rule view.
 * **The generator emits from an argument only when no call consumes it** `blocked`, on "An argument's consumer is stated".
@@ -1213,6 +1226,16 @@ On an argument or input field the path starts at the type the consuming field re
 consuming field, here at each implementation of `Person`, and lands on the type the argument
 targets, `Store`. `@nodeId` says only how to read the id.
 
+**Who takes an argument's path.** An argument or input field is taken by one consumer: a method a
+directive calls, which receives its value as a parameter, or else graphitron, which writes a
+predicate from it. A path on it hands that consumer tables. Graphitron writes its predicate on the
+path's landing, and a method receives the path's tables in its table-typed parameters, chosen by
+type as a condition's overload is, so `@condition` and `@nodeId` each combine with `@reference`. A
+path whose consumer takes no table, such as a `@service` method that takes only values, is an
+error. Graphitron cannot add to what a `@service` or `@externalField` method returns, so under
+those an argument the method does not take is an error; under `@condition` and `@routine`
+graphitron writes a predicate from it.
+
 ### Draft fact document: `scenarios/path-rules.graphqls`
 
 One document covers the rules, one field per rule, so the manual's examples select from it through
@@ -1226,7 +1249,7 @@ target member and pair of tables, with where the path came from; its final name 
 node's to settle. The `PathRulesFixtures` methods are new, in `graphitron-sakila-service` beside
 `ConditionMethodRouteFixtures`; the defect codes after `ROUTE_AMBIGUOUS` are new too.
 
-The rules it does not cover yet: a lifted parent's start, which needs a record-backed type, and an
+The rules it does not cover yet: a lifted field's start, which needs a record-backed type, and an
 inferred path on a single-table interface's own field.
 
 ```graphql
@@ -1482,40 +1505,60 @@ landing table, each end expanded to its tables. An argument's path is anchored a
 coordinate names its field. An input field's path is unanchored: an input type is reused, so its
 written elements become a path only per occurrence, under one output field. An argument's or input
 field's path starts on a step of its field's own path: the step named by `as:`, or the landing where
-none is named. The base facts are already captured: `graphql_type`, `graphql_implements_interface`,
-`graphql_union_member`, `graphitron_resolved_type_binding`, `graphitron_field_target_table`, the
-`graphitron_ast_reference_*` entries and the `graphitron_path_element_*` resolutions. What is missing
-is the paths themselves, keyed for members and occurrences, with inference and inheritance derived.
+none is named. The base facts are already captured: `graphql_type`, `graphql_poly_member`,
+`graphitron_resolved_type_binding`, `graphitron_field_key_row`, the `graphitron_ast_reference_*`
+entries and the `graphitron_path_element_*` resolutions. `graphitron_field_target_table` is not one:
+it holds one row for a single-table interface target, where the needs want one per member, and none
+for a target whose binding names several tables. What is missing is the paths themselves, keyed for
+members and occurrences, with inference and inheritance derived.
+
+**Who takes a path.** An argument or input-field occurrence has one consumer, "An argument a call
+consumes generates nothing" says: a call that takes its value as a parameter, or the generator.
+A path at an occurrence hands its consumer tables. The generator writes its predicate on the
+path's landing; a call takes the path's tables in its table-typed parameters, matched by type as a
+condition step's overload is, beside the argument's value in another. So `@condition` with
+`@reference`, and `@nodeId` with `@reference`, are ordinary, and an occurrence's path is needed
+exactly where its consumer takes a table. Whether a method takes a table is read off its parameter
+types in the code family, not off its fills, so the need does not wait on the fill that reads the
+path. Under `@service` and `@externalField` the generator cannot compose with the call, so
+everything the call does not take is `ARGUMENT_WITHOUT_CONSUMER`, and a path on what it does take is
+`PATH_NOT_TAKEN` unless the method takes a table.
 
 **The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
 nothing writes them yet.
 
 * `graphitron_path_anchor`: one place a path is written, by the name it is reached by. Keyed by
-  (graph, anchor), the anchor spelled from names: `Customer.address` for a field's composed
-  `@routine` and `@reference`, `Store.people[Staff]` for a `@referenceFor` application naming
-  `Staff`, `Query.people(storeId:)` for an argument, `StockFilter.languageId` for an input field.
-  It carries its `anchor_kind` (`FIELD`, `REFERENCE_FOR`, `ARGUMENT`, `INPUT_FIELD`) and its own
-  written position, within its file.
+  (graph, coordinate, target type), both spelled from names, so no column is ever NULL. The
+  coordinate is the declaration's, a field declared on an interface spelled from each participant
+  as every coordinate is: `Customer.address` for a field's composed `@routine` and `@reference`,
+  `Query.people(storeId:)` for an argument, `StockFilter.languageId` for an input field. The target
+  type is the member a `@referenceFor` names, else the type the declaration names, a scalar or input
+  type included: (`Store.people`, `Staff`) and (`Store.people`, `Customer`) are two anchors on one
+  field. It carries its `anchor_kind` (`FIELD`, `REFERENCE_FOR`, `ARGUMENT`, `INPUT_FIELD`) and its
+  own written position, within its file.
 * `graphitron_ast_path_entry`, capture: one element of one written path, at its place. Keyed by the
   written anchor's position and the place, both within one file, with the element's position and
   its `as:` name, NULL until R1099 adds `as:` to the directive. Captured by the path family's writer
   beside `graphitron_ast_field_path_entry`, which it generalises: that one covers output field
   declarations only and stays until its readers move.
-* `graphitron_path_holder`, anchoring: one field, argument or input-field occurrence whose paths the
-  store states. Keyed by the nested coordinate "A nested field is a field of each parent, at a nested coordinate" states:
-  a dot before each parent field and `(arg:)` for an argument, so `Customer.address`, `Emne.navn.en`
-  and `Query.films(filter:).cast.firstName`. A field of a type with no table of its own is held once
-  per parent chain, so the holder is not one-to-one with `graphitron_field`; it names the field its
-  coordinate ends at, a field inherited from an interface at the implementation's field. Nothing
-  defines that coordinate as a relation yet. When that node lands, whether its coordinate relation
-  becomes the holder's parent or the holder is that relation is a question for Alf.
-* `graphitron_path_need`, anchoring: one starting table and landing a holder must reach. Keyed by
-  holder, starting table, `landing_kind` (`TYPE` or `TABLE`) and `landing`, the type's name or the
-  schema-qualified table name, with the type or the table beside it by reference. Typed fields,
+* The holder is the occurrence "A nested field is a field of each parent, at a nested coordinate"
+  states: one place a field, argument or input field is reached, at its nested coordinate, `(x:)`
+  naming an argument and a dot a nested field (`Customer.address`, `Emne.navn.en`,
+  `Query.films(filter:).cast.firstName`). A path holder
+  is just a coordinate, so `graphitron_path_holder`, declared before that node was drafted, goes,
+  and the needs key on the coordinate with a foreign key to the occurrence.
+* `graphitron_path_need`, anchoring: one starting table and landing an occurrence must reach. Keyed
+  by coordinate, starting table, `landing_kind` (`TYPE` or `TABLE`) and `landing`, the type's name or
+  the schema-qualified table name, with the type or the table beside it by reference. Typed fields,
   `@referenceFor` members and `@nodeId` paths land on a `TYPE`; a scalar path lands on a `TABLE`,
-  which may be one no type exposes. A single-table interface target gives a need per member
-  (`FilmItem`, `ShortItem`), never one for the interface. An argument's or input field's need names
-  the field holder it continues from and the `as:` step it starts at, none for the landing.
+  which may be one no type exposes, read off its last written element's own resolution rather than
+  off a walk. A single-table interface target gives a need per member (`FilmItem`, `ShortItem`),
+  never one for the interface; a union or multi-table interface target one per table-bound member.
+  The starting table is the parent's table, for a nested occurrence its nearest table-bound
+  ancestor's, and for a field lifted onto a key row the table of its own key row. A root field, and a
+  field whose `@service` or `@routine` hands it its rows, has none. An argument's or input field's
+  need exists only where its consumer takes a table, and names the field coordinate it continues
+  from and the `as:` step it starts at, none for the landing.
 * `graphitron_path`, anchoring: how one need is met. Keyed by the need's key, so one-to-one with it,
   with the target table, its origin (`WRITTEN`, `INHERITED`, `INFERRED`) and the anchor it follows by
   name, set exactly where it is not inferred. An inherited path is a row per implementation, its
@@ -1535,11 +1578,17 @@ nothing writes them yet.
   of the first step not taken, the element's place and the moves it met there. Landing stays a view
   over steps and stops.
 
-**Defects**, as `graphitron_entry_defect` rows at the written position: a need with no path, no route
-or an ambiguous one (`ROUTE_AMBIGUOUS`, `NO_ROUTE_TO_TARGET`); no overload for a step's pair
+**Defects**, as `graphitron_entry_defect` rows at the anchor's written position: a need nothing is
+written for and no single foreign key meets (`PATH_NO_FOREIGN_KEY`, `PATH_SEVERAL_FOREIGN_KEYS`), a
+need whose members fail alike giving one row that names them; a written path that stops, with no
+route or an ambiguous one (`NO_ROUTE_TO_TARGET`, `ROUTE_AMBIGUOUS`); no overload for a step's pair
 (`CONDITION_NO_OVERLOAD_FOR_PAIR`); two overloads taking one pair (`CONDITION_OVERLOAD_TIE`);
-`@reference` where there is no target table (`REFERENCE_WITHOUT_TARGET_TABLE`); a `$path` name no
-segment carries, and two segments of one path under one name (R1099's).
+`@reference` where there is no one target table (`REFERENCE_WITHOUT_TARGET_TABLE`); two
+`@referenceFor` naming one type on one field (`REFERENCE_FOR_DUPLICATE_TYPE`); a scalar path whose
+last element names no table (`PATH_LANDING_UNKNOWN`); a `@nodeId` path landing on a table
+(`NODE_ID_LANDS_ON_TABLE`); a path on an occurrence whose consumer takes no table
+(`PATH_NOT_TAKEN`); a `$path` name no segment carries, and two segments of one path under one name
+(R1099's).
 
 **What it replaces.**
 
@@ -1548,9 +1597,9 @@ segment carries, and two segments of one path under one name (R1099's).
 | `graphitron_field_path_start` and its four kind subtypes | `graphitron_path`, its start |
 | `graphitron_field_path` and its children | `graphitron_path_step` and its children |
 | `graphitron_field_participant_path` | `graphitron_ast_path_entry` |
-| `intent_input_occurrence_path` and its steps | `graphitron_path_holder` |
+| `intent_input_occurrence_path` and its steps, and `graphitron_path_holder` | the occurrence |
 | the argument and input-field reference step targets, keyed and keyless | `graphitron_path` |
-| `graphitron_field_scope_table`, `graphitron_argument_scope_table`, `graphitron_input_field_resolving_table` | `graphitron_path_need` |
+| `graphitron_field_scope_table`, `graphitron_argument_scope_table`, `graphitron_input_field_resolving_table` | the landing of the occurrence's need, or its field's where it has no path |
 
 The element resolutions `graphitron_path_element_*` stay as they are.
 
@@ -1561,9 +1610,12 @@ coordinate spelled from names, a path names the written anchor it follows and a 
 place, and a path's start is a step's `as:` name, so an inserted step moves nothing. This is not the
 use-site ordinal "A use site is identified by position" refuses: that ordinal counts applications
 on a field, which no author chose. Inheritance is a row per implementation, its written anchor
-possibly in another file. The landing type is a key column of a path.
+possibly in another file. The landing type is a key column of a path. A path holder is a coordinate,
+and an anchor is a coordinate and a target type (2026-11-02). It is the field that is lifted onto a
+key row, not its parent, so a lifted start is read off the field's own key row. An argument's path
+is the consumer's to take, by its parameter types (2026-11-02).
 
-**Open.** A lifted parent's start (a `TableRecord` matching its table, or a key or routine type
+**Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How the
 generator reads a path per pair at run time is not yet planned; R1132's shared DataLoader is the same
 missing source type there.
