@@ -74,9 +74,8 @@ parameter and the result its fields read are store facts the generator emits fro
 
 ```text
 A service call is emitted from the store
-├── A service call is the one overload every parameter of which is filled
+├── A call is the one overload every parameter of which is filled
 │   └── Every call's parameter states what fills it
-│       ├── A condition reference names an overload set
 │       ├── A parameter states its type's first argument
 │       ├── A `Configuration` parameter is the jOOQ context
 │       ├── An argument path through input types is stored
@@ -197,7 +196,7 @@ shown an error on a schema that generates, and validate can then fail on them.
 
 * **A condition method over untyped tables resolves** `open`. A condition-only element whose method takes `Table<?>` steps from where the walk stands,
   as the generator calls it.
-* **The sakila example draws no error-severity entry defect** `blocked`, on "A condition method over untyped tables resolves" and "A condition reference names an overload set". A build check
+* **The sakila example draws no error-severity entry defect** `blocked`, on "A condition method over untyped tables resolves". A build check
   over the reactor's own example holds it.
 * **Entry defects fail validate** `blocked`, on "The sakila example draws no error-severity entry defect". Every error code in `graphitron_entry_defect` stops a build, not only the editor.
 * **The column defects read the match once** `open`. `COLUMN_UNRESOLVED` and `COLUMN_AMBIGUOUS`
@@ -371,10 +370,6 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
 A directive naming Java code or a routine is resolved once, by the graphitron anchor against the
 classpath and catalog, and every reader reads that resolution rather than a view of its own.
 
-* **A condition reference names an overload set** `open`, E's. `graphitron_code_reference` resolves a
-  `@condition` to every overload of its name, as `graphitron_path_element_method` does for a path
-  element, where today an overloaded name has no row. Needing exactly one is the rule of
-  `@service`, `@externalField` and `FieldSort.method`, which refuse any overload.
 * **The walk's condition shape refusals go** `blocked`, on "Entry defects fail validate".
   `ServiceCatalog.admitConditionShape` refuses a `@condition` set with `AmbiguousMethod` where
   `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same, and at a path step it refuses on
@@ -436,18 +431,21 @@ static method needs no holder.
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives. A jOOQ record's settable
   columns are the catalog's, `sql_table.record_class_fqn` to `sql_column`, not its class's members.
-* **Every call's parameter states what fills it** `blocked`, E's, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
-  `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
+* **Every call's parameter states what fills it** `blocked`, E's, on "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+  `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
   claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
   `graphitron_field_path_parameter` rows become its rows.
-* **A service call is the one overload every parameter of which is filled** `blocked`, E's, on "Every call's parameter states what fills it". Every argMapping left side names one of its parameters;
-  none is an unclaimed parameter and several an ambiguous call, defects beside facts in the corpus.
+* **A call is the one overload every parameter of which is filled** `blocked`, E's, on "Every call's parameter states what fills it". `graphitron_code_reference` pins it among the
+  overloads of the written name, which are `code_method`'s rows, for a `@condition` as for any call;
+  `@service`, `@externalField` and `FieldSort.method` still need the name to have one. Every argMapping
+  left side names one of its parameters; none is an unclaimed parameter and several an ambiguous call,
+  defects beside facts in the corpus.
 * **`$tenant` in argMapping routes a service call** `open`, E's. The sigil on a pair's left side names
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
-* **A service call is emitted from the store** `blocked`, E's, on "A service call is the one overload every parameter of which is filled". `ServiceMethodCallEmitter` reads the call, its fills and its holder from `graphitron_service_holder`, and
+* **A service call is emitted from the store** `blocked`, E's, on "A call is the one overload every parameter of which is filled". `ServiceMethodCallEmitter` reads the call, its fills and its holder from `graphitron_service_holder`, and
   `ServiceCatalog`'s decode, claim and bind phases go; `@service` then admits a `$context` pair, reading `graphitron_call_context_key`.
 * **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
