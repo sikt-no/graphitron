@@ -864,12 +864,6 @@ someone to profile.
     driver answers each entry without a count, as JDBC's `SUCCESS_NO_INFO` does, adds nothing; the
     cause is to be confirmed before the fix. Until then the column is wrong for every relation
     `BindBatch` writes, and a rows-per-millisecond comparison over it misleads.
-  * **A capture's instant is bound, not inlined** `open`, E's. Every writer's merge and sweep
-    passes `touched_at` as a bind parameter rather than a timestamp literal, so a statement's text
-    repeats from one capture to the next and its plan is reused. Nineteen statements inline it
-    today and hold 598 of a cold capture's 1,405 ms of preparation; the entry-defect merge had 2,817
-    texts over 2,820 calls in one `graphitron` test phase, and a long-lived cache took a repeat
-    capture's preparation from 1,231 to 50 ms (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
   * **The growth gate fails only on growth** `open`, unowned. `GraphCountGrowthGateTest` failed two
     of about nine full builds in the CPU audit, each on a different relation and 6 to 7 ms past its
     bound, and once in the R876 harvest builds, where a collection pause or a stalled thread inside

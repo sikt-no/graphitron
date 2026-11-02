@@ -12,9 +12,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.val;
 
 /**
  * The writer of {@code graphitron_entry_defect} from an owner gatherer's rule view: the defects that
@@ -89,10 +89,10 @@ public final class EntryDefects {
                 target.SOURCE_LINE.eq(line), target.SOURCE_COLUMN.eq(column), target.CODE.eq(code))
             .whenMatchedThenUpdate()
             .set(target.DETAIL, detail)
-            .set(target.TOUCHED_AT, inline(readAt))
+            .set(target.TOUCHED_AT, val(readAt, target.TOUCHED_AT))
             .whenNotMatchedThenInsert(target.GRAPH_NAME, target.SOURCE_NAME, target.SOURCE_LINE,
                 target.SOURCE_COLUMN, target.CODE, target.DETAIL, target.TOUCHED_AT)
-            .values(graph, file, line, column, code, detail, inline(readAt))
+            .values(graph, file, line, column, code, detail, val(readAt, target.TOUCHED_AT))
             .execute();
     }
 

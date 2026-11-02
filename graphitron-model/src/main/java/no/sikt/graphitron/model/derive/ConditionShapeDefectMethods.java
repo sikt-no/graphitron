@@ -11,8 +11,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.val;
 
 /**
  * The declarations a {@code CONDITION_OVERLOAD_SHAPE_DISAGREES} defect is about, written under it in
@@ -64,12 +64,12 @@ public final class ConditionShapeDefectMethods {
                 t.METHOD_CLASS_NAME.eq(methodClass), t.METHOD_NAME.eq(methodName),
                 t.METHOD_DESCRIPTOR.eq(descriptor))
             .whenMatchedThenUpdate()
-            .set(t.TOUCHED_AT, inline(readAt))
+            .set(t.TOUCHED_AT, val(readAt, t.TOUCHED_AT))
             .whenNotMatchedThenInsert(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                 t.CODE, t.METHOD_SOURCE_NAME, t.METHOD_CLASS_NAME, t.METHOD_NAME,
                 t.METHOD_DESCRIPTOR, t.TOUCHED_AT)
             .values(graphName, file, line, col, code, methodSource, methodClass, methodName,
-                descriptor, inline(readAt))
+                descriptor, val(readAt, t.TOUCHED_AT))
             .execute();
     }
 

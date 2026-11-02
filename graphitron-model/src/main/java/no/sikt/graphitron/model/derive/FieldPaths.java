@@ -53,6 +53,7 @@ import static org.jooq.impl.DSL.regexpReplaceAll;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
+import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 /**
@@ -523,9 +524,9 @@ public final class FieldPaths {
             insertValues.add(f(source, col));
         }
         insertColumns.add(touched);
-        insertValues.add(inline(touchedAt));
+        insertValues.add(val(touchedAt, touched));
         var sets = new java.util.LinkedHashMap<Field<?>, Field<?>>();
-        sets.put(touched, inline(touchedAt));
+        sets.put(touched, val(touchedAt, touched));
         for (String col : values) {
             sets.put(f(target, col), f(source, col));
         }
