@@ -609,6 +609,10 @@ classified records have no reader left and can go with the walk.
   such as `Emne.navn.en` or `Query.films(filter:).cast.firstName`, so it departs from one table and
   `graphitron_field_target_table` holds one row per coordinate, scalars included. The column
   relation then carries only the column, and the editor's column scope reads the target table alone.
+  * **Every field and argument has its occurrences, at nested coordinates** `open`, G's.
+    `graphitron_occurrence` holds one row per place a field or an argument is reached, keyed by its
+    coordinate, with its declared element and its parent occurrence, as "Nested coordinates
+    (draft)" states it.
 * **A field's source is its parent's result** `open`, E's. A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
@@ -1438,26 +1442,86 @@ table.
 **What the store holds per field today, sorted.** Of 118 field-keyed relations (excluding `_rule`
 views and the `intent_` family), 76 state a fact about the field as declared and stay keyed by
 `Type.field`: its written directives, its declared type and arguments, the emitted schema, the
-reference spellings. 34 state a fact that depends on the parent, and these re-key onto the nested
-coordinate: `graphitron_field_source_table`, `graphitron_field_target_column`,
-`graphitron_field_target_table` for scalars, the `graphitron_field_path` family and its starts,
-`graphitron_field_key_row`, `graphitron_field_scope_table`, `graphitron_argument_scope_table` and
-its step targets, `graphitron_input_field_resolving_table` and its step targets, the
-`graphitron_node_id_decode_*` family, and `graphitron_producer`, `graphitron_reader` and
-`graphitron_fetcher`, whose rules already decide per parent (a nested field is a re-read producer
-where a write, routine or service returns its parent; a reader only where its parent has one result
-shape). Eight are unclear, among them `graphitron_result_pivot`, `graphitron_outbox_leaf` and the
+reference spellings. 34 state a fact that depends on the parent. Of these, the
+`graphitron_field_path` family and its starts, `graphitron_field_scope_table`,
+`graphitron_argument_scope_table` and its step targets, and `graphitron_input_field_resolving_table`
+and its step targets do not re-key: they dissolve into the path model's family below, whose need
+lands where they answer today, and re-keying them first would be a pass the dissolution throws away.
+The rest re-key onto the nested coordinate: `graphitron_field_source_table`,
+`graphitron_field_target_column`, `graphitron_field_target_table` for scalars,
+`graphitron_field_key_row`, the `graphitron_node_id_decode_*` family, and `graphitron_producer`,
+`graphitron_reader` and `graphitron_fetcher`, whose rules already decide per parent (a nested field
+is a re-read producer where a write, routine or service returns its parent; a reader only where its
+parent has one result shape). The path model's family, declared and not yet written
+(`graphitron_path_need`, `graphitron_path`, `graphitron_path_step` and its children,
+`graphitron_path_stop`), keys on the occurrence from the start. `graphitron_path_anchor` stays keyed
+by where a path is written, a declared element. Eight are unclear, among them `graphitron_result_pivot`, `graphitron_outbox_leaf` and the
 field-site step targets, which start on the declaring type's own binding today.
 `graphitron_result` and `graphitron_result_table` are keyed by type, and a nested type reached under
 two tables holds both; they follow the coordinate too.
 
 **The relations, with their grains.**
 
-* `graphitron_field_occurrence`, anchoring: one place a field is reached. One row per nested
-  coordinate: the coordinate, the declaring `(type_name, field_name)` it is an occurrence of, the
-  coordinate of its parent occurrence (none where the parent is table-bound or a root), and for an
-  input occurrence the argument it hangs under. Keyed by `(graph_name, coordinate)`, foreign keys to
-  `graphitron_field` and to itself.
+* `graphitron_occurrence`, anchoring: one place a field or an argument is reached in the schema.
+  One row per nested coordinate, keyed by `(graph_name, coordinate)`. It carries:
+  ** `element_coordinate`, the declared element it is an occurrence of, in `graphitron_element`,
+     which holds fields, input fields and arguments alike. Nullable, with a foreign key there
+     `ON DELETE SET NULL`: an anchor's key to what it was built from does not cascade, and the sweep
+     removes a row whose element went.
+  ** `parent_coordinate`, the occurrence it hangs under, null where a chain starts, with a cascading
+     foreign key to itself, which runs downstream.
+  ** `name`, the field or argument name at this step, and `kind`, `FIELD`, `ARGUMENT` or
+     `INPUT_FIELD`, so `(x:)` and `.x` are told apart without parsing, with an index on
+     `(graph_name, parent_coordinate, name)`: a written path such as argMapping's `input.a.b`
+     resolves as one keyed join per segment, never by building or parsing a coordinate.
+  ** `depth` and `touched_at`.
+  ** Its owner is `graphitron`, whose inputs it reads (`graphitron_element`, `graphitron_field`,
+     `graphitron_field_target`, `graphitron_resolved_type_binding`, `graphitron_argument`,
+     `graphitron_type`, `graphql_poly_member`). It is written as a line of the graphitron anchor
+     phase itself, right after the field targets and before the target table and column, which
+     re-key onto it, and not as a step of `GraphitronAssemblyCapture`, which is dissolving into the
+     anchor's own lines; marked and swept.
+  ** Who has an occurrence, below.
+  ** Where a chain starts. Every field of a root type, of a table-bound type, and of a type no field
+     targets has one occurrence at its own `Type.field`, with no parent.
+  ** Output nesting. Under an occurrence whose field targets an object type with no table, each field
+     of that type has one at `<coordinate>.<field>`. A target with a table ends the chain, its
+     fields starting their own. An interface or union target ends the chain where every participant
+     has a table, each participant's fields starting their own, so `Store.people` has no
+     `Store.people.name`; one with any table-less participant is a defect, below.
+  ** A single-table interface's implementations without a `@table` of their own are types no field
+     targets, so their fields start at their own coordinate, `Film.title`; a reader takes the start
+     table from the binding, as the path needs do.
+  ** Arguments. Each argument of a field occurrence has one at `<coordinate>(<argument>:)`, under that
+     occurrence: `Query.films(filter:)`, and on a nested field `Emne.navn.en(lang:)`. An argument's
+     parent-dependent facts, the table its content binds against and its `@reference` steps, key on
+     it as a field's do.
+  ** Input nesting. Under an argument occurrence whose type is an input object, each input field has
+     one at `<coordinate>.<field>`, and an input-object-typed field descends further:
+     `Query.films(filter:).cast.firstName`, the population `intent_input_occurrence_path` holds
+     today, in this spelling.
+  ** Cycles. A chain does not expand into a type already on it, the first-visit guard
+     `InputOccurrencePaths` and the classifier apply; the occurrence that would close the cycle has a
+     row and does not expand. No store measured has an output cycle; the deepest input chain is 5.
+  ** Writing. In passes by depth, one `INSERT .. SELECT` per pass, bounded by the type count, as
+     `InputOccurrencePaths` writes; a recursive view is not safe over a cyclic graph. The passes bind
+     `touched_at` and `depth` as parameters, so one planned statement serves every pass and every
+     capture, planning being where a capture spends its time. About 2,500 nested output and 3,000
+     input occurrences on sis, beside one start per other field; the step, and the re-keyed target
+     table and column readers, are timed on sis when built.
+* Settled on the occurrence:
+  ** A field declared on an interface. Under the participant rule `Media.title` is reached as
+     `Film.title` and `Book.title`, each a declared field, so `Media.title` has an occurrence only
+     where the interface has a table of its own, and none otherwise.
+  ** An interface or union target is admitted only where every participant has a table. One with
+     any table-less participant is rejected as a defect, not given new grammar: under `X.y`
+     returning `I` with participants `A` and `B`, the coordinate `X.y.f` would name two fields.
+     None of the five stores has it.
+  ** A written path deeper than the cycle guard, `input.parent.parent.x` through an input type that
+     nests itself, has no occurrence to bind to; the binding reports it as an unsupported deferral,
+     as `graphitron_argmapping_candidate.closes_cycle` does today.
+  ** An argument has an occurrence of its own, under the field occurrence it is written on, and the
+     input fields under it hang beneath it.
 * The parent-dependent relations key on `(graph_name, coordinate)` with a foreign key to the
   occurrence, and the table they carried in their key becomes an attribute: one target table, one
   source table, one path start per coordinate. `graphitron_field_target_table` holds a row for a
@@ -1475,8 +1539,10 @@ where it rebuilds them per edge today.
 
 **Order.** The occurrence relation and its spelling first; then the target table and column, which
 unblocks moving the editor's column scope off `intent_field_column_table`; then the source table and
-the path starts; then the input occurrences, which retire `intent_input_occurrence_path`; then the
-readers.
+the key row; then the input occurrences, which retire `intent_input_occurrence_path`; then the
+readers. Beside it, the path anchor keyed by coordinate and target type and the output-field needs
+follow the occurrence directly, and the argMapping binding keys on the written entry and the field
+occurrence it sits under.
 
 **Settled.**
 
