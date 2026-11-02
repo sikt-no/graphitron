@@ -1,0 +1,38 @@
+# A $context pair binds a parameter to the value the request context carries under a key, which may
+# be spelt apart from the parameter. No site reads it yet, so every one refuses it as unsupported, a
+# deferral rather than an author error; the store still states what it fills, so the call's
+# parameters can read it once the site does. A parameter given a key twice, by two contextArguments
+# elements or by an element and a pair, is filled by neither.
+
+extend type Query {
+  # The pair fills tenant from the key tenantId, and is refused at this site.
+  byPair(id: Int): String @service(service: {
+      className: "example.Ref", method: "m", argMapping: "tenant: $context.tenantId"})
+  # userId twice in contextArguments: no row, a defect at each element.
+  twiceListed: String @service(service: {className: "example.Ref", method: "m"},
+      contextArguments: ["userId", "userId"])
+  # userId by an element and by a pair: no row, a defect at the element and at the pair.
+  listedAndPaired: String @service(service: {
+      className: "example.Ref", method: "m", argMapping: "userId: $context.userId"},
+      contextArguments: ["userId"])
+}
+
+extend schema @expectEquals(relation: "graphitron_call_context_key", rows: """
+  parameter_name, context_key, origin, origin_position
+  tenant,         tenantId,    PAIR,   0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
+  code,                     detail,            position
+  CONTEXT_SITE_UNSUPPORTED, $context.tenantId, 0
+  CONTEXT_SITE_UNSUPPORTED, $context.userId,   0
+  CONTEXT_KEY_DUPLICATE,    userId,            0
+  """)
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                     coordinate
+  CONTEXT_SITE_UNSUPPORTED, Query.byPair
+  CONTEXT_SITE_UNSUPPORTED, Query.listedAndPaired
+  CONTEXT_KEY_DUPLICATE,    Query.listedAndPaired
+  CONTEXT_KEY_DUPLICATE,    Query.twiceListed
+  """)

@@ -122,6 +122,9 @@ public final class GraphitronAstCapture {
         GraphitronCodeReferences.write(dsl, graph.name(), readAt);
         // Where each written argMapping sits, which its readers join into views of their own.
         GraphitronArgMappingSites.write(dsl, graph.name(), readAt);
+        // The context key filling each parameter of each call, which finds a pair's call through
+        // the sites just written.
+        GraphitronCallContextKeys.write(dsl, graph.name(), readAt);
         // Which types are bound to a table and which of those are nodes. Both read the anchors just
         // written and corpora captured before this one, and the mint below reads the second.
         TableTypes.derive(dsl, graph.name());

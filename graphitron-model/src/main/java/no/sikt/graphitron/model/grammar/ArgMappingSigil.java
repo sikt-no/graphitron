@@ -65,6 +65,14 @@ public final class ArgMappingSigil {
      */
     public static final String SCOPE_PREFIX = "$scope.";
 
+    /**
+     * Sigil prefix. {@code $context.<key>} binds the parameter to the value the request context
+     * carries under that key, exactly one name after the dot; {@code contextArguments: ["k"]} is
+     * the pair {@code k: $context.k}. The store states what such a pair fills, and a site refuses it
+     * until the code it generates reads that, see {@link Site#admitsContextSigil}.
+     */
+    public static final String CONTEXT_PREFIX = "$context.";
+
     private ArgMappingSigil() {}
 
     /**
@@ -165,6 +173,16 @@ public final class ArgMappingSigil {
         public boolean admitsScopeSigil() {
             return this == OUTBOX;
         }
+
+        /**
+         * False at every site for now. A context value means something wherever a method or routine
+         * is called, so a site refusing it is a deferral rather than an author error: it is admitted
+         * where the code that site generates reads the pair from the store, which none does yet.
+         * {@code contextArguments} keeps working, being read where it is written.
+         */
+        public boolean admitsContextSigil() {
+            return false;
+        }
     }
 
     /**
@@ -255,6 +273,11 @@ public final class ArgMappingSigil {
                         return new ScanResult.Rejected(malformedScopeMemberMessage(rhs));
                     }
                     binding = new Binding.ScopeMember(member);
+                } else if (rhs.startsWith(CONTEXT_PREFIX)) {
+                    if (contextKey(rhs) == null) {
+                        return new ScanResult.Rejected(malformedContextKeyMessage(rhs));
+                    }
+                    return new ScanResult.Rejected(contextNotSupportedMessage(rhs, site));
                 } else {
                     return new ScanResult.Rejected(unknownSigilMessage(rhs));
                 }
@@ -381,6 +404,31 @@ public final class ArgMappingSigil {
         return member.isEmpty() || member.indexOf('.') >= 0 ? null : member;
     }
 
+    /**
+     * The key a {@code $context.<key>} right-hand side names, or {@code null} where {@code rhs} is
+     * not that sigil with exactly one non-empty name after the dot.
+     */
+    public static String contextKey(String rhs) {
+        if (rhs == null || !rhs.startsWith(CONTEXT_PREFIX)) {
+            return null;
+        }
+        String key = rhs.substring(CONTEXT_PREFIX.length());
+        return key.isEmpty() || key.indexOf('.') >= 0 ? null : key;
+    }
+
+    /** Canonical message for a {@code $context.} value that is not exactly one key. */
+    public static String malformedContextKeyMessage(String raw) {
+        return "'" + raw + "' is not a context binding; the form is " + CONTEXT_PREFIX
+            + "<key>, exactly one key after the dot.";
+    }
+
+    /** Canonical message for {@code $context.<key>} at a site whose generated code does not read it yet. */
+    public static String contextNotSupportedMessage(String raw, Site site) {
+        return "'" + raw + "' is not supported in " + site.description() + " yet; name the key in"
+            + " contextArguments where the directive takes them, which binds the parameter of the"
+            + " same name.";
+    }
+
     /** Canonical message for a {@code $result.} path with an empty segment. */
     public static String malformedResultPathMessage(String raw) {
         return "'" + raw + "' is not a result binding; the form is " + RESULT_LITERAL + " or "
@@ -411,7 +459,7 @@ public final class ArgMappingSigil {
     public static String unknownSigilMessage(String raw) {
         return "Unknown sigil '" + raw + "' in argMapping; allowed: " + SESSION_LITERAL + ", "
             + SESSION_MEMBER_PREFIX + "<member>, " + SOURCE_PREFIX + "<column>, " + RESULT_LITERAL
-            + ", " + RESULT_PREFIX + "<path>, " + SCOPE_PREFIX + "<member>";
+            + ", " + RESULT_PREFIX + "<path>, " + SCOPE_PREFIX + "<member>, " + CONTEXT_PREFIX + "<key>";
     }
 
     /** Canonical message for {@code $source.<column>} at an argMapping site that does not admit it. */

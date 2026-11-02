@@ -1236,6 +1236,9 @@ COMMENT ON COLUMN graphql_ast_applied_argument_entry.parent_line IS 'source line
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.value_sdl IS 'the value exactly as written, in SDL. The decomposition of it is in graphql_ast_value_entry, one row per node of the expression, which is what a reader wanting the parts reads; this column is the whole literal in one string and is owed a removal once nothing reads it';
+CREATE INDEX graphql_ast_applied_argument_entry_parent_ix
+  ON graphql_ast_applied_argument_entry (graph_name, source_name, parent_line, parent_column);
+COMMENT ON INDEX graphql_ast_applied_argument_entry_parent_ix IS 'A reader holding a directive application asks for its arguments, and the primary key, an argument''s own position, serves none of that. graphitron_call_context_key_written asks it to find, from a contextArguments argument, the argument beside it that holds the call''s code reference.';
 
 CREATE TABLE graphql_ast_value_entry (
   graph_name        VARCHAR NOT NULL,
@@ -1277,6 +1280,9 @@ COMMENT ON COLUMN graphql_ast_value_entry.position IS 'where inside the enclosin
 COMMENT ON COLUMN graphql_ast_value_entry.object_field_name IS 'the object field this value was written at, null when the enclosing value is a list and at a root. The field node itself gets no row of its own: a field is a name and a value, and the name is this column';
 COMMENT ON COLUMN graphql_ast_value_entry.kind IS 'which of the nine forms the parser read here. An attribute of the value and not a different fact, which is why one relation holds all nine: every row says the same thing, that this slot was written with this literal';
 COMMENT ON COLUMN graphql_ast_value_entry.written_text IS 'the leaf''s text as the author wrote it, with a string''s quotes removed and nothing else interpreted: an int stays the digits, an enum stays the name, a boolean stays true or false. Null exactly for a list, an object and the null literal, which carry no text of their own. Not coerced to a type, because what a number means is a question for whoever anchors it against the argument''s declared type';
+CREATE INDEX graphql_ast_value_entry_holder_ix
+  ON graphql_ast_value_entry (graph_name, source_name, holder_line, holder_column);
+COMMENT ON INDEX graphql_ast_value_entry_holder_ix IS 'A reader holding an applied argument asks for the values written in it, and the primary key, a value''s own position, serves none of that. graphitron_call_context_key_written asks it of the code reference written beside a contextArguments list, and of the list itself, to find the call each element fills a parameter of.';
 
 CREATE TABLE graphql_field (
   graph_name          VARCHAR NOT NULL,
@@ -2952,6 +2958,118 @@ COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.source_
 COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
 COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an entry whose whole application went is swept with the decode it hangs on';
 COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.name IS 'the context key as written. Not nullable, unlike the payload of a decode: an element written as some other shape contributes no row at all rather than a row of NULL, so what stands here is always something the author typed';
+
+CREATE VIEW graphitron_call_context_key_written
+  (graph_name, source_name, source_line, source_column, parameter_name, context_key, origin,
+   origin_line, origin_column, origin_position) AS
+-- A $context pair names its parameter on the left and its key after the dot, exactly one name. Its
+-- call is the code reference its string is a field of; a mapping with none, a @routine's, has no
+-- call to fill here and is refused where the sigil is judged.
+SELECT p.graph_name, s.source_name, s.reference_line, s.reference_column, p.param_name,
+       SUBSTRING(p.bound_to, 10), 'PAIR', p.source_line, p.source_column, p.position
+  FROM graphitron_ast_argmapping_pair_entry p
+  JOIN graphitron_argmapping_site s
+    ON s.graph_name = p.graph_name AND s.source_name = p.source_name
+   AND s.source_line = p.source_line AND s.source_column = p.source_column
+ WHERE p.bound_to LIKE '$context.%'
+   AND CHAR_LENGTH(p.bound_to) > 9 AND POSITION('.', SUBSTRING(p.bound_to, 10)) = 0
+   AND s.reference_line IS NOT NULL
+UNION ALL
+-- A contextArguments element is the pair naming the parameter of its own name: a string written in
+-- the list a @service or @condition application takes under that name. Its call is the code
+-- reference written as the application's other argument, the object at that argument's top. A
+-- lone string is the list holding it, as an input list coerces one value.
+SELECT v.graph_name, r.source_name, r.source_line, r.source_column, v.written_text,
+       v.written_text, 'CONTEXT_ARGUMENTS', v.source_line, v.source_column, COALESCE(v.position, 0)
+  FROM graphql_ast_applied_argument_entry a
+  JOIN graphql_ast_directive_application_entry da
+    ON da.graph_name = a.graph_name AND da.source_name = a.source_name
+   AND da.source_line = a.parent_line AND da.source_column = a.parent_column
+  JOIN graphql_ast_value_entry v
+    ON v.graph_name = a.graph_name AND v.source_name = a.source_name
+   AND v.holder_line = a.source_line AND v.holder_column = a.source_column
+   AND v.kind = 'STRING'
+  JOIN graphql_ast_applied_argument_entry ra
+    ON ra.graph_name = a.graph_name AND ra.source_name = a.source_name
+   AND ra.parent_line = a.parent_line AND ra.parent_column = a.parent_column
+  JOIN graphql_ast_value_entry rv
+    ON rv.graph_name = ra.graph_name AND rv.source_name = ra.source_name
+   AND rv.holder_line = ra.source_line AND rv.holder_column = ra.source_column
+   AND rv.parent_line IS NULL
+  JOIN graphitron_ast_code_reference_entry r
+    ON r.graph_name = rv.graph_name AND r.source_name = rv.source_name
+   AND r.source_line = rv.source_line AND r.source_column = rv.source_column
+ WHERE a.name = 'contextArguments' AND da.name IN ('service', 'condition');
+COMMENT ON VIEW graphitron_call_context_key_written IS 'One context key written for one parameter of one call, at the place it was written: a $context pair, or a contextArguments element read as the pair naming its own parameter. For example contextArguments: ["tenantId"] on a @service writes tenantId for the parameter tenantId of the method its service names.';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.source_name IS 'the file the call''s code reference was written in; with the line and column, a graphitron_ast_code_reference_entry key';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.source_line IS 'the code reference''s source line';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.source_column IS 'the code reference''s source column';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.parameter_name IS 'the parameter the key fills, as written: a pair''s left side, or a contextArguments element itself';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.context_key IS 'the key the request context carries the value under: what follows $context., or the element';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin IS 'PAIR for a $context pair, CONTEXT_ARGUMENTS for a contextArguments element';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin_line IS 'source line of what wrote it: the mapping string for a pair, the element for contextArguments';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin_column IS 'source column of the same';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin_position IS 'the pair''s position in its mapping, or the element''s in its list';
+
+CREATE VIEW graphitron_call_context_key_rule
+  (graph_name, source_name, source_line, source_column, parameter_name, context_key, origin,
+   origin_line, origin_column, origin_position) AS
+-- A parameter written once. One written twice, by two elements or by an element and a pair, fills
+-- nothing here and is CONTEXT_KEY_DUPLICATE at each place it was written.
+SELECT w.graph_name, w.source_name, w.source_line, w.source_column, w.parameter_name,
+       w.context_key, w.origin, w.origin_line, w.origin_column, w.origin_position
+  FROM graphitron_call_context_key_written w
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
+                    WHERE o.graph_name = w.graph_name AND o.source_name = w.source_name
+                      AND o.source_line = w.source_line AND o.source_column = w.source_column
+                      AND o.parameter_name = w.parameter_name
+                      AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
+                           OR o.origin_position <> w.origin_position));
+COMMENT ON VIEW graphitron_call_context_key_rule IS 'One row the context-key rule computes, in the shape graphitron_call_context_key stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_call_context_key, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.graph_name IS 'the graph_name of a row of this rule, which the anchor writes into graphitron_call_context_key.graph_name';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.source_name IS 'the source_name of a row of this rule, which the anchor writes into graphitron_call_context_key.source_name';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.source_line IS 'the source_line of a row of this rule, which the anchor writes into graphitron_call_context_key.source_line';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.source_column IS 'the source_column of a row of this rule, which the anchor writes into graphitron_call_context_key.source_column';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.parameter_name IS 'the parameter_name of a row of this rule, which the anchor writes into graphitron_call_context_key.parameter_name';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.context_key IS 'the context_key of a row of this rule, which the anchor writes into graphitron_call_context_key.context_key';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.origin IS 'the origin of a row of this rule, which the anchor writes into graphitron_call_context_key.origin';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.origin_line IS 'the origin_line of a row of this rule, which the anchor writes into graphitron_call_context_key.origin_line';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.origin_column IS 'the origin_column of a row of this rule, which the anchor writes into graphitron_call_context_key.origin_column';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.origin_position IS 'the origin_position of a row of this rule, which the anchor writes into graphitron_call_context_key.origin_position';
+
+CREATE TABLE graphitron_call_context_key (
+  graph_name      VARCHAR   NOT NULL,
+  source_name     VARCHAR   NOT NULL,
+  source_line     INT       NOT NULL,
+  source_column   INT       NOT NULL,
+  parameter_name  VARCHAR   NOT NULL,
+  context_key     VARCHAR   NOT NULL,
+  origin          VARCHAR   NOT NULL,
+  origin_line     INT       NOT NULL,
+  origin_column   INT       NOT NULL,
+  origin_position INT       NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  -- A parameter is filled once per call; one written twice is a defect and no row.
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, parameter_name),
+  -- The call as written, so a key cannot outlive the reference it fills a parameter of.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_code_reference_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (origin IN ('PAIR', 'CONTEXT_ARGUMENTS'))
+);
+COMMENT ON TABLE graphitron_call_context_key IS 'The context key that fills one parameter of one call: one row per code reference and parameter a $context pair or a contextArguments element names once. For example contextArguments: ["tenantId"] on a @service fills the parameter tenantId of the method its service names with the value the request context carries under tenantId.';
+COMMENT ON COLUMN graphitron_call_context_key.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_call_context_key.source_name IS 'the file the call''s code reference was written in; with the line and column, the reference as written, which is what a call is until its method resolves';
+COMMENT ON COLUMN graphitron_call_context_key.source_line IS 'the code reference''s source line';
+COMMENT ON COLUMN graphitron_call_context_key.source_column IS 'the code reference''s source column';
+COMMENT ON COLUMN graphitron_call_context_key.parameter_name IS 'the parameter the key fills, completing the key: a pair''s left side, or a contextArguments element itself';
+COMMENT ON COLUMN graphitron_call_context_key.context_key IS 'the key the request context carries the value under, which a pair may spell apart from the parameter it fills';
+COMMENT ON COLUMN graphitron_call_context_key.origin IS 'PAIR where a $context pair wrote it, CONTEXT_ARGUMENTS where a contextArguments element did, for the surfaces that point back at the writing';
+COMMENT ON COLUMN graphitron_call_context_key.origin_line IS 'source line of what wrote it: the mapping string for a pair, the element for contextArguments';
+COMMENT ON COLUMN graphitron_call_context_key.origin_column IS 'source column of the same';
+COMMENT ON COLUMN graphitron_call_context_key.origin_position IS 'the pair''s position in its mapping, or the element''s in its list';
+COMMENT ON COLUMN graphitron_call_context_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_ast_input_value_node_id_entry (
   graph_name    VARCHAR NOT NULL,
@@ -11957,7 +12075,29 @@ SELECT t.graph_name, t.source_name, t.source_line, t.source_column, t.position,
                                          ('int', 'java.lang.Integer'), ('long', 'java.lang.Long'),
                                          ('float', 'java.lang.Float'), ('double', 'java.lang.Double'))
                           b (prim, boxed)
-                    WHERE b.prim = t.expected AND b.boxed = t.parameter_type);
+                    WHERE b.prim = t.expected AND b.boxed = t.parameter_type)
+UNION ALL
+-- A $context pair, at whatever site. A context value means something wherever a method or routine
+-- is called, so this is a deferral rather than an author error: a site admits the pair when the
+-- code it generates reads graphitron_call_context_key, which none does yet. The detail is the
+-- pair's right side as written.
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
+       'CONTEXT_SITE_UNSUPPORTED', p.bound_to
+  FROM graphitron_ast_argmapping_pair_entry p
+ WHERE p.bound_to LIKE '$context.%'
+UNION ALL
+-- A $context pair naming a parameter its call is also given a context key for elsewhere. The
+-- detail is the parameter. The string sits in the file its call's reference does.
+SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, w.origin_position,
+       'CONTEXT_KEY_DUPLICATE', w.parameter_name
+  FROM graphitron_call_context_key_written w
+ WHERE w.origin = 'PAIR'
+   AND EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
+                WHERE o.graph_name = w.graph_name AND o.source_name = w.source_name
+                  AND o.source_line = w.source_line AND o.source_column = w.source_column
+                  AND o.parameter_name = w.parameter_name
+                  AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
+                       OR o.origin_position <> w.origin_position));
 COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
 
 CREATE VIEW graphitron_outbox_routine_target
@@ -13038,7 +13178,21 @@ UNION ALL
 -- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
 SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column, r.code,
        CAST(NULL AS VARCHAR)
-  FROM graphitron_argmapping_pair_defect_rule r;
+  FROM graphitron_argmapping_pair_defect_rule r
+UNION ALL
+-- A contextArguments element naming a parameter its call is also given a context key for
+-- elsewhere, at the element. A pair doing so is a pair defect, rolled up above. The detail is the
+-- parameter.
+SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY_DUPLICATE',
+       w.parameter_name
+  FROM graphitron_call_context_key_written w
+ WHERE w.origin = 'CONTEXT_ARGUMENTS'
+   AND EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
+                WHERE o.graph_name = w.graph_name AND o.source_name = w.source_name
+                  AND o.source_line = w.source_line AND o.source_column = w.source_column
+                  AND o.parameter_name = w.parameter_name
+                  AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
+                       OR o.origin_position <> w.origin_position));
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -17436,6 +17590,12 @@ INSERT INTO meta_grain VALUES
   ('sdl-code-reference',
    'one Java code reference written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('sdl-call-parameter',
+   'one parameter, by name, of the call one Java code reference written in one SDL document makes',
+   'graph_name, source_name, source_line, source_column, parameter_name', 'sdl'),
+  ('sdl-context-key-writing',
+   'one context key written in one SDL document for a parameter of a call, at the place it was written',
+   'graph_name, source_name, source_line, source_column, parameter_name, origin_line, origin_column, origin_position', 'sdl'),
   ('sdl-entry-position',
    'one position in one SDL document, whatever the parse read there',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -17763,6 +17923,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.', 'graphitron'),
   ('CONDITION_OVERLOAD_SHAPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_SHAPE_DISAGREES',
    'A @condition names a method whose overloads differ in more than their jOOQ table parameters, on the static modifier, the return type, the parameter count, the throws clause or a parameter that is a table in some and not others or differs in name or type, so the name stands for more than one call.', 'graphitron'),
+  ('CONTEXT_KEY_DUPLICATE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONTEXT_KEY_DUPLICATE',
+   'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.', 'graphitron'),
+  ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
+   'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.', 'graphitron'),
   ('CONDITION_OVERLOAD_TIE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_TIE',
    'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'graphitron'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
@@ -18300,6 +18464,18 @@ INSERT INTO meta_relation VALUES
    'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the anchor step that runs it, on the terms every stage rule is kept on: the EXCEPT between this view and the table it fills stays runnable for as long as both exist.'),
+  ('graphitron_call_context_key', 'sdl-call-parameter', 'graphitron',
+   'The context key that fills one parameter of one call: one row per code reference and parameter a $context pair or a contextArguments element names once.',
+   'For example contextArguments: ["tenantId"] on a @service fills the parameter tenantId of the method its service names with the value the request context carries under tenantId.',
+   'What a call''s parameter row reads where a context value fills it, and what decides whether the context can fill a parameter at all. contextArguments is the pair naming its own parameter, so both spellings are one fact here and nothing downstream knows which was written. Keyed by the code reference as written rather than by the method it resolves to, because a key is written whether or not the method is found. Stored rather than read through the rule because its readers join it into the fill and constructor rules, and the climb from a contextArguments element to its reference crosses five relations. A parameter written twice has no row: which of the two to believe is not the store''s to pick, and CONTEXT_KEY_DUPLICATE says so where each was written.'),
+  ('graphitron_call_context_key_rule', 'sdl-call-parameter', 'graphitron',
+   'One row the context-key rule computes, in the shape graphitron_call_context_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_call_context_key, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the anchor step that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_call_context_key_written', 'sdl-context-key-writing', 'graphitron',
+   'One context key written for one parameter of one call, at the place it was written: a $context pair, or a contextArguments element read as the pair naming its own parameter.',
+   'For example contextArguments: ["tenantId"] on a @service writes tenantId for the parameter tenantId of the method its service names.',
+   'Every writing, twice-written parameters included, which the rule and the duplicate defect both read so that the two cannot disagree about what was written. A view because nothing constrains it and its only readers are those two, each filtered to one graph.'),
   ('graphitron_ast_argmapping_pair_entry', 'sdl-argmapping-pair', 'graphitron',
    'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this.',
    'For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.',

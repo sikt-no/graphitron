@@ -89,7 +89,6 @@ A service call is emitted from the store
 │       │   ├── A field's key row is stated
 │       │   ├── A type an `@externalField` returns holds an OBJECT
 │       │   └── A binding that names several tables is a row of none of them
-│       ├── `$context` names a context value
 │       └── `$tenant` in argMapping routes a service call
 ├── A service's holder is its one widest buildable constructor
 │   └── A service class's construction is stated
@@ -432,10 +431,7 @@ static method needs no holder.
 * **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives.
-* **`$context` names a context value** `open`, E's. A context argument is an argMapping source as
-  `$session` is, so `contextArguments` reads as the pairs it implies and a parameter row names the key.
-  Every argMapping site admits it, and a site whose emitter does not read it yet refuses it as a deferral.
-* **Every call's parameter states what fills it** `blocked`, E's, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+* **Every call's parameter states what fills it** `blocked`, E's, on "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
   claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
@@ -447,7 +443,7 @@ static method needs no holder.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
 * **A service call is emitted from the store** `blocked`, E's, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
-  `ServiceCatalog`'s decode, claim and bind phases go.
+  `ServiceCatalog`'s decode, claim and bind phases go; `@service` then admits a `$context` pair, reading `graphitron_call_context_key`.
 * **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in

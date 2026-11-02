@@ -1,0 +1,21 @@
+# A context argument fills a parameter of a call with the value the request context carries under a
+# key. contextArguments: ["k"] is the pair k: $context.k, so each element fills the parameter of its
+# own name, on the call its directive's code reference makes: a @service's method, a @condition's.
+
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+
+extend type Query {
+  greetingByUser: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet"
+  }, contextArguments: ["userId"])
+  customersSeenByUser: [Customer!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerSeenByUser"}, contextArguments: ["userId"])
+}
+
+extend schema @expectEquals(relation: "graphitron_call_context_key", rows: """
+  parameter_name, context_key, origin,            origin_position
+  userId,         userId,      CONTEXT_ARGUMENTS, 0
+  userId,         userId,      CONTEXT_ARGUMENTS, 0
+  """)

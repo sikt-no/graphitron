@@ -119,6 +119,27 @@ class ArgMappingSigilTest {
     }
 
     @ParameterizedTest
+    @EnumSource(ArgMappingSigil.Site.class)
+    void contextKey_isRefusedAtEverySiteAsNotSupportedYet(ArgMappingSigil.Site site) {
+        assertThat(site.admitsContextSigil()).isFalse();
+        var result = ArgMappingSigil.scan("tenant: $context.tenantId, pMinLength: minLength", site);
+        assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+            assertThat(rejected.message())
+                .isEqualTo(ArgMappingSigil.contextNotSupportedMessage("$context.tenantId", site)));
+        assertThat(ArgMappingSigil.contextKey("$context.tenantId")).isEqualTo("tenantId");
+    }
+
+    @Test
+    void contextWithoutExactlyOneKey_isRefusedNamingTheOneKeyForm() {
+        for (String rhs : new String[] {"$context.", "$context.a.b"}) {
+            var result = ArgMappingSigil.scan("tenant: " + rhs, ArgMappingSigil.Site.SERVICE);
+            assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+                assertThat(rejected.message()).isEqualTo(ArgMappingSigil.malformedContextKeyMessage(rhs)));
+            assertThat(ArgMappingSigil.contextKey(rhs)).isNull();
+        }
+    }
+
+    @ParameterizedTest
     @EnumSource(value = ArgMappingSigil.Site.class, names = "ROUTINE", mode = EnumSource.Mode.EXCLUDE)
     void sourceAtANonAdmittedSite_rejectsNamingTheRoutineSite(ArgMappingSigil.Site site) {
         assertThat(site.admitsSourceSigil()).isFalse();
