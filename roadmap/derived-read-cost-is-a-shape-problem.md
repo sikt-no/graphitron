@@ -282,13 +282,7 @@ this at read time, keyed by field alone; the `intent_argmapping_` relations go w
 author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
 this branch rather than modelling inputs again. Taken up on 2026-10-31.
 
-* **The path relations are declared** `open`. `graphitron_ast_path_entry`, `graphitron_path_holder`,
-  `graphitron_path_need`, `graphitron_path`, `graphitron_path_step` with its column, key, method,
-  routine and parameter children, and `graphitron_path_stop`, declared with keys, grains and owners
-  before anything writes them, as "Path model (draft)" lists them. A key that can point into another
-  file names its target by coordinate or by an element's place in its list, never by line and
-  column.
-* **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "The path relations are declared".
+* **Every path a field needs is a need, and a need without a path is a defect** `open`.
   `graphitron_path_holder` and `graphitron_path_need` are derived: each end expanded to its tables,
   an interface with its own `@table` taken as one table, a member a `@referenceFor` names on a
   single-table interface a need of its own. A need no path meets is `NO_ROUTE_TO_TARGET` or
@@ -695,7 +689,7 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
   * **A generating harness captures the run's output coordinates** `done`.
   * **The output package is read from the store** `done`.
-  * **The tenant column and the session hook signature are captured** `blocked`, on "The path relations are declared" and "The generator builds no schema".
+  * **The tenant column and the session hook signature are captured** `blocked`, on "The generator builds no schema".
     `<tenantColumn>` is one pattern, matched against database names as jOOQ matches them: a Java
     regular expression, case-insensitive, whole-name against `column`, `table.column` or
     `schema.table.column`, so a plain name matches what it matched before. The fact is per matched
