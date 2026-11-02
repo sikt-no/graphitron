@@ -2216,6 +2216,17 @@ class FieldBuilder {
             : new CallSiteExtraction.ThrowOnMismatch(decode);
     }
 
+    /**
+     * Whether a scalar argument that resolved no column is owned by its own
+     * {@code @condition(override: true)}: the method then supplies the whole predicate, so the
+     * argument needs no column. An argument with {@code @lookupKey} still needs one to drive its
+     * VALUES+JOIN, so it stays rejected, as does an argument without the override.
+     */
+    private static boolean ownedByOverride(Optional<ArgConditionRef> argCondition, GraphQLArgument arg) {
+        return argCondition.isPresent() && argCondition.get().override()
+            && !arg.hasAppliedDirective(DIR_LOOKUP_KEY);
+    }
+
     private ArgumentRef classifyArgument(String parentTypeName, GraphQLFieldDefinition fieldDef,
                                          GraphQLArgument arg,
                                          TableRef rt, String targetTypeName, boolean fieldOverride,
@@ -2393,7 +2404,7 @@ class FieldBuilder {
                             + " argument's predicate, but the condition method could not be resolved"));
                     }
                     return new ArgumentRef.ScalarArg.ConditionOwnedArg(
-                        name, typeName, nonNull, list, argCondition.get(), slotDecode);
+                        name, typeName, nonNull, list, argCondition.get(), Optional.of(slotDecode));
                 }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
                     // Same-table @nodeId arg = filter semantics (WHERE pk IN (decoded_ids) /
@@ -2552,6 +2563,10 @@ class FieldBuilder {
             String refColumnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
             var refCol = svc.resolveColumnForReference(refColumnName, refPath.elements(), rt);
             if (refCol.isEmpty()) {
+                if (ownedByOverride(argCondition, arg)) {
+                    return new ArgumentRef.ScalarArg.ConditionOwnedArg(
+                        name, typeName, nonNull, list, argCondition.get(), Optional.empty());
+                }
                 return new ArgumentRef.ScalarArg.UnboundArg(
                     name, typeName, nonNull, list, refColumnName,
                     "no column '" + refColumnName + "' reachable via @reference path from table '"
@@ -2591,6 +2606,10 @@ class FieldBuilder {
         String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
         var col = ctx.catalog.findColumn(rt.tableName(), columnName);
         if (col.isEmpty()) {
+            if (ownedByOverride(argCondition, arg)) {
+                return new ArgumentRef.ScalarArg.ConditionOwnedArg(
+                    name, typeName, nonNull, list, argCondition.get(), Optional.empty());
+            }
             return new ArgumentRef.ScalarArg.UnboundArg(
                 name, typeName, nonNull, list, columnName,
                 "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
@@ -2759,7 +2778,7 @@ class FieldBuilder {
                 // An author-owned argument on a divergent leaf never reaches here: it carries an
                 // arg-level @condition by construction, which the divergence refusal already caught.
                 case ArgumentRef.ScalarArg.ConditionOwnedArg co ->
-                    out.put(co.name(), new NodeIdArgDecode(co.decode(), co.list(), false));
+                    co.decode().ifPresent(d -> out.put(co.name(), new NodeIdArgDecode(d, co.list(), false)));
                 default -> { }
             }
         }

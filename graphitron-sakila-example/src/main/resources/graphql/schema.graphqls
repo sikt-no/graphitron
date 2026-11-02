@@ -213,6 +213,11 @@ type Query {
     filmsByTitleBeans(titles: [FilmTitleInput!] @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
             method: "filmTitlesRecordList"}, override: true)): [Film!]! @defaultOrder(primaryKey: true)
+    # An argument that matches no column, owned by its own @condition(override: true): the method
+    # supplies the whole predicate, so no column has to resolve for `titlePrefix`.
+    filmsByTitlePrefix(titlePrefix: String @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmTitlePrefixCondition"}, override: true)): [Film!]! @defaultOrder(primaryKey: true)
     filmsBySearchBean(wrap: FilmSearchWrapInput): [Film!]! @defaultOrder(primaryKey: true)
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",

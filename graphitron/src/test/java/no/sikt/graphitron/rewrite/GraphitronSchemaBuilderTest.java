@@ -4549,6 +4549,70 @@ class GraphitronSchemaBuilderTest {
         assertThat(filmsColumnBindings(sdl)).isEmpty();
     }
 
+    private static final String SAKSKODE_OVERRIDE =
+        "@condition(condition: {className: \"no.sikt.graphitron.rewrite.TestConditionStub\","
+        + " method: \"sakskodeCondition\"}, override: true)";
+
+    /**
+     * The argument coordinate's counterpart: a scalar argument that matches no column but carries
+     * {@code @condition(override: true)} classifies, because the method owns the predicate and
+     * needs no column. Only the explicit {@link ConditionFilter} is emitted, and no column slot
+     * is recorded for the argument.
+     */
+    @Test
+    void argument_overrideTrueWithoutMatchingColumn_classifiesAsConditionOwned() {
+        var sdl = """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(sakskode: String %s): [Film!]! }
+            """.formatted(SAKSKODE_OVERRIDE);
+        var f = (QueryField.QueryTableField) build(sdl).field("Query", "films");
+        assertThat(f.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance)).isFalse();
+        assertThat(f.filters().stream().filter(ConditionFilter.class::isInstance)
+                .map(ConditionFilter.class::cast).findFirst().orElseThrow().methodName())
+            .isEqualTo("sakskodeCondition");
+        assertThat(filmsColumnBindings(sdl)).isEmpty();
+    }
+
+    /** Same lift on the {@code @reference} arm, whose column miss is a separate rejection site. */
+    @Test
+    void argument_overrideTrueWithoutColumnViaReference_classifiesAsConditionOwned() {
+        var f = (QueryField.QueryTableField) build("""
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(sakskode: String @reference(path: [{key: "film_language_id_fkey"}]) %s): [Film!]!
+            }
+            """.formatted(SAKSKODE_OVERRIDE)).field("Query", "films");
+        assertThat(f.filters().stream().filter(ConditionFilter.class::isInstance)).hasSize(1);
+        assertThat(f.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance)).isFalse();
+    }
+
+    /** The override is the gate: the same argument without it is still an unbound-column rejection. */
+    @Test
+    void argument_overrideFalseWithoutMatchingColumn_stillRejected() {
+        var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) build("""
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(sakskode: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "sakskodeCondition"})): [Film!]!
+            }
+            """).field("Query", "films");
+        assertThat(f.reason())
+            .contains("argument 'sakskode'")
+            .contains("could not be resolved in table 'film'");
+        assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+    }
+
+    /** A lookup needs a column tuple to drive its VALUES+JOIN, so the override does not lift it. */
+    @Test
+    void argument_overrideTrueWithLookupKeyAndNoColumn_stillRejected() {
+        var field = build("""
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(sakskode: [String!]! @lookupKey %s): [Film!]! }
+            """.formatted(SAKSKODE_OVERRIDE)).field("Query", "films");
+        assertThat(field)
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+    }
+
     /**
      * The column-binding rows a {@link InputField.ConditionOwnedField} produces for
      * {@code Query.films} against {@code film}. The carrier is not retained on the model past the

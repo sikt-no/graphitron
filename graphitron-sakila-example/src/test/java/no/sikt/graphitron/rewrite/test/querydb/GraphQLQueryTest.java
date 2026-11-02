@@ -519,6 +519,14 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsByTitlePrefix_argumentWithNoColumnOwnedByItsOverride_narrowsByTheMethodsPredicate() {
+        Map<String, Object> data = execute("{ filmsByTitlePrefix(titlePrefix: \"AC\") { title } }");
+        assertThat(data).extractingByKey("filmsByTitlePrefix", as(list(Map.class)))
+            .extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+    }
+
+    @Test
     void filmsBySearchBean_setterBeanWithNestedBeanThroughADottedPath_filtersByNestedMember() {
         // Titles starting "A" are all five films; the nested range (length 48..100) keeps
         // ACADEMY DINOSAUR (86), ACE GOLDFINGER (48) and ADAPTATION HOLES (50).

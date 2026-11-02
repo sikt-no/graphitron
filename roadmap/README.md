@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1135` | A custom scalar coercing an array or a parameterized list has no valid shape | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](custom-scalar-over-array-column.md) |
-| `R1134` | An argument @condition(override: true) is rejected as an unbound column before the override is considered | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](argument-condition-override-rejected-as-unbound.md) |
+| `R1134` | An argument @condition(override: true) is rejected as an unbound column before the override is considered | In Review | 2026-11-02 <sub>created 2026-10-30</sub> | [plan](argument-condition-override-rejected-as-unbound.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -426,7 +426,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R851` [**Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves**](corpus-directives-to-expect-equals.md) — Spec, testing, blocked by [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)
 - `R1139` [**A field-level @condition(override: true) over an argument that matches no column is rejected as unbound**](field-condition-override-over-unbound-argument.md) — Backlog, bug, blocked by [argument-condition-override-rejected-as-unbound](argument-condition-override-rejected-as-unbound.md)
-- `R1134` [**An argument @condition(override: true) is rejected as an unbound column before the override is considered**](argument-condition-override-rejected-as-unbound.md) — Ready, bug
+- `R1134` [**An argument @condition(override: true) is rejected as an unbound column before the override is considered**](argument-condition-override-rejected-as-unbound.md) — In Review, bug
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature

@@ -38,11 +38,12 @@ import java.util.Optional;
  *   <li>{@link ScalarArg.ColumnBackedReferenceArg} — FK-target {@code @nodeId(typeName: T)}
  *       scalar arg with a resolved single-hop {@code joinPath}; carries the target NodeType's
  *       key columns (arity 1..N).</li>
- *   <li>{@link ScalarArg.ConditionOwnedArg} — {@code @nodeId} scalar arg whose
- *       {@code @condition(override: true)} method owns the whole {@code WHERE} contribution
- *       because no route to the target table resolved.</li>
- *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved;
- *       surfaced as a validation error.</li>
+ *   <li>{@link ScalarArg.ConditionOwnedArg} — scalar arg whose
+ *       {@code @condition(override: true)} method owns the whole {@code WHERE} contribution:
+ *       a {@code @nodeId} arg with no route to the target table, or a plain scalar arg that
+ *       matches no column.</li>
+ *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved and that
+ *       no {@code @condition(override: true)} owns; surfaced as a validation error.</li>
  *   <li>{@link InputTypeArg.TableInputArg} — table-resolved input arg; carries per-field
  *       column bindings.</li>
  *   <li>{@link InputTypeArg.PlainInputArg} — input type without {@code @table}; only meaningful
@@ -208,15 +209,18 @@ public sealed interface ArgumentRef {
         }
 
         /**
-         * Scalar {@code @nodeId} arg whose explicit {@code @condition(override: true)} method owns
-         * the {@code WHERE} predicate entirely: no route from the field's table to the node type's
-         * table resolved, and the author took responsibility instead. The argument coordinate's
+         * Scalar arg whose explicit {@code @condition(override: true)} method owns the
+         * {@code WHERE} predicate entirely, because no column or route resolved for it and the
+         * author took responsibility instead: a {@code @nodeId} arg with no route from the field's
+         * table to the node type's table, or a plain scalar arg that matches no column. The argument coordinate's
          * counterpart to {@link no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField}
          * on that carrier's no-route arm, where its {@code resolvedColumn} is empty: the same
          * defining fact, and the same reason for having no columns, since no route resolved one.
          *
-         * <p>The method receives the resolving table (each branch's own alias on a multitable
-         * consumer) plus the leaf's decoded key, typed by the node type's key columns. The decode is
+         * <p>For a {@code @nodeId} arg the method receives the resolving table (each branch's own
+         * alias on a multitable consumer) plus the leaf's decoded key, typed by the node type's key
+         * columns; a plain scalar arg binds to the method's parameter by name and carries no
+         * decode. The decode is
          * already installed on {@link #condition}'s own bound parameter at classification
          * ({@code ConditionResolver.installNodeIdDecode}), so no consumer of that filter reads
          * {@code decode} to emit the call.
@@ -227,8 +231,7 @@ public sealed interface ArgumentRef {
          * {@code @nodeId} argument carrier exposes its decoder through its {@code extraction}; this
          * one has no extraction slot, having no implicit predicate, so without the component the
          * field-level install would have to special-case the one carrier that declines to say what
-         * its slot decodes. Flat rather than optional, because the carrier is {@code @nodeId}-only by
-         * construction.
+         * its slot decodes. Empty for a plain scalar arg, which has no slot decode.
          *
          * <p>The compact constructor pins {@code override: true}; consumers branch on carrier
          * identity rather than re-deriving it from the condition.
@@ -239,7 +242,7 @@ public sealed interface ArgumentRef {
             boolean nonNull,
             boolean list,
             ArgConditionRef condition,
-            HelperRef.Decode decode
+            java.util.Optional<HelperRef.Decode> decode
         ) implements ScalarArg {
 
             public ConditionOwnedArg {

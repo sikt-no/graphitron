@@ -10,9 +10,13 @@ override-propagation semantics that tie them together.
 
 - `FieldBuilder.classifyArguments` returns `List<ArgumentRef>` (sealed,
   three top-level arms plus two intermediate sealed sub-groupers):
-  `ScalarArg.{ColumnBackedArg | ColumnBackedReferenceArg | UnboundArg}`,
+  `ScalarArg.{ColumnBackedArg | ColumnBackedReferenceArg | ConditionOwnedArg | UnboundArg}`,
   `InputTypeArg.{TableInputArg | PlainInputArg}`,
   plus the top-level `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`.
+  `ConditionOwnedArg` is a scalar argument whose own `@condition(override: true)`
+  method owns the predicate, a `@nodeId` argument with no route to the target
+  table or a plain scalar argument that matches no column; it carries no column,
+  and a decode only for the `@nodeId` case.
   The column-backed scalar arms carry one or more columns (arity is a column
   count read off `isComposite()`, not a leaf dimension) with local or
   FK-resolved bindings; the sealed sub-groupers let projections

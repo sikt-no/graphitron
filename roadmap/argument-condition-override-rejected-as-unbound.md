@@ -1,13 +1,13 @@
 ---
 id: R1134
 title: "An argument @condition(override: true) is rejected as an unbound column before the override is considered"
-status: Ready
+status: In Review
 bucket: bug
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-31
+last-updated: 2026-11-02
 ---
 
 # An argument @condition(override: true) is rejected as an unbound column before the override is considered
@@ -40,6 +40,8 @@ needs its column, because the implicit predicate it composes with has nothing to
 @field(name: "<column on target>")` on the argument.
 
 ## Implementation
+
+Shipped: the lift at both rejection sites (`FieldBuilder.ownedByOverride`), `ConditionOwnedArg.decode` widened to `Optional`, four pipeline cases in `GraphitronSchemaBuilderTest` (lifted, `@reference` twin, still rejected without `override`, still rejected with `@lookupKey`), the sakila field `filmsByTitlePrefix` with `InputFieldConditionFixtures.filmTitlePrefixCondition` and its `GraphQLQueryTest` case, and the `condition.adoc` and `argument-resolution.adoc` updates. The `FixtureWarningsGateTest` pinned schema line moved to 789. This lift is deliberately narrow: the argument-consumption rule in the store work retires the `override` flag altogether, and with it this carrier's `override: true` pin, so nothing new keyed on `override` was added beyond this carrier use. Verification note: `graphitron-model` was installed without its tests (its wall-clock `GraphCountGrowthGateTest` fails under load in this sandbox and passes alone); every downstream module ran in full.
 
 All sites are in `FieldBuilder` unless named.
 

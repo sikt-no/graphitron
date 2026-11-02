@@ -207,4 +207,16 @@ public final class InputFieldConditionFixtures {
         return table.field("rollekode", String.class).eq("admin");
     }
 
+    /**
+     * Argument-level {@code @condition(override: true)} on {@code Query.filmsByTitlePrefix}, whose
+     * {@code titlePrefix} argument matches no column of {@code film}: the method owns the
+     * predicate, so the argument needs no column. A {@code null} prefix is unconstrained.
+     */
+    public static Condition filmTitlePrefixCondition(Table<?> table, String titlePrefix) {
+        if (titlePrefix == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Film.FILM.TITLE).startsWith(titlePrefix);
+    }
+
 }
