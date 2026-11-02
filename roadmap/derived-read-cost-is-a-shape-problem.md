@@ -479,6 +479,8 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
   calls that consume it, or the generator, or none. Consuming an input-typed argument consumes every
   field inside it; consuming one input field leaves its siblings to the generator. None is the entry
   defect `ARGUMENT_WITHOUT_CONSUMER` at the argument's written position.
+  `ARGUMENT_WITHOUT_CONSUMER` is a code whose `graphitron_defect_type` row names its
+  `owner_gatherer`, written and swept through that owner's rule view.
 * **The generator emits from an argument only when no call consumes it** `blocked`, on "An argument's consumer is stated".
   `override:` is no longer read. What goes: the `enclosingOverride` cascade in `ClassifyContext`,
   `InputFieldResolver` and `FieldBuilder`, `suppressedByFieldOverride` on `ArgumentRef`,
