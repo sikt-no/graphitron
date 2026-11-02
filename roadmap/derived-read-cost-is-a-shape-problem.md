@@ -285,10 +285,10 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   Every output field, argument and input-field occurrence whose consumer takes a table has its
   needs in `graphitron_path_need`, and one no written, inherited or single inferred path meets is a
   defect at its anchor.
-  * **The path anchor is keyed by coordinate and target type** `blocked`, on "A nested field is a field of each parent, at a nested coordinate".
-    `graphitron_path_anchor` re-keys on (graph, coordinate, target type) and `graphitron_path_holder`
-    goes, its holders being the occurrences; two `@referenceFor` naming one type on one field are
-    `REFERENCE_FOR_DUPLICATE_TYPE` at the second.
+  * **The path anchor is keyed by coordinate and target type** `open`.
+    `graphitron_path_anchor` re-keys on (graph, declared element's coordinate, target type), and the
+    path family keys on `graphitron_occurrence` with `graphitron_path_holder` gone; two
+    `@referenceFor` naming one type on one field are `REFERENCE_FOR_DUPLICATE_TYPE` at the second.
   * **A field's path needs are stated per coordinate** `blocked`, on "The path anchor is keyed by coordinate and target type".
     Each output field's occurrence needs its landings from each starting table, and one with nothing
     written and no single foreign key is `PATH_NO_FOREIGN_KEY` or `PATH_SEVERAL_FOREIGN_KEYS`. A
@@ -1615,9 +1615,11 @@ nothing writes them yet.
 
 * `graphitron_path_anchor`: one place a path is written, by the name it is reached by. Keyed by
   (graph, coordinate, target type), both spelled from names, so no column is ever NULL. The
-  coordinate is the declaration's, a field declared on an interface spelled from each participant
-  as every coordinate is: `Customer.address` for a field's composed `@routine` and `@reference`,
-  `Query.people(storeId:)` for an argument, `StockFilter.languageId` for an input field. The target
+  coordinate is the declared element's, in `graphitron_element` with a foreign key there, not an
+  occurrence's: a path is written once, where it is declared. `Customer.address` for a field's
+  composed `@routine` and `@reference`, `Query.people(storeId:)` for an argument,
+  `StockFilter.languageId` for an input field, and `Media.title` for a path on a multi-table
+  interface's field, which reaches `Film.title` and `Book.title` as their `INHERITED` paths. The target
   type is the member a `@referenceFor` names, else the type the declaration names, a scalar or input
   type included: (`Store.people`, `Staff`) and (`Store.people`, `Customer`) are two anchors on one
   field. It carries its `anchor_kind` (`FIELD`, `REFERENCE_FOR`, `ARGUMENT`, `INPUT_FIELD`) and its
@@ -1627,8 +1629,7 @@ nothing writes them yet.
   its `as:` name, NULL until R1099 adds `as:` to the directive. Captured by the path family's writer
   beside `graphitron_ast_field_path_entry`, which it generalises: that one covers output field
   declarations only and stays until its readers move.
-* The holder is the occurrence "A nested field is a field of each parent, at a nested coordinate"
-  states: one place a field, argument or input field is reached, at its nested coordinate, `(x:)`
+* The holder is `graphitron_occurrence`: one place a field, argument or input field is reached, at its nested coordinate, `(x:)`
   naming an argument and a dot a nested field (`Customer.address`, `Emne.navn.en`,
   `Query.films(filter:).cast.firstName`). A path holder
   is just a coordinate, so `graphitron_path_holder`, declared before that node was drafted, goes,
