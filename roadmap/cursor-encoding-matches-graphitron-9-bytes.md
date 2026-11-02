@@ -1,7 +1,7 @@
 ---
 id: R1142
 title: "A newly issued cursor is byte-identical to the one Graphitron 9 issued for the same row"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 3
 theme: pagination
@@ -56,6 +56,8 @@ What the cursors sis actually holds look like, from its Graphitron 9 vs 10 diffe
 The read side also accepts every form this item writes. Checked 2026-11-02 against jOOQ 3.20.11's `DataType.convert`, which `ColumnValues.fromDatabase` calls: `"2003-08-15T00:00:00"` converts to a `LOCALDATE` and a `DATE`, and `"2003-08-15T13:14:15.000000Z"` and `"...+01:00"` convert to a `TIMESTAMPWITHTIMEZONE`. One gap predates this item and is not closed by it: an element with a time part read into a `java.sql.Date` column comes back at midnight, so a consumer whose `DATE` key maps to `java.sql.Date` and holds times cannot page by it today either (`ColumnValuesTest.DATE_WITH_TIME` pins the parse). Today's writer drops the time on encode as well; after this item the cursor carries it, as Graphitron 9's did, and the read side stays as it is. The implementer files a Backlog item for that read if none covers it; none did, and it is filed as R1143.
 
 ## Implementation
+
+Shipped at `9022a2c85`, with `a24e76b05` correcting the `decodeCursor` emission comment. The plan below is what landed, with two departures: `ColumnValues.Text` is emitted through JavaPoet's `recordBuilder` (the 0.22.0 fork has it, though an older comment in `ConnectionHelperClassGenerator` says otherwise), and in the manual's paragraph the `NULL` sentence reads "A cursor for a row with a `NULL` order column does not read back" and the following one "Two kinds of connection are an exception as well", so the paragraph does not name two different "one exception"s. The temporal coercions answer `null` on a jOOQ `DataTypeException` or `IllegalArgumentException` as well as on a `null` result, falling back to `toString()`, so the writer never throws.
 
 The element text moves into `ColumnValues`, beside the `fromDatabase` it inverts; `ConnectionHelper` keeps only the JSON framing. The decode path is untouched.
 
