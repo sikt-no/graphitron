@@ -143,6 +143,62 @@ each past a bound of four times the first plus 40 ms) and passed in the others; 
 millisecond-scale measurement is enough to fail it, and the bound has hundreds of relations to
 fail on, so it fails a verification build for a reason that is not in the code under test.
 
+### Where the preparation goes
+
+The same sequential build, with the system CPU sampled every two seconds and a recording in the
+forked test JVMs, gives the budget the item had not done. The build burned 7,192 CPU-seconds in
+2,372 s of wall clock on 4 cores (3.03 cores busy, 76%), so perfect scaling to 16 cores is 450 s, more
+than the 300 s target, which needs the work cut to about 4,800 CPU-seconds or less. `graphitron` is 49%
+of the CPU, the model 18%, `graphitron-lsp` 9% (at 92% of its cores), the example 10%, the plugin 7%.
+Twenty percent of the capacity was idle (1,940 core-seconds), mostly in the model, the plugin, the
+example and the two small modules, which is what a parallel reactor could fill, at best about a
+quarter of the wall clock here.
+
+Inside the test JVMs 84% of the execution samples sit under H2, and parsing and planning is about 60%
+of the `graphitron` JVM's samples (41 to 45% in the model's) against 8% (22%) for executing queries.
+Garbage collection is 7% and 5% of those JVMs' time in pauses, and the JVMs ran at 3.71 and 3.05 cores.
+
+To see which statements, a listener on the store's writer timed every statement's JDBC prepare, which
+in H2 is where parsing and the optimizer's plan search happen, over a full `graphitron` test phase
+(4,684 tests, thread CPU time so that waiting for a core does not count). It saw 1.2 million
+prepare calls over 23,112 distinct statement texts: 1,169 CPU-seconds preparing against 390 executing.
+Only six statements came through readers, so the tests' reads go through the writer too. The cost is a
+heavy tail. Statements that prepare at 100 ms or more each are 944 of the 23,112 and hold 57% of
+the preparation CPU, and 92% of it is derivation-stratum `merge into` and `insert into graphitron_*`
+statements. Six statement shapes hold 73% of all preparation CPU, 851 CPU-seconds, about 27% of the
+`graphitron` JVM's CPU and about 12% of the whole build's:
+
+[cols="4,1,1,1"]
+|===
+| Statement | ms per prepare | Prepares | CPU seconds
+
+| `merge into graphitron_entry_defect` | 113 | 2,820 | 318
+| `merge into graphitron_type_backing` | 235 | 940 | 221
+| `insert into graphitron_argument_reference_step_target_keyed` | 131 | 941 | 123
+| `merge into graphitron_argmapping_site` | 68 | 940 | 64
+| `merge into graphitron_field_path` | 58 | 1,088 | 63
+| `insert into graphitron_field_reference_step_hop_keyless` | 33 | 1,880 | 62
+|===
+
+What makes them expensive is not their own text. The entry-defect merge has one `SELECT` and no joins
+and reads two relations directly, but reaches 116 relations through 18 views, because H2 expands a
+view where it is used and plans the whole expansion; the type-backing merge reaches 29 through 3. Across
+one cold capture's 602 statements the prepare time correlates 0.72 with the relations a statement
+reaches through views and 0.07 with its own nested selects, the median cheap statement reaching one
+relation and the median heavy one 24. Each of the six executes in a few milliseconds to about fifty.
+
+Two further findings bear on the cache. Nineteen of a capture's statements carry that capture's own
+timestamp as an inlined literal, so their text is new every time, and a long-lived cache still takes
+a repeat capture's preparation from 1,231 ms to 50 ms, because H2 also keeps the planned view
+indexes per session in a cache sized by the same setting, and with the default of 8 that cache
+thrashes and every capture re-plans the whole view stack. And the test harness's reset between
+cases, which restores column selectivities with `ALTER TABLE ... SELECTIVITY`, empties the cache:
+borrowed cases took 3.15 s each, flat across six, where chained captures in one store fell from 3.3 s
+to 1.2 s. So a store that is cold, small-cached or reset pays about 1.2 to 1.4 s of preparation per
+capture, about a second of it from those six statements, and the level that would move the build is
+making them cheaper to plan, which is the derivation work, with keeping the cache warm and booting
+fewer cold stores second.
+
 ## Implementation
 
 Each step is measured before it starts and priced after it lands, and lands on its own; the
