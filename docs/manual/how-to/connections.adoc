@@ -56,9 +56,18 @@ The maximum covers connections only. A plain list field with a `first:` argument
 [#cursor-encoding]
 == Cursor encoding is part of the public contract
 
-A cursor names one row's position in the active order: the values of the order's columns for that row, written as a JSON array with one element per column in order, then encoded as URL-safe Base64 without padding. SQL `NULL` is `null`; every other value is a JSON string of the column's database value, so a column with a jOOQ converter contributes its database type's text, not the converted value's. Clients should still treat a cursor as opaque. The format is stated here because it is a compatibility promise, not an interface to build on.
+A cursor names one row's position in the active order: the values of the order's columns for that row, written as a JSON array with one element per column in order and no whitespace, then encoded as URL-safe Base64 without padding. Each element is the column's database value, so a column with a jOOQ converter contributes its database type's value, not the converted one. The column's SQL type decides how it is written:
 
-This is the format Graphitron 9 issued. A cursor a client stored under Graphitron 9 keeps working after the upgrade while the connection pages on the same columns: the order is unchanged and already identifies a row (Graphitron 9 wrote some values as bare JSON numbers; both forms are read). Two kinds of connection are the exception, and a client drops a cursor it stored from one and restarts from the first page:
+* SQL `NULL`: `null`.
+* A numeric column: a bare JSON number without trailing fractional zeros, `2.5` rather than `2.50`. A floating-point NaN or infinity, which JSON cannot hold, is written as a string.
+* A boolean column: `true` or `false`.
+* A date column: a date-time, `"2017-08-15T00:00:00"`, with the time of day when the column's Java type carries one.
+* A timestamp column: `"2017-08-15T13:45:10"`. A non-zero fraction of a second is written to six digits, or nine when the value needs them, `"2017-08-15T13:45:10.120000"`. With a time zone, the fraction is always written and the offset follows it, `Z` for UTC: `"2017-08-15T13:45:10.000000+01:00"`.
+* Any other column: a JSON string of its value.
+
+Clients should still treat a cursor as opaque. The format is stated here because it is a compatibility promise, not an interface to build on.
+
+Graphitron 9 issued the same bytes on Oracle, so a cursor pinned in a Graphitron 9 test keeps its value, and a cursor a client stored under Graphitron 9 keeps working while the connection pages on the same columns. Some Graphitron 9 cursors still read back but are not the bytes Graphitron 10 writes for the same row: those issued on PostgreSQL, which wrote a space after each comma, kept a number's trailing zeros and wrote a date without a time; and those of a nested connection holding a decimal number. A cursor for a row with a `NULL` order column does not read back: Graphitron 9 on Oracle left the element out, a cursor Graphitron 9 could not page from either, and Graphitron 10 rejects it and writes `null` in its place. Cursors earlier Graphitron 10 releases issued, which wrote every value as a string, are still read. Two kinds of connection are an exception as well, and a client drops a cursor it stored from one and restarts from the first page:
 
 * A connection whose order does not identify a row. Graphitron now appends the table's primary key to it (see xref:sort-results.adoc#stable-cursors-and-tie-breakers[How-to: Sort results]), so a Graphitron 9 cursor has too few values and is rejected.
 * A connection over a multi-table interface or union. Graphitron 9 wrapped its cursors in an object naming the type, which Graphitron 10 rejects.

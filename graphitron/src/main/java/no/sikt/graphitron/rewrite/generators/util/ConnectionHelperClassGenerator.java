@@ -22,12 +22,14 @@ import java.util.OptionalInt;
  * {@code edgeNode}, {@code edgeCursor}) plus a nested {@code Edge} class carrying a
  * {@code Record} and its cursor string.
  *
- * <p>Cursor encoding, the format Graphitron 9 issued: a JSON array with one element per order
- * column, SQL {@code NULL} as {@code null} and every other value as a JSON string of the column's
- * database value (the record's value passed back through the column's converter, an enum as its
- * literal), encoded as
- * URL-safe Base64 without padding. Decoding reads any JSON scalar, since Graphitron 9 wrote some
- * values as bare numbers, and binds each element through
+ * <p>Cursor encoding, the bytes Graphitron 9 issued on Oracle: a JSON array with one element per
+ * order column and no whitespace, SQL {@code NULL} as {@code null} and every other value as
+ * {@code ColumnValues.toText} of the column's database value (the record's value passed back
+ * through the column's converter, an enum as its literal), which writes it the way Oracle's
+ * {@code JSON_ARRAY} renders the column's SQL type: a number or boolean bare, a temporal value as
+ * an ISO date-time, anything else as a JSON string. Encoded as URL-safe Base64 without padding.
+ * Decoding reads any JSON scalar, so a cursor that wrote every value as a string still reads, and
+ * binds each element through
  * {@code ColumnValues.fromDatabase(column.getDataType(), element)}, which parses it as the column's
  * database type and runs the converter. Returns {@code Field<?>[]} so jOOQ's
  * {@code .seek(Field<?>...)} receives correctly-typed bind values. When no cursor is present
@@ -227,20 +229,28 @@ public class ConnectionHelperClassGenerator {
 
         // --- encodeCursor(Record, List<Field<?>>) ---
         // Column-driven: one JSON array element per order column, SQL NULL as null and every other
-        // value as a JSON string of the column's database value, so the column's DataType alone
-        // decides how decodeCursor reads it back (no type tag beside it). URL-safe Base64 without
-        // padding, the format Graphitron 9 issued.
+        // value as ColumnValues.toText of the column's database value, which the column's SQL
+        // DataType alone decides: Oracle's JSON_ARRAY rendering, the bytes Graphitron 9 issued
+        // there. The same DataType decides how decodeCursor reads it back, so no type tag rides
+        // beside it. URL-safe Base64 without padding.
+        var columnTextClass = columnValuesClass.nestedClass("Text");
         var encodeCursor = MethodSpec.methodBuilder("encodeCursor")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
             .addParameter(RECORD, "record")
             .addParameter(listOfField, "orderByColumns")
             .addStatement("$T json = new $T(\"[\")", StringBuilder.class, StringBuilder.class)
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
             .addCode("    if (i > 0) json.append(',');\n")
-            .addCode("    Object value = databaseValue(record, orderByColumns.get(i));\n")
-            .addCode("    if (value == null) json.append(\"null\");\n")
-            .addCode("    else writeJsonString(json, value.toString());\n")
+            .addCode("    $T column = orderByColumns.get(i);\n", fieldWildcard)
+            .addCode("    Object value = databaseValue(record, column);\n")
+            .addCode("    if (value == null) {\n")
+            .addCode("        json.append(\"null\");\n")
+            .addCode("        continue;\n")
+            .addCode("    }\n")
+            .addCode("    $T text = $T.toText(column.getDataType(), value);\n", columnTextClass, columnValuesClass)
+            .addCode("    if (text.literal()) json.append(text.text());\n")
+            .addCode("    else writeJsonString(json, text.text());\n")
             .addCode("}\n")
             .addStatement("json.append(']')")
             .addStatement("return $T.getUrlEncoder().withoutPadding().encodeToString("
@@ -269,8 +279,10 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // --- writeJsonString(StringBuilder, String) ---
-        // RFC 8259 string escaping: the quote, the backslash and every character below U+0020, so
-        // no text value can end an element early or read as anything but itself.
+        // Oracle's JSON_ARRAY string escaping, so a string element is byte-identical to Graphitron
+        // 9's: the quote and the backslash, the short escapes \b \f \n \r \t, every other character
+        // below U+0020 and U+007F as a four-digit escape in uppercase hex, everything else raw. No text value
+        // can end an element early or read as anything but itself.
         var writeJsonString = MethodSpec.methodBuilder("writeJsonString")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addParameter(StringBuilder.class, "json")
@@ -279,9 +291,12 @@ public class ConnectionHelperClassGenerator {
             .addCode("for (int i = 0; i < text.length(); i++) {\n")
             .addCode("    char c = text.charAt(i);\n")
             .addCode("    if (c == '\"' || c == '\\\\') json.append('\\\\').append(c);\n")
+            .addCode("    else if (c == '\\b') json.append(\"\\\\b\");\n")
+            .addCode("    else if (c == '\\f') json.append(\"\\\\f\");\n")
             .addCode("    else if (c == '\\n') json.append(\"\\\\n\");\n")
+            .addCode("    else if (c == '\\r') json.append(\"\\\\r\");\n")
             .addCode("    else if (c == '\\t') json.append(\"\\\\t\");\n")
-            .addCode("    else if (c < 0x20) json.append(String.format(\"\\\\u%04x\", (int) c));\n")
+            .addCode("    else if (c < 0x20 || c == 0x7f) json.append(String.format(\"\\\\u%04X\", (int) c));\n")
             .addCode("    else json.append(c);\n")
             .addCode("}\n")
             .addStatement("json.append('\"')")

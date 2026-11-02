@@ -65,6 +65,16 @@ import java.util.Objects;
  *
  * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
  * value of the column, so whether that is a skipped slot or a client error stays with the caller.
+ *
+ * <p>{@code toText(type, value)} is the inverse of {@code fromDatabase}: the text a connection
+ * cursor carries for a column's database value, in Oracle's {@code JSON_ARRAY} rendering, which is
+ * what Graphitron 9 issued there. The column's SQL type decides the form, and the value is first
+ * coerced to one canonical class for that type, so the form never depends on the value's Java
+ * class: a number bare with no trailing fractional zeros, a boolean bare, a date as a date-time
+ * with no fraction, a timestamp with its fraction only when non-zero, a timestamp with time zone
+ * with its fraction always and then its offset ({@code Z} at UTC), every fraction to six digits or
+ * nine. Anything else, and any value the coercion refuses (a floating-point NaN or infinity, which
+ * JSON cannot hold), is its {@code toString()} as a JSON string.
  */
 public class ColumnValuesClassGenerator {
 
@@ -78,6 +88,16 @@ public class ColumnValuesClassGenerator {
     private static final ClassName BIG_INTEGER         = ClassName.get(BigInteger.class);
     private static final ClassName ROUNDING_MODE       = ClassName.get(RoundingMode.class);
     private static final ClassName TRIP                = ClassName.get("", "Trip");
+    private static final ClassName TEXT                = ClassName.get("", "Text");
+    private static final ClassName SQL_DATA_TYPE       = ClassName.get("org.jooq.impl", "SQLDataType");
+    private static final ClassName DATE_TIME_FORMATTER = ClassName.get("java.time.format", "DateTimeFormatter");
+    private static final ClassName OFFSET_DATE_TIME    = ClassName.get("java.time", "OffsetDateTime");
+    private static final ClassName LOCAL_DATE_TIME     = ClassName.get("java.time", "LocalDateTime");
+    private static final ClassName INSTANT             = ClassName.get("java.time", "Instant");
+    private static final ClassName ZONE_OFFSET         = ClassName.get("java.time", "ZoneOffset");
+
+    /** The name of the formatter for a date-time to whole seconds, the part every temporal form shares. */
+    private static final String SECONDS = "SECONDS";
 
     public static List<TypeSpec> generate() {
         var t = TypeVariableName.get("T");
@@ -176,6 +196,70 @@ public class ColumnValuesClassGenerator {
             .addParameter(ParameterizedTypeName.get(CONVERTER, d, t), "converter")
             .addParameter(Object.class, "database")
             .addStatement("return converter.from(converter.fromType().cast(database))")
+            .build();
+
+        // Branches on the SQL type, not the value's class, and coerces through jOOQ inside each
+        // branch, so a value of any class the column admits lands on one form. Timestamp with time
+        // zone is tested before timestamp; an INSTANT column is placed at UTC itself, since jOOQ's
+        // Instant-to-OffsetDateTime coercion uses the JVM's zone.
+        var toText = MethodSpec.methodBuilder("toText")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(TEXT)
+            .addParameter(dataTypeWildcard, "type")
+            .addParameter(Object.class, "value")
+            .addJavadoc("The cursor text of {@code value}, a non-null database value of a column of {@code type},\n"
+                + "and whether it is a JSON literal written bare rather than a JSON string.\n")
+            .addStatement("$T sql = type.getSQLDataType() == null ? type : type.getSQLDataType()", dataTypeWildcard)
+            .beginControlFlow("if (sql.isBoolean())")
+            .addStatement("Boolean b = coerced(value, $T.BOOLEAN)", SQL_DATA_TYPE)
+            .addStatement("if (b != null) return new $T(b.toString(), true)", TEXT)
+            .nextControlFlow("else if (sql.isNumeric())")
+            .addStatement("$T n = coerced(value, $T.NUMERIC)", BIG_DECIMAL, SQL_DATA_TYPE)
+            .addStatement("if (n != null) return new $T(n.stripTrailingZeros().toPlainString(), true)", TEXT)
+            .nextControlFlow("else if (sql.isTimestampWithTimeZone())")
+            .addStatement("$T t", OFFSET_DATE_TIME)
+            .beginControlFlow("if (sql.getType() == $T.class)", INSTANT)
+            .addStatement("$T i = coerced(value, $T.INSTANT)", INSTANT, SQL_DATA_TYPE)
+            .addStatement("t = i == null ? null : i.atOffset($T.UTC)", ZONE_OFFSET)
+            .nextControlFlow("else")
+            .addStatement("t = coerced(value, $T.OFFSETDATETIME)", SQL_DATA_TYPE)
+            .endControlFlow()
+            .beginControlFlow("if (t != null)")
+            .addStatement("String offset = t.getOffset().getTotalSeconds() == 0 ? \"Z\" : t.getOffset().getId()")
+            .addStatement("return new $T($L.format(t) + fraction(t.getNano()) + offset, false)", TEXT, SECONDS)
+            .endControlFlow()
+            .nextControlFlow("else if (sql.isTimestamp())")
+            .addStatement("$T t = coerced(value, $T.LOCALDATETIME)", LOCAL_DATE_TIME, SQL_DATA_TYPE)
+            .addStatement("if (t != null) return new $T($L.format(t) + (t.getNano() == 0 ? \"\" : fraction(t.getNano())), false)",
+                TEXT, SECONDS)
+            .nextControlFlow("else if (sql.isDate())")
+            .addStatement("$T t = coerced(value, $T.LOCALDATETIME)", LOCAL_DATE_TIME, SQL_DATA_TYPE)
+            .addStatement("if (t != null) return new $T($L.format(t), false)", TEXT, SECONDS)
+            .endControlFlow()
+            .addStatement("return new $T(value.toString(), false)", TEXT)
+            .build();
+
+        // jOOQ's own coercion, the one the generated code binds with; null where it refuses the value.
+        var coerced = MethodSpec.methodBuilder("coerced")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addTypeVariable(t)
+            .returns(t)
+            .addParameter(Object.class, "value")
+            .addParameter(dataTypeOfT, "type")
+            .beginControlFlow("try")
+            .addStatement("return $T.val(value, type).getValue()", DSL)
+            .nextControlFlow("catch ($T | $T e)", IllegalArgumentException.class, DATA_TYPE_EXCEPTION)
+            .addStatement("return null")
+            .endControlFlow()
+            .build();
+
+        // A fraction of a second to six digits, or nine when the value needs them.
+        var fraction = MethodSpec.methodBuilder("fraction")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(int.class, "nanos")
+            .addStatement("return nanos % 1000 == 0 ? $T.format(\".%06d\", nanos / 1000) : $T.format(\".%09d\", nanos)",
+                String.class, String.class)
             .build();
 
         var trip = MethodSpec.methodBuilder("trip")
@@ -297,17 +381,33 @@ public class ColumnValuesClassGenerator {
         var suppressRemoval = AnnotationSpec.builder(SuppressWarnings.class)
             .addMember("value", "{$S, $S}", "deprecation", "removal")
             .build();
+        var textRecord = TypeSpec.recordBuilder("Text")
+            .addModifiers(Modifier.PUBLIC)
+            .addJavadoc("A database value's cursor text; {@code literal} when it is written bare, not as a JSON string.\n")
+            .recordConstructor(MethodSpec.constructorBuilder()
+                .addParameter(String.class, "text")
+                .addParameter(boolean.class, "literal")
+                .build())
+            .build();
+
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addAnnotation(suppressRemoval)
-            .addJavadoc("Whether a decoded value is a value of its column, and which one. Static,\n"
-                + "non-extendable; see {@code ColumnValuesClassGenerator} for the contract.\n")
+            .addJavadoc("Whether a decoded value is a value of its column, and which one, and the cursor text a\n"
+                + "database value is written as. Static, non-extendable; see {@code ColumnValuesClassGenerator}\n"
+                + "for the contract.\n")
+            .addField(FieldSpec.builder(DATE_TIME_FORMATTER, SECONDS, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.ofPattern($S)", DATE_TIME_FORMATTER, "uuuu-MM-dd'T'HH:mm:ss")
+                .build())
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addMethod(exact)
             .addMethod(coerce)
             .addMethod(folded)
             .addMethod(fromDatabase)
             .addMethod(fromDatabaseValue)
+            .addMethod(toText)
+            .addMethod(coerced)
+            .addMethod(fraction)
             .addMethod(trip)
             .addMethod(roundTrip)
             .addMethod(numericValue)
@@ -315,6 +415,7 @@ public class ColumnValuesClassGenerator {
             .addMethod(toBigDecimal)
             .addMethod(fitsPrecision)
             .addType(tripClass)
+            .addType(textRecord)
             .build();
         return List.of(spec);
     }

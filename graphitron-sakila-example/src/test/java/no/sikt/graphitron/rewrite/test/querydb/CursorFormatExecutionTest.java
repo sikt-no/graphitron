@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -24,10 +25,13 @@ import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The connection cursor's wire format: a JSON array with one element per order column, every
- * non-null value a JSON string of the column's database value, encoded as URL-safe Base64 without
- * padding. That is the format Graphitron 9 issued, so a cursor a client stored under Graphitron 9
- * keeps its place after the upgrade on a connection whose order already identifies a row.
+ * The connection cursor's wire format: a JSON array with one element per order column and no
+ * whitespace, each element the column's database value written as Oracle's {@code JSON_ARRAY}
+ * renders its SQL type (a number bare, a date as a date-time, a string quoted), encoded as URL-safe
+ * Base64 without padding. Those are the bytes Graphitron 9 issued on Oracle, and the cursors it
+ * issued elsewhere read back too, so a cursor a client stored under Graphitron 9 keeps its place
+ * after the upgrade on a connection whose order already identifies a row. {@code CursorEncodingTest}
+ * pins the element form per column type; this class pins it on the emitted connections.
  *
  * <p>A Graphitron 9 cursor is built here the way Graphitron 9 built it, in SQL: {@code jsonArray}
  * over the order columns for one seeded row, in the database's own JSON rendering (bare numbers, a
@@ -92,7 +96,7 @@ class CursorFormatExecutionTest {
             + "{ nodes { title } pageInfo { endCursor } } }");
         assertThat(column(data, "filmsConnection", "title")).containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
         var pageInfo = (Map<String, Object>) ((Map<String, Object>) data.get("filmsConnection")).get("pageInfo");
-        assertThat(pageInfo).as("the encoding of [\"4\"]").containsEntry("endCursor", "WyI0Il0");
+        assertThat(pageInfo).as("the encoding of [4]").containsEntry("endCursor", "WzRd");
     }
 
     @Test
@@ -161,7 +165,7 @@ class CursorFormatExecutionTest {
         String endCursor = (String) ((Map<String, Object>) ((Map<String, Object>)
             page1.get("converterIdChangesConnection")).get("pageInfo")).get("endCursor");
         assertThat(decode(endCursor)).as("the database value, an OffsetDateTime at UTC")
-            .isEqualTo("[\"1\",\"2007-08-22T00:00Z\"]");
+            .isEqualTo("[1,\"2007-08-22T00:00:00.000000Z\"]");
         var page2 = execute("{ converterIdChangesConnection(first: 1, after: \"" + endCursor + "\") { nodes { newValue } } }");
         assertThat(column(page2, "converterIdChangesConnection", "newValue")).containsExactly("small hours");
     }
@@ -198,7 +202,7 @@ class CursorFormatExecutionTest {
         var edges = (List<Map<String, Object>>) ((Map<String, Object>) data.get("filmsOrderedConnection")).get("edges");
         String nc17 = edges.stream().filter(e -> ((Map<String, Object>) e.get("node")).get("filmId").equals(3))
             .map(e -> (String) e.get("cursor")).findFirst().orElseThrow();
-        assertThat(decode(nc17)).isEqualTo("[\"NC-17\",\"3\"]");
+        assertThat(decode(nc17)).isEqualTo("[\"NC-17\",3]");
         assertThat(seededBefore(nc17)).containsExactly(2, 4, 1, 5);
     }
 
@@ -219,13 +223,55 @@ class CursorFormatExecutionTest {
     // ===== The emitted format =====
 
     @Test
-    void endCursor_isAUrlSafeUnpaddedJsonArrayOfStrings() {
+    void endCursor_isAUrlSafeUnpaddedCompactJsonArray() {
         var data = execute("{ filmsOrderedConnection(order: [{field: TITLE}, {field: FILM_ID}], first: 1) "
             + "{ pageInfo { endCursor } } }");
         String endCursor = (String) ((Map<String, Object>) ((Map<String, Object>)
             data.get("filmsOrderedConnection")).get("pageInfo")).get("endCursor");
         assertThat(endCursor).doesNotContain("=", "+", "/");
-        assertThat(decode(endCursor)).isEqualTo("[\"ACADEMY DINOSAUR\",\"1\"]");
+        assertThat(decode(endCursor)).isEqualTo("[\"ACADEMY DINOSAUR\",1]");
+    }
+
+    @Test
+    void dateAndNullElements_areWrittenInOraclesForm_andPageOn() {
+        // validity_period pages on (valid_to, period_id) two rows at a time: 3 6 | 1 4 | 8 2 | 5 7,
+        // valid_to a date that is NULL for periods 2, 5 and 7.
+        var cursors = new ArrayList<String>();
+        var ids = new ArrayList<Object>();
+        String after = null;
+        do {
+            var data = execute("{ validityPeriodsByValidTo" + (after == null ? "" : "(after: \"" + after + "\")")
+                + " { nodes { periodId } pageInfo { endCursor hasNextPage } } }");
+            ids.addAll(column(data, "validityPeriodsByValidTo", "periodId"));
+            var pageInfo = (Map<String, Object>) ((Map<String, Object>) data.get("validityPeriodsByValidTo")).get("pageInfo");
+            after = (Boolean) pageInfo.get("hasNextPage") ? (String) pageInfo.get("endCursor") : null;
+            if (after != null) cursors.add(after);
+        } while (after != null);
+        assertThat(ids).containsExactly(3, 6, 1, 4, 8, 2, 5, 7);
+        assertThat(cursors).extracting(CursorFormatExecutionTest::decode).containsExactly(
+            "[\"2026-01-01T00:00:00\",6]", "[\"2026-03-01T00:00:00\",4]", "[null,2]");
+    }
+
+    @Test
+    void pathSortKey_overANumericColumn_isWrittenBare() {
+        // filmsByOriginalLanguageId pages on the related language.language_id, carried under a
+        // reserved alias around the sort-key expression; the alias keeps the column's numeric
+        // type. Film 5 is the one film in language 1.
+        var data = execute("{ filmsByOriginalLanguageId(first: 1) { nodes { filmId } pageInfo { endCursor } } }");
+        assertThat(column(data, "filmsByOriginalLanguageId", "filmId")).containsExactly(5);
+        String endCursor = (String) ((Map<String, Object>) ((Map<String, Object>)
+            data.get("filmsByOriginalLanguageId")).get("pageInfo")).get("endCursor");
+        assertThat(decode(endCursor)).isEqualTo("[1,5]");
+    }
+
+    @Test
+    void allStringCursor_earlierReleasesIssued_pagesLikeTheBareOne() {
+        // Earlier Graphitron 10 releases wrote every value as a string, ["4"] where it now writes [4].
+        String query = "{ filmsConnection(first: 1, after: \"%s\") { nodes { title } } }";
+        assertThat(decode("WyI0Il0")).isEqualTo("[\"4\"]");
+        assertThat(column(execute(query.formatted("WyI0Il0")), "filmsConnection", "title"))
+            .isEqualTo(column(execute(query.formatted("WzRd")), "filmsConnection", "title"))
+            .containsExactly("AGENT TRUMAN");
     }
 
     @Test

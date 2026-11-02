@@ -173,8 +173,9 @@ metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
 
 - *Encode a seek value*: the column's database value, the record's value passed through the
   column's `Converter.to` (jOOQ's identity converter when it has none; an `EnumType` as its
-  literal), written as a JSON string. Never the user value's text: a converter's user type need
-  not share its text with the database type.
+  literal), written by `ColumnValues.toText` from the column's SQL `DataType`: numeric bare,
+  boolean bare, temporal in Oracle's `JSON_ARRAY` form, everything else a JSON string. Never the
+  user value's text: a converter's user type need not share its text with the database type.
 - *Decode a seek value*: `ColumnValues.fromDatabase(field.getDataType(), element)`, which parses
   the element as the database type (`getSQLDataType().convert`) and runs `Converter.from`. Not the
   converted `field.getDataType().convert(element)`: it answers `null` for text the user type does
