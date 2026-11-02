@@ -293,7 +293,8 @@ this branch rather than modelling inputs again. Taken up on 2026-10-31.
   an interface with its own `@table` taken as one table, a member a `@referenceFor` names on a
   single-table interface a need of its own. A need no path meets is `NO_ROUTE_TO_TARGET` or
   `ROUTE_AMBIGUOUS` at the field that lacks it, and `@reference` on a target with no table of its
-  own is `REFERENCE_WITHOUT_TARGET_TABLE`.
+  own is `REFERENCE_WITHOUT_TARGET_TABLE`. A `@nodeId` holder whose need lands on a `TABLE`
+  rather than its node type is a defect too, its code named here.
 * **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
   The one foreign key between two tables is a path of origin `INFERRED`, and a path written on an
   interface's field is a row per implementation of origin `INHERITED`, resolved from the
@@ -1334,38 +1335,53 @@ none is named. The base facts are already captured: `graphql_type`, `graphql_imp
 `graphitron_ast_reference_*` entries and the `graphitron_path_element_*` resolutions. What is missing
 is the paths themselves, keyed for members and occurrences, with inference and inheritance derived.
 
-**The relations, with their grains.**
+**The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
+nothing writes them yet.
 
+* `graphitron_path_anchor`: one place a path is written, by the name it is reached by. Keyed by
+  (graph, anchor), the anchor spelled from names: `Customer.address` for a field's composed
+  `@routine` and `@reference`, `Store.people[Staff]` for a `@referenceFor` application naming
+  `Staff`, `Query.people(storeId:)` for an argument, `StockFilter.languageId` for an input field.
+  It carries its `anchor_kind` (`FIELD`, `REFERENCE_FOR`, `ARGUMENT`, `INPUT_FIELD`) and its own
+  written position, within its file.
 * `graphitron_ast_path_entry`, capture: one element of one written path, at its place. Keyed by the
-  written anchor's position and the place; the anchor is a field declaration, its `@routine` and
-  `@reference` composed in order, a `@referenceFor` application, an argument or an input field. It
-  carries the element's `as:` name, where one is written. It generalises
-  `graphitron_ast_field_path_entry`, which covers output field declarations only.
-* `graphitron_path_holder`, anchoring: one place a path is needed from. One row per output field, per
-  argument of one, and per input-field occurrence under one, the occurrence being the output field,
-  the argument and the chain of input fields down to an input field carrying a path, so only chains
-  ending at one are enumerated. Keyed by the holder's coordinate spelled as the editor shows it:
-  `Customer.address`, `Query.people(storeId:)`, `Query.films(filter:).cast.firstName`.
-* `graphitron_path_need`, anchoring: one path a holder must have. One row per holder, starting table
-  and landing type: the source end expanded (each implementation of a multi-table interface from its
-  own table), the target end expanded (each table-bound member; the type itself where it has a table;
-  a member a `@referenceFor` names on a single-table interface). The landing type is part of the key,
-  so `MediaItem` and `ShortItem` landing on `film` are two needs.
-* `graphitron_path`, anchoring: one path a holder has. The need's key plus the target table, with its
-  origin (`WRITTEN`, `INHERITED`, `INFERRED`), the written anchor it follows by name (none where
-  inferred: the coordinate it was written on, `Person.homeAddress`, and the member a `@referenceFor`
-  names), the implementing type that inherited it, and for an argument or input field the step of its
-  field's path it starts from, by name. An inherited path is a row per implementation, so no reader
-  joins through implementations.
-* `graphitron_path_step`: one step a path takes, per path and place, with its from and to table, the
-  element it resolved as the written anchor by name and the element's place in its list (none where
-  inferred), and the element's `as:` name. The element's resolution in `graphitron_path_element_*`,
-  keyed by its position in its own file, is reached through the written element at that place.
+  written anchor's position and the place, both within one file, with the element's position and
+  its `as:` name, NULL until R1099 adds `as:` to the directive. Captured by the path family's writer
+  beside `graphitron_ast_field_path_entry`, which it generalises: that one covers output field
+  declarations only and stays until its readers move.
+* `graphitron_path_holder`, anchoring: one field, argument or input-field occurrence whose paths the
+  store states. Keyed by the nested coordinate "A nested field is a field of each parent, at a nested coordinate" states:
+  a dot before each parent field and `(arg:)` for an argument, so `Customer.address`, `Emne.navn.en`
+  and `Query.films(filter:).cast.firstName`. A field of a type with no table of its own is held once
+  per parent chain, so the holder is not one-to-one with `graphitron_field`; it names the field its
+  coordinate ends at, a field inherited from an interface at the implementation's field. Nothing
+  defines that coordinate as a relation yet. When that node lands, whether its coordinate relation
+  becomes the holder's parent or the holder is that relation is a question for Alf.
+* `graphitron_path_need`, anchoring: one starting table and landing a holder must reach. Keyed by
+  holder, starting table, `landing_kind` (`TYPE` or `TABLE`) and `landing`, the type's name or the
+  schema-qualified table name, with the type or the table beside it by reference. Typed fields,
+  `@referenceFor` members and `@nodeId` paths land on a `TYPE`; a scalar path lands on a `TABLE`,
+  which may be one no type exposes. A single-table interface target gives a need per member
+  (`FilmItem`, `ShortItem`), never one for the interface. An argument's or input field's need names
+  the field holder it continues from and the `as:` step it starts at, none for the landing.
+* `graphitron_path`, anchoring: how one need is met. Keyed by the need's key, so one-to-one with it,
+  with the target table, its origin (`WRITTEN`, `INHERITED`, `INFERRED`) and the anchor it follows by
+  name, set exactly where it is not inferred. An inherited path is a row per implementation, its
+  anchor possibly in another file, so no reader joins through implementations. A need with no path
+  is the defect.
+* `graphitron_path_step`: one step a path takes, per need and position, with its from and to table,
+  the place of the element it resolved in its path's anchor's written list (none where inferred, and
+  none for the step a `@routine` takes to its `@table`), and the element's `as:` name. Steps hang
+  off the need rather than the path: a met need has its path row and its steps, a stopped need its
+  steps and its stop row.
 * One row per step and joined column pair, foreign key, condition overload, routine and routine
   parameter: `graphitron_path_step_column`, `_key`, `_method`, `_routine`, `_parameter`. The method is
-  the one overload whose two table parameters take the step's from and to table.
-* `graphitron_path_stop`: one path that stopped short, with the place and what it met there. Landing
-  stays a view over steps and stops.
+  the one overload whose two table parameters take the step's from and to table. A step riding a
+  primary key gets no child of its own: `graphitron_field_path_primary_key` dissolves later and has
+  no successor.
+* `graphitron_path_stop`: one need whose path stopped short, keyed by the need, with the position
+  of the first step not taken, the element's place and the moves it met there. Landing stays a view
+  over steps and stops.
 
 **Defects**, as `graphitron_entry_defect` rows at the written position: a need with no path, no route
 or an ambiguous one (`ROUTE_AMBIGUOUS`, `NO_ROUTE_TO_TARGET`); no overload for a step's pair
