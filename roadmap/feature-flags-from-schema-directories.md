@@ -120,11 +120,14 @@ applications could not have survived into v10's output. Supplying one would coll
 declaration. This is the opposite of `@nodeType`, whose definition `EmittedRegistry` supplies and
 refuses from an author: every `@nodeType` application is one graphitron mints, so graphitron owns
 that directive, while `@feature` has authored applications and a meaning in the consumer's own
-tooling. A configured feature the schema's `@feature` definition cannot take fails the build:
-no definition at all, no `flags` argument accepting a list of strings, or no location for the
-kind of element the feature lands on. The check is per landing, so a definition without
+tooling. A configured feature the schema's `@feature` definition cannot take is not applied, and
+it fails the build: no definition at all, a `flags` argument missing or not a list of strings,
+another required argument the configured application would not supply, or no location for the
+kind of element the feature lands on. Those are exactly the checks graphql-java makes on an
+applied directive, so what is applied always assembles and what would not is reported instead.
+The check is per landing (one element a configured feature reaches), so a definition without
 `ENUM_VALUE` fails only where a configured feature actually reaches an enum value. The message
-names the element and the entry and gives the definition to paste:
+names the element and the flag and gives the definition to paste:
 
 ```graphql
 directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
@@ -133,7 +136,9 @@ directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION 
 **Where the application lives.** The configured tag's path, followed exactly. The capture records
 each file's feature beside its tag, a rule view derives one row per element that gets a feature, and
 the emitted-population views that already union in the configured `@tag` union in the configured
-`@feature` too. `EmittedRegistry.directives(store)` already places every `CONFIGURED` application on
+`@feature` too. The one addition is the split in front of the rule: every landing is either applied
+or refused with a reason, never both and never neither, so the emitted schema and the defects
+cannot drift apart. `EmittedRegistry.directives(store)` already places every `CONFIGURED` application on
 its declaring AST site whatever its name, so from there the generated `GraphitronSchema.build`
 (through `AppliedDirectiveEmitter.emitApplications`), the printed `schema.graphqls` (through
 `SchemaSdlEmitter`) and the runtime `_service { sdl }` (federation's printer over the built schema)
@@ -157,12 +162,25 @@ Store (`graphitron-model.sql`):
 
 - `store_graph_schema_input.feature` and `store_graph_source_input.feature`, nullable `VARCHAR`,
   commented like `tag`. `GraphQLSourceCapture.writeInputs` writes the latter.
-- `graphitron_configured_feature_rule`, a view shaped like `graphitron_configured_tag_rule` without
-  the union arm and without the ordinal arithmetic: three `UNION ALL` arms over `graphql_field`,
-  `graphql_argument` and `graphql_enum_value`, joined to `store_graph_source_input` on
-  `source_name` where `feature IS NOT NULL`, with `NOT EXISTS` an authored `feature` application at
-  the coordinate, joined to `graphitron_element`. It projects the element's kind (field, input
-  field, argument, enum value), which the definition check needs to pick the location.
+- `graphitron_configured_feature_landing`, a view of every place a configured feature would land,
+  shaped like `graphitron_configured_tag_rule` without the union arm and without the ordinal
+  arithmetic: three `UNION ALL` arms over `graphql_field`, `graphql_argument` and
+  `graphql_enum_value`, joined to `store_graph_source_input` on `source_name` where
+  `feature IS NOT NULL`, with `NOT EXISTS` an authored `feature` application at the coordinate,
+  joined to `graphitron_element`. It projects `(graph_name, coordinate, flag, location,
+  source_name, source_line, source_column, refusal)`. `location` is the directive location the
+  element needs, spelled as `graphql_directive_location` spells it: `FIELD_DEFINITION` or
+  `INPUT_FIELD_DEFINITION` by the declaring type's `graphql_type.kind`, `ARGUMENT_DEFINITION`,
+  `ENUM_VALUE`. The
+  position is the element's declaring site, the `source_line` and `source_column` its relation
+  already carries, which `graphql_ast_element_entry` holds as a declaration. `refusal` is NULL
+  where the graph's `@feature` definition takes the landing, and otherwise the first that applies of
+  `UNDEFINED` (no row in `graphql_directive` for `feature`), `ARGUMENTS` (no `flags` row in
+  `graphql_directive_argument` with `named_type` `String` and `list_depth` 1, or another argument
+  with `non_null` and no `default_value_sdl`), and `LOCATION` (no `graphql_directive_location` row
+  for `location`).
+- `graphitron_configured_feature_rule`: the landing view's rows with `refusal IS NULL`, projected to
+  the table's columns, so the rule and the table agree in shape for `StageAnswerAgreementTest`.
 - `graphitron_configured_feature`, the anchored table: `(graph_name, coordinate, flag, touched_at)`,
   primary key `(graph_name, coordinate)`, foreign key to `store_graph`. It stores the flag itself,
   not a rendered `["<flag>"]`, so a reader (an LSP hover, say) gets the flag without parsing SDL. No
@@ -176,21 +194,38 @@ Store (`graphitron-model.sql`):
   'flags', '["' || flag || '"]')`. The literal ordinal and the rendering live in the views, not
   the table. The views' comments stop saying the set is tags alone.
 
-The definition check is a detection view over captured rows: one row per `graphitron_configured_feature`
-row whose landing the graph's `@feature` definition cannot take, anti-joined against
-`graphql_directive_location` for the element's kind and against `graphql_directive_argument` for
-`flags`, with the reason as a typed column. Because it reads exactly the rows the emitter applies,
-the check and the emission cannot drift. It surfaces as an error arm of the `diagnostic` view, so
-the build, the editor and the MCP `diagnostics` tool report it alike, and the message, the paste
-line included, is minted in Java from a typed rejection with a stable LSP code rather than built in
-SQL. Two homes are rejected. It is not a `REWRITE`-stage refusal: that stage records what the
-loading rewrites hit while running, and the configured directives are deliberately not among the
-rewrites (`LoadingRewrites`). And it is not a throw in `EmittedRegistry` reading the live registry,
-the way `refuseAuthoredNodeType` does, since the store already holds every fact the check needs.
-The implementer confirms the build fails on this error before `EmittedRegistry.derive` or the
-generated `GraphitronSchema.build` would hit graphql-java's raw unknown-directive error. (The
-`intent_` family's claim-conflict arms show how an error arm of `diagnostic` is wired; per
-`CLAUDE.md` they are not precedent for the relation's shape.)
+The definition check is a stored defect, added the way
+`docs/architecture/explanation/defects-as-facts.adoc` § Adding a defect says, with `@outbox`'s
+configuration faults (`OUTBOX_NO_TARGET`, read by `OutboxDefects`) as the worked precedent: a
+configuration has no SDL position, so the fault is reported at each element it affects.
+
+- `graphitron_defect_type` gains three codes, one per refusal: `FEATURE_UNDEFINED`,
+  `FEATURE_ARGUMENTS` and `FEATURE_LOCATION`, each `error`, basis `GRAPHITRON`, owner `graphitron`,
+  with `lsp_code` `GRAPHITRON_` plus the code. Each statement says what the definition lacks and
+  ends with the definition to paste, so the paste line is the vocabulary's and every reader quotes
+  the same one.
+- `graphitron_entry_defect_rule` gains an arm reading `graphitron_configured_feature_landing` where
+  `refusal IS NOT NULL`: one row per refused landing at the element's declaring site, the code
+  picked by the refusal, the detail naming the flag and, for `FEATURE_LOCATION`, the missing
+  location. `EntryDefects.derive` writes it in the graphitron gatherer's anchor phase
+  (`GraphitronAssemblyCapture.resolve`), which runs after `EmittedAnchor`, and the existing sweep
+  removes a refusal the next reading no longer finds. `graphitron_entry_defect_site` resolves the
+  position to the element's coordinate, a declaration being its own element, so the editor and the
+  MCP `diagnostics` tool show it through `diagnostic`'s entry arm with no change there.
+- `ConfiguredFeatureDefects`, a new `StoreDetections` component on `OutboxDefects`' shape:
+  `READS` `graphitron_entry_defect`, `graphitron_defect_type` and `graphql_ast_element_entry` (for
+  the coordinate, keeping the read on tables), selects the `FEATURE\_%` codes, and mints each as a
+  `ValidationError` at the element, the statement with the detail. This is what fails the build. A
+  schema with no definition at all refuses every landing, which for sis is thousands, so the
+  reader collapses rows sharing a code and a flag into one error at the first landing in
+  position order, ending "and N more elements in M files". The store keeps one row per landing,
+  which is what the editor underlines.
+
+Refused landings are not applied, which settles the order of the run. The post-synthesis registry
+carries only applications the definition takes, so `EmittedRegistry.derive` assembles,
+`GraphQLRewriteGenerator.runPipeline`'s `emittedSchema()` returns, and `StoreDetections.over`, read
+just after it, fails the build with the defect's message. Nothing in `runPipeline` moves. The
+editor and the dev loop keep an assembled schema while the defect is shown.
 
 Docs:
 
@@ -240,14 +275,21 @@ Migration paragraph:
   feature entry and one not, through `GraphitronStore.captured(ctx)`. Only the first file's
   elements are flagged, and a field the unflagged file adds by `extend type` to a type the flagged
   file declares is not.
-- The definition check, in a model-tier test beside `ConfiguredFeatureTest`: one case each for no
-  definition, a definition without `flags`, and one without `ENUM_VALUE`. The last fails when a
-  configured feature lands on an enum value and passes when the flagged file declares none. Each
-  error is read off the `diagnostic` view with its LSP code, and a build over the first case fails
-  with the paste line rather than graphql-java's unknown-directive message.
-- The registration gates the new relations come under, the ones `graphitron_configured_tag` already
-  passes: `RelationRegistrationGateTest`, `StageAnswerAgreementTest` (the rule and table pair),
-  `MetaDeclarationGateTest` and `SupertypeSignatureGateTest`.
+- The definition check, pinned in a fact document per defects-as-facts: one case per refusal (no
+  definition; `flags` missing; `flags: String`; an extra `owner: String!`; no `ENUM_VALUE`), each
+  drawing its `FEATURE_*` row at the element's position, read off `diagnostic` with its LSP code,
+  and no `graphitron_configured_feature` row for that landing. Beside them the near misses that draw
+  nothing: the definition without `ENUM_VALUE` over a flagged file that declares no enum value
+  (its field still flagged), and an extra argument that is nullable or has a default.
+- The run order, in the graphitron tier through `GraphitronStore.captured(ctx)`: over the
+  no-definition case the post-synthesis assembly is `SchemaAssembly.Assembled`, and the build fails
+  with `ValidationFailedException` carrying the paste line, one collapsed error per flag, not
+  `emittedSchema()`'s `IllegalStateException`.
+- The registration gates the new relations come under, the ones `graphitron_configured_tag` and the
+  `OUTBOX_*` codes already pass: `RelationRegistrationGateTest`, `StageAnswerAgreementTest` (the
+  rule and table pair), `MetaDeclarationGateTest`, `SupertypeSignatureGateTest`,
+  `DefectOwnerGateTest` (the three codes owned by `graphitron` and written by its rule view) and
+  `DetectionReadReachGateTest` (the new component's `READS`).
 - Recipe round trip: `SchemaRecipeExpansionTest` and the mojo's `SchemaInputExpansionRenderingTest`
   or `GenerateMojoTest` carry `<feature>` from POM binding to `SchemaInput`, and the stored recipe
   replays it.
@@ -275,6 +317,18 @@ Migration paragraph:
 - **Graphitron supplies the `@feature` definition**, as v9 did. Rejected: it would collide with
   the declaration consumers applying `@feature` by hand already have, and Graphitron's own
   directive file is unpublished by design. A failing build that prints the line costs one paste.
+- **Apply every landing and report the bad ones**, reading `StoreDetections` before
+  `emittedSchema()` in `runPipeline` so the defect wins the race. Rejected: the post-synthesis
+  registry would still fail to assemble, which the editor, the dev loop and the generated
+  `GraphitronSchema.build` all consume, and the reorder only moves which error a build shows first.
+  Withholding a refused landing keeps every product assembling and costs nothing, since the build
+  fails on the defect anyway.
+- **Check the definition somewhere other than the defect vocabulary.** A `REWRITE`-stage refusal
+  records what the loading rewrites hit while running, and the configured directives are
+  deliberately not among the rewrites (`LoadingRewrites`). A throw in `EmittedRegistry`, the way
+  `refuseAuthoredNodeType` reads the live registry, would reach the build alone, never the editor,
+  when the store already holds every fact the check needs. A detection view with its own arm of
+  `diagnostic` would never reach the build, which reads `StoreDetections` rather than `diagnostic`.
 - **One `graphitron_configured_directive` relation keyed by directive name**, replacing the tag
   table. Rejected: the two rows have different key shapes. A tag is repeatable, keyed with an
   ordinal, and a union takes one per declaration site; a feature is not repeatable and is keyed on
@@ -313,6 +367,12 @@ reason or one code with a typed detail, a position each landing hangs on, the ow
 `StoreDetections` reader), or name that path in "Other solutions" and say why it does not fit. In
 the second case, also say how the chosen arm reaches the build.
 
+> Author: moved onto the defect path. Three `FEATURE_*` codes in `graphitron_defect_type`, an arm
+> of `graphitron_entry_defect_rule` at each refused landing's declaring site (the `OUTBOX_NO_TARGET`
+> precedent for a configuration fault), and a `ConfiguredFeatureDefects` component in
+> `StoreDetections` that fails the build. The detection view and the new `diagnostic` arm are gone,
+> and "Other solutions" says why a separate arm would not reach the build.
+
 **2. Wherever the check lives, the run fails before it is read (viability).** The rows the check
 flags are, by design, rows the emitter applies. So whenever the check fires, the post-synthesis
 registry carries an application that graphql-java refuses: an undeclared directive, an illegal
@@ -331,6 +391,14 @@ plan states the order, and a test pins that a build over a schema with no `@feat
 fails with the paste-line message rather than the graphitron-defect message. The Tests section
 already asks for that assertion. It needs a design that can pass it.
 
+> Author: refused landings are withheld. `graphitron_configured_feature_landing` splits every
+> landing into applied (`refusal IS NULL`, which feeds the rule and the emitted relation) or
+> refused (which feeds the defect arm). The refusals are exactly graphql-java's applied-directive
+> checks, the extra-required-argument case included, so the post-synthesis registry always
+> assembles and `runPipeline` reaches `StoreDetections.over` unchanged. The Tests section pins
+> `Assembled` plus the defect's `ValidationFailedException` over the no-definition case. The
+> reorder alternative is under "Other solutions".
+
 **3. The rule view and the table disagree on a column (question 2, minor).**
 `graphitron_configured_feature_rule` "projects the element's kind, which the definition check needs".
 `graphitron_configured_feature` is `(graph_name, coordinate, flag, touched_at)`, and the check is
@@ -339,6 +407,10 @@ section enrolls the pair in, compares table and rule with `EXCEPT` in both direc
 columns have to agree. The check also cannot read a kind the table does not hold. Say whether the
 table stores the kind, or whether the check gets it again from the coordinate's type and the rule
 drops it.
+
+> Author: the kind (now `location`, spelled as `graphql_directive_location` spells it) lives on the
+> landing view. Both the rule and the defect arm read that view. The rule projects
+> `(graph_name, coordinate, flag)`, which matches the table, so the stage pair compares cleanly.
 
 Not blocking: every other symbol, test and relation the spec names exists as named. That includes
 `EmittedRegistry.directives` placing any `CONFIGURED` row on its declaring site, extension sites
