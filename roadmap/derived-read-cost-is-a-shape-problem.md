@@ -1320,8 +1320,8 @@ extend schema @expectEquals(relation: "graphitron_path", rows: """
   Customer,  store,             -,        customer,    store,        INFERRED
   Language,  media,             -,        language,    film,         WRITTEN
   Language,  media,             ShortItem, language,   film,         WRITTEN
-  Query,     people.storeId,    Customer, customer,    store,        INFERRED
-  Query,     people.storeId,    Staff,    staff,       store,        WRITTEN
+  Query,     people(storeId:),  Customer, customer,    store,        INFERRED
+  Query,     people(storeId:),  Staff,    staff,       store,        WRITTEN
   Staff,     address,           -,        staff,       address,      INFERRED
   Staff,     customerAddress,   -,        staff,       address,      INHERITED
   Staff,     homeAddress,       -,        staff,       address,      INHERITED
@@ -1354,6 +1354,125 @@ What the document pins beyond the rows:
 * `peopleByCondition` reuses one method across members; `storePerson(Store, Customer)` and
   `storePerson(Store, Staff)` are each taken by one pair. Written as one `@reference`, the same field
   would draw `REFERENCE_WITHOUT_TARGET_TABLE`, as `peopleByKey` does.
+
+## Nested coordinates (draft)
+
+**What we are after.** A field means one thing wherever the store holds it. Today a field is keyed
+by `(type_name, field_name)`, once per declaration, but a field of a type with no table of its own
+(a *nested type*, reached under a field of another type) and a field of an input type mean
+something different under each parent: which table they read, where their path starts, what their
+parent holds. The store tells parents apart by a table column added to the key instead
+(`from_*`, `start_*`, `table_*`, `resolving_*`, `origin_*`). So a field reached from two parents on
+one table is one row, a field reached from two tables is two rows nobody can name, and every reader
+that wants "the table" has to choose. The goal is to state such a field once per parent chain, at a
+*nested coordinate*, so every parent-dependent fact has one row per coordinate and readers read it
+without choosing.
+
+**The coordinate.** The field's place in the schema, spelled `TypeName.nestingField.nestedField`
+from the nearest field whose parent is not nested, its nested steps dotted as argMapping already
+spells a path (`filter.actorRef.actor_id`). An argument keeps the specification's `(argument:)`, so
+`Type.field(x:)` names the argument and `Type.field.x` a field. `Emne.navn.en` is `en` on the nested
+type `EmnenavnAlleSprak` under `Emne.navn`, and `Query.films(filter:).cast.firstName` an input field
+under the argument `filter`. A field declared on an interface or reached through a union is spelled from the
+participant, never the interface: `Film.title` and `Book.title`, not `Media.title`, so each
+coordinate departs from the participant's one table. A field whose parent is table-bound or a root
+has exactly one coordinate, its own `Type.field`, so the population is uniform: every field has at
+least one.
+
+**What the stores hold.** Measured on sakila, sis and the three FS-plattform consumer modules.
+
+[cols="3,1,1,1,1,1"]
+|===
+| | sakila | sis | tilgangsstyring | utdanningsregisteret | opptak
+
+| Nested output types | 156 | 727 | 55 | 96 | 190
+| Their fields (one row each today) | 290 | 1,591 | 127 | 211 | 465
+| Nested types under more than one parent field | 33 | 14 | 4 | 4 | 22
+| Nested types whose rows come from more than one table | 1 | 3 | 0 | 1 | 1
+| Nested coordinates, one per parent chain and field | 550 | 2,516 | 351 | 335 | 854
+| Deepest nesting chain | 2 | 3 | 2 | 3 | 4
+| Input fields (one row each today) | 277 | 2,526 | 116 | 359 | 769
+| Input occurrences already enumerated (`intent_input_occurrence_path`) | 651 | 3,028 | 160 | 442 | 1,162
+| Deepest input chain | 3 | 4 | 1 | 5 | 5
+|===
+
+No store has a cycle in its output nesting. Stating a field per parent chain costs 1.6 to 2.8 times
+today's nested field rows. "Nested output type" counts every object or interface no table binds that
+is some field's target, payloads and service results included, not only directiveless types under a
+table.
+
+**What already works this way.**
+
+* The generator classifies a nested type's fields once per parent field (`FieldBuilder` builds a
+  `ChildField.NestingField` per embedding edge, resolved against that parent's table), but emits one
+  class per nested type from a representative edge (`NestingReach`), so
+  `GraphitronSchemaValidator.validateNestingParentCompat` refuses reuse where parents disagree on a
+  column, its class, a filter or the presence columns, and tells the author to split the type.
+* The generator resolves input fields per use (`TypeBuilder.resolveInputFields` against the
+  consuming field's table), keyed by `ClassifyContext.UseSite`: the root field, the argument and the
+  chain of input fields under it. That is the input half of the nested coordinate.
+* `intent_input_occurrence_path` and its steps enumerate input occurrences, spelled
+  `Type.field(arg)/inputField/...`, and `graphitron_node_id_instruction.use_site` reuses that
+  spelling. Both are derivation-written.
+* The path model draft below keys `graphitron_path_holder` per input-field occurrence, in this
+  section's spelling.
+
+**What the store holds per field today, sorted.** Of 118 field-keyed relations (excluding `_rule`
+views and the `intent_` family), 76 state a fact about the field as declared and stay keyed by
+`Type.field`: its written directives, its declared type and arguments, the emitted schema, the
+reference spellings. 34 state a fact that depends on the parent, and these re-key onto the nested
+coordinate: `graphitron_field_source_table`, `graphitron_field_target_column`,
+`graphitron_field_target_table` for scalars, the `graphitron_field_path` family and its starts,
+`graphitron_field_key_row`, `graphitron_field_scope_table`, `graphitron_argument_scope_table` and
+its step targets, `graphitron_input_field_resolving_table` and its step targets, the
+`graphitron_node_id_decode_*` family, and `graphitron_producer`, `graphitron_reader` and
+`graphitron_fetcher`, whose rules already decide per parent (a nested field is a re-read producer
+where a write, routine or service returns its parent; a reader only where its parent has one result
+shape). Eight are unclear, among them `graphitron_result_pivot`, `graphitron_outbox_leaf` and the
+field-site step targets, which start on the declaring type's own binding today.
+`graphitron_result` and `graphitron_result_table` are keyed by type, and a nested type reached under
+two tables holds both; they follow the coordinate too.
+
+**The relations, with their grains.**
+
+* `graphitron_field_occurrence`, anchoring: one place a field is reached. One row per nested
+  coordinate: the coordinate, the declaring `(type_name, field_name)` it is an occurrence of, the
+  coordinate of its parent occurrence (none where the parent is table-bound or a root), and for an
+  input occurrence the argument it hangs under. Keyed by `(graph_name, coordinate)`, foreign keys to
+  `graphitron_field` and to itself.
+* The parent-dependent relations key on `(graph_name, coordinate)` with a foreign key to the
+  occurrence, and the table they carried in their key becomes an attribute: one target table, one
+  source table, one path start per coordinate. `graphitron_field_target_table` holds a row for a
+  scalar's coordinate as well as an object's, and `graphitron_field_target_column` carries the column
+  only.
+* `intent_input_occurrence_path` and its steps dissolve into the input occurrences, and
+  `graphitron_node_id_instruction.use_site` becomes the coordinate.
+
+**What changes for readers.** The editor resolves a cursor to a declared field, so a hover on a
+nested field lists its occurrences by coordinate rather than its tables, and completion and the
+member-name diagnostic read the occurrence's target table instead of finding none, which they do
+today. MCP's `fieldRef` carries the coordinate; `Type.field` is the coordinate of a field with one
+occurrence, so nothing changes on the wire for those. The generator reads one fact per occurrence
+where it rebuilds them per edge today.
+
+**Order.** The occurrence relation and its spelling first; then the target table and column, which
+unblocks moving the editor's column scope off `intent_field_column_table`; then the source table and
+the path starts; then the input occurrences, which retire `intent_input_occurrence_path`; then the
+readers.
+
+**Settled.**
+
+* The spelling is `TypeName.nestingField.nestedField`, the nested steps dotted as argMapping's are
+  and an argument spelled `(argument:)` as the specification has it; the occurrence path's `(arg)`
+  and `/` steps retire with it, and the path model's holders take it.
+* A polymorphic parent is spelled by its participant, so an interface field reached from
+  implementations on different tables is one coordinate per implementation, each with one table.
+* Support does not widen. The generator keeps one class per nested type and its
+  parent-compatibility rejection; what changes is that the store states the per-occurrence facts
+  that rejection compares.
+* Ownership. The key row, the source table and the path starts belong to "A service call is emitted
+  from the store" and its result-model nodes; the occurrence is the key they would take, so the order
+  of the two is settled with whoever holds them.
 
 ## Path model (draft)
 
