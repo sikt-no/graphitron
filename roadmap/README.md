@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1142` | A newly issued cursor is byte-identical to the one Graphitron 9 issued for the same row | In Review | 2026-11-02 | [plan](cursor-encoding-matches-graphitron-9-bytes.md) |
 | `R1077` | Apply @feature(flags:) to the elements a <schemaInput> entry's files declare, replacing Graphitron 9's features/<flag>/ directories | In Review | 2026-11-02 <sub>created 2026-10-20</sub> | [plan](feature-flags-from-schema-directories.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -599,7 +598,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### pagination
 
-- `R1142` [**A newly issued cursor is byte-identical to the one Graphitron 9 issued for the same row**](cursor-encoding-matches-graphitron-9-bytes.md) — In Review, enhancement
 - `R1143` [**A cursor over a java.sql.Date order column pages from the time of day it carries**](cursor-date-key-keeps-time-of-day.md) — Backlog, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
