@@ -298,9 +298,11 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   "Every field has a path, the written one or the one discovery implies".
 * **A path is keyed per pair of tables** `blocked`, on "Inference and inheritance are written into the store".
   Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
-  to `graphitron_path`, their readers with them, with a sis timing before and after. A
-  `@referenceFor` application is a path to its member, and `graphitron_field_participant_path`,
-  written and read by nothing, goes.
+  to `graphitron_path`, their readers with them, with a sis timing before and after, and
+  `graphitron_field_participant_path`, written and read by nothing, goes. A condition step's overload
+  is chosen by its two tables on `graphitron_path_step_method`, where `CONDITION_NO_OVERLOAD_FOR_PAIR`,
+  `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
+  `graphitron_field_path_method_candidate` goes with the old family.
 * **Arguments and input fields have paths from their field's path** `blocked`, on "A path is keyed per pair of tables".
   An argument's path is anchored at the argument; an input field's written elements become a path
   per occurrence, one holder per output field, argument and chain of input fields down to it. Both
