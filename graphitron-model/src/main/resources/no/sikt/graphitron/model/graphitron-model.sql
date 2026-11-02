@@ -5294,6 +5294,45 @@ COMMENT ON COLUMN graphitron_field_target.target_type_name IS 'the target type''
 COMMENT ON COLUMN graphitron_field_target.wrapper_type_name IS 'the connection type the target was unwrapped from, which is the field''s named type; null where the field returns its target directly. List and non-null wrapping are cardinality rather than a wrapper, and stay on graphitron_field';
 COMMENT ON COLUMN graphitron_field_target.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the coordinates a rewriting moved off; a field the author removed takes its row with it through the cascade above, so the two together are what let a second reading of one store land on the first''s rows rather than meeting them on the key';
 
+CREATE TABLE graphitron_occurrence (
+  graph_name             VARCHAR   NOT NULL,
+  coordinate             VARCHAR   NOT NULL,
+  element_coordinate     VARCHAR   NOT NULL,
+  parent_coordinate      VARCHAR,
+  name                   VARCHAR   NOT NULL,
+  kind                   VARCHAR   NOT NULL,
+  depth                  INT       NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  element_graph_ref      VARCHAR,
+  element_coordinate_ref VARCHAR,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The occurrence it hangs under; a parent the corpus no longer reaches takes its subtree with it.
+  FOREIGN KEY (graph_name, parent_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  -- What it is an occurrence of, through the anchor's own copy of the key: a key to what an anchor was
+  -- built from does not cascade, and the sweep removes the row the element no longer reaches.
+  FOREIGN KEY (element_graph_ref, element_coordinate_ref)
+    REFERENCES graphitron_element (graph_name, coordinate) ON DELETE SET NULL,
+  CHECK (element_graph_ref IS NULL OR element_graph_ref = graph_name),
+  CHECK (element_coordinate_ref IS NULL OR element_coordinate_ref = element_coordinate),
+  CHECK (kind IN ('FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT')),
+  CHECK ((parent_coordinate IS NULL) = (depth = 0))
+);
+CREATE INDEX graphitron_occurrence_step_ix ON graphitron_occurrence (graph_name, parent_coordinate, name);
+COMMENT ON INDEX graphitron_occurrence_step_ix IS 'Serves a written path walked one step at a time: from an occurrence, the child of a given name, so argMapping''s input.a.b resolves as one keyed join per segment rather than by building or parsing a coordinate.';
+COMMENT ON TABLE graphitron_occurrence IS 'One place a field or an argument is reached in the schema: one row per nested coordinate. For example Emne.navn.en is en on the type Emne.navn returns, which has no table of its own, and Query.films(filter:).cast.firstName an input field under the argument filter.';
+COMMENT ON COLUMN graphitron_occurrence.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_occurrence.coordinate IS 'where the field or argument is reached, spelled TypeName.nestingField.nestedField from the nearest field whose parent is not nested, an argument as (argument:); with the graph, the key. A field whose parent is a root, is table-bound or is targeted by no field has its own Type.field';
+COMMENT ON COLUMN graphitron_occurrence.element_coordinate IS 'the declared field, input field or argument this is an occurrence of, as graphitron_element spells it';
+COMMENT ON COLUMN graphitron_occurrence.parent_coordinate IS 'the occurrence this one hangs under: the field a nested field or an argument is reached through, or the argument or input field an input field is under; null where a chain starts';
+COMMENT ON COLUMN graphitron_occurrence.name IS 'the field or argument name at this step, the last segment of the coordinate, stated so a reader walks a path by name without parsing the coordinate';
+COMMENT ON COLUMN graphitron_occurrence.kind IS 'what the element is, in graphitron_element''s vocabulary: FIELD, INPUT_FIELD or FIELD_ARGUMENT, so (x:) and .x are told apart without parsing';
+COMMENT ON COLUMN graphitron_occurrence.depth IS 'how many steps the occurrence is below where its chain starts, 0 at the start';
+COMMENT ON COLUMN graphitron_occurrence.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+COMMENT ON COLUMN graphitron_occurrence.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_occurrence.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
+
 CREATE TABLE graphitron_field_target_table (
   graph_name         VARCHAR NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -8806,6 +8845,95 @@ COMMENT ON VIEW intent_field_navigated_type IS 'Deprecated with the whole intent
 -- COMMENT ON COLUMN intent_field_navigated_type.field_name IS 'the field whose navigation this row states; with the two columns above, the grain, and one row per field of the graph';
 -- COMMENT ON COLUMN intent_field_navigated_type.basis IS 'which rung answered, in a closed vocabulary of two: CONNECTION_ELEMENT from the structural edges.node shape of a connection type, NAMED_TYPE from the field''s own named type. A third rung read the pre-expansion type expression a macro had rewritten, and went when the expansion stopped overwriting it: the field''s own row carries what the author wrote, so the expression is a column rather than a rung. Provenance and a pinnable rule both; a reader that means one of them filters on it and owns having chosen';
 -- COMMENT ON COLUMN intent_field_navigated_type.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins graphitron_resolved_type_binding, intent_poly_member or graphql_type on it according to what it actually needs to know';
+
+-- Where an occurrence chain starts: a field of an object type that is a root, is table-bound or is
+-- targeted by no output field, and a field of an interface with a table of its own. A field of a
+-- multi-table interface is reached through its participants' own fields, and an input field only
+-- under an argument.
+CREATE VIEW graphitron_occurrence_start_rule
+  (graph_name, coordinate, element_coordinate, name, kind) AS
+SELECT f.graph_name, f.coordinate, f.coordinate, f.field_name, 'FIELD'
+  FROM graphitron_field f
+  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.type_name
+ WHERE (t.kind = 'OBJECT'
+        AND (EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+                      WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name)
+             OR NOT EXISTS (SELECT 1 FROM graphitron_field_target ft
+                              JOIN graphitron_type o
+                                ON o.graph_name = ft.graph_name AND o.type_name = ft.type_name
+                               AND o.kind IN ('OBJECT', 'INTERFACE')
+                             WHERE ft.graph_name = t.graph_name
+                               AND ft.target_type_name = t.type_name)))
+    OR (t.kind = 'INTERFACE'
+        AND EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+                     WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name));
+COMMENT ON VIEW graphitron_occurrence_start_rule IS 'One occurrence a chain starts at, in the shape graphitron_occurrence stores at depth 0: the rule itself, evaluated on demand rather than read off disk. For example Film.title on the table-bound Film, and Mutation.createFilm on the root.';
+-- COMMENT ON COLUMN graphitron_occurrence_start_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_start_rule.coordinate IS 'the field''s own Type.field';
+-- COMMENT ON COLUMN graphitron_occurrence_start_rule.element_coordinate IS 'the same, the field being its own element';
+-- COMMENT ON COLUMN graphitron_occurrence_start_rule.name IS 'the field name';
+-- COMMENT ON COLUMN graphitron_occurrence_start_rule.kind IS 'always FIELD';
+
+-- One step down from an occurrence this reading has written: into the fields of the object type with
+-- no table a field targets, onto a field's arguments, and into the fields of the input type an argument
+-- or an input field is. The chain grows only through a nested field, so a target with a table, an
+-- interface or a union ends it, its participants' fields starting their own. The writer adds the
+-- first-visit guard, which needs the types already on the chain and so a walk up it.
+CREATE VIEW graphitron_occurrence_step_rule
+  (graph_name, parent_coordinate, parent_depth, coordinate, element_coordinate, name, kind,
+   entered_type_name) AS
+WITH parent (graph_name, coordinate, element_coordinate, kind, depth) AS (
+  SELECT o.graph_name, o.coordinate, o.element_coordinate, o.kind, o.depth
+    FROM graphitron_occurrence o
+    JOIN store_graph g ON g.graph_name = o.graph_name AND g.last_captured = o.touched_at
+)
+SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '.' || c.field_name, c.coordinate,
+       c.field_name, 'FIELD', t.type_name
+  FROM parent p
+  JOIN graphitron_field f ON f.graph_name = p.graph_name AND f.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type t
+    ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name AND t.kind = 'OBJECT'
+  JOIN graphitron_field c ON c.graph_name = t.graph_name AND c.type_name = t.type_name
+ WHERE p.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+                    WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name)
+UNION ALL
+SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '(' || a.argument_name || ':)',
+       a.coordinate, a.argument_name, 'FIELD_ARGUMENT', CAST(NULL AS VARCHAR)
+  FROM parent p
+  JOIN graphitron_field f ON f.graph_name = p.graph_name AND f.coordinate = p.element_coordinate
+  JOIN graphitron_argument a
+    ON a.graph_name = f.graph_name AND a.type_name = f.type_name AND a.field_name = f.field_name
+ WHERE p.kind = 'FIELD'
+UNION ALL
+SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '.' || c.field_name, c.coordinate,
+       c.field_name, 'INPUT_FIELD', t.type_name
+  FROM parent p
+  JOIN graphitron_argument a ON a.graph_name = p.graph_name AND a.coordinate = p.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = a.graph_name AND t.type_name = a.named_type AND t.kind = 'INPUT_OBJECT'
+  JOIN graphitron_field c ON c.graph_name = t.graph_name AND c.type_name = t.type_name
+ WHERE p.kind = 'FIELD_ARGUMENT'
+UNION ALL
+SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '.' || c.field_name, c.coordinate,
+       c.field_name, 'INPUT_FIELD', t.type_name
+  FROM parent p
+  JOIN graphitron_field f ON f.graph_name = p.graph_name AND f.coordinate = p.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INPUT_OBJECT'
+  JOIN graphitron_field c ON c.graph_name = t.graph_name AND c.type_name = t.type_name
+ WHERE p.kind = 'INPUT_FIELD';
+COMMENT ON VIEW graphitron_occurrence_step_rule IS 'One occurrence one step below an occurrence this reading wrote, before the first-visit guard: the rule the writer applies a depth at a time. For example Emne.navn.en under Emne.navn, Query.films(filter:) under Query.films, and Query.films(filter:).cast under Query.films(filter:).';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.parent_coordinate IS 'the occurrence stepped down from';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.parent_depth IS 'its depth, which the writer''s pass selects on';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.coordinate IS 'the child''s coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.element_coordinate IS 'the child''s declared element';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.name IS 'the child''s name at this step';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.kind IS 'FIELD, INPUT_FIELD or FIELD_ARGUMENT';
+-- COMMENT ON COLUMN graphitron_occurrence_step_rule.entered_type_name IS 'the type whose fields the step enters, which the first-visit guard tests against the chain; null for an argument, which enters none';
 
 CREATE VIEW graphitron_field_target_table_rule
   (graph_name, type_name, field_name, arriving_type_name, basis) AS
@@ -17594,6 +17722,9 @@ INSERT INTO meta_grain VALUES
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
+  ('graph-occurrence',
+   'one place one field or argument is reached in the schema, in one graph',
+   'graph_name, coordinate', 'sdl'),
   ('producer-claim',
    'one kind of producer one field''s written directives claim, in one graph',
    'graph_name, type_name, field_name, kind', 'sdl'),
@@ -19188,6 +19319,18 @@ INSERT INTO meta_relation VALUES
    'One row the field target-table rule computes, in the shape graphitron_field_target_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
+  ('graphitron_occurrence', 'graph-occurrence', 'graphitron',
+   'One place a field or an argument is reached in the schema: one row per nested coordinate.',
+   'For example Emne.navn.en is en on the type Emne.navn returns, which has no table of its own, and Query.films(filter:).cast.firstName an input field under the argument filter.',
+   'A field of a type with no table of its own, an argument and an input field mean something different under each parent: which table they read, where their path starts, what their parent holds. Stated once per parent chain at a coordinate, every fact that depends on the parent has one row per occurrence, and a reader reads it without choosing among the tables a declaration-keyed row carries. Stored rather than a view because its population is a walk with a first-visit guard over a graph that can cycle, which a view cannot state safely, and because the parent-dependent relations key into it.'),
+  ('graphitron_occurrence_start_rule', 'graph-occurrence', 'graphitron',
+   'One occurrence a chain starts at, in the shape graphitron_occurrence stores at depth 0: the rule itself, evaluated on demand rather than read off disk.',
+   'For example Film.title on the table-bound Film, and Mutation.createFilm on the root.',
+   'The rule, kept in the catalog rather than in the step that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_occurrence_step_rule', 'graph-occurrence', 'graphitron',
+   'One occurrence one step below an occurrence this reading wrote, before the first-visit guard: the rule the writer applies a depth at a time.',
+   'For example Emne.navn.en under Emne.navn, Query.films(filter:) under Query.films, and Query.films(filter:).cast under Query.films(filter:).',
+   'The step, kept in the catalog so what it reads is visible to the gates; the writer applies it one depth at a time and adds the first-visit guard, which needs the types already on the chain and so a walk up it that a view over a cyclic graph cannot state safely.'),
   ('graphitron_fetcher', 'graph-field', 'graphitron',
    'An output field''s fetcher, and whether it produces a result or reads one: one row per field.',
    'For example Query.films selects and so produces, and Film.title reads a column of the row its parent produced.',

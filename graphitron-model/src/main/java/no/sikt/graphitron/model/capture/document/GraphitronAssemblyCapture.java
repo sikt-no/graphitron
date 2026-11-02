@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.capture.document;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
+import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetColumns;
@@ -87,6 +88,11 @@ public final class GraphitronAssemblyCapture {
         // Then the bindings, which the routine arm reaches through the hops just written, and then
         // the walk, which seeds from those bindings and steps through those hops.
         ResolvedTypeBindings.derive(dsl, graph);
+        // Every place a field or an argument is reached, off the targets and the bindings just
+        // written: a chain grows through a field whose target is an object type with no table.
+        // Here rather than as a line of the anchor because both inputs are written above; it moves
+        // with the other steps when this class dissolves into the anchor's own lines.
+        Occurrences.derive(dsl, graph, readAt);
         // Then which class stands for each type: the table binding just written read through its
         // record class, and what the producers' resolved methods ground, closed over the members
         // each backed class offers. The classpath was read before this gatherer ran.

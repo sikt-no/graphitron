@@ -1,0 +1,48 @@
+# Where each field and argument is reached, at its nested coordinate. A chain starts at a field of a
+# root or a table-bound type, and grows only through a field whose target is an object type with no
+# table of its own: FilmDetails under Film.details. An argument hangs under its field, and an input
+# type's fields under the argument, two deep through YearSpan. A union target ends the chain, so
+# Query.search has nothing under it and its participants' fields start at their own coordinates.
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+}
+
+type FilmDetails {
+  length: Int
+  rating: String
+}
+
+type Language @table(name: "language") { name: String }
+
+union Searchable = Film | Language
+
+input FilmFilter {
+  title: String
+  span: YearSpan
+}
+
+input YearSpan { from: Int @field(name: "release_year") }
+
+extend type Query {
+  films(filter: FilmFilter, first: Int): [Film!]!
+  search: [Searchable]
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                      element_coordinate,     parent_coordinate,       name,    kind,           depth
+  Film.details,                    Film.details,           ,                        details, FIELD,          0
+  Film.details.length,             FilmDetails.length,     Film.details,            length,  FIELD,          1
+  Film.details.rating,             FilmDetails.rating,     Film.details,            rating,  FIELD,          1
+  Film.title,                      Film.title,             ,                        title,   FIELD,          0
+  Language.name,                   Language.name,          ,                        name,    FIELD,          0
+  Query.films,                     Query.films,            ,                        films,   FIELD,          0
+  Query.films(filter:),            Query.films(filter:),   Query.films,             filter,  FIELD_ARGUMENT, 1
+  Query.films(filter:).span,       FilmFilter.span,        Query.films(filter:),    span,    INPUT_FIELD,    2
+  Query.films(filter:).span.from,  YearSpan.from,          Query.films(filter:).span, from,  INPUT_FIELD,    3
+  Query.films(filter:).title,      FilmFilter.title,       Query.films(filter:),    title,   INPUT_FIELD,    2
+  Query.films(first:),             Query.films(first:),    Query.films,             first,   FIELD_ARGUMENT, 1
+  Query.search,                    Query.search,           ,                        search,  FIELD,          0
+  """)

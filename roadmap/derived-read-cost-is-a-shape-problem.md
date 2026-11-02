@@ -612,10 +612,6 @@ classified records have no reader left and can go with the walk.
   such as `Emne.navn.en` or `Query.films(filter:).cast.firstName`, so it departs from one table and
   `graphitron_field_target_table` holds one row per coordinate, scalars included. The column
   relation then carries only the column, and the editor's column scope reads the target table alone.
-  * **Every field and argument has its occurrences, at nested coordinates** `open`, G's.
-    `graphitron_occurrence` holds one row per place a field or an argument is reached, keyed by its
-    coordinate, with its declared element and its parent occurrence, as "Nested coordinates
-    (draft)" states it.
 * **A field's source is its parent's result** `open`, E's. A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
@@ -1499,18 +1495,18 @@ two tables holds both; they follow the coordinate too.
   ** `depth` and `touched_at`.
   ** Its owner is `graphitron`, whose inputs it reads (`graphitron_element`, `graphitron_field`,
      `graphitron_field_target`, `graphitron_resolved_type_binding`, `graphitron_argument`,
-     `graphitron_type`, `graphql_poly_member`). It is written as a line of the graphitron anchor
-     phase itself, right after the field targets and before the target table and column, which
-     re-key onto it, and not as a step of `GraphitronAssemblyCapture`, which is dissolving into the
-     anchor's own lines; marked and swept.
+     `graphitron_type`). It is written as a step of `GraphitronAssemblyCapture`, right after
+     `ResolvedTypeBindings` and ahead of the target table and column, which re-key onto it, because
+     both its inputs, the field targets and the bindings, are written there; it moves with the other
+     steps when that class dissolves into the anchor's own lines. Marked and swept.
   ** Who has an occurrence, below.
   ** Where a chain starts. Every field of a root type, of a table-bound type, and of a type no field
      targets has one occurrence at its own `Type.field`, with no parent.
   ** Output nesting. Under an occurrence whose field targets an object type with no table, each field
-     of that type has one at `<coordinate>.<field>`. A target with a table ends the chain, its
-     fields starting their own. An interface or union target ends the chain where every participant
-     has a table, each participant's fields starting their own, so `Store.people` has no
-     `Store.people.name`; one with any table-less participant is a defect, below.
+     of that type has one at `<coordinate>.<field>`. The chain grows only through such a nested
+     field, and a table-bound field is not nested by definition: a target with a table, an interface
+     or a union ends the chain, its fields or its participants' fields starting their own, so
+     `Store.people` has no `Store.people.name` and an `errors` field none under it.
   ** A single-table interface's implementations without a `@table` of their own are types no field
      targets, so their fields start at their own coordinate, `Film.title`; a reader takes the start
      table from the binding, as the path needs do.
@@ -1525,20 +1521,21 @@ two tables holds both; they follow the coordinate too.
   ** Cycles. A chain does not expand into a type already on it, the first-visit guard
      `InputOccurrencePaths` and the classifier apply; the occurrence that would close the cycle has a
      row and does not expand. No store measured has an output cycle; the deepest input chain is 5.
-  ** Writing. In passes by depth, one `INSERT .. SELECT` per pass, bounded by the type count, as
-     `InputOccurrencePaths` writes; a recursive view is not safe over a cyclic graph. The passes bind
-     `touched_at` and `depth` as parameters, so one planned statement serves every pass and every
-     capture, planning being where a capture spends its time. About 2,500 nested output and 3,000
-     input occurrences on sis, beside one start per other field; the step, and the re-keyed target
-     table and column readers, are timed on sis when built.
+  ** Writing. `graphitron_occurrence_start_rule` names the starts and
+     `graphitron_occurrence_step_rule` one step down from an occurrence the reading wrote; the writer
+     merges a depth at a time, bounded by the type count, as `InputOccurrencePaths` writes, since a
+     recursive view is not safe over a cyclic graph. A pass knows its parents' depth, so it reaches
+     each ancestor by that many joins up the parent links for the first-visit guard; the instant and
+     the depth are bound as parameters. On sis it writes 10,394 occurrences, 2,487 of them nested
+     output and 3,028 the argument and input occurrences, in 0.55 s cold and 0.64 s warm.
 * Settled on the occurrence:
   ** A field declared on an interface. Under the participant rule `Media.title` is reached as
      `Film.title` and `Book.title`, each a declared field, so `Media.title` has an occurrence only
      where the interface has a table of its own, and none otherwise.
-  ** An interface or union target is admitted only where every participant has a table. One with
-     any table-less participant is rejected as a defect, not given new grammar: under `X.y`
-     returning `I` with participants `A` and `B`, the coordinate `X.y.f` would name two fields.
-     None of the five stores has it.
+  ** An interface or union target ends the chain, whatever its participants: the chain grows only
+     through a nested field. So no coordinate names a participant's field through it, and no defect
+     is needed; an `errors` union of `@error` types and `Query.node` over table-less participants are
+     ordinary.
   ** A written path deeper than the cycle guard, `input.parent.parent.x` through an input type that
      nests itself, has no occurrence to bind to; the binding reports it as an unsupported deferral,
      as `graphitron_argmapping_candidate.closes_cycle` does today.
