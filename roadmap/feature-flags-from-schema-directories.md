@@ -337,6 +337,44 @@ Migration paragraph:
   element or carry an ordinal only some rows use. The generic surface already exists one layer up,
   in the `graphitron_directive_application_configured` views the two arms union into.
 
+## Implementation notes
+
+Shipped as planned, with these departures from the body above, each made where the plan left the
+shape open or the tree answered differently:
+
+- **The build collapses by code and detail, not by code and flag.** The detail is `feature <flag>`
+  for `FEATURE_UNDEFINED` and `FEATURE_ARGUMENTS`, and `feature <flag>, location <LOCATION>` for
+  `FEATURE_LOCATION`, so a definition missing two locations reports two errors, each naming the
+  location to add, rather than one naming whichever came first. For the two codes without a
+  location the grouping is exactly the plan's. The collapsed message ends "and N more elements in M
+  files"; `ConfiguredFeatureDefects.Group` owns it. The error's coordinate prefix is
+  `Element '<coordinate>': `, the element being a field, an argument or an enum value.
+- **The fact harness learned `@withConfiguration(feature:)`.** Defects-as-facts asks for a fact
+  document, and the harness could not configure a `<schemaInput>` attribute: its recipe is always
+  the document's own files. The stated feature rides `SubjectConfig.recipe` as a one-entry recipe,
+  whose attribution `CapturedStore.captureFiles` lends to every file it captures; the files are
+  still the harness's own. The prelude's line count is unchanged, since every document's recorded
+  positions sit below it. The five refusal cases are `facts/defects/feature-*.graphqls` (the
+  `flags: String` and `owner: String!` cases as the plan lists them, the "flags missing" case as a
+  definition with no arguments at all); the two near misses share one scenario,
+  `facts/scenarios/feature-definition-takes.graphqls`, its definition lacking `ENUM_VALUE` over a
+  file declaring no enum value and carrying both a nullable `owner` and a defaulted `since: Int! = 1`.
+  A scenario stating configuration is skipped by `GenerateTestSchemas`, as every such one is.
+- **The pipeline-tier test is a sibling**, `FeatureInputsPipelineTest`, rather than a case in
+  `TaggedInputsPipelineTest`, holding both the two-file split and the run-order case. It also pins
+  that the minted Connection's fields and the pagination arguments take no feature.
+- **`graphitron_configured_feature_landing` joins `graphql_type`** for the declaring type's kind
+  (field against input field), so `transcription-readers.txt` gains it under the adjudicated-and-kept
+  heading beside the tag rule, with the reason.
+- **`CapturedStore.featured`** is the new door, taking a feature and an optional tag.
+  `StageAnswerAgreementTest`'s federation fixture now goes through it, its SDL declaring `@feature`,
+  so the stage pair is compared over rows, which the gate's non-vacuity case requires.
+- **Test call sites.** `SchemaInput` and `SchemaRecipe.Binding` gained a fourth component, so every
+  construction site states it. The ones constructing an all-empty file entry now call
+  `SchemaInput.file`, which is that entry.
+- The `mojo-configuration.adoc` count corrected is the `<schemaInput>` binding section's ("four
+  optional children"), the `schemaInputs` row itself stating no count.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready (session_01FY5UvtekMBx3FKcETS4837, 2026-11-02)
