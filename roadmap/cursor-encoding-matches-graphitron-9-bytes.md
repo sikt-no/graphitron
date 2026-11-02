@@ -1,7 +1,7 @@
 ---
 id: R1142
 title: "A newly issued cursor is byte-identical to the one Graphitron 9 issued for the same row"
-status: Spec
+status: Ready
 bucket: enhancement
 priority: 3
 theme: pagination
