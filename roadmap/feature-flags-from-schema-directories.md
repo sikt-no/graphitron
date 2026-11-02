@@ -284,3 +284,64 @@ Migration paragraph:
   in the `graphitron_directive_application_configured` views the two arms union into.
 
 ## Reviewer findings
+
+### Round 1: Spec → Ready (session_01FY5UvtekMBx3FKcETS4837, 2026-11-02)
+
+Verdict: withhold. Question 1 passes. When this lands, a consumer adds `<feature>beta</feature>` to a
+`<schemaInput>` and every field, input field, argument and enum value in the matched files gets
+`@feature(flags: ["beta"])` in the served schema and in `_service { sdl }`, unless the author already
+wrote one. The consumer declares the directive themselves. The emission half is reachable as
+described and follows the configured tag path exactly. Question 2 fails, along with that half's
+viability, on the definition check. The emission design is fine; findings 1 and 2 are about the
+check alone.
+
+**1. The definition check stands a parallel mechanism beside the one the tree documents for exactly
+this (question 2).** `docs/architecture/explanation/defects-as-facts.adoc` is the home for a defect
+detected from captured rows. A code is declared in `graphitron_defect_type` (severity, `lsp_code`,
+the statement an author reads, `owner_gatherer`). Rows go in `graphitron_entry_defect` at a written
+position, from the owner's `<family>_entry_defect_rule` view that `EntryDefects` writes in its
+anchor phase. The build reads it through a `StoreDetections` reader, the editor and MCP read it
+through `diagnostic`'s entry arm, and `DefectOwnerGateTest` holds the ownership together. The spec
+instead plans a separate detection view, a new arm of `diagnostic`, and a message "minted in Java
+from a typed rejection", wired the way the `intent_` claim-conflict arm is. It does not mention the
+defect vocabulary, and it does not reject it in "Other solutions". Its stated payoff is also wrong
+for this tree: an arm of `diagnostic` does not reach the build. The build does not read
+`diagnostic`; it reads `StoreDetections` (`GraphQLRewriteGenerator.runPipeline`), and
+defects-as-facts says outright that a stored defect fails the build only where a `StoreDetections`
+reader reads its code. What would satisfy this: either put the check on the defect path (a code per
+reason or one code with a typed detail, a position each landing hangs on, the owner gatherer, and a
+`StoreDetections` reader), or name that path in "Other solutions" and say why it does not fit. In
+the second case, also say how the chosen arm reaches the build.
+
+**2. Wherever the check lives, the run fails before it is read (viability).** The rows the check
+flags are, by design, rows the emitter applies. So whenever the check fires, the post-synthesis
+registry carries an application that graphql-java refuses: an undeclared directive, an illegal
+location, or an unknown argument. `SchemaAssembly.of` records that as `Rejected` without throwing
+during capture. Then `GraphQLRewriteGenerator.runPipeline` calls `emittedSchema()`, which throws
+`IllegalStateException("the emitted registry derived from the store did not assemble ...")`. That
+is the message for graphitron's own defect, and it fires before `StoreDetections.over` is read a few
+lines later. The spec's "the implementer confirms the build fails on this error before
+`EmittedRegistry.derive` or the generated `GraphitronSchema.build` would hit graphql-java's raw
+unknown-directive error" is therefore not a confirmation. In today's order the confirmation fails,
+and repairing it is a design choice the spec has to make. Some options: read the detections before
+the emitted schema is assembled; keep a configured feature the definition cannot take out of the
+emitted relation, so the emitted registry still assembles while the defect is reported (this also
+gives the editor a usable schema); or another order the author prefers. What would satisfy this: the
+plan states the order, and a test pins that a build over a schema with no `@feature` definition
+fails with the paste-line message rather than the graphitron-defect message. The Tests section
+already asks for that assertion. It needs a design that can pass it.
+
+**3. The rule view and the table disagree on a column (question 2, minor).**
+`graphitron_configured_feature_rule` "projects the element's kind, which the definition check needs".
+`graphitron_configured_feature` is `(graph_name, coordinate, flag, touched_at)`, and the check is
+"one row per `graphitron_configured_feature` row". `StageAnswerAgreementTest`, which the Tests
+section enrolls the pair in, compares table and rule with `EXCEPT` in both directions, so their
+columns have to agree. The check also cannot read a kind the table does not hold. Say whether the
+table stores the kind, or whether the check gets it again from the coordinate's type and the rule
+drops it.
+
+Not blocking: every other symbol, test and relation the spec names exists as named. That includes
+`EmittedRegistry.directives` placing any `CONFIGURED` row on its declaring site, extension sites
+included (`ElementSite.of`), `unpublish` dropping the bundled vocabulary's definitions, and
+`SourceInTwoInputs` (a `LoadingRewrites.Refusal`, raised from `SchemaInputAttribution.build`'s
+throw).
