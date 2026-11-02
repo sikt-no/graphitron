@@ -8856,7 +8856,7 @@ SELECT f.graph_name, f.coordinate, f.coordinate, f.field_name, 'FIELD'
   FROM graphitron_field f
   JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.type_name
  WHERE (t.kind = 'OBJECT'
-        AND (EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+        AND (EXISTS (SELECT 1 FROM graphitron_tabletype b
                       WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name)
              OR NOT EXISTS (SELECT 1 FROM graphitron_field_target ft
                               JOIN graphitron_type o
@@ -8865,7 +8865,7 @@ SELECT f.graph_name, f.coordinate, f.coordinate, f.field_name, 'FIELD'
                              WHERE ft.graph_name = t.graph_name
                                AND ft.target_type_name = t.type_name)))
     OR (t.kind = 'INTERFACE'
-        AND EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+        AND EXISTS (SELECT 1 FROM graphitron_tabletype b
                      WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name));
 COMMENT ON VIEW graphitron_occurrence_start_rule IS 'One occurrence a chain starts at, in the shape graphitron_occurrence stores at depth 0: the rule itself, evaluated on demand rather than read off disk. For example Film.title on the table-bound Film, and Mutation.createFilm on the root.';
 -- COMMENT ON COLUMN graphitron_occurrence_start_rule.graph_name IS 'the owning graph''s partition';
@@ -8897,7 +8897,7 @@ SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '.' || c.field_name,
     ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name AND t.kind = 'OBJECT'
   JOIN graphitron_field c ON c.graph_name = t.graph_name AND c.type_name = t.type_name
  WHERE p.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
                     WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name)
 UNION ALL
 SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '(' || a.argument_name || ':)',

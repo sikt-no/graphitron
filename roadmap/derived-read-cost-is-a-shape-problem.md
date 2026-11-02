@@ -538,7 +538,8 @@ pass and no stratum that clears and recomputes.
 * **`GraphitronAssemblyCapture` is gone, its steps the anchor's own lines** `blocked`, on the child
   below and on "Nothing resolves a path but the walk".
   * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
-    `NodeIdCandidates`, `SpelledTables` and `ResolvedTypeBindings`; the path steps go with the walk.
+    `NodeIdCandidates` and `SpelledTables`; the path steps go with the walk, and `ResolvedTypeBindings`
+    with its relation.
 * **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
@@ -651,9 +652,10 @@ classified records have no reader left and can go with the walk.
   the table-bound types their members return, a cost accepted until this lands. Its merge is the
   build's second costliest statement to plan, 235 ms a prepare and 221 CPU-seconds over a
   `graphitron` test phase, reaching 29 relations through 3 views (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
-* **The bindings are resolved before the targets** `open`, off the critical path. `ResolvedTypeBindings` reads only the
-  written `@table`, so its place after the hops is accidental; it runs before
-  `graphitron_field_target` and is marked and swept rather than cleared and rewritten.
+* **`graphitron_resolved_type_binding` dissolves into `graphitron_tabletype`** `open`, G's. It restates
+  `intent_bound_table`, cleared and refilled, where the anchor already binds a type to one table;
+  its readers read `graphitron_tabletype`, an ambiguous or an input type's `@table` being no binding,
+  and `ResolvedTypeBindings` goes.
 * **A routine's result is an object of its function's record class** `open`, off the critical path. An unbound type a
   `@routine` returns is a result, an OBJECT whose class is the function's record off
   `sql_table.record_class_fqn`, whether the routine is a producer (a root, `@splitQuery`, under an
@@ -1494,11 +1496,12 @@ two tables holds both; they follow the coordinate too.
      resolves as one keyed join per segment, never by building or parsing a coordinate.
   ** `depth` and `touched_at`.
   ** Its owner is `graphitron`, whose inputs it reads (`graphitron_element`, `graphitron_field`,
-     `graphitron_field_target`, `graphitron_resolved_type_binding`, `graphitron_argument`,
-     `graphitron_type`). It is written as a step of `GraphitronAssemblyCapture`, right after
-     `ResolvedTypeBindings` and ahead of the target table and column, which re-key onto it, because
-     both its inputs, the field targets and the bindings, are written there; it moves with the other
-     steps when that class dissolves into the anchor's own lines. Marked and swept.
+     `graphitron_field_target`, `graphitron_tabletype`, `graphitron_argument`, `graphitron_type`).
+     A type is table-bound where `graphitron_tabletype` binds it, the anchor's own one-row-per-type
+     binding, not `graphitron_resolved_type_binding`, which restates `intent_bound_table`. It is
+     written as a step of `GraphitronAssemblyCapture`, ahead of the target table and column, because
+     the field targets it reads are written there; it moves with the other steps when that class
+     dissolves into the anchor's own lines. Marked and swept.
   ** Who has an occurrence, below.
   ** Where a chain starts. Every field of a root type, of a table-bound type, and of a type no field
      targets has one occurrence at its own `Type.field`, with no parent.
