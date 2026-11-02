@@ -300,8 +300,7 @@ class RejectionSeverityCoverageTest {
         // whole sub-family uniformly). Further arms re-land later as their producer paths do.
         if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots.class) {
             return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots(
-                "com.example.Svc",
-                no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.Round.METHOD);
+                "com.example.Svc");
         }
         if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ParameterUnbindable.class) {
             return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ParameterUnbindable(

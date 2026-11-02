@@ -418,13 +418,17 @@ public final class CodeCapture {
      *
      * <p>Read for these classes only: a constructor is named by nothing an author writes, and what
      * reads these rows is the choice of the object an instance service method runs on, so a class no
-     * such method is declared on has no holder to choose.
+     * such method is declared on has no holder to choose. An abstract class is passed over for the
+     * same reason: its constructors make no object of it, so none of them is a holder.
      */
     private static void constructors(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                                      ClassAncestry ancestry, Map<String, Container> containers,
                                      LocalDateTime touchedAt) {
         var found = new ArrayList<Member>();
         for (ClassfileCensus.ClassAt at : classes) {
+            if (at.isAbstract()) {
+                continue;
+            }
             for (ClassfileCensus.MethodAt constructor : at.constructors()) {
                 found.add(new Member(at.source(), at.className(), constructor));
             }

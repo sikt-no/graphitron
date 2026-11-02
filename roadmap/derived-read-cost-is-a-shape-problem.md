@@ -90,8 +90,6 @@ A service call is emitted from the store
 │       │   ├── A type an `@externalField` returns holds an OBJECT
 │       │   └── A binding that names several tables is a row of none of them
 │       └── `$tenant` in argMapping routes a service call
-├── A service's holder is its one widest buildable constructor
-│   └── A service class's construction is stated
 └── A field's source is its parent's result
     └── The result and path model is stated before it is built
 ```
@@ -423,9 +421,6 @@ static method needs no holder.
   `Set<List<FilmRecord>>` without parsing a spelling.
 * **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
-* **A service's holder is its one widest buildable constructor** `open`, E's. Every
-  parameter is the jOOQ context, at most once; two of the widest, or none buildable, is a defect. A
-  context key no longer fills a constructor parameter, which no fs-plattform subgraph does, so that goes, breaking.
 * **An argument path through input types is stored** `open`, E's. This is R1099's step 2,
   `graphitron_argmapping_binding`, owned here since a service call's fills read it; R1099 keeps its other steps.
 * **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
@@ -442,7 +437,7 @@ static method needs no holder.
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
-* **A service call is emitted from the store** `blocked`, E's, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
+* **A service call is emitted from the store** `blocked`, E's, on "A service call is the one overload every parameter of which is filled". `ServiceMethodCallEmitter` reads the call, its fills and its holder from `graphitron_service_holder`, and
   `ServiceCatalog`'s decode, claim and bind phases go; `@service` then admits a `$context` pair, reading `graphitron_call_context_key`.
 * **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
@@ -1649,6 +1644,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   primary key set where the parent carries only the key's value; a child `@service` keys off the
   parent being that record or having exactly one accessor returning it. The directive comes back
   once the model is cleaned up.
+* **Breaking: a context argument no longer fills a service class's constructor** ("breaking: a
+  service class's constructor takes only the jOOQ context, unused in FS-plattform"). An instance
+  `@service` method's object is made with a public constructor taking nothing or one `DSLContext`,
+  the widest; one whose only public constructor also takes a `contextArguments` value stops
+  building, and the value goes on the method instead. FS-plattform: every one of the 37
+  `contextArguments` uses across opptak, kompetanse, kreg and sis fills a method parameter, and
+  every service class's constructor takes only `DSLContext`.
 
 ## Retired vocabulary
 

@@ -220,7 +220,7 @@ final class ServiceDirectiveResolver {
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
         var ctxKeys = new HashSet<>(contextArgs);
 
-        var decoded = svc.decodeServiceMethod(serviceRef.className(), serviceRef.methodName(), ctxKeys);
+        var decoded = svc.decodeServiceMethod(serviceRef.className(), serviceRef.methodName());
         if (decoded.failed()) {
             return new Resolved.Rejected(decoded.rejection().prefixedWith("service method could not be resolved — "));
         }

@@ -90,8 +90,7 @@ public final class ServiceMethodCallWalker {
         }
 
         if (dslSlotsInMethod > 1) {
-            errors.add(new ServiceMethodCallError.MultipleDslContextSlots(
-                method.className(), ServiceMethodCallError.Round.METHOD));
+            errors.add(new ServiceMethodCallError.MultipleDslContextSlots(method.className()));
         }
 
         var returnContainer = ServiceMethodCall.ReturnContainer.of(method.returnType(), recordTable);
@@ -118,11 +117,10 @@ public final class ServiceMethodCallWalker {
 
     /**
      * Projects the holder constructor's resolved parameter sources onto {@code ctorArgs}
-     * entries. Each {@link MethodRef.Param} is a {@link ParamSource.DslContext} or
-     * {@link ParamSource.Context} by construction (the producer's {@code resolveInstanceHolder}
-     * only binds those), so the cross-round invariant forbidding {@link MappingEntry.FromArg}
-     * in {@code ctorArgs} holds structurally. More than one {@code DSLContext} slot raises
-     * {@link ServiceMethodCallError.MultipleDslContextSlots} under the {@code CTOR} round.
+     * entries. Each {@link MethodRef.Param} is a {@link ParamSource.DslContext} by construction,
+     * at most one of them (the producer's {@code resolveInstanceHolder} only binds a constructor
+     * taking nothing or one {@code DSLContext}), so the invariant forbidding
+     * {@link MappingEntry.FromArg} in {@code ctorArgs} holds structurally.
      */
     private List<MappingEntry> ctorArgs(
         MethodRef.CallShape.InstanceWithDslHolder holder,
@@ -131,23 +129,14 @@ public final class ServiceMethodCallWalker {
         List<Rejection.AuthorError> errors
     ) {
         List<MappingEntry> entries = new ArrayList<>();
-        int dslSlots = 0;
         for (MethodRef.Param p : holder.ctorParams()) {
             if (!(p instanceof MethodRef.Param.Typed typed)) {
                 continue;
             }
             MappingEntry entry = projectParam(typed, method, site, errors);
-            if (entry == null) {
-                continue;
+            if (entry != null) {
+                entries.add(entry);
             }
-            if (entry instanceof MappingEntry.FromDsl) {
-                dslSlots++;
-            }
-            entries.add(entry);
-        }
-        if (dslSlots > 1) {
-            errors.add(new ServiceMethodCallError.MultipleDslContextSlots(
-                method.className(), ServiceMethodCallError.Round.CTOR));
         }
         return entries;
     }

@@ -21,6 +21,7 @@ import org.jooq.DSLContext;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR_BUILDABLE;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
@@ -72,6 +73,9 @@ class CodeCaptureTest {
 
     private static final String HOLDERS =
         "no.sikt.graphitron.model.capture.code.fixtures.HolderFixture";
+
+    private static final String ABSTRACT_HOLDERS =
+        "no.sikt.graphitron.model.capture.code.fixtures.AbstractServiceHolderFixture";
 
     private static final String SLOT_RECORD =
         "no.sikt.graphitron.model.capture.code.fixtures.SlotRecord";
@@ -941,6 +945,27 @@ class CodeCaptureTest {
             assertThat(dsl.fetchCount(CODE_CONSTRUCTOR, CODE_CONSTRUCTOR.CLASS_NAME.eq(SERVICES)))
                 .as("a class whose service methods are all static has no holder to make")
                 .isZero();
+            assertThat(dsl.fetchCount(CODE_CONSTRUCTOR, CODE_CONSTRUCTOR.CLASS_NAME.eq(ABSTRACT_HOLDERS)))
+                .as("an abstract class's constructors make no object of it")
+                .isZero();
+        });
+    }
+
+    /**
+     * Of a holder class's public constructors, the run can call those whose every position is the
+     * jOOQ context, at most once: a DSLContext by exact type. A Configuration is not one the
+     * generated code passes, and a position a context key would fill is not one the run supplies.
+     */
+    @Test
+    @DisplayName("a buildable constructor takes nothing or one DSLContext")
+    void aBuildableConstructorTakesOnlyTheJooqContext() {
+        withReactorCapture(dsl -> {
+            var b = CODE_CONSTRUCTOR_BUILDABLE;
+            assertThat(dsl.select(b.DESCRIPTOR, b.WIDTH)
+                    .from(b)
+                    .where(b.CLASS_NAME.eq(HOLDERS))
+                    .fetch(r -> r.value1() + " " + r.value2()))
+                .containsExactly("(Lorg/jooq/DSLContext;)V 1");
         });
     }
 

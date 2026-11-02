@@ -1,0 +1,17 @@
+# An instance @service method runs on an object of its class, which the generated fetcher makes with
+# the widest constructor it can call: one taking nothing or only a DSLContext. A static method runs on
+# no object and has no holder.
+
+extend type Query {
+  titleByFilmIdViaInstance(filmId: Int!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleInstanceService",
+      method: "titleByFilmId"})
+  greetingByUser: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet"}, contextArguments: ["userId"])
+}
+
+extend schema @expectEquals(relation: "graphitron_service_holder", rows: """
+  type_name, field_name,               constructor_class_name,                                           constructor_descriptor
+  Query,     titleByFilmIdViaInstance, no.sikt.graphitron.rewrite.test.services.SampleInstanceService, (Lorg/jooq/DSLContext;)V
+  """)

@@ -23,6 +23,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_HOLDER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_HOLDER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
@@ -121,6 +123,9 @@ public final class Fetchers {
             GRAPHITRON_PRODUCER_ROUTINE.GRAPH_NAME, GRAPHITRON_PRODUCER_ROUTINE.TOUCHED_AT, graph, touchedAt);
         refresh(dsl, GRAPHITRON_PRODUCER_SERVICE, GRAPHITRON_PRODUCER_SERVICE_RULE,
             GRAPHITRON_PRODUCER_SERVICE.GRAPH_NAME, GRAPHITRON_PRODUCER_SERVICE.TOUCHED_AT, graph, touchedAt);
+        // The object an instance service method runs on, off the service producers just written.
+        refresh(dsl, GRAPHITRON_SERVICE_HOLDER, GRAPHITRON_SERVICE_HOLDER_RULE,
+            GRAPHITRON_SERVICE_HOLDER.GRAPH_NAME, GRAPHITRON_SERVICE_HOLDER.TOUCHED_AT, graph, touchedAt);
         refresh(dsl, GRAPHITRON_PRODUCER_OUTCOME, GRAPHITRON_PRODUCER_OUTCOME_RULE,
             GRAPHITRON_PRODUCER_OUTCOME.GRAPH_NAME, GRAPHITRON_PRODUCER_OUTCOME.TOUCHED_AT, graph, touchedAt);
 

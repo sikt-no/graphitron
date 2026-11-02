@@ -1,0 +1,18 @@
+# An instance @service method whose class has no constructor the generated code can call, one taking
+# nothing or only a DSLContext, has no holder: FilmShelf is made from a FilmBlurb, which the run does
+# not have.
+
+extend type Query {
+  shelfByKey: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmShelf", method: "getByKey"})
+}
+
+extend schema @assertAbsent(relation: "graphitron_service_holder", rows: """
+  type_name, field_name
+  Query,     shelfByKey
+  """)
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                       coordinate
+  SERVICE_HOLDER_UNBUILDABLE, Query.shelfByKey
+  """)

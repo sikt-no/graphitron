@@ -83,7 +83,7 @@ class ServiceCatalogTest {
     private static ServiceCatalog.ServiceReflectionResult reflect(ServiceCatalog catalog,
             String className, String methodName, ArgBindingMap argBindings, Set<String> ctxKeys,
             List<ColumnRef> batchKeyColumns, Map<String, graphql.schema.GraphQLInputType> slotTypes) {
-        var decoded = catalog.decodeServiceMethod(className, methodName, ctxKeys);
+        var decoded = catalog.decodeServiceMethod(className, methodName);
         if (decoded.failed()) {
             return new ServiceCatalog.ServiceReflectionResult(null, decoded.rejection());
         }
@@ -490,7 +490,7 @@ class ServiceCatalogTest {
 
     @Test
     void decodeServiceMethod_capturesParameterisedReturnTypeExactly() {
-        var decoded = newCatalog().decodeServiceMethod(STUB_CLASS, "getFilms", Set.of());
+        var decoded = newCatalog().decodeServiceMethod(STUB_CLASS, "getFilms");
 
         assertThat(decoded.failed()).isFalse();
         assertThat(decoded.signature().returnType())
@@ -515,9 +515,9 @@ class ServiceCatalogTest {
         // same raw class over a different inner type, and the same inner type under a different
         // container. Structural inequality is what makes each of those a mismatch downstream.
         var catalog = newCatalog();
-        var single = catalog.decodeServiceMethod(STUB_CLASS, "get", Set.of()).signature().returnType();
-        var films = catalog.decodeServiceMethod(STUB_CLASS, "getFilms", Set.of()).signature().returnType();
-        var languages = catalog.decodeServiceMethod(STUB_CLASS, "getLanguages", Set.of()).signature().returnType();
+        var single = catalog.decodeServiceMethod(STUB_CLASS, "get").signature().returnType();
+        var films = catalog.decodeServiceMethod(STUB_CLASS, "getFilms").signature().returnType();
+        var languages = catalog.decodeServiceMethod(STUB_CLASS, "getLanguages").signature().returnType();
 
         assertThat(single).isNotEqualTo(FILM_RECORD);
         assertThat(films).isNotEqualTo(FILM_RECORD);
@@ -918,10 +918,10 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_instanceMethodUnbindableCtor_rejectedWithActionableMessage() {
-        // Holder class's only public constructor takes a parameter that is neither a DSLContext
-        // nor a declared context key, so no constructor is bindable (the holder rule admits any
-        // all-bindable constructor, not just a (DSLContext)-only one). The classifier rejects with the
-        // typed InstanceHolderUnconstructible arm spelling out both options.
+        // Holder class's only public constructor takes a parameter that is not a DSLContext, so
+        // no constructor is buildable: a holder is made with one taking nothing or one DSLContext.
+        // The classifier rejects with the typed InstanceHolderUnconstructible arm spelling out both
+        // options.
         var result = reflect(newCatalog(),
             "no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor", "getFilm",
             bindings(Map.of()), Set.of(), List.of());
@@ -931,8 +931,8 @@ class ServiceCatalogTest {
             .isInstanceOf(no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible.class);
         assertThat(result.rejection().message())
             .contains("instance method")
-            .contains("no public constructor whose")
-            .contains("DSLContext or a declared context argument")
+            .contains("no public constructor taking")
+            .contains("nothing or only a DSLContext")
             .contains("make the method static");
     }
 
@@ -952,21 +952,18 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_instanceMethodDslAndContextCtor_resolvesCtorParamSources() {
-        // A (DSLContext, tenantId) constructor resolves when tenantId is a declared context
-        // key. The holder's ctor parameter sources are carried on the call shape in order: a
-        // DSLContext slot then a context binding.
+    void reflectServiceMethod_instanceMethodDslAndContextCtor_isUnconstructible() {
+        // A (DSLContext, tenantId) constructor is no holder, tenantId being a declared context key
+        // or not: a context value fills a method parameter, never a constructor's.
         var result = reflect(newCatalog(),
             "no.sikt.graphitron.rewrite.TestInstanceServiceStubMultiArgCtor", "getFilm",
             bindings(Map.of()), Set.of("tenantId"), List.of());
 
-        assertThat(result.failed()).isFalse();
-        var callShape = ((MethodRef.CallShape.InstanceWithDslHolder)
-            ((MethodRef.Service) result.ref()).callShape());
-        assertThat(callShape.ctorParams()).hasSize(2);
-        assertThat(callShape.ctorParams().get(0).source()).isInstanceOf(ParamSource.DslContext.class);
-        assertThat(callShape.ctorParams().get(1).source()).isInstanceOf(ParamSource.Context.class);
-        assertThat(callShape.ctorParams().get(1).name()).isEqualTo("tenantId");
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection()).isInstanceOfSatisfying(
+            no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible.class,
+            u -> assertThat(u.problem()).isEqualTo(
+                no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR));
     }
 
     // ===== shared reflection-intrinsic typed arms =====

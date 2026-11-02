@@ -42,13 +42,13 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
         return this;
     }
 
-    /** Round identifier: which parameter list raised the multi-DSL-slot violation. */
-    enum Round { CTOR, METHOD }
-
-    record MultipleDslContextSlots(String className, Round round) implements ServiceMethodCallError {
+    /**
+     * A service method takes the {@code DSLContext} at more than one position. A holder constructor
+     * cannot: one that takes it twice is no constructor the generated code calls.
+     */
+    record MultipleDslContextSlots(String className) implements ServiceMethodCallError {
         @Override public String message() {
-            return "service '" + className + "' has more than one DSLContext slot in its "
-                + (round == Round.CTOR ? "constructor" : "method")
+            return "service '" + className + "' has more than one DSLContext slot in its method"
                 + "; the emitter would alias both to the same 'dsl' local";
         }
         @Override public String lspCode() { return "graphitron.service-method-call.multiple-dsl-context-slots"; }
@@ -81,10 +81,9 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
 
     /**
      * An instance {@code @service} method's enclosing class cannot be used as a holder: it is
-     * abstract / an interface, or it exposes no public constructor whose parameters are each
-     * bindable from a {@code DSLContext} slot or a declared context argument (relaxing the
-     * legacy {@code (DSLContext)}-only rule). Carries the class/method coordinate, the class's
-     * simple name (for the fix hint), and which {@link HolderProblem} applies.
+     * abstract / an interface, or it exposes no public constructor the generated code can call,
+     * one taking nothing or only a {@code DSLContext}. Carries the class/method coordinate, the
+     * class's simple name (for the fix hint), and which {@link HolderProblem} applies.
      */
     record InstanceHolderUnconstructible(
         String className,
@@ -97,11 +96,12 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
                 case ABSTRACT_OR_INTERFACE -> "method '" + methodName + "' in class '" + className
                     + "' is an instance method, but its enclosing class is abstract or an interface"
                     + " — make the method static, or move it to a concrete class with a public"
-                    + " constructor whose parameters are each a DSLContext or a declared context argument";
+                    + " constructor taking nothing or only a DSLContext";
                 case NO_BINDABLE_CTOR -> "method '" + methodName + "' in class '" + className
-                    + "' is an instance method but the class has no public constructor whose"
-                    + " parameters are each a DSLContext or a declared context argument — add e.g. `public "
-                    + classSimpleName + "(DSLContext ctx)`, or make the method static";
+                    + "' is an instance method but the class has no public constructor taking"
+                    + " nothing or only a DSLContext — add e.g. `public "
+                    + classSimpleName + "(DSLContext ctx)`, or make the method static; a context"
+                    + " value fills a method parameter, not a constructor's";
             };
         }
         @Override public String lspCode() { return "graphitron.service-method-call.instance-holder-unconstructible"; }

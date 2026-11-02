@@ -4,10 +4,9 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
 /**
- * Instance-method service stub whose holder constructor takes a {@code DSLContext} plus a context
- * argument ({@code tenantId}). Used to pin {@link ServiceCatalog#decodeServiceMethod}'s relaxed
- * holder resolution: a {@code (DSLContext, ctxArg)} constructor resolves, with each ctor
- * parameter bound to a {@code DSLContext} slot or a declared context key.
+ * Instance-method service stub whose only constructor takes a {@code DSLContext} plus a value a
+ * context argument ({@code tenantId}) could supply. Pins that {@link ServiceCatalog#decodeServiceMethod}
+ * finds no holder in it: a context value fills a method parameter, never a constructor's.
  */
 public class TestInstanceServiceStubMultiArgCtor {
 

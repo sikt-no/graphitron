@@ -262,17 +262,17 @@ class ServiceCatalog {
 
     /**
      * Decode: loads the service class, resolves the single method of that name, and reduces it to
-     * a {@link ServiceSignature}. Pure over the class, the method name and the declared context
-     * keys; no binding inputs, no coordinate inputs, so nothing decided here can depend on either.
+     * a {@link ServiceSignature}. Pure over the class and the method name; no binding inputs, no
+     * coordinate inputs, so nothing decided here can depend on either.
      *
-     * <p>Instance-holder resolution runs here too. It reads only the class and {@code ctxKeys}, so
-     * it is decode by that definition even though its rejection is a binding-level concern; the
+     * <p>Instance-holder resolution runs here too. It reads only the class, so it is decode by
+     * that definition even though its rejection is a binding-level concern; the
      * outcome rides on the signature and {@link #bindServiceMethod} surfaces it.
      *
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected.
      */
-    DecodeResult decodeServiceMethod(String className, String methodName, Set<String> ctxKeys) {
+    DecodeResult decodeServiceMethod(String className, String methodName) {
         if (className == null || methodName == null) {
             return new DecodeResult(null, Rejection.structural("service reference is incomplete"));
         }
@@ -295,7 +295,7 @@ class ServiceCatalog {
         List<MethodRef.Param> ctorParams = List.of();
         Rejection unconstructible = null;
         if (!isStatic) {
-            InstanceHolderResolution holder = resolveInstanceHolder(cls, methodName, className, ctxKeys);
+            InstanceHolderResolution holder = resolveInstanceHolder(cls, methodName, className);
             if (holder.rejection() != null) {
                 unconstructible = holder.rejection();
                 ctorParams = null;
@@ -660,20 +660,18 @@ class ServiceCatalog {
 
     /**
      * Resolves the holder constructor for an instance {@code @service} method. The class must be
-     * concrete and expose a public constructor whose parameters are each bindable from a
-     * {@code DSLContext} slot or a declared context key. Among qualifying constructors the one
-     * with the most parameters wins; ties break on declaration order.
+     * concrete and expose a public constructor the generated code can call: every parameter the
+     * jOOQ context, a {@code DSLContext} by exact type, at most once. Of those the widest wins, and
+     * no two are equally wide, since the only ones are the no-argument and the
+     * {@code (DSLContext)} constructor. The store states the same choice in
+     * {@code graphitron_service_holder}.
      *
      * <p>Returns the chosen constructor's parameters projected onto {@link MethodRef.Param} with
-     * {@link ParamSource.DslContext} / {@link ParamSource.Context} sources, which the walker
-     * translates into {@code ServiceMethodCall.Instance.ctorArgs}. Context-key binding reuses the
-     * same {@code ctxKeys} membership the method-parameter loop uses, so a ctor context arg
-     * participates in the cross-site {@code contextArgument} type-agreement check unchanged. A
-     * multi-{@code DSLContext} constructor is not rejected here; the walker raises
-     * {@link ServiceMethodCallError.MultipleDslContextSlots} with the {@code CTOR} round.
+     * {@link ParamSource.DslContext} sources, which the walker translates into
+     * {@code ServiceMethodCall.Instance.ctorArgs}.
      */
     private static InstanceHolderResolution resolveInstanceHolder(
-            Class<?> cls, String methodName, String className, Set<String> ctxKeys) {
+            Class<?> cls, String methodName, String className) {
         int classMods = cls.getModifiers();
         if (java.lang.reflect.Modifier.isAbstract(classMods) || cls.isInterface()) {
             return new InstanceHolderResolution(null,
@@ -683,7 +681,7 @@ class ServiceCatalog {
         java.lang.reflect.Constructor<?> chosen = null;
         for (var ctor : cls.getDeclaredConstructors()) {
             if (!java.lang.reflect.Modifier.isPublic(ctor.getModifiers())) continue;
-            if (!ctorParamsAllBindable(ctor, ctxKeys)) continue;
+            if (!buildable(ctor)) continue;
             if (chosen == null || ctor.getParameterCount() > chosen.getParameterCount()) {
                 chosen = ctor;
             }
@@ -695,36 +693,23 @@ class ServiceCatalog {
         }
         var ctorParams = new ArrayList<MethodRef.Param>();
         for (var p : chosen.getParameters()) {
-            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) {
-                String paramName = p.isNamePresent() ? p.getName() : "dsl";
-                ctorParams.add(new MethodRef.Param.Typed(paramName,
-                    p.getParameterizedType().getTypeName(),
-                    TypeName.get(p.getParameterizedType()),
-                    new ParamSource.DslContext()));
-            } else {
-                // Bindable by the ctorParamsAllBindable guard: name matches a context key.
-                ctorParams.add(new MethodRef.Param.Typed(p.getName(),
-                    p.getParameterizedType().getTypeName(),
-                    TypeName.get(p.getParameterizedType()),
-                    new ParamSource.Context()));
-            }
+            String paramName = p.isNamePresent() ? p.getName() : "dsl";
+            ctorParams.add(new MethodRef.Param.Typed(paramName,
+                p.getParameterizedType().getTypeName(),
+                TypeName.get(p.getParameterizedType()),
+                new ParamSource.DslContext()));
         }
         return new InstanceHolderResolution(List.copyOf(ctorParams), null);
     }
 
     /**
-     * True when every parameter of {@code ctor} is bindable for an instance-{@code @service}
-     * holder: a {@code DSLContext}, or a named parameter whose name is a declared context key.
-     * A nameless parameter (compiled without {@code -parameters}) that isn't a {@code DSLContext}
-     * is not bindable.
+     * True when the generated code can call {@code ctor} to make a holder: it takes nothing, or one
+     * {@code DSLContext} by exact type, the jOOQ context the run holds. A context value fills a
+     * method parameter, never a constructor's.
      */
-    private static boolean ctorParamsAllBindable(java.lang.reflect.Constructor<?> ctor, Set<String> ctxKeys) {
-        for (var p : ctor.getParameters()) {
-            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) continue;
-            if (p.isNamePresent() && ctxKeys.contains(p.getName())) continue;
-            return false;
-        }
-        return true;
+    private static boolean buildable(java.lang.reflect.Constructor<?> ctor) {
+        var types = ctor.getParameterTypes();
+        return types.length == 0 || (types.length == 1 && types[0] == org.jooq.DSLContext.class);
     }
 
     /**

@@ -178,9 +178,10 @@ class ServiceRootFetcherPipelineTest {
     }
 
     @Test
-    void serviceOnMultiArgCtorHolder_resolvesWithoutHolderRejection() {
-        // An instance @service whose holder takes (DSLContext, tenantId) resolves when
-        // tenantId is a declared context argument — no InstanceHolderUnconstructible rejection.
+    void serviceOnContextArgumentCtorHolder_isRejectedAsUnconstructible() {
+        // An instance @service whose only constructor takes (DSLContext, tenantId) has no holder,
+        // tenantId being a declared context argument or not: a context value fills a method
+        // parameter, never a constructor's.
         var errors = validate("""
             type Film @table(name: "film") { title: String }
             type Query {
@@ -191,9 +192,10 @@ class ServiceRootFetcherPipelineTest {
             """);
 
         assertThat(errors)
-            .as("a (DSLContext, ctxArg) holder ctor must resolve without a holder rejection")
-            .noneMatch(e -> e.rejection()
-                instanceof no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible);
+            .as("a (DSLContext, ctxArg) constructor is no holder")
+            .anyMatch(e -> e.rejection()
+                instanceof no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible u
+                && u.problem() == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR);
     }
 
     private static List<ValidationError> validate(String sdl) {

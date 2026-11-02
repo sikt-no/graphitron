@@ -6511,6 +6511,25 @@ COMMENT ON COLUMN code_constructor_parameter.erased_class IS 'the class the para
 COMMENT ON COLUMN code_constructor_parameter.role IS 'what the position is for as far as its type alone decides, by the rule and in the vocabulary of code_method_parameter.role: DSL_CONTEXT or CONFIGURATION where the position is declared as that jOOQ type exactly, the two table roles, else OTHER';
 COMMENT ON COLUMN code_constructor_parameter.touched_at IS 'when the reading that produced this row ran; swept with the constructor it hangs on';
 
+CREATE VIEW code_constructor_buildable (source_name, class_name, descriptor, width) AS
+-- Every position is the jOOQ context, which the run holds one of: a DSLContext by exact type, at
+-- most once, so the constructors this admits take nothing or one DSLContext and no two are equally
+-- wide. A position anything else fills, a context key included, is one the run cannot supply.
+SELECT c.source_name, c.class_name, c.descriptor,
+       (SELECT COUNT(*) FROM code_constructor_parameter p
+         WHERE p.source_name = c.source_name AND p.class_name = c.class_name
+           AND p.descriptor = c.descriptor)
+  FROM code_constructor c
+ WHERE NOT EXISTS (SELECT 1 FROM code_constructor_parameter p
+                    WHERE p.source_name = c.source_name AND p.class_name = c.class_name
+                      AND p.descriptor = c.descriptor
+                      AND (p.role <> 'DSL_CONTEXT' OR p.position > 0));
+COMMENT ON VIEW code_constructor_buildable IS 'One public constructor the run can call to make an object an instance service method runs on: every parameter the jOOQ context, at most once. For example SampleInstanceService(DSLContext) and a no-argument constructor are buildable, and one taking a String is not.';
+-- COMMENT ON COLUMN code_constructor_buildable.source_name IS 'the entry the class was read from, as on code_constructor';
+-- COMMENT ON COLUMN code_constructor_buildable.class_name IS 'the class the constructor makes';
+-- COMMENT ON COLUMN code_constructor_buildable.descriptor IS 'the constructor''s descriptor, completing its key in code_constructor';
+-- COMMENT ON COLUMN code_constructor_buildable.width IS 'how many parameters it takes, which is what makes one buildable constructor wider than another';
+
 CREATE TABLE code_write_slot (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -13192,7 +13211,23 @@ SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY
                   AND o.source_line = w.source_line AND o.source_column = w.source_column
                   AND o.parameter_name = w.parameter_name
                   AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
-                       OR o.origin_position <> w.origin_position));
+                       OR o.origin_position <> w.origin_position))
+UNION ALL
+-- An instance @service method whose class has no constructor the run can call, at the reference:
+-- an abstract class or an interface has none, and one taking anything but the jOOQ context is not
+-- buildable. The detail is the class.
+SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
+       'SERVICE_HOLDER_UNBUILDABLE', cr.method_class_name
+  FROM graphitron_code_reference_site site
+  JOIN graphitron_code_reference cr
+    ON cr.graph_name = site.graph_name AND cr.source_name = site.source_name
+   AND cr.source_line = site.source_line AND cr.source_column = site.source_column
+  JOIN code_method m
+    ON m.source_name = cr.method_source_name AND m.class_name = cr.method_class_name
+   AND m.method_name = cr.method_name AND m.descriptor = cr.method_descriptor
+ WHERE site.directive_name = 'service' AND NOT m.is_static
+   AND NOT EXISTS (SELECT 1 FROM code_constructor_buildable b
+                    WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name);
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -13397,6 +13432,55 @@ COMMENT ON VIEW graphitron_producer_service_rule IS 'One row the service rule co
 -- COMMENT ON COLUMN graphitron_producer_service_rule.method_class_name IS 'the class declaring the method';
 -- COMMENT ON COLUMN graphitron_producer_service_rule.method_name IS 'the method';
 -- COMMENT ON COLUMN graphitron_producer_service_rule.method_descriptor IS 'the method''s descriptor';
+
+CREATE VIEW graphitron_service_holder_rule
+  (graph_name, type_name, field_name, constructor_source_name, constructor_class_name,
+   constructor_descriptor) AS
+-- An instance method's class, and of its buildable constructors the widest. A static method runs on
+-- no object, and a class with no buildable constructor has no row; graphitron_entry_defect says so.
+SELECT s.graph_name, s.type_name, s.field_name, b.source_name, b.class_name, b.descriptor
+  FROM graphitron_producer_service s
+  JOIN code_method m
+    ON m.source_name = s.method_source_name AND m.class_name = s.method_class_name
+   AND m.method_name = s.method_name AND m.descriptor = s.method_descriptor
+  JOIN code_constructor_buildable b
+    ON b.source_name = s.method_source_name AND b.class_name = s.method_class_name
+ WHERE NOT m.is_static
+   AND NOT EXISTS (SELECT 1 FROM code_constructor_buildable w
+                    WHERE w.source_name = b.source_name AND w.class_name = b.class_name
+                      AND w.width > b.width);
+COMMENT ON VIEW graphitron_service_holder_rule IS 'One row the holder rule computes, in the shape graphitron_service_holder stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_service_holder, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_service_holder_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_service_holder.graph_name';
+-- COMMENT ON COLUMN graphitron_service_holder_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_service_holder.type_name';
+-- COMMENT ON COLUMN graphitron_service_holder_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_service_holder.field_name';
+-- COMMENT ON COLUMN graphitron_service_holder_rule.constructor_source_name IS 'the constructor_source_name of a row of this rule, which the stage writes into graphitron_service_holder.constructor_source_name';
+-- COMMENT ON COLUMN graphitron_service_holder_rule.constructor_class_name IS 'the constructor_class_name of a row of this rule, which the stage writes into graphitron_service_holder.constructor_class_name';
+-- COMMENT ON COLUMN graphitron_service_holder_rule.constructor_descriptor IS 'the constructor_descriptor of a row of this rule, which the stage writes into graphitron_service_holder.constructor_descriptor';
+
+CREATE TABLE graphitron_service_holder (
+  graph_name              VARCHAR   NOT NULL,
+  type_name               VARCHAR   NOT NULL,
+  field_name              VARCHAR   NOT NULL,
+  constructor_source_name VARCHAR   NOT NULL,
+  constructor_class_name  VARCHAR   NOT NULL,
+  constructor_descriptor  VARCHAR   NOT NULL,
+  touched_at              TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  -- The service call it makes the object for, so a holder cannot outlive the call.
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_producer_service (graph_name, type_name, field_name) ON DELETE CASCADE,
+  -- The constructor, so a reading that no longer finds it takes the holder with it.
+  FOREIGN KEY (constructor_source_name, constructor_class_name, constructor_descriptor)
+    REFERENCES code_constructor (source_name, class_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_service_holder IS 'The constructor that makes the object an instance @service method runs on: one row per service producer whose method is an instance method and whose class has a buildable constructor, the widest. For example Query.title @service(service: {className: "SampleInstanceService", method: "titleByFilmId"}) is made by SampleInstanceService(DSLContext).';
+COMMENT ON COLUMN graphitron_service_holder.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_service_holder.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_service_holder.field_name IS 'the field; with the type, the service producer whose call this object receives';
+COMMENT ON COLUMN graphitron_service_holder.constructor_source_name IS 'the classpath entry the class was read from; with the class and the descriptor, a code_constructor key';
+COMMENT ON COLUMN graphitron_service_holder.constructor_class_name IS 'the class the constructor makes, the one declaring the method';
+COMMENT ON COLUMN graphitron_service_holder.constructor_descriptor IS 'the constructor''s descriptor; what fills each of its positions is the jOOQ context, read off code_constructor_parameter';
+COMMENT ON COLUMN graphitron_service_holder.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- A nullable list of a union or an interface with members, every one of them @error. A field whose
 -- union or interface lists an @error type and falls short of this is a defect where it was written.
@@ -17927,6 +18011,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.', 'graphitron'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
    'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.', 'graphitron'),
+  ('SERVICE_HOLDER_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_HOLDER_UNBUILDABLE',
+   'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.', 'graphitron'),
   ('CONDITION_OVERLOAD_TIE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_TIE',
    'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'graphitron'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
@@ -18464,6 +18550,14 @@ INSERT INTO meta_relation VALUES
    'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the anchor step that runs it, on the terms every stage rule is kept on: the EXCEPT between this view and the table it fills stays runnable for as long as both exist.'),
+  ('graphitron_service_holder', 'graph-field', 'graphitron',
+   'The constructor that makes the object an instance @service method runs on: one row per service producer whose method is an instance method and whose class has a buildable constructor, the widest.',
+   'For example Query.title @service(service: {className: "SampleInstanceService", method: "titleByFilmId"}) is made by SampleInstanceService(DSLContext).',
+   'What the service call reads to make its object, where the generator reflected on the class to choose. Keyed by the producer, since each call makes its own object, and keyed into code_constructor so that a constructor gone from the classpath takes it along. Stored rather than read through the rule because the call that reads it is emitted per field and the rule climbs the producer, the method and every constructor of the class. A class with no buildable constructor has no row; SERVICE_HOLDER_UNBUILDABLE says so.'),
+  ('graphitron_service_holder_rule', 'graph-field', 'graphitron',
+   'One row the holder rule computes, in the shape graphitron_service_holder stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron assembly inserts this view''s rows for one graph into graphitron_service_holder, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_call_context_key', 'sdl-call-parameter', 'graphitron',
    'The context key that fills one parameter of one call: one row per code reference and parameter a $context pair or a contextArguments element names once.',
    'For example contextArguments: ["tenantId"] on a @service fills the parameter tenantId of the method its service names with the value the request context carries under tenantId.',
@@ -19438,6 +19532,10 @@ INSERT INTO meta_relation VALUES
    'One public constructor of a class declaring an instance @service method: one row per class and constructor, overloads told apart by descriptor.',
    'For example SampleInstanceService(DSLContext), the one public constructor of a class whose titleByFilmId an instance @service names.',
    'What a generated fetcher calls to get the object an instance @service method runs on, so the holder a field needs is chosen from what the class offers rather than by reflecting on it when the schema is classified. Read only for the classes the reading already found an instance service method on, kept apart from the methods as the census keeps them, since a constructor is named by nothing an author writes.'),
+  ('code_constructor_buildable', 'class-constructor', 'code',
+   'One public constructor the run can call to make an object an instance service method runs on: every parameter the jOOQ context, at most once.',
+   'For example SampleInstanceService(DSLContext) and a no-argument constructor are buildable, and one taking a String is not.',
+   'Which constructors the generated code can call, stated once for the holder rule and the defect that reports a class with none, so the two cannot disagree. A view: its readers each look up one class, and nothing constrains it.'),
   ('code_constructor_parameter', 'constructor-parameter', 'code',
    'One position in a public constructor''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
    'For example position 0 of SampleInstanceService(DSLContext), named ctx and playing the DSL_CONTEXT role.',
