@@ -15,6 +15,7 @@ import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
+import no.sikt.graphitron.model.derive.PathAnchors;
 import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
@@ -93,6 +94,9 @@ public final class GraphitronAssemblyCapture {
         // table. Here rather than as a line of the anchor because the targets are written above; it
         // moves with the other steps when this class dissolves into the anchor's own lines.
         Occurrences.derive(dsl, graph, readAt);
+        // Where each path is written, by the declared element and the type it reaches, off the path
+        // entries and the targets above; the paths follow these.
+        PathAnchors.derive(dsl, graph, readAt);
         // Then which class stands for each type: the table binding just written read through its
         // record class, and what the producers' resolved methods ground, closed over the members
         // each backed class offers. The classpath was read before this gatherer ran.

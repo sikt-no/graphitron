@@ -14,11 +14,12 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ANCHOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_HOLDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -29,10 +30,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The path relations hold a consistent row set and refuse an inconsistent one by their own keys and
  * checks: a need's landing is a type or a table as its kind says, a path names an anchor exactly when
- * it was not inferred, and a step needs its need.
+ * it was not inferred, a need goes with its occurrence, and an anchor outlives what it was built from
+ * until the sweep takes it.
  *
- * <p>The rows past the written elements are the test's own, written over a captured store whose
- * field, type, positions and tables they reference, since no stage derives them yet.
+ * <p>The rows past the anchor are the test's own, written over a captured store whose occurrence,
+ * anchor, types and tables they reference, since no stage derives them yet.
  */
 class PathRelationConstraintTest {
 
@@ -44,97 +46,145 @@ class PathRelationConstraintTest {
         }
         """;
 
-    private static final String HOLDER = "Customer.address";
+    private static final String COORDINATE = "Customer.address";
+    private static final String TARGET = "Address";
     private static final LocalDateTime NOW = LocalDateTime.now();
 
     @Test
-    @DisplayName("a written path to a type and an inferred path to a table are accepted, and go with their holder")
+    @DisplayName("a written path to a type and an inferred path to a table are accepted, and go with their occurrence")
     void aConsistentRowSetIsAccepted(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStoreOfCatalog(tmp, SDL, CatalogInput.of(TestRunContext.of()))) {
             var dsl = store.dsl();
             var customer = table(dsl, "customer");
             var address = table(dsl, "address");
-            seedHolderAndAnchor(dsl);
+            assertOccurrenceAndAnchor(dsl);
 
             insertTypeNeed(dsl, customer);
-            insertPath(dsl, customer, "TYPE", "Address", address, "WRITTEN", HOLDER);
-            insertStep(dsl, customer, "TYPE", "Address", customer, address, 0);
+            insertPath(dsl, customer, "TYPE", TARGET, address, "WRITTEN", COORDINATE, TARGET);
+            insertStep(dsl, customer, "TYPE", TARGET, customer, address, 0);
 
             insertTableNeed(dsl, customer, address);
             String landing = address.value2() + ".address";
-            insertPath(dsl, customer, "TABLE", landing, address, "INFERRED", null);
+            insertPath(dsl, customer, "TABLE", landing, address, "INFERRED", null, null);
             insertStep(dsl, customer, "TABLE", landing, customer, address, null);
 
             assertThat(dsl.fetchCount(GRAPHITRON_PATH)).isEqualTo(2);
             assertThat(dsl.fetchCount(GRAPHITRON_PATH_STEP)).isEqualTo(2);
 
-            var h = GRAPHITRON_PATH_HOLDER;
-            dsl.deleteFrom(h).where(h.GRAPH_NAME.eq(GRAPH), h.HOLDER.eq(HOLDER)).execute();
-            assertThat(dsl.fetchCount(GRAPHITRON_PATH_NEED)).as("needs go with their holder").isZero();
+            var o = GRAPHITRON_OCCURRENCE;
+            dsl.deleteFrom(o).where(o.GRAPH_NAME.eq(GRAPH), o.COORDINATE.eq(COORDINATE)).execute();
+            assertThat(dsl.fetchCount(GRAPHITRON_PATH_NEED)).as("needs go with their occurrence").isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_PATH)).as("paths go with their need").isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_PATH_STEP)).as("steps go with their need").isZero();
+            var a = GRAPHITRON_PATH_ANCHOR;
+            assertThat(dsl.fetchCount(a, a.GRAPH_NAME.eq(GRAPH), a.ELEMENT_COORDINATE.eq(COORDINATE)))
+                .as("the anchor is the declaration's, not the occurrence's, and stays")
+                .isOne();
         }
     }
 
     @Test
-    @DisplayName("a TYPE need with a landing table, an inferred path with an anchor and a step on no need are refused")
+    @DisplayName("an anchor survives its element going, its reference set null, and the path following it stays")
+    void anAnchorOutlivesItsElement(@TempDir Path tmp) {
+        try (var store = CapturedStore.ownStoreOfCatalog(tmp, SDL, CatalogInput.of(TestRunContext.of()))) {
+            var dsl = store.dsl();
+            var customer = table(dsl, "customer");
+            var address = table(dsl, "address");
+            assertOccurrenceAndAnchor(dsl);
+            insertTypeNeed(dsl, customer);
+            insertPath(dsl, customer, "TYPE", TARGET, address, "WRITTEN", COORDINATE, TARGET);
+
+            // The field row references the element without a cascade, so it goes first.
+            var f = GRAPHITRON_FIELD;
+            dsl.deleteFrom(f).where(f.GRAPH_NAME.eq(GRAPH), f.COORDINATE.eq(COORDINATE)).execute();
+            var e = GRAPHITRON_ELEMENT;
+            dsl.deleteFrom(e).where(e.GRAPH_NAME.eq(GRAPH), e.COORDINATE.eq(COORDINATE)).execute();
+
+            var a = GRAPHITRON_PATH_ANCHOR;
+            var anchor = dsl.select(a.ELEMENT_GRAPH_REF, a.ELEMENT_COORDINATE_REF, a.TARGET_TYPE_REF)
+                .from(a).where(a.GRAPH_NAME.eq(GRAPH), a.ELEMENT_COORDINATE.eq(COORDINATE),
+                    a.TARGET_TYPE.eq(TARGET))
+                .fetchOptional();
+            assertThat(anchor).as("the anchor survives its element").isPresent();
+            assertThat(anchor.get().value1()).as("the element reference's graph half").isNull();
+            assertThat(anchor.get().value2()).as("the element reference's coordinate half").isNull();
+            assertThat(anchor.get().value3()).as("the type still stands").isEqualTo(TARGET);
+            assertThat(dsl.fetchCount(GRAPHITRON_PATH)).as("the path following it stays").isOne();
+        }
+    }
+
+    @Test
+    @DisplayName("a TYPE need with a landing table, a need on no occurrence, an inferred path with an anchor, a written one without, and a step on no need are refused")
     void anInconsistentRowIsRefused(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStoreOfCatalog(tmp, SDL, CatalogInput.of(TestRunContext.of()))) {
             var dsl = store.dsl();
             var customer = table(dsl, "customer");
             var address = table(dsl, "address");
-            seedHolderAndAnchor(dsl);
+            assertOccurrenceAndAnchor(dsl);
 
             var n = GRAPHITRON_PATH_NEED;
             assertRefused("Check constraint", () -> dsl.insertInto(n)
-                .set(n.GRAPH_NAME, GRAPH).set(n.HOLDER, HOLDER)
+                .set(n.GRAPH_NAME, GRAPH).set(n.COORDINATE, COORDINATE)
                 .set(n.START_SOURCE_NAME, customer.value1()).set(n.START_SCHEMA, customer.value2())
                 .set(n.START_TABLE, customer.value3())
-                .set(n.LANDING_KIND, "TYPE").set(n.LANDING, "Address").set(n.LANDING_TYPE, "Address")
+                .set(n.LANDING_KIND, "TYPE").set(n.LANDING, TARGET).set(n.LANDING_TYPE, TARGET)
                 .set(n.LANDING_SOURCE_NAME, address.value1()).set(n.LANDING_SCHEMA, address.value2())
                 .set(n.LANDING_TABLE, address.value3())
                 .set(n.TOUCHED_AT, NOW).execute());
 
+            assertRefused("Referential integrity", () -> dsl.insertInto(n)
+                .set(n.GRAPH_NAME, GRAPH).set(n.COORDINATE, "Customer.nowhere")
+                .set(n.START_SOURCE_NAME, customer.value1()).set(n.START_SCHEMA, customer.value2())
+                .set(n.START_TABLE, customer.value3())
+                .set(n.LANDING_KIND, "TYPE").set(n.LANDING, TARGET).set(n.LANDING_TYPE, TARGET)
+                .set(n.TOUCHED_AT, NOW).execute());
+
             insertTypeNeed(dsl, customer);
-            assertRefused("Check constraint",
-                () -> insertPath(dsl, customer, "TYPE", "Address", address, "INFERRED", HOLDER));
+            assertRefused("Check constraint", () -> insertPath(dsl, customer, "TYPE", TARGET, address,
+                "INFERRED", COORDINATE, TARGET));
+            assertRefused("Check constraint", () -> insertPath(dsl, customer, "TYPE", TARGET, address,
+                "WRITTEN", null, null));
+            assertRefused("Check constraint", () -> insertPath(dsl, customer, "TYPE", TARGET, address,
+                "WRITTEN", COORDINATE, null));
 
             assertRefused("Referential integrity",
                 () -> insertStep(dsl, customer, "TYPE", "Customer", customer, address, 0));
         }
     }
 
-    private static void seedHolderAndAnchor(DSLContext dsl) {
-        var f = GRAPHITRON_AST_FIELD_PATH_ENTRY;
-        var written = dsl.select(f.SOURCE_NAME, f.FIELD_LINE, f.FIELD_COLUMN, f.ELEMENT_LINE,
-                f.ELEMENT_COLUMN)
-            .from(f).where(f.GRAPH_NAME.eq(GRAPH), f.POSITION.eq(0)).fetchSingle();
-        var a = GRAPHITRON_PATH_ANCHOR;
-        dsl.insertInto(a)
-            .set(a.GRAPH_NAME, GRAPH).set(a.ANCHOR, HOLDER).set(a.ANCHOR_KIND, "FIELD")
-            .set(a.SOURCE_NAME, written.value1()).set(a.SOURCE_LINE, written.value2())
-            .set(a.SOURCE_COLUMN, written.value3()).set(a.TOUCHED_AT, NOW).execute();
-        var e = GRAPHITRON_AST_PATH_ENTRY;
-        assertThat(dsl.fetchCount(e, e.GRAPH_NAME.eq(GRAPH), e.SOURCE_NAME.eq(written.value1()),
-                e.ANCHOR_LINE.eq(written.value2()), e.ANCHOR_COLUMN.eq(written.value3()),
-                e.PLACE.eq(0), e.ELEMENT_LINE.eq(written.value4()),
-                e.ELEMENT_COLUMN.eq(written.value5())))
-            .as("capture writes the field's element at its anchor, which the anchor row names")
+    /**
+     * The occurrence the needs key on and the anchor the written path follows, both as the capture
+     * wrote them: the field's own coordinate, and its declaration reaching its target type.
+     */
+    private static void assertOccurrenceAndAnchor(DSLContext dsl) {
+        var o = GRAPHITRON_OCCURRENCE;
+        assertThat(dsl.fetchCount(o, o.GRAPH_NAME.eq(GRAPH), o.COORDINATE.eq(COORDINATE)))
+            .as("capture writes the field's occurrence at its own coordinate")
             .isOne();
-        var h = GRAPHITRON_PATH_HOLDER;
-        dsl.insertInto(h)
-            .set(h.GRAPH_NAME, GRAPH).set(h.HOLDER, HOLDER).set(h.KIND, "FIELD")
-            .set(h.TYPE_NAME, "Customer").set(h.FIELD_NAME, "address")
-            .set(h.TOUCHED_AT, NOW).execute();
+        var a = GRAPHITRON_PATH_ANCHOR;
+        var anchor = dsl.select(a.ANCHOR_KIND, a.ELEMENT_COORDINATE_REF, a.TARGET_TYPE_REF,
+                a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN)
+            .from(a).where(a.GRAPH_NAME.eq(GRAPH), a.ELEMENT_COORDINATE.eq(COORDINATE),
+                a.TARGET_TYPE.eq(TARGET))
+            .fetchSingle();
+        assertThat(anchor.value1()).isEqualTo("FIELD");
+        assertThat(anchor.value2()).as("the element reference").isEqualTo(COORDINATE);
+        assertThat(anchor.value3()).as("the type reference").isEqualTo(TARGET);
+        var e = GRAPHITRON_AST_PATH_ENTRY;
+        assertThat(dsl.fetchCount(e, e.GRAPH_NAME.eq(GRAPH), e.SOURCE_NAME.eq(anchor.value4()),
+                e.ANCHOR_LINE.eq(anchor.value5()), e.ANCHOR_COLUMN.eq(anchor.value6()),
+                e.PLACE.eq(0)))
+            .as("the anchor stands at the position capture keyed the field's element under")
+            .isOne();
     }
 
     private static void insertTypeNeed(DSLContext dsl, Record3<String, String, String> start) {
         var n = GRAPHITRON_PATH_NEED;
         dsl.insertInto(n)
-            .set(n.GRAPH_NAME, GRAPH).set(n.HOLDER, HOLDER)
+            .set(n.GRAPH_NAME, GRAPH).set(n.COORDINATE, COORDINATE)
             .set(n.START_SOURCE_NAME, start.value1()).set(n.START_SCHEMA, start.value2())
             .set(n.START_TABLE, start.value3())
-            .set(n.LANDING_KIND, "TYPE").set(n.LANDING, "Address").set(n.LANDING_TYPE, "Address")
+            .set(n.LANDING_KIND, "TYPE").set(n.LANDING, TARGET).set(n.LANDING_TYPE, TARGET)
             .set(n.TOUCHED_AT, NOW).execute();
     }
 
@@ -142,7 +192,7 @@ class PathRelationConstraintTest {
                                         Record3<String, String, String> landing) {
         var n = GRAPHITRON_PATH_NEED;
         dsl.insertInto(n)
-            .set(n.GRAPH_NAME, GRAPH).set(n.HOLDER, HOLDER)
+            .set(n.GRAPH_NAME, GRAPH).set(n.COORDINATE, COORDINATE)
             .set(n.START_SOURCE_NAME, start.value1()).set(n.START_SCHEMA, start.value2())
             .set(n.START_TABLE, start.value3())
             .set(n.LANDING_KIND, "TABLE").set(n.LANDING, landing.value2() + "." + landing.value3())
@@ -154,16 +204,17 @@ class PathRelationConstraintTest {
     private static void insertPath(DSLContext dsl, Record3<String, String, String> start,
                                    String landingKind, String landing,
                                    Record3<String, String, String> target, String origin,
-                                   String anchor) {
+                                   String anchorCoordinate, String anchorTargetType) {
         var p = GRAPHITRON_PATH;
         dsl.insertInto(p)
-            .set(p.GRAPH_NAME, GRAPH).set(p.HOLDER, HOLDER)
+            .set(p.GRAPH_NAME, GRAPH).set(p.COORDINATE, COORDINATE)
             .set(p.START_SOURCE_NAME, start.value1()).set(p.START_SCHEMA, start.value2())
             .set(p.START_TABLE, start.value3())
             .set(p.LANDING_KIND, landingKind).set(p.LANDING, landing)
             .set(p.TARGET_SOURCE_NAME, target.value1()).set(p.TARGET_SCHEMA, target.value2())
             .set(p.TARGET_TABLE, target.value3())
-            .set(p.ORIGIN, origin).set(p.ANCHOR, anchor)
+            .set(p.ORIGIN, origin).set(p.ANCHOR_COORDINATE, anchorCoordinate)
+            .set(p.ANCHOR_TARGET_TYPE, anchorTargetType)
             .set(p.TOUCHED_AT, NOW).execute();
     }
 
@@ -173,7 +224,7 @@ class PathRelationConstraintTest {
                                    Record3<String, String, String> to, Integer elementPlace) {
         var s = GRAPHITRON_PATH_STEP;
         dsl.insertInto(s)
-            .set(s.GRAPH_NAME, GRAPH).set(s.HOLDER, HOLDER)
+            .set(s.GRAPH_NAME, GRAPH).set(s.COORDINATE, COORDINATE)
             .set(s.START_SOURCE_NAME, start.value1()).set(s.START_SCHEMA, start.value2())
             .set(s.START_TABLE, start.value3())
             .set(s.LANDING_KIND, landingKind).set(s.LANDING, landing).set(s.POSITION, 0)

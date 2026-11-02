@@ -1,5 +1,6 @@
-# The second reading: the field's path loses its second element and the argument its @reference.
-# The rows that still say what is written are marked again; the others go.
+# The second reading: the field's path loses its second element, the argument its @reference, and
+# managers its second @referenceFor naming Staff. The rows that still say what is written are marked
+# again; the others go.
 
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
 type Staff @table(name: "staff") { staffId: Int @field(name: "staff_id") }
@@ -10,19 +11,27 @@ type Customer @table(name: "customer") {
 
 union Person = Customer | Staff
 
+interface Located {
+  address: Address @reference(path: [{table: "address"}])
+}
+
+type Branch implements Located @table(name: "store") { address: Address }
+
 input CustomerFilter @table(name: "customer") {
   addressId: Int @reference(path: [{key: "customer_address_id_fkey"}])
 }
 
 type Store @table(name: "store") {
   people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+    @referenceFor(type: "Customer", path: [{key: "customer_store_id_fkey"}])
+  managers: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
   customers(
     filter: CustomerFilter
     cityId: Int
   ): [Customer!]!
 }
 
-extend type Query { stores: [Store!]! }
+extend type Query { stores: [Store!]! branches: [Located!]! }
 
 # The field's path is one element now, rewritten at this reading.
 extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
@@ -34,11 +43,18 @@ extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
   0,     34,             1000000060
   """)
 
-# The @referenceFor application's row, unchanged and marked again.
+# The @referenceFor application on people naming Staff, unchanged and marked again.
 extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
   (graph_name, source_name, anchor_line, anchor_column) IN (
-    SELECT graph_name, source_name, source_line, source_column
-      FROM graphitron_ast_reference_for_entry WHERE participant_type_ref = 'Staff')
+    SELECT r.graph_name, r.source_name, r.source_line, r.source_column
+      FROM graphitron_ast_reference_for_entry r
+      JOIN graphql_ast_entry e
+        ON e.graph_name = r.graph_name AND e.source_name = r.source_name
+       AND e.source_line = r.source_line AND e.source_column = r.source_column
+      JOIN graphql_ast_field_definition_entry f
+        ON f.graph_name = e.graph_name AND f.source_name = e.source_name
+       AND f.source_line = e.parent_line AND f.source_column = e.parent_column
+     WHERE r.participant_type_ref = 'Staff' AND f.name = 'people')
   """, rows: """
   place, element_column, touched_at
   0,     58,             1000000060
@@ -60,4 +76,21 @@ extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
   """, rows: """
   place, element_column, touched_at
   0,     36,             1000000060
+  """)
+
+# The anchors still written are marked again, at the positions the edit moved them to; the
+# argument's is swept, and managers keeps the one @referenceFor naming Staff it still writes.
+extend schema @expectEquals(relation: "graphitron_path_anchor", rows: """
+  element_coordinate,       target_type, anchor_kind,   source_line, source_column, touched_at
+  Customer.city,            String,      FIELD,         9,           3,             1000000060
+  Located.address,          Address,     FIELD,         15,          3,             1000000060
+  CustomerFilter.addressId, Int,         INPUT_FIELD,   21,          3,             1000000060
+  Store.people,             Staff,       REFERENCE_FOR, 25,          22,            1000000060
+  Store.people,             Customer,    REFERENCE_FOR, 26,          5,             1000000060
+  Store.managers,           Staff,       REFERENCE_FOR, 27,          24,            1000000060
+  """)
+
+# managers names Staff once now, so the defect is swept.
+extend schema @assertEmpty(relation: "graphitron_entry_defect", where: """
+  code = 'REFERENCE_FOR_DUPLICATE_TYPE'
   """)

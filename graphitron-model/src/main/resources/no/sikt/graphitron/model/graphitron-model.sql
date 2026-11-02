@@ -2407,7 +2407,7 @@ COMMENT ON TABLE graphitron_ast_path_entry IS 'One element of one written path, 
 COMMENT ON COLUMN graphitron_ast_path_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_path_entry.source_name IS 'the file the anchor was written in, which holds every element of its path';
 COMMENT ON COLUMN graphitron_ast_path_entry.anchor_line IS 'the anchor''s source line, 1-based: a field declaration''s, a @referenceFor application''s at sign, an argument''s or an input field''s';
-COMMENT ON COLUMN graphitron_ast_path_entry.anchor_column IS 'the anchor''s source column; with the line, a position in graphql_ast_entry within this file, and graphitron_path_anchor names the same anchor by name for a reference from elsewhere';
+COMMENT ON COLUMN graphitron_ast_path_entry.anchor_column IS 'the anchor''s source column; with the line, a position in graphql_ast_entry within this file, and graphitron_path_anchor names the same anchor by its declared element and target type for a reference from elsewhere';
 COMMENT ON COLUMN graphitron_ast_path_entry.place IS 'the element''s place in its anchor''s path, numbered from zero in the order written; for a field declaration across its @routine and @reference applications, each application''s elements in their own order. A reference from another file names an element by its anchor and this place';
 COMMENT ON COLUMN graphitron_ast_path_entry.element_line IS 'the element''s source line: a @routine application''s own, or a path element''s value node''s';
 COMMENT ON COLUMN graphitron_ast_path_entry.element_column IS 'the element''s source column; with the line, the written position every decode of the element is keyed by, within this file';
@@ -9994,63 +9994,50 @@ COMMENT ON VIEW graphitron_field_path_landing IS 'Where a field''s path ends fro
 -- COMMENT ON COLUMN graphitron_field_path_landing.table_name IS 'the table the path ends on: the last step''s destination, or the start itself where nothing was walked';
 
 CREATE TABLE graphitron_path_anchor (
-  graph_name    VARCHAR NOT NULL,
-  anchor        VARCHAR NOT NULL,
-  anchor_kind   VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, anchor),
-  -- One written position anchors one path, so the name and the position say the same anchor.
-  UNIQUE (graph_name, source_name, source_line, source_column),
+  graph_name             VARCHAR   NOT NULL,
+  element_coordinate     VARCHAR   NOT NULL,
+  target_type            VARCHAR   NOT NULL,
+  anchor_kind            VARCHAR   NOT NULL,
+  source_name            VARCHAR   NOT NULL,
+  source_line            INT       NOT NULL,
+  source_column          INT       NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  element_graph_ref      VARCHAR,
+  element_coordinate_ref VARCHAR,
+  target_graph_ref       VARCHAR,
+  target_type_ref        VARCHAR,
+  PRIMARY KEY (graph_name, element_coordinate, target_type),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
+  -- The declared element and the type it reaches, each through the anchor's own copy of the key: a
+  -- key to what an anchor was built from does not cascade, and the sweep removes the row the
+  -- reading no longer finds.
+  FOREIGN KEY (element_graph_ref, element_coordinate_ref)
+    REFERENCES graphitron_element (graph_name, coordinate) ON DELETE SET NULL,
+  FOREIGN KEY (target_graph_ref, target_type_ref)
+    REFERENCES graphitron_type (graph_name, type_name) ON DELETE SET NULL,
+  CHECK (element_graph_ref IS NULL OR element_graph_ref = graph_name),
+  CHECK (element_coordinate_ref IS NULL OR element_coordinate_ref = element_coordinate),
+  CHECK (target_graph_ref IS NULL OR target_graph_ref = graph_name),
+  CHECK (target_type_ref IS NULL OR target_type_ref = target_type),
   CHECK (anchor_kind IN ('FIELD', 'REFERENCE_FOR', 'ARGUMENT', 'INPUT_FIELD'))
 );
-COMMENT ON TABLE graphitron_path_anchor IS 'One place a path is written, by the name it is reached by: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path. For example Store.people @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}]) is the anchor Store.people[Staff], of kind REFERENCE_FOR.';
+COMMENT ON TABLE graphitron_path_anchor IS 'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path. For example Store.people with @referenceFor(type: "Staff") is the anchor (Store.people, Staff), of kind REFERENCE_FOR.';
 COMMENT ON COLUMN graphitron_path_anchor.graph_name IS 'the owning graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN graphitron_path_anchor.anchor IS 'the anchor spelled from names, which a path in any file follows it by: Customer.address for a field, Store.people[Staff] for a @referenceFor application naming Staff, Query.people(storeId:) for an argument, StockFilter.languageId for an input field';
+COMMENT ON COLUMN graphitron_path_anchor.element_coordinate IS 'the declared field, argument or input field the path is written on, as graphitron_element spells it: Customer.address, Query.people(storeId:), StockFilter.languageId. A declaration and not an occurrence, a path being written once where it is declared; a path in any file follows it by this and the target type';
+COMMENT ON COLUMN graphitron_path_anchor.target_type IS 'the type the path reaches: the member a @referenceFor names, else the type the declaration names, unwrapped from a connection for an output field, a scalar or input type included. With the coordinate the key, so two @referenceFor on one field naming different members are two anchors, and the first written of two naming one type is the one kept';
 COMMENT ON COLUMN graphitron_path_anchor.anchor_kind IS 'what wrote the path: FIELD, a field declaration''s @routine and @reference applications composed; REFERENCE_FOR, one @referenceFor application; ARGUMENT, an argument; or INPUT_FIELD, an input field, whose written elements become a path per occurrence';
 COMMENT ON COLUMN graphitron_path_anchor.source_name IS 'the file the anchor was written in';
 COMMENT ON COLUMN graphitron_path_anchor.source_line IS 'the anchor''s source line, 1-based';
-COMMENT ON COLUMN graphitron_path_anchor.source_column IS 'the anchor''s source column; with the two columns before it, the anchor''s position in graphql_ast_entry, within its own file, and the anchor position graphitron_ast_path_entry keys its elements by';
+COMMENT ON COLUMN graphitron_path_anchor.source_column IS 'the anchor''s source column; with the two columns before it, the anchor position graphitron_ast_path_entry keys its elements by within this file. An attribute and not a reference: a position is only a key within its own file, and the anchor is named by the coordinate and the target type';
 COMMENT ON COLUMN graphitron_path_anchor.touched_at IS 'when the reading that last stated this anchor ran: the mark the sweep reads, so an anchor a reading no longer finds goes with the paths following it';
-
-CREATE TABLE graphitron_path_holder (
-  graph_name    VARCHAR NOT NULL,
-  holder        VARCHAR NOT NULL,
-  kind          VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR,
-  input_chain   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
-  CHECK (kind IN ('FIELD', 'ARGUMENT', 'INPUT_FIELD')),
-  -- A field holder names no argument; an argument or an input-field occurrence names the argument
-  -- it is, or the one its chain of input fields starts under.
-  CHECK ((kind = 'FIELD') = (argument_name IS NULL)),
-  CHECK ((kind = 'INPUT_FIELD') = (input_chain IS NOT NULL))
-);
-COMMENT ON TABLE graphitron_path_holder IS 'One field, argument or input-field occurrence whose paths the store states: one row per output field at its nested coordinate, a field of a type with no table of its own once per parent chain, per argument of one, and per chain of input fields under one down to an input field writing a path. For example Query.films(filter:).cast.firstName holds the paths of the input field firstName reached through filter and cast under Query.films.';
-COMMENT ON COLUMN graphitron_path_holder.graph_name IS 'the owning graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN graphitron_path_holder.holder IS 'the holder''s nested coordinate, spelled from names: a dot before each parent field and (arg:) for an argument, as in Customer.address, Emne.navn.en, Query.people(storeId:) and Query.films(filter:).cast.firstName';
-COMMENT ON COLUMN graphitron_path_holder.kind IS 'what holds the paths: FIELD, an output field; ARGUMENT, an argument of one; or INPUT_FIELD, an input field at the end of a chain under one';
-COMMENT ON COLUMN graphitron_path_holder.type_name IS 'the type owning the field the coordinate ends at; a field inherited from an interface is held at the implementation''s field, so this is the implementation';
-COMMENT ON COLUMN graphitron_path_holder.field_name IS 'the field the coordinate ends at; with the two columns before it, a reference into graphitron_field, so a holder goes with its field. A field of a type with no table of its own is held once per parent chain, so several holders may name one field';
-COMMENT ON COLUMN graphitron_path_holder.argument_name IS 'the argument, for an ARGUMENT holder, or the argument an INPUT_FIELD holder''s chain starts under; NULL for a FIELD holder';
-COMMENT ON COLUMN graphitron_path_holder.input_chain IS 'the input fields after the argument down to the one holding the paths, spelled with dots as in the holder: cast.firstName; NULL unless the kind is INPUT_FIELD';
-COMMENT ON COLUMN graphitron_path_holder.touched_at IS 'when the reading that last stated this holder ran: the mark the sweep reads, so a holder a reading no longer finds goes with its needs';
+COMMENT ON COLUMN graphitron_path_anchor.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_anchor.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
+COMMENT ON COLUMN graphitron_path_anchor.target_graph_ref IS 'the graph half of the target type''s key, nullable so the type''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_anchor.target_type_ref IS 'the type half of the target type''s key, equal to target_type while the type stands; null where the type named is none the graph has';
 
 CREATE TABLE graphitron_path_need (
   graph_name          VARCHAR NOT NULL,
-  holder              VARCHAR NOT NULL,
+  coordinate          VARCHAR NOT NULL,
   start_source_name   VARCHAR NOT NULL,
   start_schema        VARCHAR NOT NULL,
   start_table         VARCHAR NOT NULL,
@@ -10060,21 +10047,21 @@ CREATE TABLE graphitron_path_need (
   landing_source_name VARCHAR,
   landing_schema      VARCHAR,
   landing_table       VARCHAR,
-  start_holder        VARCHAR,
+  start_coordinate    VARCHAR,
   start_as            VARCHAR,
   touched_at          TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing),
-  FOREIGN KEY (graph_name, holder)
-    REFERENCES graphitron_path_holder (graph_name, holder) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (start_source_name, start_schema, start_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, landing_type)
     REFERENCES graphitron_type (graph_name, type_name) ON DELETE CASCADE,
   FOREIGN KEY (landing_source_name, landing_schema, landing_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, start_holder)
-    REFERENCES graphitron_path_holder (graph_name, holder) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, start_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   CHECK (landing_kind IN ('TYPE', 'TABLE')),
   -- The landing is a type or a table, said once in the key and once by reference, and the two agree.
   CHECK ((landing_kind = 'TYPE') = (landing_type IS NOT NULL)),
@@ -10084,11 +10071,11 @@ CREATE TABLE graphitron_path_need (
   CHECK (landing_kind <> 'TYPE' OR landing = landing_type),
   CHECK (landing_kind <> 'TABLE' OR landing = landing_schema || '.' || landing_table),
   -- A named step to start at belongs to the field path the need continues from.
-  CHECK (start_as IS NULL OR start_holder IS NOT NULL)
+  CHECK (start_as IS NULL OR start_coordinate IS NOT NULL)
 );
-COMMENT ON TABLE graphitron_path_need IS 'One starting table and landing a holder must reach: one row per holder, table its rows start on and type or table it lands on, each end expanded to its tables. For example Store.people needs store to Customer and store to Staff, and Customer.city, a scalar, needs customer to the table public.city.';
-COMMENT ON COLUMN graphitron_path_need.graph_name IS 'the owning graph''s partition, carried from the holder';
-COMMENT ON COLUMN graphitron_path_need.holder IS 'the holder whose need this is; with the graph, a reference into graphitron_path_holder';
+COMMENT ON TABLE graphitron_path_need IS 'One starting table and landing an occurrence must reach: one row per occurrence, table its rows start on and type or table it lands on, each end expanded to its tables. For example Store.people needs store to Customer and store to Staff, and Customer.city, a scalar, needs customer to the table public.city.';
+COMMENT ON COLUMN graphitron_path_need.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_path_need.coordinate IS 'the occurrence whose need this is, at its nested coordinate; with the graph, a reference into graphitron_occurrence, so a need goes with the occurrence';
 COMMENT ON COLUMN graphitron_path_need.start_source_name IS 'the catalog partition of the table the path starts on';
 COMMENT ON COLUMN graphitron_path_need.start_schema IS 'the SQL schema of the table the path starts on';
 COMMENT ON COLUMN graphitron_path_need.start_table IS 'the table the path starts on: for a field, the table of the type it is declared on, each implementation''s own where an interface has none; for an argument or input field, the table of the step it starts at';
@@ -10098,13 +10085,13 @@ COMMENT ON COLUMN graphitron_path_need.landing_type IS 'the type landed on, a re
 COMMENT ON COLUMN graphitron_path_need.landing_source_name IS 'the catalog partition of the table landed on; set exactly where the landing kind is TABLE';
 COMMENT ON COLUMN graphitron_path_need.landing_schema IS 'the SQL schema of the table landed on, as landing spells it';
 COMMENT ON COLUMN graphitron_path_need.landing_table IS 'the table landed on, a reference into sql_table; set exactly where the landing kind is TABLE';
-COMMENT ON COLUMN graphitron_path_need.start_holder IS 'for an argument or input-field need, the field holder whose path it continues from; NULL for a field''s own need';
-COMMENT ON COLUMN graphitron_path_need.start_as IS 'the as: name of the step of start_holder''s path this need starts at; NULL where it starts at that path''s landing or continues from no path';
+COMMENT ON COLUMN graphitron_path_need.start_coordinate IS 'for an argument or input-field need, the field occurrence whose path it continues from, a reference into graphitron_occurrence; NULL for a field''s own need';
+COMMENT ON COLUMN graphitron_path_need.start_as IS 'the as: name of the step of start_coordinate''s path this need starts at; NULL where it starts at that path''s landing or continues from no path';
 COMMENT ON COLUMN graphitron_path_need.touched_at IS 'when the reading that last stated this need ran: the mark the sweep reads, so a need a reading no longer finds goes with its path';
 
 CREATE TABLE graphitron_path (
   graph_name         VARCHAR NOT NULL,
-  holder             VARCHAR NOT NULL,
+  coordinate         VARCHAR NOT NULL,
   start_source_name  VARCHAR NOT NULL,
   start_schema       VARCHAR NOT NULL,
   start_table        VARCHAR NOT NULL,
@@ -10114,25 +10101,28 @@ CREATE TABLE graphitron_path (
   target_schema      VARCHAR NOT NULL,
   target_table       VARCHAR NOT NULL,
   origin             VARCHAR NOT NULL,
-  anchor             VARCHAR,
+  anchor_coordinate  VARCHAR,
+  anchor_target_type VARCHAR,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing)
-    REFERENCES graphitron_path_need (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_need (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing) ON DELETE CASCADE,
   FOREIGN KEY (target_source_name, target_schema, target_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, anchor)
-    REFERENCES graphitron_path_anchor (graph_name, anchor) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, anchor_coordinate, anchor_target_type)
+    REFERENCES graphitron_path_anchor (graph_name, element_coordinate, target_type)
+    ON DELETE CASCADE,
   CHECK (origin IN ('WRITTEN', 'INHERITED', 'INFERRED')),
   -- A written or inherited path follows the anchor that wrote it; an inferred one was written nowhere.
-  CHECK ((origin = 'INFERRED') = (anchor IS NULL))
+  CHECK ((origin = 'INFERRED') = (anchor_coordinate IS NULL AND anchor_target_type IS NULL)),
+  CHECK ((anchor_coordinate IS NULL) = (anchor_target_type IS NULL))
 );
-COMMENT ON TABLE graphitron_path IS 'How one need is met: one row per need a path meets, with the table it reaches, where it came from and the anchor it follows by name. For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the anchor Person.homeAddress, origin INHERITED.';
+COMMENT ON TABLE graphitron_path IS 'How one need is met: one row per need a path meets, with the table it reaches, where it came from and the anchor it follows by name. For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the anchor (Person.homeAddress, Address), origin INHERITED.';
 COMMENT ON COLUMN graphitron_path.graph_name IS 'the owning graph''s partition, carried from the need';
-COMMENT ON COLUMN graphitron_path.holder IS 'the holder whose need the path meets';
+COMMENT ON COLUMN graphitron_path.coordinate IS 'the occurrence whose need the path meets';
 COMMENT ON COLUMN graphitron_path.start_source_name IS 'the catalog partition of the table the path starts on';
 COMMENT ON COLUMN graphitron_path.start_schema IS 'the SQL schema of the table the path starts on';
 COMMENT ON COLUMN graphitron_path.start_table IS 'the table the path starts on';
@@ -10141,13 +10131,14 @@ COMMENT ON COLUMN graphitron_path.landing IS 'the landing as the need spells it;
 COMMENT ON COLUMN graphitron_path.target_source_name IS 'the catalog partition of the table the path reaches';
 COMMENT ON COLUMN graphitron_path.target_schema IS 'the SQL schema of the table the path reaches';
 COMMENT ON COLUMN graphitron_path.target_table IS 'the table the path reaches, its last step''s destination';
-COMMENT ON COLUMN graphitron_path.origin IS 'where the path came from: WRITTEN at the holder''s own anchor; INHERITED from an interface''s field, one row per implementation; or INFERRED from the one foreign key joining the two tables';
-COMMENT ON COLUMN graphitron_path.anchor IS 'the anchor the path follows, by name, a reference into graphitron_path_anchor which may lie in another file; set exactly where the origin is not INFERRED';
+COMMENT ON COLUMN graphitron_path.origin IS 'where the path came from: WRITTEN at the anchor of the element the occurrence is of; INHERITED from an interface''s field, one row per implementation; or INFERRED from the one foreign key joining the two tables';
+COMMENT ON COLUMN graphitron_path.anchor_coordinate IS 'the declared element of the anchor the path follows, which may lie in another file; with anchor_target_type a reference into graphitron_path_anchor, set exactly where the origin is not INFERRED';
+COMMENT ON COLUMN graphitron_path.anchor_target_type IS 'the target type of the anchor the path follows, set and null with anchor_coordinate';
 COMMENT ON COLUMN graphitron_path.touched_at IS 'when the reading that last stated this path ran: the mark the sweep reads';
 
 CREATE TABLE graphitron_path_step (
   graph_name        VARCHAR NOT NULL,
-  holder            VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
   start_source_name VARCHAR NOT NULL,
   start_schema      VARCHAR NOT NULL,
   start_table       VARCHAR NOT NULL,
@@ -10163,13 +10154,13 @@ CREATE TABLE graphitron_path_step (
   element_place     INT,
   as_name           VARCHAR,
   touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position),
   -- A step belongs to its need, not to the path meeting it: a met need has its path and its
   -- steps, and a stopped need has the steps it took and its stop.
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing)
-    REFERENCES graphitron_path_need (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_need (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing) ON DELETE CASCADE,
   FOREIGN KEY (from_source_name, from_schema, from_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
@@ -10180,7 +10171,7 @@ CREATE TABLE graphitron_path_step (
 );
 COMMENT ON TABLE graphitron_path_step IS 'One step a path takes: one row per need and position the path toward it stepped through, from one table to the next, with the place of the written element it resolved where one did. For example Customer.city over @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}]) is two steps, customer to address and address to city.';
 COMMENT ON COLUMN graphitron_path_step.graph_name IS 'the owning graph''s partition, carried from the need';
-COMMENT ON COLUMN graphitron_path_step.holder IS 'the holder whose need the step is toward';
+COMMENT ON COLUMN graphitron_path_step.coordinate IS 'the occurrence whose need the step is toward';
 COMMENT ON COLUMN graphitron_path_step.start_source_name IS 'the need''s start catalog partition';
 COMMENT ON COLUMN graphitron_path_step.start_schema IS 'the need''s start SQL schema';
 COMMENT ON COLUMN graphitron_path_step.start_table IS 'the need''s start table';
@@ -10199,7 +10190,7 @@ COMMENT ON COLUMN graphitron_path_step.touched_at IS 'when the reading that last
 
 CREATE TABLE graphitron_path_step_column (
   graph_name        VARCHAR NOT NULL,
-  holder            VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
   start_source_name VARCHAR NOT NULL,
   start_schema      VARCHAR NOT NULL,
   start_table       VARCHAR NOT NULL,
@@ -10216,11 +10207,11 @@ CREATE TABLE graphitron_path_step_column (
   to_table          VARCHAR NOT NULL,
   to_column         VARCHAR NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position, ordinal),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position)
-    REFERENCES graphitron_path_step (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_step (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing, position)
     ON DELETE CASCADE,
   FOREIGN KEY (from_source_name, from_schema, from_table, from_column)
@@ -10231,7 +10222,7 @@ CREATE TABLE graphitron_path_step_column (
 );
 COMMENT ON TABLE graphitron_path_step_column IS 'A column pair a step of a path joins on: one row per step and pair. For example the step from customer to address joins customer.address_id to address.address_id, one pair.';
 COMMENT ON COLUMN graphitron_path_step_column.graph_name IS 'the owning graph''s partition, carried from the step';
-COMMENT ON COLUMN graphitron_path_step_column.holder IS 'the holder, as on the step';
+COMMENT ON COLUMN graphitron_path_step_column.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_path_step_column.start_source_name IS 'the start''s catalog partition, as on the step';
 COMMENT ON COLUMN graphitron_path_step_column.start_schema IS 'the start''s SQL schema, as on the step';
 COMMENT ON COLUMN graphitron_path_step_column.start_table IS 'the start table, as on the step';
@@ -10251,7 +10242,7 @@ COMMENT ON COLUMN graphitron_path_step_column.touched_at IS 'when the reading th
 
 CREATE TABLE graphitron_path_step_key (
   graph_name             VARCHAR NOT NULL,
-  holder                 VARCHAR NOT NULL,
+  coordinate             VARCHAR NOT NULL,
   start_source_name      VARCHAR NOT NULL,
   start_schema           VARCHAR NOT NULL,
   start_table            VARCHAR NOT NULL,
@@ -10263,11 +10254,11 @@ CREATE TABLE graphitron_path_step_key (
   constraint_table       VARCHAR NOT NULL,
   constraint_name        VARCHAR NOT NULL,
   touched_at             TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position)
-    REFERENCES graphitron_path_step (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_step (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing, position)
     ON DELETE CASCADE,
   FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
@@ -10276,7 +10267,7 @@ CREATE TABLE graphitron_path_step_key (
 );
 COMMENT ON TABLE graphitron_path_step_key IS 'The foreign key a step of a path rode: one row per step that rode one, written or inferred. For example {key: "customer_address_id_fkey"} from customer rides customer_address_id_fkey, and so does the inferred step from customer to address.';
 COMMENT ON COLUMN graphitron_path_step_key.graph_name IS 'the owning graph''s partition, carried from the step';
-COMMENT ON COLUMN graphitron_path_step_key.holder IS 'the holder, as on the step';
+COMMENT ON COLUMN graphitron_path_step_key.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_path_step_key.start_source_name IS 'the start''s catalog partition, as on the step';
 COMMENT ON COLUMN graphitron_path_step_key.start_schema IS 'the start''s SQL schema, as on the step';
 COMMENT ON COLUMN graphitron_path_step_key.start_table IS 'the start table, as on the step';
@@ -10291,7 +10282,7 @@ COMMENT ON COLUMN graphitron_path_step_key.touched_at IS 'when the reading that 
 
 CREATE TABLE graphitron_path_step_primary_key (
   graph_name        VARCHAR NOT NULL,
-  holder            VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
   start_source_name VARCHAR NOT NULL,
   start_schema      VARCHAR NOT NULL,
   start_table       VARCHAR NOT NULL,
@@ -10302,11 +10293,11 @@ CREATE TABLE graphitron_path_step_primary_key (
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position)
-    REFERENCES graphitron_path_step (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_step (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing, position)
     ON DELETE CASCADE,
   FOREIGN KEY (table_source_name, table_schema, table_name)
@@ -10315,7 +10306,7 @@ CREATE TABLE graphitron_path_step_primary_key (
 );
 COMMENT ON TABLE graphitron_path_step_primary_key IS 'The primary key a step of a path rode to join a row to itself: one row per step whose {key:} names its table''s own primary key. For example Film.sameRow over @reference(path: [{key: "film_pkey"}]) is one step from film back to film on film_pkey, reading the parent''s own row.';
 COMMENT ON COLUMN graphitron_path_step_primary_key.graph_name IS 'the owning graph''s partition, carried from the step';
-COMMENT ON COLUMN graphitron_path_step_primary_key.holder IS 'the holder, as on the step';
+COMMENT ON COLUMN graphitron_path_step_primary_key.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_path_step_primary_key.start_source_name IS 'the start''s catalog partition, as on the step';
 COMMENT ON COLUMN graphitron_path_step_primary_key.start_schema IS 'the start''s SQL schema, as on the step';
 COMMENT ON COLUMN graphitron_path_step_primary_key.start_table IS 'the start table, as on the step';
@@ -10329,7 +10320,7 @@ COMMENT ON COLUMN graphitron_path_step_primary_key.touched_at IS 'when the readi
 
 CREATE TABLE graphitron_path_step_method (
   graph_name         VARCHAR NOT NULL,
-  holder             VARCHAR NOT NULL,
+  coordinate         VARCHAR NOT NULL,
   start_source_name  VARCHAR NOT NULL,
   start_schema       VARCHAR NOT NULL,
   start_table        VARCHAR NOT NULL,
@@ -10341,12 +10332,12 @@ CREATE TABLE graphitron_path_step_method (
   method_name        VARCHAR NOT NULL,
   method_descriptor  VARCHAR NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position, method_source_name, method_class_name, method_name,
                method_descriptor),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position)
-    REFERENCES graphitron_path_step (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_step (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing, position)
     ON DELETE CASCADE,
   FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
@@ -10355,7 +10346,7 @@ CREATE TABLE graphitron_path_step_method (
 );
 COMMENT ON TABLE graphitron_path_step_method IS 'The condition method a step of a path joins or filters by: one row per step, the one overload whose two table parameters take the step''s from and to table. For example Customer.homeAddress, inherited from Person.homeAddress, calls homeAddress(Customer, Address) where Staff.homeAddress calls homeAddress(Staff, Address).';
 COMMENT ON COLUMN graphitron_path_step_method.graph_name IS 'the owning graph''s partition, carried from the step';
-COMMENT ON COLUMN graphitron_path_step_method.holder IS 'the holder, as on the step';
+COMMENT ON COLUMN graphitron_path_step_method.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_path_step_method.start_source_name IS 'the start''s catalog partition, as on the step';
 COMMENT ON COLUMN graphitron_path_step_method.start_schema IS 'the start''s SQL schema, as on the step';
 COMMENT ON COLUMN graphitron_path_step_method.start_table IS 'the start table, as on the step';
@@ -10370,7 +10361,7 @@ COMMENT ON COLUMN graphitron_path_step_method.touched_at IS 'when the reading th
 
 CREATE TABLE graphitron_path_step_routine (
   graph_name          VARCHAR NOT NULL,
-  holder              VARCHAR NOT NULL,
+  coordinate          VARCHAR NOT NULL,
   start_source_name   VARCHAR NOT NULL,
   start_schema        VARCHAR NOT NULL,
   start_table         VARCHAR NOT NULL,
@@ -10381,11 +10372,11 @@ CREATE TABLE graphitron_path_step_routine (
   table_schema        VARCHAR NOT NULL,
   routine_name        VARCHAR NOT NULL,
   touched_at          TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position)
-    REFERENCES graphitron_path_step (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_step (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing, position)
     ON DELETE CASCADE,
   FOREIGN KEY (routine_source_name, table_schema, routine_name)
@@ -10393,7 +10384,7 @@ CREATE TABLE graphitron_path_step_routine (
 );
 COMMENT ON TABLE graphitron_path_step_routine IS 'The routine a step of a path calls: one row per step a @routine element took. For example Actor.films over @routine(name: "films_for_actor") is one step from actor to films_for_actor, calling public.films_for_actor.';
 COMMENT ON COLUMN graphitron_path_step_routine.graph_name IS 'the owning graph''s partition, carried from the step';
-COMMENT ON COLUMN graphitron_path_step_routine.holder IS 'the holder, as on the step';
+COMMENT ON COLUMN graphitron_path_step_routine.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_path_step_routine.start_source_name IS 'the start''s catalog partition, as on the step';
 COMMENT ON COLUMN graphitron_path_step_routine.start_schema IS 'the start''s SQL schema, as on the step';
 COMMENT ON COLUMN graphitron_path_step_routine.start_table IS 'the start table, as on the step';
@@ -10407,7 +10398,7 @@ COMMENT ON COLUMN graphitron_path_step_routine.touched_at IS 'when the reading t
 
 CREATE TABLE graphitron_path_step_parameter (
   graph_name         VARCHAR NOT NULL,
-  holder             VARCHAR NOT NULL,
+  coordinate         VARCHAR NOT NULL,
   start_source_name  VARCHAR NOT NULL,
   start_schema       VARCHAR NOT NULL,
   start_table        VARCHAR NOT NULL,
@@ -10422,11 +10413,11 @@ CREATE TABLE graphitron_path_step_parameter (
   from_column        VARCHAR,
   argument           VARCHAR,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position, parameter_position),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing, position)
-    REFERENCES graphitron_path_step_routine (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_step_routine (graph_name, coordinate, start_source_name, start_schema,
                                              start_table, landing_kind, landing, position)
     ON DELETE CASCADE,
   FOREIGN KEY (from_source_name, from_schema, from_table, from_column)
@@ -10437,7 +10428,7 @@ CREATE TABLE graphitron_path_step_parameter (
 );
 COMMENT ON TABLE graphitron_path_step_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.';
 COMMENT ON COLUMN graphitron_path_step_parameter.graph_name IS 'the owning graph''s partition, carried from the step';
-COMMENT ON COLUMN graphitron_path_step_parameter.holder IS 'the holder, as on the step';
+COMMENT ON COLUMN graphitron_path_step_parameter.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_path_step_parameter.start_source_name IS 'the start''s catalog partition, as on the step';
 COMMENT ON COLUMN graphitron_path_step_parameter.start_schema IS 'the start''s SQL schema, as on the step';
 COMMENT ON COLUMN graphitron_path_step_parameter.start_table IS 'the start table, as on the step';
@@ -10455,7 +10446,7 @@ COMMENT ON COLUMN graphitron_path_step_parameter.touched_at IS 'when the reading
 
 CREATE TABLE graphitron_path_stop (
   graph_name        VARCHAR NOT NULL,
-  holder            VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
   start_source_name VARCHAR NOT NULL,
   start_schema      VARCHAR NOT NULL,
   start_table       VARCHAR NOT NULL,
@@ -10465,11 +10456,11 @@ CREATE TABLE graphitron_path_stop (
   element_place     INT,
   moves             INT     NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing),
-  FOREIGN KEY (graph_name, holder, start_source_name, start_schema, start_table, landing_kind,
+  FOREIGN KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing)
-    REFERENCES graphitron_path_need (graph_name, holder, start_source_name, start_schema,
+    REFERENCES graphitron_path_need (graph_name, coordinate, start_source_name, start_schema,
                                      start_table, landing_kind, landing) ON DELETE CASCADE,
   CHECK (position >= 0),
   CHECK (element_place >= 0),
@@ -10477,7 +10468,7 @@ CREATE TABLE graphitron_path_stop (
 );
 COMMENT ON TABLE graphitron_path_stop IS 'One need whose path stopped short: one row per need whose path met a step it could not take, with where and how many moves it found there. For example {key: "film_actor_actor_id_fkey"} written on a Film field stops the path from film at position 0, no move leaving film.';
 COMMENT ON COLUMN graphitron_path_stop.graph_name IS 'the owning graph''s partition, carried from the need';
-COMMENT ON COLUMN graphitron_path_stop.holder IS 'the holder whose need stopped';
+COMMENT ON COLUMN graphitron_path_stop.coordinate IS 'the occurrence whose need stopped';
 COMMENT ON COLUMN graphitron_path_stop.start_source_name IS 'the need''s start catalog partition';
 COMMENT ON COLUMN graphitron_path_stop.start_schema IS 'the need''s start SQL schema';
 COMMENT ON COLUMN graphitron_path_stop.start_table IS 'the need''s start table';
@@ -13355,7 +13346,27 @@ SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
    AND m.method_name = cr.method_name AND m.descriptor = cr.method_descriptor
  WHERE site.directive_name = 'service' AND NOT m.is_static
    AND NOT EXISTS (SELECT 1 FROM code_constructor_buildable b
-                    WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name);
+                    WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name)
+UNION ALL
+-- A @referenceFor naming a type an earlier @referenceFor on the same declaration already names, at
+-- each application after the first written. Read off the entries within one file, a declaration and
+-- what is applied to it being written together, reaching the siblings through the parent position;
+-- the first is the anchor kept. The detail is the type.
+SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column,
+       'REFERENCE_FOR_DUPLICATE_TYPE', r.participant_type_ref
+  FROM graphitron_ast_reference_for_entry r
+  JOIN graphql_ast_entry e
+    ON e.graph_name = r.graph_name AND e.source_name = r.source_name
+   AND e.source_line = r.source_line AND e.source_column = r.source_column
+  JOIN graphql_ast_entry e2
+    ON e2.graph_name = e.graph_name AND e2.source_name = e.source_name
+   AND e2.parent_line = e.parent_line AND e2.parent_column = e.parent_column
+  JOIN graphitron_ast_reference_for_entry r2
+    ON r2.graph_name = e2.graph_name AND r2.source_name = e2.source_name
+   AND r2.source_line = e2.source_line AND r2.source_column = e2.source_column
+ WHERE r2.participant_type_ref = r.participant_type_ref
+   AND (e2.source_line < e.source_line
+        OR (e2.source_line = e.source_line AND e2.source_column < e.source_column));
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -17591,32 +17602,29 @@ INSERT INTO meta_grain VALUES
    'where one walk of one field''s path stopped, in one graph',
    'graph_name, type_name, field_name, start_source_name, start_schema, start_table', 'sdl'),
   ('path-anchor',
-   'one place a path is written, named as it is reached, in one graph',
-   'graph_name, anchor', 'sdl'),
-  ('path-holder',
-   'one field, argument or input-field occurrence whose paths the store states, in one graph',
-   'graph_name, holder', 'sdl'),
+   'one place a path is written, by the declared element it is written on and the type it reaches, in one graph',
+   'graph_name, element_coordinate, target_type', 'sdl'),
   ('path-need',
-   'one starting table and landing one holder must reach, in one graph',
-   'graph_name, holder, start_source_name, start_schema, start_table, landing_kind, landing', 'sdl'),
+   'one starting table and landing one occurrence must reach, in one graph',
+   'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing', 'sdl'),
   ('path-step',
    'one step one path takes, in one graph',
-   'graph_name, holder, start_source_name, start_schema, start_table, landing_kind, landing, position', 'sdl'),
+   'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing, position', 'sdl'),
   ('path-step-column',
    'one column pair one step of a path joins on, in one graph',
-   'graph_name, holder, start_source_name, start_schema, start_table, landing_kind, landing, position, ordinal', 'sdl'),
+   'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing, position, ordinal', 'sdl'),
   ('path-step-key',
    'the key one step of a path rode, in one graph',
-   'graph_name, holder, start_source_name, start_schema, start_table, landing_kind, landing, position', 'sdl'),
+   'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing, position', 'sdl'),
   ('path-step-method',
    'one condition method one step of a path joins or filters by, in one graph',
-   'graph_name, holder, start_source_name, start_schema, start_table, landing_kind, landing, position, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
+   'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing, position, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('path-step-routine',
    'the routine one step of a path calls, in one graph',
-   'graph_name, holder, start_source_name, start_schema, start_table, landing_kind, landing, position', 'sdl'),
+   'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing, position', 'sdl'),
   ('path-step-parameter',
    'one parameter of the routine one step of a path calls, in one graph',
-   'graph_name, holder, start_source_name, start_schema, start_table, landing_kind, landing, position, parameter_position', 'sdl'),
+   'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing, position, parameter_position', 'sdl'),
   ('stale-module-hint',
    'one graph whose run read a workspace module stale',
    'graph_name', 'classpath'),
@@ -18126,6 +18134,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @routine write re-reads its committed row by the keys the write returned, which is not a page, so the generator emits nothing for a field @asConnection rewrote.', 'graphitron'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
    'A chain link reaches its destination by more than one route, so the generator has a join to emit and nothing to pick it by; naming the foreign key rather than the table settles it.', 'graphitron'),
+  ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',
+   'Two @referenceFor applications on one field name the same type, and only the first one written is used.', 'graphitron'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
    'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all.', 'graphitron'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
@@ -18341,21 +18351,17 @@ INSERT INTO meta_relation VALUES
    'For example a capture merges the rows with one move into graphitron_field_path until a round adds nothing; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads. One round only: a view cannot state the fixpoint, and H2 evaluates a recursive view again for every row joined to it, so the stage merges rounds until one adds nothing.'),
   ('graphitron_path_anchor', 'path-anchor', 'graphitron',
-   'One place a path is written, by the name it is reached by: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path.',
-   'For example Store.people @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}]) is the anchor Store.people[Staff], of kind REFERENCE_FOR.',
-   'A path can be followed from another file, an inherited path from an implementation in one file to the interface''s field in another, and a written position moves when the file around it is edited, so a path names what it follows by a name an author chose. This is that name, with the position it stands for within its own file, where the written elements are keyed.'),
-  ('graphitron_path_holder', 'path-holder', 'graphitron',
-   'One field, argument or input-field occurrence whose paths the store states: one row per output field at its nested coordinate, a field of a type with no table of its own once per parent chain, per argument of one, and per chain of input fields under one down to an input field writing a path.',
-   'For example Query.films(filter:).cast.firstName holds the paths of the input field firstName reached through filter and cast under Query.films.',
-   'The paths a schema states belong to output fields, and an argument''s or input field''s to the output field it is used under, an input type being reused; the holder is that place, keyed by its coordinate spelled from names so a reference from another file does not move with an edit. Only chains of input fields ending at one writing a path are holders, so the chains are not enumerated beyond need.'),
+   'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path.',
+   'For example Store.people with @referenceFor(type: "Staff") is the anchor (Store.people, Staff), of kind REFERENCE_FOR.',
+   'A path can be followed from another file, an inherited path from an implementation in one file to the interface''s field in another, and a written position moves when the file around it is edited, so a path names what it follows by names an author chose: the declared element and the type the path reaches, which tells two @referenceFor on one field apart. The position it stands for within its own file is kept beside them as an attribute, where the written elements are keyed. The element and the type are referenced through copies of their keys that their removal sets null, so the sweep, not a cascade, removes an anchor the reading no longer finds.'),
   ('graphitron_path_need', 'path-need', 'graphitron',
-   'One starting table and landing a holder must reach: one row per holder, table its rows start on and type or table it lands on, each end expanded to its tables.',
+   'One starting table and landing an occurrence must reach: one row per occurrence, table its rows start on and type or table it lands on, each end expanded to its tables.',
    'For example Store.people needs store to Customer and store to Staff, and Customer.city, a scalar, needs customer to the table public.city.',
-   'What a holder must reach is decided by the types at its two ends, each expanded to its tables, before any path is looked for, so a need no path meets is a defect at the holder rather than a row a reader fails to find. The landing is a type for typed fields, @referenceFor members and @nodeId paths, and a table for a scalar path, which may reach a table no type exposes.'),
+   'What an occurrence must reach is decided by the types at its two ends, each expanded to its tables, before any path is looked for, so a need no path meets is a defect at the occurrence rather than a row a reader fails to find. Keyed by the occurrence''s nested coordinate, so a field of a type with no table of its own has a need per parent chain, and goes with the occurrence. The landing is a type for typed fields, @referenceFor members and @nodeId paths, and a table for a scalar path, which may reach a table no type exposes.'),
   ('graphitron_path', 'path-need', 'graphitron',
    'How one need is met: one row per need a path meets, with the table it reaches, where it came from and the anchor it follows by name.',
-   'For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the anchor Person.homeAddress, origin INHERITED.',
-   'One path per need, keyed by the need so the two cannot disagree on what was asked: written at the holder''s own anchor, inherited per implementation so no reader joins through implementations, or inferred from the one foreign key between the two tables. The anchor is named rather than positioned, since an inherited path''s may lie in another file.'),
+   'For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the anchor (Person.homeAddress, Address), origin INHERITED.',
+   'One path per need, keyed by the need so the two cannot disagree on what was asked: written at the anchor of the element the occurrence is of, inherited per implementation so no reader joins through implementations, or inferred from the one foreign key between the two tables. The anchor is named by its element and target type rather than positioned, since an inherited path''s may lie in another file.'),
   ('graphitron_path_step', 'path-step', 'graphitron',
    'One step a path takes: one row per need and position the path toward it stepped through, from one table to the next, with the place of the written element it resolved where one did.',
    'For example Customer.city over @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}]) is two steps, customer to address and address to city.',

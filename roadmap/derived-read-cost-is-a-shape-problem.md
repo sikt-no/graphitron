@@ -285,11 +285,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   Every output field, argument and input-field occurrence whose consumer takes a table has its
   needs in `graphitron_path_need`, and one no written, inherited or single inferred path meets is a
   defect at its anchor.
-  * **The path anchor is keyed by coordinate and target type** `open`.
-    `graphitron_path_anchor` re-keys on (graph, declared element's coordinate, target type), and the
-    path family keys on `graphitron_occurrence` with `graphitron_path_holder` gone; two
-    `@referenceFor` naming one type on one field are `REFERENCE_FOR_DUPLICATE_TYPE` at the second.
-  * **A field's path needs are stated per coordinate** `blocked`, on "The path anchor is keyed by coordinate and target type".
+  * **A field's path needs are stated per coordinate** `open`.
     Each output field's occurrence needs its landings from each starting table, and one with nothing
     written and no single foreign key is `PATH_NO_FOREIGN_KEY` or `PATH_SEVERAL_FOREIGN_KEYS`. A
     `@reference` on a target with no one table is `REFERENCE_WITHOUT_TARGET_TABLE`, and a scalar
@@ -1454,8 +1450,7 @@ table.
 * `intent_input_occurrence_path` and its steps enumerate input occurrences, spelled
   `Type.field(arg)/inputField/...`, and `graphitron_node_id_instruction.use_site` reuses that
   spelling. Both are derivation-written.
-* The path model draft below keys `graphitron_path_holder` per input-field occurrence, in this
-  section's spelling.
+* The path model draft below keys its needs on the occurrence, in this section's spelling.
 
 **What the store holds per field today, sorted.** Of 118 field-keyed relations (excluding `_rule`
 views and the `intent_` family), 76 state a fact about the field as declared and stay keyed by
@@ -1614,19 +1609,22 @@ everything the call does not take is `ARGUMENT_WITHOUT_CONSUMER`, and a path on 
 `PATH_NOT_TAKEN` unless the method takes a table.
 
 **The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
-nothing writes them yet.
+the anchor is written, and nothing writes the rest yet.
 
-* `graphitron_path_anchor`: one place a path is written, by the name it is reached by. Keyed by
-  (graph, coordinate, target type), both spelled from names, so no column is ever NULL. The
-  coordinate is the declared element's, in `graphitron_element` with a foreign key there, not an
-  occurrence's: a path is written once, where it is declared. `Customer.address` for a field's
+* `graphitron_path_anchor`, written by `PathAnchors`: one place a path is written, by the declared
+  element it is written on and the type it reaches. Keyed by (graph, element coordinate, target
+  type), both spelled from names, so no column is ever NULL. The coordinate is the declared
+  element's, not an occurrence's: a path is written once, where it is declared. The element and the
+  type are referenced through `_ref` copies their removal sets null, and the sweep removes the
+  anchor; two anchors on one key keep the first written, and two `@referenceFor` naming one type on
+  one declaration are `REFERENCE_FOR_DUPLICATE_TYPE` at the second. `Customer.address` for a field's
   composed `@routine` and `@reference`, `Query.people(storeId:)` for an argument,
   `StockFilter.languageId` for an input field, and `Media.title` for a path on a multi-table
   interface's field, which reaches `Film.title` and `Book.title` as their `INHERITED` paths. The target
   type is the member a `@referenceFor` names, else the type the declaration names, a scalar or input
   type included: (`Store.people`, `Staff`) and (`Store.people`, `Customer`) are two anchors on one
   field. It carries its `anchor_kind` (`FIELD`, `REFERENCE_FOR`, `ARGUMENT`, `INPUT_FIELD`) and its
-  own written position, within its file.
+  own written position, an attribute within its file and no key.
 * `graphitron_ast_path_entry`, capture: one element of one written path, at its place. Keyed by the
   written anchor's position and the place, both within one file, with the element's position and
   its `as:` name, NULL until R1099 adds `as:` to the directive. Captured by the path family's writer
@@ -1634,9 +1632,8 @@ nothing writes them yet.
   declarations only and stays until its readers move.
 * The holder is `graphitron_occurrence`: one place a field, argument or input field is reached, at its nested coordinate, `(x:)`
   naming an argument and a dot a nested field (`Customer.address`, `Emne.navn.en`,
-  `Query.films(filter:).cast.firstName`). A path holder
-  is just a coordinate, so `graphitron_path_holder`, declared before that node was drafted, goes,
-  and the needs key on the coordinate with a foreign key to the occurrence.
+  `Query.films(filter:).cast.firstName`). The needs key on the coordinate with a foreign key to
+  the occurrence, and so does a need's start; there is no holder relation of its own.
 * `graphitron_path_need`, anchoring: one starting table and landing an occurrence must reach. Keyed
   by coordinate, starting table, `landing_kind` (`TYPE` or `TABLE`) and `landing`, the type's name or
   the schema-qualified table name, with the type or the table beside it by reference. Typed fields,
