@@ -1,7 +1,7 @@
 ---
 id: R1077
 title: "Apply @feature(flags:) to the elements a <schemaInput> entry's files declare, replacing Graphitron 9's features/<flag>/ directories"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: tooling
