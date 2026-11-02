@@ -5,7 +5,7 @@ status: Backlog
 bucket: bug
 priority: 4
 theme: classification-model
-depends-on: [argument-condition-override-rejected-as-unbound]
+depends-on: []
 created: 2026-10-30
 last-updated: 2026-10-30
 ---
