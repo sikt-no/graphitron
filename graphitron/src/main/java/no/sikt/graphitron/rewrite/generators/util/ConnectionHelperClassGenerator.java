@@ -418,8 +418,9 @@ public class ConnectionHelperClassGenerator {
         // --- decodeCursor(String cursor, List<Field<?>>) → Field<?>[] ---
         // Returns DSL.noField(col) per column when cursor is null (seek no-op); pageRequest has
         // already turned an empty or blank cursor into null.
-        // Otherwise reads the JSON array encodeCursor writes (and Graphitron 9 wrote, some numbers
-        // bare) and binds each element as its column's value: null as a typed NULL, anything else
+        // Otherwise reads the JSON array encodeCursor writes (and Graphitron 9 wrote, and earlier
+        // releases wrote with every value quoted) and binds each element as its column's value:
+        // null as a typed NULL, anything else
         // through ColumnValues.fromDatabase, which parses it as the column's database type and runs
         // the converter, the inverse of encodeCursor's databaseValue.
         // The decode body is wrapped in one try whose multi-catch classifies blame at the wire
