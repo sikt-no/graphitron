@@ -580,6 +580,11 @@ classified records have no reader left and can go with the walk.
     reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
+* **A nested field is a field of each parent, at a nested coordinate** `open`. A field of a type
+  with no table of its own, or of an input type, is stated once per parent chain at a coordinate
+  such as `Emne.navn.en` or `Query.films(filter:).cast.firstName`, so it departs from one table and
+  `graphitron_field_target_table` holds one row per coordinate, scalars included. The column
+  relation then carries only the column, and the editor's column scope reads the target table alone.
 * **A field's source is its parent's result** `open`. A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
