@@ -870,7 +870,7 @@ someone to profile.
     driver answers each entry without a count, as JDBC's `SUCCESS_NO_INFO` does, adds nothing; the
     cause is to be confirmed before the fix. Until then the column is wrong for every relation
     `BindBatch` writes, and a rows-per-millisecond comparison over it misleads.
-  * **A capture's instant is bound, not inlined** `open`, unowned. Every writer's merge and sweep
+  * **A capture's instant is bound, not inlined** `open`, E's. Every writer's merge and sweep
     passes `touched_at` as a bind parameter rather than a timestamp literal, so a statement's text
     repeats from one capture to the next and its plan is reused. Nineteen statements inline it
     today and hold 598 of a cold capture's 1,405 ms of preparation; the entry-defect merge had 2,817
