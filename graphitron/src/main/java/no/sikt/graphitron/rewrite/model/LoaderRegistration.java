@@ -28,10 +28,10 @@ import java.util.Objects;
  * mapped-source declarations) and {@link Dispatch#LOAD_MANY} (accessor-many's loadMany
  * contract).
  *
- * <p>The path-scoped DataLoader name (tenant-partitioned for fields inheriting a divined tenant
- * in a multi-tenant build) is computed at fetch time from
+ * <p>The DataLoader name (response path plus declaring parent type, tenant-partitioned for fields
+ * inheriting a divined tenant in a multi-tenant build) is computed at fetch time from
  * {@code env.getExecutionStepInfo().getPath()}; it is not carried on this record because
- * path-scoping is a runtime fact, not a build-time one.
+ * the response path is a runtime fact, not a build-time one.
  */
 public record LoaderRegistration(
     boolean valueIsList,

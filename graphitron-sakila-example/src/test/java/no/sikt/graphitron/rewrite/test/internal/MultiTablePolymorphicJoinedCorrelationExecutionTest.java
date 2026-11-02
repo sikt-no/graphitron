@@ -97,8 +97,8 @@ class MultiTablePolymorphicJoinedCorrelationExecutionTest {
     @Test
     void splitFieldOnBothParticipants_eachResolvesFromItsOwnTable_inEitherFragmentOrder() {
         // ActorMember.films goes through film_actor, FilmInventory.films through inventory.film_id.
-        // With a path-only loader name the second participant reused the first's loader and got
-        // null/empty; per-declaring-type names give each its own batch.
+        // A loader name built from the response path alone would hand the second participant the
+        // first's loader (null/empty children); the declaring type in the name gives each its own batch.
         for (var fragments : List.of(
                 "... on ActorMember { films { filmId } } ... on FilmInventory { films { filmId } }",
                 "... on FilmInventory { films { filmId } } ... on ActorMember { films { filmId } }")) {

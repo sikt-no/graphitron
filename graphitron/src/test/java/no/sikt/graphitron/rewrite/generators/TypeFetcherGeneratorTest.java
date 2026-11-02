@@ -1310,7 +1310,7 @@ class TypeFetcherGeneratorTest {
     void graphitronContextHelper_emittedForServiceRecordOnlyClass() {
         // ServiceRecordField is the only BatchKeyField that doesn't extend SqlGeneratingField
         // via TableTargetField, so a predicate enumerating SqlGeneratingField subtypes silently
-        // drops it: the fetcher emits a graphitronContext(env) call (via buildDataLoaderName)
+        // drops it: the fetcher emits a graphitronContext(env) call (via the loader-name declaration)
         // with no graphitronContext helper method. Helper emission is gated on a request
         // recorded through TypeFetcherEmissionContext.graphitronContextCall().
         var field = scalarServiceRecordField(
@@ -1889,7 +1889,7 @@ class TypeFetcherGeneratorTest {
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var fetcher = method(spec, "related").code().toString();
         assertThat(fetcher)
-            .as("DataLoader name uses path-only key (R190 dropped the tenant prefix)")
+            .as("DataLoader name is built from the response path (no tenant prefix)")
             .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
         assertThat(fetcher)
             .as("Loader value type is List<Record> per parent")
@@ -2079,7 +2079,7 @@ class TypeFetcherGeneratorTest {
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "relatedConnection").code().toString();
         assertThat(body)
-            .as("DataLoader name: path-only key (R190 dropped the tenant prefix)")
+            .as("DataLoader name is built from the response path (no tenant prefix)")
             .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
         assertThat(body)
             .as("DataLoader<Row1<Timestamp>, ConnectionResult> registration")

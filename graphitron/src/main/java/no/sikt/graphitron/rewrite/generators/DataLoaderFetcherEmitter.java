@@ -16,8 +16,8 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
  * by a DataLoader. The concrete fetcher shapes share the same outer dance:
  *
  * <ol>
- *   <li>resolve the path-scoped DataLoader name via
- *       {@code env.getExecutionStepInfo().getPath()}</li>
+ *   <li>resolve the DataLoader name: the response path
+ *       ({@code env.getExecutionStepInfo().getPath()}) plus the declaring parent type</li>
  *   <li>register / look up the typed {@code DataLoader<K, V>} on the registry, picking the
  *       factory by {@link LoaderRegistration#container()}</li>
  *   <li>extract the per-fetch key (or keys list); caller-supplied as {@code keyExtraction}

@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit-tier coverage of {@link DataLoaderFetcherEmitter#build} — the unified DataFetcher
- * outer dance. Pins the path-scoped name construction, the loader-factory choice (positional
+ * outer dance. Pins the loader-name paste-through, the loader-factory choice (positional
  * vs mapped), the key-extraction paste-through, the load-vs-loadMany dispatch (read off
  * {@link LoaderRegistration#dispatch()}), and the async-wrap tail paste-through.
  */

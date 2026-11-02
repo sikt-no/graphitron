@@ -366,7 +366,7 @@ Two shapes are rejected by name rather than guessed at: more than one accessor r
 
 === One DataLoader per request, per field
 
-The dispatch is `DataLoader`-batched: one invocation of the service method per request per field, regardless of how many parents the request touches. The cache key is path-scoped, request-scoped, and tenant-prefixed (see xref:split-vs-inline.adoc[How-to: When to split queries] for the full key shape and the consequences for aliased uses).
+The dispatch is `DataLoader`-batched: one invocation of the service method per request per field, regardless of how many parents the request touches. The cache key is scoped by response path and declaring type, request-scoped, and tenant-prefixed (see xref:split-vs-inline.adoc[How-to: When to split queries] for the full key shape and the consequences for aliased uses).
 
 The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output result, regardless of fan-out. A request that touches 200 films sees one `titleUppercase` invocation with a 200-element `Set`, not 200 calls; missing keys in the returned `Map` yield `null` for that parent's field.
 

@@ -137,11 +137,13 @@ so the regression case belongs in the execution tier, with unit-tier pins for th
   returns wrong or empty children. If the classifier rejects the list-cardinality parent-holds-FK
   path on `FilmInventory`, fall back to a new pair of small participant tables in `init.sql`
   rather than bending the shape. Assert both orders of the two fragments and an aliased control.
-  Also pin what the build does with `@splitQuery` on a field declared on the interface itself (check
-  the classifier rather than assume): no fetcher or loader name is emitted for it, and the test
-  asserts whatever the build reports, so the fixture's behaviour is stated rather than implied.
-  Also add the `@referenceFor` multitable child shape (nested under a parent), since the report
-  names both.
+  `Film.membersViaJunction` is itself a `@referenceFor` multitable child (its participants are reached
+  through a `@referenceFor(type: ...)` route), so these cases are the `@referenceFor` shape the report
+  names; kreg's `barn` differs only in that its parent is also a participant, which does not enter the
+  name (it is the field's own declaring type plus its path).
+* Pipeline: `InterfaceDeclaredSplitQueryPinTest` pins what the build does with `@splitQuery` on a field
+  declared on the interface itself: no diagnostic, no field classified for the interface (it hosts no
+  fetcher class), and each participant's own declaration classifies as a batched field.
 * Unit/pipeline: update the assertions that pin the path-only name: `DataLoaderFetcherEmitterTest`
   (line 57 region, the exact `String.join` statement), `TenantRoutedFetcherPipelineTest` (the
   `loaderName(env)` / `tenantLoaderName(env)` / inline `getKeysOnly` strings), `TenantFanOutFetcherPipelineTest`
@@ -149,6 +151,14 @@ so the regression case belongs in the execution tier, with unit-tier pins for th
   pin). `TypeFetcherGeneratorTest` only asserts `getKeysOnly()` is present and stays green.
   No approval-file or generated-output snapshot pins the name beyond these.
 * Run the full verification build; the Javadoc reference gate covers the edited `{@link}`s.
+
+## Retired vocabulary
+
+* "path-scoped" / "path-only" DataLoader name, "path-derived form": the name is the response path plus
+  the declaring parent type.
+* `DataLoaderFetcherEmitter.buildDataLoaderName` and the convenience `build` overload that called it.
+* `ConnectionRuntimeClassGenerator` one-argument `loaderName(env)` and the `tenantLoaderName(env)` /
+  `tenantLoaderName(env, tenant)` forms: parent type is now a parameter ahead of the tenant.
 
 ## Other solutions we've considered
 
@@ -230,10 +240,14 @@ participants' split fields are emitted by the same `TypeFetcherGenerator` class 
 a coverage gap and not a suspected defect, but nothing named shows the second shape the goal promises. Add
 the execution case, or have the spec drop the claim.
 
+> Response (author): `Film.membersViaJunction` is a `@referenceFor` multitable child, so the new execution cases are that shape; the spec's Tests wording now says so and names the one difference from kreg's `barn`. Not adding a separate polymorphic-parent fixture, since the parent's type does not enter the name. Say so if you want it anyway.
+
 **Finding 2 (question four). The pin for `@splitQuery` on an interface-declared field is not written.**
 Round 1 asked for it to be restated rather than dropped, and the spec carries it as a test. The author's
 note says the reviewer decides whether it blocks; it does not need to be a long test, but it is the one
 place the build's behaviour for that directive is stated, so either write it or remove it from the spec.
+
+> Response (author): written as `InterfaceDeclaredSplitQueryPinTest`: the build accepts the directive with no diagnostic, classifies no field for the interface, and classifies each participant's declaration as a batched field.
 
 **Finding 3 (question three: the approved change, prose half). Prose still describes the path-only name.**
 The spec's step "update the javadoc on `DataLoaderFetcherEmitter` (the class summary ...)" is only half done:
@@ -243,6 +257,8 @@ in `MultiTablePolymorphicEmitter` (line 1658, "the path-derived form") and in `D
 (line 16). `TypeFetcherGeneratorTest` (line 1313) still points at the deleted `buildDataLoaderName`. The item
 declared no `Retired vocabulary`, which is what the sweep would otherwise have caught; the path-only name is
 the retired mechanism here.
+
+> Response (author): the class summary, `LoaderRegistration`, `MultiTablePolymorphicEmitter`, `DataLoaderFetcherEmitterTest` and `TypeFetcherGeneratorTest` wording is fixed, the two stale `R190` assertion descriptions and the sakila test comment are reworded, and the manual's `handle-services.adoc` and `split-vs-inline.adoc` sentences that still said path-scoped now say path and declaring type. A `## Retired vocabulary` section is declared. A grep for path-scoped, path-only, path-derived and `buildDataLoaderName` over java, adoc, graphqls and md now finds only unrelated uses.
 
 Evidence the reviewer produced, so the author does not redo it: with the four generator sources reverted to
 their pre-fix state and the same schema and tests, `splitFieldOnBothParticipants_eachResolvesFromItsOwnTable_inEitherFragmentOrder`
