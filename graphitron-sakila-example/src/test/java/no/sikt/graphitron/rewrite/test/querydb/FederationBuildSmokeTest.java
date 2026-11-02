@@ -250,7 +250,7 @@ class FederationBuildSmokeTest {
         var applied = "@feature\\s*\\(\\s*flags\\s*:\\s*\\[\\s*\"beta\"\\s*\\]\\s*\\)";
         assertThat(sdl)
             .as("the flagged file's field")
-            .containsPattern("filmsByRating\\s*\\([^)]*\\)\\s*:\\s*\\[Film!\\]!\\s*" + applied)
+            .containsPattern("filmsByRating\\s*\\([^\\n]*\\)\\s*:\\s*\\[Film!\\]!\\s*" + applied)
             .as("its argument")
             .containsPattern("rating\\s*:\\s*MpaaRating\\s*[^)]*" + applied)
             .as("and its enum values")
