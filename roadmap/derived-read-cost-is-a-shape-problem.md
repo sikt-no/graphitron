@@ -427,7 +427,7 @@ static method needs no holder.
 * **A service's holder is its one widest buildable constructor** `open`, E's. Every
   parameter is jOOQ context or a context key; two of the widest, or none buildable, is a defect.
 * **An argument path through input types is stored** `open`, E's. This is R1099's step 2,
-  `graphitron_argmapping_binding`, and is done when that step lands; R1099 owns what it retires.
+  `graphitron_argmapping_binding`, owned here since a service call's fills read it; R1099 keeps its other steps.
 * **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives.
