@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -329,7 +331,7 @@ class NodeIdDecodeCoveragePipelineTest {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
         var ctx = new RunContext(
-            List.of(SchemaInput.file(schema)),
+            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "NodeIdDecodeCoveragePipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,

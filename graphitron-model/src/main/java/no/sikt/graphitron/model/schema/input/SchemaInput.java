@@ -20,23 +20,18 @@ import java.util.Optional;
  * defined in the source, which {@code graphitron_configured_tag} states and the
  * emitted schema applies. A {@code descriptionNote} appends the note, after a
  * blank line, to the description of every in-scope element, minting the description the
- * part relations carry and the emitted schema applies. A {@code feature} puts
- * {@code @feature(flags: ["<feature>"])} on every field, input field, argument and enum value
- * defined in the source that carries no {@code @feature} of its own, which
- * {@code graphitron_configured_feature} states and the emitted schema applies. The three are
- * independent; any combination may be present on a given entry.
+ * part relations carry and the emitted schema applies. The two are
+ * independent; either, both, or neither may be present on a given entry.
  */
 public record SchemaInput(
     SchemaSource source,
     Optional<String> tag,
-    Optional<String> descriptionNote,
-    Optional<String> feature
+    Optional<String> descriptionNote
 ) {
     public SchemaInput {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(tag, "tag");
         Objects.requireNonNull(descriptionNote, "descriptionNote");
-        Objects.requireNonNull(feature, "feature");
     }
 
     /** The source's canonical rendering; see {@link SchemaSource#sourceName()}. */
@@ -46,8 +41,7 @@ public record SchemaInput(
 
     /** An unattributed entry over a schema file on disk. */
     public static SchemaInput file(Path path) {
-        return new SchemaInput(SchemaSource.file(path), Optional.empty(), Optional.empty(),
-            Optional.empty());
+        return new SchemaInput(SchemaSource.file(path), Optional.empty(), Optional.empty());
     }
 
     /**
@@ -56,7 +50,6 @@ public record SchemaInput(
      * present nor lost, and only a {@link #file} entry can be observed to have gone stale.
      */
     public static SchemaInput named(String label) {
-        return new SchemaInput(SchemaSource.named(label), Optional.empty(), Optional.empty(),
-            Optional.empty());
+        return new SchemaInput(SchemaSource.named(label), Optional.empty(), Optional.empty());
     }
 }

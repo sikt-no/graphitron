@@ -37,7 +37,7 @@ directive @assertEmpty(relation: String!, where: String) repeatable on SCHEMA
 # the fact harness off the document's text before the capture, since a reading is told its
 # configuration rather than finding it. A document without it is a run that declared nothing. The
 # output coordinates travel together, all three or none; the schema files are always the document's
-# own, feature being the flag each takes as <schemaInput feature>. In steps, from the files as they stand.
+# own. In a graph read in steps, a reading takes it from the files as they then stand.
 #
 # jooqPackage is the catalog the graph is captured against. Left out, it is the fixture catalog every
 # other graph reads; jooqPackage: null is a run that declared no catalog. All graphs share one store,
@@ -54,7 +54,7 @@ directive @withConfiguration(
   lintExcludedTypes: [String!],
   sessionState: Boolean,
   sessionHandle: String,
-  maxAllowedPageSize: Int, outboxTable: String, outboxFunction: String, outboxColumns: [String!], outboxParameters: [String!], outboxPayload: String, feature: String
+  maxAllowedPageSize: Int, outboxTable: String, outboxFunction: String, outboxColumns: [String!], outboxParameters: [String!], outboxPayload: String
 ) on SCHEMA
 
 # The root field runs something, as every output field must: a read of payment, a table no fact

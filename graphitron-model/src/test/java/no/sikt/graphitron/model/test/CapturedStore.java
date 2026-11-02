@@ -253,26 +253,13 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore tagged(Path directory, String sdl, String tag) {
         Path file = write(directory, GRAPH, sdl);
         return configured(directory, List.of(
-            new SchemaInput(SchemaSource.file(file), Optional.of(tag), Optional.empty(),
-                Optional.empty())));
+            new SchemaInput(SchemaSource.file(file), Optional.of(tag), Optional.empty())));
     }
 
     /**
-     * Captures {@code sdl} as the one input of a recipe entry configured with {@code feature}, and
-     * with {@code tag} where it is not null: the shape a run configuring
-     * {@code <schemaInput feature>} has.
-     */
-    public static CapturedStore featured(Path directory, String sdl, String feature, String tag) {
-        Path file = write(directory, GRAPH, sdl);
-        return configured(directory, List.of(
-            new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty(),
-                Optional.of(feature))));
-    }
-
-    /**
-     * Captures {@code inputs} as one recipe entry each, in order, with the tag, the note and the
-     * feature each configures: the shape a run whose files are configured differently has. The
-     * files are the caller's to write; {@link #file()} is the first.
+     * Captures {@code inputs} as one recipe entry each, in order, with the tag and the note each
+     * configures: the shape a run whose files are configured differently has. The files are the
+     * caller's to write; {@link #file()} is the first.
      */
     public static CapturedStore configured(Path directory, List<SchemaInput> inputs) {
         var sources = inputs.stream().map(input -> (SchemaSource.File) input.source()).toList();
@@ -281,7 +268,7 @@ public final class CapturedStore implements AutoCloseable {
         var corpus = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
             inputs.stream()
                 .map(input -> new SchemaRecipe.Binding(new SchemaRecipe.Entry.Literal(input.source()),
-                    input.tag(), input.descriptionNote(), input.feature()))
+                    input.tag(), input.descriptionNote()))
                 .toList(),
             List.of("graphqls")));
         var schemas = capture(store.dsl(), graph(directory), corpus, null);
@@ -663,8 +650,7 @@ public final class CapturedStore implements AutoCloseable {
     /**
      * The same under a stated configuration. The recipe is always the files this capture was given,
      * whatever {@code configuration} carries, so a fixture states what the run was configured with
-     * and never which documents it read. A recipe the configuration does carry lends its first
-     * entry's attribution, the tag, note and feature, to every one of those files.
+     * and never which documents it read.
      */
     private static CapturedSchema captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                                String graphName, CatalogInput jooq, boolean warm,
@@ -675,8 +661,7 @@ public final class CapturedStore implements AutoCloseable {
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
         // classpath families where there is a classpath, every document stratum, and runs the
         // derivations at its tail.
-        var corpus = corpusOf(files, directory,
-            configuration.recipe().flatMap(stated -> stated.bindings().stream().findFirst()));
+        var corpus = corpusOf(files, directory);
         var subject = new SubjectConfig(corpus.recipe(), configuration.jooqPackage(),
             configuration.supergraph(), configuration.output(), configuration.tenantColumn(),
             configuration.lint(), configuration.sessionState(),
@@ -699,18 +684,8 @@ public final class CapturedStore implements AutoCloseable {
      * then capture one of them, and a pattern would quietly hand the gatherer the other.
      */
     public static SubjectConfig corpusOf(List<Path> files, Path directory) {
-        return corpusOf(files, directory, Optional.empty());
-    }
-
-    /** The same, each file taking {@code attribution}'s tag, note and feature where it is present. */
-    private static SubjectConfig corpusOf(List<Path> files, Path directory,
-                                          Optional<SchemaRecipe.Binding> attribution) {
         return SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-            files.stream().map(file -> attribution
-                    .map(a -> new SchemaRecipe.Binding(
-                        new SchemaRecipe.Entry.Literal(SchemaSource.file(file)), a.tag(),
-                        a.descriptionNote(), a.feature()))
-                    .orElseGet(() -> SchemaRecipe.Binding.literal(SchemaSource.file(file))))
+            files.stream().map(file -> SchemaRecipe.Binding.literal(SchemaSource.file(file)))
                 .toList(),
             List.of("graphqls")));
     }

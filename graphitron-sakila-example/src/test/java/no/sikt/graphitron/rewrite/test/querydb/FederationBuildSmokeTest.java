@@ -232,47 +232,6 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * A {@code <schemaInput>} configuring {@code <feature>beta</feature>} flags what its files
-     * declare, and only that: the field, argument and enum values of
-     * {@code features/beta/film-rating.graphqls} carry {@code @feature(flags: ["beta"])} in the
-     * served {@code _service { sdl }}, and nothing the rest of the fixture declares does, so the
-     * file's elements are the only applications the printed schema holds.
-     */
-    @Test
-    void serviceSdlCarriesTheConfiguredFeatureOnTheFlaggedFileAlone() {
-        var result = Graphitron.newGraphQL().build().execute(
-            ExecutionInput.newExecutionInput().query("{ _service { sdl } }").build());
-        assertThat(result.getErrors()).isEmpty();
-        @SuppressWarnings("unchecked")
-        var sdl = (String) ((Map<String, Object>) ((Map<String, Object>) result.getData())
-            .get("_service")).get("sdl");
-
-        var applied = "@feature\\s*\\(\\s*flags\\s*:\\s*\\[\\s*\"beta\"\\s*\\]\\s*\\)";
-        assertThat(sdl)
-            .as("the flagged file's field")
-            .containsPattern("filmsByRating\\s*\\([^\\n]*\\)\\s*:\\s*\\[Film!\\]!\\s*" + applied)
-            .as("its argument")
-            .containsPattern("rating\\s*:\\s*MpaaRating\\s*[^)]*" + applied)
-            .as("and its enum values")
-            .containsPattern("\\bPG_13\\s*" + applied);
-        assertThat(java.util.regex.Pattern.compile(applied).matcher(sdl).results().count())
-            .as("one field, one argument and five enum values, and nothing else")
-            .isEqualTo(7);
-    }
-
-    /** The applied {@code @feature} reaches the built {@code GraphQLSchema} itself, not only its print. */
-    @Test
-    void theFlaggedFieldCarriesTheAppliedDirective() {
-        GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
-        var field = schema.getQueryType().getFieldDefinition("filmsByRating");
-        assertThat(field.getAppliedDirectives("feature")).singleElement()
-            .satisfies(d -> assertThat(d.getArgument("flags").<List<String>>getValue())
-                .containsExactly("beta"));
-        assertThat(schema.getQueryType().getFieldDefinition("films").getAppliedDirectives("feature"))
-            .as("a field federated-schema.graphqls declares").isEmpty();
-    }
-
-    /**
      * The spec built-ins register as the {@code graphql.Scalars} constants themselves, since
      * introspection and federation-jvm reference them as objects; every other scalar is a copy
      * carrying its SDL declaration, so its {@code @specifiedBy} URL is what introspection reports.

@@ -21,9 +21,9 @@ import java.util.Set;
  * <p>Two of them, in this order. {@link FederationLinkComposer} puts in the federation link the
  * store settled on, the author's with the imports the anchor states or one of graphitron's own
  * where only the configuration opts in, and {@link FederationLinkApplier} adds the definitions that
- * link imports. The order is a dependency: the federation library reads the link the first wrote. The configured tags, features and notes are not here: {@code graphitron_configured_tag} states
- * the tags, {@code graphitron_configured_feature} the features, the part relations carry the
- * descriptions the notes mint, and the emitted schema applies all three.
+ * link imports. The order is a dependency: the federation library reads the link the first wrote. The configured tags and notes are not here: {@code graphitron_configured_tag} states
+ * the tags, the part relations carry the descriptions the notes mint, and the emitted schema applies
+ * both.
  *
  * <p>The registry handed in belongs to the call. The rewrites run in place, or rebuild it around a
  * rewritten link, and the federation injection adds definitions one at a time, so a refusal can

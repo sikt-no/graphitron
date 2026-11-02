@@ -80,8 +80,8 @@ class ConfiguredNoteTest {
         var cinema = Files.writeString(tmp.resolve("cinema.graphqls"), CINEMA);
         var shared = Files.writeString(tmp.resolve("shared.graphqls"), SHARED);
         try (var store = CapturedStore.configured(tmp, List.of(
-                new SchemaInput(SchemaSource.file(cinema), Optional.empty(), Optional.of(NOTE), Optional.empty()),
-                SchemaInput.file(shared)))) {
+                new SchemaInput(SchemaSource.file(cinema), Optional.empty(), Optional.of(NOTE)),
+                new SchemaInput(SchemaSource.file(shared), Optional.empty(), Optional.empty())))) {
             emitted = ((SchemaAssembly.Assembled) store.schema().synthesised().orElseThrow()).schema();
             written = ((SchemaAssembly.Assembled) store.schema().written().assembly()).schema();
             var dsl = store.dsl();

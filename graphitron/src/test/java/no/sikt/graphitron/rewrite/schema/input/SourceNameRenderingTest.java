@@ -45,7 +45,7 @@ class SourceNameRenderingTest {
         // a hand-built arm would be this test agreeing with itself instead of with the producer.
         var recipe = new SchemaRecipe(null, List.of(new SchemaRecipe.Binding(
             new SchemaRecipe.Entry.Pattern("nested/**/*.graphqls"),
-            Optional.of("catalog"), Optional.of("Part of the catalog feature."), Optional.empty())),
+            Optional.of("catalog"), Optional.of("Part of the catalog feature."))),
             List.of(".graphqls"));
 
         var expansion = recipe.expand(tmp);

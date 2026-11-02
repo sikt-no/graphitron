@@ -317,7 +317,7 @@ class StoreEmittedFederationSchemaPipelineTest {
                 """, "stable");
         var note = "Stable since 2.0.";
         var ctx = context(tmp,
-            new SchemaInput(stable.source(), stable.tag(), Optional.of(note), Optional.empty()),
+            new SchemaInput(stable.source(), stable.tag(), Optional.of(note)),
             input(tmp, "experimental.graphqls", """
                 extend type Query {
                   films(filter: FilmFilter, rating: Rating): [Film!]!
@@ -380,7 +380,7 @@ class StoreEmittedFederationSchemaPipelineTest {
         Files.createDirectories(dir);
         Path file = dir.resolve(name);
         Files.writeString(file, sdl);
-        return new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty(), Optional.empty());
+        return new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty());
     }
 
     private static RunContext context(Path dir, SchemaInput... inputs) throws IOException {

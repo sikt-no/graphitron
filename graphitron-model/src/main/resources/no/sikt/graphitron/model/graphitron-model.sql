@@ -110,7 +110,6 @@ CREATE TABLE store_graph_schema_input (
   entry_value      VARCHAR NOT NULL,
   tag              VARCHAR,
   description_note VARCHAR,
-  feature          VARCHAR,
   touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
@@ -123,7 +122,6 @@ COMMENT ON COLUMN store_graph_schema_input.kind IS 'a closed taxonomy of what en
 COMMENT ON COLUMN store_graph_schema_input.entry_value IS 'the entry as configured: an include pattern in the recipe''s one glob dialect (SchemaRecipe owns the expansion) when kind is pattern, and the source''s canonical rendering when it is file or named';
 COMMENT ON COLUMN store_graph_schema_input.tag IS 'the entry''s tag, when configured; not optional fidelity: the generator''s emitted schema carries the tag applications and the capture''s assembly judges them, so a replay without it would judge a different schema than the graph''s own build. No relation transcribes the applications themselves';
 COMMENT ON COLUMN store_graph_schema_input.description_note IS 'the entry''s description note, when configured; kept for the same replay-fidelity reason as tag';
-COMMENT ON COLUMN store_graph_schema_input.feature IS 'the entry''s feature flag, when configured; kept for the same replay-fidelity reason as tag';
 COMMENT ON COLUMN store_graph_schema_input.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. A recipe that lost an entry is the case to read it against: the surviving entries upsert over the leading ordinals and the trailing ones are what the sweep collects';
 
 CREATE TABLE store_graph_schema_extension (
@@ -438,18 +436,16 @@ CREATE TABLE store_graph_source_input (
   source_name      VARCHAR NOT NULL,
   tag              VARCHAR,
   description_note VARCHAR,
-  feature          VARCHAR,
   touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name),
   FOREIGN KEY (graph_name, source_name) REFERENCES store_graph_source (graph_name, source_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE store_graph_source_input IS 'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag, description note and feature flag its entry carries. For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.';
+COMMENT ON TABLE store_graph_source_input IS 'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag and description note its entry carries. For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.';
 COMMENT ON COLUMN store_graph_source_input.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN store_graph_source_input.source_name IS 'the file, as the source rows name it; with the graph, the grain, and a reference into the graph''s claim on it';
 COMMENT ON COLUMN store_graph_source_input.tag IS 'the tag the matching entry configures, which the loading rewrites apply to every element the file declares that carries no @tag of its own; NULL where the entry configures none';
 COMMENT ON COLUMN store_graph_source_input.description_note IS 'the note the matching entry configures, which the loading rewrites append to the descriptions the file declares; NULL where the entry configures none';
-COMMENT ON COLUMN store_graph_source_input.feature IS 'the feature flag the matching entry configures, which graphitron_configured_feature applies to every field, input field, argument and enum value the file declares that carries no @feature of its own; NULL where the entry configures none';
 COMMENT ON COLUMN store_graph_source_input.touched_at IS 'when the reading that wrote this row ran. Every reading writes the whole recipe''s matches, so it finishes by deleting the graph''s rows carrying another instant, which are the files the recipe stopped matching';
 
 CREATE TABLE store_stamp (
@@ -8059,100 +8055,13 @@ COMMENT ON COLUMN graphitron_configured_tag.ordinal IS 'after every authored @ta
 COMMENT ON COLUMN graphitron_configured_tag.value_sdl IS 'the tag as the name: argument an author would have written';
 COMMENT ON COLUMN graphitron_configured_tag.touched_at IS 'when the reading that last found this tag ran: the mark the sweep reads, so a tag still applied survives a reading and one no longer applied goes';
 
-CREATE VIEW graphitron_configured_feature_landing
-  (graph_name, coordinate, flag, location, source_name, source_line, source_column, refusal) AS
-WITH landing (graph_name, coordinate, flag, location, source_name, source_line, source_column) AS (
-  -- A field or an input field takes the feature of the file declaring it, base or extension.
-  SELECT f.graph_name, f.type_name || '.' || f.field_name, s.feature,
-         CASE WHEN t.kind = 'INPUT_OBJECT' THEN 'INPUT_FIELD_DEFINITION' ELSE 'FIELD_DEFINITION' END,
-         f.source_name, f.source_line, f.source_column
-    FROM graphql_field f
-    JOIN graphql_type t ON t.graph_name = f.graph_name AND t.type_name = f.type_name
-    JOIN store_graph_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
-   WHERE s.feature IS NOT NULL
-  UNION ALL
-  -- A field argument takes the feature of the file declaring its field.
-  SELECT a.graph_name, a.type_name || '.' || a.field_name || '(' || a.argument_name || ':)',
-         s.feature, 'ARGUMENT_DEFINITION', a.source_name, a.source_line, a.source_column
-    FROM graphql_argument a
-    JOIN store_graph_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name
-   WHERE s.feature IS NOT NULL
-  UNION ALL
-  SELECT v.graph_name, v.type_name || '.' || v.value_name, s.feature, 'ENUM_VALUE',
-         v.source_name, v.source_line, v.source_column
-    FROM graphql_enum_value v
-    JOIN store_graph_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name
-   WHERE s.feature IS NOT NULL)
--- The refusals are graphql-java's own checks on an applied directive, in the order it makes them,
--- so a landing the definition takes always assembles and one it would not is reported instead.
-SELECT l.graph_name, l.coordinate, l.flag, l.location, l.source_name, l.source_line,
-       l.source_column,
-       CASE WHEN NOT EXISTS (SELECT 1 FROM graphql_directive d
-                              WHERE d.graph_name = l.graph_name AND d.directive_name = 'feature')
-              THEN 'UNDEFINED'
-            WHEN NOT EXISTS (SELECT 1 FROM graphql_directive_argument a
-                              WHERE a.graph_name = l.graph_name AND a.directive_name = 'feature'
-                                AND a.argument_name = 'flags' AND a.named_type = 'String'
-                                AND a.list_depth = 1)
-              OR EXISTS (SELECT 1 FROM graphql_directive_argument a
-                          WHERE a.graph_name = l.graph_name AND a.directive_name = 'feature'
-                            AND a.argument_name <> 'flags' AND a.non_null
-                            AND a.default_value_sdl IS NULL)
-              THEN 'ARGUMENTS'
-            WHEN NOT EXISTS (SELECT 1 FROM graphql_directive_location o
-                              WHERE o.graph_name = l.graph_name AND o.directive_name = 'feature'
-                                AND o.location = l.location)
-              THEN 'LOCATION' END
-  FROM landing l
-  JOIN graphitron_element e ON e.graph_name = l.graph_name AND e.coordinate = l.coordinate
- WHERE NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                    WHERE d.graph_name = l.graph_name AND d.coordinate = l.coordinate
-                      AND d.directive_name = 'feature');
-COMMENT ON VIEW graphitron_configured_feature_landing IS 'One element a configured feature reaches, and whether the schema''s @feature definition can take it there. For example a field declared in a file whose entry carries feature beta, with no @feature of its own, is one row naming beta and FIELD_DEFINITION, its refusal NULL where the definition takes it and UNDEFINED where the schema declares no @feature.';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.coordinate IS 'the element the feature reaches: a field, an input field, a field argument or an enum value';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.flag IS 'the flag the entry of the element''s declaring file configures';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.location IS 'the directive location the element needs, as graphql_directive_location spells it';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.source_name IS 'the file declaring the element, base or extension';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.source_line IS 'the element''s declaring line, where a refusal is reported';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.source_column IS 'the element''s declaring column';
--- COMMENT ON COLUMN graphitron_configured_feature_landing.refusal IS 'NULL where the definition takes the landing; otherwise the first of UNDEFINED (no @feature definition), ARGUMENTS (no flags: [String] argument, or another required argument without a default) and LOCATION (no location for this kind of element)';
-
-CREATE VIEW graphitron_configured_feature_rule (graph_name, coordinate, flag) AS
-SELECT l.graph_name, l.coordinate, l.flag
-  FROM graphitron_configured_feature_landing l
- WHERE l.refusal IS NULL;
-COMMENT ON VIEW graphitron_configured_feature_rule IS 'One row the configured-feature rule computes, in the shape graphitron_configured_feature stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_configured_feature, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
--- COMMENT ON COLUMN graphitron_configured_feature_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_configured_feature_rule.coordinate IS 'the element the feature is applied to: a field, an input field, a field argument or an enum value';
--- COMMENT ON COLUMN graphitron_configured_feature_rule.flag IS 'the flag, as configured';
-CREATE TABLE graphitron_configured_feature (
-  graph_name     VARCHAR NOT NULL,
-  coordinate     VARCHAR NOT NULL,
-  flag           VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphitron_configured_feature IS 'The rule <schemaInput feature> states, as a relation: one row per element the configuration flags. For example a field declared in a file whose entry carries feature beta, and which carries no @feature of its own, is one row naming beta, which the emitted schema applies as @feature(flags: ["beta"]).';
-COMMENT ON COLUMN graphitron_configured_feature.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_configured_feature.coordinate IS 'the element the feature is applied to: a field, an input field, a field argument or an enum value. The whole key with the graph, @feature not being repeatable';
-COMMENT ON COLUMN graphitron_configured_feature.flag IS 'the flag itself, not its SDL rendering, so a reader gets it without parsing; graphitron_directive_application_arg_configured renders it';
-COMMENT ON COLUMN graphitron_configured_feature.touched_at IS 'when the reading that last found this feature ran: the mark the sweep reads, so a feature still applied survives a reading and one no longer applied goes';
-
 CREATE VIEW graphitron_directive_application_configured
   (graph_name, coordinate, directive_name, ordinal, origin,
    source_name, source_line, source_column) AS
 SELECT c.graph_name, c.coordinate, 'tag', c.ordinal, 'CONFIGURED',
        CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
-  FROM graphitron_configured_tag c
-UNION ALL
--- @feature is not repeatable and is configured only where the element carries none, so it is the
--- first and only application of its name.
-SELECT c.graph_name, c.coordinate, 'feature', 0, 'CONFIGURED',
-       CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
-  FROM graphitron_configured_feature c;
-COMMENT ON VIEW graphitron_directive_application_configured IS 'One of the three sets graphitron_directive_application is the union of: an application the configuration adds to what a document declares. For example the @tag(name: "stable") a field takes from the entry its file was matched by, or the @feature(flags: ["beta"]) an enum value takes from its.';
+  FROM graphitron_configured_tag c;
+COMMENT ON VIEW graphitron_directive_application_configured IS 'One of the three sets graphitron_directive_application is the union of: an application the configuration adds to what a document declares. For example the @tag(name: "stable") a field takes from the entry its file was matched by.';
 -- COMMENT ON COLUMN graphitron_directive_application_configured.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_directive_application_configured.coordinate IS 'the element the configuration applies the directive to';
 -- COMMENT ON COLUMN graphitron_directive_application_configured.directive_name IS 'the directive the configuration applies';
@@ -8318,17 +8227,14 @@ COMMENT ON VIEW graphitron_directive_application_arg_authored IS 'One of the thr
 CREATE VIEW graphitron_directive_application_arg_configured
   (graph_name, coordinate, directive_name, ordinal, directive_argument_name, value_sdl) AS
 SELECT c.graph_name, c.coordinate, 'tag', c.ordinal, 'name', c.value_sdl
-  FROM graphitron_configured_tag c
-UNION ALL
-SELECT c.graph_name, c.coordinate, 'feature', 0, 'flags', '["' || c.flag || '"]'
-  FROM graphitron_configured_feature c;
-COMMENT ON VIEW graphitron_directive_application_arg_configured IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument the configuration passes to an application it adds. For example the name: "stable" of a configured tag is one row here, and the flags: ["beta"] of a configured feature another.';
+  FROM graphitron_configured_tag c;
+COMMENT ON VIEW graphitron_directive_application_arg_configured IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument the configuration passes to an application it adds. For example the name: "stable" of a configured tag is one row here.';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_configured.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_configured.coordinate IS 'the owning application''s coordinate';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_configured.directive_name IS 'the owning application''s directive name';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_configured.ordinal IS 'the owning application''s ordinal';
--- COMMENT ON COLUMN graphitron_directive_application_arg_configured.directive_argument_name IS 'name on a tag, the one argument @tag takes, and flags on a feature';
--- COMMENT ON COLUMN graphitron_directive_application_arg_configured.value_sdl IS 'the configured tag or flag list as SDL';
+-- COMMENT ON COLUMN graphitron_directive_application_arg_configured.directive_argument_name IS 'always name, the one argument @tag takes';
+-- COMMENT ON COLUMN graphitron_directive_application_arg_configured.value_sdl IS 'the configured tag as SDL';
 
 CREATE VIEW graphitron_directive_application_arg_minted
   (graph_name, coordinate, directive_name, ordinal, directive_argument_name, value_sdl) AS
@@ -13300,17 +13206,6 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYL
                                   AND l.key_name = c.key_name))) d
  WHERE d.rn = 1
 UNION ALL
--- A configured feature the schema's @feature definition cannot take, at the element it would have
--- flagged. The configuration has no SDL position, so the fault is reported at every element it
--- reaches; the landing is withheld from graphitron_configured_feature, so the emitted schema still
--- assembles while this is shown.
-SELECT l.graph_name, l.source_name, l.source_line, l.source_column, 'FEATURE_' || l.refusal,
-       CASE WHEN l.refusal = 'LOCATION'
-              THEN 'feature ' || l.flag || ', location ' || l.location
-            ELSE 'feature ' || l.flag END
-  FROM graphitron_configured_feature_landing l
- WHERE l.refusal IS NOT NULL AND l.source_line IS NOT NULL
-UNION ALL
 -- A $session binding the session configuration cannot answer, at the written position of the
 -- string, once per code however many of its entries offend. Which entries, and what is wrong with
 -- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
@@ -18011,12 +17906,6 @@ INSERT INTO meta_grain VALUES
   ('configured-tag',
    'one @tag the configuration applies to one element, at its place among the element''s tags, in one graph',
    'graph_name, coordinate, ordinal', 'configuration'),
-  ('configured-feature',
-   'one element the configuration flags with @feature, in one graph',
-   'graph_name, coordinate', 'configuration'),
-  ('configured-feature-landing',
-   'one element a configured feature reaches, whether or not the schema''s @feature definition takes it there, in one graph',
-   'graph_name, coordinate', 'configuration'),
   ('gatherer-progress',
    'one gatherer''s last reading of one graph, or the whole capture''s',
    'graph_name, gatherer_name', 'configuration'),
@@ -18232,12 +18121,6 @@ INSERT INTO graphitron_defect_type VALUES
    'An @outbox argMapping binds a key to a member of the session handle whose type a JSON payload cannot carry: bind a member that is text, a number, a boolean, a character, a UUID or a java.time value.', 'graphitron'),
   ('OUTBOX_PAYLOAD_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_PAYLOAD_INVALID',
    'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.', 'graphitron'),
-  ('FEATURE_UNDEFINED', 'error', 'GRAPHITRON', 'GRAPHITRON_FEATURE_UNDEFINED',
-   'A <schemaInput> configures a <feature> for this element and the schema declares no @feature directive to apply, so the element is not flagged: declare it, directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE', 'graphitron'),
-  ('FEATURE_ARGUMENTS', 'error', 'GRAPHITRON', 'GRAPHITRON_FEATURE_ARGUMENTS',
-   'A <schemaInput> configures a <feature> for this element and the schema''s @feature directive cannot take one flag as flags: ["<flag>"], since it lacks a flags argument that is a list of String or requires another argument with no default, so the element is not flagged: declare it as directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE', 'graphitron'),
-  ('FEATURE_LOCATION', 'error', 'GRAPHITRON', 'GRAPHITRON_FEATURE_LOCATION',
-   'A <schemaInput> configures a <feature> for this element and the schema''s @feature directive does not allow the location this kind of element needs, so the element is not flagged: add it, as in directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE', 'graphitron'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.', 'graphitron'),
   ('PRODUCER_KINDS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_PRODUCER_KINDS_CONFLICT',
@@ -19098,7 +18981,7 @@ INSERT INTO meta_relation VALUES
    'For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.',
    'The field grain of graphitron_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that population is a disjoint union; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
   ('store_graph_source_input', 'graph-source-input', 'graphql-source',
-   'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag, description note and feature flag its entry carries.',
+   'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag and description note its entry carries.',
    'For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.',
    'The configuration''s tags and notes reached the schema the run emits and no relation said which element they reached, so a store-sourced reader dropped them: the tag a carrier takes from its file never reached the type it coined. The recipe entry''s own row cannot answer it, a pattern entry matching many files and the match being made only where the files are read; so it is recorded there, at the file grain the elements already carry. A store_ relation because it is configuration rather than a reading of the file: a store_graph_schema_input entry, matched to a file the graph claims in store_graph_source.'),
   ('graphitron_directive_application', 'expanded-directive-application', 'graphitron',
@@ -19115,8 +18998,8 @@ INSERT INTO meta_relation VALUES
    'Restricted to the coordinates graphitron_element holds, which is the boundary that relation''s CHECK states: an application on an enum value or on the schema block stays in graphql_directive_application until an emitter wants the whole schema from this family.'),
   ('graphitron_directive_application_configured', 'expanded-directive-application', 'graphitron',
    'One of the three sets graphitron_directive_application is the union of: an application the configuration adds to what a document declares.',
-   'For example the @tag(name: "stable") a field takes from the entry its file was matched by, or the @feature(flags: ["beta"]) an enum value takes from its.',
-   'The configuration applies it and no document states it, so it is a set of its own rather than authored; graphitron_configured_tag and graphitron_configured_feature state the rules.'),
+   'For example the @tag(name: "stable") a field takes from the entry its file was matched by.',
+   'The loading rewrites apply it and no document states it, so it is a set of its own rather than authored; graphitron_configured_tag states the rule.'),
   ('graphitron_directive_application_minted', 'expanded-directive-application', 'graphitron',
    'One of the three sets graphitron_directive_application is the union of: an application macro expansion adds.',
    'For example @key(fields: "id") on a node type in a federation-linked graph whose author declared no id key, or the @tag a minted Connection inherits from its carrier.',
@@ -19127,7 +19010,7 @@ INSERT INTO meta_relation VALUES
    'On graphitron_directive_application_authored''s terms, at the argument grain.'),
   ('graphitron_directive_application_arg_configured', 'expanded-directive-application-argument', 'graphitron',
    'One of the three sets graphitron_directive_application_arg is the union of: an argument the configuration passes to an application it adds.',
-   'For example the name: "stable" of a configured tag is one row here, and the flags: ["beta"] of a configured feature another.',
+   'For example the name: "stable" of a configured tag is one row here.',
    'On graphitron_directive_application_configured''s terms, at the argument grain.'),
   ('graphitron_directive_application_arg_minted', 'expanded-directive-application-argument', 'graphitron',
    'One of the three sets graphitron_directive_application_arg is the union of: an argument macro expansion passes to an application it adds.',
@@ -19141,18 +19024,6 @@ INSERT INTO meta_relation VALUES
    'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
-  ('graphitron_configured_feature_landing', 'configured-feature-landing', 'graphitron',
-   'One element a configured feature reaches, and whether the schema''s @feature definition can take it there.',
-   'For example a field declared in a file whose entry carries feature beta, with no @feature of its own, is one row naming beta and FIELD_DEFINITION, its refusal NULL where the definition takes it and UNDEFINED where the schema declares no @feature.',
-   'The split in front of the rule: every landing is applied or refused, never both and never neither, so the emitted schema and the defects cannot drift apart. The refusals are the checks graphql-java makes on an applied directive, so what is applied always assembles; graphitron_configured_feature_rule reads the applied half and graphitron_entry_defect_rule the refused half.'),
-  ('graphitron_configured_feature', 'configured-feature', 'graphitron',
-   'The rule <schemaInput feature> states, as a relation: one row per element the configuration flags.',
-   'For example a field declared in a file whose entry carries feature beta, and which carries no @feature of its own, is one row naming beta, which the emitted schema applies as @feature(flags: ["beta"]).',
-   'The one statement of the rule, which the emitted schema applies through graphitron_directive_application_configured. Fields, input fields, field arguments and enum values take their declaring file''s feature; types and minted elements take none, @feature''s locations admitting no type. It stores the flag rather than its SDL so a reader gets it without parsing, and has no ordinal, @feature not being repeatable. Stored beside graphitron_configured_tag, for the reason that relation gives.'),
-  ('graphitron_configured_feature_rule', 'configured-feature', 'graphitron',
-   'One row the configured-feature rule computes, in the shape graphitron_configured_feature stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_configured_feature, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_configured_tag_rule''s terms: the landings the @feature definition takes.'),
   ('graphitron_enum_value', 'expanded-enum-value', 'graphitron',
    'Every enum value the generator emits: one row per enum value coordinate.',
    'For example enum Rating { G PG } is the rows Rating.G and Rating.PG. Authored only, the macros minting no enum.',

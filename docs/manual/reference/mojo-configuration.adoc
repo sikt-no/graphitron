@@ -229,7 +229,7 @@ Set `quarkus.live-reload.instrumentation=false` in `application.properties` to d
 [#schemainput-binding]
 == `<schemaInput>` binding
 
-Each `<schemaInput>` carries four optional children. The `pattern` is the only one most consumers need:
+Each `<schemaInput>` carries three optional children. The `pattern` is the only one most consumers need:
 
 [cols="1,1,3",options="header"]
 |===
@@ -246,10 +246,6 @@ Each `<schemaInput>` carries four optional children. The `pattern` is the only o
 | `descriptionNote`
 | `String`
 | Optional sentence appended to every element's description. Useful for marking a subgraph's elements with a provenance hint (e.g. `"From the orders subgraph"`) without editing the SDL by hand.
-
-| `feature`
-| `String`
-| Optional feature flag applied to every field, input field, argument and enum value defined in matched files, as `@feature(flags: ["<flag>"])`. An element that already carries `@feature` keeps its own. Your schema must declare the directive, `directive @feature(flags: [String!]!) on FIELD_DEFINITION \| ARGUMENT_DEFINITION \| INPUT_FIELD_DEFINITION \| ENUM_VALUE`; the build fails and shows that line if it does not. Fields added with `extend type` take the feature of the file holding the extension. Unlike `tag`, this has nothing to do with federation and does not add an `@link`.
 |===
 
 The minimum useful entry is one `pattern`:

@@ -77,18 +77,17 @@ class StoreEntriesTest {
 
             assertThat(dsl.select(STORE_GRAPH_SCHEMA_INPUT.ORDINAL, STORE_GRAPH_SCHEMA_INPUT.KIND,
                     STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE, STORE_GRAPH_SCHEMA_INPUT.TAG,
-                    STORE_GRAPH_SCHEMA_INPUT.DESCRIPTION_NOTE, STORE_GRAPH_SCHEMA_INPUT.FEATURE)
+                    STORE_GRAPH_SCHEMA_INPUT.DESCRIPTION_NOTE)
                 .from(STORE_GRAPH_SCHEMA_INPUT)
                 .where(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME.eq(GRAPH))
                 .orderBy(STORE_GRAPH_SCHEMA_INPUT.ORDINAL)
                 .fetch(row -> tuple(row.value1(), row.value2(), row.value3(), row.value4(),
-                    row.value5(), row.value6())))
+                    row.value5())))
                 .as("the recipe keeps its own order, and each entry says which door it came in by")
                 .containsExactly(
-                    tuple(0, "pattern", "src/main/resources/**.graphqls", null, null, null),
-                    tuple(1, "file", "/schema/extra.graphqls", "extra", "from the extra file",
-                        "beta"),
-                    tuple(2, "named", "bundled", null, null, null));
+                    tuple(0, "pattern", "src/main/resources/**.graphqls", null, null),
+                    tuple(1, "file", "/schema/extra.graphqls", "extra", "from the extra file"),
+                    tuple(2, "named", "bundled", null, null));
 
             assertThat(dsl.select(STORE_GRAPH_SCHEMA_EXTENSION.EXTENSION)
                 .from(STORE_GRAPH_SCHEMA_EXTENSION)
@@ -324,7 +323,7 @@ class StoreEntriesTest {
             SchemaRecipe.Binding.pattern("src/main/resources/**.graphqls"),
             new SchemaRecipe.Binding(
                 new SchemaRecipe.Entry.Literal(SchemaSource.file(Path.of("/schema/extra.graphqls"))),
-                Optional.of("extra"), Optional.of("from the extra file"), Optional.of("beta")),
+                Optional.of("extra"), Optional.of("from the extra file")),
             SchemaRecipe.Binding.literal(SchemaSource.named("bundled"))),
             List.of(".graphqls", ".graphql"));
     }

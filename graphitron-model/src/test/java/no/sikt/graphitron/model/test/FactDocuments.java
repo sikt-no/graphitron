@@ -13,8 +13,6 @@ import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.run.SubjectConfig;
-import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 
 import java.nio.file.Path;
@@ -229,20 +227,9 @@ public final class FactDocuments {
                 roles(strings(directive, "outboxColumns")),
                 roles(strings(directive, "outboxParameters")),
                 string(directive, "outboxPayload").orElse(null));
-            return new SubjectConfig(string(directive, "feature").map(StatedConfiguration::featured),
-                Optional.empty(), string(directive, "supergraph"), output,
-                string(directive, "tenantColumn"), lint, session,
-                integer(directive, "maxAllowedPageSize"), outbox);
-        }
-
-        /**
-         * A stated feature, carried as the attribution of a recipe the harness reads for nothing
-         * else: the capture's files are its own, and each takes this entry's attribution.
-         */
-        private static SchemaRecipe featured(String feature) {
-            return new SchemaRecipe(null, List.of(new SchemaRecipe.Binding(
-                new SchemaRecipe.Entry.Literal(SchemaSource.named("stated")), Optional.empty(),
-                Optional.empty(), Optional.of(feature))), List.of());
+            return new SubjectConfig(Optional.empty(), Optional.empty(),
+                string(directive, "supergraph"), output, string(directive, "tenantColumn"), lint,
+                session, integer(directive, "maxAllowedPageSize"), outbox);
         }
 
         /** {@code role=name} strings as the ordered role bindings they state. */

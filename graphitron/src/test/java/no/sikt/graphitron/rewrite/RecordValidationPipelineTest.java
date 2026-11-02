@@ -7,6 +7,7 @@ import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -175,7 +177,7 @@ class RecordValidationPipelineTest {
         // A run reads the file as written, without the test helper's prelude declaring Node.
         Files.writeString(schema, "interface Node { id: ID! }\n" + sdl);
         return new RunContext(
-            List.of(SchemaInput.file(schema)),
+            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "RecordValidationPipelineTest", tmp,
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lint);

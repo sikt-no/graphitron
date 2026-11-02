@@ -12,6 +12,7 @@ import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.DSLContext;
 
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.RunContext;
@@ -117,7 +119,7 @@ public final class BuiltStore implements AutoCloseable {
             Path storeHome = tmp.resolve("store");
             Path out = tmp.resolve("out");
             var inputs = List.of(
-                SchemaInput.file(schemaFile));
+                new SchemaInput(SchemaSource.file(schemaFile), Optional.empty(), Optional.empty()));
             var ctx = new RunContext(
                 inputs,
                 tmp, graphName, out, out.resolve("resources"), OUTPUT_PACKAGE, jooqPackage,

@@ -500,7 +500,7 @@ class GraphQLSchemaProblemsTest {
 
     private static SchemaRecipe.Binding tagged(String glob) {
         return new SchemaRecipe.Binding(new SchemaRecipe.Entry.Pattern(glob),
-            Optional.of("public"), Optional.empty(), Optional.empty());
+            Optional.of("public"), Optional.empty());
     }
 
     /**

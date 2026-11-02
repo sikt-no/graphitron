@@ -54,9 +54,9 @@ class TaggedInputsPipelineTest {
 
         var ctx = new RunContext(
             List.of(
-                new SchemaInput(SchemaSource.file(enrolment), Optional.of("enrolment"), Optional.empty(), Optional.empty()),
-                new SchemaInput(SchemaSource.file(cinema), Optional.empty(), Optional.of("Part of cinema feature."), Optional.empty()),
-                new SchemaInput(SchemaSource.file(shared), Optional.of("core"), Optional.of("Shared by every feature."), Optional.empty())
+                new SchemaInput(SchemaSource.file(enrolment), Optional.of("enrolment"), Optional.empty()),
+                new SchemaInput(SchemaSource.file(cinema), Optional.empty(), Optional.of("Part of cinema feature.")),
+                new SchemaInput(SchemaSource.file(shared), Optional.of("core"), Optional.of("Shared by every feature."))
             ),
             tmp, "TaggedInputsPipelineTest",
             tmp,

@@ -59,7 +59,6 @@ class GenerateMojoTest {
         b.pattern = "schema.graphqls";
         b.tag = "api";
         b.descriptionNote = "public API";
-        b.feature = "beta";
         mojo.schemaInputs = List.of(b);
 
         var ctx = mojo.buildContext();
@@ -67,7 +66,6 @@ class GenerateMojoTest {
         assertThat(ctx.schemaInputs()).hasSize(1);
         assertThat(ctx.schemaInputs().get(0).tag()).isEqualTo(Optional.of("api"));
         assertThat(ctx.schemaInputs().get(0).descriptionNote()).isEqualTo(Optional.of("public API"));
-        assertThat(ctx.schemaInputs().get(0).feature()).isEqualTo(Optional.of("beta"));
         assertThat(ctx.schemaInputs().get(0).sourceName())
             .isEqualTo(basedir.resolve("schema.graphqls").toAbsolutePath().normalize().toString());
     }
