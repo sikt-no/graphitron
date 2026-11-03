@@ -295,17 +295,16 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
       an implementer of a `@table` interface to carry the same `@table`; without one it has no
       `graphitron_tabletype` row and its fields no source, and nothing says so.
-    * **A connection's fields hang under the field that returns it** `blocked`, G's, on "A carrier graphitron builds names its generated class".
+    * **A connection's fields hang under the field that returns it** `blocked`, G's, on "A connection's result names its generated class".
       The step rule descends from a field returning a connection into its connection type, so its
-      `edges`, `nodes`, `pageInfo` and `totalCount`, and below them `node`, `cursor` and the page
-      info's fields, are occurrences under the returning field, sourced from the carrier object, an
-      instance of the class graphitron generates for it. They read what the root producer fetched,
-      mapped onto the SDL shape by graphql-java: `nodes` and `edges.node` are readers of its records
-      with no query of their own, and only `totalCount` runs one.
-      * **A carrier graphitron builds names its generated class** `open`, G's.
-        `graphitron_result_class` holds the class graphitron generates for a connection, its edge and
-        its page info, which the emitters reference directly today rather than read off the store,
-        so the carrier is an object source like any producer's class.
+      fields and its edge's are occurrences under the returning field, binding into what that
+      field's producer produces, a page of records with its ordering in the class graphitron
+      generates. `nodes` binds the page's records, `edges` each record with its cursor, `edges.node`
+      the record, `edges.cursor` a function of the record and the page's ordering (its kind open) and
+      `pageInfo` the page; only `totalCount` runs a query.
+      * **A connection's result names its generated class** `open`, G's. The result a producer
+        states for a field returning a connection is a page in `ConnectionResult`, with `Edge` per
+        record, which the emitters reference directly today rather than read off the store.
       * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
         producer's source and argument values, its statement counted, and runs only when queried.
   * **A field's path needs are stated per coordinate** `blocked`, F's, on "Every occurrence's source is stated".
@@ -633,8 +632,8 @@ classified records have no reader left and can go with the walk.
 * **What an occurrence takes is a binding** `blocked`, G's, on "A field's path needs are stated per coordinate".
   `graphitron_occurrence_binding` holds one place an occurrence binds, keyed by (graph, coordinate,
   bound), a `VALUE`'s bound being its class and member, with its kind (`COLUMN`, `TABLE`,
-  `NODE_ID`, `VALUE`, `PARAMETER`) an attribute and a subtype per kind; F writes the `TABLE`
-  subtype beside the needs and E the `PARAMETER` one, the `VALUE` subtype, a member's value at an
+  `NODE_ID`, `VALUE`, `PARAMETER`, `EXPRESSION`) an attribute and a subtype per kind; F writes the
+  `TABLE` subtype beside the needs and E the `PARAMETER` and `EXPRESSION` ones, the `VALUE` subtype, a member's value at an
   accessor path's end, waits on a producer's value object being bound, and the column relation
   below is its `COLUMN` subtype. `PARAMETER` is decided before `COLUMN`, so a scalar input with no
   binding under a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and
@@ -1554,12 +1553,13 @@ that depend on the parent fall three ways.
      children, and `graphitron_join_path_stop`;
   ** `graphitron_occurrence_binding` and a subtype per kind, keyed by
      `(graph_name, coordinate, bound)`, the bound spelled from names: a table for `TABLE`, `COLUMN`
-     and `NODE_ID`, a forked end being a binding per table, the call, method and position for
-     `PARAMETER`, and the class and member for `VALUE` (`no.sikt.fs.EmneNavn#getEn`):
+     and `NODE_ID`, a forked end being a binding per table, the holder's key, the method and the
+     position for `PARAMETER`, the method for `EXPRESSION`, and the class and member for `VALUE`
+     (`no.sikt.fs.EmneNavn#getEn`):
      `graphitron_occurrence_column` with its `sql_column` and whether the SQL or the jOOQ name
      matched, `graphitron_occurrence_node_id`, one row per key column by ordinal,
      `graphitron_occurrence_binding_table`, `graphitron_occurrence_binding_value` and E's
-     `PARAMETER` subtype. A miss is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS` at the field's written
+     `PARAMETER` and `EXPRESSION` subtypes. A miss is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS` at the field's written
      position, and for an input under a parent bound `TABLE` only where no parameter binds it;
   ** `graphitron_field_key_row` and its method subtype: the keys a parent hands a child `@service`,
      which no path end states;
