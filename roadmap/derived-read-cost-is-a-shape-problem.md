@@ -2006,6 +2006,14 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 For the retirement sweep at the Done gate. Determined by diffing the schema's relation names across
 the item's life. Already swept once, with seven survivors found and fixed.
 
+**Path relations renamed or dropped before they had readers.** `graphitron_path_anchor` is
+`graphitron_path_claim`, its writer `PathAnchors` is `PathClaims`, and `anchor_kind`,
+`anchor_coordinate` and `anchor_target_type` are `claim_kind`, `claim_coordinate` and
+`claim_target_type`; "anchor" stays the anchoring phase and the anchor relations the anchor rule
+speaks of, and `graphitron_ast_path_entry`'s `anchor_line` and `anchor_column`. `graphitron_path_holder`
+went into `graphitron_occurrence`, a holder being just a coordinate. The anchor's spelling
+`Store.people[Staff]` and the argument spelling `Query.people.storeId` are retired with them.
+
 **Relations retired.** Eight per-site argMapping tables into `graphitron_arg_mapping_pair`:
 `graphitron_argument_condition_arg_mapping_pair`,
 `graphitron_argument_reference_for_step_arg_mapping_pair`,
