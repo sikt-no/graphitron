@@ -1,7 +1,7 @@
 ---
 id: R1135
 title: "A custom scalar coercing an array or a parameterized list has no valid shape"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: codegen-correctness
@@ -85,6 +85,8 @@ Shipped at `467a73f`, as planned: `ScalarTypeResolver` carries a `java.lang.refl
 ## Tests
 
 Shipped at `467a73f`. Fixtures `StringArrayCoercing`, `StringListCoercing`, `WildcardListCoercing`, `ObjectArrayCoercing` with constants `TAGS`, `TAG_LIST`, `WILDCARD_LIST`, `OBJECT_ARRAY` on `ScalarConstants`. Unit: four `ScalarTypeResolverTest` cases. Pipeline: `GraphitronSchemaBuilderTest` rows `DIRECTIVE_RESOLVES_ARRAY_COERCING_SCALAR`, `DIRECTIVE_RESOLVES_LIST_COERCING_SCALAR`, `DIRECTIVE_COERCING_INPUT_NOT_CONCRETE_REJECTS` and `ARRAY_COERCING_SCALAR_OVER_ARRAY_COLUMN`; new `CollectionScalarInputRecordPipelineTest` pins the emitted component types `String[]`, `List<String>` and, beyond the plan, `List<String[]>` for an SDL list of the array scalar. The list-scalar test pins the component type on the `TypeSpec`; the element-wise `fromMap` read is not asserted, per the no-body-assertion rule.
+
+Rework round, shipped at `ff2326b`, closing the three completeness findings below: `CollectionScalarInputRecordPipelineTest` compiles the emitted input records with `EmittedCodeHarness` and round-trips a `List<String>` scalar through `fromMap`'s list branch (and the null case), a `String[]` scalar and an SDL list of the array scalar; `ArrayColumnCodegenPipelineTest.arrayCoercingScalar_overTextArrayColumn_generates` generates the fetchers for `ArrayHolder { id, tags: Tags }` over `array_holder`; `RecordReadAccessorValidationTest` accepts `String[]` / `List<String>` accessors for the two scalars and rejects `Integer[]` / `String` ones (fixtures `CollectionScalarRecord`, `CollectionScalarMismatchRecord`). Forcing `reflectClassOf` back to the `Object` fallback fails the rejection case, so it pins the `FieldBuilder` extension.
 
 The generic-base-class gap named under Scope decision is filed as R1145.
 
