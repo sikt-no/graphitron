@@ -1,27 +1,28 @@
 ---
 id: R1133
-title: "A @service payload class with its own errors accessor silently loses its @error channel"
+title: "A single @error type as the errors field's element is not recognised as an error channel"
 status: Spec
 bucket: bug
 priority: 2
 theme: error-channel
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-30
+last-updated: 2026-11-03
 ---
 
-# A @service payload class with its own errors accessor silently loses its @error channel
+# A single @error type as the errors field's element is not recognised as an error channel
 
 ## Goal
 
 A `@service` field whose payload type lists `@error` types in its `errors` field routes a handled
 exception through those types' handlers, and the payload's backing Java class (the class the
 service returns) having its own `getErrors()` or `errors()` accessor changes nothing about that:
-the channel always wins, the accessor is never read, and the manual says so. The defect as
-reported (a clean build, every handled exception redacted) is not reproducible on trunk, where the
-route that produced it no longer exists; what the item delivers is the pin that keeps it that way,
-the manual rule a consumer migrating from Graphitron 9 needs, and one explicit decision about the
-accessor, recorded below.
+the channel always wins, the accessor is never read, and the manual says so. The errors field's
+element may be a single `@error` type as well as a union or interface of them, as
+`error-channel.adoc` ("Carrier shapes: union vs single type") already promises. Today a single
+`@error` type is not recognised as a carrier at all: the build is clean, no channel forms, and every
+handled exception is redacted. That is the defect; the accessor the item was filed under is a
+symptom of it, not its cause.
 
 ```graphql
 type KregUgyldigInput implements Error
@@ -40,13 +41,19 @@ type Query {
 ```
 
 A thrown `MeldingerException` arrives as `errors: [{message: ...}]` data, not as a redacted
-top-level error. The terms: the *channel* is the carrier-side wiring that catches a thrown
+top-level error, with `errors:` typed by the single `@error` type exactly as written above. The terms: the *channel* is the carrier-side wiring that catches a thrown
 exception and hands it to the payload's `errors` field, resolved from the SDL alone; an *outcome*
 is the typed wrapper (`Outcome.Success` or `Outcome.ErrorList`) a channel-bearing fetcher returns
 in place of the bare payload.
 
 ## What the code does today (verified)
 
+* The single-type carrier is refused, silently. `BuildContext.detectErrorsFieldShape` returns a
+  carrier only when the errors field's element resolves to a `ReturnTypeRef.PolymorphicReturnType`
+  (a union, or an interface's implementations) whose members are all `@error` types; a single
+  `@error` object type resolves otherwise and the method returns `null`, so the field is classified
+  as a plain data field and the fetcher takes `noChannelCatchArm`. `FieldBuilder.liftToErrorsField`
+  mirrors the same rule. The manual documents both shapes as equivalent.
 * The channel is decided from the schema, never from the class.
   `FieldBuilder.resolveServiceOutcomeChannel` reads the payload type's own field definitions
   through `BuildContext.detectErrorsFieldShape` and runs `ErrorChannelWalker`; neither reflects on
@@ -62,8 +69,9 @@ in place of the bare payload.
   `isOutcome(parentType)` holds (a type an `@service` returns, at a root or below one, or an
   emitted-carrier payload); the classes `Transport` and `Transport.PayloadAccessor`, and the
   `PropertyDataFetcher.fetching(name)` registration the item names, are gone from
-  `graphitron/src/main`. `ErrorMappings.ByType` is likewise absent; the constant is named per
-  field through `TypeFetcherEmissionContext.mappingsConstant`.
+  `graphitron/src/main`. `ErrorMappings.ByType` is present on trunk
+  (`ErrorMappingsClassGenerator`, `BY_TYPE_HOLDER`), beside the per-field constants named through
+  `TypeFetcherEmissionContext.mappingsConstant`; an earlier reading of this item said otherwise.
 * Existing coverage already has the shape: `SakPayload` (a record with an `errors` component) in
   `ErrorChannelClassificationTest`, and in `graphitron-sakila-example` the
   `submitSetterShapeFilmReview` fixture, whose backing class `SetterShapeFilmReviewPayload` has
@@ -71,9 +79,20 @@ in place of the bare payload.
   `FilmReviewBadRating` entry (`GraphQLQueryTest.submitSetterShapeFilmReview_invalidRating_routesThroughBadRatingErrorType`).
   None is named for the property, so a regression back to an accessor read would fail only by
   accident.
-* Provenance correction: `origin/main` and the trunk are the same commit as this item's filing, and
-  neither carries the `PayloadAccessor` arm, so the reporter's RC46 build (which has the
-  `ErrorMappings.ByType` shape) is older than trunk.
+* Reproduced on trunk. The kreg port re-ran its 30 recorded v9 requests against a trunk snapshot
+  (`claude/graphitron-rewrite` at `06d71b62b`, 2026-11-03) and got the same result as on 10.0.0-RC46
+  and RC47: cases 17, 18, 25 and 27 redact. Its variants locate the cause:
+  ** as written, `errors: [KregUgyldigInput!]`, a single `@error` type: no channel, the catch is
+     `ErrorRouter.surfaceClientErrorOrRedact`, and `errors` reads the payload's `getErrors()`;
+  ** the payload's `getErrors()` removed: the build fails with "no accessor ... matched SDL field",
+     so `errors` was classified as a plain data field all along;
+  ** `errors: [KregStatusFeil!]` with `union KregStatusFeil = KregUgyldigInput`, the accessor kept:
+     the channel forms, the fetcher returns `Outcome<...>` claimed through `ErrorMappings`, `errors`
+     reads `Outcome.ErrorList`, and the handled exception arrives as data (v9's case 18 shape). So
+     the channel already wins over the accessor;
+  ** the single type without `implements Error`: no channel, as written.
+  The union is not a workaround for a consumer: it changes the client contract, and existing
+  `errors { path message }` selections fail validation against the union.
 * The sibling item that reifies the `PayloadAccessor` errors fetcher (`reify-error-payload-accessor-fetcher`)
   and the `PropertyDataFetcher` wording in `pin-defaultread-outcome-rejection` describe that arm
   and are stale for the same reason; neither overlaps this item, and both want a Discarded or
@@ -93,14 +112,23 @@ The accessor is not read, and the build does not warn about it.
   the outcome wrapper retired, give one field two sources, and make the same schema behave
   differently by whether the success path set a list.
 * A diagnostic would fire on every Graphitron 9 payload a consumer keeps as is, which is the
-  common and harmless case (the accessor exists, nothing populates it). The reported failure, the
-  handlers being unreachable, is false on trunk, so a diagnostic naming "unreachable handlers"
-  would be wrong; the only true thing to say is "your accessor is unused", which is noise.
+  common and harmless case (the accessor exists, nothing populates it). The handlers the item was
+  filed over are unreachable because of the single-type carrier, not the accessor, so once the
+  carrier is fixed the only true thing to say about the accessor is "it is unused", which is noise.
 * The population that does lose data (a service hand-filling errors on success) is a service
   contract the manual can state in one sentence, with the supported spelling: throw, and let a
   handler claim it.
 
 ## Implementation
+
+* The carrier. `BuildContext.detectErrorsFieldShape` admits a list whose element is a single
+  `@error` object type, returning that one `ErrorType`, beside the union and interface cases and
+  under the same nullable-list rule; `FieldBuilder.liftToErrorsField` takes the same rule, so the
+  two classifier paths agree, as the method's javadoc requires. The rest of the channel (handler
+  rules, `ErrorMappings`, the catch arm, the `Outcome` wrapper, the errors fetcher) already works
+  from a `List<ErrorType>` and needs no change beyond what a one-member list exercises. The error
+  objects a single-type field returns need no type resolver; check that the emitted schema wiring
+  does not register one for a non-polymorphic errors field.
 
 * `docs/manual/how-to/error-channel.adoc`: after the paragraph ending "The payload class needs no
   errors slot", add the rule. Wording:
@@ -118,9 +146,16 @@ The accessor is not read, and the build does not warn about it.
   `submitSetterShapeFilmReview` test comments in `GraphQLQueryTest` still describe a
   "catch-arm payload-factory" in setter form that Graphitron no longer emits; reword them to the
   outcome wrapper so the fixture that carries the pin does not teach the retired mechanism.
-* No generator change.
 
 ## Tests
+
+The carrier, first. Pipeline tier (`ErrorChannelClassificationTest`): a named case
+`singleErrorTypeElement_isAnErrorsCarrier`, a `@service` payload whose `errors` field lists one
+`@error` type, asserting `errorChannel()` is present and the field classifies as
+`ChildField.ErrorsField`; and its negative, the same type without `implements Error`, still a plain
+field. Execution tier (`graphitron-sakila-example`): a payload whose `errors:` is a single `@error`
+type over a `@service` that throws a handled exception, asserting the error arrives as typed data
+under `errors` and the response has no top-level error. Behaviour, not generated text.
 
 Pipeline tier (`ErrorChannelClassificationTest`, unit tier by its annotation, SDL to classified
 model): a named case `payloadBackingClassWithErrorsAccessor_stillPopulatesErrorChannel` that
@@ -145,19 +180,15 @@ Build: this is a documentation plus test item; the verification build is the ful
 
 ## Other solutions we've considered
 
-* *Build diagnostic naming the accessor.* Rejected above: warns on the benign common case, and its
-  stated reason (unreachable handlers) is false on trunk.
+* *Build diagnostic naming the accessor.* Rejected above: warns on the benign common case, and the
+  unreachable handlers it would explain are the single-type carrier's, fixed at their cause.
 * *Read the accessor when the channel has nothing.* Rejected above: two sources for one field and a
   schema whose behaviour depends on the service's success path.
 
 ## Open questions for the user
 
-* The kreg port reproduced this on 10.0.0-RC46, whose generated code names `ErrorMappings.ByType`,
-  which trunk does not have. Before this goes to Ready, someone should re-run kreg baseline cases
-  17, 18, 25 and 27 against a trunk build. If they still redact there, the cause is a
-  classification path this reading missed (the likeliest seam is
-  `resolveServiceOutcomeChannel` answering `NoChannel` because `lookAheadVerdict` does not return a
-  `ResultType` for the payload) and this item needs a repro schema, not just the pin.
+* Settled 2026-11-03: the trunk re-run happened, the cases still redact, and the cause is the
+  single-type carrier above, not `lookAheadVerdict`. kreg's schema is the repro.
 * Is dropping a service-populated errors list acceptable, or should a populated success-path list
   surface? The recommendation is to keep it dropped and say so. The kreg port objects: its baseline
   case 27 is one thrown `MeldingerException` carrying four validation messages, which Graphitron 9
