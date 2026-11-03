@@ -1,7 +1,7 @@
 ---
 id: R1135
 title: "A custom scalar coercing an array or a parameterized list has no valid shape"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: codegen-correctness

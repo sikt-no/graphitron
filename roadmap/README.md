@@ -35,8 +35,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1130` | A node id in a query filter does not vote on the tenant when another slot already binds it | Ready | 2026-11-03 <sub>created 2026-10-30</sub> | [plan](read-filter-nodeid-does-not-vote-on-tenant.md) |
-| `R1135` | A custom scalar coercing an array or a parameterized list has no valid shape | In Progress | 2026-11-03 <sub>created 2026-10-30</sub> | [plan](custom-scalar-over-array-column.md) |
 | `R1143` | A cursor over a java.sql.Date order column pages from the time of day it carries | In Review | 2026-11-03 <sub>created 2026-11-02</sub> | [plan](cursor-date-key-keeps-time-of-day.md) |
+| `R1135` | A custom scalar coercing an array or a parameterized list has no valid shape | In Review | 2026-11-03 <sub>created 2026-10-30</sub> | [plan](custom-scalar-over-array-column.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -667,7 +667,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R1076` [**_entities answers a representation with an unknown __typename with an error, not a silent null**](entities-unknown-typename-is-an-error.md) — Backlog, bug
-- `R1135` [**A custom scalar coercing an array or a parameterized list has no valid shape**](custom-scalar-over-array-column.md) — In Progress, bug
+- `R1135` [**A custom scalar coercing an array or a parameterized list has no valid shape**](custom-scalar-over-array-column.md) — In Review, bug
 - `R1111` [**A routine argument mapped from a computed $source column looks up a parentInput field typed with its generator**](routine-source-column-strips-generator.md) — Backlog, bug
 - `R1078` [**An enum-typed output field over a jOOQ-enum column is not checked against the Java enum constants**](enum-output-over-jooq-enum-column-unchecked.md) — Backlog, bug
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture
