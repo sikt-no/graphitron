@@ -280,20 +280,17 @@ are among the costliest statements the build plans: the argument step targets, `
 with its methods, and the field reference step hops hold about 265 CPU-seconds of preparation over a
 `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 
-* **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "A field's path needs are stated per coordinate" and "An argument's path needs are stated where its consumer takes a table".
-  Every output field, argument and input-field occurrence whose consumer takes a table has its
-  needs in `graphitron_path_need`, and one no written, inherited or single inferred path meets is a
+* **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "A field's path needs are stated per coordinate".
+  Every output field, argument and input-field occurrence has its needs in `graphitron_path_need`,
+  an empty path included, and one no written, inherited, single inferred or empty path meets is a
   defect at its anchor.
-  * **A field's path needs are stated per coordinate** `open`.
-    Each output field's occurrence needs its landings from each starting table, and one with nothing
-    written and no single foreign key is `PATH_NO_FOREIGN_KEY` or `PATH_SEVERAL_FOREIGN_KEYS`. A
-    `@reference` on a target with no one table is `REFERENCE_WITHOUT_TARGET_TABLE`, and a scalar
-    path whose last element names no table is `PATH_LANDING_UNKNOWN`.
-  * **An argument's path needs are stated where its consumer takes a table** `blocked`, on "A field's path needs are stated per coordinate" and "An argument's consumer is stated".
-    An argument or input-field occurrence the generator consumes, or a call consumes into a
-    table-typed parameter, needs a path from its field's landing or `as:` step; a `@nodeId` one lands
-    on its node type or is `NODE_ID_LANDS_ON_TABLE`. A path on an occurrence whose consumer takes no
-    table is `PATH_NOT_TAKEN`.
+  * **A field's path needs are stated per coordinate** `open`, F's.
+    Every occurrence needs its landings from each start, by the path rules of the nested-coordinates
+    draft below: a fork is a need of its own, and an empty path has origin `EMPTY`. One with
+    nothing written and no single foreign key is `PATH_NO_FOREIGN_KEY` or
+    `PATH_SEVERAL_FOREIGN_KEYS`, a `@reference` on a target with no one table
+    `REFERENCE_WITHOUT_TARGET_TABLE`, a scalar path whose last element names no table
+    `PATH_LANDING_UNKNOWN`, and a `@nodeId` one landing on a table `NODE_ID_LANDS_ON_TABLE`.
 * **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
   The one foreign key between two tables is a path of origin `INFERRED`, and a path written on an
   interface's field is a row per implementation of origin `INHERITED`, resolved from the
@@ -486,6 +483,10 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
   under `@service` and `@externalField` an occurrence the call does not take is that defect.
   `ARGUMENT_WITHOUT_CONSUMER` is a code whose `graphitron_defect_type` row names its
   `owner_gatherer`, written and swept through that owner's rule view.
+  * **A path or a column a consumer does not take is a defect** `blocked`, on "An argument's consumer is stated" and "A scalar's column is read at its path's end".
+    A written path on an occurrence whose consumer takes no table is `PATH_NOT_TAKEN`. A scalar
+    argument or input field matching no column at its path's end is `COLUMN_UNRESOLVED` only where
+    no call parameter consumes it.
 * **The generator emits from an argument only when no call consumes it** `blocked`, on "An argument's consumer is stated".
   `override:` is no longer read. What goes: the `enclosingOverride` cascade in `ClassifyContext`,
   `InputFieldResolver` and `FieldBuilder`, `suppressedByFieldOverride` on `ArgumentRef`,
@@ -602,13 +603,19 @@ classified records have no reader left and can go with the walk.
     reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
-* **A nested field is a field of each parent, at a nested coordinate** `open`. A field of a type
-  with no table of its own, or of an input type, is stated once per parent chain at a coordinate
-  such as `Emne.navn.en` or `Query.films(filter:).cast.firstName`, so it departs from one table and
-  `graphitron_field_target_table` holds one row per coordinate, scalars included. The column
-  relation then carries only the column, and the editor's column scope reads the target table alone.
-* **A field's source is its parent's result** `open`, E's. A field's source is a join on its parent
-  type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
+* **A nested field is a field of each parent, at a nested coordinate** `open`, G's.
+  `graphitron_occurrence` states every field, argument and input field once per parent chain; what
+  is left is the input-field spelling inside the parentheses, `Query.films(filter.cast.firstName:)`,
+  in its step rule and fact document.
+* **A scalar's column is read at its path's end** `blocked`, G's, on "A field's path needs are stated per coordinate".
+  `graphitron_occurrence_column` holds one column an occurrence binds at one of its path's ends,
+  keyed by graph, coordinate, end table and ordinal, with its `sql_column` and a basis (SQL name,
+  jOOQ name, node identity, `@nodeId` key), a miss on an output field being `COLUMN_UNRESOLVED` or
+  `COLUMN_AMBIGUOUS`. `graphitron_field_target_column`, `graphitron_field_target_table` and the
+  `graphitron_node_id_decode_*` family go, and the editor's column scope reads it.
+* **A field's source is its parent's result** `blocked`, F's, on "A field's path needs are stated per coordinate".
+  A field's source is its occurrence's start: its declaring type's table at a chain start, nothing
+  at a root, and its parent's path end below it; its readers read that start where they read
   `graphitron_field_source_table`'s inherited rule today.
 * **An object result is lifted onto a key row** `blocked`, E's, on "`graphitron_field_source_table` dissolves into the results". Under an
   object parent a path starts at the key row's table, and `graphitron_field_source_table`
@@ -619,9 +626,9 @@ classified records have no reader left and can go with the walk.
     gains `LIFTED` and its subtype `graphitron_field_path_start_lifted`, referencing the key row, so
     `FilmDetailsCarrier.language` starts on film; an `ACCESSOR` key row, the target's own record,
     starts none.
-  * **`graphitron_field_source_table` dissolves into the results** `open`, E's. The column match and
-    the hover read the parent's result and the key row where they read the source table's interim
-    rules, and the source table, its rule and its stage go.
+  * **`graphitron_field_source_table` dissolves into the results** `blocked`, F's, on "A field's source is its parent's result".
+    The column match and the hover read the occurrence's start where they read the source table's
+    interim rules, and the source table, its rule and its stage go.
   * **A binding that names several tables is a row of none of them** `done`. The result rule took a
     bound type's table from every candidate of its binding, so a type bound to a bare name two
     schemas declare held a ROW of both; it is still a ROW, of no table, the ambiguity being the
@@ -1471,10 +1478,12 @@ family, a mismatch a defect. Where a path starts and ends:
    `id: ID` on a `Node` type is the node identity, and a `@nodeId` unpacks into the key columns of the
    table its path ends on. The unpack is stated at the path's end, so the argMapping binding keeps
    only (written entry, call occurrence) to bound occurrence and its own defects.
-6. A `@service` argument has a path like any other: its input is converted to the parameter's type,
-   a `TableRecord` included, before the call, and the conversion reads each input field's column off
-   its path's end. Whether a path is stated for every argument or only where a parameter takes a
-   table is the writer's choice.
+6. Every argument and input-field occurrence has a path, whatever consumes it. A `@service`
+   argument's input is converted to the parameter's type, a `TableRecord` included, before the call,
+   and the conversion reads each input field's column off its path's end. A scalar argument or input
+   field need not match a column: a miss is a defect only where no call parameter consumes it, and a
+   written path a consumer takes no table from is `PATH_NOT_TAKEN`, both judged once the consumer is
+   stated.
 
 An empty path is a `graphitron_path` row with no steps and its target its start, with its own
 origin `EMPTY` beside `WRITTEN`, `INHERITED` and `INFERRED`, so the foreign-key defects cannot read
@@ -1507,8 +1516,8 @@ that depend on the parent fall three ways.
   ** `graphitron_field_scope_table`, `graphitron_argument_scope_table` and
      `graphitron_input_field_resolving_table`: the end of the field's path, forks included (rules 2
      to 4).
-  ** `graphitron_field_target_column`: the column resolved at the path's end (rule 5), a fact keyed on
-     the occurrence with a foreign key to `sql_column`, and its defects.
+  ** `graphitron_field_target_column`: `graphitron_occurrence_column`, the column resolved at the
+     path's end (rule 5), and its defects.
   ** `graphitron_node_id_decode_column`, `_hop` and `_hop_column`, and
      `graphitron_node_id_instruction`, all written by `DerivationStratum`: the `@nodeId` unpack at the
      path's end (rule 5).
@@ -1527,7 +1536,12 @@ that depend on the parent fall three ways.
 * Stay keyed on the occurrence, `(graph_name, coordinate)` with a foreign key to it:
   ** the path family itself, `graphitron_path_need`, `graphitron_path`, `graphitron_path_step` and its
      children, and `graphitron_path_stop`;
-  ** the column at a path's end, the successor of the target column above;
+  ** `graphitron_occurrence_column`: one column an occurrence binds at one of its path's ends, keyed
+     by `(graph_name, coordinate, end table, ordinal)` (an input field under a forked argument has
+     several ends, a `@nodeId` several key columns), with a foreign key to `sql_column` and its basis,
+     SQL name, jOOQ name, node identity or `@nodeId` key. A miss is `COLUMN_UNRESOLVED` or
+     `COLUMN_AMBIGUOUS` at the field's written position, for an argument or input field only where
+     no call parameter consumes it;
   ** `graphitron_field_key_row` and its method subtype: the keys a parent hands a child `@service`,
      which no path end states;
   ** `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`, whose rules already decide
@@ -1611,13 +1625,13 @@ today. MCP's `fieldRef` carries the coordinate; `Type.field` is the coordinate o
 occurrence, so nothing changes on the wire for those. The generator reads one fact per occurrence
 where it rebuilds them per edge today.
 
-**Owners and order.** Proposed, for A to confirm on the graph.
+**Owners and order.** Agreed with A, F, E and Alf (2026-11-03); the graph's nodes carry it.
 
 1. G: the input-field spelling in `graphitron_occurrence_step_rule` and its fact document.
 2. F: the path writer, "A field's path needs are stated per coordinate" widened to every
    occurrence: needs with their forks (rule 3), paths with `EMPTY` beside the other origins, steps and
    stops. The path model text below takes the new spelling and rules 2 to 4 from here.
-3. G: the column at a path's end and the `@nodeId` unpack (rule 5), once paths stand. Then
+3. G: `graphitron_occurrence_column` and the `@nodeId` unpack (rule 5), once paths stand. Then
    `graphitron_field_target_column` and the `graphitron_node_id_decode_*` family go, the editor's
    column scope moves off `intent_field_column_table` onto it, and `graphitron_field_target_table`
    dissolves into declared facts.
@@ -1650,6 +1664,11 @@ where it rebuilds them per edge today.
 * A `@service` argument has a path: the call's input is converted to its parameter types before
   the call (2026-11-03).
 * The `@nodeId` unpack is stated at the path's end, not in the argMapping binding (2026-11-03).
+* Every argument and input-field occurrence has a path; a scalar one matching no column is a defect
+  only where no call parameter consumes it (2026-11-03).
+* The column at a path's end is `graphitron_occurrence_column` (2026-11-03).
+* E's source-table nodes move to F's path writer; E keeps the key row, the lift and the first key
+  (2026-11-03).
 * A forked end is a need, in `graphitron_path_need`.
 
 ## Path model (draft)
