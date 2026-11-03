@@ -19,7 +19,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ANCHOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -29,12 +29,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The path relations hold a consistent row set and refuse an inconsistent one by their own keys and
- * checks: a need's landing is a type or a table as its kind says, a path names an anchor exactly when
- * it was not inferred, a need goes with its occurrence, and an anchor outlives what it was built from
+ * checks: a need's landing is a type or a table as its kind says, a path names a claim exactly when
+ * it was not inferred, a need goes with its occurrence, and a claim outlives what it was built from
  * until the sweep takes it.
  *
- * <p>The rows past the anchor are the test's own, written over a captured store whose occurrence,
- * anchor, types and tables they reference, since no stage derives them yet.
+ * <p>The rows past the claim are the test's own, written over a captured store whose occurrence,
+ * claim, types and tables they reference, since no stage derives them yet.
  */
 class PathRelationConstraintTest {
 
@@ -57,7 +57,7 @@ class PathRelationConstraintTest {
             var dsl = store.dsl();
             var customer = table(dsl, "customer");
             var address = table(dsl, "address");
-            assertOccurrenceAndAnchor(dsl);
+            assertOccurrenceAndClaim(dsl);
 
             insertTypeNeed(dsl, customer);
             insertPath(dsl, customer, "TYPE", TARGET, address, "WRITTEN", COORDINATE, TARGET);
@@ -76,21 +76,21 @@ class PathRelationConstraintTest {
             assertThat(dsl.fetchCount(GRAPHITRON_PATH_NEED)).as("needs go with their occurrence").isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_PATH)).as("paths go with their need").isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_PATH_STEP)).as("steps go with their need").isZero();
-            var a = GRAPHITRON_PATH_ANCHOR;
+            var a = GRAPHITRON_PATH_CLAIM;
             assertThat(dsl.fetchCount(a, a.GRAPH_NAME.eq(GRAPH), a.ELEMENT_COORDINATE.eq(COORDINATE)))
-                .as("the anchor is the declaration's, not the occurrence's, and stays")
+                .as("the claim is the declaration's, not the occurrence's, and stays")
                 .isOne();
         }
     }
 
     @Test
-    @DisplayName("an anchor survives its element going, its reference set null, and the path following it stays")
-    void anAnchorOutlivesItsElement(@TempDir Path tmp) {
+    @DisplayName("a claim survives its element going, its reference set null, and the path following it stays")
+    void aClaimOutlivesItsElement(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStoreOfCatalog(tmp, SDL, CatalogInput.of(TestRunContext.of()))) {
             var dsl = store.dsl();
             var customer = table(dsl, "customer");
             var address = table(dsl, "address");
-            assertOccurrenceAndAnchor(dsl);
+            assertOccurrenceAndClaim(dsl);
             insertTypeNeed(dsl, customer);
             insertPath(dsl, customer, "TYPE", TARGET, address, "WRITTEN", COORDINATE, TARGET);
 
@@ -100,27 +100,27 @@ class PathRelationConstraintTest {
             var e = GRAPHITRON_ELEMENT;
             dsl.deleteFrom(e).where(e.GRAPH_NAME.eq(GRAPH), e.COORDINATE.eq(COORDINATE)).execute();
 
-            var a = GRAPHITRON_PATH_ANCHOR;
-            var anchor = dsl.select(a.ELEMENT_GRAPH_REF, a.ELEMENT_COORDINATE_REF, a.TARGET_TYPE_REF)
+            var a = GRAPHITRON_PATH_CLAIM;
+            var claim = dsl.select(a.ELEMENT_GRAPH_REF, a.ELEMENT_COORDINATE_REF, a.TARGET_TYPE_REF)
                 .from(a).where(a.GRAPH_NAME.eq(GRAPH), a.ELEMENT_COORDINATE.eq(COORDINATE),
                     a.TARGET_TYPE.eq(TARGET))
                 .fetchOptional();
-            assertThat(anchor).as("the anchor survives its element").isPresent();
-            assertThat(anchor.get().value1()).as("the element reference's graph half").isNull();
-            assertThat(anchor.get().value2()).as("the element reference's coordinate half").isNull();
-            assertThat(anchor.get().value3()).as("the type still stands").isEqualTo(TARGET);
+            assertThat(claim).as("the claim survives its element").isPresent();
+            assertThat(claim.get().value1()).as("the element reference's graph half").isNull();
+            assertThat(claim.get().value2()).as("the element reference's coordinate half").isNull();
+            assertThat(claim.get().value3()).as("the type still stands").isEqualTo(TARGET);
             assertThat(dsl.fetchCount(GRAPHITRON_PATH)).as("the path following it stays").isOne();
         }
     }
 
     @Test
-    @DisplayName("a TYPE need with a landing table, a need on no occurrence, an inferred path with an anchor, a written one without, and a step on no need are refused")
+    @DisplayName("a TYPE need with a landing table, a need on no occurrence, an inferred path with a claim, a written one without, and a step on no need are refused")
     void anInconsistentRowIsRefused(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStoreOfCatalog(tmp, SDL, CatalogInput.of(TestRunContext.of()))) {
             var dsl = store.dsl();
             var customer = table(dsl, "customer");
             var address = table(dsl, "address");
-            assertOccurrenceAndAnchor(dsl);
+            assertOccurrenceAndClaim(dsl);
 
             var n = GRAPHITRON_PATH_NEED;
             assertRefused("Check constraint", () -> dsl.insertInto(n)
@@ -153,28 +153,28 @@ class PathRelationConstraintTest {
     }
 
     /**
-     * The occurrence the needs key on and the anchor the written path follows, both as the capture
+     * The occurrence the needs key on and the claim the written path follows, both as the capture
      * wrote them: the field's own coordinate, and its declaration reaching its target type.
      */
-    private static void assertOccurrenceAndAnchor(DSLContext dsl) {
+    private static void assertOccurrenceAndClaim(DSLContext dsl) {
         var o = GRAPHITRON_OCCURRENCE;
         assertThat(dsl.fetchCount(o, o.GRAPH_NAME.eq(GRAPH), o.COORDINATE.eq(COORDINATE)))
             .as("capture writes the field's occurrence at its own coordinate")
             .isOne();
-        var a = GRAPHITRON_PATH_ANCHOR;
-        var anchor = dsl.select(a.ANCHOR_KIND, a.ELEMENT_COORDINATE_REF, a.TARGET_TYPE_REF,
+        var a = GRAPHITRON_PATH_CLAIM;
+        var claim = dsl.select(a.CLAIM_KIND, a.ELEMENT_COORDINATE_REF, a.TARGET_TYPE_REF,
                 a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN)
             .from(a).where(a.GRAPH_NAME.eq(GRAPH), a.ELEMENT_COORDINATE.eq(COORDINATE),
                 a.TARGET_TYPE.eq(TARGET))
             .fetchSingle();
-        assertThat(anchor.value1()).isEqualTo("FIELD");
-        assertThat(anchor.value2()).as("the element reference").isEqualTo(COORDINATE);
-        assertThat(anchor.value3()).as("the type reference").isEqualTo(TARGET);
+        assertThat(claim.value1()).isEqualTo("FIELD");
+        assertThat(claim.value2()).as("the element reference").isEqualTo(COORDINATE);
+        assertThat(claim.value3()).as("the type reference").isEqualTo(TARGET);
         var e = GRAPHITRON_AST_PATH_ENTRY;
-        assertThat(dsl.fetchCount(e, e.GRAPH_NAME.eq(GRAPH), e.SOURCE_NAME.eq(anchor.value4()),
-                e.ANCHOR_LINE.eq(anchor.value5()), e.ANCHOR_COLUMN.eq(anchor.value6()),
+        assertThat(dsl.fetchCount(e, e.GRAPH_NAME.eq(GRAPH), e.SOURCE_NAME.eq(claim.value4()),
+                e.ANCHOR_LINE.eq(claim.value5()), e.ANCHOR_COLUMN.eq(claim.value6()),
                 e.PLACE.eq(0)))
-            .as("the anchor stands at the position capture keyed the field's element under")
+            .as("the claim stands at the position capture keyed the field's element under")
             .isOne();
     }
 
@@ -204,7 +204,7 @@ class PathRelationConstraintTest {
     private static void insertPath(DSLContext dsl, Record3<String, String, String> start,
                                    String landingKind, String landing,
                                    Record3<String, String, String> target, String origin,
-                                   String anchorCoordinate, String anchorTargetType) {
+                                   String claimCoordinate, String claimTargetType) {
         var p = GRAPHITRON_PATH;
         dsl.insertInto(p)
             .set(p.GRAPH_NAME, GRAPH).set(p.COORDINATE, COORDINATE)
@@ -213,8 +213,8 @@ class PathRelationConstraintTest {
             .set(p.LANDING_KIND, landingKind).set(p.LANDING, landing)
             .set(p.TARGET_SOURCE_NAME, target.value1()).set(p.TARGET_SCHEMA, target.value2())
             .set(p.TARGET_TABLE, target.value3())
-            .set(p.ORIGIN, origin).set(p.ANCHOR_COORDINATE, anchorCoordinate)
-            .set(p.ANCHOR_TARGET_TYPE, anchorTargetType)
+            .set(p.ORIGIN, origin).set(p.CLAIM_COORDINATE, claimCoordinate)
+            .set(p.CLAIM_TARGET_TYPE, claimTargetType)
             .set(p.TOUCHED_AT, NOW).execute();
     }
 

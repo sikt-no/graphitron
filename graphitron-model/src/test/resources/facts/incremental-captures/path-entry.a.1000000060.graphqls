@@ -80,8 +80,8 @@ extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
 
 # The anchors still written are marked again, at the positions the edit moved them to; the
 # argument's is swept, and managers keeps the one @referenceFor naming Staff it still writes.
-extend schema @expectEquals(relation: "graphitron_path_anchor", rows: """
-  element_coordinate,       target_type, anchor_kind,   source_line, source_column, touched_at
+extend schema @expectEquals(relation: "graphitron_path_claim", rows: """
+  element_coordinate,       target_type, claim_kind,   source_line, source_column, touched_at
   Customer.city,            String,      FIELD,         9,           3,             1000000060
   Located.address,          Address,     FIELD,         15,          3,             1000000060
   CustomerFilter.addressId, Int,         INPUT_FIELD,   21,          3,             1000000060

@@ -11,7 +11,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ANCHOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
@@ -25,30 +25,30 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 /**
- * The capture-cadence writer of {@code graphitron_path_anchor}: every place a path is written, by the
+ * The capture-cadence writer of {@code graphitron_path_claim}: every place a path is written, by the
  * declared element it is written on and the type it reaches, marked and swept.
  *
- * <p>The anchors are the positions {@code graphitron_ast_path_entry} keys its elements under. A
+ * <p>The claims are the positions {@code graphitron_ast_path_entry} keys its elements under. A
  * {@code @referenceFor} application is written on the declaration that is its parent and reaches the
- * member it names; any other anchor is the declaration itself, reaching its target type, the
+ * member it names; any other claim is the declaration itself, reaching its target type, the
  * argument's named type for an argument. The kind is read off the declaration's own entry kind, at
- * the position the anchor was written, so it does not wait on the element being emitted. Positions
+ * the position the claim was written, so it does not wait on the element being emitted. Positions
  * are joined only within one file.
  *
- * <p>Two anchors on one element reaching one type keep one row: the first written, by the merge
+ * <p>Two claims on one element reaching one type keep one row: the first written, by the merge
  * order of the declarations they sit in, as {@code graphql_type_declaration} numbers them, then by
  * file and position. Two {@code @referenceFor} on one declaration naming one type are also a defect,
  * which the entry-defect rule reads off the entries rather than off this.
  *
- * <p>Runs after the targets are written and before the paths that follow the anchors.
+ * <p>Runs after the targets are written and before the paths that follow the claims.
  */
-public final class PathAnchors {
+public final class PathClaims {
 
-    private PathAnchors() {}
+    private PathClaims() {}
 
-    /** Re-derives the graph's anchors and sweeps what the reading no longer finds. */
+    /** Re-derives the graph's claims and sweeps what the reading no longer finds. */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        var a = GRAPHITRON_PATH_ANCHOR;
+        var a = GRAPHITRON_PATH_CLAIM;
         var p = GRAPHITRON_AST_PATH_ENTRY;
         var positions = selectDistinct(p.GRAPH_NAME, p.SOURCE_NAME, p.ANCHOR_LINE, p.ANCHOR_COLUMN)
             .from(p)
@@ -68,7 +68,7 @@ public final class PathAnchors {
         var ft = GRAPHITRON_FIELD_TARGET;
         var arg = GRAPHITRON_ARGUMENT;
 
-        // A @referenceFor is written on its parent declaration; any other anchor is the declaration.
+        // A @referenceFor is written on its parent declaration; any other claim is the declaration.
         var declarationLine = when(rf.SOURCE_LINE.isNotNull(), at.PARENT_LINE).otherwise(line);
         var declarationColumn = when(rf.SOURCE_LINE.isNotNull(), at.PARENT_COLUMN).otherwise(column);
         var kind = when(rf.SOURCE_LINE.isNotNull(), val("REFERENCE_FOR"))
@@ -81,7 +81,7 @@ public final class PathAnchors {
 
         var ranked = dsl
             .select(graph.as("graph_name"), el.COORDINATE.as("element_coordinate"),
-                target.as("target_type"), kind.as("anchor_kind"), file.as("source_name"),
+                target.as("target_type"), kind.as("claim_kind"), file.as("source_name"),
                 line.as("source_line"), column.as("source_column"), rank.as("rn"))
             .from(positions)
             .join(at).on(at.GRAPH_NAME.eq(graph), at.SOURCE_NAME.eq(file),
@@ -107,12 +107,12 @@ public final class PathAnchors {
         var e = GRAPHITRON_ELEMENT;
         var t = GRAPHITRON_TYPE;
         dsl.insertInto(a)
-            .columns(a.GRAPH_NAME, a.ELEMENT_COORDINATE, a.TARGET_TYPE, a.ANCHOR_KIND,
+            .columns(a.GRAPH_NAME, a.ELEMENT_COORDINATE, a.TARGET_TYPE, a.CLAIM_KIND,
                 a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, a.TOUCHED_AT,
                 a.ELEMENT_GRAPH_REF, a.ELEMENT_COORDINATE_REF, a.TARGET_GRAPH_REF,
                 a.TARGET_TYPE_REF)
             .select(dsl
-                .select(rGraph, rElement, rTarget, ranked.field("anchor_kind", String.class),
+                .select(rGraph, rElement, rTarget, ranked.field("claim_kind", String.class),
                     ranked.field("source_name", String.class),
                     ranked.field("source_line", Integer.class),
                     ranked.field("source_column", Integer.class), val(touchedAt, a.TOUCHED_AT),
@@ -122,9 +122,9 @@ public final class PathAnchors {
                 .leftJoin(t).on(t.GRAPH_NAME.eq(rGraph), t.TYPE_NAME.eq(rTarget))
                 .where(ranked.field("rn", Integer.class).eq(1))
                 .and(rTarget.isNotNull())
-                .and(ranked.field("anchor_kind", String.class).isNotNull()))
+                .and(ranked.field("claim_kind", String.class).isNotNull()))
             .onDuplicateKeyUpdate()
-            .set(a.ANCHOR_KIND, excluded(a.ANCHOR_KIND))
+            .set(a.CLAIM_KIND, excluded(a.CLAIM_KIND))
             .set(a.SOURCE_NAME, excluded(a.SOURCE_NAME))
             .set(a.SOURCE_LINE, excluded(a.SOURCE_LINE))
             .set(a.SOURCE_COLUMN, excluded(a.SOURCE_COLUMN))

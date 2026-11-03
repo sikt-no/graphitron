@@ -2403,7 +2403,7 @@ COMMENT ON TABLE graphitron_ast_path_entry IS 'One element of one written path, 
 COMMENT ON COLUMN graphitron_ast_path_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_path_entry.source_name IS 'the file the anchor was written in, which holds every element of its path';
 COMMENT ON COLUMN graphitron_ast_path_entry.anchor_line IS 'the anchor''s source line, 1-based: a field declaration''s, a @referenceFor application''s at sign, an argument''s or an input field''s';
-COMMENT ON COLUMN graphitron_ast_path_entry.anchor_column IS 'the anchor''s source column; with the line, a position in graphql_ast_entry within this file, and graphitron_path_anchor names the same anchor by its declared element and target type for a reference from elsewhere';
+COMMENT ON COLUMN graphitron_ast_path_entry.anchor_column IS 'the anchor''s source column; with the line, a position in graphql_ast_entry within this file, and graphitron_path_claim names the same anchor by its declared element and target type for a reference from elsewhere';
 COMMENT ON COLUMN graphitron_ast_path_entry.place IS 'the element''s place in its anchor''s path, numbered from zero in the order written; for a field declaration across its @routine and @reference applications, each application''s elements in their own order. A reference from another file names an element by its anchor and this place';
 COMMENT ON COLUMN graphitron_ast_path_entry.element_line IS 'the element''s source line: a @routine application''s own, or a path element''s value node''s';
 COMMENT ON COLUMN graphitron_ast_path_entry.element_column IS 'the element''s source column; with the line, the written position every decode of the element is keyed by, within this file';
@@ -10053,11 +10053,11 @@ COMMENT ON VIEW graphitron_field_path_landing IS 'Where a field''s path ends fro
 -- COMMENT ON COLUMN graphitron_field_path_landing.table_schema IS 'the landing table''s SQL schema';
 -- COMMENT ON COLUMN graphitron_field_path_landing.table_name IS 'the table the path ends on: the last step''s destination, or the start itself where nothing was walked';
 
-CREATE TABLE graphitron_path_anchor (
+CREATE TABLE graphitron_path_claim (
   graph_name             VARCHAR   NOT NULL,
   element_coordinate     VARCHAR   NOT NULL,
   target_type            VARCHAR   NOT NULL,
-  anchor_kind            VARCHAR   NOT NULL,
+  claim_kind            VARCHAR   NOT NULL,
   source_name            VARCHAR   NOT NULL,
   source_line            INT       NOT NULL,
   source_column          INT       NOT NULL,
@@ -10068,8 +10068,8 @@ CREATE TABLE graphitron_path_anchor (
   target_type_ref        VARCHAR,
   PRIMARY KEY (graph_name, element_coordinate, target_type),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  -- The declared element and the type it reaches, each through the anchor's own copy of the key: a
-  -- key to what an anchor was built from does not cascade, and the sweep removes the row the
+  -- The declared element and the type it reaches, each through the claim's own copy of the key: a
+  -- key to what a claim was built from does not cascade, and the sweep removes the row the
   -- reading no longer finds.
   FOREIGN KEY (element_graph_ref, element_coordinate_ref)
     REFERENCES graphitron_element (graph_name, coordinate) ON DELETE SET NULL,
@@ -10079,21 +10079,21 @@ CREATE TABLE graphitron_path_anchor (
   CHECK (element_coordinate_ref IS NULL OR element_coordinate_ref = element_coordinate),
   CHECK (target_graph_ref IS NULL OR target_graph_ref = graph_name),
   CHECK (target_type_ref IS NULL OR target_type_ref = target_type),
-  CHECK (anchor_kind IN ('FIELD', 'REFERENCE_FOR', 'ARGUMENT', 'INPUT_FIELD'))
+  CHECK (claim_kind IN ('FIELD', 'REFERENCE_FOR', 'ARGUMENT', 'INPUT_FIELD'))
 );
-COMMENT ON TABLE graphitron_path_anchor IS 'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path. For example Store.people with @referenceFor(type: "Staff") is the anchor (Store.people, Staff), of kind REFERENCE_FOR.';
-COMMENT ON COLUMN graphitron_path_anchor.graph_name IS 'the owning graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN graphitron_path_anchor.element_coordinate IS 'the declared field, argument or input field the path is written on, as graphitron_element spells it: Customer.address, Query.people(storeId:), StockFilter.languageId. A declaration and not an occurrence, a path being written once where it is declared; a path in any file follows it by this and the target type';
-COMMENT ON COLUMN graphitron_path_anchor.target_type IS 'the type the path reaches: the member a @referenceFor names, else the type the declaration names, unwrapped from a connection for an output field, a scalar or input type included. With the coordinate the key, so two @referenceFor on one field naming different members are two anchors, and the first written of two naming one type is the one kept';
-COMMENT ON COLUMN graphitron_path_anchor.anchor_kind IS 'what wrote the path: FIELD, a field declaration''s @routine and @reference applications composed; REFERENCE_FOR, one @referenceFor application; ARGUMENT, an argument; or INPUT_FIELD, an input field, whose written elements become a path per occurrence';
-COMMENT ON COLUMN graphitron_path_anchor.source_name IS 'the file the anchor was written in';
-COMMENT ON COLUMN graphitron_path_anchor.source_line IS 'the anchor''s source line, 1-based';
-COMMENT ON COLUMN graphitron_path_anchor.source_column IS 'the anchor''s source column; with the two columns before it, the anchor position graphitron_ast_path_entry keys its elements by within this file. An attribute and not a reference: a position is only a key within its own file, and the anchor is named by the coordinate and the target type';
-COMMENT ON COLUMN graphitron_path_anchor.touched_at IS 'when the reading that last stated this anchor ran: the mark the sweep reads, so an anchor a reading no longer finds goes with the paths following it';
-COMMENT ON COLUMN graphitron_path_anchor.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
-COMMENT ON COLUMN graphitron_path_anchor.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
-COMMENT ON COLUMN graphitron_path_anchor.target_graph_ref IS 'the graph half of the target type''s key, nullable so the type''s removal sets the reference null rather than cascading';
-COMMENT ON COLUMN graphitron_path_anchor.target_type_ref IS 'the type half of the target type''s key, equal to target_type while the type stands; null where the type named is none the graph has';
+COMMENT ON TABLE graphitron_path_claim IS 'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path. For example Store.people with @referenceFor(type: "Staff") is the claim (Store.people, Staff), of kind REFERENCE_FOR.';
+COMMENT ON COLUMN graphitron_path_claim.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN graphitron_path_claim.element_coordinate IS 'the declared field, argument or input field the path is written on, as graphitron_element spells it: Customer.address, Query.people(storeId:), StockFilter.languageId. A declaration and not an occurrence, a path being written once where it is declared; a path in any file follows it by this and the target type';
+COMMENT ON COLUMN graphitron_path_claim.target_type IS 'the type the path reaches: the member a @referenceFor names, else the type the declaration names, unwrapped from a connection for an output field, a scalar or input type included. With the coordinate the key, so two @referenceFor on one field naming different members are two claims, and the first written of two naming one type is the one kept';
+COMMENT ON COLUMN graphitron_path_claim.claim_kind IS 'what wrote the path: FIELD, a field declaration''s @routine and @reference applications composed; REFERENCE_FOR, one @referenceFor application; ARGUMENT, an argument; or INPUT_FIELD, an input field, whose written elements become a path per occurrence';
+COMMENT ON COLUMN graphitron_path_claim.source_name IS 'the file the claim was written in';
+COMMENT ON COLUMN graphitron_path_claim.source_line IS 'the claim''s source line, 1-based';
+COMMENT ON COLUMN graphitron_path_claim.source_column IS 'the claim''s source column; with the two columns before it, the claim position graphitron_ast_path_entry keys its elements by within this file. An attribute and not a reference: a position is only a key within its own file, and the claim is named by the coordinate and the target type';
+COMMENT ON COLUMN graphitron_path_claim.touched_at IS 'when the reading that last stated this claim ran: the mark the sweep reads, so a claim a reading no longer finds goes with the paths following it';
+COMMENT ON COLUMN graphitron_path_claim.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_claim.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
+COMMENT ON COLUMN graphitron_path_claim.target_graph_ref IS 'the graph half of the target type''s key, nullable so the type''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_claim.target_type_ref IS 'the type half of the target type''s key, equal to target_type while the type stands; null where the type named is none the graph has';
 
 CREATE TABLE graphitron_path_need (
   graph_name          VARCHAR NOT NULL,
@@ -10161,8 +10161,8 @@ CREATE TABLE graphitron_path (
   target_schema      VARCHAR NOT NULL,
   target_table       VARCHAR NOT NULL,
   origin             VARCHAR NOT NULL,
-  anchor_coordinate  VARCHAR,
-  anchor_target_type VARCHAR,
+  claim_coordinate  VARCHAR,
+  claim_target_type VARCHAR,
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind,
                landing),
@@ -10172,15 +10172,15 @@ CREATE TABLE graphitron_path (
                                      start_table, landing_kind, landing) ON DELETE CASCADE,
   FOREIGN KEY (target_source_name, target_schema, target_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, anchor_coordinate, anchor_target_type)
-    REFERENCES graphitron_path_anchor (graph_name, element_coordinate, target_type)
+  FOREIGN KEY (graph_name, claim_coordinate, claim_target_type)
+    REFERENCES graphitron_path_claim (graph_name, element_coordinate, target_type)
     ON DELETE CASCADE,
   CHECK (origin IN ('WRITTEN', 'INHERITED', 'INFERRED')),
-  -- A written or inherited path follows the anchor that wrote it; an inferred one was written nowhere.
-  CHECK ((origin = 'INFERRED') = (anchor_coordinate IS NULL AND anchor_target_type IS NULL)),
-  CHECK ((anchor_coordinate IS NULL) = (anchor_target_type IS NULL))
+  -- A written or inherited path follows the claim that wrote it; an inferred one was written nowhere.
+  CHECK ((origin = 'INFERRED') = (claim_coordinate IS NULL AND claim_target_type IS NULL)),
+  CHECK ((claim_coordinate IS NULL) = (claim_target_type IS NULL))
 );
-COMMENT ON TABLE graphitron_path IS 'How one need is met: one row per need a path meets, with the table it reaches, where it came from and the anchor it follows by name. For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the anchor (Person.homeAddress, Address), origin INHERITED.';
+COMMENT ON TABLE graphitron_path IS 'How one need is met: one row per need a path meets, with the table it reaches, where it came from and the claim it follows by name. For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the claim (Person.homeAddress, Address), origin INHERITED.';
 COMMENT ON COLUMN graphitron_path.graph_name IS 'the owning graph''s partition, carried from the need';
 COMMENT ON COLUMN graphitron_path.coordinate IS 'the occurrence whose need the path meets';
 COMMENT ON COLUMN graphitron_path.start_source_name IS 'the catalog partition of the table the path starts on';
@@ -10191,9 +10191,9 @@ COMMENT ON COLUMN graphitron_path.landing IS 'the landing as the need spells it;
 COMMENT ON COLUMN graphitron_path.target_source_name IS 'the catalog partition of the table the path reaches';
 COMMENT ON COLUMN graphitron_path.target_schema IS 'the SQL schema of the table the path reaches';
 COMMENT ON COLUMN graphitron_path.target_table IS 'the table the path reaches, its last step''s destination';
-COMMENT ON COLUMN graphitron_path.origin IS 'where the path came from: WRITTEN at the anchor of the element the occurrence is of; INHERITED from an interface''s field, one row per implementation; or INFERRED from the one foreign key joining the two tables';
-COMMENT ON COLUMN graphitron_path.anchor_coordinate IS 'the declared element of the anchor the path follows, which may lie in another file; with anchor_target_type a reference into graphitron_path_anchor, set exactly where the origin is not INFERRED';
-COMMENT ON COLUMN graphitron_path.anchor_target_type IS 'the target type of the anchor the path follows, set and null with anchor_coordinate';
+COMMENT ON COLUMN graphitron_path.origin IS 'where the path came from: WRITTEN at the claim of the element the occurrence is of; INHERITED from an interface''s field, one row per implementation; or INFERRED from the one foreign key joining the two tables';
+COMMENT ON COLUMN graphitron_path.claim_coordinate IS 'the declared element of the claim the path follows, which may lie in another file; with claim_target_type a reference into graphitron_path_claim, set exactly where the origin is not INFERRED';
+COMMENT ON COLUMN graphitron_path.claim_target_type IS 'the target type of the claim the path follows, set and null with claim_coordinate';
 COMMENT ON COLUMN graphitron_path.touched_at IS 'when the reading that last stated this path ran: the mark the sweep reads';
 
 CREATE TABLE graphitron_path_step (
@@ -17683,7 +17683,7 @@ INSERT INTO meta_grain VALUES
   ('field-path-stop',
    'where one walk of one field''s path stopped, in one graph',
    'graph_name, type_name, field_name, start_source_name, start_schema, start_table', 'sdl'),
-  ('path-anchor',
+  ('path-claim',
    'one place a path is written, by the declared element it is written on and the type it reaches, in one graph',
    'graph_name, element_coordinate, target_type', 'sdl'),
   ('path-need',
@@ -18430,18 +18430,18 @@ INSERT INTO meta_relation VALUES
    'One round of the walk that fills graphitron_field_path: every move the next written element allows from where each walk stands, and every step once with no destination, which is all a step allowing no move has.',
    'For example a capture merges the rows with one move into graphitron_field_path until a round adds nothing; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads. One round only: a view cannot state the fixpoint, and H2 evaluates a recursive view again for every row joined to it, so the stage merges rounds until one adds nothing.'),
-  ('graphitron_path_anchor', 'path-anchor', 'graphitron',
+  ('graphitron_path_claim', 'path-claim', 'graphitron',
    'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path.',
-   'For example Store.people with @referenceFor(type: "Staff") is the anchor (Store.people, Staff), of kind REFERENCE_FOR.',
-   'A path can be followed from another file, an inherited path from an implementation in one file to the interface''s field in another, and a written position moves when the file around it is edited, so a path names what it follows by names an author chose: the declared element and the type the path reaches, which tells two @referenceFor on one field apart. The position it stands for within its own file is kept beside them as an attribute, where the written elements are keyed. The element and the type are referenced through copies of their keys that their removal sets null, so the sweep, not a cascade, removes an anchor the reading no longer finds.'),
+   'For example Store.people with @referenceFor(type: "Staff") is the claim (Store.people, Staff), of kind REFERENCE_FOR.',
+   'A path can be followed from another file, an inherited path from an implementation in one file to the interface''s field in another, and a written position moves when the file around it is edited, so a path names what it follows by names an author chose: the declared element and the type the path reaches, which tells two @referenceFor on one field apart. The position it stands for within its own file is kept beside them as an attribute, where the written elements are keyed. The element and the type are referenced through copies of their keys that their removal sets null, so the sweep, not a cascade, removes a claim the reading no longer finds.'),
   ('graphitron_path_need', 'path-need', 'graphitron',
    'One starting table and landing an occurrence must reach: one row per occurrence, table its rows start on and type or table it lands on, each end expanded to its tables.',
    'For example Store.people needs store to Customer and store to Staff, and Customer.city, a scalar, needs customer to the table public.city.',
    'What an occurrence must reach is decided by the types at its two ends, each expanded to its tables, before any path is looked for, so a need no path meets is a defect at the occurrence rather than a row a reader fails to find. Keyed by the occurrence''s nested coordinate, so a field of a type with no table of its own has a need per parent chain, and goes with the occurrence. The landing is a type for typed fields, @referenceFor members and @nodeId paths, and a table for a scalar path, which may reach a table no type exposes.'),
   ('graphitron_path', 'path-need', 'graphitron',
-   'How one need is met: one row per need a path meets, with the table it reaches, where it came from and the anchor it follows by name.',
-   'For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the anchor (Person.homeAddress, Address), origin INHERITED.',
-   'One path per need, keyed by the need so the two cannot disagree on what was asked: written at the anchor of the element the occurrence is of, inherited per implementation so no reader joins through implementations, or inferred from the one foreign key between the two tables. The anchor is named by its element and target type rather than positioned, since an inherited path''s may lie in another file.'),
+   'How one need is met: one row per need a path meets, with the table it reaches, where it came from and the claim it follows by name.',
+   'For example Staff.homeAddress, inherited from Person.homeAddress, meets the need staff to Address from the claim (Person.homeAddress, Address), origin INHERITED.',
+   'One path per need, keyed by the need so the two cannot disagree on what was asked: written at the claim of the element the occurrence is of, inherited per implementation so no reader joins through implementations, or inferred from the one foreign key between the two tables. The claim is named by its element and target type rather than positioned, since an inherited path''s may lie in another file.'),
   ('graphitron_path_step', 'path-step', 'graphitron',
    'One step a path takes: one row per need and position the path toward it stepped through, from one table to the next, with the place of the written element it resolved where one did.',
    'For example Customer.city over @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}]) is two steps, customer to address and address to city.',
@@ -18922,7 +18922,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_ast_path_entry', 'sdl-path-position', 'graphitron',
    'One element of one written path, at its place under the anchor that wrote it: a field declaration''s @routine and @reference applications composed in order, a @referenceFor application, an argument or an input field.',
    'For example Store.people @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}]) gives one row, the key element at place 0 under the @referenceFor application.',
-   'Every written path as a path, whatever wrote it: graphitron_ast_field_path_entry holds a field declaration''s alone, so a @referenceFor application, an argument and an input field had nowhere to state their elements in order. Keyed by the anchor''s position within its file, an entry''s own key; a reference from another file reaches an element by its anchor''s name in graphitron_path_anchor and its place here.'),
+   'Every written path as a path, whatever wrote it: graphitron_ast_field_path_entry holds a field declaration''s alone, so a @referenceFor application, an argument and an input field had nowhere to state their elements in order. Keyed by the anchor''s position within its file, an entry''s own key; a reference from another file reaches an element by its anchor''s name in graphitron_path_claim and its place here.'),
   ('graphitron_ast_reference_for_entry', 'sdl-declaration-site', 'graphitron',
    'What a @referenceFor application says, at any site: the participant type whose join path this application replaces, as written.',
    'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.',

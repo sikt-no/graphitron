@@ -282,7 +282,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
 * **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "A field's path needs are stated per coordinate".
   Every output field, argument and input-field occurrence with a table source has its needs in
   `graphitron_path_need`, an empty path included, and one no written, inherited, single inferred or
-  empty path meets is a defect at its anchor.
+  empty path meets is a defect at its claim.
   * **Every occurrence's source is stated** `open`, F's.
     `graphitron_occurrence_source` holds the one place each occurrence's values come from, keyed by
     the coordinate, a table (`graphitron_occurrence_source_table`, lifted or not) or a producer's
@@ -1549,7 +1549,7 @@ that depend on the parent fall three ways.
      single-table interface, read off `graphitron_field_target`, `graphql_poly_member` and
      `graphitron_tabletype`; the needs carry one per member.
   ** `graphitron_resolved_type_binding`: `graphitron_tabletype`, by its own node.
-  ** `graphitron_path_anchor` is already keyed by the declared element and target type.
+  ** `graphitron_path_claim` is already keyed by the declared element and target type.
 * Stay keyed on the occurrence, `(graph_name, coordinate)` with a foreign key to it:
   ** `graphitron_occurrence_source`, one per occurrence, and its subtypes on the same key:
      `graphitron_occurrence_source_table` with `graphitron_occurrence_lift` and a subtype per way it
@@ -1756,21 +1756,21 @@ row for a single-table interface target, where the needs want one per member, an
 whose binding names several tables.
 
 **The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
-the anchor is written, and nothing writes the rest yet.
+the claim is written, and nothing writes the rest yet.
 
-* `graphitron_path_anchor`, written by `PathAnchors`: one place a path is written, by the declared
+* `graphitron_path_claim`, written by `PathClaims`: one place a path is written, by the declared
   element it is written on and the type it reaches. Keyed by (graph, element coordinate, target
   type), both spelled from names, so no column is ever NULL. The coordinate is the declared
   element's, not an occurrence's: a path is written once, where it is declared. The element and the
   type are referenced through `_ref` copies their removal sets null, and the sweep removes the
-  anchor; two anchors on one key keep the first written, and two `@referenceFor` naming one type on
+  claim; two claims on one key keep the first written, and two `@referenceFor` naming one type on
   one declaration are `REFERENCE_FOR_DUPLICATE_TYPE` at the second. `Customer.address` for a field's
   composed `@routine` and `@reference`, `Query.people(storeId:)` for an argument,
   `StockFilter.languageId` for an input field, and `Media.title` for a path on a multi-table
   interface's field, which reaches `Film.title` and `Book.title` as their `INHERITED` paths. The target
   type is the member a `@referenceFor` names, else the type the declaration names, a scalar or input
-  type included: (`Store.people`, `Staff`) and (`Store.people`, `Customer`) are two anchors on one
-  field. It carries its `anchor_kind` (`FIELD`, `REFERENCE_FOR`, `ARGUMENT`, `INPUT_FIELD`) and its
+  type included: (`Store.people`, `Staff`) and (`Store.people`, `Customer`) are two claims on one
+  field. It carries its `claim_kind` (`FIELD`, `REFERENCE_FOR`, `ARGUMENT`, `INPUT_FIELD`) and its
   own written position, an attribute within its file and no key.
 * `graphitron_ast_path_entry`, capture: one element of one written path, at its place. Keyed by the
   written anchor's position and the place, both within one file, with the element's position and
@@ -1815,7 +1815,7 @@ the anchor is written, and nothing writes the rest yet.
   nothing it writes. It is the successor of `graphitron_field_path_start`, which starts only fields
   that wrote a path, and of `graphitron_field_source_table`.
 * `graphitron_path_need`, anchoring: one type an occurrence with a table source must reach. Keyed by
-  (graph, coordinate, target type), as the anchor is keyed by its element and target type, with a
+  (graph, coordinate, target type), as the claim is keyed by its element and target type, with a
   foreign key to the table source; the start table and the landing table are attributes with
   nullable references. The target type is the field's target, each member of a single-table
   interface (`FilmItem`, `ShortItem`), never the interface, each table-bound member of a union or
@@ -1827,13 +1827,13 @@ the anchor is written, and nothing writes the rest yet.
   need is without one.
 * `graphitron_path`, anchoring: how one need is met. Keyed by the need's key, so one-to-one with it,
   with the target table, never null, its start where the path is empty; its origin (`WRITTEN`,
-  `INHERITED`, `INFERRED`, `EMPTY`) and the anchor it follows by name, set exactly where it is
+  `INHERITED`, `INFERRED`, `EMPTY`) and the claim it follows by name, set exactly where it is
   written or inherited. `EMPTY` is its own origin so the foreign-key defects cannot read an empty
   path as a failed inference. An inherited path is a row per implementation, its
-  anchor possibly in another file, so no reader joins through implementations. A need with no path
+  claim possibly in another file, so no reader joins through implementations. A need with no path
   is the defect.
 * `graphitron_path_step`: one step a path takes, per need and position, with its from and to table,
-  the place of the element it resolved in its path's anchor's written list (none where inferred, and
+  the place of the element it resolved in its path's claim's written list (none where inferred, and
   none for the step a `@routine` takes to its `@table`), and the element's `as:` name. Steps hang
   off the need rather than the path: a met need has its path row and its steps, a stopped need its
   steps and its stop row.
@@ -1858,7 +1858,7 @@ the anchor is written, and nothing writes the rest yet.
   the class and member read, waits on a producer's value object being bound. Every kind has its
   subtype, so the supertype holds the key and the kind alone (Alf, 2026-11-03).
 
-**Defects**, as `graphitron_entry_defect` rows at the anchor's written position: a need nothing is
+**Defects**, as `graphitron_entry_defect` rows at the claim's written position: a need nothing is
 written for and no single foreign key meets (`PATH_NO_FOREIGN_KEY`, `PATH_SEVERAL_FOREIGN_KEYS`), a
 need whose members fail alike giving one row that names them; a written path that stops, with no
 route or an ambiguous one (`NO_ROUTE_TO_TARGET`, `ROUTE_AMBIGUOUS`); no overload for a step's pair
@@ -1891,12 +1891,12 @@ The element resolutions `graphitron_path_element_*` stay as they are.
 **Decided.** A written position, a file's line and column, keys a fact only within that file; a
 reference that can cross files is anchored to names or to an element's place in its list, which an
 author chose and which do not move when the file around them is edited. So a holder is keyed by its
-coordinate spelled from names, a path names the written anchor it follows and a step the element's
+coordinate spelled from names, a path names the written claim it follows and a step the element's
 place, and a path's start is a step's `as:` name, so an inserted step moves nothing. This is not the
 use-site ordinal "A use site is identified by position" refuses: that ordinal counts applications
-on a field, which no author chose. Inheritance is a row per implementation, its written anchor
+on a field, which no author chose. Inheritance is a row per implementation, its written claim
 possibly in another file. The landing type is a key column of a path. A path holder is a coordinate,
-and an anchor is a coordinate and a target type (2026-11-02). It is the field that is lifted onto a
+and a claim is a coordinate and a target type (2026-11-02). It is the field that is lifted onto a
 key row, not its parent, so a lifted start is read off the field's own key row. Every occurrence
 binds, and has a path wherever it has a table source; a path's target is never null, and a path
 with no start or no end is invalid; a root field has a path only through a `@routine`, and a field
@@ -1904,7 +1904,7 @@ under a result source binds its accessor with no path (2026-11-03). The source i
 table source and a result source its subtypes and the lift a subtype of the table source, with a
 subtype per way it lifts; the binding has a subtype per kind (2026-11-03). An occurrence has one
 source, keyed by its coordinate, a fork adding targets and never sources; a need is keyed by
-(coordinate, target type), as an anchor by (element, target type); a binding by (coordinate,
+(coordinate, target type), as a claim by (element, target type); a binding by (coordinate,
 bound), an accessor's bound its class and member (2026-11-03). None holds a table in its key: each
 references its tables through nullable copies a vanished table sets null and the sweep removes,
 so each follows the anchor rule with no exception. Each relation here is written as a plain
