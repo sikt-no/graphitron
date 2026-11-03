@@ -1945,6 +1945,115 @@ key, never a path of another kind. How the
 generator reads a path per pair at run time is not yet planned; R1132's shared DataLoader is the same
 missing source type there.
 
+## Producer, bind and call on the occurrence (draft)
+
+How the occurrence model decides what executes. Source, path and bind say where an occurrence's
+values come from and what it takes; this section says which occurrences run something of their own,
+and where a method call sits. Every occurrence binds; some also produce. It is a draft for Alf and the
+sessions holding the nodes below; nothing in it is built. "Producer" is the word the store already
+has, kept until a better one is found.
+
+**Producer.** An occurrence that executes something and produces a result: a query, a write, a
+`@service` call or a routine call. Two kinds, and only two:
+
+* A *root producer*: an occurrence with no source, a field of a root type. It executes from nothing:
+  a select, a lookup, a write, a `@service`, or a `@routine` with no table before it.
+* A *child producer*: a child output field that starts a query of its own, batched per parent, from
+  its parent's key row or a routine's table: a query, a `@service` called with the parents' keys, or a
+  routine.
+
+A *lift* is a producer's crossing into the world of tables, and belongs to the producer, never to
+the occurrences under it: where a child producer starts, a parent's key row lifted onto the key's
+table; or what any producer hands back, a `TableRecord` lifted onto its record class's table, a
+routine's result onto its derived table. So a `@service` whose result is a `FilmRecord` is lifted onto
+`film`, and its scalar children bind columns of their source, simply the `film` table, read off the
+record with no query of their own. A source only ever states tables or a class.
+
+**Bind, not reader.** Every output occurrence binds, and its binding says what it takes: a column at
+its path's end (`COLUMN`), the table an inline object or list joins to (`TABLE`), a node identity
+(`NODE_ID`), a member's value off its parent's object (`VALUE`), or a value an `@externalField`
+method computes in its producer's query (`EXPRESSION`, proposed). An occurrence that binds and does
+not produce executes nothing: its join path continues the query of the producer it belongs to, the
+nearest producer up its chain of occurrences, or it reads a member of its parent's object. That needs
+no relation of its own: `graphitron_reader`'s `reads` (`COLUMN`, `NESTED`, `EXPRESSION`, `ACCESSOR`)
+is the binding's kind said less precisely, so it dissolves into the binding. A connection's `nodes`
+and `edges.node` bind and read what the returning producer fetched.
+
+**The join path is what lets a target join an existing query.** A child reached from a table source
+by a join path is joined into the query its source already belongs to, and only binds. Where there is
+nothing to join along, a parent that is a value rather than rows of a query, the child must start a
+query of its own from the parent's key, and is a producer. So a child continues its parent either
+by a join path, binding into the producer's query, or from a key row, producing.
+
+**What makes a child a producer.** Measured off the generator's classification (`FieldBuilder`):
+
+* A `@table` child under a record- or class-backed parent: it starts from the parent's key row
+  (always split today, `@splitQuery` redundant there).
+* A payload's data field under a write, `@service` or `@routine` carrier: it re-fetches the produced
+  record by key.
+* A child `@service`: called with its parents' keys.
+* `@splitQuery`: the author starts from the parent's key a child that could have been joined; this
+  is how `@splitQuery` changes the source and makes a producer of a field that would only bind. `@tenantFanOut` does the
+  same and is forced in effect, a fanned child running once per tenant.
+* Shapes that start a producer although a join path could in theory continue the query, because the generator
+  builds no inline form for them: a list or connection of a single-table discriminated interface, a
+  list or connection of a multi-table interface or union with a table-bound participant, and a
+  connection on a plain `@table` child, which today the author must mark `@splitQuery`. These are
+  stated as forced, so each can stop producing when the generator learns to join it.
+* A connection's `totalCount` is a producer of its own, a count sharing the returning producer's
+  source and argument values, run only when queried. The connection's other fields are sourced from
+  its carrier object, whose class graphitron generates, and `nodes` and `edges.node` read what the
+  returning producer fetched (Alf, with the connection model).
+
+**Input occurrences never produce.** An argument or input field is not a fetcher. It is bound, at its
+path's end, to a column, a table, a node identity or the parameter of a call that consumes it; an
+input field under an argument bound to a `TableRecord` parameter starts on that record's table
+because a child starts where its parent ends, not because anything lifts.
+
+**Calls.** A method or routine graphitron invokes, held by the occurrence or the join path step it
+is written at, never by a written position. Two kinds:
+
+* *Executing calls*: the `@service` of a root or lifted producer, the `@routine` of a root producer
+  (one with no table before it), and a `@routine` that is a join path step (one with a table before
+  it, after a `@reference` or applied to the parent's row). A `@routine` is the one or the other,
+  never both.
+* *Calls that are part of a query*: an `@externalField` expression, held by its occurrence's
+  `EXPRESSION` binding, an occurrence's `@condition`, a predicate over the rows at its path's end, and
+  a join path step's condition. They go into the query
+  of the producer the occurrence belongs to, through its join path. Under a producer that composes
+  no query over those rows, a `@service` handing back a value object or an `INSERT`, they decide
+  nothing, which is a defect at them rather than a silent drop.
+
+A call states its method, the one overload every parameter of which is filled among the
+`code_method` rows its class and name find; for an instance `@service`, its holder; and per
+parameter, what fills it: an input occurrence's value (that occurrence's `PARAMETER` binding read the
+other way), a table at the call's path end or a step's from and to table, the source row's columns
+or keys, `$context`, `$session`, `$tenant` or the jOOQ context. Each holder owns its parameter rows,
+keyed by the holder, the method and the position, and a `PARAMETER` binding's place is spelled from
+the same key.
+
+**What this replaces.** `graphitron_code_reference`, keyed by a reference's written position,
+dissolves into the calls' methods; `graphitron_producer_service` and `graphitron_producer_routine`
+are the executing calls of root and lifted producers. `graphitron_producer`, `graphitron_reader` and
+`graphitron_fetcher` go to the occurrence: the producer, with its lift folded in, one row per root or
+child producer; the reader into the binding; the fetcher, a producer or not, derived. `graphitron_occurrence_lift` and its way subtypes
+fold into the producer, and the source states only tables or a class. `graphitron_argmapping_landing` becomes the argMapping arm
+of parameter matching, keyed by the call and the parameter, and `graphitron_call_context_key` the
+call's `$context` fills.
+
+**Open.**
+
+* Owners: the producer with its lift E's, written per depth inside the source's loop, before that
+  depth's sources, beside the key rows; the source F's; the calls and their parameters E's; the
+  connection's `totalCount` G's, with the connection model.
+* Whether a `@condition` under `UPDATE` and `DELETE` applies to the rows they match, and whether the
+  defect for a condition that decides nothing exists already or is new.
+* Whether the call holders share a supertype for the parameter rows' one foreign key, or each holder
+  keeps its own parameter relation, as the routine step does today; the draft leans to the latter.
+* Whether one call per occurrence is right for a `@condition` reached under two tables, pinning a
+  different overload for each, as the join path step already does per implementation.
+* The `EXPRESSION` binding kind is proposed to G, whose binding supertype it extends.
+
 ## Tests
 
 The obligation this section carried is discharged and not by being measured. It asked the Done gate
