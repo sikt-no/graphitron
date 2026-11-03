@@ -642,6 +642,12 @@ classified records have no reader left and can go with the walk.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read
   `graphitron_field_source_table`'s inherited rule today.
+* **The result relations dissolve into the occurrence source** `blocked`, E's, on "Every occurrence's source is stated".
+  `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` say per type what the
+  occurrence source says per occurrence, so their type-level readers (the LSP's type hover and
+  inlays, the outbox rule, `RESULT_SHAPES_CONFLICT`) read sources grouped by type and the result
+  rule's fixpoint goes; the key row reading "the parent holds an `OBJECT`" while the source's key-row
+  lift reads the key row is the ordering to settle, a source written in two passes one way to.
 * **An object result is lifted onto a key row** `blocked`, F's, on "Every occurrence's source is stated".
   Under an object parent a field's source is lifted onto its key row's table,
   `graphitron_occurrence_lift_key_row` over E's key row, and only a key on the source side lifts one,
