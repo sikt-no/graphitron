@@ -1,13 +1,13 @@
 ---
 id: R1144
 title: "A cursor a Graphitron 10 release candidate issued keeps its place after the upgrade"
-status: Spec
+status: Ready
 bucket: enhancement
 priority: 2
 theme: pagination
 depends-on: []
 created: 2026-11-02
-last-updated: 2026-11-02
+last-updated: 2026-11-03
 ---
 
 # A cursor a Graphitron 10 release candidate issued keeps its place after the upgrade
@@ -35,7 +35,7 @@ Read 2026-11-02 from `ConnectionHelperClassGenerator` in the published RC14, RC2
 * **Decode.** `Base64.getDecoder()`, split on U+0000 keeping trailing empty tokens (`split("\u0000", -1)`), strict arity, U+0001 as a typed `NULL` (`DSL.val((Object) null, col.getDataType())`), every other token through `col.getDataType().convert(token)`, and a `null` from that rejected as not coercible. Bad Base64, arity and coercion failures all surfaced as the same `cursor is not valid (was: "…")` client error trunk raises. `DataType.convert(Object)` is deprecated for removal since jOOQ 3.20; RC46 suppressed `deprecation` and `removal` on the whole `ConnectionHelper` class. The non-deprecated `DSL.val((Object) token, type).getValue()`, which trunk's `ConnectionHelper` already uses to coerce facet values, gives the same answer: checked 2026-11-02 on jOOQ 3.20.11 for an enum (`G`, `NC-17`, `NC_17`, `PG_13`), `integer` (`2`, `abc`, `2.5`), `date`, `timestamp` (`LocalDateTime.toString()` forms with and without a fraction, and garbage) and `numeric` (`1.50`, `x`), identical value or `null` in every case.
 * **The token is the user-side value.** `record.get` answers the value after the column's converter, where trunk writes the database value through `ColumnValues`, and `DataType.convert` on the column's own (converted) type is what read it back. Whether that round-trips depends on the converter; R1088's changelog entry records converter-backed columns failing on the second page in the release candidate itself.
 * **Enum columns.** A jOOQ `EnumType`'s `toString()` is the Java constant's name, and the column's `DataType.convert` parses the literal. Checked 2026-11-02 against sakila's `MpaaRating` on jOOQ 3.20.11: `convert("G")` gives `G`, `convert("NC-17")` gives `NC_17`, `convert("NC_17")` and `convert("PG_13")` give `null`. So RC46 paged from a cursor on an enum whose constant name equals its literal and rejected one on `NC-17` or `PG-13` as not coercible. Reproducing RC46's read reproduces both.
-* **Multi-table connections** (an interface or union connection over several tables, `MultiTablePolymorphicEmitter`) call the same `ConnectionHelper.encodeCursor` and `decodeCursor`, over the participant key fields followed by the synthetic `__typename` tiebreaker. The emitter's diff from `e99388f85` to trunk is a single javadoc line, so their order columns are unchanged, and a release-candidate cursor from one reads like any other.
+* **Multi-table connections** (an interface or union connection over several tables, `MultiTablePolymorphicEmitter`) call the same `ConnectionHelper.encodeCursor` and `decodeCursor`, over the participant key fields followed by the synthetic `__typename` tiebreaker. The emitter's diff from `e99388f85` to trunk is the JavaPoet import swap and a single javadoc line, so their order columns are unchanged, and a release-candidate cursor from one reads like any other.
 * **Order columns, RC46 to trunk.** Unchanged for every connection that compiled under RC46. R1106 (a single-table connection's order gets the row key as tiebreaker, `8e9abb051`) is an ancestor of `e99388f85`, so RC46's orders already carry it. Of the order-shaping commits since, R1122 (`c8197d1cf`) extended the same completion to plain lists without touching connections, and R1083 (`2d9093056`) added `path:` and `method:` sort keys, an order RC46 could not express, so no RC46 cursor exists for one. A release candidate before R1106 wrote a shorter cursor on a connection whose order did not already identify a row; that cursor stopped working at the release-candidate upgrade that added the tiebreaker, falls outside "the same columns", and is not this item's to restore.
 
 ## Telling the formats apart
