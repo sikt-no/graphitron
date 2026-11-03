@@ -1,7 +1,7 @@
 ---
 id: R1143
 title: "A cursor over a java.sql.Date order column pages from the time of day it carries"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: pagination
