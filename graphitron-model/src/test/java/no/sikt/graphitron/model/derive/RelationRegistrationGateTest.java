@@ -303,6 +303,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_code_reference_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site_rule", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_call", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_step", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_landing", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_landing_rule", Arm.DERIVED);
         registrations.put("graphitron_call_context_key", Arm.DERIVED);
         registrations.put("graphitron_call_context_key_rule", Arm.DERIVED);
         registrations.put("graphitron_call_context_key_written", Arm.DERIVED);

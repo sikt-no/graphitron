@@ -5329,6 +5329,157 @@ COMMENT ON COLUMN graphitron_occurrence.touched_at IS 'the reading that last wro
 COMMENT ON COLUMN graphitron_occurrence.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
 COMMENT ON COLUMN graphitron_occurrence.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
 
+CREATE INDEX graphitron_occurrence_element_ix ON graphitron_occurrence (graph_name, element_coordinate);
+COMMENT ON INDEX graphitron_occurrence_element_ix IS 'A reader holding a declared element asks for its occurrences, and the primary key, a nested coordinate, serves none of that. graphitron_argmapping_step asks it of every argMapping, which is written on a declared field, argument or input field and resolved once per place that element is reached.';
+
+-- An argMapping entry binding a parameter to an argument path, under one occurrence of its call.
+CREATE VIEW graphitron_argmapping_call
+  (graph_name, source_name, source_line, source_column, position, call_coordinate, call_name,
+   call_kind, bound_to, segments, head, rest) AS
+-- A @service, a @routine or a @condition, on a field, an argument or an input field, written once and
+-- taken under every occurrence of what it is written on. A sigil binds something else, and a path
+-- element's or @outbox's mapping binds a table or a payload.
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position, c.coordinate,
+       c.name, c.kind, p.bound_to,
+       CHAR_LENGTH(p.bound_to) - CHAR_LENGTH(REPLACE(p.bound_to, '.', '')) + 1,
+       REGEXP_REPLACE(p.bound_to, '\..*$', ''),
+       CASE WHEN POSITION('.', p.bound_to) = 0 THEN ''
+            ELSE SUBSTRING(p.bound_to, POSITION('.', p.bound_to) + 1) END
+  FROM graphitron_ast_argmapping_pair_entry p
+  JOIN graphitron_argmapping_site s
+    ON s.graph_name = p.graph_name AND s.source_name = p.source_name
+   AND s.source_line = p.source_line AND s.source_column = p.source_column
+  JOIN graphitron_occurrence c
+    ON c.graph_name = s.graph_name AND c.element_coordinate = s.coordinate
+ WHERE p.bound_to NOT LIKE '$%'
+   AND s.directive_name IN ('service', 'routine', 'condition')
+   AND s.step_position IS NULL;
+COMMENT ON VIEW graphitron_argmapping_call IS 'One written argMapping entry binding a parameter to an argument path, under one occurrence of the field, argument or input field its directive is written on. For example filter.minLength on @routine at Actor.filmsNested, under Actor.filmsNested.';
+-- COMMENT ON COLUMN graphitron_argmapping_call.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_argmapping_call.source_name IS 'the file the mapping string was written in, the first of the four columns that are the string''s key';
+-- COMMENT ON COLUMN graphitron_argmapping_call.source_line IS 'source line of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_call.source_column IS 'source column of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_call.position IS 'the entry''s position in its mapping, completing the entry''s key';
+-- COMMENT ON COLUMN graphitron_argmapping_call.call_coordinate IS 'the occurrence the directive is written on that the path is taken under';
+-- COMMENT ON COLUMN graphitron_argmapping_call.call_name IS 'that occurrence''s own name, which a path on an argument or an input field may begin with';
+-- COMMENT ON COLUMN graphitron_argmapping_call.call_kind IS 'that occurrence''s kind: on a FIELD the head names an argument, otherwise an input field';
+-- COMMENT ON COLUMN graphitron_argmapping_call.bound_to IS 'the right-hand side as written';
+-- COMMENT ON COLUMN graphitron_argmapping_call.segments IS 'how many dot-separated names it has';
+-- COMMENT ON COLUMN graphitron_argmapping_call.head IS 'its first name';
+-- COMMENT ON COLUMN graphitron_argmapping_call.rest IS 'what follows the first name and its dot, empty where there is one name';
+
+-- Each step a written argMapping path takes through the occurrences under its call.
+CREATE VIEW graphitron_argmapping_step
+  (graph_name, source_name, source_line, source_column, position, call_coordinate, bound_to,
+   segments, consumed, rest, step_coordinate, repeats_own_name) AS
+WITH RECURSIVE
+step (graph_name, source_name, source_line, source_column, position, call_coordinate, bound_to,
+      segments, consumed, rest, step_coordinate, repeats_own_name) AS (
+  -- The head. On a field it names one of the field's arguments; on an argument or an input field it
+  -- names a field of what that opens into, or the call's own name, which the coordinate's own name
+  -- wins where an input field shares it.
+  SELECT e.graph_name, e.source_name, e.source_line, e.source_column, e.position, e.call_coordinate,
+         e.bound_to, e.segments, 1, e.rest, o.coordinate, FALSE
+    FROM graphitron_argmapping_call e
+    JOIN graphitron_occurrence o
+      ON o.graph_name = e.graph_name AND o.parent_coordinate = e.call_coordinate AND o.name = e.head
+   WHERE (e.call_kind = 'FIELD' AND o.kind = 'FIELD_ARGUMENT')
+      OR (e.call_kind <> 'FIELD' AND o.kind = 'INPUT_FIELD' AND e.head <> e.call_name)
+  UNION ALL
+  SELECT e.graph_name, e.source_name, e.source_line, e.source_column, e.position, e.call_coordinate,
+         e.bound_to, e.segments, 1, e.rest, e.call_coordinate, TRUE
+    FROM graphitron_argmapping_call e
+   WHERE e.call_kind <> 'FIELD' AND e.head = e.call_name
+  UNION ALL
+  -- Every later segment names an input field of what the step before reached.
+  SELECT s.graph_name, s.source_name, s.source_line, s.source_column, s.position, s.call_coordinate,
+         s.bound_to, s.segments, s.consumed + 1,
+         CASE WHEN POSITION('.', s.rest) = 0 THEN ''
+              ELSE SUBSTRING(s.rest, POSITION('.', s.rest) + 1) END,
+         o.coordinate, s.repeats_own_name
+    FROM step s
+    JOIN graphitron_occurrence o
+      ON o.graph_name = s.graph_name AND o.parent_coordinate = s.step_coordinate
+     AND o.name = REGEXP_REPLACE(s.rest, '\..*$', '') AND o.kind = 'INPUT_FIELD'
+   WHERE s.consumed < s.segments
+)
+SELECT graph_name, source_name, source_line, source_column, position, call_coordinate, bound_to,
+       segments, consumed, rest, step_coordinate, repeats_own_name
+  FROM step;
+COMMENT ON VIEW graphitron_argmapping_step IS 'One segment a written argMapping path consumes under one occurrence of its call, and the occurrence it reaches. For example filter.minLength on @routine at Actor.filmsNested reaches Actor.filmsNested(filter:) at 1 and Actor.filmsNested(filter.minLength:) at 2.';
+-- COMMENT ON COLUMN graphitron_argmapping_step.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_argmapping_step.source_name IS 'the file the mapping string was written in, the first of the four columns that are the string''s key';
+-- COMMENT ON COLUMN graphitron_argmapping_step.source_line IS 'source line of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_step.source_column IS 'source column of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_step.position IS 'the entry''s position in its mapping, completing the entry''s key';
+-- COMMENT ON COLUMN graphitron_argmapping_step.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on that this path is taken under';
+-- COMMENT ON COLUMN graphitron_argmapping_step.bound_to IS 'the right-hand side as written';
+-- COMMENT ON COLUMN graphitron_argmapping_step.segments IS 'how many dot-separated names it has';
+-- COMMENT ON COLUMN graphitron_argmapping_step.consumed IS 'how many of them this step has consumed, 1 at the head';
+-- COMMENT ON COLUMN graphitron_argmapping_step.rest IS 'the names not yet consumed, dot-separated, empty where every name is';
+-- COMMENT ON COLUMN graphitron_argmapping_step.step_coordinate IS 'the occurrence the consumed names reach';
+-- COMMENT ON COLUMN graphitron_argmapping_step.repeats_own_name IS 'whether the head was the call''s own name rather than something it opens into';
+
+CREATE VIEW graphitron_argmapping_landing_rule
+  (graph_name, source_name, source_line, source_column, position, call_coordinate,
+   landing_coordinate, trailing_name, repeats_own_name) AS
+-- Where the path stops: every name consumed, or every name but one, which then names a key column of
+-- a node id at the occurrence reached and is the path end's to resolve.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, s.position, s.call_coordinate,
+       s.step_coordinate,
+       CASE WHEN s.consumed = s.segments THEN CAST(NULL AS VARCHAR) ELSE s.rest END,
+       s.repeats_own_name
+  FROM graphitron_argmapping_step s
+ WHERE s.consumed >= s.segments - 1
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_step d
+                    WHERE d.graph_name = s.graph_name AND d.source_name = s.source_name
+                      AND d.source_line = s.source_line AND d.source_column = s.source_column
+                      AND d.position = s.position AND d.call_coordinate = s.call_coordinate
+                      AND d.consumed > s.consumed);
+COMMENT ON VIEW graphitron_argmapping_landing_rule IS 'One row the argMapping landing rule computes, in the shape graphitron_argmapping_landing stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_landing, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.graph_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.source_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_argmapping_landing.source_line';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_argmapping_landing.source_column';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_argmapping_landing.position';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.call_coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.landing_coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.trailing_name IS 'the trailing_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.trailing_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.repeats_own_name IS 'the repeats_own_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.repeats_own_name';
+
+CREATE TABLE graphitron_argmapping_landing (
+  graph_name         VARCHAR   NOT NULL,
+  source_name        VARCHAR   NOT NULL,
+  source_line        INT       NOT NULL,
+  source_column      INT       NOT NULL,
+  position           INT       NOT NULL,
+  call_coordinate    VARCHAR   NOT NULL,
+  landing_coordinate VARCHAR   NOT NULL,
+  trailing_name      VARCHAR,
+  repeats_own_name   BOOLEAN   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position, call_coordinate),
+  -- The entry as written, so a landing cannot outlive what an author wrote.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
+    REFERENCES graphitron_ast_argmapping_pair_entry (graph_name, source_name, source_line, source_column, position)
+    ON DELETE CASCADE,
+  -- The call's occurrence and the landing's, so a place the corpus no longer reaches takes its rows.
+  FOREIGN KEY (graph_name, call_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, landing_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_argmapping_landing IS 'Where one written argMapping entry''s argument path lands under one occurrence of its call: one row per entry and call occurrence whose path resolves. For example input.ids on @service at Query.filmsByPath lands on Query.filmsByPath(input.ids:).';
+COMMENT ON COLUMN graphitron_argmapping_landing.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_argmapping_landing.source_name IS 'the file the mapping string was written in; with the line, the column and the position, the entry''s key in graphitron_ast_argmapping_pair_entry';
+COMMENT ON COLUMN graphitron_argmapping_landing.source_line IS 'source line of the mapping string';
+COMMENT ON COLUMN graphitron_argmapping_landing.source_column IS 'source column of the mapping string';
+COMMENT ON COLUMN graphitron_argmapping_landing.position IS 'the entry''s position in its mapping';
+COMMENT ON COLUMN graphitron_argmapping_landing.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on, completing the key: a field of a nested type is reached once per parent, and the path resolves under each';
+COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argument or input-field occurrence the path names; what it is, its column, table or node identity, is that occurrence''s own binding, not restated here';
+COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: a key column of the node id the landing carries, which the landing''s binding resolves and judges';
+COMMENT ON COLUMN graphitron_argmapping_landing.repeats_own_name IS 'whether the path began with the call''s own name, as an argument-level or input-field-level argMapping was once required to: a spelling that still resolves';
+COMMENT ON COLUMN graphitron_argmapping_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 CREATE TABLE graphitron_field_target_table (
   graph_name         VARCHAR NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -12144,7 +12295,40 @@ SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, w.origin_pos
                   AND o.source_line = w.source_line AND o.source_column = w.source_column
                   AND o.parameter_name = w.parameter_name
                   AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
-                       OR o.origin_position <> w.origin_position));
+                       OR o.origin_position <> w.origin_position))
+UNION ALL
+-- An argument path that does not land under some occurrence of its call. Where it stopped at an
+-- input field of an input-object type that opens into nothing, the first-visit guard left it
+-- unexpanded, its type being already on its chain, so the path goes on through a cycle, which is not
+-- supported yet; otherwise a name in it names nothing. The detail is the path as written.
+SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column, c.position,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence r
+                           JOIN graphitron_field d
+                             ON d.graph_name = r.graph_name AND d.coordinate = r.element_coordinate
+                           JOIN graphitron_type t
+                             ON t.graph_name = d.graph_name AND t.type_name = d.named_type
+                            AND t.kind = 'INPUT_OBJECT'
+                          WHERE r.graph_name = f.graph_name AND r.coordinate = f.step_coordinate
+                            AND r.kind = 'INPUT_FIELD'
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence ch
+                                             WHERE ch.graph_name = r.graph_name
+                                               AND ch.parent_coordinate = r.coordinate))
+            THEN 'ARGMAPPING_PATH_PAST_CYCLE' ELSE 'ARGMAPPING_PATH_UNRESOLVED' END,
+       c.bound_to
+  FROM graphitron_argmapping_call c
+  LEFT JOIN graphitron_argmapping_step f
+    ON f.graph_name = c.graph_name AND f.source_name = c.source_name
+   AND f.source_line = c.source_line AND f.source_column = c.source_column
+   AND f.position = c.position AND f.call_coordinate = c.call_coordinate
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_step d
+                    WHERE d.graph_name = f.graph_name AND d.source_name = f.source_name
+                      AND d.source_line = f.source_line AND d.source_column = f.source_column
+                      AND d.position = f.position AND d.call_coordinate = f.call_coordinate
+                      AND d.consumed > f.consumed)
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                    WHERE l.graph_name = c.graph_name AND l.source_name = c.source_name
+                      AND l.source_line = c.source_line AND l.source_column = c.source_column
+                      AND l.position = c.position AND l.call_coordinate = c.call_coordinate);
 COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
 
 CREATE VIEW graphitron_outbox_routine_target
@@ -17708,6 +17892,12 @@ INSERT INTO meta_grain VALUES
   ('sdl-argmapping-pair',
    'one entry of one argMapping written in one SDL document, at its position in the mapping',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
+  ('sdl-argmapping-pair-call',
+   'one entry of one argMapping written in one SDL document, under one occurrence of the call it is written on',
+   'graph_name, source_name, source_line, source_column, position, call_coordinate', 'sdl'),
+  ('sdl-argmapping-pair-call-step',
+   'one name of one argMapping path written in one SDL document, consumed under one occurrence of its call',
+   'graph_name, source_name, source_line, source_column, position, call_coordinate, consumed', 'sdl'),
   ('sdl-code-reference',
    'one Java code reference written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -18046,6 +18236,10 @@ INSERT INTO graphitron_defect_type VALUES
    'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.', 'graphitron'),
   ('SERVICE_HOLDER_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_HOLDER_UNBUILDABLE',
    'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.', 'graphitron'),
+  ('ARGMAPPING_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED',
+   'An argMapping right-hand side names a path through the call''s arguments and input fields that does not exist: on a field it begins with one of the field''s arguments, on an argument or an input field with a field of what that opens into, and each further name is a field of the input type before it.', 'graphitron'),
+  ('ARGMAPPING_PATH_PAST_CYCLE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ARGMAPPING_PATH_PAST_CYCLE',
+   'An argMapping right-hand side follows an input type that nests itself further than its first repetition, which is not supported yet: bind the parameter at a shallower depth.', 'graphitron'),
   ('CONDITION_OVERLOAD_TIE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_TIE',
    'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'graphitron'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
@@ -18593,6 +18787,22 @@ INSERT INTO meta_relation VALUES
    'One context key written for one parameter of one call, at the place it was written: a $context pair, or a contextArguments element read as the pair naming its own parameter.',
    'For example contextArguments: ["tenantId"] on a @service writes tenantId for the parameter tenantId of the method its service names.',
    'Every writing, twice-written parameters included, which the rule and the duplicate defect both read so that the two cannot disagree about what was written. A view because nothing constrains it and its only readers are those two, each filtered to one graph.'),
+  ('graphitron_argmapping_call', 'sdl-argmapping-pair-call', 'graphitron',
+   'One written argMapping entry binding a parameter to an argument path, under one occurrence of the field, argument or input field its directive is written on.',
+   'For example filter.minLength on @routine at Actor.filmsNested, under Actor.filmsNested.',
+   'The population the landing rule and its defects share, so that the two cannot disagree about which entries owe a landing: a mapping string is written once on a declared element and taken under every place that element is reached. A view, its readers each joining it on its full key.'),
+  ('graphitron_argmapping_step', 'sdl-argmapping-pair-call-step', 'graphitron',
+   'One segment a written argMapping path consumes under one occurrence of its call, and the occurrence it reaches.',
+   'For example filter.minLength on @routine at Actor.filmsNested reaches Actor.filmsNested(filter:) at 1 and Actor.filmsNested(filter.minLength:) at 2.',
+   'The path taken a name at a time over the occurrences, one keyed join per name on their parent and name, which is what lets the landing and the defect telling a misspelt name from a cycle read the same steps. Recursive because a path has as many names as its author wrote; it ends because each step consumes one, whatever the input types do.'),
+  ('graphitron_argmapping_landing', 'sdl-argmapping-pair-call', 'graphitron',
+   'Where one written argMapping entry''s argument path lands under one occurrence of its call: one row per entry and call occurrence whose path resolves.',
+   'For example input.ids on @service at Query.filmsByPath lands on Query.filmsByPath(input.ids:).',
+   'Where an author''s argument path goes, stated once per place its call is reached and nothing more: what the landing is, a column, a table or a node identity, is its occurrence''s own binding, so a reader joins the occurrence rather than finding a copy here. It replaces the candidate set, which enumerated every path an author might write at every coordinate to serve the few written. A path that does not land has no row and a defect at its mapping string.'),
+  ('graphitron_argmapping_landing_rule', 'sdl-argmapping-pair-call', 'graphitron',
+   'One row the argMapping landing rule computes, in the shape graphitron_argmapping_landing stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_landing, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_ast_argmapping_pair_entry', 'sdl-argmapping-pair', 'graphitron',
    'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this.',
    'For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.',

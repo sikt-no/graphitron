@@ -1,0 +1,40 @@
+# Where a written argMapping path lands: under each occurrence of the field, argument or input field
+# its directive is written on, a walk over the occurrences a name at a time. On a field the first name
+# is one of its arguments; on an argument or an input field it is a field of what that opens into, or
+# its own name, a spelling that still resolves. Each further name is a field of the input type before
+# it, and one name past the last that names nothing is a node id's key column, the landing's binding
+# to resolve. A path that names nothing, or that follows a self-nesting input type past its first
+# repetition, does not land and is a defect at its mapping string.
+
+input FilmIds { ids: [Int] ref: Reference }
+input Reference { key: Int }
+input TitleFilter { title: String }
+input Tree { value: Int child: Tree }
+
+type Shelf { titles(ids: FilmIds): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: ids.ids"}) }
+
+extend type Query {
+  byIds(input: FilmIds): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "a: input.ids, b: input.ref.key, c: input.ref.actor_id"})
+  byFilter(filter: TitleFilter @condition(condition: {className: "example.Ref", method: "m", argMapping: "t: title, u: filter.title"})): [String]
+  shelfA: Shelf
+  shelfB: Shelf
+  missing(input: FilmIds): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: input.nope.deeper"})
+  deep(tree: Tree): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: tree.child.child.value"})
+}
+
+extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
+  call_coordinate,      landing_coordinate,          trailing_name, repeats_own_name
+  Query.byIds,          Query.byIds(input.ids:),     ,              FALSE
+  Query.byIds,          Query.byIds(input.ref.key:), ,              FALSE
+  Query.byIds,          Query.byIds(input.ref:),     actor_id, FALSE
+  Query.byFilter(filter:), Query.byFilter(filter.title:), , FALSE
+  Query.byFilter(filter:), Query.byFilter(filter.title:), , TRUE
+  Query.shelfA.titles,  Query.shelfA.titles(ids.ids:), , FALSE
+  Query.shelfB.titles,  Query.shelfB.titles(ids.ids:), , FALSE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
+  code,                       detail
+  ARGMAPPING_PATH_UNRESOLVED, input.nope.deeper
+  ARGMAPPING_PATH_PAST_CYCLE, tree.child.child.value
+  """)

@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: [derived-read-cost-is-a-shape-problem]
 created: 2026-10-24
-last-updated: 2026-11-02
+last-updated: 2026-11-03
 ---
 
 # Inputs navigate through output fields, and argMapping names its source
@@ -155,7 +155,7 @@ The comparison is by tables, not keys: where two keys reach the same table (a st
 ## Implementation
 
 1. **`$source` replaces bare column names in `argMapping`.** Shipped as "breaking: a bare argMapping name is an argument, $source.<column> binds a column", amending R876's changelog line for the `columnMapping` break.
-2. **argMapping resolves by the keyed walk.** `graphitron_argmapping_match` and the generator's `ArgBindingMap.of` read the walk; the candidate table, its stage and the `intent_` node-key chain go. Owned by R876 as "An argument path through input types is stored", since a service call's fills read it.
+2. **argMapping resolves by the keyed walk.** `graphitron_argmapping_match` and the generator's `ArgBindingMap.of` read the walk; the candidate table, its stage and the `intent_` node-key chain go. Owned by R876, since a service call's fills read it: landed as `graphitron_argmapping_landing`, one row per written entry under each occurrence of its call, and its readers move under R876's "The argMapping readers read the landing, and the candidate and match go".
 3. **`$target` navigation in `@field` on inputs**, once R876's branch has input `@reference` in the walk as anonymous paths: the field element kind, the per-occurrence `$target`, and the defects above.
 4. **Editor completion** offers the names valid at the cursor: arguments, then fields of the type stood in, then key columns past a node id, and the sources' members after a sigil.
 5. **`as:` names a path segment, and `$path.<as>` reads it.** `ReferenceElement` gains `as:`; an `argMapping` on a `@routine` after a `@reference` moves from `$source` to `$path.<as>`, shipped as breaking, beside step 1's changelog line.

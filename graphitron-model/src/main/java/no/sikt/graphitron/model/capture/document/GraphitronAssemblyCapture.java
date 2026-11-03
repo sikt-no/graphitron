@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
 import no.sikt.graphitron.model.derive.Occurrences;
@@ -94,6 +95,9 @@ public final class GraphitronAssemblyCapture {
         // table. Here rather than as a line of the anchor because the targets are written above; it
         // moves with the other steps when this class dissolves into the anchor's own lines.
         Occurrences.derive(dsl, graph, readAt);
+        // Where each written argMapping path lands under each occurrence of its call, a walk over the
+        // occurrences just written.
+        ArgMappingLandings.derive(dsl, graph, readAt);
         // Where each path is written, by the declared element and the type it reaches, off the path
         // entries and the targets above; the paths follow these.
         PathAnchors.derive(dsl, graph, readAt);

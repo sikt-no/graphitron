@@ -78,7 +78,6 @@ A service call is emitted from the store
 │   └── Every call's parameter states what fills it
 │       ├── A parameter states its type's first argument
 │       ├── A `Configuration` parameter is the jOOQ context
-│       ├── An argument path through input types is stored
 │       ├── A parameter's fill states how its value is built
 │       ├── An object result is lifted onto a key row
 │       │   ├── The result and path model is stated before it is built
@@ -273,7 +272,7 @@ its landing. The rules are stated in "User documentation (first-client check): p
 relations in "Path model (draft)", and `scenarios/path-rules` asserts both. Today
 `graphitron_field_scope_table`, `intent_input_occurrence_path`, `intent_input_occurrence_path_step`,
 `intent_argument_reference_step_hop` and the argument and input-field step targets derive part of
-this at read time, keyed by field alone; the `intent_argmapping_` relations go with "An argument path through input types is stored". R1099, the
+this at read time, keyed by field alone; the `intent_argmapping_` relations go with "The argMapping readers read the landing, and the candidate and match go". R1099, the
 author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
 this branch rather than modelling inputs again. Taken up on 2026-10-31. The relations it retires
 are among the costliest statements the build plans: the argument step targets, `graphitron_field_path`
@@ -429,13 +428,15 @@ static method needs no holder.
   `Set<List<FilmRecord>>` without parsing a spelling.
 * **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
-* **An argument path through input types is stored** `open`, E's. This is R1099's step 2,
-  `graphitron_argmapping_binding`, owned here since a service call's fills read it; R1099 keeps its other steps.
-* **A parameter's fill states how its value is built** `blocked`, E's, on "An argument path through input types is stored". A scalar, a list, or a Java record,
+* **The argMapping readers read the landing, and the candidate and match go** `blocked`, E's, on "A scalar's column is read at its path's end". R1099's step 2 stored where an argument path lands, `graphitron_argmapping_landing`, under each occurrence of its call; what follows is its readers.
+  `graphitron_outbox_leaf` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
+  `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
+  landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
+* **A parameter's fill states how its value is built** `blocked`, E's, on "A scalar's column is read at its path's end". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives. A jOOQ record's settable
-  columns are the catalog's, `sql_table.record_class_fqn` to `sql_column`, not its class's members.
-* **Every call's parameter states what fills it** `blocked`, E's, on "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+  columns are the input fields' columns at their path ends, `graphitron_occurrence_column`, not its class's members.
+* **Every call's parameter states what fills it** `blocked`, E's, on "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
   claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
