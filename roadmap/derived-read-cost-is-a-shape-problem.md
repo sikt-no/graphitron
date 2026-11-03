@@ -286,11 +286,19 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_path_need`, an empty path included, and one no written, inherited, single inferred or
   empty path meets is a defect at its claim.
   * **Every occurrence's source is stated** `open`, F's.
-    `graphitron_occurrence_source` holds the one place each occurrence's values come from, keyed by
-    the coordinate, a table (`graphitron_occurrence_source_table`, lifted or not) or an object a
-    producer hands back (`graphitron_occurrence_source_object`), off the declaring type's table, the enclosing
-    occurrence's end or `TABLE` binding, E's result facts and E's `PARAMETER` bindings, the last lift
-    landing when those stand; a root field with no `@routine` has none.
+    `graphitron_occurrence_source` states what each occurrence's values come from, rows of tables
+    (`graphitron_occurrence_source_table`, one row per table, lifted or not) or an instance of a class
+    (`graphitron_occurrence_source_object`), written per depth after `FieldKeyRows` from the declaring
+    type's table, the parent's tables or bindings, E's result facts and key rows; the parameter lift
+    is declared and waits on E's `PARAMETER` bindings, and a connection's fields and an errors
+    field's subtree have no source yet.
+    * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
+      an implementer of a `@table` interface to carry the same `@table`; without one it has no
+      `graphitron_tabletype` row and its fields no source, and nothing says so.
+    * **A connection's fields hang under the field that returns it** `open`, G's. Targets are
+      unwrapped from their connection, so a connection type's `edges`, `nodes` and `pageInfo` start
+      chains of their own with nothing above them; as occurrences under the returning field they take
+      its tables as their source.
   * **A field's path needs are stated per coordinate** `blocked`, F's, on "Every occurrence's source is stated".
     Every occurrence with a table source needs one join path per target type, keyed (coordinate,
     target type), by the rules of "Source, path, bind" in the path model below: a fork is a target of
@@ -1684,21 +1692,23 @@ and an *accessor path* from object to object by accessors, the Java path field n
 Today's writers build the table side; the accessor path is named here and built when value objects
 are bound.
 
-* *Source*: where its values come from, one per occurrence, its kind saying which. `DECLARED`, the
-  declaring type's table at a chain start, a field declared on an interface being an occurrence per
-  participant and so a source per participant. `ENCLOSING_END`, the end of the occurrence it hangs
-  under (its `parent_coordinate`): a nested field's, a type with no table under a table included,
-  and an argument's, its field's end. `ENCLOSING_BINDING`, for an argument of a root field with no
-  path, that field's `TABLE` binding. `ARGUMENT_START`, for an input field, where the argument above
-  it starts, at any depth. `LIFT`, a source not of a table's shape lifted to one where we know how: a
-  key row to the key's table, a `TableRecord` a producer hands back to its record class's table, a
-  `@routine` call to the derived table its function returns, a root field's included, and a child of
-  an occurrence bound to a `TableRecord` parameter to that record's table. `OBJECT`, an object source:
-  a value a producer hands back with a class but no record class and no key row, which does not lift,
-  deriving its table being solvable but out of scope. A root field with no `@routine` has no source,
-  and a carrier graphitron builds, a connection or a payload with no class, is no object source: its
-  fields take their sources by their own rules. Where the enclosing end or binding forks, the
-  source is still one; the tables are read off the enclosing occurrence's targets.
+* *Source*: what its values come from, stated on the occurrence itself rather than as a pointer to
+  another: rows of one or more tables, or an instance of a class. The writer derives it by rules no
+  reader needs, the parent being the occurrence its `parent_coordinate` names: at a chain start the
+  declaring type's table, a field declared on an interface being an occurrence per participant; a
+  nested field or an argument takes its parent's tables, its parent's path targets or, where the
+  parent has no path, the tables the parent binds, so a root field's arguments and a write
+  payload's data field take what the root field binds; an input field takes its argument's tables,
+  at any depth. A source not of a table's shape is *lifted* to one where we know how: a key row to
+  the key's table, a `TableRecord` a producer hands back to its record class's table, a `@routine`
+  call to the derived table its function returns, a root field's and a mutation's included where
+  the function has a table, and a child of an occurrence bound to a `TableRecord` parameter to that
+  record's table. An object source is a value a producer hands back with a class but no record class
+  and no key row, which does not lift, deriving its table being solvable but out of scope; its
+  class is the parent field's own producer's result class, else the type's one class. A root field
+  with no `@routine` has no source, and a carrier graphitron builds, a connection or a payload with
+  no class, is no object source: a connection's fields and an errors field's subtree have no source
+  yet. Where the parent forks, the occurrence has a table source row per table.
 * *Path*: how it gets from its source to one type it reaches, one path per occurrence and target
   type, of the source's kind. A join path runs from a table source between two tables, concrete or
   derived, and an accessor path from an object source between two classes; either may be empty,
@@ -1766,20 +1776,17 @@ and `graphitron_ast_path_entry` keeps its name as the written entry.
   field inside the parentheses (`Customer.address`, `Emne.navn.en`, `Query.films(filter:)`,
   `Query.films(filter.cast.firstName:)`). Every relation below keys on the coordinate with a
   foreign key to the occurrence; there is no holder relation of its own.
-* `graphitron_occurrence_source`, anchoring: the one place an occurrence's values come from. A
-  supertype keyed by (graph, coordinate) with a foreign key to the occurrence, its kind an
-  attribute (`DECLARED`, `ENCLOSING_END`, `ENCLOSING_BINDING`, `ARGUMENT_START`, `LIFT`, `OBJECT`); a
-  root field with no `@routine` has none. A fork adds no source: an argument under a forked end has
-  one source, and its several start tables are read off the enclosing occurrence's targets or
-  bindings. Each subtype is keyed by the supertype's key with a cascading foreign key to it and
-  carries what its kind references, as nullable copies a vanished source sets null, the sweep
-  removing the row:
-  ** `graphitron_occurrence_source_table`: the source is a table, for every kind but `OBJECT`, with
-     its `sql_table` where the source names one itself (`DECLARED` and the lifts); `ENCLOSING_END`,
-     `ENCLOSING_BINDING` and `ARGUMENT_START` read theirs off the occurrence above. A table source
-     starts a join path.
-  ** `graphitron_occurrence_lift`, under the table source, for kind `LIFT`: how a source not of a
-     table's shape became one, with a subtype per way: `_key_row` (E's key row, wherever the field has
+* `graphitron_occurrence_source`, anchoring: what one occurrence's values come from, one row per
+  occurrence that has a source, keyed by (graph, coordinate) with a foreign key to the occurrence and
+  its kind, `TABLE` or `OBJECT`, an attribute. How the writer found it is not stored. Its subtypes
+  carry what they reference as nullable copies a vanished source sets null, the sweep removing the
+  row:
+  ** `graphitron_occurrence_source_table`: one table an occurrence's values are rows of, one row per
+     occurrence and table, keyed by (graph, coordinate, table) with a cascading foreign key to the
+     source; an argument under a forked parent has a row per table. A join path starts from one of
+     these rows: a need's start is a foreign key to it.
+  ** `graphitron_occurrence_lift`, under a table source row: why a table that is not the value's
+     shape is its source, how it became one, with a subtype per way: `_key_row` (E's key row, wherever the field has
      one, since it fetches its own rows and an `ACCESSOR` key row can lift to another table than the
      record's), `_record` (the record class a producer's result hands back, E's `graphitron_result_class`
      joined to the table whose record class it is, for the record's other fields), `_routine` (the
@@ -1788,21 +1795,22 @@ and `graphitron_ast_path_entry` keeps its name as the written entry.
      candidate overload of an unpinned call binds and readers keep the pinned one's). The ways are
      exclusive, the key row winning; two different calls consuming one argument with different
      record tables is `ARGUMENT_LIFTS_TO_TWO_TABLES` at it.
-  ** `graphitron_occurrence_source_object`: an object source, a value a producer hands back with a
-     class and no table, E's `OBJECT` result and its class in `graphitron_result_class`, one class per
-     occurrence since a coordinate names one producer. It starts an accessor path, and a lift is the
+  ** `graphitron_occurrence_source_object`: the class an occurrence's values are an instance of, a
+     value a producer hands back with no table, E's `OBJECT` result and its class in
+     `graphitron_result_class`, one class per occurrence since a coordinate names one producer. It starts an accessor path, and a lift is the
      crossing from it to a table source. A carrier graphitron builds has no class and no object
      source.
   E keeps the key row and the first key; the source that reads them is F's. It reads the record
   class and the key row off E's result facts rather than restating them, the key row through the
   occurrence's element until `graphitron_field_key_row` keys on the occurrence, a join that goes
   when it does. E's `PARAMETER` bindings are written whole before it, their parameter matching reading
-  nothing it writes. It is the successor of `graphitron_field_path_start`, which starts only fields
+  nothing it writes; `_parameter` is declared with this node and written once they stand. It is the successor of `graphitron_field_path_start`, which starts only fields
   that wrote a path, and of `graphitron_field_source_table`.
 * `graphitron_path_need`, anchoring: one type an occurrence with a source must reach. Keyed by
   (graph, coordinate, target type), as the claim is keyed by its element and target type, with a
-  foreign key to the source; on the table side the start table and the landing table are attributes
-  with nullable references, on the object side the start class and the landing class. The target type is the field's target, each member of a single-table
+  foreign key to the source; on the table side its start is a foreign key to the table source row
+  (coordinate, start table) and the landing table an attribute with a nullable reference, on the
+  object side the start class and the landing class. The target type is the field's target, each member of a single-table
   interface (`FilmItem`, `ShortItem`), never the interface, each table-bound member of a union or
   multi-table interface, each type a write's payload forks to, and for a `@mutation(table:)` the
   field's own target type, its one declared table the landing. An argument or input field reaches
@@ -1903,7 +1911,9 @@ SQL's: a path is a join path from a table source, written by `@reference(path:)`
 path from an object source, and a lift is the crossing from an object to a table; inference is a
 join step's, never a path's (2026-11-03). A step's inferred key is judged once, wherever it is
 inferred: no shared foreign key is `NO_ROUTE_TO_TARGET` and several `ROUTE_AMBIGUOUS`, so
-`PATH_NO_FOREIGN_KEY` and `PATH_SEVERAL_FOREIGN_KEYS` are never introduced (2026-11-03). None holds a table in its key: each
+`PATH_NO_FOREIGN_KEY` and `PATH_SEVERAL_FOREIGN_KEYS` are never introduced (2026-11-03). A source states what an occurrence's values come from, its
+tables or its class, never a pointer to the occurrence it was derived from; a table source is a row
+per occurrence and table (2026-11-03). None holds a table in its key: each
 references its tables through nullable copies a vanished table sets null and the sweep removes,
 so each follows the anchor rule with no exception. Each relation here is written as a plain
 `INSERT .. SELECT` over the occurrence and what the occurrence above it states, the instant bound,
