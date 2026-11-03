@@ -166,12 +166,15 @@ built-in directive means what graphql-java executes.
 * **A redeclared `@skip` or `@include` loses to the specification, and says so** `open`. The
   anchor keeps the specification's declaration for those two whatever a document says, and the
   discarded redeclaration is a `graphql_schema_problem` row at its own position.
-* **An application is identified by where its `@` was written** `blocked`, on the three below and
-  on "Nothing resolves a path but the walk". `graphitron_directive_application` is keyed by
-  position, and the ordinal stays only on applications with no position.
-  * **The argMapping match carries the application's position** `open`.
-    `graphitron_argmapping_match` and what reads it name the application by position, not ordinal.
-  * **A use site is identified by position** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". Nothing spells a use site as `Type.field#ordinal`.
+* **An application is named by its coordinate, directive and ordinal** `blocked`, on the two below.
+  Only the `ast_*_entry` relations key a fact by file, line and column; every other relation names an
+  application, and what is written inside one, by names, keeping where it was written only for a
+  defect to point at, since a stable key is what spares its readers churn. `graphitron_directive_application`
+  is keyed so already.
+  * **An argMapping entry and a code reference are anchored by name** `open`, E's. `graphitron_argmapping_landing`, `graphitron_call_context_key`,
+    `graphitron_argmapping_site` and `graphitron_code_reference` key on written positions; each re-keys onto an anchored relation
+    named by the element coordinate, the directive and its ordinal, the path step where one sits and, for an entry, the
+    parameter, keeping the entry only for where a defect is reported.
   * **The emitted applications number their own** `open`. A configured or minted application keeps
     an ordinal of its own, and the authored ones rank by position instead of copying one.
 * **The schema-file extensions are a set, keyed by the extension** `open`.
@@ -434,10 +437,6 @@ static method needs no holder.
   `graphitron_outbox_leaf` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
-* **An argMapping entry and a code reference are anchored by name** `open`, E's. `graphitron_argmapping_landing`
-  and `graphitron_call_context_key` key on written positions; each re-keys onto an anchored relation named by the element
-  coordinate, the directive and its ordinal, the path step where one sits and, for an entry, the parameter, keeping the entry
-  only for where a defect is reported.
 * **A parameter's fill states how its value is built** `blocked`, E's, on "A scalar's column is read at its path's end". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives. A jOOQ record's settable
@@ -1890,9 +1889,9 @@ The element resolutions `graphitron_path_element_*` stay as they are.
 reference that can cross files is anchored to names or to an element's place in its list, which an
 author chose and which do not move when the file around them is edited. So a holder is keyed by its
 coordinate spelled from names, a path names the written claim it follows and a step the element's
-place, and a path's start is a step's `as:` name, so an inserted step moves nothing. This is not the
-use-site ordinal "A use site is identified by position" refuses: that ordinal counts applications
-on a field, which no author chose. Inheritance is a row per implementation, its written claim
+place, and a path's start is a step's `as:` name, so an inserted step moves nothing. An application
+itself is named by its coordinate, directive and ordinal ("An application is named by its coordinate,
+directive and ordinal"). Inheritance is a row per implementation, its written claim
 possibly in another file. The landing type is a key column of a path. A path holder is a coordinate,
 and a claim is a coordinate and a target type (2026-11-02). It is the field that is lifted onto a
 key row, not its parent, so a lifted start is read off the field's own key row. Every occurrence
