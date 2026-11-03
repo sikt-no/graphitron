@@ -293,9 +293,8 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     Every occurrence with a table source needs one join path per target type, keyed (coordinate,
     target type), by the rules of "Source, path, bind" in the path model below: a fork is a target of
     its own, an empty path has origin `EMPTY`, and `PathRelationConstraintTest`'s cascades become
-    incremental fact documents, its hand-written refusals going. One with
-    nothing written and no single foreign key is `PATH_NO_FOREIGN_KEY` or
-    `PATH_SEVERAL_FOREIGN_KEYS`, a `@reference` on a target with no one table
+    incremental fact documents, its hand-written refusals going. An inferred-key step whose two tables share no
+    foreign key is `NO_ROUTE_TO_TARGET` and one sharing several `ROUTE_AMBIGUOUS`, a `@reference` on a target with no one table
     `REFERENCE_WITHOUT_TARGET_TABLE`, a scalar path whose last element names no table
     `PATH_LANDING_UNKNOWN`, and a `@nodeId` one landing on a table `NODE_ID_LANDS_ON_TABLE`.
 * **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
@@ -1481,7 +1480,7 @@ family, a mismatch a defect. Where a path starts and ends:
    record class backs the type. A root type departs from nowhere.
 2. A path ends at its landing, written or inferred. A path between two table-bound types is never
    empty, even on one table: two `@table` types on one table are a join, and with nothing written and
-   no single foreign key it is `PATH_NO_FOREIGN_KEY` or `PATH_SEVERAL_FOREIGN_KEYS`, as today. A path
+   no single foreign key it is `NO_ROUTE_TO_TARGET` or `ROUTE_AMBIGUOUS`, as today. A path
    is empty only where the target is not table-bound: a reader's ends at its start, and a producer's
    at its result's table, the record class's table for a record-backed result, or nowhere for a plain
    object.
@@ -1880,10 +1879,11 @@ and `graphitron_ast_path_entry` keeps its name as the written entry.
   the class and member whose value it takes, waits on a producer's value object being bound. Every kind has its
   subtype, so the supertype holds the key and the kind alone (Alf, 2026-11-03).
 
-**Defects**, as `graphitron_entry_defect` rows at the claim's written position: a need nothing is
-written for and no single foreign key meets (`PATH_NO_FOREIGN_KEY`, `PATH_SEVERAL_FOREIGN_KEYS`), a
-need whose members fail alike giving one row that names them; a written path that stops, with no
-route or an ambiguous one (`NO_ROUTE_TO_TARGET`, `ROUTE_AMBIGUOUS`); no overload for a step's pair
+**Defects**, as `graphitron_entry_defect` rows at the claim's written position: an inferred-key
+step whose two tables share no foreign key or several (`NO_ROUTE_TO_TARGET`, `ROUTE_AMBIGUOUS`),
+whether nothing was written or a written element names only a table, a need whose members fail
+alike giving one row that names them; a written step that resolves to no move or several, which is
+the same pair; no overload for a step's pair
 (`CONDITION_NO_OVERLOAD_FOR_PAIR`); two overloads taking one pair (`CONDITION_OVERLOAD_TIE`);
 `@reference` where there is no one target table (`REFERENCE_WITHOUT_TARGET_TABLE`); two
 `@referenceFor` naming one type on one field (`REFERENCE_FOR_DUPLICATE_TYPE`); a scalar path whose
@@ -1929,7 +1929,9 @@ need is keyed by (coordinate, target type), as a claim by (element, target type)
 (coordinate, bound), a value's bound its class and member (2026-11-03). Source and bind are not
 SQL's: a path is a join path from a table source, written by `@reference(path:)`, or an accessor
 path from an object source, and a lift is the crossing from an object to a table; inference is a
-join step's, never a path's (2026-11-03). None holds a table in its key: each
+join step's, never a path's (2026-11-03). A step's inferred key is judged once, wherever it is
+inferred: no shared foreign key is `NO_ROUTE_TO_TARGET` and several `ROUTE_AMBIGUOUS`, so
+`PATH_NO_FOREIGN_KEY` and `PATH_SEVERAL_FOREIGN_KEYS` are never introduced (2026-11-03). None holds a table in its key: each
 references its tables through nullable copies a vanished table sets null and the sweep removes,
 so each follows the anchor rule with no exception. Each relation here is written as a plain
 `INSERT .. SELECT` over the occurrence and what the occurrence above it states, the instant bound,
@@ -1937,10 +1939,7 @@ never as a view over views, and its writer gets a sis timing when it is built.
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
-value object lifts to a derived table is out of scope. Whether the two foreign-key defect pairs, a
-path with nothing written (`PATH_NO_FOREIGN_KEY`, `PATH_SEVERAL_FOREIGN_KEYS`) and a written table
-element (`NO_ROUTE_TO_TARGET`, `ROUTE_AMBIGUOUS`), become one pair on the inferred-key step they
-both judge, is Alf's. An emitter may collapse a join whose key already sits on the row, the
+value object lifts to a derived table is out of scope. An emitter may collapse a join whose key already sits on the row, the
 `@nodeId` key lift and the foreign-key mirror among them; that is its reading of the first step's
 key, never a path of another kind. How the
 generator reads a path per pair at run time is not yet planned; R1132's shared DataLoader is the same
