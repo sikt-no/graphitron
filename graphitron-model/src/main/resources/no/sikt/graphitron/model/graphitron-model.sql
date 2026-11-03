@@ -17813,7 +17813,7 @@ INSERT INTO meta_grain VALUES
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
   ('graph-occurrence',
-   'one place one field or argument is reached in the schema, in one graph',
+   'one use of one declared field, argument or input field reached along a chain, in one graph',
    'graph_name, coordinate', 'sdl'),
   ('producer-claim',
    'one kind of producer one field''s written directives claim, in one graph',
