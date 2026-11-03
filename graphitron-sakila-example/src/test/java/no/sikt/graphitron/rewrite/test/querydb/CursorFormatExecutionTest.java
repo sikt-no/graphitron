@@ -297,16 +297,35 @@ class CursorFormatExecutionTest {
             + "... on DisplayPerson { personId } ... on DisplayAccount { accountId } } } pageInfo { endCursor } } }";
         var first = (Map<String, Object>) execute(query.formatted("")).get("displayNamedConnection");
         String endCursor = (String) ((Map<String, Object>) first.get("pageInfo")).get("endCursor");
-        // The JSON cursor's elements are strings and integers with no comma or quote inside, so
-        // splitting the array is enough to rebuild the release candidates' cursor from them.
-        String json = decode(endCursor);
-        Object[] elements = Stream.of(json.substring(1, json.length() - 1).split(","))
-            .map(e -> e.startsWith("\"") ? e.substring(1, e.length() - 1) : e).toArray();
-        String cursor = releaseCandidateCursor(elements);
+        String cursor = releaseCandidateCursor(jsonElements(decode(endCursor)).toArray());
         assertThat(execute(query.formatted(", after: \"" + cursor + "\"")))
             .isEqualTo(execute(query.formatted(", after: \"" + endCursor + "\"")));
         var second = (Map<String, Object>) execute(query.formatted(", after: \"" + cursor + "\"")).get("displayNamedConnection");
         assertThat((List<?>) second.get("edges")).isNotEmpty();
+    }
+
+    /**
+     * The elements of a JSON cursor over string and integer columns, each as its text: a string
+     * unquoted (its only escapes here being a quote and a backslash), a number as written.
+     */
+    private static List<String> jsonElements(String json) {
+        var elements = new ArrayList<String>();
+        int i = 1;
+        while (i < json.length() - 1) {
+            var element = new StringBuilder();
+            if (json.charAt(i) == '"') {
+                for (i++; json.charAt(i) != '"'; i++) {
+                    if (json.charAt(i) == '\\') i++;
+                    element.append(json.charAt(i));
+                }
+                i++;
+            } else {
+                while (json.charAt(i) != ',' && json.charAt(i) != ']') element.append(json.charAt(i++));
+            }
+            elements.add(element.toString());
+            i++;
+        }
+        return elements;
     }
 
     @Test
