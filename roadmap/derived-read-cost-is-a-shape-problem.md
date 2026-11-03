@@ -300,7 +300,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
       fields and its edge's are occurrences under the returning field, binding into what that
       field's producer produces, a page of records with its ordering in the class graphitron
       generates. `nodes` binds the page's records, `edges` each record with its cursor, `edges.node`
-      the record, `edges.cursor` a function of the record and the page's ordering (its kind open) and
+      the record, `edges.cursor` a function of the record and the page's ordering (`RESULT_EXPRESSION`) and
       `pageInfo` the page; only `totalCount` runs a query.
       * **A connection's result names its generated class** `open`, G's. The result a producer
         states for a field returning a connection is a page in `ConnectionResult`, with `Edge` per
@@ -632,7 +632,9 @@ classified records have no reader left and can go with the walk.
 * **What an occurrence takes is a binding** `blocked`, G's, on "A field's path needs are stated per coordinate".
   `graphitron_occurrence_binding` holds one place an occurrence binds, keyed by (graph, coordinate,
   bound), a `VALUE`'s bound being its class and member, with its kind (`COLUMN`, `TABLE`,
-  `NODE_ID`, `VALUE`, `PARAMETER`, `EXPRESSION`) an attribute and a subtype per kind; F writes the
+  `NODE_ID`, `VALUE`, `PARAMETER`, `EXPRESSION`, `RESULT_EXPRESSION`) an attribute and a subtype
+  per kind, `EXPRESSION` a value the producer computes in its query and `RESULT_EXPRESSION` one a
+  method computes over the result the producer produced, a cursor; F writes the
   `TABLE` subtype beside the needs and E the `PARAMETER` and `EXPRESSION` ones, the `VALUE` subtype, a member's value at an
   accessor path's end, waits on a producer's value object being bound, and the column relation
   below is its `COLUMN` subtype. `PARAMETER` is decided before `COLUMN`, so a scalar input with no
@@ -1559,7 +1561,8 @@ that depend on the parent fall three ways.
   ** `graphitron_occurrence_binding` and a subtype per kind, keyed by
      `(graph_name, coordinate, bound)`, the bound spelled from names: a table for `TABLE`, `COLUMN`
      and `NODE_ID`, a forked end being a binding per table, the holder's key, the method and the
-     position for `PARAMETER`, the method for `EXPRESSION`, and the class and member for `VALUE`
+     position for `PARAMETER`, the method for `EXPRESSION` and `RESULT_EXPRESSION`, and the class
+     and member for `VALUE`
      (`no.sikt.fs.EmneNavn#getEn`):
      `graphitron_occurrence_column` with its `sql_column` and whether the SQL or the jOOQ name
      matched, `graphitron_occurrence_node_id`, one row per key column by ordinal,
