@@ -1549,8 +1549,9 @@ that depend on the parent fall three ways.
 
 **The relations, with their grains.**
 
-* `graphitron_occurrence`, anchoring: one place a field or an argument is reached in the schema.
-  One row per nested coordinate, keyed by `(graph_name, coordinate)`. It carries:
+* `graphitron_occurrence`, anchoring: an occurrence of an element, one use of a declared field,
+  argument or input field reached along a chain of parents, as the fact model's use-keyed facts are
+  keyed on it and its definition's on `graphitron_element`. One row per nested coordinate, keyed by `(graph_name, coordinate)`. It carries:
   ** `element_coordinate`, the declared element it is an occurrence of, in `graphitron_element`,
      which holds fields, input fields and arguments alike. Nullable, with a foreign key there
      `ON DELETE SET NULL`: an anchor's key to what it was built from does not cascade, and the sweep
@@ -1719,7 +1720,7 @@ are bound.
   only where the generator cannot consume it, under `@service` or `@externalField`, and no
   parameter does.
 
-Where each starts and ends, from "Nested coordinates and their paths (draft)": a chain start
+Where each starts and ends: a chain start
 departs from its declaring type's table, or is lifted as above; a nested field or an argument starts
 where the occurrence it hangs under ends, and every input field under an argument where the
 argument starts, a `@reference` on one moving none of its children. A join path between two
@@ -1764,8 +1765,8 @@ and `graphitron_ast_path_entry` keeps its name as the written entry.
   its `as:` name, NULL until R1099 adds `as:` to the directive. Captured by the path family's writer
   beside `graphitron_ast_field_path_entry`, which it generalises: that one covers output field
   declarations only and stays until its readers move.
-* The holder is `graphitron_occurrence`: one place a field, argument or input field is reached, at
-  its nested coordinate, a dot before a nested output field, `(x:)` naming an argument and an input
+* The holder is `graphitron_occurrence`: an occurrence of an element, one use of a declared field,
+  argument or input field reached along a chain of parents, at its nested coordinate, a dot before a nested output field, `(x:)` naming an argument and an input
   field inside the parentheses (`Customer.address`, `Emne.navn.en`, `Query.films(filter:)`,
   `Query.films(filter.cast.firstName:)`). Every relation below keys on the coordinate with a
   foreign key to the occurrence; there is no holder relation of its own.
