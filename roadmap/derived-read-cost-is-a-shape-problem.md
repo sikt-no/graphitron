@@ -82,7 +82,6 @@ A service call is emitted from the store
 │       ├── An object result is lifted onto a key row
 │       │   ├── The result and path model is stated before it is built
 │       │   ├── An error-carrying payload's data element holds its class
-│       │   ├── A plain object's first key is read off its members
 │       │   ├── A field's key row is stated
 │       │   ├── A type an `@externalField` returns holds an OBJECT
 │       │   └── A binding that names several tables is a row of none of them
@@ -612,8 +611,6 @@ classified records have no reader left and can go with the walk.
     rows off its members; on sis, the 19 payloads that do so.
   * **A nested class is read** `open`. The code family skips `NestedFilmsPayloadHolder$Payload` and
     its kind, so their accessors are unknown.
-  * **A plain object's first key is read off its members** `open`, E's. The classifier's `FkColumns`
-    reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
 * **What an occurrence takes is a binding** `blocked`, G's, on "A field's path needs are stated per coordinate".
@@ -685,8 +682,8 @@ classified records have no reader left and can go with the walk.
   supersedes the row of its function that a `@routine` read with nothing after it has handed since
   `0428ef411`, and `graphitron_routine_result` and the landing's row with no place go. Today Tilgang
   holds a ROW and an OBJECT, and Brukertilgang's three bound children have no start and no key.
-* **A path starts at its parent's table and targets a table** `blocked`, off the critical path, on "A routine's result is an object of its function's record class", "Every field has a path, the written one or the one discovery implies",
-  "An error-carrying payload's data element holds its class" and "A plain object's first key is read off its members".
+* **A path starts at its parent's table and targets a table** `blocked`, off the critical path, on "A routine's result is an object of its function's record class", "Every field has a path, the written one or the one discovery implies"
+  and "An error-carrying payload's data element holds its class".
   A table-bound parent starts every field's path on its binding, whatever its result, so for almost
   every field the start is known before the results and the editor completes on an unreached type;
   only an unbound parent asks its result, a nested type starting on its result's tables and an
@@ -1637,9 +1634,9 @@ where it rebuilds them per edge today.
 5. E: "`graphitron_field_source_table` dissolves into the results" and
    "A field's source is its parent's result" are the occurrence's source and come off E's graph into
    step 2.
-   "A field's key row is stated", "An object result is lifted onto a key row" and
-   "A plain object's first key is read off its members" stay E's, keyed on the occurrence and
-   starting from path ends. The argMapping binding
+   "A field's key row is stated" stays E's, keyed on the occurrence; "An object result is lifted onto
+   a key row" is F's key-row lift, and "A plain object's first key is read off its members" is
+   discarded, a plain object not lifting. The argMapping binding
    binds to occurrences and leaves the unpack to step 3; the fill of a jOOQ record reads its columns
    off path ends rather than `sql_table.record_class_fqn` to `sql_column`.
 6. Whoever moves their readers: `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`
