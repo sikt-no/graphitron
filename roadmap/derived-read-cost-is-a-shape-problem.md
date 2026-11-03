@@ -1383,7 +1383,7 @@ What the document pins beyond the rows:
   `storePerson(Store, Staff)` are each taken by one pair. Written as one `@reference`, the same field
   would draw `REFERENCE_WITHOUT_TARGET_TABLE`, as `peopleByKey` does.
 
-## Nested coordinates (draft)
+## Nested coordinates and their paths (draft)
 
 **What we are after.** A field means one thing wherever the store holds it. Today a field is keyed
 by `(type_name, field_name)`, once per declaration, but a field of a type with no table of its own
@@ -1394,14 +1394,18 @@ parent holds. The store tells parents apart by a table column added to the key i
 one table is one row, a field reached from two tables is two rows nobody can name, and every reader
 that wants "the table" has to choose. The goal is to state such a field once per parent chain, at a
 *nested coordinate*, so every parent-dependent fact has one row per coordinate and readers read it
-without choosing.
+without choosing. And every occurrence has a path, an empty one ending where it starts, so the
+tables a field reads and the column it binds are read off its occurrence's path, not off a relation
+per question that each choose a table.
 
 **The coordinate.** The field's place in the schema, spelled `TypeName.nestingField.nestedField`
 from the nearest field whose parent is not nested, its nested steps dotted as argMapping already
-spells a path (`filter.actorRef.actor_id`). An argument keeps the specification's `(argument:)`, so
-`Type.field(x:)` names the argument and `Type.field.x` a field. `Emne.navn.en` is `en` on the nested
-type `EmnenavnAlleSprak` under `Emne.navn`, and `Query.films(filter:).cast.firstName` an input field
-under the argument `filter`. A field declared on an interface or reached through a union is spelled from the
+spells a path (`filter.actorRef.actor_id`). An argument keeps the specification's `(argument:)`, and
+an input field is spelled inside the parentheses, from the argument: `Type.field(x:)` names the
+argument, `Type.field(x.y:)` and `Type.field(x.y.z:)` input fields under it, and `Type.field.x` only
+ever a nested output field. `Emne.navn.en` is `en` on the nested type `EmnenavnAlleSprak` under
+`Emne.navn`, and `Query.films(filter.cast.firstName:)` an input field under the argument `filter`.
+A field declared on an interface or reached through a union is spelled from the
 participant, never the interface: `Film.title` and `Book.title`, not `Media.title`, so each
 coordinate departs from the participant's one table. A field whose parent is table-bound or a root
 has exactly one coordinate, its own `Type.field`, so the population is uniform: every field has at
@@ -1444,28 +1448,93 @@ table.
   spelling. Both are derivation-written.
 * The path model draft below keys its needs on the occurrence, in this section's spelling.
 
-**What the store holds per field today, sorted.** Of 118 field-keyed relations (excluding `_rule`
-views and the `intent_` family), 76 state a fact about the field as declared and stay keyed by
-`Type.field`: its written directives, its declared type and arguments, the emitted schema, the
-reference spellings. 34 state a fact that depends on the parent. Of these, the
-`graphitron_field_path` family and its starts, `graphitron_field_scope_table`,
-`graphitron_argument_scope_table` and its step targets, and `graphitron_input_field_resolving_table`
-and its step targets do not re-key: they dissolve into the path model's family below, whose need
-lands where they answer today, and re-keying them first would be a pass the dissolution throws away.
-`graphitron_field_source_table` dissolves into the results by its own node, and the
-`graphitron_node_id_decode_*` family is written by `DerivationStratum`, which is going, so its owner
-anchors it on the occurrence when it moves; neither re-keys first. The rest re-key onto the nested
-coordinate: `graphitron_field_target_column`, `graphitron_field_target_table` for scalars,
-`graphitron_field_key_row`, and `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`,
-whose rules already decide per parent (a nested field
-is a re-read producer where a write, routine or service returns its parent; a reader only where its
-parent has one result shape). The path model's family, declared and not yet written
-(`graphitron_path_need`, `graphitron_path`, `graphitron_path_step` and its children,
-`graphitron_path_stop`), keys on the occurrence from the start. `graphitron_path_anchor` stays keyed
-by where a path is written, a declared element. Eight are unclear, among them `graphitron_result_pivot`, `graphitron_outbox_leaf` and the
-field-site step targets, which start on the declaring type's own binding today.
-`graphitron_result` and `graphitron_result_table` are keyed by type, and a nested type reached under
-two tables holds both; they follow the coordinate too.
+**Every occurrence has a path** (Alf, 2026-11-02 and 2026-11-03). Walking an occurrence's path
+resolves what it binds by column precedence: a match adds a fact with a foreign key into the `sql_`
+family, a mismatch a defect. Where a path starts and ends:
+
+1. A chain start departs from its declaring type's table: `graphitron_tabletype`, or the table whose
+   record class backs the type. A root type departs from nowhere.
+2. A path ends at its landing, written or inferred. A path between two table-bound types is never
+   empty, even on one table: two `@table` types on one table are a join, and with nothing written and
+   no single foreign key it is `PATH_NO_FOREIGN_KEY` or `PATH_SEVERAL_FOREIGN_KEYS`, as today. A path
+   is empty only where the target is not table-bound: a reader's ends at its start, and a producer's
+   at its result's table, the record class's table for a record-backed result, or nowhere for a plain
+   object.
+3. Some ends fork, one end per table: a write whose payload has one data field beside its errors
+   field ends at that field's table, a `@mutation(table:)` at its table, and a target with no table of
+   its own once per participant table. Each fork is a need of its own in `graphitron_path_need`, not a
+   second relation.
+4. A child starts where its parent's path ends: a nested field, an argument, and every input field
+   under an argument, at any depth, where its argument starts. A `@reference` on an input field
+   starts there too and does not move its children.
+5. A scalar's column is its bound name at its path's end, SQL name before jOOQ name; an unbound
+   `id: ID` on a `Node` type is the node identity, and a `@nodeId` unpacks into the key columns of the
+   table its path ends on. The unpack is stated at the path's end, so the argMapping binding keeps
+   only (written entry, call occurrence) to bound occurrence and its own defects.
+6. A `@service` argument has a path like any other: its input is converted to the parameter's type,
+   a `TableRecord` included, before the call, and the conversion reads each input field's column off
+   its path's end. Whether a path is stated for every argument or only where a parameter takes a
+   table is the writer's choice.
+
+An empty path is a `graphitron_path` row with no steps and its target its start, with its own
+origin `EMPTY` beside `WRITTEN`, `INHERITED` and `INFERRED`, so the foreign-key defects cannot read
+an empty path as a failed inference.
+
+**Checked on sis**, rules 1 to 5 against today's relations, per declared field; the scripts are a
+session's, not the tree's.
+
+[cols="3,1,1,2"]
+|===
+| | today | path model | difference
+
+| Output field departures, against `graphitron_field_source_table` | 3,772 | 3,772 | none
+| Scalar columns, against `graphitron_field_target_column` | 1,913 | 1,915 | the node identity of two `Node` types' unbound `id`
+| Argument tables, against `graphitron_argument_scope_table` | 970 | 1,470 | none missing; 436 rows for `first:`/`after:`, which `graphql_argument` lacks, and 46 `@service` mutations over a record-backed payload, which rule 6 now covers
+| Input-field tables, against `graphitron_input_field_resolving_table` | 1,803 | 2,236 | none missing; the 433 extra are the 93 input types under those 46 services
+|===
+
+The check ended a same-table `@table` target with nothing written at its target's table, which rule
+2 now refuses; no count depended on it.
+
+**The relations, sorted.** Of 118 field-keyed relations (excluding `_rule` views and the `intent_`
+family), 76 state a fact about the field as declared and stay keyed by `Type.field`: its written
+directives, its declared type and arguments, the emitted schema, the reference spellings. The ones
+that depend on the parent fall three ways.
+
+* Dissolve into the occurrence and its path. Each is a read of the occurrence, its path and what the
+  path's end resolves; none re-keys first.
+  ** `graphitron_field_source_table`: an occurrence's start (rule 1, rule 4).
+  ** `graphitron_field_scope_table`, `graphitron_argument_scope_table` and
+     `graphitron_input_field_resolving_table`: the end of the field's path, forks included (rules 2
+     to 4).
+  ** `graphitron_field_target_column`: the column resolved at the path's end (rule 5), a fact keyed on
+     the occurrence with a foreign key to `sql_column`, and its defects.
+  ** `graphitron_node_id_decode_column`, `_hop` and `_hop_column`, and
+     `graphitron_node_id_instruction`, all written by `DerivationStratum`: the `@nodeId` unpack at the
+     path's end (rule 5).
+  ** The `graphitron_field_path` family and its starts and stop, the field, argument and input-field
+     reference step targets and hops, keyed and keyless, and `graphitron_field_participant_path`: the
+     path family, as the path model draft below lists.
+  ** `intent_input_occurrence_path` and its steps: the input occurrences.
+  ** `graphitron_result_table`: a table-bound type's table is `graphitron_tabletype`, a record-backed
+     type's its record class's table, and a nested type's the start of its fields' occurrences.
+* Dissolve into declared facts, keyed by `Type.field` or by type.
+  ** `graphitron_field_target_table`: the arriving type is the declared target, or each member of a
+     single-table interface, read off `graphitron_field_target`, `graphql_poly_member` and
+     `graphitron_tabletype`; the needs carry one per member.
+  ** `graphitron_resolved_type_binding`: `graphitron_tabletype`, by its own node.
+  ** `graphitron_path_anchor` is already keyed by the declared element and target type.
+* Stay keyed on the occurrence, `(graph_name, coordinate)` with a foreign key to it:
+  ** the path family itself, `graphitron_path_need`, `graphitron_path`, `graphitron_path_step` and its
+     children, and `graphitron_path_stop`;
+  ** the column at a path's end, the successor of the target column above;
+  ** `graphitron_field_key_row` and its method subtype: the keys a parent hands a child `@service`,
+     which no path end states;
+  ** `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`, whose rules already decide
+     per parent (a nested field is a re-read producer where a write, routine or service returns its
+     parent; a reader only where its parent has one result shape).
+  ** Unsorted: `graphitron_result_pivot` and the view `graphitron_outbox_leaf`, which follows what it
+     reads; both are sorted when their readers are.
 
 **The relations, with their grains.**
 
@@ -1477,8 +1546,8 @@ two tables holds both; they follow the coordinate too.
      removes a row whose element went.
   ** `parent_coordinate`, the occurrence it hangs under, null where a chain starts, with a cascading
      foreign key to itself, which runs downstream.
-  ** `name`, the field or argument name at this step, and `kind`, `FIELD`, `ARGUMENT` or
-     `INPUT_FIELD`, so `(x:)` and `.x` are told apart without parsing, with an index on
+  ** `name`, the field or argument name at this step, and `kind`, `FIELD`, `FIELD_ARGUMENT` or
+     `INPUT_FIELD`, so an argument and a field are told apart without parsing, with an index on
      `(graph_name, parent_coordinate, name)`: a written path such as argMapping's `input.a.b`
      resolves as one keyed join per segment, never by building or parsing a coordinate.
   ** `depth` and `touched_at`.
@@ -1505,9 +1574,10 @@ two tables holds both; they follow the coordinate too.
      parent-dependent facts, the table its content binds against and its `@reference` steps, key on
      it as a field's do.
   ** Input nesting. Under an argument occurrence whose type is an input object, each input field has
-     one at `<coordinate>.<field>`, and an input-object-typed field descends further:
-     `Query.films(filter:).cast.firstName`, the population `intent_input_occurrence_path` holds
-     today, in this spelling.
+     one inside the argument's parentheses, `Type.field(arg.field:)`, and an input-object-typed field
+     descends further: `Query.films(filter.cast.firstName:)`, the population
+     `intent_input_occurrence_path` holds today, in this spelling. The step rule spells
+     `(filter:).cast` today and moves to this spelling first.
   ** Cycles. A chain does not expand into a type already on it, the first-visit guard
      `InputOccurrencePaths` and the classifier apply; the occurrence that would close the cycle has a
      row and does not expand. No store measured has an output cycle; the deepest input chain is 5.
@@ -1531,14 +1601,8 @@ two tables holds both; they follow the coordinate too.
      as `graphitron_argmapping_candidate.closes_cycle` does today.
   ** An argument has an occurrence of its own, under the field occurrence it is written on, and the
      input fields under it hang beneath it.
-* The parent-dependent relations that re-key key on `(graph_name, coordinate)` with a foreign key to
-  the occurrence, and the table they carried in their key becomes an attribute: one target table and
-  one key row per coordinate, as the path family has one path start per coordinate from the start.
-  `graphitron_field_target_table` holds a row for a
-  scalar's coordinate as well as an object's, and `graphitron_field_target_column` carries the column
-  only.
-* `intent_input_occurrence_path` and its steps dissolve into the input occurrences, and
-  `graphitron_node_id_instruction.use_site` becomes the coordinate.
+* `graphitron_node_id_instruction.use_site` and `intent_input_occurrence_path` go with the
+  relations they belong to, sorted above.
 
 **What changes for readers.** The editor resolves a cursor to a declared field, so a hover on a
 nested field lists its occurrences by coordinate rather than its tables, and completion and the
@@ -1547,26 +1611,46 @@ today. MCP's `fieldRef` carries the coordinate; `Type.field` is the coordinate o
 occurrence, so nothing changes on the wire for those. The generator reads one fact per occurrence
 where it rebuilds them per edge today.
 
-**Order.** The occurrence relation and its spelling first; then the target table and column, which
-unblocks moving the editor's column scope off `intent_field_column_table`; then the key row, while
-the source table dissolves into the results on the occurrence; then the input occurrences, which retire `intent_input_occurrence_path`; then the
-readers. Beside it, the path anchor keyed by coordinate and target type and the output-field needs
-follow the occurrence directly, and the argMapping binding keys on the written entry and the field
-occurrence it sits under.
+**Owners and order.** Proposed, for A to confirm on the graph.
+
+1. G: the input-field spelling in `graphitron_occurrence_step_rule` and its fact document.
+2. F: the path writer, "A field's path needs are stated per coordinate" widened to every
+   occurrence: needs with their forks (rule 3), paths with `EMPTY` beside the other origins, steps and
+   stops. The path model text below takes the new spelling and rules 2 to 4 from here.
+3. G: the column at a path's end and the `@nodeId` unpack (rule 5), once paths stand. Then
+   `graphitron_field_target_column` and the `graphitron_node_id_decode_*` family go, the editor's
+   column scope moves off `intent_field_column_table` onto it, and `graphitron_field_target_table`
+   dissolves into declared facts.
+4. As their readers move to path ends, `graphitron_field_scope_table`,
+   `graphitron_argument_scope_table` and `graphitron_input_field_resolving_table` go, each in the
+   commit that moves its last reader, and `intent_input_occurrence_path` with them.
+5. E: "`graphitron_field_source_table` dissolves into the results" and
+   "A field's source is its parent's result" are rules 1 and 4 and come off E's graph into step 2.
+   "A field's key row is stated", "An object result is lifted onto a key row" and
+   "A plain object's first key is read off its members" stay E's, keyed on the occurrence and
+   starting from path ends. The argMapping binding
+   binds to occurrences and leaves the unpack to step 3; the fill of a jOOQ record reads its columns
+   off path ends rather than `sql_table.record_class_fqn` to `sql_column`.
+6. Whoever moves their readers: `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`
+   re-key onto the occurrence.
 
 **Settled.**
 
-* The spelling is `TypeName.nestingField.nestedField`, the nested steps dotted as argMapping's are
-  and an argument spelled `(argument:)` as the specification has it; the occurrence path's `(arg)`
-  and `/` steps retire with it, and the path model's holders take it.
+* The spelling is `TypeName.nestingField.nestedField` for output fields and
+  `Type.field(arg.inputField:)` inside the parentheses for input fields, an argument spelled
+  `(argument:)` as the specification has it; the occurrence path's `(arg)` and `/` steps retire with
+  it, and the path model's holders take it (2026-11-03).
 * A polymorphic parent is spelled by its participant, so an interface field reached from
   implementations on different tables is one coordinate per implementation, each with one table.
 * Support does not widen. The generator keeps one class per nested type and its
   parent-compatibility rejection; what changes is that the store states the per-occurrence facts
   that rejection compares.
-* Ownership. The key row, the source table and the path starts belong to "A service call is emitted
-  from the store" and its result-model nodes; the occurrence is the key they would take, so the order
-  of the two is settled with whoever holds them.
+* Every occurrence has a path, and an empty one ends where it starts (2026-11-02).
+* A path between two table-bound types is not empty, even on one table (2026-11-03).
+* A `@service` argument has a path: the call's input is converted to its parameter types before
+  the call (2026-11-03).
+* The `@nodeId` unpack is stated at the path's end, not in the argMapping binding (2026-11-03).
+* A forked end is a need, in `graphitron_path_need`.
 
 ## Path model (draft)
 
