@@ -650,11 +650,16 @@ classified records have no reader left and can go with the walk.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read
   `graphitron_field_source_table`'s inherited rule today.
-* **The result relations dissolve into the occurrence source** `blocked`, E's, on "Every occurrence's source is stated".
-  `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` say per type what the
-  occurrence source says per occurrence, so their type-level readers (the LSP's type hover and
-  inlays, the outbox rule, `RESULT_SHAPES_CONFLICT`) read sources grouped by type and the result
-  rule's fixpoint goes. `graphitron_field_key_row` re-keys onto the occurrence and reads its parent's
+* **The result relations dissolve into the producer's result** `blocked`, E's, on "Every occurrence's source is stated".
+  The producer knows what it produces (Alf, 2026-11-03): its result, one record, a list of records,
+  a connection page or a `@service`'s object, each with its class where it has one, is a fact of the
+  producing occurrence, and the occurrences under it bind into it. `graphitron_result`,
+  `_result_table`, `_result_class` and `_result_pivot` say per type what the producer's result says
+  per producer, so they go, their type-level readers (the LSP's type hover and inlays, the outbox
+  rule, `RESULT_SHAPES_CONFLICT`) reading the results grouped by type, and the result rule's
+  fixpoint goes; the source reads a class off its producer's result. The generator's `ResultShape`
+  (`SingleRecord`, `RecordList`, `Connection`, `LoaderDelegated`) is that fact today.
+  `graphitron_field_key_row` re-keys onto the occurrence and reads its parent's
   source rather than "the parent holds an `OBJECT`"; since the source's key-row lift reads the key row,
   the source's depth loop calls `KeyRows.writeDepth` between a depth's sources and the next depth's,
   writing the key rows of the occurrences one below, and the key rows are swept after the loop. The
@@ -1962,6 +1967,11 @@ has, kept until a better one is found.
   its parent's key row or a routine's table: a query, a `@service` called with the parents' keys, or a
   routine.
 
+The producer knows what it produces (Alf): its *result*, one record, a list of records, a connection
+page or a `@service`'s object, each with its class where it has one, is a fact of the producing
+occurrence, and the occurrences under it bind into it; the type-keyed `graphitron_result` goes
+("The result relations dissolve into the producer's result").
+
 A *lift* is a producer's crossing into the world of tables, and belongs to the producer, never to
 the occurrences under it: where a child producer starts, a parent's key row lifted onto the key's
 table; or what any producer hands back, a `TableRecord` lifted onto its record class's table, a
@@ -1972,7 +1982,8 @@ record with no query of their own. A source only ever states tables or a class.
 **Bind, not reader.** Every output occurrence binds, and its binding says what it takes: a column at
 its path's end (`COLUMN`), the table an inline object or list joins to (`TABLE`), a node identity
 (`NODE_ID`), a member's value off its parent's object (`VALUE`), or a value an `@externalField`
-method computes in its producer's query (`EXPRESSION`, proposed). An occurrence that binds and does
+method computes in its producer's query (`EXPRESSION`, bound by its method, one row per candidate
+overload until the pin). An occurrence that binds and does
 not produce executes nothing: its join path continues the query of the producer it belongs to, the
 nearest producer up its chain of occurrences, or it reads a member of its parent's object. That needs
 no relation of its own: `graphitron_reader`'s `reads` (`COLUMN`, `NESTED`, `EXPRESSION`, `ACCESSOR`)
@@ -2052,7 +2063,6 @@ call's `$context` fills.
   keeps its own parameter relation, as the routine step does today; the draft leans to the latter.
 * Whether one call per occurrence is right for a `@condition` reached under two tables, pinning a
   different overload for each, as the join path step already does per implementation.
-* The `EXPRESSION` binding kind is proposed to G, whose binding supertype it extends.
 
 ## Tests
 
