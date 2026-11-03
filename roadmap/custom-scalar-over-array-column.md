@@ -1,7 +1,7 @@
 ---
 id: R1135
 title: "A custom scalar coercing an array or a parameterized list has no valid shape"
-status: In Review
+status: Ready
 bucket: bug
 priority: 4
 theme: codegen-correctness
@@ -93,3 +93,17 @@ The generic-base-class gap named under Scope decision is filed as R1145.
 Whether the `ServiceCatalog` wire-coercion check should also judge a list-valued scalar against a `List<String>` service parameter (today it passes through unchecked). Recommendation: leave as is; it is a hardening, not part of this defect.
 
 Provenance: reported by the kreg Graphitron 10 port session (fs-plattform's kreg module on 10.0.0-RC46, branch `worktree-kreg-g10` at `7858137af4`, not pushed), 2026-10-30; the reporter found it present on graphitron `origin/main` the same day.
+
+## Reviewer findings
+
+### In Review → Done: rework (session_01WkW2JEfQnza57yP4t2mkZs, 2026-11-03)
+
+Question 1 (right change, implemented correctly): passes. The resolver change, the new `CoercingInputNotConcrete` arm, its message, the `FieldBuilder` erasure and the docs match the Scope decision. The consumer-table claims checked out: a service parameter's `getTypeName()` renders `java.lang.String[]` / `java.util.List<java.lang.String>`, the same as JavaPoet's `toString()`. `findCoercingInputType` now stops at the first `Coercing<T, ?>` it finds even when `T` is a type variable. That gives the same `Erased` verdict as before for the generic-base case, which R1145 owns.
+
+Question 2 (how do we know it is complete): fails.
+
+1. The plan's consumer table required a test: "a test must pin it so a later change to that branch does not silently break the scalar case". This refers to a non-list SDL field whose scalar is `List<String>`, read through `InputRecordGenerator.readComponent`'s list branch. `listScalarComponent_isListOfString` only checks the accessor's return type. It would still pass if that branch stopped reading the value correctly. The no-body-assertion rule bans reading the generated text; it does not ban a behaviour pin. A test that runs `fromMap` in the compile or execution tier (a value goes in, an equal `List<String>` comes out), or a `graphitron-sakila-example` round trip, would satisfy it.
+2. The Goal says the scalar "classifies and generates" over a `text[]` column. `ARRAY_COERCING_SCALAR_OVER_ARRAY_COLUMN` only shows that it classifies. No test drives generation for `ArrayHolder { tags: Tags }`. `ArrayColumnCodegenPipelineTest` already does this cheaply for the same table by driving `TypeFetcherGenerator`, and the `graphitron-sakila-example` compile is the cross-module check the principles name. Either one would satisfy this.
+3. Nothing tests the `FieldBuilder.mapGraphQLTypeToReflectType` / `reflectClassOf` extension. Before this change the code fell back to `Object.class`, which accepts anything. If `reflectClassOf` regressed to that fallback, no test would fail. A pipeline case is needed: a resolver returning `String[]` for a `Tags` field is accepted, and one returning an incompatible type is rejected.
+
+Not verified by this reviewer: `mvn install -Plocal-db`. The session was not allowed to run the build.
