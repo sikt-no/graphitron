@@ -614,13 +614,17 @@ classified records have no reader left and can go with the walk.
   `graphitron_occurrence_binding` holds one place an occurrence binds, keyed by (graph, coordinate,
   bound) with its kind (`COLUMN`, `TABLE`, `NODE_ID`, `ACCESSOR`, `PARAMETER`) an attribute; F
   writes the `TABLE` binding beside the needs, E the `PARAMETER` subtype, and the column relation
-  below is its `COLUMN` subtype.
+  below is its `COLUMN` subtype. `PARAMETER` is decided before `COLUMN`, so a scalar input with no
+  binding under a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and
+  `ARGUMENT_WITHOUT_CONSUMER` only where the generator cannot consume it, under `@service` or
+  `@externalField`, and no parameter does.
 * **A scalar's column is read at its path's end** `blocked`, G's, on "What an occurrence takes is a binding".
-  `graphitron_occurrence_column` holds one column an occurrence binds at one of its path's ends,
-  keyed by graph, coordinate, end table and ordinal, with its `sql_column` and a basis (SQL name,
-  jOOQ name, node identity, `@nodeId` key), a miss on an output field being `COLUMN_UNRESOLVED` or
-  `COLUMN_AMBIGUOUS`. `graphitron_field_target_column`, `graphitron_field_target_table` and the
-  `graphitron_node_id_decode_*` family go, and the editor's column scope reads it.
+  `graphitron_occurrence_column`, the `COLUMN` subtype on the binding's key, holds a scalar's one
+  column with its `sql_column` and whether the SQL or the jOOQ name matched, and
+  `graphitron_occurrence_node_id`, the `NODE_ID` subtype, the key columns an unbound `id: ID` on a
+  `Node` type or a `@nodeId` unpacks into, one row per ordinal. `graphitron_field_target_column`,
+  `graphitron_field_target_table` and the `graphitron_node_id_decode_*` family go, and the editor's
+  column scope reads the column.
 * **A field's source is its parent's result** `blocked`, F's, on "Every occurrence's path starts where its source lifts to a table".
   A field's source is its occurrence's lift: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that lift where they read
@@ -1524,11 +1528,11 @@ that depend on the parent fall three ways.
   ** `graphitron_field_scope_table`, `graphitron_argument_scope_table` and
      `graphitron_input_field_resolving_table`: the end of the field's path, forks included (rules 2
      to 4).
-  ** `graphitron_field_target_column`: `graphitron_occurrence_column`, the column resolved at the
+  ** `graphitron_field_target_column`: `graphitron_occurrence_column`, the `COLUMN` binding at the
      path's end (rule 5), and its defects.
   ** `graphitron_node_id_decode_column`, `_hop` and `_hop_column`, and
-     `graphitron_node_id_instruction`, all written by `DerivationStratum`: the `@nodeId` unpack at the
-     path's end (rule 5).
+     `graphitron_node_id_instruction`, all written by `DerivationStratum`: the `NODE_ID` binding,
+     `graphitron_occurrence_node_id`, at the path's end (rule 5).
   ** The `graphitron_field_path` family and its starts and stop, the field, argument and input-field
      reference step targets and hops, keyed and keyless, and `graphitron_field_participant_path`: the
      path family, as the path model draft below lists.
@@ -1544,12 +1548,11 @@ that depend on the parent fall three ways.
 * Stay keyed on the occurrence, `(graph_name, coordinate)` with a foreign key to it:
   ** the path family itself, `graphitron_path_need`, `graphitron_path`, `graphitron_path_step` and its
      children, and `graphitron_path_stop`;
-  ** `graphitron_occurrence_column`: one column an occurrence binds at one of its path's ends, keyed
-     by `(graph_name, coordinate, end table, ordinal)` (an input field under a forked argument has
-     several ends, a `@nodeId` several key columns), with a foreign key to `sql_column` and its basis,
-     SQL name, jOOQ name, node identity or `@nodeId` key. A miss is `COLUMN_UNRESOLVED` or
-     `COLUMN_AMBIGUOUS` at the field's written position, for an argument or input field only where
-     no call parameter consumes it;
+  ** `graphitron_occurrence_binding` and its subtypes, keyed by `(graph_name, coordinate, bound)`, a
+     forked end being a binding per table: `graphitron_occurrence_column` with its `sql_column` and
+     whether the SQL or the jOOQ name matched, and `graphitron_occurrence_node_id`, one row per key
+     column by ordinal. A miss is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS` at the field's written
+     position, and for an input under a parent bound `TABLE` only where no parameter binds it;
   ** `graphitron_field_key_row` and its method subtype: the keys a parent hands a child `@service`,
      which no path end states;
   ** `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`, whose rules already decide
@@ -1673,7 +1676,9 @@ where it rebuilds them per edge today.
 * The `@nodeId` unpack is stated at the path's end, not in the argMapping binding (2026-11-03).
 * Every argument and input-field occurrence has a path; a scalar one matching no column is a defect
   only where no call parameter consumes it (2026-11-03).
-* The column at a path's end is `graphitron_occurrence_column` (2026-11-03).
+* What an occurrence takes is a binding, keyed by `(graph_name, coordinate, bound)` with its kind an
+  attribute; the column at a path's end is its `COLUMN` subtype, `graphitron_occurrence_column`, and
+  a node id its `NODE_ID` subtype, `graphitron_occurrence_node_id` (2026-11-03).
 * E's source-table nodes move to F's path writer; E keeps the key row, the lift and the first key
   (2026-11-03).
 * A forked end is a need, in `graphitron_path_need`.
