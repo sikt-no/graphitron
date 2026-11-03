@@ -1,7 +1,7 @@
 ---
 id: R1144
 title: "A cursor a Graphitron 10 release candidate issued keeps its place after the upgrade"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 2
 theme: pagination
