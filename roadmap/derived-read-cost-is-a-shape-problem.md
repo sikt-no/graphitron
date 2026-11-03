@@ -295,10 +295,19 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
       an implementer of a `@table` interface to carry the same `@table`; without one it has no
       `graphitron_tabletype` row and its fields no source, and nothing says so.
-    * **A connection's fields hang under the field that returns it** `open`, G's. Targets are
-      unwrapped from their connection, so a connection type's `edges`, `nodes` and `pageInfo` start
-      chains of their own with nothing above them; as occurrences under the returning field they take
-      its tables as their source.
+    * **A connection's fields hang under the field that returns it** `blocked`, G's, on "A carrier graphitron builds names its generated class".
+      The step rule descends from a field returning a connection into its connection type, so its
+      `edges`, `nodes`, `pageInfo` and `totalCount`, and below them `node`, `cursor` and the page
+      info's fields, are occurrences under the returning field, sourced from the carrier object, an
+      instance of the class graphitron generates for it. They read what the root producer fetched,
+      mapped onto the SDL shape by graphql-java: `nodes` and `edges.node` are readers of its records
+      with no query of their own, and only `totalCount` runs one.
+      * **A carrier graphitron builds names its generated class** `open`, G's.
+        `graphitron_result_class` holds the class graphitron generates for a connection, its edge and
+        its page info, which the emitters reference directly today rather than read off the store,
+        so the carrier is an object source like any producer's class.
+      * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
+        producer's source and argument values, its statement counted, and runs only when queried.
   * **A field's path needs are stated per coordinate** `blocked`, F's, on "Every occurrence's source is stated".
     Every occurrence with a table source needs one join path per target type, keyed (coordinate,
     target type), by the rules of "Source, path, bind" in the path model below: a fork is a target of
