@@ -1,13 +1,13 @@
 ---
 id: R1135
 title: "A custom scalar coercing an array or a parameterized list has no valid shape"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-31
+last-updated: 2026-11-03
 ---
 
 # A custom scalar coercing an array or a parameterized list has no valid shape
@@ -76,7 +76,7 @@ Rejected at the scalar's coordinate (the `UnclassifiedType` the classifier alrea
 
 Recommendation: ship supported and rejected as above in one item. The alternative of supporting only arrays leaves the list form with the same misleading message, and the work is the same walk.
 
-Not in scope, found while verifying: `findCoercingInputType` only recognises a `Coercing<I, ...>` parameterisation whose type arguments are classes, so `class X extends AbstractTypedCoercing<Money, Money>` (a generic base that itself implements `Coercing<I, O>`) is rejected as erased, contradicting the walk's own javadoc. That is a type-variable-resolution gap separate from this shape question; file separately if wanted.
+Not in scope, found while verifying: `findCoercingInputType` only recognises a `Coercing<I, ...>` parameterisation whose type arguments are classes, so `class X extends AbstractTypedCoercing<Money, Money>` (a generic base that itself implements `Coercing<I, O>`) is rejected as erased, contradicting the walk's own javadoc. That is a type-variable-resolution gap separate from this shape question, filed as R1145.
 
 ## Implementation
 
