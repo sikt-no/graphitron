@@ -603,10 +603,6 @@ classified records have no reader left and can go with the walk.
     reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
-* **A nested field is a field of each parent, at a nested coordinate** `open`, G's.
-  `graphitron_occurrence` states every field, argument and input field once per parent chain; what
-  is left is the input-field spelling inside the parentheses, `Query.films(filter.cast.firstName:)`,
-  in its step rule and fact document.
 * **A scalar's column is read at its path's end** `blocked`, G's, on "A field's path needs are stated per coordinate".
   `graphitron_occurrence_column` holds one column an occurrence binds at one of its path's ends,
   keyed by graph, coordinate, end table and ordinal, with its `sql_column` and a basis (SQL name,
@@ -1590,8 +1586,7 @@ that depend on the parent fall three ways.
   ** Input nesting. Under an argument occurrence whose type is an input object, each input field has
      one inside the argument's parentheses, `Type.field(arg.field:)`, and an input-object-typed field
      descends further: `Query.films(filter.cast.firstName:)`, the population
-     `intent_input_occurrence_path` holds today, in this spelling. The step rule spells
-     `(filter:).cast` today and moves to this spelling first.
+     `intent_input_occurrence_path` holds today, in this spelling.
   ** Cycles. A chain does not expand into a type already on it, the first-visit guard
      `InputOccurrencePaths` and the classifier apply; the occurrence that would close the cycle has a
      row and does not expand. No store measured has an output cycle; the deepest input chain is 5.
@@ -1627,7 +1622,7 @@ where it rebuilds them per edge today.
 
 **Owners and order.** Agreed with A, F, E and Alf (2026-11-03); the graph's nodes carry it.
 
-1. G: the input-field spelling in `graphitron_occurrence_step_rule` and its fact document.
+1. G: the input-field spelling in `graphitron_occurrence_step_rule` and its fact document, done.
 2. F: the path writer, "A field's path needs are stated per coordinate" widened to every
    occurrence: needs with their forks (rule 3), paths with `EMPTY` beside the other origins, steps and
    stops. The path model text below takes the new spelling and rules 2 to 4 from here.

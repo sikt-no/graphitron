@@ -36,10 +36,10 @@ class OccurrenceCycleTest {
                 children: [Tree]
             }
             type Query { films(filter: Tree): [Film!]! }
-            """, dsl -> assertThat(occurrencesUnder(dsl, "Query.films(filter:)")).containsExactly(
-                "Query.films(filter:) FIELD_ARGUMENT 1",
-                "Query.films(filter:).children INPUT_FIELD 2",
-                "Query.films(filter:).title INPUT_FIELD 2"));
+            """, dsl -> assertThat(occurrencesFrom(dsl, "Query.films(filter")).containsExactly(
+                "Query.films(filter.children:) INPUT_FIELD 2",
+                "Query.films(filter.title:) INPUT_FIELD 2",
+                "Query.films(filter:) FIELD_ARGUMENT 1"));
     }
 
     @Test
@@ -54,19 +54,19 @@ class OccurrenceCycleTest {
                 more: Details
             }
             type Query { films: [Film!]! }
-            """, dsl -> assertThat(occurrencesUnder(dsl, "Film.details")).containsExactly(
+            """, dsl -> assertThat(occurrencesFrom(dsl, "Film.details")).containsExactly(
                 "Film.details FIELD 0",
                 "Film.details.length FIELD 1",
                 "Film.details.more FIELD 1"));
     }
 
-    /** The occurrences at or under one coordinate, one string per row, in coordinate order. */
-    private static List<String> occurrencesUnder(DSLContext dsl, String coordinate) {
+    /** The occurrences whose coordinate starts with a prefix, one string per row, in coordinate order. */
+    private static List<String> occurrencesFrom(DSLContext dsl, String prefix) {
         var o = GRAPHITRON_OCCURRENCE;
         return dsl.select(o.COORDINATE, o.KIND, o.DEPTH)
             .from(o)
             .where(o.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(o.COORDINATE.eq(coordinate).or(o.COORDINATE.startsWith(coordinate + ".")))
+            .and(o.COORDINATE.startsWith(prefix))
             .orderBy(o.COORDINATE)
             .fetch()
             .map(row -> row.value1() + " " + row.value2() + " " + row.value3());
