@@ -646,8 +646,11 @@ classified records have no reader left and can go with the walk.
   `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` say per type what the
   occurrence source says per occurrence, so their type-level readers (the LSP's type hover and
   inlays, the outbox rule, `RESULT_SHAPES_CONFLICT`) read sources grouped by type and the result
-  rule's fixpoint goes; the key row reading "the parent holds an `OBJECT`" while the source's key-row
-  lift reads the key row is the ordering to settle, a source written in two passes one way to.
+  rule's fixpoint goes. `graphitron_field_key_row` re-keys onto the occurrence and reads its parent's
+  source rather than "the parent holds an `OBJECT`"; since the source's key-row lift reads the key row,
+  the source's depth loop calls `KeyRows.writeDepth` between a depth's sources and the next depth's,
+  writing the key rows of the occurrences one below, and the key rows are swept after the loop. The
+  rule and the relation are E's, the cadence the source's.
 * **An object result is lifted onto a key row** `blocked`, F's, on "Every occurrence's source is stated".
   Under an object parent a field's source is lifted onto its key row's table,
   `graphitron_occurrence_lift_key_row` over E's key row, and only a key on the source side lifts one,
