@@ -302,7 +302,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
       generates. `nodes` binds the page's records, `edges` each record with its cursor, `edges.node`
       the record, `edges.cursor` a function of the record and the page's ordering (`RESULT_EXPRESSION`) and
       `pageInfo` the page; only `totalCount` runs a query.
-      * **A connection's producer states its page as its result** `blocked`, on "The result relations dissolve into the producer's result".
+      * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
         The result a producer states for a field returning a connection is a page of
         `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
         classes and the members the connection's fields bind to being stated there already.
