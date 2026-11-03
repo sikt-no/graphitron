@@ -434,6 +434,10 @@ static method needs no holder.
   `graphitron_outbox_leaf` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
+* **An argMapping entry and a code reference are anchored by name** `open`, E's. `graphitron_argmapping_landing`
+  and `graphitron_call_context_key` key on written positions; each re-keys onto an anchored relation named by the element
+  coordinate, the directive and its ordinal, the path step where one sits and, for an entry, the parameter, keeping the entry
+  only for where a defect is reported.
 * **A parameter's fill states how its value is built** `blocked`, E's, on "A scalar's column is read at its path's end". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives. A jOOQ record's settable
@@ -441,12 +445,12 @@ static method needs no holder.
 * **Every call's parameter states what fills it** `blocked`, E's, on "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
-  claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
+  matched by argMapping, by name, by type or as the one unmatched pair. A routine step's
   `graphitron_field_path_parameter` rows become its rows.
 * **A call is the one overload every parameter of which is filled** `blocked`, E's, on "Every call's parameter states what fills it". `graphitron_code_reference` pins it among the
   overloads of the written name, which are `code_method`'s rows, for a `@condition` as for any call;
   `@service`, `@externalField` and `FieldSort.method` still need the name to have one. Every argMapping
-  left side names one of its parameters; none is an unclaimed parameter and several an ambiguous call,
+  left side names one of its parameters; none is an unmatched parameter and several an ambiguous call,
   defects beside facts in the corpus.
 * **`$tenant` in argMapping routes a service call** `open`, E's. The sigil on a pair's left side names
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
@@ -1795,7 +1799,7 @@ and `graphitron_ast_path_entry` keeps its name as the written entry.
   E keeps the key row and the first key; the source that reads them is F's. It reads the record
   class and the key row off E's result facts rather than restating them, the key row through the
   occurrence's element until `graphitron_field_key_row` keys on the occurrence, a join that goes
-  when it does. E's `PARAMETER` bindings are written whole before it, their claim rules reading
+  when it does. E's `PARAMETER` bindings are written whole before it, their parameter matching reading
   nothing it writes. It is the successor of `graphitron_field_path_start`, which starts only fields
   that wrote a path, and of `graphitron_field_source_table`.
 * `graphitron_path_need`, anchoring: one type an occurrence with a source must reach. Keyed by
