@@ -60,7 +60,11 @@ import java.util.Objects;
  *       {@code converter.from} of that, which must fit the declared precision. Parsing through the
  *       converted {@code convert} instead would answer {@code null} for text the user type does not
  *       share with the database type, and hand an input that is already an instance of the user
- *       type back untouched rather than converting it.</li>
+ *       type back untouched rather than converting it. A date column whose database class is
+ *       {@code java.sql.Date}, the one date class that can hold a time of day, reads the input as a
+ *       date-time and coerces that to the column, so the time {@code toText} wrote survives; the
+ *       plain date parse would bind midnight. Input that does not read as a date-time (one carrying
+ *       an offset) falls back to the plain parse, so nothing read before is refused.</li>
  * </ul>
  *
  * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
@@ -172,10 +176,11 @@ public class ColumnValuesClassGenerator {
             .addParameter(Object.class, "value")
             .addJavadoc("The value {@code value}, read as the column's database value, names in a column of\n"
                 + "{@code type}, or {@code null} when it names none: parsed as the database type, taken through\n"
-                + "the converter, and fitting the column's precision.\n")
+                + "the converter, and fitting the column's precision. A {@code java.sql.Date} column reads\n"
+                + "{@code value} as a date-time, so the time of day {@code toText} wrote survives.\n")
             .addStatement("if (value == null) return null")
             .beginControlFlow("try")
-            .addStatement("Object database = type.getSQLDataType().convert(value)")
+            .addStatement("Object database = databaseValue(type.getSQLDataType(), value)")
             .addStatement("if (database == null) return null")
             .addStatement("$T canonical = fromDatabaseValue(type.getConverter(), database)", t)
             .addStatement("if (canonical == null) return null")
@@ -184,6 +189,23 @@ public class ColumnValuesClassGenerator {
             .nextControlFlow("catch ($T | $T e)", IllegalArgumentException.class, DATA_TYPE_EXCEPTION)
             .addStatement("return null")
             .endControlFlow()
+            .build();
+
+        // The database value a cursor element names. java.sql.Date is the one date class that holds a
+        // time of day, and SQLDataType.DATE.convert drops it, so such a column parses the element as a
+        // LocalDateTime and coerces that to the column: the inverse of toText's isDate() branch, both
+        // legs in the JVM's zone. Where the date-time parse refuses the element (an offset), and for
+        // every other column, the plain database-type parse answers, as it always has.
+        var databaseValue = MethodSpec.methodBuilder("databaseValue")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(dataTypeWildcard, "sql")
+            .addParameter(Object.class, "value")
+            .beginControlFlow("if (sql.isDate() && sql.getType() == java.sql.Date.class)")
+            .addStatement("$T t = $T.LOCALDATETIME.convert(value)", LOCAL_DATE_TIME, SQL_DATA_TYPE)
+            .addStatement("if (t != null) return coerced(t, sql)")
+            .endControlFlow()
+            .addStatement("return sql.convert(value)")
             .build();
 
         // Generic over the converter's database type, as roundTrip is, so handing the parsed database
@@ -404,6 +426,7 @@ public class ColumnValuesClassGenerator {
             .addMethod(coerce)
             .addMethod(folded)
             .addMethod(fromDatabase)
+            .addMethod(databaseValue)
             .addMethod(fromDatabaseValue)
             .addMethod(toText)
             .addMethod(coerced)

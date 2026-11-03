@@ -234,6 +234,24 @@ class ColumnValuesTest {
     }
 
     @Test
+    void fromDatabase_readsASqlDateAsADateTime_keepingItsTimeOfDay() {
+        assertThat(sqlDateFromDatabase("2003-08-15T13:14:15")).isEqualTo(Timestamp.valueOf("2003-08-15 13:14:15"));
+        assertThat(sqlDateFromDatabase("2003-08-15T00:00:00")).isEqualTo(Timestamp.valueOf("2003-08-15 00:00:00"));
+        assertThat(sqlDateFromDatabase("2003-08-15")).isEqualTo(Timestamp.valueOf("2003-08-15 00:00:00"));
+        assertThat(sqlDateFromDatabase("2003-08-15T13:14:15+01:00"))
+            .as("no date-time, so the plain date parse still reads it, at midnight")
+            .isEqualTo(Timestamp.valueOf("2003-08-15 00:00:00"));
+        assertThat(ColumnValues.fromDatabase(SQLDataType.DATE, "garbage")).isNull();
+    }
+
+    /** The {@code java.sql.Date} {@code fromDatabase} reads, as a timestamp so the comparison sees its time of day. */
+    private static Timestamp sqlDateFromDatabase(String text) {
+        java.sql.Date date = ColumnValues.fromDatabase(SQLDataType.DATE, text);
+        assertThat(date).as(text).isNotNull();
+        return new Timestamp(date.getTime());
+    }
+
+    @Test
     void fromDatabase_readsATimestamptzRenderingAsTheUtcLocalDateTime() {
         for (String text : new String[] {"2007-08-22T02:24:00+00:00", "2007-08-22T02:24Z",
                 "2007-08-22T04:24:00.000000+02:00"}) {

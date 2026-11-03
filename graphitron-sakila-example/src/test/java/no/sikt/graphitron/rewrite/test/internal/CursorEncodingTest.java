@@ -44,8 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * detached records over typed columns pin it on every database without one in the build.
  *
  * <p>Each case also reads back through {@link ConnectionHelper#decodeCursor} to the value it was
- * written from, except a {@code java.sql.Date} with a time of day, which the read side binds at
- * midnight, and NaN, which JSON cannot hold.
+ * written from, except NaN, which JSON cannot hold.
  *
  * <p>The last section pins the read side's second format, the cursors the Graphitron 10 release
  * candidates issued: which format a cursor string is read as, and how each token binds per column
@@ -164,6 +163,21 @@ class CursorEncodingTest {
     void sqlDate_keepsItsTimeOfDay() {
         var date = new java.sql.Date(Timestamp.valueOf("2003-08-15 13:14:15").getTime());
         assertThat(json(SQLDataType.DATE, date)).isEqualTo("[\"2003-08-15T13:14:15\"]");
+        assertThat(((java.sql.Date) readBack(SQLDataType.DATE, date)).getTime())
+            .as("binds the time of day, not midnight").isEqualTo(date.getTime());
+    }
+
+    @Test
+    void sqlDate_keepsItsTimeOfDay_whateverTheJvmZone() {
+        TimeZone previous = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/Oslo"));
+        try {
+            var date = new java.sql.Date(Timestamp.valueOf("2003-08-15 13:14:15").getTime());
+            assertThat(json(SQLDataType.DATE, date)).isEqualTo("[\"2003-08-15T13:14:15\"]");
+            assertThat(((java.sql.Date) readBack(SQLDataType.DATE, date)).getTime()).isEqualTo(date.getTime());
+        } finally {
+            TimeZone.setDefault(previous);
+        }
     }
 
     @Test
