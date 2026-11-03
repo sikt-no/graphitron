@@ -616,9 +616,10 @@ classified records have no reader left and can go with the walk.
 * **What an occurrence takes is a binding** `blocked`, G's, on "A field's path needs are stated per coordinate".
   `graphitron_occurrence_binding` holds one place an occurrence binds, keyed by (graph, coordinate,
   bound), a `VALUE`'s bound being its class and member, with its kind (`COLUMN`, `TABLE`,
-  `NODE_ID`, `VALUE`, `PARAMETER`) an attribute and a subtype per kind; F writes the `TABLE` subtype beside the needs, E the `PARAMETER` subtype, the
-  `VALUE` subtype, a member's value at an accessor path's end, waits on a producer's value object being bound, and the column relation below
-  is its `COLUMN` subtype. `PARAMETER` is decided before `COLUMN`, so a scalar input with no
+  `NODE_ID`, `VALUE`, `PARAMETER`) an attribute and a subtype per kind; F writes the `TABLE`
+  subtype beside the needs and E the `PARAMETER` one, the `VALUE` subtype, a member's value at an
+  accessor path's end, waits on a producer's value object being bound, and the column relation
+  below is its `COLUMN` subtype. `PARAMETER` is decided before `COLUMN`, so a scalar input with no
   binding under a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and
   `ARGUMENT_WITHOUT_CONSUMER` only where the generator cannot consume it, under `@service` or
   `@externalField`, and no parameter does.
@@ -1472,42 +1473,12 @@ table.
   spelling. Both are derivation-written.
 * The path model draft below keys its needs on the occurrence, in this section's spelling.
 
-**Every occurrence has a path** (Alf, 2026-11-02 and 2026-11-03). Walking an occurrence's path
-resolves what it binds by column precedence: a match adds a fact with a foreign key into the `sql_`
-family, a mismatch a defect. Where a path starts and ends:
+**The rules.** Where an occurrence's values come from, how its path runs and what it binds are
+stated once, in the path model's Source, path, bind below. They grew from rules drafted here and
+checked against sis on 2026-11-02 and 2026-11-03, the check below.
 
-1. A chain start departs from its declaring type's table: `graphitron_tabletype`, or the table whose
-   record class backs the type. A root type departs from nowhere.
-2. A path ends at its landing, written or inferred. A path between two table-bound types is never
-   empty, even on one table: two `@table` types on one table are a join, and with nothing written and
-   no single foreign key it is `NO_ROUTE_TO_TARGET` or `ROUTE_AMBIGUOUS`, as today. A path
-   is empty only where the target is not table-bound: a reader's ends at its start, and a producer's
-   at its result's table, the record class's table for a record-backed result, or nowhere for a plain
-   object.
-3. Some ends fork, one end per table: a write whose payload has one data field beside its errors
-   field ends at that field's table, a `@mutation(table:)` at its table, and a target with no table of
-   its own once per participant table. Each fork is a need of its own in `graphitron_path_need`, not a
-   second relation.
-4. A child starts where its parent's path ends: a nested field, an argument, and every input field
-   under an argument, at any depth, where its argument starts. A `@reference` on an input field
-   starts there too and does not move its children.
-5. A scalar's column is its bound name at its path's end, SQL name before jOOQ name; an unbound
-   `id: ID` on a `Node` type is the node identity, and a `@nodeId` unpacks into the key columns of the
-   table its path ends on. The unpack is stated at the path's end, so the argMapping binding keeps
-   only (written entry, call occurrence) to bound occurrence and its own defects.
-6. Every argument and input-field occurrence has a path, whatever consumes it. A `@service`
-   argument's input is converted to the parameter's type, a `TableRecord` included, before the call,
-   and the conversion reads each input field's column off its path's end. A scalar argument or input
-   field need not match a column: a miss is a defect only where no call parameter consumes it, and a
-   written path a consumer takes no table from is `PATH_NOT_TAKEN`, both judged once the consumer is
-   stated.
-
-An empty path is a `graphitron_path` row with no steps and its target its start, with its own
-origin `EMPTY` beside `WRITTEN`, `INHERITED` and `INFERRED`, so the foreign-key defects cannot read
-an empty path as a failed inference.
-
-**Checked on sis**, rules 1 to 5 against today's relations, per declared field; the scripts are a
-session's, not the tree's.
+**Checked on sis**, the sources, path ends and columns those rules give, against today's relations,
+per declared field; the scripts are a session's, not the tree's.
 
 [cols="3,1,1,2"]
 |===
@@ -1515,12 +1486,12 @@ session's, not the tree's.
 
 | Output field departures, against `graphitron_field_source_table` | 3,772 | 3,772 | none
 | Scalar columns, against `graphitron_field_target_column` | 1,913 | 1,915 | the node identity of two `Node` types' unbound `id`
-| Argument tables, against `graphitron_argument_scope_table` | 970 | 1,470 | none missing; 436 rows for `first:`/`after:`, which `graphql_argument` lacks, and 46 `@service` mutations over a record-backed payload, which rule 6 now covers
+| Argument tables, against `graphitron_argument_scope_table` | 970 | 1,470 | none missing; 436 rows for `first:`/`after:`, which `graphql_argument` lacks, and 46 `@service` mutations over a record-backed payload, whose inputs now take a table through a `TableRecord` parameter
 | Input-field tables, against `graphitron_input_field_resolving_table` | 1,803 | 2,236 | none missing; the 433 extra are the 93 input types under those 46 services
 |===
 
-The check ended a same-table `@table` target with nothing written at its target's table, which rule
-2 now refuses; no count depended on it.
+The check ended a same-table `@table` target with nothing written at its target's table, which the
+rules now refuse; no count depended on it.
 
 **The relations, sorted.** Of 118 field-keyed relations (excluding `_rule` views and the `intent_`
 family), 76 state a fact about the field as declared and stay keyed by `Type.field`: its written
@@ -1529,15 +1500,14 @@ that depend on the parent fall three ways.
 
 * Dissolve into the occurrence and its path. Each is a read of the occurrence, its path and what the
   path's end resolves; none re-keys first.
-  ** `graphitron_field_source_table`: the occurrence's source (rule 1, rule 4).
+  ** `graphitron_field_source_table`: the occurrence's source.
   ** `graphitron_field_scope_table`, `graphitron_argument_scope_table` and
-     `graphitron_input_field_resolving_table`: the end of the field's path, forks included (rules 2
-     to 4).
+     `graphitron_input_field_resolving_table`: the end of the field's path, forks included.
   ** `graphitron_field_target_column`: `graphitron_occurrence_column`, the `COLUMN` binding at the
-     path's end (rule 5), and its defects.
+     path's end, and its defects.
   ** `graphitron_node_id_decode_column`, `_hop` and `_hop_column`, and
      `graphitron_node_id_instruction`, all written by `DerivationStratum`: the `NODE_ID` binding,
-     `graphitron_occurrence_node_id`, at the path's end (rule 5).
+     `graphitron_occurrence_node_id`, at the path's end.
   ** The `graphitron_field_path` family and its starts and stop, the field, argument and input-field
      reference step targets and hops, keyed and keyless, and `graphitron_field_participant_path`: the
      path family, as the path model draft below lists.
@@ -1651,9 +1621,9 @@ where it rebuilds them per edge today.
 
 1. G: the input-field spelling in `graphitron_occurrence_step_rule` and its fact document, done.
 2. F: the path writer, "A field's path needs are stated per coordinate" widened to every
-   occurrence: needs with their forks (rule 3), paths with `EMPTY` beside the other origins, steps and
-   stops. The path model text below takes the new spelling and rules 2 to 4 from here.
-3. G: `graphitron_occurrence_column` and the `@nodeId` unpack (rule 5), once paths stand. Then
+   occurrence: needs with their forks, paths with `EMPTY` beside the other origins, steps and stops,
+   by the rules the path model below states.
+3. G: `graphitron_occurrence_column` and the `@nodeId` unpack, once paths stand. Then
    `graphitron_field_target_column` and the `graphitron_node_id_decode_*` family go, the editor's
    column scope moves off `intent_field_column_table` onto it, and `graphitron_field_target_table`
    dissolves into declared facts.
@@ -1661,7 +1631,8 @@ where it rebuilds them per edge today.
    `graphitron_argument_scope_table` and `graphitron_input_field_resolving_table` go, each in the
    commit that moves its last reader, and `intent_input_occurrence_path` with them.
 5. E: "`graphitron_field_source_table` dissolves into the results" and
-   "A field's source is its parent's result" are rules 1 and 4 and come off E's graph into step 2.
+   "A field's source is its parent's result" are the occurrence's source and come off E's graph into
+   step 2.
    "A field's key row is stated", "An object result is lifted onto a key row" and
    "A plain object's first key is read off its members" stay E's, keyed on the occurrence and
    starting from path ends. The argMapping binding
