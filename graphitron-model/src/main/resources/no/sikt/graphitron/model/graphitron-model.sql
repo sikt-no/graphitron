@@ -9262,6 +9262,43 @@ COMMENT ON COLUMN graphitron_result_class.shape IS 'always OBJECT, pinned so the
 COMMENT ON COLUMN graphitron_result_class.class_name IS 'the class, as graphitron_type_backing names it from what a producer returns or a member delivers';
 COMMENT ON COLUMN graphitron_result_class.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+CREATE TABLE graphitron_runtime_class (
+  kind          VARCHAR NOT NULL,
+  relative_name VARCHAR NOT NULL,
+  PRIMARY KEY (kind),
+  UNIQUE (relative_name),
+  CHECK (kind IN ('CONNECTION_RESULT', 'CONNECTION_HELPER', 'CONNECTION_EDGE'))
+);
+COMMENT ON TABLE graphitron_runtime_class IS 'One class graphitron generates into every consumer from a fixed template, by what it is for and its binary name below the output package. For example CONNECTION_RESULT is util.ConnectionResult, the page a connection''s producer produces.';
+COMMENT ON COLUMN graphitron_runtime_class.kind IS 'what the class is for, a closed vocabulary: CONNECTION_RESULT the page a connection''s producer produces, CONNECTION_EDGE one record of it with its cursor, CONNECTION_HELPER the static functions the connection''s fields call';
+COMMENT ON COLUMN graphitron_runtime_class.relative_name IS 'the binary name below store_graph_output.output_package, a nested class after a $; a reader prefixes the package and a dot to name the class one graph''s generation wrote';
+INSERT INTO graphitron_runtime_class VALUES
+  ('CONNECTION_RESULT', 'util.ConnectionResult'),
+  ('CONNECTION_HELPER', 'util.ConnectionHelper'),
+  ('CONNECTION_EDGE', 'util.ConnectionHelper$Edge');
+
+CREATE TABLE graphitron_runtime_member (
+  kind        VARCHAR NOT NULL,
+  member_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  is_static   BOOLEAN NOT NULL,
+  PRIMARY KEY (kind, member_name, descriptor),
+  FOREIGN KEY (kind) REFERENCES graphitron_runtime_class (kind)
+);
+COMMENT ON TABLE graphitron_runtime_member IS 'One method of a class graphitron generates that an occurrence binds to, by its name and JVM descriptor. For example CONNECTION_RESULT''s trimmedResult ()Ljava/util/List; is the page''s records, which a connection''s nodes binds.';
+COMMENT ON COLUMN graphitron_runtime_member.kind IS 'the class the method is declared on, by its kind in graphitron_runtime_class';
+COMMENT ON COLUMN graphitron_runtime_member.member_name IS 'the method''s name';
+COMMENT ON COLUMN graphitron_runtime_member.descriptor IS 'the method''s raw JVM descriptor, as code_method spells one, so a binding names a generated method exactly as it names an author''s';
+COMMENT ON COLUMN graphitron_runtime_member.is_static IS 'whether the method is static: a function of its arguments, such as ConnectionHelper''s encodeCursor, rather than an accessor on an instance the producer produced';
+INSERT INTO graphitron_runtime_member VALUES
+  ('CONNECTION_RESULT', 'trimmedResult', '()Ljava/util/List;', FALSE),
+  ('CONNECTION_RESULT', 'hasNextPage', '()Z', FALSE),
+  ('CONNECTION_RESULT', 'hasPreviousPage', '()Z', FALSE),
+  ('CONNECTION_RESULT', 'orderByColumns', '()Ljava/util/List;', FALSE),
+  ('CONNECTION_EDGE', 'record', '()Lorg/jooq/Record;', FALSE),
+  ('CONNECTION_EDGE', 'cursor', '()Ljava/lang/String;', FALSE),
+  ('CONNECTION_HELPER', 'encodeCursor', '(Lorg/jooq/Record;Ljava/util/List;)Ljava/lang/String;', TRUE);
+
 CREATE TABLE graphitron_field_key_row (
   graph_name        VARCHAR   NOT NULL,
   type_name         VARCHAR   NOT NULL,
@@ -16753,6 +16790,14 @@ COMMENT ON COLUMN meta_stated_relation.example IS 'one concrete row, on meta_rel
 COMMENT ON COLUMN meta_stated_relation.rationale IS 'why the rows are the file''s rather than a gatherer''s. The bar is not that the rows change rarely: a gathered relation whose corpus never changes is still gathered. It is that no corpus outside the store could be read to produce them, because they are the vocabulary this file itself declares, so a refresh has nothing to re-read and a gate has nothing to compare against but the DDL';
 
 INSERT INTO meta_stated_relation VALUES
+  ('graphitron_runtime_class',
+   'One class graphitron generates into every consumer from a fixed template, by what it is for and its binary name below the output package.',
+   'For example CONNECTION_RESULT is util.ConnectionResult, the page a connection''s producer produces.',
+   'The classes are graphitron''s own: the generator writes them from a template, so no classpath a capture reads declares them before generation runs, and their names are a function of the template, the output package aside. Stating them lets a producer''s result and an occurrence''s binding name a generated class as they name an author''s, where the emitters reference it directly today.'),
+  ('graphitron_runtime_member',
+   'One method of a class graphitron generates that an occurrence binds to, by its name and JVM descriptor.',
+   'For example CONNECTION_RESULT''s trimmedResult ()Ljava/util/List; is the page''s records, which a connection''s nodes binds.',
+   'The methods are the template''s, written by the generator and read by no capture, so the file states the ones a binding reaches. The set is closed by what the bindings read rather than by what the classes declare; a binding reaching another member is adding a row, and a test holds the rows against what the generator emits.'),
   ('code_delivery_container',
    'One class a declared type delivers something through, with the type-argument position its element sits at and whether passing through it makes the delivery many.',
    'For example java.util.List delivers its argument at position 0, many.',

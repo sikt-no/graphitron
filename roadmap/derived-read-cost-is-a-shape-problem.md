@@ -295,16 +295,17 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
       an implementer of a `@table` interface to carry the same `@table`; without one it has no
       `graphitron_tabletype` row and its fields no source, and nothing says so.
-    * **A connection's fields hang under the field that returns it** `blocked`, G's, on "A connection's result names its generated class".
+    * **A connection's fields hang under the field that returns it** `open`, G's.
       The step rule descends from a field returning a connection into its connection type, so its
       fields and its edge's are occurrences under the returning field, binding into what that
       field's producer produces, a page of records with its ordering in the class graphitron
       generates. `nodes` binds the page's records, `edges` each record with its cursor, `edges.node`
       the record, `edges.cursor` a function of the record and the page's ordering (`RESULT_EXPRESSION`) and
       `pageInfo` the page; only `totalCount` runs a query.
-      * **A connection's result names its generated class** `open`, G's. The result a producer
-        states for a field returning a connection is a page in `ConnectionResult`, with `Edge` per
-        record, which the emitters reference directly today rather than read off the store.
+      * **A connection's producer states its page as its result** `blocked`, on "The result relations dissolve into the producer's result".
+        The result a producer states for a field returning a connection is a page of
+        `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
+        classes and the members the connection's fields bind to being stated there already.
       * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
         producer's source and argument values, its statement counted, and runs only when queried.
   * **A field's path needs are stated per coordinate** `blocked`, F's, on "Every occurrence's source is stated".

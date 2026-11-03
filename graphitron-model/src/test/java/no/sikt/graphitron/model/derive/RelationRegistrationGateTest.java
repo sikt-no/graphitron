@@ -518,6 +518,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("code_delivery_container", Arm.UNSHADOWED);
+        registrations.put("graphitron_runtime_class", Arm.UNSHADOWED);
+        registrations.put("graphitron_runtime_member", Arm.UNSHADOWED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
