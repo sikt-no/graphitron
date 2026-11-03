@@ -36,6 +36,16 @@ import java.util.OptionalInt;
  * (absent, empty, or blank), {@code DSL.noField(field)} is returned per column, making
  * {@code .seek()} a no-op.
  *
+ * <p>Decoding also reads a second format, the one the Graphitron 10 release candidates wrote,
+ * so a cursor a client stored under one keeps its place after the upgrade: each order column's
+ * user-side value as its {@code toString()} (U+0001 for SQL {@code NULL}), joined by U+0000, in
+ * standard Base64. Its tokens are read as the release candidates read them, coerced on the
+ * column's converted type. The decoder tells the formats apart before reading: by the Base64
+ * alphabet when the cursor holds a character only one alphabet has, else by the decoded text (a
+ * JSON cursor opens with {@code [} and holds no raw U+0000), and text that looks like JSON is read
+ * as JSON first and as a release-candidate cursor only when that fails. Encoding writes only the
+ * JSON form.
+ *
  * <p>Every malformed-input failure of decode (bad Base64, a malformed JSON array, wrong element
  * arity, an element that is no value of its column) is rethrown as a {@code GraphitronClientException} carrying
  * {@code cursor is not valid (was: "<echo>")}, echo capped at 100 characters; any other
@@ -418,56 +428,129 @@ public class ConnectionHelperClassGenerator {
         // --- decodeCursor(String cursor, List<Field<?>>) → Field<?>[] ---
         // Returns DSL.noField(col) per column when cursor is null (seek no-op); pageRequest has
         // already turned an empty or blank cursor into null.
-        // Otherwise reads the JSON array encodeCursor writes (and Graphitron 9 wrote, and earlier
-        // releases wrote with every value quoted) and binds each element as its column's value:
-        // null as a typed NULL, anything else
-        // through ColumnValues.fromDatabase, which parses it as the column's database type and runs
-        // the converter, the inverse of encodeCursor's databaseValue.
+        // Otherwise reads one of two formats, chosen from the cursor string before reading it:
+        //   - the JSON array encodeCursor writes (and Graphitron 9 wrote), URL-safe Base64 without
+        //     padding, read by readJsonCursor;
+        //   - the Graphitron 10 release candidates' format, each order column's user-side value as
+        //     its toString() (U+0001 for SQL NULL) joined by U+0000 in standard Base64, read by
+        //     readReleaseCandidateCursor exactly as the release candidates read it, so a cursor a
+        //     client stored under one keeps its place after the upgrade.
+        // The choice: the alphabet first, when it speaks (+, / or = only in standard Base64, - or
+        // _ only in the URL-safe alphabet, both at once is malformed); then the decoded text, since
+        // a JSON cursor opens with '[' and never holds a raw U+0000 while a release-candidate cursor
+        // over two or more columns always does; and text that looks like JSON is read as JSON first,
+        // falling back to the release-candidate reading only when the JSON reading fails. A cursor
+        // the alphabet routed gets no second reading.
+        // Accepted residue: a release-candidate cursor whose bytes are also a valid JSON cursor for
+        // the same connection (a single string order column whose value is itself the text of a
+        // one-element JSON array, such as ["xy"], with Base64 holding no + or / and no padding) is
+        // byte-identical to the JSON cursor for xy, and the JSON reading wins, because every cursor
+        // encodeCursor writes has to read right.
         // The decode body is wrapped in one try whose multi-catch classifies blame at the wire
         // boundary: Base64 decode, JSON read, strict-arity, and coercion failures are all pure
         // functions of the opaque client cursor, so they collapse to one GraphitronClientException
-        // the no-channel disposition surfaces instead of redacting to a correlation-id 500. Any
+        // the no-channel disposition surfaces instead of redacting to a correlation-id 500. Both
+        // readers throw only IllegalArgumentException or DataTypeException on malformed input. Any
         // other unchecked throw (e.g. an NPE from a buggy custom Converter) is a genuine server
-        // fault and keeps propagating. Arity is strict in both directions: encodeCursor emits
-        // exactly one element per order column, so any other count is a forged, corrupted, or
-        // stale-across-schema-change cursor.
+        // fault and keeps propagating. Arity is strict in both directions in both formats: a cursor
+        // carries exactly one element per order column, so any other count is a forged, corrupted,
+        // or stale-across-schema-change cursor.
         var decodeCursor = MethodSpec.methodBuilder("decodeCursor")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ArrayTypeName.of(fieldWildcard))
             .addParameter(String.class, "cursor")
             .addParameter(listOfField, "orderByColumns")
-            .addStatement("$T[] seekFields = new $T[orderByColumns.size()]", fieldWildcard, fieldWildcard)
             .addCode("if (cursor == null) {\n")
+            .addCode("    $T[] seekFields = new $T[orderByColumns.size()];\n", fieldWildcard, fieldWildcard)
             .addCode("    for (int i = 0; i < orderByColumns.size(); i++)\n")
             .addCode("        seekFields[i] = $T.noField(orderByColumns.get(i));\n", DSL)
             .addCode("    return seekFields;\n")
             .addCode("}\n")
             .addCode("try {\n")
-            .addCode("    $T<Object> values = readJsonArray(new String($T.getUrlDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8));\n",
-                LIST_CLASS, BASE64)
-            .addCode("    if (values.size() != orderByColumns.size())\n")
-            .addCode("        throw new IllegalArgumentException(\"cursor arity mismatch\");\n")
-            .addCode("    for (int i = 0; i < orderByColumns.size(); i++) {\n")
-            .addCode("        $T col = orderByColumns.get(i);\n", fieldWildcard)
-            .addCode("        if (values.get(i) == null) {\n")
-            .addCode("            seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
-            .addCode("        } else {\n")
-            // fromDatabase answers null for an element that is no value of the column (text its
-            // database type does not parse, a number wider than the column); rejecting it here
-            // collapses into the same client error as bad Base64 / wrong arity instead of silently
-            // seeking on a null bound value. A cursor encodeCursor wrote always comes back.
-            .addCode("            Object value = $T.fromDatabase(col.getDataType(), values.get(i));\n", columnValuesClass)
-            .addCode("            if (value == null)\n")
-            .addCode("                throw new IllegalArgumentException(\"cursor token not coercible\");\n")
-            .addCode("            seekFields[i] = $T.val(value, col.getDataType());\n", DSL)
-            .addCode("        }\n")
+            .addCode("    boolean standard = cursor.indexOf('+') >= 0 || cursor.indexOf('/') >= 0 || cursor.indexOf('=') >= 0;\n")
+            .addCode("    boolean urlSafe = cursor.indexOf('-') >= 0 || cursor.indexOf('_') >= 0;\n")
+            .addCode("    if (standard && urlSafe)\n")
+            .addCode("        throw new IllegalArgumentException(\"cursor mixes Base64 alphabets\");\n")
+            .addCode("    if (standard)\n")
+            .addCode("        return readReleaseCandidateCursor(new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8), orderByColumns);\n",
+                BASE64)
+            .addCode("    String text = new String($T.getUrlDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8);\n",
+                BASE64)
+            .addCode("    if (urlSafe) return readJsonCursor(text, orderByColumns);\n")
+            .addCode("    if (text.indexOf('\\u0000') >= 0 || !text.startsWith(\"[\")) return readReleaseCandidateCursor(text, orderByColumns);\n")
+            .addCode("    try {\n")
+            .addCode("        return readJsonCursor(text, orderByColumns);\n")
+            .addCode("    } catch (IllegalArgumentException | $T notJson) {\n", DATA_TYPE_EXCEPTION)
+            .addCode("        return readReleaseCandidateCursor(text, orderByColumns);\n")
             .addCode("    }\n")
-            .addCode("    return seekFields;\n")
             .addCode("} catch (IllegalArgumentException | $T e) {\n", DATA_TYPE_EXCEPTION)
             .addCode("    String echo = cursor.length() > 100 ? cursor.substring(0, 100) + \"\\u2026\" : cursor;\n")
             .addCode("    throw new $T($S + echo + $S);\n",
                 clientException, "cursor is not valid (was: \"", "\")")
             .addCode("}\n")
+            .build();
+
+        // --- readJsonCursor(String text, List<Field<?>>) → Field<?>[] ---
+        // The decoded text of a JSON cursor, bound one element per order column: null as a typed
+        // NULL, anything else through ColumnValues.fromDatabase, which parses it as the column's
+        // database type and runs the converter, the inverse of encodeCursor's databaseValue.
+        var readJsonCursor = MethodSpec.methodBuilder("readJsonCursor")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(ArrayTypeName.of(fieldWildcard))
+            .addParameter(String.class, "text")
+            .addParameter(listOfField, "orderByColumns")
+            .addStatement("$T<Object> values = readJsonArray(text)", LIST_CLASS)
+            .addCode("if (values.size() != orderByColumns.size())\n")
+            .addCode("    throw new IllegalArgumentException(\"cursor arity mismatch\");\n")
+            .addStatement("$T[] seekFields = new $T[orderByColumns.size()]", fieldWildcard, fieldWildcard)
+            .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
+            .addCode("    $T col = orderByColumns.get(i);\n", fieldWildcard)
+            .addCode("    if (values.get(i) == null) {\n")
+            .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
+            .addCode("    } else {\n")
+            // fromDatabase answers null for an element that is no value of the column (text its
+            // database type does not parse, a number wider than the column); rejecting it here
+            // collapses into the same client error as bad Base64 / wrong arity instead of silently
+            // seeking on a null bound value. A cursor encodeCursor wrote always comes back.
+            .addCode("        Object value = $T.fromDatabase(col.getDataType(), values.get(i));\n", columnValuesClass)
+            .addCode("        if (value == null)\n")
+            .addCode("            throw new IllegalArgumentException(\"cursor token not coercible\");\n")
+            .addCode("        seekFields[i] = $T.val(value, col.getDataType());\n", DSL)
+            .addCode("    }\n")
+            .addCode("}\n")
+            .addStatement("return seekFields")
+            .build();
+
+        // --- readReleaseCandidateCursor(String text, List<Field<?>>) → Field<?>[] ---
+        // The decoded text of a cursor a Graphitron 10 release candidate issued, read as they read
+        // it: split on U+0000 keeping trailing empty tokens, strict arity, U+0001 as a typed NULL,
+        // every other token coerced on the column's own (converted) type. The token is the text of
+        // the user-side value, record.get(column).toString(), so it is read through the converted
+        // type rather than ColumnValues; an enum token is the Java constant's name, which parses only
+        // where it equals the literal, exactly as before. DSL.val(token, type).getValue() is the
+        // non-deprecated equivalent of the DataType.convert the release candidates called; a null
+        // from it is a token that is no value of its column, rejected like the JSON reading's.
+        var readReleaseCandidateCursor = MethodSpec.methodBuilder("readReleaseCandidateCursor")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(ArrayTypeName.of(fieldWildcard))
+            .addParameter(String.class, "text")
+            .addParameter(listOfField, "orderByColumns")
+            .addStatement("String[] tokens = text.split(\"\\u0000\", -1)")
+            .addCode("if (tokens.length != orderByColumns.size())\n")
+            .addCode("    throw new IllegalArgumentException(\"cursor arity mismatch\");\n")
+            .addStatement("$T[] seekFields = new $T[orderByColumns.size()]", fieldWildcard, fieldWildcard)
+            .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
+            .addCode("    $T col = orderByColumns.get(i);\n", fieldWildcard)
+            .addCode("    if (\"\\u0001\".equals(tokens[i])) {\n")
+            .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
+            .addCode("    } else {\n")
+            .addCode("        Object value = $T.val((Object) tokens[i], col.getDataType()).getValue();\n", DSL)
+            .addCode("        if (value == null)\n")
+            .addCode("            throw new IllegalArgumentException(\"cursor token not coercible\");\n")
+            .addCode("        seekFields[i] = $T.val(value, col.getDataType());\n", DSL)
+            .addCode("    }\n")
+            .addCode("}\n")
+            .addStatement("return seekFields")
             .build();
 
         var listOfRecord = ParameterizedTypeName.get(LIST_CLASS, RECORD);
@@ -700,6 +783,8 @@ public class ConnectionHelperClassGenerator {
             .addMethod(databaseValue)
             .addMethod(writeJsonString)
             .addMethod(decodeCursor)
+            .addMethod(readJsonCursor)
+            .addMethod(readReleaseCandidateCursor)
             .addMethod(readJsonArray)
             .addMethod(readJsonChar)
             .addMethod(readJsonScalar)

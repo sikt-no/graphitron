@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.test.internal;
 
+import no.sikt.graphitron.generated.schema.GraphitronClientException;
 import no.sikt.graphitron.generated.util.ConnectionHelper;
 import no.sikt.graphitron.rewrite.fixtures.codegen.UtcLocalDateTimeConverter;
+import no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.Field;
 import org.jooq.Param;
@@ -24,8 +26,13 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.TimeZone;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM;
+import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.VALIDITY_PERIOD;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The cursor text {@link ConnectionHelper#encodeCursor} writes per column type, pinned against
@@ -39,6 +46,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Each case also reads back through {@link ConnectionHelper#decodeCursor} to the value it was
  * written from, except a {@code java.sql.Date} with a time of day, which the read side binds at
  * midnight, and NaN, which JSON cannot hold.
+ *
+ * <p>The last section pins the read side's second format, the cursors the Graphitron 10 release
+ * candidates issued: which format a cursor string is read as, and how each token binds per column
+ * type, the way those releases bound it.
  */
 @UnitTier
 class CursorEncodingTest {
@@ -230,5 +241,90 @@ class CursorEncodingTest {
         var value = LocalDateTime.of(2007, 8, 22, 0, 0);
         assertThat(json(type, value)).isEqualTo("[\"2007-08-22T00:00:00.000000Z\"]");
         assertThat(readBack(type, value)).isEqualTo(value);
+    }
+
+    // ===== A release-candidate cursor =====
+    // The release candidates wrote each order column's value as its toString(), U+0001 for SQL
+    // NULL, joined by U+0000, in standard Base64. The decoder reads that format beside the JSON one,
+    // telling them apart by the Base64 alphabet, then by the decoded text.
+
+    /** The cursor a Graphitron 10 release candidate wrote for a row with these order-column values. */
+    static String releaseCandidateCursor(Object... values) {
+        String text = Stream.of(values).map(v -> v == null ? "\u0001" : v.toString())
+            .collect(Collectors.joining("\u0000"));
+        return Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static List<Object> bound(String cursor, Field<?>... columns) {
+        var bound = new ArrayList<Object>();
+        for (Field<?> seek : ConnectionHelper.decodeCursor(cursor, List.of(columns))) {
+            bound.add(((Param<?>) seek).getValue());
+        }
+        return bound;
+    }
+
+    private static void assertRejected(String cursor, Field<?>... columns) {
+        assertThatThrownBy(() -> ConnectionHelper.decodeCursor(cursor, List.of(columns)))
+            .as(cursor)
+            .isInstanceOf(GraphitronClientException.class)
+            .hasMessage("cursor is not valid (was: \"" + cursor + "\")");
+    }
+
+    @Test
+    void releaseCandidateCursor_underASilentAlphabet_isReadByItsText() {
+        assertThat(releaseCandidateCursor(100)).isEqualTo("MTAw");
+        assertThat(bound("MTAw", FILM.FILM_ID)).containsExactly(100);
+        assertThat(releaseCandidateCursor(null, 2)).isEqualTo("AQAy");
+        List<Object> nullAndTwo = bound("AQAy", VALIDITY_PERIOD.VALID_TO, VALIDITY_PERIOD.PERIOD_ID);
+        assertThat(nullAndTwo).containsExactly(null, 2);
+        Field<?>[] seek = ConnectionHelper.decodeCursor("AQAy", List.of(VALIDITY_PERIOD.VALID_TO, VALIDITY_PERIOD.PERIOD_ID));
+        assertThat(seek[0].getDataType().getType()).as("a typed NULL").isEqualTo(LocalDate.class);
+    }
+
+    @Test
+    void textThatIsAlsoAJsonCursor_readsAsJson_andTextThatFailsJson_readsAsAReleaseCandidateCursor() {
+        // The text ["xy"] is the release candidates' cursor for that title and the JSON cursor for
+        // the title xy, byte for byte; every cursor encodeCursor writes has to read right, so JSON wins.
+        assertThat(releaseCandidateCursor("[\"xy\"]")).isEqualTo("WyJ4eSJd")
+            .isEqualTo(encode(List.of(FILM.TITLE), "xy"));
+        assertThat(bound("WyJ4eSJd", FILM.TITLE)).containsExactly("xy");
+        assertThat(releaseCandidateCursor("[abcd]")).isEqualTo("W2FiY2Rd");
+        assertThat(bound("W2FiY2Rd", FILM.TITLE)).containsExactly("[abcd]");
+    }
+
+    @Test
+    void releaseCandidateCursor_withAStandardAlphabetCharacter_isReadAsOne() {
+        String cursor = releaseCandidateCursor("ME?", 7);
+        assertThat(cursor).as("precondition: the standard alphabet speaks").isEqualTo("TUU/ADc=").contains("/");
+        assertThat(bound(cursor, FILM.TITLE, FILM.FILM_ID)).containsExactly("ME?", 7);
+    }
+
+    @Test
+    void releaseCandidateTokens_bindPerColumnType() {
+        assertThat(bound(releaseCandidateCursor(2), FILM.FILM_ID)).containsExactly(2);
+        assertThat(bound(releaseCandidateCursor(new BigDecimal("1.50")), FILM.RENTAL_RATE))
+            .containsExactly(new BigDecimal("1.50"));
+        assertThat(bound(releaseCandidateCursor(LocalDate.of(2026, 3, 1)), VALIDITY_PERIOD.VALID_TO))
+            .containsExactly(LocalDate.of(2026, 3, 1));
+        for (var timestamp : List.of(LocalDateTime.of(2024, 1, 1, 10, 11, 12),
+                LocalDateTime.of(2024, 1, 1, 10, 11, 12, 123_456_000))) {
+            assertThat(bound(releaseCandidateCursor(timestamp), FILM.LAST_UPDATE)).containsExactly(timestamp);
+        }
+        assertThat(bound(releaseCandidateCursor(MpaaRating.G), FILM.RATING)).containsExactly(MpaaRating.G);
+    }
+
+    @Test
+    void malformedReleaseCandidateCursor_isTheClientError() {
+        assertRejected("Mg-+", FILM.FILM_ID);
+        assertRejected("Mg=x", FILM.FILM_ID);
+        assertRejected("MQAy", FILM.FILM_ID);
+        assertRejected(releaseCandidateCursor("abc"), FILM.FILM_ID);
+        assertRejected(releaseCandidateCursor("abc"), FILM.RENTAL_RATE);
+        assertRejected(releaseCandidateCursor("bogus"), VALIDITY_PERIOD.VALID_TO);
+        assertRejected(releaseCandidateCursor("bogus"), FILM.LAST_UPDATE);
+        // The constant's name where it differs from the literal: the release candidates wrote it
+        // and could not read it back, and neither can this.
+        assertThat(MpaaRating.NC_17.toString()).isEqualTo("NC_17");
+        assertRejected(releaseCandidateCursor(MpaaRating.NC_17), FILM.RATING);
     }
 }

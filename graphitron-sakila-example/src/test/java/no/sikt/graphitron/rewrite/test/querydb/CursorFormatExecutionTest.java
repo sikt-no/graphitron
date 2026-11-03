@@ -13,11 +13,14 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.CONVERTER_ID_CHANGE;
 import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM;
@@ -38,6 +41,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code timestamptz} with its offset), then encoded. Films another class inserts get higher ids
  * than the five seeded ones, so a page after a seeded film by {@code film_id} is the seeded films
  * that follow it; a title-ordered page picks the seeded rows out by id.
+ *
+ * <p>The decoder also reads the cursors the Graphitron 10 release candidates issued, so a client
+ * that stored one keeps its place after the upgrade; one is built here the way those releases
+ * built it, and pages like the JSON cursor for the same row.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -220,6 +227,99 @@ class CursorFormatExecutionTest {
         return column(data, "filmsOrderedConnection", "filmId").stream().filter(id -> (Integer) id <= 5).toList();
     }
 
+    // ===== A release-candidate cursor keeps its place =====
+
+    /** The cursor a Graphitron 10 release candidate wrote: each value's toString(), U+0001 for NULL, joined by U+0000, standard Base64. */
+    private static String releaseCandidateCursor(Object... values) {
+        String text = Stream.of(values).map(v -> v == null ? "\u0001" : v.toString())
+            .collect(Collectors.joining("\u0000"));
+        return Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void releaseCandidateCursor_overOneNumericColumn_pagesLikeTheJsonCursor_andIsAnsweredInJson() {
+        String cursor = releaseCandidateCursor(2);
+        assertThat(cursor).isEqualTo("Mg==");
+        String query = "{ filmsConnection(first: 2, after: \"%s\") { nodes { title } pageInfo { endCursor } } }";
+        var data = execute(query.formatted(cursor));
+        assertThat(column(data, "filmsConnection", "title"))
+            .isEqualTo(column(execute(query.formatted("WzJd")), "filmsConnection", "title"))
+            .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
+        var pageInfo = (Map<String, Object>) ((Map<String, Object>) data.get("filmsConnection")).get("pageInfo");
+        assertThat(pageInfo).as("the writer is unchanged").containsEntry("endCursor", "WzRd");
+    }
+
+    @Test
+    void releaseCandidateCursor_overATextAndANumericColumn_pagesToTheRowsAfterIt() {
+        String cursor = releaseCandidateCursor("ACE GOLDFINGER", 2);
+        var data = execute("{ filmsOrderedConnection(order: [{field: TITLE}, {field: FILM_ID}], first: 100, "
+            + "after: \"" + cursor + "\") { nodes { filmId title } } }");
+        var nodes = (List<Map<String, Object>>) ((Map<String, Object>) data.get("filmsOrderedConnection")).get("nodes");
+        assertThat(nodes.stream().filter(n -> (Integer) n.get("filmId") <= 5).map(n -> n.get("title")).toList())
+            .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
+    }
+
+    @Test
+    void releaseCandidateCursor_asBefore_pagesToTheRowsBeforeIt() {
+        String cursor = releaseCandidateCursor(4);
+        assertThat(cursor).isEqualTo("NA==");
+        var data = execute("{ filmsConnection(last: 2, before: \"" + cursor + "\") { nodes { title } } }");
+        assertThat(column(data, "filmsConnection", "title")).containsExactly("ACE GOLDFINGER", "ADAPTATION HOLES");
+    }
+
+    @Test
+    void releaseCandidateCursor_withNullAndDateTokens_pagesLikeTheJsonCursor() {
+        // validity_period pages on (valid_to, period_id) two rows at a time: 3 6 | 1 4 | 8 2 | 5 7.
+        assertThat(validityPeriodsAfter(releaseCandidateCursor(null, 2)))
+            .isEqualTo(validityPeriodsAfter(encode("[null,2]")))
+            .containsExactly(5, 7);
+        assertThat(validityPeriodsAfter(releaseCandidateCursor(LocalDate.of(2026, 3, 1), 4)))
+            .isEqualTo(validityPeriodsAfter(encode("[\"2026-03-01T00:00:00\",4]")))
+            .containsExactly(8, 2);
+    }
+
+    private List<Object> validityPeriodsAfter(String cursor) {
+        return column(execute("{ validityPeriodsByValidTo(after: \"" + cursor + "\") { nodes { periodId } } }"),
+            "validityPeriodsByValidTo", "periodId");
+    }
+
+    @Test
+    void releaseCandidateCursor_onAnEnumColumn_pagesBackwardLikeTheJsonCursor() {
+        // Film 4 is rated G, a rating whose constant name is its literal, so the release candidates
+        // could page from it.
+        String cursor = releaseCandidateCursor(no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating.G, 4);
+        assertThat(seededBefore(cursor)).isEqualTo(seededBefore(encode("[\"G\",4]"))).containsExactly(2);
+    }
+
+    @Test
+    void releaseCandidateCursor_onAMultiTableConnection_pagesLikeTheJsonCursor() {
+        String query = "{ displayNamedConnection(first: 3%s) { edges { node { __typename "
+            + "... on DisplayPerson { personId } ... on DisplayAccount { accountId } } } pageInfo { endCursor } } }";
+        var first = (Map<String, Object>) execute(query.formatted("")).get("displayNamedConnection");
+        String endCursor = (String) ((Map<String, Object>) first.get("pageInfo")).get("endCursor");
+        // The JSON cursor's elements are strings and integers with no comma or quote inside, so
+        // splitting the array is enough to rebuild the release candidates' cursor from them.
+        String json = decode(endCursor);
+        Object[] elements = Stream.of(json.substring(1, json.length() - 1).split(","))
+            .map(e -> e.startsWith("\"") ? e.substring(1, e.length() - 1) : e).toArray();
+        String cursor = releaseCandidateCursor(elements);
+        assertThat(execute(query.formatted(", after: \"" + cursor + "\"")))
+            .isEqualTo(execute(query.formatted(", after: \"" + endCursor + "\"")));
+        var second = (Map<String, Object>) execute(query.formatted(", after: \"" + cursor + "\"")).get("displayNamedConnection");
+        assertThat((List<?>) second.get("edges")).isNotEmpty();
+    }
+
+    @Test
+    void malformedReleaseCandidateCursor_surfacesTheClientError() {
+        String cursor = releaseCandidateCursor("abc");
+        assertThat(cursor).isEqualTo("YWJj");
+        var result = executeRaw("{ filmsConnection(first: 2, after: \"" + cursor + "\") { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("cursor is not valid (was: \"YWJj\")")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
     // ===== The emitted format =====
 
     @Test
@@ -265,8 +365,8 @@ class CursorFormatExecutionTest {
     }
 
     @Test
-    void allStringCursor_earlierReleasesIssued_pagesLikeTheBareOne() {
-        // Earlier Graphitron 10 releases wrote every value as a string, ["4"] where it now writes [4].
+    void allStringCursor_pagesLikeTheBareOne() {
+        // The JSON reading takes a string element for a numeric column: ["4"] reads like [4].
         String query = "{ filmsConnection(first: 1, after: \"%s\") { nodes { title } } }";
         assertThat(decode("WyI0Il0")).isEqualTo("[\"4\"]");
         assertThat(column(execute(query.formatted("WyI0Il0")), "filmsConnection", "title"))

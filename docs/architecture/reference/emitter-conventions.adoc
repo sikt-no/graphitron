@@ -181,6 +181,11 @@ metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
   converted `field.getDataType().convert(element)`: it answers `null` for text the user type does
   not share with the database type, and hands an input that is already a user-type instance back
   unconverted.
+  A release-candidate cursor, the format the Graphitron 10 release candidates wrote and the
+  decoder still reads, is the one exception: its token is the user value's `toString()`, so it is
+  coerced on the converted type with `DSL.val(token, field.getDataType()).getValue()`, the one
+  place the decoder deliberately reads through the converted type, reproducing what those
+  releases read.
 - *The no-seek case*: `DSL.noField(field)` where a column position must be present but no seek
   value applies, rather than a null placeholder or an omitted column that would misalign the tuple.
 
