@@ -185,4 +185,39 @@ class RecordReadAccessorValidationTest {
         var gp = (AccessorResolution.GetterPrefixed) accessor;
         assertThat(gp.method().getName()).isEqualTo("isActive");
     }
+
+    private static final String COLLECTION_SCALARS = """
+        scalar Tags @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAGS")
+        scalar TagList @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAG_LIST")
+        """;
+
+    private static GraphitronSchema buildWithCollectionScalars(String fixtureSimpleName) {
+        return TestSchemaHelper.buildSchema(COLLECTION_SCALARS + """
+            type Query {
+                result: TestType @service(service: {className: "%s", method: "r88%s"})
+            }
+            type TestType { tags: Tags tagList: TagList }
+            """.formatted(DUMMY_SERVICE_FQN, fixtureSimpleName));
+    }
+
+    @Test
+    void recordParent_arrayAndListScalarAccessors_resolve() {
+        var schema = buildWithCollectionScalars("CollectionScalarRecord");
+        var errors = validate(schema);
+        assertThat(errors).extracting(ValidationError::message)
+            .noneMatch(m -> m.contains("TestType.tags") || m.contains("TestType.tagList"));
+        assertThat(accessorOf(schema.field("TestType", "tags"))).isInstanceOf(AccessorResolution.BareName.class);
+        assertThat(accessorOf(schema.field("TestType", "tagList"))).isInstanceOf(AccessorResolution.BareName.class);
+    }
+
+    @Test
+    void recordParent_arrayAndListScalarAccessorsOfWrongType_rejected() {
+        var schema = buildWithCollectionScalars("CollectionScalarMismatchRecord");
+        var errors = validate(schema);
+        assertThat(errors).extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("TestType.tags") && m.contains("not assignable"))
+            .anyMatch(m -> m.contains("TestType.tagList") && m.contains("not assignable"));
+        assertThat(schema.field("TestType", "tags")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(schema.field("TestType", "tagList")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+    }
 }

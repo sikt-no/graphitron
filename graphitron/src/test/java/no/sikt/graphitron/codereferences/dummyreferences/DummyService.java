@@ -84,6 +84,8 @@ public final class DummyService {
     public static R88AccessorFixtures.BooleanPojo r88BooleanPojo() { return unused(); }
     public static R88AccessorFixtures.BareNameRecord r88BareNameRecord() { return unused(); }
     public static R88AccessorFixtures.MissingComponentRecord r88MissingComponentRecord() { return unused(); }
+    public static R88AccessorFixtures.CollectionScalarRecord r88CollectionScalarRecord() { return unused(); }
+    public static R88AccessorFixtures.CollectionScalarMismatchRecord r88CollectionScalarMismatchRecord() { return unused(); }
 
     // ===== R461AccessorFixtures.* (walk-grounding parents; method name = "r461" + fixture simple name) =====
     public static R461AccessorFixtures.OrderParentPojo r461OrderParentPojo() { return unused(); }

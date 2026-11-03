@@ -60,4 +60,30 @@ class ArrayColumnCodegenPipelineTest {
             .as("the ArrayHolder datafetcher class emits despite the parent row carrying array columns")
             .anyMatch(t -> t.name().contains("ArrayHolder"));
     }
+
+    /**
+     * A custom scalar whose {@code Coercing} produces {@code String[]}, on a {@code @table} field
+     * over the {@code text[]} column: the field classifies as a column field and the fetchers
+     * for the type generate. Before array coercings were supported, resolving the scalar crashed
+     * the generator in JavaPoet.
+     */
+    @Test
+    void arrayCoercingScalar_overTextArrayColumn_generates() {
+        String sdl = """
+            scalar Tags @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAGS")
+            type ArrayHolder @table(name: "array_holder") {
+                id: Int @field(name: "id")
+                tags: Tags
+            }
+            type Query { arrayHolders: [ArrayHolder] }
+            """;
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        assertThat(schema.field("ArrayHolder", "tags"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField.class);
+
+        var fetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(fetchers)
+            .as("the ArrayHolder datafetcher class emits with the array-coercing scalar column selected")
+            .anyMatch(t -> t.name().contains("ArrayHolder"));
+    }
 }

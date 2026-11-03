@@ -91,4 +91,19 @@ public final class R88AccessorFixtures {
      * {@code Rejected}.
      */
     public record MissingComponentRecord(String otherField) {}
+
+    /**
+     * Accessors returning a custom scalar's array and parameterized Java types: SDL
+     * {@code tags: Tags} (coercing {@code String[]}) and {@code tagList: TagList} (coercing
+     * {@code List<String>}) both resolve.
+     */
+    public record CollectionScalarRecord(String[] tags, java.util.List<String> tagList) {}
+
+    /**
+     * The same SDL fields over accessors of the wrong type: {@code Integer[]} is not assignable
+     * to {@code String[]}, nor {@code String} to {@code List}. Both are rejected, which holds
+     * only while the scalar's array or parameterized type is erased to its runtime class rather
+     * than to {@code Object}.
+     */
+    public record CollectionScalarMismatchRecord(Integer[] tags, String tagList) {}
 }
