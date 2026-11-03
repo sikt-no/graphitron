@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
+import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
@@ -115,6 +116,9 @@ public final class GraphitronAssemblyCapture {
         // How each field under a held object takes its keys off it, off the producers and results
         // just written and the path elements above; the walk departs from these.
         FieldKeyRows.derive(dsl, graph, readAt);
+        // What each occurrence's values come from, a depth at a time, off the occurrences, the
+        // producers and the key rows just written: its tables or its class.
+        OccurrenceSources.derive(dsl, graph, readAt);
         // Then each field's path, off the producers and results just written: walked from every
         // table its parent's result is a row of, or from a root routine's own table, one written
         // element at a time.

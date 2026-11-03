@@ -10132,6 +10132,86 @@ COMMENT ON COLUMN graphitron_path_claim.element_coordinate_ref IS 'the coordinat
 COMMENT ON COLUMN graphitron_path_claim.target_graph_ref IS 'the graph half of the target type''s key, nullable so the type''s removal sets the reference null rather than cascading';
 COMMENT ON COLUMN graphitron_path_claim.target_type_ref IS 'the type half of the target type''s key, equal to target_type while the type stands; null where the type named is none the graph has';
 
+CREATE TABLE graphitron_occurrence_source (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  -- What each subtype references, so a subtype row can only hang under a source of its own kind.
+  UNIQUE (graph_name, coordinate, kind),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (kind IN ('TABLE', 'OBJECT'))
+);
+COMMENT ON TABLE graphitron_occurrence_source IS 'What one occurrence''s values come from: one row per occurrence that has a source. For example Film.title''s values are rows of film, of kind TABLE, and Query.filmBlurbHolder.blurb''s are read off an instance of FilmBlurbHolder, of kind OBJECT.';
+COMMENT ON COLUMN graphitron_occurrence_source.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_source.coordinate IS 'the occurrence whose source this is, at its nested coordinate; with the graph, the key and a reference into graphitron_occurrence, so a source goes with its occurrence';
+COMMENT ON COLUMN graphitron_occurrence_source.kind IS 'TABLE, rows of the tables graphitron_occurrence_source_table names, or OBJECT, an instance of the class graphitron_occurrence_source_object names; carried into each subtype''s key so a subtype of the other kind cannot be written';
+COMMENT ON COLUMN graphitron_occurrence_source.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_source_table (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  table_source_ref  VARCHAR,
+  table_schema_ref  VARCHAR,
+  table_name_ref    VARCHAR,
+  PRIMARY KEY (graph_name, coordinate, table_source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name, coordinate, kind)
+    REFERENCES graphitron_occurrence_source (graph_name, coordinate, kind) ON DELETE CASCADE,
+  -- The table, through the row's own copy of its key: a key to what an anchor was built from does
+  -- not cascade, and the sweep removes the row the reading no longer finds.
+  FOREIGN KEY (table_source_ref, table_schema_ref, table_name_ref)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE SET NULL,
+  CHECK (table_source_ref IS NULL OR table_source_ref = table_source_name),
+  CHECK (table_schema_ref IS NULL OR table_schema_ref = table_schema),
+  CHECK (table_name_ref IS NULL OR table_name_ref = table_name),
+  CHECK (kind = 'TABLE')
+);
+COMMENT ON TABLE graphitron_occurrence_source_table IS 'One table an occurrence''s values are rows of: one row per occurrence and table. For example Film.details.length is read from film, and an argument of a field returning a union of Film and Language has a row for film and one for language.';
+COMMENT ON COLUMN graphitron_occurrence_source_table.graph_name IS 'the owning graph''s partition, carried from the source';
+COMMENT ON COLUMN graphitron_occurrence_source_table.coordinate IS 'the occurrence whose values are rows of the table';
+COMMENT ON COLUMN graphitron_occurrence_source_table.table_source_name IS 'the table''s catalog partition; with the schema and the name, an sql_table key';
+COMMENT ON COLUMN graphitron_occurrence_source_table.table_schema IS 'the table''s SQL schema';
+COMMENT ON COLUMN graphitron_occurrence_source_table.table_name IS 'the table the values are rows of, a function''s derived table included; with the coordinate the key, so a source over several tables has a row per table';
+COMMENT ON COLUMN graphitron_occurrence_source_table.kind IS 'always TABLE, pinned so the foreign key holds the row to a source of kind TABLE';
+COMMENT ON COLUMN graphitron_occurrence_source_table.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+COMMENT ON COLUMN graphitron_occurrence_source_table.table_source_ref IS 'the catalog half of the table''s key, nullable so the table''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_occurrence_source_table.table_schema_ref IS 'the schema half of the table''s key, equal to table_schema while the table stands';
+COMMENT ON COLUMN graphitron_occurrence_source_table.table_name_ref IS 'the name half of the table''s key, equal to table_name while the table stands';
+
+CREATE TABLE graphitron_occurrence_source_object (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  kind             VARCHAR   NOT NULL,
+  class_name       VARCHAR   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  class_source_ref VARCHAR,
+  class_name_ref   VARCHAR,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate, kind)
+    REFERENCES graphitron_occurrence_source (graph_name, coordinate, kind) ON DELETE CASCADE,
+  -- The class, through the row's own copy of its key, where the reading read the class at all.
+  FOREIGN KEY (class_source_ref, class_name_ref)
+    REFERENCES code_class (source_name, class_name) ON DELETE SET NULL,
+  CHECK ((class_source_ref IS NULL) = (class_name_ref IS NULL)),
+  CHECK (class_name_ref IS NULL OR class_name_ref = class_name),
+  CHECK (kind = 'OBJECT')
+);
+COMMENT ON TABLE graphitron_occurrence_source_object IS 'The class an occurrence''s values are an instance of: one row per occurrence whose source is an object. For example Query.filmBlurbHolder.blurb is read off the FilmBlurbHolder its parent''s service hands back.';
+COMMENT ON COLUMN graphitron_occurrence_source_object.graph_name IS 'the owning graph''s partition, carried from the source';
+COMMENT ON COLUMN graphitron_occurrence_source_object.coordinate IS 'the occurrence whose values are read off the object; with the graph, the key, one class per occurrence since a coordinate names one producer';
+COMMENT ON COLUMN graphitron_occurrence_source_object.kind IS 'always OBJECT, pinned so the foreign key holds the row to a source of kind OBJECT';
+COMMENT ON COLUMN graphitron_occurrence_source_object.class_name IS 'the class the parent field''s own producer hands back, its method''s result with containers peeled off';
+COMMENT ON COLUMN graphitron_occurrence_source_object.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+COMMENT ON COLUMN graphitron_occurrence_source_object.class_source_ref IS 'the classpath entry half of the class''s code_class key, nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
+COMMENT ON COLUMN graphitron_occurrence_source_object.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
+
 CREATE TABLE graphitron_path_need (
   graph_name          VARCHAR NOT NULL,
   coordinate          VARCHAR NOT NULL,
@@ -17731,6 +17811,9 @@ INSERT INTO meta_grain VALUES
   ('path-claim',
    'one place a path is written, by the declared element it is written on and the type it reaches, in one graph',
    'graph_name, element_coordinate, target_type', 'sdl'),
+  ('occurrence-source-table',
+   'one table one occurrence''s values are rows of, in one graph',
+   'graph_name, coordinate, table_source_name, table_schema, table_name', 'sdl'),
   ('path-need',
    'one starting table and landing one occurrence must reach, in one graph',
    'graph_name, coordinate, start_source_name, start_schema, start_table, landing_kind, landing', 'sdl'),
@@ -18479,6 +18562,18 @@ INSERT INTO meta_relation VALUES
    'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path.',
    'For example Store.people with @referenceFor(type: "Staff") is the claim (Store.people, Staff), of kind REFERENCE_FOR.',
    'A path can be followed from another file, an inherited path from an implementation in one file to the interface''s field in another, and a written position moves when the file around it is edited, so a path names what it follows by names an author chose: the declared element and the type the path reaches, which tells two @referenceFor on one field apart. The position it stands for within its own file is kept beside them as an attribute, where the written elements are keyed. The element and the type are referenced through copies of their keys that their removal sets null, so the sweep, not a cascade, removes a claim the reading no longer finds.'),
+  ('graphitron_occurrence_source', 'graph-occurrence', 'graphitron',
+   'What one occurrence''s values come from: one row per occurrence that has a source.',
+   'For example Film.title''s values are rows of film, of kind TABLE, and Query.filmBlurbHolder.blurb''s are read off an instance of FilmBlurbHolder, of kind OBJECT.',
+   'Every path starts from a source, so where an occurrence''s values come from is stated on the occurrence itself, rows of tables or an instance of a class, rather than as a pointer to another occurrence a reader would follow. How the writer found it is not stored. Written a depth at a time, each depth reading only what the depth above stated, and the kind is carried into each subtype''s key so the database refuses a table row under an object source.'),
+  ('graphitron_occurrence_source_table', 'occurrence-source-table', 'graphitron',
+   'One table an occurrence''s values are rows of: one row per occurrence and table.',
+   'For example Film.details.length is read from film, and an argument of a field returning a union of Film and Language has a row for film and one for language.',
+   'A join path starts from one of these rows, so where a parent forks each table is a row of its own. The table is referenced through a copy of its key its removal sets null, so the sweep, not a cascade, removes a row the reading no longer finds.'),
+  ('graphitron_occurrence_source_object', 'graph-occurrence', 'graphitron',
+   'The class an occurrence''s values are an instance of: one row per occurrence whose source is an object.',
+   'For example Query.filmBlurbHolder.blurb is read off the FilmBlurbHolder its parent''s service hands back.',
+   'A value a producer hands back with a class but no table record and no key row is rows of no table, so its occurrences read it as an object, the start of an accessor path. The class is the parent field''s own producer''s result and nothing else, so a source never guesses among the classes a type may be backed by.'),
   ('graphitron_path_need', 'path-need', 'graphitron',
    'One starting table and landing an occurrence must reach: one row per occurrence, table its rows start on and type or table it lands on, each end expanded to its tables.',
    'For example Store.people needs store to Customer and store to Staff, and Customer.city, a scalar, needs customer to the table public.city.',

@@ -285,30 +285,23 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   Every output field, argument and input-field occurrence with a table source has its needs in
   `graphitron_path_need`, an empty path included, and one no written, inherited, single inferred or
   empty path meets is a defect at its claim.
-  * **Every occurrence's source is stated** `open`, F's.
-    `graphitron_occurrence_source` states what each occurrence's values come from, rows of tables
-    (`graphitron_occurrence_source_table`, one row per table, lifted or not) or an instance of a class
-    (`graphitron_occurrence_source_object`), written per depth after `FieldKeyRows` from the declaring
-    type's table, the parent's tables or bindings, E's result facts and key rows; the parameter lift
-    is declared and waits on E's `PARAMETER` bindings, and a connection's fields and an errors
-    field's subtree have no source yet.
-    * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
-      an implementer of a `@table` interface to carry the same `@table`; without one it has no
-      `graphitron_tabletype` row and its fields no source, and nothing says so.
-    * **A connection's fields hang under the field that returns it** `open`, G's.
-      The step rule descends from a field returning a connection into its connection type, so its
-      fields and its edge's are occurrences under the returning field, binding into what that
-      field's producer produces, a page of records with its ordering in the class graphitron
-      generates. `nodes` binds the page's records, `edges` each record with its cursor, `edges.node`
-      the record, `edges.cursor` a function of the record and the page's ordering (`RESULT_EXPRESSION`) and
-      `pageInfo` the page; only `totalCount` runs a query.
-      * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
-        The result a producer states for a field returning a connection is a page of
-        `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
-        classes and the members the connection's fields bind to being stated there already.
-      * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
-        producer's source and argument values, its statement counted, and runs only when queried.
-  * **A field's path needs are stated per coordinate** `blocked`, F's, on "Every occurrence's source is stated".
+  * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
+    an implementer of a `@table` interface to carry the same `@table`; without one it has no
+    `graphitron_tabletype` row and its fields no source, and nothing says so.
+  * **A connection's fields hang under the field that returns it** `open`, G's.
+    The step rule descends from a field returning a connection into its connection type, so its
+    fields and its edge's are occurrences under the returning field, binding into what that
+    field's producer produces, a page of records with its ordering in the class graphitron
+    generates. `nodes` binds the page's records, `edges` each record with its cursor, `edges.node`
+    the record, `edges.cursor` a function of the record and the page's ordering (`RESULT_EXPRESSION`) and
+    `pageInfo` the page; only `totalCount` runs a query.
+    * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
+      The result a producer states for a field returning a connection is a page of
+      `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
+      classes and the members the connection's fields bind to being stated there already.
+    * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
+      producer's source and argument values, its statement counted, and runs only when queried.
+  * **A field's path needs are stated per coordinate** `open`, F's.
     Every occurrence with a table source needs one join path per target type, keyed (coordinate,
     target type), by the rules of "Source, path, bind" in the path model below: a fork is a target of
     its own, an empty path has origin `EMPTY`, and `PathRelationConstraintTest`'s cascades become
@@ -316,6 +309,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     foreign key is `NO_ROUTE_TO_TARGET` and one sharing several `ROUTE_AMBIGUOUS`, a `@reference` on a target with no one table
     `REFERENCE_WITHOUT_TARGET_TABLE`, a scalar path whose last element names no table
     `PATH_LANDING_UNKNOWN`, and a `@nodeId` one landing on a table `NODE_ID_LANDS_ON_TABLE`.
+* **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
 * **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
   The one foreign key between two tables is a path of origin `INFERRED`, and a path written on an
   interface's field is a row per implementation of origin `INHERITED`, resolved from the
@@ -649,11 +643,11 @@ classified records have no reader left and can go with the walk.
   `Node` type or a `@nodeId` unpacks into, one row per ordinal. `graphitron_field_target_column`,
   `graphitron_field_target_table` and the `graphitron_node_id_decode_*` family go, and the editor's
   column scope reads the column.
-* **A field's source is its parent's result** `blocked`, F's, on "Every occurrence's source is stated".
+* **A field's source is its parent's result** `open`, F's.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read
   `graphitron_field_source_table`'s inherited rule today.
-* **The result relations dissolve into the producer's result** `blocked`, E's, on "Every occurrence's source is stated".
+* **The result relations dissolve into the producer's result** `open`, E's.
   The producer knows what it produces (Alf, 2026-11-03): its result, one record, a list of records,
   a connection page or a `@service`'s object, each with its class where it has one, is a fact of the
   producing occurrence, and the occurrences under it bind into it. `graphitron_result`,
@@ -667,9 +661,10 @@ classified records have no reader left and can go with the walk.
   the source's depth loop calls `KeyRows.writeDepth` between a depth's sources and the next depth's,
   writing the key rows of the occurrences one below, and the key rows are swept after the loop. The
   rule and the relation are E's, the cadence the source's.
-* **An object result is lifted onto a key row** `blocked`, F's, on "Every occurrence's source is stated".
-  Under an object parent a field's source is lifted onto its key row's table,
-  `graphitron_occurrence_lift_key_row` over E's key row, and only a key on the source side lifts one,
+* **An object result is lifted onto a key row** `open`, E's.
+  Under an object parent the producer that starts a field lifts it onto its key row's table, a lift
+  the producer states over E's key row while the field's source names only that table
+  ("Producer, bind and call on the occurrence (draft)"), and only a key on the source side lifts one,
   a `COLUMNS` key on the parent's record table, so a field whose key re-fetches its own target gets
   none. E keeps the key row and the first key; the hover's departing table for an input type's
   record binding is a reader of the source, kept, not dropped.
@@ -1555,8 +1550,8 @@ that depend on the parent fall three ways.
   ** `graphitron_join_path_claim` is already keyed by the declared element and target type.
 * Stay keyed on the occurrence, `(graph_name, coordinate)` with a foreign key to it:
   ** `graphitron_occurrence_source`, one per occurrence, and its subtypes on the same key:
-     `graphitron_occurrence_source_table` with `graphitron_occurrence_lift` and a subtype per way it
-     lifts, and `graphitron_occurrence_source_object`;
+     `graphitron_occurrence_source_table` and `graphitron_occurrence_source_object`, the lift being
+     the producer's;
   ** the path family itself, `graphitron_path_need`, `graphitron_path`, `graphitron_join_path_step` and its
      children, and `graphitron_join_path_stop`;
   ** `graphitron_occurrence_binding` and a subtype per kind, keyed by
@@ -1670,7 +1665,7 @@ where it rebuilds them per edge today.
    "A field's source is its parent's result" are the occurrence's source and come off E's graph into
    step 2.
    "A field's key row is stated" stays E's, keyed on the occurrence; "An object result is lifted onto
-   a key row" is F's key-row lift, and "A plain object's first key is read off its members" is
+   a key row" is the producer's key-row lift, E's, and "A plain object's first key is read off its members" is
    discarded, a plain object not lifting. The argMapping binding
    binds to occurrences and leaves the unpack to step 3; the fill of a jOOQ record reads its columns
    off path ends rather than `sql_table.record_class_fqn` to `sql_column`.
@@ -1715,7 +1710,8 @@ bind are the same whether the values are rows or objects, and only a path has a 
 world. A *table source* is rows of a table and an *object source* an instance of a class a producer
 hands back. A *join path* goes from table to table by joins, the SQL path `@reference(path:)` writes,
 and an *accessor path* from object to object by accessors, the Java path field names and
-`@field(name:)` write. A *lift* is where the two worlds cross, an object source made a table source.
+`@field(name:)` write. A *lift* is where the two worlds cross, an object made rows of a table; it is
+the producer's, stated by the producer that makes it and not by the source.
 Today's writers build the table side; the accessor path is named here and built when value objects
 are bound.
 
@@ -1724,18 +1720,27 @@ are bound.
   reader needs, the parent being the occurrence its `parent_coordinate` names: at a chain start the
   declaring type's table, a field declared on an interface being an occurrence per participant; a
   nested field or an argument takes its parent's tables, its parent's path targets or, where the
-  parent has no path, the tables the parent binds, so a root field's arguments and a write
-  payload's data field take what the root field binds; an input field takes its argument's tables,
-  at any depth. A source not of a table's shape is *lifted* to one where we know how: a key row to
-  the key's table, a `TableRecord` a producer hands back to its record class's table, a `@routine`
-  call to the derived table its function returns, a root field's and a mutation's included where
-  the function has a table, and a child of an occurrence bound to a `TableRecord` parameter to that
-  record's table. An object source is a value a producer hands back with a class but no record class
-  and no key row, which does not lift, deriving its table being solvable but out of scope; its
-  class is the parent field's own producer's result class, else the type's one class. A root field
-  with no `@routine` has no source, and a carrier graphitron builds, a connection or a payload with
-  no class, is no object source: a connection's fields and an errors field's subtree have no source
-  yet. Where the parent forks, the occurrence has a table source row per table.
+  parent has no path, the tables the parent binds, so a root field's arguments take what the root
+  field binds. A write's payload is what the write produces: a payload field with a table-bound
+  target is a producer of its own, lifted from the keys the write returned, and its source is its
+  target's table; any other payload field has no source until the producer's result is stated. An
+  input field takes its argument's tables,
+  at any depth. A source states only tables or a class. Where a value not of a table's shape becomes
+  rows of one, the lift is stated by the producer, E's ("Producer, bind and call on the occurrence (draft)"),
+  and the source states the table it lands on: a key row's table for a field with one, a
+  `TableRecord` a producer hands back its record class's table, and a `@routine` call the derived
+  table its function returns, a root field's and a mutation's included where the function has a
+  table. A child of an occurrence bound to a `TableRecord` parameter will take that record's table
+  as an ordinary table source; nothing writes it yet. A nested field whose parent field writes a
+  path starts where that path lands, which only the join path knows, so it has no source until the
+  join path stands. An object source is a value a producer hands back with a class but no record
+  class and no key row, which is rows of no table, deriving its table being solvable but out of
+  scope; the source reads its class off its producer's result, the parent field's own producer's
+  result class, else the type's one class. A root field with no `@routine` has no source. A carrier
+  graphitron builds has the class it generates; a connection's fields take their source from the
+  returning producer's result once they hang under it ("A connection's fields hang under the field that returns it");
+  an errors field's subtree has no source yet. Where the parent forks, the occurrence has a table
+  source row per table.
 * *Path*: how it gets from its source to one type it reaches, one path per occurrence and target
   type, of the source's kind. A join path runs from a table source between two tables, concrete or
   derived, and an accessor path from an object source between two classes; either may be empty,
@@ -1754,7 +1759,7 @@ are bound.
   parameter does.
 
 Where each starts and ends: a chain start
-departs from its declaring type's table, or is lifted as above; a nested field or an argument starts
+departs from its declaring type's table, or from the table a producer's lift lands on, as above; a nested field or an argument starts
 where the occurrence it hangs under ends, and every input field under an argument where the
 argument starts, a `@reference` on one moving none of its children. A join path between two
 table-bound types is never empty, even on one table: with nothing written and no single foreign key
@@ -1773,7 +1778,7 @@ row for a single-table interface target, where the needs want one per member, an
 whose binding names several tables.
 
 **The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
-the claim is written, and nothing writes the rest yet. The names below are the ones decided on
+the claim and the source are written, and nothing writes the rest yet. The names below are the ones decided on
 2026-11-03; the SQL takes them in the commit that builds the need writer, so until then
 `graphitron_path_claim`, `graphitron_path_step` and its children and `graphitron_path_stop` stand
 there for `graphitron_join_path_claim`, `graphitron_join_path_step` and `graphitron_join_path_stop`,
@@ -1812,27 +1817,23 @@ and `graphitron_ast_path_entry` keeps its name as the written entry.
      occurrence and table, keyed by (graph, coordinate, table) with a cascading foreign key to the
      source; an argument under a forked parent has a row per table. A join path starts from one of
      these rows: a need's start is a foreign key to it.
-  ** `graphitron_occurrence_lift`, under a table source row: why a table that is not the value's
-     shape is its source, how it became one, with a subtype per way: `_key_row` (E's key row, wherever the field has
-     one, since it fetches its own rows and an `ACCESSOR` key row can lift to another table than the
-     record's), `_record` (the record class a producer's result hands back, E's `graphitron_result_class`
-     joined to the table whose record class it is, for the record's other fields), `_routine` (the
-     routine whose derived table it is) and `_parameter` (the `PARAMETER` bindings a `TableRecord`
-     parameter brings, keyed by (coordinate, binding), each with its record table, since each
-     candidate overload of an unpinned call binds and readers keep the pinned one's). The ways are
-     exclusive, the key row winning; two different calls consuming one argument with different
-     record tables is `ARGUMENT_LIFTS_TO_TWO_TABLES` at it.
+  ** The lift is not the source's: it belongs to the producer, E's, which states why a table that is
+     not the value's shape is a source, by a key row, a record class or a routine
+     ("Producer, bind and call on the occurrence (draft)"). The source states only the table, a key
+     row's wherever the field has one, since it fetches its own rows and an `ACCESSOR` key row can
+     land on another table than the record's.
   ** `graphitron_occurrence_source_object`: the class an occurrence's values are an instance of, a
      value a producer hands back with no table, E's `OBJECT` result and its class in
-     `graphitron_result_class`, one class per occurrence since a coordinate names one producer. It starts an accessor path, and a lift is the
-     crossing from it to a table source. A carrier graphitron builds has no class and no object
-     source.
-  E keeps the key row and the first key; the source that reads them is F's. It reads the record
-  class and the key row off E's result facts rather than restating them, the key row through the
-  occurrence's element until `graphitron_field_key_row` keys on the occurrence, a join that goes
-  when it does. E's `PARAMETER` bindings are written whole before it, their parameter matching reading
-  nothing it writes; `_parameter` is declared with this node and written once they stand. It is the successor of `graphitron_field_path_start`, which starts only fields
-  that wrote a path, and of `graphitron_field_source_table`.
+     `graphitron_result_class`, one class per occurrence since a coordinate names one producer. It
+     starts an accessor path, and a lift is the producer's crossing from it to a table.
+  E keeps the key row and the first key, and the lift is the producer's, E's; the source is F's. It
+  reads the record class and the key row off E's result facts rather than restating them, the key
+  row through the occurrence's element until `graphitron_field_key_row` keys on the occurrence, a
+  join that goes when it does. An input field under an argument bound to a `TableRecord` parameter
+  takes an ordinary table source once E's `PARAMETER` bindings stand. It is the successor of
+  `graphitron_field_path_start`, which starts only fields that wrote a path, and of
+  `graphitron_field_source_table`. E's per-depth producer step runs in the source's loop before each
+  depth's sources, as agreed with E; the writer marks the place.
 * `graphitron_path_need`, anchoring: one type an occurrence with a source must reach. Keyed by
   (graph, coordinate, target type), as the claim is keyed by its element and target type, with a
   foreign key to the source; on the table side its start is a foreign key to the table source row
@@ -1896,8 +1897,8 @@ the same pair; no overload for a step's pair
 `@referenceFor` naming one type on one field (`REFERENCE_FOR_DUPLICATE_TYPE`); a scalar path whose
 last element names no table (`PATH_LANDING_UNKNOWN`); a `@nodeId` path landing on a table
 (`NODE_ID_LANDS_ON_TABLE`); a `$path` name no segment carries, and two segments of one path under
-one name (R1099's); two calls consuming one argument with different record tables
-(`ARGUMENT_LIFTS_TO_TWO_TABLES`, the lift's). A binding's own defects are the binding's: a scalar
+one name (R1099's). Two calls consuming one argument with different record tables belong with the
+producer's lift ("Producer, bind and call on the occurrence (draft)"). A binding's own defects are the binding's: a scalar
 input with no binding under a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and
 `ARGUMENT_WITHOUT_CONSUMER` only where the generator cannot consume it, under `@service` or
 `@externalField`, and no parameter does; `PATH_NOT_TAKEN` waits on the consumer.
@@ -1929,8 +1930,8 @@ and a claim is a coordinate and a target type (2026-11-02). It is the field that
 key row, not its parent, so a lifted start is read off the field's own key row. Every occurrence
 binds, and has a path wherever it has a source; a path's target is never null, and a path with no
 start or no end is invalid; a root field has a path only through a `@routine` (2026-11-03). The
-source is a supertype, a table source and an object source its subtypes and the lift a subtype of
-the table source, with a subtype per way it lifts; the binding has a subtype per kind (2026-11-03).
+source is a supertype, a table source and an object source its subtypes; the lift is the
+producer's, E's, not a subtype of the source; the binding has a subtype per kind (2026-11-03).
 An occurrence has one source, keyed by its coordinate, a fork adding targets and never sources; a
 need is keyed by (coordinate, target type), as a claim by (element, target type); a binding by
 (coordinate, bound), a value's bound its class and member (2026-11-03). Source and bind are not
@@ -1940,7 +1941,8 @@ join step's, never a path's (2026-11-03). A step's inferred key is judged once, 
 inferred: no shared foreign key is `NO_ROUTE_TO_TARGET` and several `ROUTE_AMBIGUOUS`, so
 `PATH_NO_FOREIGN_KEY` and `PATH_SEVERAL_FOREIGN_KEYS` are never introduced (2026-11-03). A source states what an occurrence's values come from, its
 tables or its class, never a pointer to the occurrence it was derived from; a table source is a row
-per occurrence and table (2026-11-03). None holds a table in its key: each
+per occurrence and table (2026-11-03). The write payload is what the write produces, a table-bound
+payload field a producer lifted from the returned keys (2026-11-03). None holds a table in its key: each
 references its tables through nullable copies a vanished table sets null and the sweep removes,
 so each follows the anchor rule with no exception. Each relation here is written as a plain
 `INSERT .. SELECT` over the occurrence and what the occurrence above it states, the instant bound,

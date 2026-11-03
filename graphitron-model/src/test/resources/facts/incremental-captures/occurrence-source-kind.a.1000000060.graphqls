@@ -1,0 +1,31 @@
+# The second reading's service hands back a FilmBlurbHolder, no table's record, so the same
+# occurrence's source is now that object: the table source goes with the kind, and a source whose
+# kind is unchanged is marked again.
+
+type Film @table(name: "film") { title: String }
+
+type FilmDetailsCarrier { filmId: Int @field(name: "film_id") }
+
+extend type Query {
+  carrier(filmId: Int!): FilmDetailsCarrier
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_source", where: """
+  coordinate IN ('Film.title', 'Query.carrier.filmId')
+  """, rows: """
+  coordinate,            kind,   touched_at
+  Film.title,            TABLE,  1000000060
+  Query.carrier.filmId,  OBJECT, 1000000060
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_source_object", where: """
+  coordinate = 'Query.carrier.filmId'
+  """, rows: """
+  coordinate,            class_name,                                                touched_at
+  Query.carrier.filmId,  no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,  1000000060
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_occurrence_source_table", where: """
+  coordinate = 'Query.carrier.filmId'
+  """)

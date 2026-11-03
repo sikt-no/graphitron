@@ -208,8 +208,12 @@ class SupertypeSignatureGateTest {
         // graphitron_result_table or graphitron_resolved_type_binding, so its columns are its
         // supertype's; that is the supertype and subtype shape, not relations holding one fact. The
         // routine start is not here only because it is keyed by its producer alone.
+        // graphitron_occurrence_source joins them on a payload of its kind alone, keyed by the
+        // occurrence: the successor of the start, which starts every occurrence with a source rather
+        // than only the fields that wrote a path. Successor and incumbent, not siblings; the set goes
+        // to one member when the start does.
         Set.of("graphitron_field_path_start", "graphitron_field_path_start_binding",
-               "graphitron_field_path_start_result"),
+               "graphitron_field_path_start_result", "graphitron_occurrence_source"),
         // The per-need path relations declared beside the per-field ones they replace: a step's
         // column pairs and a routine step's parameters say what they said, keyed by the need rather
         // than by the field and its start. Successor and incumbent, not siblings; each pair goes to
