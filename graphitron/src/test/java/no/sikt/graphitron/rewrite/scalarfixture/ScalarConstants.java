@@ -23,6 +23,10 @@ import java.util.Locale;
  *       {@code CoercingErased.RAW_TYPE} arm.</li>
  *   <li>{@link #ERASED_NAMED_MONEY} — Coercing declared with {@code Object, Object} parameters.
  *       The {@code CoercingErased.ERASED_NAMED_CLASS} arm.</li>
+ *   <li>{@link #TAGS} and {@link #TAG_LIST}: array and parameterized input types, both
+ *       resolved with their full shape.</li>
+ *   <li>{@link #WILDCARD_LIST} and {@link #OBJECT_ARRAY}: a wildcard or {@code Object} inside
+ *       the input type. The {@code CoercingInputNotConcrete} arm.</li>
  * </ul>
  */
 public final class ScalarConstants {
@@ -83,5 +87,29 @@ public final class ScalarConstants {
         .name("ErasedNamedMoney")
         .description("Test fixture: named Coercing declared with Coercing<Object, Object>")
         .coercing(new ErasedNamedCoercing())
+        .build();
+
+    public static final GraphQLScalarType TAGS = GraphQLScalarType.newScalar()
+        .name("Tags")
+        .description("Test fixture: Coercing<String[], String[]>, a scalar over a text[] column")
+        .coercing(new StringArrayCoercing())
+        .build();
+
+    public static final GraphQLScalarType TAG_LIST = GraphQLScalarType.newScalar()
+        .name("TagList")
+        .description("Test fixture: Coercing<List<String>, List<String>>")
+        .coercing(new StringListCoercing())
+        .build();
+
+    public static final GraphQLScalarType WILDCARD_LIST = GraphQLScalarType.newScalar()
+        .name("WildcardList")
+        .description("Test fixture: Coercing<List<?>, List<?>>, not concrete")
+        .coercing(new WildcardListCoercing())
+        .build();
+
+    public static final GraphQLScalarType OBJECT_ARRAY = GraphQLScalarType.newScalar()
+        .name("ObjectArray")
+        .description("Test fixture: Coercing<Object[], Object[]>, not concrete")
+        .coercing(new ObjectArrayCoercing())
         .build();
 }

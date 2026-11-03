@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
+import com.palantir.javapoet.ArrayTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.ParameterizedTypeName;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
@@ -5768,6 +5771,59 @@ class GraphitronSchemaBuilderTest {
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(); }
         },
+
+        DIRECTIVE_RESOLVES_ARRAY_COERCING_SCALAR(
+            "@scalarType over a Coercing<String[], ...> → ScalarType whose Java type is String[]",
+            """
+            scalar Tags @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAGS")
+            type Query { x: Tags }
+            """,
+            schema -> {
+                var t = (ScalarType) schema.type("Tags");
+                assertThat(t.resolution().javaType())
+                    .isEqualTo(ArrayTypeName.of(ClassName.get(String.class)));
+            }),
+
+        DIRECTIVE_RESOLVES_LIST_COERCING_SCALAR(
+            "@scalarType over a Coercing<List<String>, ...> → ScalarType whose Java type is List<String>",
+            """
+            scalar TagList @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAG_LIST")
+            type Query { x: TagList }
+            """,
+            schema -> {
+                var t = (ScalarType) schema.type("TagList");
+                assertThat(t.resolution().javaType()).isEqualTo(
+                    ParameterizedTypeName.get(ClassName.get(java.util.List.class), ClassName.get(String.class)));
+            }),
+
+        DIRECTIVE_COERCING_INPUT_NOT_CONCRETE_REJECTS(
+            "@scalarType over a Coercing<List<?>, ...> → UnclassifiedType naming the wildcard shape",
+            """
+            scalar WildcardList @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.WILDCARD_LIST")
+            type Query { x: WildcardList }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("WildcardList");
+                assertThat(t.reason())
+                    .contains("scalar 'WildcardList'")
+                    .contains("java.util.List<?>")
+                    .contains("not concrete");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        },
+
+        ARRAY_COERCING_SCALAR_OVER_ARRAY_COLUMN(
+            "an array-coercing scalar on a @table field over a text[] column classifies as a column field",
+            """
+            scalar Tags @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAGS")
+            type ArrayHolder @table(name: "array_holder") { id: Int tags: Tags }
+            type Query { holder: ArrayHolder }
+            """,
+            schema -> {
+                assertThat(schema.type("Tags")).isInstanceOf(ScalarType.class);
+                var col = (ColumnBackedField) schema.field("ArrayHolder", "tags");
+                assertThat(col.columns().get(0).sqlName()).isEqualTo("tags");
+            }),
 
         UNANNOTATED_NON_SPEC_SCALAR_ESCALATES(
             "non-spec, non-federation scalar with no @scalarType → UnclassifiedType with the "

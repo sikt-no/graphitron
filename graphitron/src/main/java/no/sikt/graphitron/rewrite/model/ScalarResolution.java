@@ -65,7 +65,7 @@ public sealed interface ScalarResolution permits ScalarResolution.Successful, Sc
     sealed interface Rejected extends ScalarResolution
         permits Rejected.ClassNotFound, Rejected.UndeclaredClass, Rejected.FieldNotFound,
                 Rejected.FieldNotAccessible, Rejected.NullAtCodegen, Rejected.NotAScalarType,
-                Rejected.CoercingErased {
+                Rejected.CoercingErased, Rejected.CoercingInputNotConcrete {
 
         record ClassNotFound(String fqn) implements Rejected {}
 
@@ -103,6 +103,16 @@ public sealed interface ScalarResolution permits ScalarResolution.Successful, Sc
          */
         record CoercingErased(
             String coercingClass, CoercingDeclarationKind declarationKind
+        ) implements Rejected {}
+
+        /**
+         * The Coercing declares concrete parameters, but its {@code I} type holds a wildcard, a
+         * type variable or {@code Object} inside a generic or array ({@code List<?>},
+         * {@code List<T>}, {@code Object[]}), so it names no single Java type a record
+         * component or parameter can bind to. {@code declaredInput} is the type as declared.
+         */
+        record CoercingInputNotConcrete(
+            String coercingClass, String declaredInput
         ) implements Rejected {}
     }
 }

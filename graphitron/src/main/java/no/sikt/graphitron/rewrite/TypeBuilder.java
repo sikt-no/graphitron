@@ -1504,6 +1504,11 @@ class TypeBuilder {
                     + "' has erased type parameters (" + r.declarationKind()
                     + "). Declare concrete <Input, Output> parameters so the resolver can "
                     + "recover the Java type without falling back to Object.");
+            case ScalarResolution.Rejected.CoercingInputNotConcrete r -> Rejection.structural(
+                "scalar '" + scalarName + "': the Coercing on '" + r.coercingClass()
+                    + "' declares input type '" + r.declaredInput() + "', which is not concrete: "
+                    + "it names a wildcard, type variable or Object where a concrete Java type "
+                    + "is needed. Declare a concrete type such as List<String>.");
         };
     }
 

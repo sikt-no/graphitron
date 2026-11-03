@@ -8,9 +8,11 @@ import no.sikt.graphitron.rewrite.model.CoercingDeclarationKind;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -46,10 +48,13 @@ import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
  * <p>Two narrowing invariants on {@link ScalarResolution.Resolved#javaType}:
  *
  * <ul>
- *   <li>Never {@code Object} from a raw / erased Coercing. For built-ins this is a closed
- *       table; for consumer scalars this is the post-condition of
- *       {@link #recoverInputType(Coercing)} guarded by the {@link ScalarResolution.Rejected.CoercingErased}
- *       arm.</li>
+ *   <li>Never {@code Object}, a wildcard or a type variable at any depth. For built-ins this
+ *       is a closed table; for consumer scalars this is the post-condition of
+ *       {@link #recoverInputType(Coercing)}, guarded by the
+ *       {@link ScalarResolution.Rejected.CoercingErased} arm at the top level and the
+ *       {@link ScalarResolution.Rejected.CoercingInputNotConcrete} arm inside a generic or
+ *       array. Arrays and parameterized types of concrete types are kept whole, so the type
+ *       may be an {@code ArrayTypeName} or a {@code ParameterizedTypeName}.</li>
  *   <li>A JavaPoet {@link TypeName} ready to drop into a {@code MethodSpec} / {@code RecordSpec}
  *       declaration without further coercion.</li>
  * </ul>
@@ -177,12 +182,19 @@ public final class ScalarTypeResolver {
             return check.rejection();
         }
         Coercing<?, ?> coercing = check.scalar().getCoercing();
-        TypeName javaType = recoverInputType(coercing);
-        if (javaType == null) {
-            return new ScalarResolution.Rejected.CoercingErased(
-                coercing.getClass().getName(),
-                describeCoercingDeclaration(coercing)
-            );
+        TypeName javaType;
+        switch (recoverInputType(coercing)) {
+            case InputRecovery.Erased ignored -> {
+                return new ScalarResolution.Rejected.CoercingErased(
+                    coercing.getClass().getName(),
+                    describeCoercingDeclaration(coercing)
+                );
+            }
+            case InputRecovery.NotConcrete nc -> {
+                return new ScalarResolution.Rejected.CoercingInputNotConcrete(
+                    coercing.getClass().getName(), nc.declaredInput());
+            }
+            case InputRecovery.Found found -> javaType = found.javaType();
         }
         Class<?> owner = check.owner();
         ClassName ownerName = ClassName.get(owner.getPackageName(), owner.getSimpleName());
@@ -253,40 +265,77 @@ public final class ScalarTypeResolver {
     }
 
     /**
-     * Returns the boxed Java type the Coercing's {@code I} parameter resolves to, or
-     * {@code null} when {@code I} resolves to {@code Object} (raw, anonymous, or named-erased).
-     * Walks the implementing type's interface list and supertype chain so a subclass like
-     * {@code class MoneyCoercing extends AbstractTypedCoercing<Money, Money>} resolves through
-     * the parent's generic declaration.
+     * Outcome of reading the Coercing's {@code I} parameter: a nameable Java type, a top-level
+     * erasure (raw, anonymous, {@code Object}, or a bare type variable), or a well-declared
+     * parameter whose shape holds a wildcard, a type variable or {@code Object} at depth.
      */
-    private static TypeName recoverInputType(Coercing<?, ?> coercing) {
-        Class<?> raw = coercing.getClass();
-        Class<?> input = findCoercingInputType(raw);
-        if (input == null || input == Object.class) return null;
-        return ClassName.get(box(input));
+    private sealed interface InputRecovery {
+        record Found(TypeName javaType) implements InputRecovery {}
+        record Erased() implements InputRecovery {}
+        record NotConcrete(String declaredInput) implements InputRecovery {}
     }
 
-    private static Class<?> findCoercingInputType(Class<?> startClass) {
-        // BFS over interface + supertype edges, capturing the first concrete Coercing<I, ?> binding.
+    /**
+     * Recovers the Java type the Coercing's {@code I} parameter names. Walks the implementing
+     * type's interface list and supertype chain to the first {@code Coercing<I, O>}
+     * parameterisation, then converts {@code I} once with {@link TypeName#get(Type)}, so an
+     * array ({@code String[]}, {@code int[]}), a parameterized type ({@code List<String>},
+     * {@code Map<String, Integer>}) and any nesting of the two keep their full shape. A bare
+     * top-level class is boxed.
+     */
+    private static InputRecovery recoverInputType(Coercing<?, ?> coercing) {
+        Type input = findCoercingInputType(coercing.getClass());
+        if (input == null || input == Object.class || input instanceof TypeVariable<?>) {
+            return new InputRecovery.Erased();
+        }
+        if (!isConcrete(input, false)) {
+            return new InputRecovery.NotConcrete(input.getTypeName());
+        }
+        if (input instanceof Class<?> c && !c.isArray()) {
+            return new InputRecovery.Found(ClassName.get(box(c)));
+        }
+        return new InputRecovery.Found(TypeName.get(input));
+    }
+
+    /**
+     * True when {@code t} names one concrete Java type: no wildcard and no type variable at any
+     * depth, and no {@code Object} as a generic argument or array element ({@code nested}).
+     */
+    private static boolean isConcrete(Type t, boolean nested) {
+        return switch (t) {
+            case Class<?> c when c.isArray() -> isConcrete(c.getComponentType(), true);
+            case Class<?> c -> !(nested && c == Object.class);
+            case ParameterizedType pt -> {
+                for (Type arg : pt.getActualTypeArguments()) {
+                    if (!isConcrete(arg, true)) yield false;
+                }
+                yield true;
+            }
+            case GenericArrayType gat -> isConcrete(gat.getGenericComponentType(), true);
+            default -> false;
+        };
+    }
+
+    private static Type findCoercingInputType(Class<?> startClass) {
+        // Walk interface + supertype edges, capturing the first Coercing<I, ?> parameterisation.
         Class<?> cls = startClass;
         while (cls != null && cls != Object.class) {
             for (Type iface : cls.getGenericInterfaces()) {
-                Class<?> found = inputFromInterface(iface);
+                Type found = inputFromInterface(iface);
                 if (found != null) return found;
             }
-            Type sup = cls.getGenericSuperclass();
-            Class<?> superInput = inputFromInterface(sup);
+            Type superInput = inputFromInterface(cls.getGenericSuperclass());
             if (superInput != null) return superInput;
             cls = cls.getSuperclass();
         }
         return null;
     }
 
-    private static Class<?> inputFromInterface(Type t) {
+    private static Type inputFromInterface(Type t) {
         if (t instanceof ParameterizedType pt && pt.getRawType() == Coercing.class) {
             Type[] args = pt.getActualTypeArguments();
-            if (args.length == 2 && args[0] instanceof Class<?> inputClass) {
-                return inputClass;
+            if (args.length == 2) {
+                return args[0];
             }
         }
         return null;

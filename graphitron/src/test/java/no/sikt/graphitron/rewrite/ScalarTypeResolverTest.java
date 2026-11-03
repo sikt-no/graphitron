@@ -1,11 +1,15 @@
 package no.sikt.graphitron.rewrite;
 
+import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.rewrite.model.CoercingDeclarationKind;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 import no.sikt.graphitron.rewrite.scalarfixture.Money;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -204,6 +208,43 @@ class ScalarTypeResolverTest {
 
         assertThat(result).isEqualTo(new ScalarResolution.Rejected.CoercingErased(
             FIXTURE_PKG + ".ErasedNamedCoercing", CoercingDeclarationKind.ERASED_NAMED_CLASS));
+    }
+
+    @Test
+    void resolveFromConstantFqn_arrayCoercing_resolvesToArrayType() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromConstantFqn(
+            FIXTURE_PKG + ".ScalarConstants", "TAGS", LOADER);
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r ->
+            assertThat(r.javaType()).isEqualTo(ArrayTypeName.of(ClassName.get(String.class))));
+    }
+
+    @Test
+    void resolveFromConstantFqn_listCoercing_resolvesToParameterizedType() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromConstantFqn(
+            FIXTURE_PKG + ".ScalarConstants", "TAG_LIST", LOADER);
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r ->
+            assertThat(r.javaType()).isEqualTo(
+                ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get(String.class))));
+    }
+
+    @Test
+    void resolveFromConstantFqn_wildcardListCoercing_returnsCoercingInputNotConcrete() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromConstantFqn(
+            FIXTURE_PKG + ".ScalarConstants", "WILDCARD_LIST", LOADER);
+
+        assertThat(result).isEqualTo(new ScalarResolution.Rejected.CoercingInputNotConcrete(
+            FIXTURE_PKG + ".WildcardListCoercing", "java.util.List<?>"));
+    }
+
+    @Test
+    void resolveFromConstantFqn_objectArrayCoercing_returnsCoercingInputNotConcrete() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromConstantFqn(
+            FIXTURE_PKG + ".ScalarConstants", "OBJECT_ARRAY", LOADER);
+
+        assertThat(result).isEqualTo(new ScalarResolution.Rejected.CoercingInputNotConcrete(
+            FIXTURE_PKG + ".ObjectArrayCoercing", "java.lang.Object[]"));
     }
 
     // ===== Directive value parsing (resolveFromDirectiveValue) =====

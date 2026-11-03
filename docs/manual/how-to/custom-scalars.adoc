@@ -47,7 +47,7 @@ scalar BigDecimal @scalarType(scalar: "com.example.Scalars.MONEY")
 
 == Build your own `GraphQLScalarType` for a unique domain shape
 
-When no library covers the shape, author the constant in your consumer module and point `@scalarType` at it. The constant must be `public static final`, non-null at code generation, and assignable to `graphql.schema.GraphQLScalarType`. The bound `Coercing<I, O>` must declare concrete type parameters (a raw `Coercing`, `Coercing<Object, Object>`, or an anonymous-class declaration whose `I` erases to `Object` is rejected with a `CoercingErased` reason).
+When no library covers the shape, author the constant in your consumer module and point `@scalarType` at it. The constant must be `public static final`, non-null at code generation, and assignable to `graphql.schema.GraphQLScalarType`. The bound `Coercing<I, O>` must declare concrete type parameters (a raw `Coercing`, `Coercing<Object, Object>`, or an anonymous-class declaration whose `I` erases to `Object` is rejected with a `CoercingErased` reason). `I` may be an array or a parameterized type of concrete types, such as `String[]` for a scalar over a `text[]` column or `List<String>`; a wildcard, type variable or `Object` inside it (`List<?>`, `Object[]`) is rejected with a `CoercingInputNotConcrete` reason.
 
 [source,java]
 ----
@@ -87,7 +87,7 @@ Graphitron's scalar resolver recognises two implicit paths plus the directive:
 
 A non-spec, non-federation scalar with no `@scalarType` is unresolved and the build fails with a validation error naming `@scalarType(scalar:)` as the fix. There is no silent fallback to `Object`.
 
-Field-level rejection reasons are surfaced with per-arm messages: `FieldNotFound`, `FieldNotAccessible`, `NullAtCodegen`, `NotAScalarType`, `CoercingErased`. The directive reference catalogues each one.
+Field-level rejection reasons are surfaced with per-arm messages: `FieldNotFound`, `FieldNotAccessible`, `NullAtCodegen`, `NotAScalarType`, `CoercingErased`, `CoercingInputNotConcrete`. The directive reference catalogues each one.
 
 == Migrate off manual `additionalType(...)` calls
 
@@ -105,7 +105,7 @@ The graphitron LSP completes `@scalarType(scalar: |)` on a `scalar X` declaratio
 * The SDL `scalar <Name>` declaration is what makes the name resolvable in the SDL; the `@scalarType(scalar:)` directive is what makes the *reference* resolvable in the built schema. When the SDL name matches the constant's own `name()` the constant is registered directly; when it differs, the scalar registers under the SDL name borrowing the constant's coercing (an aliasing declaration).
 * The referenced class must be on the codegen classpath (consumer module's `target/classes`, any reactor sibling's `target/classes`, or a declared dependency). Plugin-classpath visibility does not count.
 * The referenced field must be `public static`, non-null at code generation, and assignable to `graphql.schema.GraphQLScalarType`.
-* The constant's `Coercing<I, O>` must declare concrete type parameters; raw, `Object`-erased, or anonymous-class declarations whose `I` resolves to `Object` are rejected with a `CoercingErased` reason.
+* The constant's `Coercing<I, O>` must declare concrete type parameters; raw, `Object`-erased, or anonymous-class declarations whose `I` resolves to `Object` are rejected with a `CoercingErased` reason. Arrays and parameterized types of concrete types are accepted; a wildcard, type variable or `Object` inside one is rejected with a `CoercingInputNotConcrete` reason.
 * Federation-namespaced scalars (e.g. `_FieldSet`) are wired automatically when the SDL declares an Apollo Federation `@link`; do not redeclare them with `@scalarType`. xref:federation-keys.adoc[How-to: Federation key fields] covers the federation directive surface.
 
 == See also

@@ -8017,11 +8017,9 @@ class FieldBuilder {
             // Registry-free look-ahead at the scalar's verdict for the assignability
             // check; resolved at this field's edge, not read from the in-progress registry.
             var classified = typeBuilder.lookAheadVerdict(s.getName());
-            if (classified instanceof GraphitronType.ScalarType st
-                    && st.resolution().javaType() instanceof com.palantir.javapoet.ClassName cn) {
-                // nameability: exempt (Java type from an already-classified scalar verdict)
-                try { return Class.forName(cn.reflectionName(), false, ctx.codegenLoader()); }
-                catch (ClassNotFoundException e) { return Object.class; }
+            if (classified instanceof GraphitronType.ScalarType st) {
+                Class<?> scalarClass = reflectClassOf(st.resolution().javaType());
+                return scalarClass != null ? scalarClass : Object.class;
             }
             return Object.class;
         }
@@ -8044,6 +8042,43 @@ class FieldBuilder {
             }
         }
         return Object.class;
+    }
+
+    /**
+     * The runtime class a classified scalar's Java type erases to, for the assignability check:
+     * a parameterized type maps to its raw class ({@code List<String>} to {@code List}), an
+     * array to the array class of its erased element ({@code String[]}, {@code int[]}). Returns
+     * {@code null} when a class is missing from the codegen classloader.
+     */
+    private Class<?> reflectClassOf(com.palantir.javapoet.TypeName type) {
+        return switch (type) {
+            case com.palantir.javapoet.ClassName cn -> {
+                // nameability: exempt (Java type from an already-classified scalar verdict)
+                try { yield Class.forName(cn.reflectionName(), false, ctx.codegenLoader()); }
+                catch (ClassNotFoundException e) { yield null; }
+            }
+            case com.palantir.javapoet.ParameterizedTypeName ptn -> reflectClassOf(ptn.rawType());
+            case com.palantir.javapoet.ArrayTypeName atn -> {
+                Class<?> component = reflectClassOf(atn.componentType());
+                yield component == null ? null : component.arrayType();
+            }
+            default -> primitiveClassOf(type);
+        };
+    }
+
+    private static Class<?> primitiveClassOf(com.palantir.javapoet.TypeName type) {
+        if (!type.isPrimitive()) return null;
+        return switch (type.toString()) {
+            case "boolean" -> boolean.class;
+            case "byte" -> byte.class;
+            case "short" -> short.class;
+            case "int" -> int.class;
+            case "long" -> long.class;
+            case "char" -> char.class;
+            case "float" -> float.class;
+            case "double" -> double.class;
+            default -> null;
+        };
     }
 
     /**
