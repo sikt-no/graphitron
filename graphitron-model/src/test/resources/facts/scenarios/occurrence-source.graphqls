@@ -10,6 +10,8 @@
 # and any other payload field, an id list among them, has none until that result is stated. An
 # argument reads its field's target tables, each member's for a union, the write's table for a write's
 # payload, and its field's own tables where the target binds none; an input field reads its parent's.
+# A connection's fields hang under the field returning it and read the page its producer produces,
+# which no table source states, so they have none yet; its arguments read the element's table.
 
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
   title: String
@@ -26,7 +28,12 @@ type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
   titleTexts: TranslatedTexts
     @reference(path: [{table: "film_translation"}])
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
+  # A connection under a table-bound parent, its path inferred from film_actor's one key to film, split
+  # into its own query as the generator requires of a connection on a table field.
+  actorRows: [FilmActor!]! @asConnection @splitQuery
 }
+
+type FilmActor @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
 
 type FilmDetails { length: Int }
 
@@ -113,6 +120,10 @@ type Mutation {
 extend schema @expectEquals(relation: "graphitron_occurrence_source",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate,                                kind
+  Film.actorRows,                            TABLE
+  Film.actorRows(after:),                    TABLE
+  Film.actorRows(first:),                    TABLE
+  FilmActor.actorId,                         TABLE
   Film.details,                              TABLE
   Film.details.length,                       TABLE
   Film.titleTexts,                           TABLE
@@ -147,6 +158,10 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source",
 extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate,                                table_schema, table_name
+  Film.actorRows,                            public,       film
+  Film.actorRows(after:),                    public,       film_actor
+  Film.actorRows(first:),                    public,       film_actor
+  FilmActor.actorId,                         public,       film_actor
   Film.details,                              public,       film
   Film.details.length,                       public,       film
   Film.titleTexts,                           public,       film
@@ -187,7 +202,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_object",
 # Occurrences that stand with no source: a root field with no @routine, its arguments where the target
 # binds no table, the arguments of a scalar that writes a path, a field of a plain type its parent field
 # reaches by a written path, an errors field, a write payload's field whose target binds no table, and a
-# field read off an object source.
+# field read off an object source, and a connection's fields.
 extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   coordinate
   Query.films
@@ -197,6 +212,11 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   Mutation.addFilm.errors
   Mutation.deleteLanguages.deletedIds
   Query.filmBlurbHolder.blurb.description
+  Film.actorRows.edges
+  Film.actorRows.edges.node
+  Film.actorRows.nodes
+  Film.actorRows.pageInfo
+  Film.actorRows.totalCount
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
@@ -208,4 +228,9 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
   Mutation.addFilm.errors
   Mutation.deleteLanguages.deletedIds
   Query.filmBlurbHolder.blurb.description
+  Film.actorRows.edges
+  Film.actorRows.edges.node
+  Film.actorRows.nodes
+  Film.actorRows.pageInfo
+  Film.actorRows.totalCount
   """)

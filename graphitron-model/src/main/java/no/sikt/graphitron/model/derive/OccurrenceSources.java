@@ -433,7 +433,8 @@ public final class OccurrenceSources {
     /**
      * A nested field of a plain type under a parent with a table source, and no service of its own
      * handing it an object, reads its parent's tables; an errors field reads none, and neither does
-     * a field whose parent field writes a path, a root {@code @routine} call aside.
+     * a field whose parent field writes a path, a root {@code @routine} call aside, nor a field of a
+     * connection, which binds into the page its returning producer produces.
      */
     private static Select<Record> nestedCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                              Condition at, LocalDateTime touchedAt) {
@@ -446,6 +447,7 @@ public final class OccurrenceSources {
         var fd = GRAPHQL_AST_FIELD_DEFINITION_ENTRY.as("fd");
         var ro = GRAPHQL_ROOT_OPERATION.as("ro");
         var re = GRAPHITRON_AST_ROUTINE_ENTRY.as("re");
+        var pw = GRAPHITRON_FIELD_TARGET.as("pw");
         return row(o, TABLE, pt.TABLE_SOURCE_NAME, pt.TABLE_SCHEMA, pt.TABLE_NAME, null)
             .from(o)
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
@@ -474,7 +476,12 @@ public final class OccurrenceSources {
                             re.SOURCE_COLUMN.eq(pe.ELEMENT_COLUMN)))))))
             .and(notExists(selectOne().from(ef)
                 .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
-                    ef.FIELD_NAME.eq(cf.FIELD_NAME))));
+                    ef.FIELD_NAME.eq(cf.FIELD_NAME))))
+            // A connection's fields read the page its producer produces, which no table source
+            // states; until that result is stated they wait.
+            .and(notExists(selectOne().from(pw)
+                .where(pw.GRAPH_NAME.eq(pf.GRAPH_NAME), pw.TYPE_NAME.eq(pf.TYPE_NAME),
+                    pw.FIELD_NAME.eq(pf.FIELD_NAME), pw.WRAPPER_TYPE_NAME.isNotNull())));
     }
 
     /** An argument of a field whose target type is bound to a table reads that table. */
