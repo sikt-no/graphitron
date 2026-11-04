@@ -19,6 +19,7 @@ import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.PathClaims;
 import no.sikt.graphitron.model.derive.PathElements;
+import no.sikt.graphitron.model.derive.ProducerClaims;
 import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.SpelledTables;
@@ -75,6 +76,9 @@ public final class GraphitronAssemblyCapture {
         NodeLegacyKeyShapes.derive(dsl, graph);
         NodeIdCandidates.derive(dsl, graph);
         targets(dsl, graph, readAt);
+        // What each field's written directives claim it runs, off the anchor's fields and
+        // applications; the fetchers and the entry defects below read it.
+        ProducerClaims.derive(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could
         // take, which read it. Every input either was captured before this gatherer ran or is a

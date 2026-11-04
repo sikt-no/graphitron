@@ -5544,18 +5544,57 @@ COMMENT ON COLUMN graphitron_producer.touched_at IS 'the reading that last wrote
 
 -- What a field's written directives say it runs, before any rule decides between them: a field
 -- with one claim is a producer of that kind, and a field with two is the defect.
-CREATE VIEW graphitron_producer_claim (graph_name, type_name, field_name, kind) AS
+CREATE TABLE graphitron_producer_claim (
+  graph_name             VARCHAR   NOT NULL,
+  coordinate             VARCHAR   NOT NULL,
+  kind                   VARCHAR   NOT NULL,
+  source_name            VARCHAR,
+  source_line            INT,
+  source_column          INT,
+  touched_at             TIMESTAMP NOT NULL,
+  element_graph_ref      VARCHAR,
+  element_coordinate_ref VARCHAR,
+  PRIMARY KEY (graph_name, coordinate, kind),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The claimed field through the claim's own copy of its key: a key to what a claim was built
+  -- from does not cascade, and the sweep removes the row the reading no longer finds.
+  FOREIGN KEY (element_graph_ref, element_coordinate_ref)
+    REFERENCES graphitron_element (graph_name, coordinate) ON DELETE SET NULL,
+  CHECK (element_graph_ref IS NULL OR element_graph_ref = graph_name),
+  CHECK (element_coordinate_ref IS NULL OR element_coordinate_ref = coordinate),
+  CHECK (kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'LOOKUP')),
+  -- A position is all three or none: an application nobody wrote has none.
+  CHECK ((source_name IS NULL) = (source_line IS NULL)
+     AND (source_line IS NULL) = (source_column IS NULL))
+);
+COMMENT ON TABLE graphitron_producer_claim IS 'One kind of producer a field claims it runs: one row per field and kind. For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field claiming nothing has none.';
+COMMENT ON COLUMN graphitron_producer_claim.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN graphitron_producer_claim.coordinate IS 'the declared field claimed, as graphitron_field spells it: Query.films. A declaration and not an occurrence, a claim being written once where the field is declared';
+COMMENT ON COLUMN graphitron_producer_claim.kind IS 'the graphitron_producer kind claimed: SERVICE, ROUTINE, INSERT, UPDATE, DELETE or LOOKUP. With the field the key, so what the field claims is the row and not the directive that said it; another spelling of the same claim changes no row';
+COMMENT ON COLUMN graphitron_producer_claim.source_name IS 'the file the claim was written in; null for an application nobody wrote';
+COMMENT ON COLUMN graphitron_producer_claim.source_line IS 'the claim''s source line, 1-based';
+COMMENT ON COLUMN graphitron_producer_claim.source_column IS 'the claim''s source column: where the application claiming the kind was written, the argument''s @lookupKey for a LOOKUP. The first written of two claiming one kind is kept. An attribute and not a reference, for a defect to point at';
+COMMENT ON COLUMN graphitron_producer_claim.touched_at IS 'when the reading that last stated this claim ran: the mark the sweep reads';
+COMMENT ON COLUMN graphitron_producer_claim.element_graph_ref IS 'the graph half of the field''s element key, nullable so the element''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_producer_claim.element_coordinate_ref IS 'the coordinate half of the field''s element key, equal to coordinate while the field stands';
+
+-- What each field's written directives claim it runs, an application at a time, the first written
+-- of two claiming one kind on one field kept.
+CREATE VIEW graphitron_producer_claim_rule (graph_name, coordinate, kind, source_name, source_line,
+                                            source_column, element_graph_ref,
+                                            element_coordinate_ref) AS
+WITH claimed (graph_name, coordinate, kind, source_name, source_line, source_column) AS (
 -- @service, wherever it is written.
-SELECT f.graph_name, f.type_name, f.field_name, 'SERVICE'
+SELECT f.graph_name, f.coordinate, 'SERVICE', da.source_name, da.source_line, da.source_column
   FROM graphitron_field f
   JOIN graphitron_directive_application da
     ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
    AND da.directive_name = 'service'
-UNION
+UNION ALL
 -- @routine on a query or mutation root field, or on a child @splitQuery takes out of its parent's
 -- statement. Below a root and not split, a routine is a lateral in the parent's statement, which
 -- the field reads.
-SELECT f.graph_name, f.type_name, f.field_name, 'ROUTINE'
+SELECT f.graph_name, f.coordinate, 'ROUTINE', da.source_name, da.source_line, da.source_column
   FROM graphitron_field f
   JOIN graphitron_directive_application da
     ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
@@ -5566,9 +5605,9 @@ SELECT f.graph_name, f.type_name, f.field_name, 'ROUTINE'
     OR EXISTS (SELECT 1 FROM graphitron_directive_application s
                 WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
                   AND s.directive_name = 'splitQuery')
-UNION
+UNION ALL
 -- @mutation on a mutation-root field, by the verb written. Upsert is retired and claims nothing.
-SELECT f.graph_name, f.type_name, f.field_name, m.operation
+SELECT f.graph_name, f.coordinate, m.operation, da.source_name, da.source_line, da.source_column
   FROM graphitron_field f
   JOIN graphql_root_operation ro
     ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
@@ -5579,10 +5618,11 @@ SELECT f.graph_name, f.type_name, f.field_name, m.operation
     ON m.graph_name = da.graph_name AND m.source_name = da.source_name
    AND m.source_line = da.source_line AND m.source_column = da.source_column
  WHERE m.operation IN ('INSERT', 'UPDATE', 'DELETE')
-UNION
--- @lookupKey on an argument, at the query root or on a split child; inline below a root, the keys
--- narrow the parent's statement and the field reads.
-SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP'
+UNION ALL
+-- @lookupKey on an argument, at the query root or on a split child, where the argument's
+-- application was written; inline below a root, the keys narrow the parent's statement and the
+-- field reads.
+SELECT f.graph_name, f.coordinate, 'LOOKUP', da.source_name, da.source_line, da.source_column
   FROM graphitron_field f
   JOIN graphitron_argument a
     ON a.graph_name = f.graph_name AND a.type_name = f.type_name AND a.field_name = f.field_name
@@ -5595,21 +5635,23 @@ SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP'
     OR EXISTS (SELECT 1 FROM graphitron_directive_application s
                 WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
                   AND s.directive_name = 'splitQuery')
-UNION
--- node and nodes, by their signature: a query-root field returning the Node interface, the ids it
--- is handed being the keys.
-SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP'
-  FROM graphitron_field f
-  JOIN graphql_root_operation ro
-    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'QUERY'
-  JOIN graphitron_type t
-    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INTERFACE'
- WHERE f.named_type = 'Node';
-COMMENT ON VIEW graphitron_producer_claim IS 'One kind of producer a field''s written directives claim it runs: one row per field and kind. For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field carrying neither has none.';
--- COMMENT ON COLUMN graphitron_producer_claim.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_producer_claim.type_name IS 'the type declaring the field';
--- COMMENT ON COLUMN graphitron_producer_claim.field_name IS 'the field claimed';
--- COMMENT ON COLUMN graphitron_producer_claim.kind IS 'the graphitron_producer kind the claim names; SERVICE, ROUTINE, INSERT, UPDATE, DELETE or LOOKUP, the kinds a directive or the node signature decides';
+)
+SELECT graph_name, coordinate, kind, source_name, source_line, source_column, graph_name, coordinate
+  FROM (SELECT c.graph_name, c.coordinate, c.kind, c.source_name, c.source_line, c.source_column,
+               ROW_NUMBER() OVER (PARTITION BY c.graph_name, c.coordinate, c.kind
+                                  ORDER BY c.source_name NULLS LAST, c.source_line,
+                                           c.source_column) AS written
+          FROM claimed c) first_written
+ WHERE written = 1;
+COMMENT ON VIEW graphitron_producer_claim_rule IS 'One row the producer claim rule computes, in the shape graphitron_producer_claim stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_claim, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.coordinate IS 'the declared field claimed';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.kind IS 'the graphitron_producer kind claimed';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.source_name IS 'the file the first claim of the kind was written in';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.element_graph_ref IS 'the graph, as the element reference';
+-- COMMENT ON COLUMN graphitron_producer_claim_rule.element_coordinate_ref IS 'the field, as the element reference';
 
 CREATE TABLE graphitron_method_reference_entry (
   graph_name    VARCHAR NOT NULL,
@@ -10967,9 +11009,10 @@ COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answ
 -- graphitron_entry_defect_rule; @lookupKey with @routine is deferred and has no row either.
 CREATE VIEW graphitron_producer_rule (graph_name, type_name, field_name, kind) AS
 WITH claim_count (graph_name, type_name, field_name, claims, kind) AS (
-  SELECT graph_name, type_name, field_name, COUNT(*), MIN(kind)
-    FROM graphitron_producer_claim
-   GROUP BY graph_name, type_name, field_name
+  SELECT f.graph_name, f.type_name, f.field_name, COUNT(*), MIN(c.kind)
+    FROM graphitron_producer_claim c
+    JOIN graphitron_field f ON f.graph_name = c.graph_name AND f.coordinate = c.coordinate
+   GROUP BY f.graph_name, f.type_name, f.field_name
 ),
 -- A type a statement lands on is one with a table, resolved or written: whether @table names a table
 -- the catalog holds is its own defect, not a reason the field runs something else.
@@ -11000,6 +11043,14 @@ SELECT graph_name, type_name, field_name, kind
   FROM (
     SELECT f.graph_name, f.type_name, f.field_name,
            CASE
+             -- node and nodes, by their signature: a query-root field returning the Node
+             -- interface looks up the ids it is handed. A position and not a claim, so a written
+             -- @service takes the field over rather than conflicting with it.
+             WHEN f.named_type = 'Node' AND tt.kind = 'INTERFACE'
+              AND EXISTS (SELECT 1 FROM graphql_root_operation q
+                           WHERE q.graph_name = f.graph_name AND q.type_name = f.type_name
+                             AND q.operation = 'QUERY')
+               THEN 'LOOKUP'
              -- A query-root field with nothing written selects, where its target lands anywhere.
              WHEN ro.operation = 'QUERY' THEN
                CASE WHEN EXISTS (SELECT 1 FROM landing l
@@ -11033,15 +11084,16 @@ SELECT graph_name, type_name, field_name, kind
              -- claiming nothing else. Probed per field rather than collected beside the claim
              -- counts, which H2 would collect again for every field it asks about.
              WHEN EXISTS (SELECT 1 FROM graphitron_field_target pf
+                           JOIN graphitron_field pff
+                             ON pff.graph_name = pf.graph_name AND pff.type_name = pf.type_name
+                            AND pff.field_name = pf.field_name
                            JOIN graphitron_producer_claim pc
-                             ON pc.graph_name = pf.graph_name AND pc.type_name = pf.type_name
-                            AND pc.field_name = pf.field_name
+                             ON pc.graph_name = pff.graph_name AND pc.coordinate = pff.coordinate
                             AND pc.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
                           WHERE pf.graph_name = f.graph_name AND pf.target_type_name = f.type_name
                             AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim pc2
                                              WHERE pc2.graph_name = pc.graph_name
-                                               AND pc2.type_name = pc.type_name
-                                               AND pc2.field_name = pc.field_name
+                                               AND pc2.coordinate = pc.coordinate
                                                AND pc2.kind <> pc.kind))
               AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype pb
                                WHERE pb.graph_name = f.graph_name AND pb.type_name = f.type_name)
@@ -13178,11 +13230,12 @@ UNION ALL
 -- fetcher runs one thing. @lookupKey with @routine is deferred rather than refused.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'PRODUCER_KINDS_CONFLICT', CAST(NULL AS VARCHAR)
-  FROM (SELECT graph_name, type_name, field_name
-          FROM graphitron_producer_claim
-         GROUP BY graph_name, type_name, field_name
+  FROM (SELECT f.graph_name, f.type_name, f.field_name
+          FROM graphitron_producer_claim pc
+          JOIN graphitron_field f ON f.graph_name = pc.graph_name AND f.coordinate = pc.coordinate
+         GROUP BY f.graph_name, f.type_name, f.field_name
         HAVING COUNT(*) > 1
-           AND NOT (COUNT(*) = 2 AND MIN(kind) = 'LOOKUP' AND MAX(kind) = 'ROUTINE')) c
+           AND NOT (COUNT(*) = 2 AND MIN(pc.kind) = 'LOOKUP' AND MAX(pc.kind) = 'ROUTINE')) c
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
 UNION ALL
@@ -13287,8 +13340,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                     WHERE fe.graph_name = f.graph_name AND fe.type_name = f.type_name
                       AND fe.field_name = f.field_name)
    AND (SELECT COUNT(*) FROM graphitron_producer_claim c
-         WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name) < 2
+         WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate) < 2
 UNION ALL
 -- A field on the subscription root, at the field's own declaration. Meaningful under the
 -- specification and under the directives alike: graphitron generates no subscription resolver
@@ -14407,8 +14459,7 @@ SELECT f.graph_name, f.type_name, f.field_name,
                     WHERE p.graph_name = f.graph_name AND p.type_name = f.type_name
                       AND p.field_name = f.field_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim c
-                    WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
-                      AND c.field_name = f.field_name);
+                    WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate);
 COMMENT ON VIEW graphitron_reader_rule IS 'One row the reader rule computes, in the shape graphitron_reader stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_reader, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_reader_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_reader_rule.type_name IS 'the object type declaring the field';
@@ -18292,8 +18343,8 @@ INSERT INTO meta_grain VALUES
    'one use of one declared field, argument or input field reached along a chain, in one graph',
    'graph_name, coordinate', 'sdl'),
   ('producer-claim',
-   'one kind of producer one field''s written directives claim, in one graph',
-   'graph_name, type_name, field_name, kind', 'sdl'),
+   'one kind of producer one declared field claims, in one graph',
+   'graph_name, coordinate, kind', 'sdl'),
   ('type-result',
    'one shape of result one type holds, in one graph',
    'graph_name, type_name, shape', 'sdl'),
@@ -20031,9 +20082,13 @@ INSERT INTO meta_relation VALUES
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_reader, which is the name every reader spells.',
    'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_producer_claim', 'producer-claim', 'graphitron',
-   'One kind of producer a field''s written directives claim it runs: one row per field and kind.',
-   'For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field carrying neither has none.',
-   'Kept apart from the rule so the conflict and the kind read one statement of what was claimed: the rule takes a field with one claim, and the entry defects report a field with two.'),
+   'One kind of producer a field claims it runs: one row per field and kind.',
+   'For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field claiming nothing has none.',
+   'Kept apart from the rule so the conflict and the kind read one statement of what was claimed: the rule takes a field with one claim, and the entry defects report a field with two. Keyed by what is claimed, the field and the kind, and not by the directive that claims it, so another spelling of the same claim changes no row; where it was written is kept beside the key for a defect to point at. A kind no author writes is no claim: a root''s SELECT, the node signature''s LOOKUP and a split child''s re-read are the rule''s, decided by position, so a written @service takes over the node field rather than conflicting with it. The field is referenced through a copy of its key that its removal sets null, so the sweep, not a cascade, removes a claim the reading no longer finds.'),
+  ('graphitron_producer_claim_rule', 'producer-claim', 'graphitron',
+   'One row the producer claim rule computes, in the shape graphitron_producer_claim stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_claim, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_producer_rule', 'graph-field', 'graphitron',
    'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer, which is the name every reader spells.',

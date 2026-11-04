@@ -110,6 +110,14 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   coordinate,       code
   Query.conflicted, PRODUCER_KINDS_CONFLICT
   """)
+# Each kind written is a claim of its own, which is the conflict.
+extend schema @expectEquals(relation: "graphitron_producer_claim", where: """
+  coordinate = 'Query.conflicted'
+  """, rows: """
+  coordinate,       kind
+  Query.conflicted, SERVICE
+  Query.conflicted, ROUTINE
+  """)
 
 # What each kind runs, resolved. A produced type is not here: it is the field's target, so the
 # delete that produces ids still names the table it mutates.
