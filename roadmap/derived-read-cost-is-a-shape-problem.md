@@ -657,10 +657,10 @@ classified records have no reader left and can go with the walk.
   fixpoint goes; the source reads a class off its producer's result. The generator's `ResultShape`
   (`SingleRecord`, `RecordList`, `Connection`, `LoaderDelegated`) is that fact today.
   `graphitron_field_key_row` re-keys onto the occurrence and reads its parent's
-  source rather than "the parent holds an `OBJECT`"; since the source's key-row lift reads the key row,
-  the source's depth loop calls `KeyRows.writeDepth` between a depth's sources and the next depth's,
-  writing the key rows of the occurrences one below, and the key rows are swept after the loop. The
-  rule and the relation are E's, the cadence the source's.
+  source rather than "the parent holds an `OBJECT`"; since a child producer's key-row start reads the
+  key row and a depth's sources read that depth's producers, E's producer step, at the marked place
+  in the source's depth loop, writes a depth's key rows and producers before its sources, both swept
+  after the loop. The rules and the relations are E's, the cadence the source's.
 * **An object result is lifted onto a key row** `open`, E's.
   Under an object parent the producer that starts a field lifts it onto its key row's table, a lift
   the producer states over E's key row while the field's source names only that table
@@ -2051,10 +2051,10 @@ the same key.
 
 **What this replaces.** `graphitron_code_reference`, keyed by a reference's written position,
 dissolves into the calls' methods; `graphitron_producer_service` and `graphitron_producer_routine`
-are the executing calls of root and lifted producers. `graphitron_producer`, `graphitron_reader` and
-`graphitron_fetcher` go to the occurrence: the producer, with its lift folded in, one row per root or
-child producer; the reader into the binding; the fetcher, a producer or not, derived. `graphitron_occurrence_lift` and its way subtypes
-fold into the producer, and the source states only tables or a class. `graphitron_argmapping_landing` becomes the argMapping arm
+are the executing calls of root and child producers. `graphitron_producer`, `graphitron_reader` and
+`graphitron_fetcher` go to the occurrence: the producer, its lift included, one row per root or
+child producer; the reader into the binding; the fetcher, a producer or not, derived. The source
+states only tables or a class. `graphitron_argmapping_landing` becomes the argMapping arm
 of parameter matching, keyed by the call and the parameter, and `graphitron_call_context_key` the
 call's `$context` fills.
 
