@@ -23,9 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * documentation tree.
  *
  * <p>Four floors, each naming the file and the fix: a query whose rendered file is missing is a
- * render (the approval reports it), a rendered file whose query is gone is a deletion, a query naming
- * no fact document or one that does not exist is an edit to the query, and a rendered file no page
- * beside its folder includes is an edit to the page.
+ * render (the approval reports it), a rendered file whose query is gone is a deletion, an example
+ * naming a fact document that does not exist is an edit to the query, and an example no page beside
+ * its folder includes is an edit to the page.
  */
 @PipelineTier
 class ManualExampleTest {
@@ -66,16 +66,15 @@ class ManualExampleTest {
     }
 
     @Test
-    void everyQueryNamesAFactDocumentThatExists() {
+    void everyExampleNamesAFactDocumentThatExists() {
         List<String> unresolved = ManualExamples.queries().stream()
-            .filter(q -> ManualExamples.factDocumentPath(ManualExamples.read(q))
-                .flatMap(ManualExamples::factDocument).isEmpty())
-            .map(Path::toString)
+            .flatMap(q -> ManualExamples.examples(q).stream()
+                .filter(e -> ManualExamples.factDocument(e.path()).isEmpty())
+                .map(e -> q + " " + e.name() + " (" + e.path() + ")"))
             .toList();
         assertThat(unresolved)
-            .as("a query must carry @factDocument(path:) naming a fact document by its folder and"
-                + " name, as scenarios/result-external-field; these name none, or one that does not"
-                + " exist")
+            .as("an example's @factDocument(path:) names a fact document by its folder and name, as"
+                + " scenarios/result-external-field; these name one that does not exist")
             .isEmpty();
     }
 
@@ -92,23 +91,26 @@ class ManualExampleTest {
     }
 
     @Test
-    void everyRenderedExampleIsIncludedByAPage() throws IOException {
+    void everyExampleIsIncludedByAPage() throws IOException {
         var missing = new java.util.ArrayList<String>();
-        for (Path rendered : ManualExamples.rendered()) {
-            Path pageDirectory = rendered.getParent().getParent();
-            String line = ManualExamples.includeLine(rendered);
-            boolean included;
-            try (Stream<Path> pages = Files.list(pageDirectory)) {
-                included = pages.filter(p -> p.getFileName().toString().endsWith(".adoc"))
-                    .anyMatch(p -> ManualExamples.read(p).contains(line));
+        for (Path query : ManualExamples.queries()) {
+            Path rendered = ManualExamples.renderedFile(query);
+            String pages;
+            try (Stream<Path> files = Files.list(query.getParent().getParent())) {
+                pages = files.filter(p -> p.getFileName().toString().endsWith(".adoc"))
+                    .map(ManualExamples::read)
+                    .collect(java.util.stream.Collectors.joining("\n"));
             }
-            if (!included) {
-                missing.add(rendered + " (" + line + ")");
+            for (var example : ManualExamples.examples(query)) {
+                String line = ManualExamples.includeLine(rendered, example.name());
+                if (!pages.contains(line)) {
+                    missing.add(line + " (" + query + ")");
+                }
             }
         }
         assertThat(missing)
-            .as("a rendered example no page includes is an example nobody reads. Add the include"
-                + " line where the example belongs in a page beside its examples folder.")
+            .as("an example no page includes is one nobody reads. Add the include line where the"
+                + " example belongs in a page beside its examples folder.")
             .isEmpty();
     }
 }

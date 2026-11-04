@@ -28,6 +28,9 @@ type Film @table(name: "film") {
   "A scalar @externalField hands no object, so no result follows from it."
   titleUpper: String
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmFields", method: "title"})
+  "A computed boolean; the method is named for the field, so the reference leaves method: out."
+  isEnglish: Boolean
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
 }
 
 extend type Query { inventories: [Inventory!]! }
@@ -70,6 +73,7 @@ extend schema @assertContains(relation: "graphitron_reader", rows: """
   FilmCardWrapper, example,      ACCESSOR
   RecordExample,   fieldA,       ACCESSOR
   Film,            titleUpper,   EXPRESSION
+  Film,            isEnglish,    EXPRESSION
   """)
 
 extend schema @expectEquals(relation: "graphitron_field_key_row", where: "type_name = 'FilmCardWrapper'", rows: """

@@ -1,0 +1,12 @@
+fragment ComputedBoolean on Film @factDocument(path: "scenarios/result-external-field") {
+  isEnglish
+}
+
+fragment TableRecordLift on Inventory @factDocument(path: "scenarios/result-external-field") {
+  inventoryId
+  filmRef { filmId }
+}
+
+fragment JavaRecordLift on Inventory @factDocument(path: "scenarios/result-external-field") {
+  filmCardData { film { title } }
+}

@@ -1,0 +1,36 @@
+# Rendered by ManualExampleTest from externalField.graphql. Do not edit.
+
+# tag::ComputedBoolean[]
+type Film @table(name: "film") {
+  "A computed boolean; the method is named for the field, so the reference leaves method: out."
+  isEnglish: Boolean @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+}
+# end::ComputedBoolean[]
+
+# tag::TableRecordLift[]
+type Inventory @table(name: "inventory") {
+  inventoryId: Int @field(name: "inventory_id")
+  "Field<FilmRecord>: a table's own record, read through the Record API."
+  filmRef: FilmCard @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+}
+
+type FilmCard {
+  filmId: Int @field(name: "film_id")
+}
+# end::TableRecordLift[]
+
+# tag::JavaRecordLift[]
+type Inventory @table(name: "inventory") {
+  "Field<FilmCardData>: a Java record wrapping one."
+  filmCardData: FilmCardWrapper @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+}
+
+type FilmCardWrapper {
+  "A table child under the value: its key is read off the record's film() accessor."
+  film: Film
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+# end::JavaRecordLift[]

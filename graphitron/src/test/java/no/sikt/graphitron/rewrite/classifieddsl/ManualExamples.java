@@ -20,12 +20,13 @@ import java.util.stream.Stream;
  * A manual page's schema example, rendered from a query over a fact document rather than written by
  * hand, so an example cannot show what the store does not hold.
  *
- * <p>An example is two files in an {@code examples} folder beside the page: a {@code .graphql} file
- * holding one operation or fragment marked {@code @factDocument(path:)}, naming the fact document it
- * selects from as its folder and name ({@code scenarios/result-external-field}), and the
- * {@code .graphqls} file {@link QueryViewRenderer} renders from that selection over the document, its
- * real directives kept and the fact documents' own stripped. The page includes the rendered file's
- * {@value #TAG} region, which leaves the header out.
+ * <p>A page's examples are two files in an {@code examples} folder beside it, named for the page: a
+ * {@code .graphql} file holding one named operation or fragment per example, each marked
+ * {@code @factDocument(path:)} naming the fact document it selects from as its folder and name
+ * ({@code scenarios/result-external-field}), and the {@code .graphqls} file holding what
+ * {@link QueryViewRenderer} renders from each selection over its document, its real directives kept
+ * and the fact documents' own stripped. Each example renders into a tag region named for its
+ * definition, which the page includes where the example belongs, leaving the header out.
  *
  * <p>The rendered file is committed for the reason {@link CorpusFragmentRenderer} gives for its
  * fragments: an {@code include::} resolves in every build, including the ones that skip tests and
@@ -33,8 +34,8 @@ import java.util.stream.Stream;
  */
 final class ManualExamples {
 
-    /** The tag region a page includes, so the header stays out of the page. */
-    static final String TAG = "example";
+    /** One example: the definition's name, which is its tag region, the fact document, the selection. */
+    record Example(String name, String path, String selection) {}
 
     private static final String QUERY_SUFFIX = ".graphql";
     private static final String RENDERED_SUFFIX = ".graphqls";
@@ -72,23 +73,42 @@ final class ManualExamples {
         return rendered.resolveSibling(baseName(rendered) + QUERY_SUFFIX);
     }
 
-    /** The line a page beside the {@code examples} folder includes the rendered file with. */
-    static String includeLine(Path rendered) {
-        return "include::" + FOLDER + "/" + rendered.getFileName() + "[tag=" + TAG + "]";
+    /** The line a page beside the {@code examples} folder includes one example's region with. */
+    static String includeLine(Path rendered, String example) {
+        return "include::" + FOLDER + "/" + rendered.getFileName() + "[tag=" + example + "]";
     }
 
-    /** The fact document path the query names, or empty when no definition carries the directive. */
-    static Optional<String> factDocumentPath(String query) {
-        var paths = new Parser().parseDocument(query).getDefinitions().stream()
-            .filter(DirectivesContainer.class::isInstance)
-            .flatMap(d -> ((DirectivesContainer<?>) d).getDirectives(DIRECTIVE).stream())
-            .map(ManualExamples::path)
-            .toList();
-        if (paths.size() > 1) {
-            throw new IllegalArgumentException("an example selects from one fact document, and this"
-                + " one names " + paths.size() + ": " + paths);
+    /**
+     * The examples a query file holds, in written order. Every definition is one example, so each
+     * must be named, its name being the region a page includes, and must name its fact document.
+     */
+    static List<Example> examples(Path query) {
+        var examples = new java.util.ArrayList<Example>();
+        for (graphql.language.Definition<?> definition
+                : new Parser().parseDocument(read(query)).getDefinitions()) {
+            String name = switch (definition) {
+                case graphql.language.OperationDefinition o -> o.getName();
+                case graphql.language.FragmentDefinition f -> f.getName();
+                default -> throw new IllegalArgumentException(query + " holds a definition that is"
+                    + " neither an operation nor a fragment");
+            };
+            if (name == null || name.isEmpty()) {
+                throw new IllegalArgumentException(query + " holds an unnamed operation; an example's"
+                    + " name is the tag region its page includes");
+            }
+            var paths = ((DirectivesContainer<?>) definition).getDirectives(DIRECTIVE).stream()
+                .map(ManualExamples::path).toList();
+            if (paths.size() != 1) {
+                throw new IllegalArgumentException(query + "'s " + name + " must carry one @"
+                    + DIRECTIVE + "(path:), and carries " + paths.size());
+            }
+            examples.add(new Example(name, paths.getFirst(),
+                graphql.language.AstPrinter.printAst(definition)));
         }
-        return paths.stream().findFirst();
+        if (examples.stream().map(Example::name).distinct().count() != examples.size()) {
+            throw new IllegalArgumentException(query + " names two examples alike");
+        }
+        return List.copyOf(examples);
     }
 
     /**
@@ -102,20 +122,20 @@ final class ManualExamples {
             .findFirst();
     }
 
-    /** What the query renders to, header and tag region included: the committed file's whole text. */
+    /** What the query file renders to, its header and one region per example: the committed text. */
     static String render(Path query) {
-        String text = read(query);
-        String path = factDocumentPath(text).orElseThrow(() -> new IllegalArgumentException(
-            query + " carries no @" + DIRECTIVE + "(path:), so it names nothing to select from"));
-        Document document = factDocument(path).orElseThrow(() -> new IllegalArgumentException(
-            query + " names the fact document '" + path + "', which does not exist"));
-        String sdl = QueryViewRenderer.render(
-            QueryViewRenderer.Prelude.of(FactDocuments.prelude()), document.sdl(), text);
-        return "# Rendered by ManualExampleTest from " + query.getFileName() + " over the fact document "
-            + path + ". Do not edit.\n"
-            + "# tag::" + TAG + "[]\n"
-            + sdl + "\n"
-            + "# end::" + TAG + "[]\n";
+        var prelude = QueryViewRenderer.Prelude.of(FactDocuments.prelude());
+        var out = new StringBuilder("# Rendered by ManualExampleTest from " + query.getFileName()
+            + ". Do not edit.\n");
+        for (Example example : examples(query)) {
+            Document document = factDocument(example.path()).orElseThrow(() ->
+                new IllegalArgumentException(query + "'s " + example.name() + " names the fact"
+                    + " document '" + example.path() + "', which does not exist"));
+            out.append("\n# tag::").append(example.name()).append("[]\n")
+                .append(QueryViewRenderer.render(prelude, document.sdl(), example.selection()))
+                .append("\n# end::").append(example.name()).append("[]\n");
+        }
+        return out.toString();
     }
 
     static String read(Path file) {

@@ -27,11 +27,7 @@ A computed boolean derived from a column on the parent table. The method name is
 
 [source,graphql]
 ----
-type Film @table(name: "film") {
-    isEnglish: Boolean @externalField(reference: {
-        className: "com.example.FilmExtensions"
-    })
-}
+include::examples/externalField.graphqls[tag=ComputedBoolean]
 ----
 
 [source,java]
@@ -47,25 +43,14 @@ A `Field<TableRecord<?>>` lift via `DSL.row(...).convertFrom(...)`. The lifted `
 
 [source,graphql]
 ----
-include::examples/external-field-film-ref.graphqls[tag=example]
+include::examples/externalField.graphqls[tag=TableRecordLift]
 ----
 
 A `Field<CustomJavaRecord>` lift returning a developer-defined record whose canonical accessor returns a typed jOOQ record. The classifier auto-derives an accessor-keyed batch key (single-record accessor) from the typed accessor, so a child `@table`-returning field on the wrapper resolves through a `DataLoader` keyed on the lifted record's PK:
 
 [source,graphql]
 ----
-type Inventory @table(name: "inventory") {
-    filmCardData: FilmCardWrapper @externalField(reference: {
-        className: "com.example.InventoryExtensions",
-        method:    "filmCardData"
-    })
-}
-
-# FilmCardWrapper is backed by com.example.services.FilmCardData, the element
-# type of the Field<CustomJavaRecord> the filmCardData lift returns.
-type FilmCardWrapper {
-    film: Film
-}
+include::examples/externalField.graphqls[tag=JavaRecordLift]
 ----
 
 == Constraints

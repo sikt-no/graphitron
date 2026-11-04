@@ -1,4 +1,0 @@
-fragment FilmRef on Inventory @factDocument(path: "scenarios/result-external-field") {
-  inventoryId
-  filmRef { filmId }
-}
