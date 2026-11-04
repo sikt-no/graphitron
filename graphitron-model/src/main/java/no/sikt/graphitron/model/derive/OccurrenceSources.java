@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.tables.GraphitronField;
 import no.sikt.graphitron.model.tables.GraphitronOccurrence;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -485,7 +486,10 @@ public final class OccurrenceSources {
                     pw.FIELD_NAME.eq(pf.FIELD_NAME), pw.WRAPPER_TYPE_NAME.isNotNull())));
     }
 
-    /** An argument of a field whose target type is bound to a table reads that table. */
+    /**
+     * An argument of a field whose target type is bound to a table reads that table, unless the
+     * field writes a path.
+     */
     private static Select<Record> argumentTarget(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at) {
         var pf = GRAPHITRON_FIELD.as("pf");
@@ -498,12 +502,13 @@ public final class OccurrenceSources {
             .join(ft).on(ft.GRAPH_NAME.eq(pf.GRAPH_NAME), ft.TYPE_NAME.eq(pf.TYPE_NAME),
                 ft.FIELD_NAME.eq(pf.FIELD_NAME))
             .join(tt).on(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
-            .where(at, o.KIND.eq("FIELD_ARGUMENT"));
+            .where(at, o.KIND.eq("FIELD_ARGUMENT"))
+            .andNot(writesPath(pf));
     }
 
     /**
      * An argument of a field whose target, a union or an interface, binds no table of its own reads
-     * each table its members are bound to, a row per table.
+     * each table its members are bound to, a row per table, unless the field writes a path.
      */
     private static Select<Record> argumentMember(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at) {
@@ -521,13 +526,14 @@ public final class OccurrenceSources {
             .join(pm).on(pm.GRAPH_NAME.eq(ft.GRAPH_NAME), pm.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME))
             .join(mt).on(mt.GRAPH_NAME.eq(pm.GRAPH_NAME), mt.TYPE_NAME.eq(pm.MEMBER_TYPE_NAME))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"))
+            .andNot(writesPath(pf))
             .and(notExists(selectOne().from(tt)
                 .where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))));
     }
 
     /**
      * An argument of a write whose target is an object type bound to no table, the payload
-     * graphitron builds, reads the table the write mutates.
+     * graphitron builds, reads the table the write mutates, unless the write writes a path.
      */
     private static Select<Record> argumentWrite(GraphitronOccurrence o, GraphitronOccurrence p,
                                                 Condition at) {
@@ -549,6 +555,7 @@ public final class OccurrenceSources {
             .join(gt).on(gt.GRAPH_NAME.eq(ft.GRAPH_NAME), gt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME),
                 gt.KIND.eq("OBJECT"))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"))
+            .andNot(writesPath(pf))
             .and(notExists(selectOne().from(tt)
                 .where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))))
             .and(notExists(selectOne().from(pm)
@@ -559,7 +566,7 @@ public final class OccurrenceSources {
     /**
      * An argument of a field whose target is bound to no table, a nested object, a scalar or an
      * enum, reads its field's own tables, the field's path being empty; a write's payload reads the
-     * write's table instead, and the arguments of a scalar field that writes a path read none.
+     * write's table instead, and the arguments of a field that writes a path read none.
      */
     private static Select<Record> argumentCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                                Condition at, LocalDateTime touchedAt) {
@@ -571,9 +578,6 @@ public final class OccurrenceSources {
         var mt = GRAPHITRON_TABLETYPE.as("mt");
         var pw = GRAPHITRON_PRODUCER_WRITE.as("pw");
         var gt = GRAPHITRON_TYPE.as("gt");
-        var ot = GRAPHITRON_TYPE.as("ot");
-        var pe = GRAPHITRON_AST_FIELD_PATH_ENTRY.as("pe");
-        var fd = GRAPHQL_AST_FIELD_DEFINITION_ENTRY.as("fd");
         return row(o, TABLE, pt.TABLE_SOURCE_NAME, pt.TABLE_SCHEMA, pt.TABLE_NAME, null)
             .from(o)
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
@@ -592,15 +596,32 @@ public final class OccurrenceSources {
                 .join(gt).on(gt.GRAPH_NAME.eq(pw.GRAPH_NAME), gt.KIND.eq("OBJECT"))
                 .where(pw.GRAPH_NAME.eq(pf.GRAPH_NAME), pw.TYPE_NAME.eq(pf.TYPE_NAME),
                     pw.FIELD_NAME.eq(pf.FIELD_NAME), gt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))))
-            // A scalar's written path is the join path's to resolve; until then its arguments wait.
-            .and(exists(selectOne().from(ot)
-                    .where(ot.GRAPH_NAME.eq(ft.GRAPH_NAME), ot.TYPE_NAME.eq(ft.TARGET_TYPE_NAME),
-                        ot.KIND.in("OBJECT", "INTERFACE", "UNION")))
-                .or(notExists(selectOne().from(pe)
-                    .join(fd).on(fd.GRAPH_NAME.eq(pe.GRAPH_NAME), fd.SOURCE_NAME.eq(pe.SOURCE_NAME),
-                        fd.SOURCE_LINE.eq(pe.FIELD_LINE), fd.SOURCE_COLUMN.eq(pe.FIELD_COLUMN))
-                    .where(fd.GRAPH_NAME.eq(pf.GRAPH_NAME), fd.TYPE_NAME.eq(pf.TYPE_NAME),
-                        fd.NAME.eq(pf.FIELD_NAME)))));
+            .andNot(writesPath(pf));
+    }
+
+    /**
+     * Whether the field {@code pf} writes a path. Where it lands is the join path's to resolve, so
+     * its arguments wait for it, whatever its target: a @routine's result is its signature's, and
+     * what an argument there takes is not yet settled. A root field's leading @routine is its
+     * producer's call, no step of a path, and its table the arguments' source already.
+     */
+    private static Condition writesPath(GraphitronField pf) {
+        var pe = GRAPHITRON_AST_FIELD_PATH_ENTRY.as("wpe");
+        var fd = GRAPHQL_AST_FIELD_DEFINITION_ENTRY.as("wfd");
+        var ro = GRAPHQL_ROOT_OPERATION.as("wro");
+        var re = GRAPHITRON_AST_ROUTINE_ENTRY.as("wre");
+        return exists(selectOne().from(pe)
+            .join(fd).on(fd.GRAPH_NAME.eq(pe.GRAPH_NAME), fd.SOURCE_NAME.eq(pe.SOURCE_NAME),
+                fd.SOURCE_LINE.eq(pe.FIELD_LINE), fd.SOURCE_COLUMN.eq(pe.FIELD_COLUMN))
+            .where(fd.GRAPH_NAME.eq(pf.GRAPH_NAME), fd.TYPE_NAME.eq(pf.TYPE_NAME),
+                fd.NAME.eq(pf.FIELD_NAME))
+            .andNot(pe.POSITION.eq(0)
+                .and(exists(selectOne().from(ro)
+                    .where(ro.GRAPH_NAME.eq(pf.GRAPH_NAME), ro.TYPE_NAME.eq(pf.TYPE_NAME))))
+                .and(exists(selectOne().from(re)
+                    .where(re.GRAPH_NAME.eq(pe.GRAPH_NAME), re.SOURCE_NAME.eq(pe.SOURCE_NAME),
+                        re.SOURCE_LINE.eq(pe.ELEMENT_LINE),
+                        re.SOURCE_COLUMN.eq(pe.ELEMENT_COLUMN))))));
     }
 
     /** An input field reads its parent argument's or input field's tables. */

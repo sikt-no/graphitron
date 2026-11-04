@@ -7,7 +7,8 @@
 # field with no path it expands its field's target the same way, starting on each type's table, or on
 # its own source table, the write's, where the type has none. An input field copies its parent's.
 # Every start is one of the occurrence's source table rows, start_table_ref saying so. The schema is
-# scenarios/occurrence-source's, with two fields added on FilmActor for the polymorphic targets.
+# scenarios/occurrence-source's, with two fields added on FilmActor for the polymorphic targets and
+# Film.castFilms, whose argument waits for its path.
 
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
   title: String
@@ -27,7 +28,16 @@ type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
   # A connection under a table-bound parent, its path inferred from film_actor's one key to film, split
   # into its own query as the generator requires of a connection on a table field.
   actorRows: [FilmActor!]! @asConnection @splitQuery
+  # A path ending on a @routine that returns a plain object: the field lands on no table yet, and
+  # its argument and its fields wait for the path, with no source and no needs.
+  castFilms(minLength: Int!): [ActorFilm!]
+    @reference(path: [{table: "film_actor"}])
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
 }
+
+type ActorFilm { filmId: Int @field(name: "FILM_ID") }
 
 type FilmActor @table(name: "film_actor") {
   actorId: Int @field(name: "actor_id")
@@ -131,6 +141,7 @@ extend schema @expectEquals(relation: "graphitron_path_need",
   FilmActor.credits,                        Film,                    film_actor,      film_actor,      film
   FilmActor.credits,                        Language,                film_actor,      film_actor,      language
   FilmActor.media,                          Film,                    film_actor,      film_actor,      film
+  Film.castFilms,                           ActorFilm,               film,            film,
   Film.details,                             FilmDetails,             film,            film,            film
   Film.details.length,                      Int,                     film,            film,            film
   Film.languageName,                        String,                  film,            film,
@@ -182,6 +193,8 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   Film.actorRows.edges
   Film.actorRows.nodes
   Film.actorRows.totalCount
+  Film.castFilms(minLength:)
+  Film.castFilms.filmId
   """)
 
 extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
@@ -201,4 +214,13 @@ extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
   Film.actorRows.edges
   Film.actorRows.nodes
   Film.actorRows.totalCount
+  Film.castFilms(minLength:)
+  Film.castFilms.filmId
+  """)
+
+# The argument of a field whose path ends on a @routine has no source either.
+extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
+  coordinate
+  Film.castFilms(minLength:)
+  Film.castFilms.filmId
   """)

@@ -27,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.castNull;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.exists;
@@ -47,8 +48,10 @@ import static org.jooq.impl.DSL.when;
  * interface or a union; and otherwise its target type itself, landing on its start, or on no table
  * yet where its declaration writes a path. An argument copies its field's needs, starting where the
  * field lands for each type; under a field with no needs, a root field with no path, it expands the
- * field's target as a field's needs do, starting on the type's table, or on its own one source table
- * where the type has none. An input field copies its parent's needs unchanged.
+ * field's target as a field's needs do, starting on the type's table, an interface's own table for
+ * its members where it has one, or on its own one source table where the type has none. A
+ * connection's pagination arguments' needs stand until the connection's binding states what they
+ * take. An input field copies its parent's needs unchanged.
  *
  * <p>A need's start is a reference to one of the occurrence's {@code graphitron_occurrence_source_table}
  * rows; a start the rules give that is none of them keeps a null reference, which says so.
@@ -359,7 +362,10 @@ public final class PathNeeds {
 
     /**
      * An argument of a field with no needs whose target is an interface or a union reaches each
-     * member with a table, starting and landing on the member's table.
+     * member with a table, landing on the member's table: starting on the interface's own table where
+     * it has one, which is the argument's source, and otherwise on the member's. A connection's
+     * pagination arguments are among these; their needs stand until the connection's binding states
+     * what they take.
      */
     private static Select<Record> argumentMember(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at, LocalDateTime touchedAt) {
@@ -368,8 +374,10 @@ public final class PathNeeds {
         var gt = GRAPHITRON_TYPE.as("gt");
         var pm = GRAPHQL_POLY_MEMBER.as("pm");
         var mt = GRAPHITRON_TABLETYPE.as("mt");
+        var it = GRAPHITRON_TABLETYPE.as("it");
         Condition written = writesPath(o);
-        return row(o, pm.MEMBER_TYPE_NAME, mt.TABLE_SOURCE_NAME, mt.TABLE_SCHEMA, mt.TABLE_NAME,
+        return row(o, pm.MEMBER_TYPE_NAME, coalesce(it.TABLE_SOURCE_NAME, mt.TABLE_SOURCE_NAME),
+                coalesce(it.TABLE_SCHEMA, mt.TABLE_SCHEMA), coalesce(it.TABLE_NAME, mt.TABLE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(mt.TABLE_SOURCE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(mt.TABLE_SCHEMA),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(mt.TABLE_NAME))
@@ -382,6 +390,7 @@ public final class PathNeeds {
                 gt.KIND.in("INTERFACE", "UNION"))
             .join(pm).on(pm.GRAPH_NAME.eq(ft.GRAPH_NAME), pm.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME))
             .join(mt).on(mt.GRAPH_NAME.eq(pm.GRAPH_NAME), mt.TYPE_NAME.eq(pm.MEMBER_TYPE_NAME))
+            .leftJoin(it).on(it.GRAPH_NAME.eq(ft.GRAPH_NAME), it.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"))
             .and(parentHasNoNeed(p, touchedAt))
             .and(sourcedAt(o, touchedAt));

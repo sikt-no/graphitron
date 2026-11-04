@@ -1840,9 +1840,12 @@ entry.
   declaration writes a path. A write's payload fields follow the same rules; the write itself has no
   source and no needs. An argument copies its field's needs, starting where the field lands for each
   type; under a field with no needs, a root field with no path, it expands its field's target the
-  same way, starting on each type's table, or on its own one source table, the write's, where the
-  type has none, which is what its source rows already state. An input field copies its parent's
-  needs unchanged. A path follows the claim matching its need: an argument's or input field's need
+  same way, starting on each type's table, an interface's own table for its members where it has
+  one, or on its own one source table, the write's, where the type has none, which is what its
+  source rows already state. A connection's pagination arguments' needs stand until the
+  connection's binding states what they take. An argument of a field that writes a path has no
+  source, and so no need, until that path is resolved. An input field copies its parent's needs
+  unchanged. A path follows the claim matching its need: an argument's or input field's need
   the `@referenceFor` claim naming its target type, else the element's one claim. The object side,
   the start class and the landing class, waits on value objects being bound.
 * `graphitron_path`, anchoring: how one need is met, in either world. A supertype keyed by the
@@ -1956,8 +1959,10 @@ so each follows the anchor rule with no exception. Each relation here is written
 never as a view over views, and its writer gets a sis timing when it is built. The need is general,
 keyed by target type with its landing an attribute, and keeps its name; only an occurrence with a
 table source has needs; an argument copies its field's needs, starting where the field lands, and
-under a root field with no path expands the field's target from its own source rows, and an input
-field copies its parent's; every reference a need, a path or a step makes to what it was built from
+under a root field with no path expands the field's target from its own source rows, an interface
+with its own table starting there for each member; an argument of a field that writes a path has
+no source, and so no need, until the path is resolved, as a nested field's; and an input field
+copies its parent's; every reference a need, a path or a step makes to what it was built from
 follows the anchor rule; an argument's or input field's need follows the `@referenceFor` claim
 naming its target type, else its element's one claim; `CHAIN_WITHOUT_TARGET` is merged into
 `REFERENCE_WITHOUT_TARGET_TABLE`, raised at the claim; a `@mutation(table:)` is accepted where
