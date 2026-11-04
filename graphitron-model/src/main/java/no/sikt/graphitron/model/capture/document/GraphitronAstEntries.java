@@ -36,6 +36,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
  * one site therefore decodes into more than one relation, and the relations are told apart by the
  * one they hang from rather than by a discriminator: {@code @condition} on an output field and on
  * an argument are different populations with different consumers, and the site is already the key.
+ * Where what was written is the same fact at every site, as a {@code @field}'s name or a
+ * {@code @nodeId}'s type is, one writer reads every site and one relation holds it, the site being
+ * a join away rather than a reason to split.
  *
  * <p>Nothing here resolves, and nothing is quarantined. A written name is cut where its grammar
  * cuts it and kept as typed otherwise; a value of some other shape decodes to null, every argument
@@ -68,11 +71,13 @@ public final class GraphitronAstEntries {
         GraphitronInputValueEntries.write(dsl, graph, source, onInputValues, touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source, onEnumValues, touchedAt);
         GraphitronSchemaEntries.write(dsl, graph, source, onSchemas, touchedAt);
-        // The writers that are not a site's: a code reference, an argMapping and a path are each the
-        // same fact wherever they are written, so they are read off every application at once.
+        // The writers that are not a site's: a code reference, an argMapping, a path, a @field's name
+        // and a @nodeId's type are each the same fact wherever they are written, so they are read off
+        // every application at once.
         var everywhere = new ArrayList<GraphQLAstEntries.Nested<Directive>>();
         List.of(onTypes, onFields, onInputValues, onEnumValues, onSchemas).forEach(everywhere::addAll);
         GraphitronCodeReferenceEntries.write(dsl, graph, source, everywhere, touchedAt);
+        GraphitronBindingEntries.write(dsl, graph, source, everywhere, touchedAt);
         GraphitronReferencePathEntries.write(dsl, graph, source, everywhere, touchedAt);
         GraphitronArgMappingEntries.write(dsl, graph, source, everywhere, touchedAt);
     }

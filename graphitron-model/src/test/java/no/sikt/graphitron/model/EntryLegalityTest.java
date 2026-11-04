@@ -25,7 +25,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CODE_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
@@ -254,8 +254,8 @@ class EntryLegalityTest {
                 """));
             assertEnumValueApplicationWasWritten(dsl, "bare-enum-binding", "field");
             assertRefusedByAssembly(dsl, "bare-enum-binding");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY,
-                GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY.GRAPH_NAME.eq("bare-enum-binding")))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY,
+                GRAPHITRON_AST_BINDING_ENTRY.GRAPH_NAME.eq("bare-enum-binding")))
                 .as("the binding is withheld, the site judging its applications like every other")
                 .isZero();
         });

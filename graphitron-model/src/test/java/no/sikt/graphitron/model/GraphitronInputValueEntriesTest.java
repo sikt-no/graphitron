@@ -27,11 +27,11 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
@@ -78,7 +78,7 @@ class GraphitronInputValueEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var decode = GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
+            var decode = GRAPHITRON_AST_BINDING_ENTRY;
             var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
             var entry = GRAPHQL_AST_ENTRY;
             var argument = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
@@ -153,11 +153,11 @@ class GraphitronInputValueEntriesTest {
                     GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
                 .as("the applications are what says they were applied")
                 .containsExactly("asFacet", "lookupKey", "orderBy");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY)
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY)
                     + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY)
                     + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_FOR_ENTRY)
                     + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY)
-                    + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY))
+                    + dsl.fetchCount(GRAPHITRON_AST_NODE_ID_ENTRY))
                 .as("and no decode relation holds a row for any of them")
                 .isZero();
         });
@@ -271,12 +271,12 @@ class GraphitronInputValueEntriesTest {
                     GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
                 .as("both were applied, which is what the applied-directive row is for")
                 .containsExactly("field", "nodeId");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY))
                 .as("@field without its required name decodes to nothing rather than to a null")
                 .isZero();
-            assertThat(dsl.select(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY.NODE_TYPE_REF)
-                    .from(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY)
-                    .fetch(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY.NODE_TYPE_REF))
+            assertThat(dsl.select(GRAPHITRON_AST_NODE_ID_ENTRY.NODE_TYPE_REF)
+                    .from(GRAPHITRON_AST_NODE_ID_ENTRY)
+                    .fetch(GRAPHITRON_AST_NODE_ID_ENTRY.NODE_TYPE_REF))
                 .as("while @nodeId has no required argument, so a bare one is a row naming no type")
                 .containsExactly((String) null);
         });
@@ -396,7 +396,7 @@ class GraphitronInputValueEntriesTest {
                 .as("and the condition it replaced is not a fact any more").isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
                 .as("nor its context arguments, which went with the decode they hung on").isZero();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY))
                 .as("what the author wrote instead is there").isEqualTo(1);
         });
     }

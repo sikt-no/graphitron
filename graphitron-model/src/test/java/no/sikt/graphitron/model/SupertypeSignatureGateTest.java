@@ -276,8 +276,8 @@ class SupertypeSignatureGateTest {
                "graphitron_service_entry"),
         Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry",
                "graphitron_default_order_field_entry"),
-        Set.of("graphitron_argument_node_id_entry", "graphitron_ast_field_node_id_entry",
-               "graphitron_ast_input_value_node_id_entry", "graphitron_field_node_id_entry"),
+        Set.of("graphitron_argument_node_id_entry", "graphitron_ast_node_id_entry",
+               "graphitron_field_node_id_entry"),
         Set.of("graphitron_argument_reference_for_entry", "graphitron_ast_reference_for_entry",
                "graphitron_reference_for_entry"),
         // What the step split leaves in place of the two wide relations, one per arm now that both
@@ -288,12 +288,6 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_reference_table_step_entry", "graphitron_ast_table_entry"),
         Set.of("graphitron_ast_connection_entry", "graphitron_connection_entry"),
         Set.of("graphitron_ast_default_order_entry", "graphitron_default_order_entry"),
-        // The field-site binding entry pairs with the enum-value anchor rather than with the field
-        // anchor, which carries a folded twin of its one column and so shares no payload with
-        // anything. The enum-value site's own entry has since arrived and joined them, which is the
-        // member that replaces the anchor when the migration dissolves the row.
-        Set.of("graphitron_ast_enum_value_binding_entry", "graphitron_ast_field_binding_entry",
-               "graphitron_ast_input_value_binding_entry"),
         Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"),
         // A link's imports as written and the federated graph's imports, the second derived from the
         // first for the one link that opts the graph in, plus what graphitron applies itself. Decided:
@@ -359,11 +353,6 @@ class SupertypeSignatureGateTest {
         // set above gives.
         "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg",
         "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
-        // What an element claims it binds to, read where @field and @nodeId were written on a field
-        // or on an input value: the claim it stores is the one statement of the payload, which a
-        // reader joins instead of these entries.
-        "graphitron_binding_claim_rule|graphitron_ast_field_binding_entry,graphitron_ast_input_value_binding_entry",
-        "graphitron_binding_claim_rule|graphitron_ast_field_node_id_entry,graphitron_ast_input_value_node_id_entry",
         "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry");
 
 

@@ -25,8 +25,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INDEX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_FIELD_ENTRY;
@@ -41,9 +40,9 @@ import static org.assertj.core.api.Assertions.tuple;
  * The enum-value site's decode: the sorting vocabulary, read where it was written.
  *
  * <p>The claims worth standing up here are the ones this site decides rather than the ones any
- * decode would satisfy. That {@code @field} on an enum value is a different population from
- * {@code @field} on an output field is what one writer per site buys, the directive being admitted
- * at four of them. That {@code @order}'s three surfaces are told apart by which columns are null
+ * decode would satisfy. That {@code @field} on an enum value lands beside {@code @field} on an
+ * output field, the name written being one fact at every site the directive is admitted at. That
+ * {@code @order}'s three surfaces are told apart by which columns are null
  * and whether child rows exist is the relation's whole shape. And that an element's written index
  * survives an element that decodes to nothing is the rule the position key rests on.
  */
@@ -52,14 +51,13 @@ class GraphitronEnumValueEntriesTest {
     private static final String GRAPH = "enum-value";
 
     /**
-     * The site is the key, so the same directive name at two sites is two relations. This is the
-     * claim the writer exists for: the incumbent routed both down one path and told them apart by
-     * the coordinate columns it wrote, where here they are simply different rows in different
-     * relations, joined back to their own parent.
+     * The name a {@code @field} writes is one fact wherever it is written, so the enum value's and
+     * the output field's are rows of one relation, each joined back to its own parent by position
+     * rather than told apart by which relation holds it.
      */
     @Test
-    @DisplayName("@field on an enum value is not the field site's binding")
-    void theSiteDecidesWhichRelationABindingLandsIn(@TempDir Path tmp) {
+    @DisplayName("@field on an enum value and on an output field is one relation")
+    void aBindingLandsInOneRelationAtEverySite(@TempDir Path tmp) {
         write(tmp, "film.graphqls", """
             type Query { films: [Film!] }
             type Film { title: String @field(name: "title") }
@@ -69,15 +67,10 @@ class GraphitronEnumValueEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.fetch(GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY))
-                .as("the enum value's binding, and only it, is this site's")
-                .extracting(row -> row.get(GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY.NAME_REF))
-                .containsExactly("rating_code");
-
-            assertThat(dsl.fetch(GRAPHITRON_AST_FIELD_BINDING_ENTRY))
-                .as("and the output field's stayed where the field site writes it")
-                .extracting(row -> row.get(GRAPHITRON_AST_FIELD_BINDING_ENTRY.NAME_REF))
-                .containsExactly("title");
+            assertThat(dsl.fetch(GRAPHITRON_AST_BINDING_ENTRY))
+                .as("the enum value's binding and the output field's, side by side")
+                .extracting(row -> row.get(GRAPHITRON_AST_BINDING_ENTRY.NAME_REF))
+                .containsExactlyInAnyOrder("rating_code", "title");
         });
     }
 

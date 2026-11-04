@@ -4,8 +4,7 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
@@ -19,7 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
  * The capture-cadence writer of {@code graphitron_node_id_candidate}: the node types a bare
  * {@code @nodeId} at a coordinate may be the ID of.
  *
- * <p>A bare application is an entry row naming no type, at either site, and its coordinate is the
+ * <p>A bare application is an entry row naming no type, at any site, and its coordinate is the
  * one {@code graphql_directive_application} records at the same position. Its candidates are read
  * by type: on the {@code id} field a type declares for {@code Node}, that type; on an argument the
  * field's return type, or each member of an interface or union return. Only {@code Node.id} binds
@@ -41,22 +40,15 @@ public final class NodeIdCandidates {
         dsl.deleteFrom(c).where(c.GRAPH_NAME.eq(graphName)).execute();
 
         var a = GRAPHQL_DIRECTIVE_APPLICATION;
-        var fe = GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
-        var ie = GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
+        var ne = GRAPHITRON_AST_NODE_ID_ENTRY;
 
         // The bare applications, at whichever site, by the coordinate they were written on.
-        Table<?> bare = dsl.select(a.GRAPH_NAME, a.COORDINATE)
+        Table<?> bare = dsl.selectDistinct(a.GRAPH_NAME, a.COORDINATE)
             .from(a)
-            .join(fe).on(fe.GRAPH_NAME.eq(a.GRAPH_NAME), fe.SOURCE_NAME.eq(a.SOURCE_NAME),
-                fe.SOURCE_LINE.eq(a.SOURCE_LINE), fe.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+            .join(ne).on(ne.GRAPH_NAME.eq(a.GRAPH_NAME), ne.SOURCE_NAME.eq(a.SOURCE_NAME),
+                ne.SOURCE_LINE.eq(a.SOURCE_LINE), ne.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
             .where(a.GRAPH_NAME.eq(graphName), a.DIRECTIVE_NAME.eq("nodeId"),
-                fe.NODE_TYPE_REF.isNull())
-            .union(dsl.select(a.GRAPH_NAME, a.COORDINATE)
-                .from(a)
-                .join(ie).on(ie.GRAPH_NAME.eq(a.GRAPH_NAME), ie.SOURCE_NAME.eq(a.SOURCE_NAME),
-                    ie.SOURCE_LINE.eq(a.SOURCE_LINE), ie.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-                .where(a.GRAPH_NAME.eq(graphName), a.DIRECTIVE_NAME.eq("nodeId"),
-                    ie.NODE_TYPE_REF.isNull()))
+                ne.NODE_TYPE_REF.isNull())
             .asTable("bare");
         Field<String> g = bare.field(a.GRAPH_NAME);
         Field<String> coordinate = bare.field(a.COORDINATE);

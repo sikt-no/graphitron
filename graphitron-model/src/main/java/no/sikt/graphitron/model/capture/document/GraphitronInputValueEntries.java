@@ -9,17 +9,14 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -39,11 +36,12 @@ import static org.jooq.impl.DSL.val;
  * carries no graphitron directive in any corpus we read, though it is not empty: the bundled
  * vocabulary deprecates {@code @asConnection(connectionName:)}.
  *
- * <p>Nine directive names reach this site and three get a relation here. {@code @lookupKey},
+ * <p>Nine directive names reach this site and two get a relation here. {@code @lookupKey},
  * {@code @orderBy}, {@code @asFacet} and {@code @tenant} declare no argument at all, so a row for
  * any of them would carry its key and nothing else, which is what the applied-directive row
  * already says. {@code @reference} and {@code @referenceFor} are the path family's, written for
- * every site at once by {@link GraphitronReferencePathEntries}.
+ * every site at once by {@link GraphitronReferencePathEntries}, and {@code @field} and
+ * {@code @nodeId} by {@link GraphitronBindingEntries}.
  * Neither repeatable directive carries an ordinal, each application standing at its own at sign.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
@@ -58,13 +56,10 @@ final class GraphitronInputValueEntries {
      */
     static void write(DSLContext dsl, String graph, String source,
                       List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
-        bindings(dsl, graph, touchedAt, wrote(applied(applications, "field"), "name"));
-
         var conditions = naming(applied(applications, "condition"), "condition");
         conditions(dsl, graph, touchedAt, conditions);
         conditionContextArguments(dsl, graph, touchedAt, conditions);
 
-        nodeIds(dsl, graph, touchedAt, applied(applications, "nodeId"));
         deprecations(dsl, graph, touchedAt, applied(applications, "deprecated"));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
@@ -74,29 +69,9 @@ final class GraphitronInputValueEntries {
      * prefix: a relation added above and not here would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY, GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY,
+        GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY,
         GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY,
-        GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY,
-        GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY);
-
-    private static void bindings(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                 List<Directive> applications) {
-        var t = GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "name"), t.NAME_REF)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.NAME_REF)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.NAME_REF, excluded(t.NAME_REF)));
-    }
+        GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY);
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<Directive> applications) {
@@ -187,24 +162,5 @@ final class GraphitronInputValueEntries {
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.REASON, excluded(t.REASON)));
-    }
-
-    private static void nodeIds(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                List<Directive> applications) {
-        var t = GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "typeName"), t.NODE_TYPE_REF)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.NODE_TYPE_REF)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.NODE_TYPE_REF, excluded(t.NODE_TYPE_REF)));
     }
 }

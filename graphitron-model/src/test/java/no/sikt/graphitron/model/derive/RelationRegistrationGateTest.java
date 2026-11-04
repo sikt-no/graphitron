@@ -166,11 +166,11 @@ class RelationRegistrationGateTest {
             // The decode of a field-site application, on the same terms: keyed by the position of
             // the @ token, so an application repeated on one field is repeated rows here where
             // GraphitronSchema holds one binding per field under an ordinal it assigned.
-            "graphitron_ast_field_binding_entry", "graphitron_ast_field_condition_entry",
+            "graphitron_ast_field_condition_entry",
             "graphitron_ast_field_condition_context_arg_entry",
             "graphitron_ast_service_entry", "graphitron_ast_service_context_arg_entry",
             "graphitron_ast_external_field_entry",
-            "graphitron_ast_connection_entry", "graphitron_ast_field_node_id_entry",
+            "graphitron_ast_connection_entry",
             "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
             "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",
             "graphitron_ast_routine_entry", "graphitron_ast_outbox_entry",
@@ -178,6 +178,10 @@ class RelationRegistrationGateTest {
             // than off a site. Nothing older states the whole of it to agree with; the fact
             // document code-reference.graphqls pins one row per site the vocabulary allows.
             "graphitron_ast_code_reference_entry",
+            // A @field's name and a @nodeId's type, read off every site on the same terms: one fact
+            // wherever written. GraphitronFieldEntriesTest, GraphitronInputValueEntriesTest and
+            // GraphitronEnumValueEntriesTest pin them at the sites each one covers.
+            "graphitron_ast_binding_entry", "graphitron_ast_node_id_entry",
             // Every entry of every argMapping, read off the vocabulary's name for one; pinned by the
             // fact document argmapping-pair.graphqls, one mapping per directive that takes one.
             "graphitron_ast_argmapping_pair_entry",
@@ -208,17 +212,15 @@ class RelationRegistrationGateTest {
             // field path, and the parser calls it an input value, so there is no population here to
             // compare. GraphitronInputValueEntriesTest pins them, over a corpus writing both parents
             // a consumer schema writes and repeating a repeatable directive on one input value.
-            "graphitron_ast_input_value_binding_entry",
             "graphitron_ast_input_value_condition_entry",
             "graphitron_ast_input_value_condition_context_arg_entry",
-            "graphitron_ast_input_value_node_id_entry",
             // And of an enum-value application, the sorting vocabulary read where it was written.
             // Keyed by the position of the @ token like every entry above it, where GraphitronSchema
             // holds one sort specification per enum value, so a value carrying two applications is
             // two rows here and one reading there. GraphitronEnumValueEntriesTest pins them, over a
             // corpus writing each of the three surfaces @order admits and a field list whose
             // elements do not all decode.
-            "graphitron_ast_enum_value_binding_entry", "graphitron_ast_index_entry",
+            "graphitron_ast_index_entry",
             "graphitron_ast_order_entry", "graphitron_ast_order_field_entry",
             // And of a schema-site application, the one site whose subject is the corpus rather
             // than an element of it. GraphitronSchema holds federation's opt-in as a parsed

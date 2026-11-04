@@ -57,8 +57,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
 import static org.jooq.impl.DSL.coalesce;
@@ -863,7 +862,7 @@ public final class GraphitronAnchor {
      */
     private static void fieldBindings(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var c = claimedOnField(dsl, graph, "field");
-        var e = GRAPHITRON_AST_FIELD_BINDING_ENTRY;
+        var e = GRAPHITRON_AST_BINDING_ENTRY;
         writeBinding(dsl, graph, touchedAt, c, e.NAME_REF,
             onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, graph, c), e);
     }
@@ -871,14 +870,14 @@ public final class GraphitronAnchor {
     /** The same application in the other habitat, on an input-object field. */
     private static void inputFieldBindings(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var c = claimedOnInputField(dsl, graph, "field");
-        var e = GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
+        var e = GRAPHITRON_AST_BINDING_ENTRY;
         writeBinding(dsl, graph, touchedAt, c, e.NAME_REF,
             onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, graph, c), e);
     }
 
     /**
-     * The shared insert both habitats make, which differ in the relation the bound name is read
-     * from and in nothing else.
+     * The shared insert both habitats make, which differ in how the application is found and in
+     * nothing else.
      */
     private static void writeBinding(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                      Table<?> claimed, Field<String> nameRef,

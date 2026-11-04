@@ -2117,7 +2117,7 @@ COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.description IS 'th
 -- A list argument becomes a child relation, and a child hangs off the decode of the application it
 -- was written inside, so deleting that decode takes its elements. A decode that carries nothing but
 -- its key is not empty when children hang from it: it is what they reference and cascade from.
-CREATE TABLE graphitron_ast_field_binding_entry (
+CREATE TABLE graphitron_ast_binding_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT     NOT NULL,
@@ -2130,13 +2130,34 @@ CREATE TABLE graphitron_ast_field_binding_entry (
     REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_ast_field_binding_entry IS 'What a @field application on an output field says: the name that field is bound to, as written. For example title: String @field(name: "title") gives one row reading title.';
-COMMENT ON COLUMN graphitron_ast_field_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_binding_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_field_binding_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_binding_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
-COMMENT ON COLUMN graphitron_ast_field_binding_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_binding_entry.name_ref IS 'the name argument exactly as written. Nullable although the definition marks it required, because a document that omits it still applied the directive and the row is what says so. What the name refers to, a column or a Java member, is settled by what backs the field and is not this relation''s business';
+COMMENT ON TABLE graphitron_ast_binding_entry IS 'What a @field application says: the name written, wherever it was written. For example title: String @field(name: "title") on an output field, films(titleFilter: String @field(name: "title")) on an argument and TITLE @field(name: "title") on an enum value give one row each, all reading title.';
+COMMENT ON COLUMN graphitron_ast_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_binding_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_binding_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_binding_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_binding_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_binding_entry.name_ref IS 'the name argument exactly as written. The definition requires it, so an application that omits it is malformed rather than meaning anything, and it writes no row here at all: the applied-directive row says the directive was applied and the argument''s own value says what was written instead';
+
+CREATE TABLE graphitron_ast_node_id_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  node_type_ref VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_node_id_entry IS 'What a @nodeId application says: the node type the identifier belongs to, as written, wherever it was written. For example id: ID! @nodeId(typeName: "Film") on an output field and actorId: ID @nodeId on an input field give one row each, the first reading Film and the second naming no type.';
+COMMENT ON COLUMN graphitron_ast_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_node_id_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_node_id_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_node_id_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_node_id_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_node_id_entry.node_type_ref IS 'the typeName argument as written, or NULL on a bare @nodeId. The row is what says the directive was applied and the NULL is what says the author left the type to be inferred, which is a resolution over other relations and none of this one''s';
 
 CREATE TABLE graphitron_ast_field_condition_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2702,27 +2723,6 @@ COMMENT ON COLUMN graphitron_ast_connection_entry.touched_at IS 'when the readin
 COMMENT ON COLUMN graphitron_ast_connection_entry.default_first_value IS 'the defaultFirstValue argument as written, or NULL where the author wrote none. The definition''s own default of 100 is not supplied here: it stands in graphql_directive_argument.default_value_sdl, and filling it in would lose the difference between a default taken and a value written. A bare @asConnection is therefore a row of two nulls, which is what says the directive was applied with nothing said';
 COMMENT ON COLUMN graphitron_ast_connection_entry.connection_name IS 'the connectionName argument as written, or NULL where the author wrote none. The argument is deprecated and the deprecation is the directive definition''s to state; a transcription records the value and says nothing about whether it should have been written';
 
-CREATE TABLE graphitron_ast_field_node_id_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  node_type_ref VARCHAR,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_field_node_id_entry IS 'What a @nodeId application on an output field says: the node type the identifier belongs to, as written. For example id: ID! @nodeId(typeName: "Film") gives one row reading Film.';
-COMMENT ON COLUMN graphitron_ast_field_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_node_id_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_field_node_id_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_node_id_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
-COMMENT ON COLUMN graphitron_ast_field_node_id_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_node_id_entry.node_type_ref IS 'the typeName argument as written, or NULL on a bare @nodeId. Nothing here supplies what an omitted name deduces to, the containing type on a plain field and the table''s node type on a referenced one: both are resolutions over other relations, and a row of NULL is what says the author left the deduction to the build';
-
 CREATE TABLE graphitron_ast_mutation_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -2886,27 +2886,6 @@ COMMENT ON COLUMN graphitron_ast_outbox_entry.argmapping IS 'the argMapping argu
 -- relation: @lookupKey, @orderBy, @asFacet and @tenant declare no argument at all, so a row would
 -- carry its key and repeat what the applied-directive row says. @reference's only argument is its path, so
 -- the steps get the relation and the application does not.
-CREATE TABLE graphitron_ast_input_value_binding_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  name_ref      VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_binding_entry IS 'What a @field application on an input value says: the column this argument or input field binds to, as written. For example films(titleFilter: String @field(name: "title")) gives one row reading title.';
-COMMENT ON COLUMN graphitron_ast_input_value_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_binding_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_binding_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_binding_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
-COMMENT ON COLUMN graphitron_ast_input_value_binding_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_binding_entry.name_ref IS 'the name argument exactly as written. The definition requires it, so an application that omits it is malformed rather than meaning anything, and it writes no row here at all: the applied-directive row says the directive was applied and the argument''s own value says what was written instead';
-
 CREATE TABLE graphitron_ast_input_value_condition_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -3067,27 +3046,6 @@ COMMENT ON COLUMN graphitron_call_context_key.origin_column IS 'source column of
 COMMENT ON COLUMN graphitron_call_context_key.origin_position IS 'the pair''s position in its mapping, or the element''s in its list';
 COMMENT ON COLUMN graphitron_call_context_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
-CREATE TABLE graphitron_ast_input_value_node_id_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  node_type_ref VARCHAR,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_node_id_entry IS 'What a @nodeId application on an input value says: the type the identifier belongs to, as written. For example actorId: ID @nodeId(typeName: "Actor") gives one row naming Actor.';
-COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
-COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.node_type_ref IS 'the typeName argument as written, naming the type the identifier belongs to, or NULL on a bare @nodeId. The row is what says the directive was applied and the NULL is what says the author left the type to be inferred, which is a resolution over other relations and none of this one''s';
-
 CREATE TABLE graphitron_ast_input_value_deprecated_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -3108,27 +3066,6 @@ COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.source_line IS 'so
 COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
 COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.reason IS 'the reason argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string. The decode is the whole reason this relation exists beside the applied-argument row: that row carries the rendered literal, quotes included, and a consumer wanting the text would have to re-read SDL to get it';
-
-CREATE TABLE graphitron_ast_enum_value_binding_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  name_ref      VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_enum_value_binding_entry IS 'What a @field application on an enum value says: the database column the value binds to, as written. For example TITLE @field(name: "title") gives one row whose name_ref is title.';
-COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
-COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.name_ref IS 'the name argument decoded to the string the author wrote. Whether a column of that name exists is the anchor''s question and not this row''s';
 
 CREATE TABLE graphitron_ast_index_entry (
   graph_name    VARCHAR NOT NULL,
@@ -4113,7 +4050,7 @@ CREATE TABLE graphitron_field_node_id_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_node_id_entry is the replacement, written by the graphitron gatherer from the document the application sits in.';
+COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_node_id_entry is the replacement, written by the graphitron gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_field_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_node_id_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_node_id_entry.field_name IS 'the field name within the owning type';
@@ -5745,46 +5682,41 @@ COMMENT ON COLUMN graphitron_binding_claim.kind IS 'the graphitron_occurrence_bi
 COMMENT ON COLUMN graphitron_binding_claim.named IS 'what the claim names, as written: the column for COLUMN, the node type for NODE_ID. Null for a bare @nodeId, whose node type the binding infers, and for EXPRESSION';
 COMMENT ON COLUMN graphitron_binding_claim.source_name IS 'the file the claim was written in; null for an application nobody wrote';
 COMMENT ON COLUMN graphitron_binding_claim.source_line IS 'the claim''s source line, 1-based';
-COMMENT ON COLUMN graphitron_binding_claim.source_column IS 'the claim''s source column. The first written of two claiming one kind is kept. An attribute and not a reference, for a defect to point at';
+COMMENT ON COLUMN graphitron_binding_claim.source_column IS 'the claim''s source column. An attribute and not a reference, for a defect to point at';
 COMMENT ON COLUMN graphitron_binding_claim.touched_at IS 'when the reading that last stated this claim ran: the mark the sweep reads';
 COMMENT ON COLUMN graphitron_binding_claim.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
 COMMENT ON COLUMN graphitron_binding_claim.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to coordinate while the element stands';
 
--- What each field, input field and argument's written directives claim it binds to, the first
--- written of two claiming one kind on one element kept. An enum value's @field names a value, not
--- a place, and claims nothing here.
+-- What each field, input field and argument's written directives claim it binds to. None of the
+-- three directives repeats, so an element's one application of each is its ordinal 0; a refused
+-- schema repeating one still claims once. An enum value's @field names the sort column its @order
+-- reads, which binds no occurrence, and claims nothing here.
 CREATE VIEW graphitron_binding_claim_rule (graph_name, coordinate, kind, named, source_name,
                                            source_line, source_column, element_graph_ref,
                                            element_coordinate_ref) AS
 WITH claimed (graph_name, coordinate, kind, named, source_name, source_line, source_column) AS (
 -- @field(name:), the column written.
-SELECT e.graph_name, e.coordinate, 'COLUMN', COALESCE(fb.name_ref, ib.name_ref),
+SELECT e.graph_name, e.coordinate, 'COLUMN', b.name_ref,
        da.source_name, da.source_line, da.source_column
   FROM graphitron_element e
   JOIN graphitron_directive_application da
     ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
-   AND da.directive_name = 'field'
-  LEFT JOIN graphitron_ast_field_binding_entry fb
-    ON fb.graph_name = da.graph_name AND fb.source_name = da.source_name
-   AND fb.source_line = da.source_line AND fb.source_column = da.source_column
-  LEFT JOIN graphitron_ast_input_value_binding_entry ib
-    ON ib.graph_name = da.graph_name AND ib.source_name = da.source_name
-   AND ib.source_line = da.source_line AND ib.source_column = da.source_column
+   AND da.directive_name = 'field' AND da.ordinal = 0
+  LEFT JOIN graphitron_ast_binding_entry b
+    ON b.graph_name = da.graph_name AND b.source_name = da.source_name
+   AND b.source_line = da.source_line AND b.source_column = da.source_column
  WHERE e.element_kind IN ('FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT')
 UNION ALL
 -- @nodeId, with the node type when one is written.
-SELECT e.graph_name, e.coordinate, 'NODE_ID', COALESCE(fn.node_type_ref, inn.node_type_ref),
+SELECT e.graph_name, e.coordinate, 'NODE_ID', n.node_type_ref,
        da.source_name, da.source_line, da.source_column
   FROM graphitron_element e
   JOIN graphitron_directive_application da
     ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
-   AND da.directive_name = 'nodeId'
-  LEFT JOIN graphitron_ast_field_node_id_entry fn
-    ON fn.graph_name = da.graph_name AND fn.source_name = da.source_name
-   AND fn.source_line = da.source_line AND fn.source_column = da.source_column
-  LEFT JOIN graphitron_ast_input_value_node_id_entry inn
-    ON inn.graph_name = da.graph_name AND inn.source_name = da.source_name
-   AND inn.source_line = da.source_line AND inn.source_column = da.source_column
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  LEFT JOIN graphitron_ast_node_id_entry n
+    ON n.graph_name = da.graph_name AND n.source_name = da.source_name
+   AND n.source_line = da.source_line AND n.source_column = da.source_column
  WHERE e.element_kind IN ('FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT')
 UNION ALL
 -- @externalField, on an output field.
@@ -5793,24 +5725,18 @@ SELECT e.graph_name, e.coordinate, 'EXPRESSION', CAST(NULL AS VARCHAR),
   FROM graphitron_element e
   JOIN graphitron_directive_application da
     ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
-   AND da.directive_name = 'externalField'
+   AND da.directive_name = 'externalField' AND da.ordinal = 0
  WHERE e.element_kind = 'FIELD'
 )
 SELECT graph_name, coordinate, kind, named, source_name, source_line, source_column, graph_name,
        coordinate
-  FROM (SELECT c.graph_name, c.coordinate, c.kind, c.named, c.source_name, c.source_line,
-               c.source_column,
-               ROW_NUMBER() OVER (PARTITION BY c.graph_name, c.coordinate, c.kind
-                                  ORDER BY c.source_name NULLS LAST, c.source_line,
-                                           c.source_column) AS written
-          FROM claimed c) first_written
- WHERE written = 1;
+  FROM claimed;
 COMMENT ON VIEW graphitron_binding_claim_rule IS 'One row the binding claim rule computes, in the shape graphitron_binding_claim stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_binding_claim, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.coordinate IS 'the declared element claiming';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.kind IS 'the graphitron_occurrence_binding kind claimed';
--- COMMENT ON COLUMN graphitron_binding_claim_rule.named IS 'the column or node type the first claim of the kind names';
--- COMMENT ON COLUMN graphitron_binding_claim_rule.source_name IS 'the file the first claim of the kind was written in';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.named IS 'the column or node type the claim names';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.source_name IS 'the file the claim was written in';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.element_graph_ref IS 'the graph, as the element reference';
@@ -19716,10 +19642,14 @@ INSERT INTO meta_relation VALUES
    'A DATABASE handler of an @error application, at its position in the list, as written.',
    'For example {handler: DATABASE, sqlState: "23503"} at position 0.',
    'One relation per handler kind, because the kind decides which fields mean anything. A DATABASE handler discriminates on one of two SQL codes and matches any SQLException, so it carries no class name; the directive rejects className on it outright. Merged with its siblings this would be six nullable columns of which a row fills two or three, and which of them is a rule no constraint over that shape can state. Both discriminators are columns here although the directive admits only one at a time, because refusing the row would lose what the author wrote and the conflict is a detection over these two columns.'),
-  ('graphitron_ast_field_binding_entry', 'sdl-declaration-site', 'graphitron',
-   'What a @field application on an output field says: the name that field is bound to, as written.',
-   'For example title: String @field(name: "title") gives one row reading title.',
-   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. One of the three relations this directive draws, one per site its definition admits, because which kind of node an application sits on is settled while walking the document: all three hang off graphql_ast_directive_application_entry, and the site is the decode relation itself, so a reader wanting output fields reads this one and joins nothing to exclude the rest. Two documents binding one field are two rows and neither is refused, a collision being a query over these rows resolved oldest source first. What the written name refers to, a column or a Java member, follows from what backs the field and is settled where the catalog and the classpath are read.'),
+  ('graphitron_ast_binding_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @field application says: the name written, wherever it was written.',
+   'For example title: String @field(name: "title") on an output field, films(titleFilter: String @field(name: "title")) on an argument and TITLE @field(name: "title") on an enum value give one row each, all reading title.',
+   'A decode of one directive application, keyed by the application''s own position, so the element it was written on and the file are one join away rather than columns here. One relation for every site the definition admits, because the name written is one fact wherever it is written: the key already reaches the application and through it the element and its kind, so a relation per site would be told apart by what the key reaches anyway, and every reader wanting the name at more than one site would put them back together. What the name refers to, a column the element reads or binds, or the sort column an enum value under @order names, follows from the site and is settled where the catalog is read.'),
+  ('graphitron_ast_node_id_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @nodeId application says: the node type the identifier belongs to, as written, wherever it was written.',
+   'For example id: ID! @nodeId(typeName: "Film") on an output field and actorId: ID @nodeId on an input field give one row each, the first reading Film and the second naming no type.',
+   'A decode of one directive application, keyed by the application''s own position, on graphitron_ast_binding_entry''s terms: one relation for every site, the site being one join away. Whether an identifier is encoded or decoded follows from that site and is the binding''s question, not a property of what was written. The type name is nullable and nothing here supplies what an omitted one deduces to, the containing type on a plain field and the table''s node type on a referenced one being resolutions over other relations; a NULL is what says the author left the deduction to the build.'),
   ('graphitron_ast_field_condition_entry', 'sdl-declaration-site', 'graphitron',
    'What a @condition application on an output field says: the external method constraining the field''s query, as written.',
    'For example summary: String @condition(condition: {className: "no.example.Conditions", method: "visibleFilm"}) gives one row.',
@@ -19776,10 +19706,6 @@ INSERT INTO meta_relation VALUES
    'What an @asConnection application says: the page size the field defaults to and the Connection type name it overrides, as written.',
    'For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row reading 25.',
    'A decode of one directive application, keyed by the application''s own position. Both columns are nullable and the definition''s own defaults are not filled in, so a bare @asConnection is a row of two nulls: that row is what says the directive was applied with nothing said, which is a different fact from an application naming the default page size explicitly, and the fallback itself already stands in graphql_directive_argument.default_value_sdl. The connection name argument is deprecated and the deprecation is the directive definition''s to state; a transcription records what was written and says nothing about whether it should have been.'),
-  ('graphitron_ast_field_node_id_entry', 'sdl-declaration-site', 'graphitron',
-   'What a @nodeId application on an output field says: the node type the identifier belongs to, as written.',
-   'For example id: ID! @nodeId(typeName: "Film") gives one row reading Film.',
-   'A decode of one directive application, keyed by the application''s own position. One of the two relations this directive draws, one per site the entry family separates, the other hanging off the input-value relation: an output field carrying @nodeId encodes an identifier where an argument or input field carrying one decodes it, so the two sites are read by different consumers and a merged relation would be discriminated by the row its key already reaches. The type name is nullable and nothing here supplies what an omitted one deduces to, the containing type on a plain field and the table''s node type on a referenced one being resolutions over other relations; a NULL is what says the author left the deduction to the build.'),
   ('graphitron_ast_outbox_entry', 'sdl-declaration-site', 'graphitron',
    'What an @outbox application says: the event it names and the mapping that builds its payload, as written.',
    'For example createFilm(in: FilmCreateInput!): Film @outbox(event: "FilmCreated", argMapping: "filmId: $result.id") gives one row.',
@@ -19853,10 +19779,6 @@ INSERT INTO meta_relation VALUES
    'For example extend schema @composeDirective(name: "@nodeType") gives one row whose directive_name is @nodeType.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications apart: the directive repeats and no ordinal is assigned here. Federation spells the directive two ways, @composeDirective where the schema''s @link imports it and @federation__composeDirective where it does not, and both are the same fact, so the writer reads both into this one relation rather than leaving every reader to ask twice. A row is written only for an application that wrote its name as a string: the argument is required, so an application without one asserts nothing a row can hold, and the applied-directive row already says it was applied. The question it answers is which directives a graph composes, which graphitron_synthesized_node_type_id asks of @nodeType; an import under an alias is not resolved and so is not recognised.'),
 
-  ('graphitron_ast_enum_value_binding_entry', 'sdl-declaration-site', 'graphitron',
-   'What a @field application on an enum value says: the database column the value binds to, as written.',
-   'For example TITLE @field(name: "title") gives one row whose name_ref is title.',
-   'A decode of one directive application, keyed by the application''s own position. The directive is admitted at four sites and this relation holds one of them, the site being the key rather than a discriminator: a @field on an enum value names a sort column and a @field on an output field names the column the field reads, and the two have different consumers. The name is kept as the string the author typed and nothing is cut from it, an enum value''s binding naming one column and no qualified form. Whether a column of that name exists on the table the enclosing @order resolves against is the anchor''s question, which is why the second argument the directive declares is absent here: javaName concerns a generated accessor and not a column, and no reader of this site has asked for it.'),
   ('graphitron_ast_index_entry', 'sdl-declaration-site', 'graphitron',
    'What an @index application says: the database index the enum value names, as written.',
    'For example TITLE_INDEX @index(name: "idx_film_title") gives one row whose index_ref is idx_film_title.',
@@ -19869,10 +19791,6 @@ INSERT INTO meta_relation VALUES
    'One fields element of an @order application, at its position in the list, as written.',
    'For example fields: [{name: "title", collate: "xdanish_ai"}] gives one row at position 0.',
    'A list argument becomes rows rather than a column, and here the order is the answer: the position an element was written at is the sort order the author asked for, so a reader takes it from the key rather than from parsing a literal. FieldSort is the element type the directive definition declares, so an element of some other shape makes the whole application one @order does not admit and none of it is transcribed. Each field of the element becomes a column, all three nullable because an element may write only its name and because a NULL direction is what says the element takes the enclosing application''s, filling one in being a loss of which of the two the author wrote.'),
-  ('graphitron_ast_input_value_binding_entry', 'sdl-declaration-site', 'graphitron',
-   'What a @field application on an input value says: the column this argument or input field binds to, as written.',
-   'For example films(titleFilter: String @field(name: "title")) gives one row reading title.',
-   'A decode of one directive application, keyed by the application''s own position, so which input value it was written on and in which file are one join away rather than columns here. The site is one relation where the incumbent had two: an input object''s field and a field''s argument are the same node to the parser, and the incumbent routed the first down its field path, which is why an author writing @field on an input field met the field-site rules. What the three parents an input value can have are is a question the AST row answers, and it answers it with a position rather than a key, a parent in one of three relations being sound to reference and unspellable as a constraint.'),
   ('graphitron_ast_input_value_condition_entry', 'sdl-declaration-site', 'graphitron',
    'What a @condition application on an input value says: the external method deciding the predicate, as written.',
    'For example scope: ID @condition(condition: {className: "no.example.Conditions", method: "inScope"}) gives one row.',
@@ -19881,10 +19799,6 @@ INSERT INTO meta_relation VALUES
    'One contextArguments entry of a @condition application on an input value, at its position in the list.',
    'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
    'A list argument becomes a relation of its own rather than a delimited column, so a reader asks for one key by name instead of splitting a string, and the position keeps the order the author wrote. Hung off the decode of the application it was written inside rather than off the AST row, so deleting that decode takes its elements and no row is left naming an application nobody decoded. What a context key must be present in the GraphQLContext at run time is not a question this relation answers or could.'),
-  ('graphitron_ast_input_value_node_id_entry', 'sdl-declaration-site', 'graphitron',
-   'What a @nodeId application on an input value says: the type the identifier belongs to, as written.',
-   'For example actorId: ID @nodeId(typeName: "Actor") gives one row naming Actor.',
-   'A decode of one directive application, keyed by the application''s own position, so which input value it was written on and in which file are one join away rather than columns here. The argument is optional in the definition and NULL here says the author omitted it, which is a different fact from any name: what an omitted typeName deduces to is a resolution over the catalog and the node declarations, and supplying it here would put a resolution in a relation whose whole claim is that it performs none. Whether the named type carries @node is a question for the anchors on the same terms.'),
   ('graphitron_minted_conflict', 'minted-conflict', 'graphitron',
    'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph.',
    'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.',

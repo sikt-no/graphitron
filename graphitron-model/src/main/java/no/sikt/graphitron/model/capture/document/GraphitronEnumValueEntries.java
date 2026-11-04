@@ -9,7 +9,6 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INDEX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_FIELD_ENTRY;
@@ -31,10 +30,11 @@ import static org.jooq.impl.DSL.val;
  * row there. Which value the directive was written on, and in which file, is one join away rather
  * than a column.
  *
- * <p>Three directive names reach this site and all three get a relation, which is unusual and
+ * <p>Three directive names reach this site and every one carries an argument, which is unusual and
  * follows from what the site is for. An enum value carrying a graphitron directive is a sorting
  * vocabulary rather than a schema element the generator emits, so every directive admitted here
- * exists to carry an argument and none of them is a marker.
+ * exists to carry an argument and none of them is a marker. Two get a relation here; the name a
+ * {@code @field} writes is one fact at every site, written by {@link GraphitronBindingEntries}.
  *
  * <p>{@code @order} is the enum-value twin of {@code @defaultOrder} at the field site, down to the
  * child relation its field list becomes, and the two are deliberately not one relation: the same
@@ -54,7 +54,6 @@ final class GraphitronEnumValueEntries {
      */
     static void write(DSLContext dsl, String graph, String source,
                       List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
-        bindings(dsl, graph, touchedAt, wrote(applied(applications, "field"), "name"));
         indexes(dsl, graph, touchedAt, wrote(applied(applications, "index"), "name"));
 
         var orders = applied(applications, "order");
@@ -69,27 +68,8 @@ final class GraphitronEnumValueEntries {
      * and did not list would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY, GRAPHITRON_AST_INDEX_ENTRY,
+        GRAPHITRON_AST_INDEX_ENTRY,
         GRAPHITRON_AST_ORDER_FIELD_ENTRY, GRAPHITRON_AST_ORDER_ENTRY);
-
-    private static void bindings(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                 List<Directive> applications) {
-        var t = GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "name"), t.NAME_REF)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.NAME_REF)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.NAME_REF, excluded(t.NAME_REF)));
-    }
 
     private static void indexes(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                 List<Directive> applications) {

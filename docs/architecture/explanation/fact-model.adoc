@@ -487,7 +487,7 @@ The four anchors and what hangs off each:
 
 | enum value
 | `graphql_enum_value_element`
-| `graphql_enum_value`, `graphitron_ast_enum_value_binding_entry`
+| `graphql_enum_value`
 |===
 
 The directive-definition family has no anchor of its own and needs none: a directive is defined once, nothing merges into a definition, and only its own two children reference it.

@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Locale;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ENTRY;
@@ -127,7 +127,7 @@ class GraphitronFieldEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var decode = GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
+            var decode = GRAPHITRON_AST_NODE_ID_ENTRY;
             var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
             var entry = GRAPHQL_AST_ENTRY;
             var declared = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;

@@ -14,7 +14,7 @@ import static org.jooq.impl.DSL.val;
  * claims, from the rule view beside it, marked and swept.
  *
  * <p>A claim is what the element's written directives say, keyed by the element and the kind; what
- * the claim names and where the first claim of a kind was written ride along, the first for the
+ * the claim names and where it was written ride along, the first for the
  * binding to resolve and the second for a defect to point at.
  */
 public final class BindingClaims {
