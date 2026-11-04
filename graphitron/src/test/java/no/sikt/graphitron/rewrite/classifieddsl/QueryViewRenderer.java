@@ -102,23 +102,22 @@ public final class QueryViewRenderer {
     private QueryViewRenderer() {}
 
     /**
-     * The test-only directive names to strip from rendered excerpts, derived from the parsed
-     * {@link CorpusDocuments#prelude()}'s directive definitions (the
-     * {@link no.sikt.graphitron.model.schema.DeclaredDirectives} derivation shape) rather
-     * than hand-maintained, so a new corpus directive cannot leak into the published triggers
-     * page by construction.
+     * A prelude a fixture is read over, and what it contributes to nothing a page shows: its
+     * directive definitions are the test-only names stripped from every excerpt, and its types are
+     * the scaffolding no example is about. Both are derived from the parsed prelude (the
+     * {@link no.sikt.graphitron.model.schema.DeclaredDirectives} derivation shape) rather than
+     * hand-maintained, so a new test directive cannot leak onto a published page by construction.
      */
-    private static final Set<String> INTERNAL_DIRECTIVES = Set.copyOf(
-        new graphql.schema.idl.SchemaParser().parse(CorpusDocuments.prelude())
-            .getDirectiveDefinitions().keySet());
+    record Prelude(String text, Set<String> directives, Set<String> types) {
+        static Prelude of(String text) {
+            var parsed = new graphql.schema.idl.SchemaParser().parse(text);
+            return new Prelude(text, Set.copyOf(parsed.getDirectiveDefinitions().keySet()),
+                Set.copyOf(parsed.types().keySet()));
+        }
+    }
 
-    /**
-     * The type names the prelude declares, derived the same way as {@link #INTERNAL_DIRECTIVES}.
-     * The leaf expansion below emits what the <em>fixture</em> declares; the prelude's assertion
-     * vocabulary is not part of any example and would be noise on the page.
-     */
-    private static final Set<String> PRELUDE_TYPES = Set.copyOf(
-        new graphql.schema.idl.SchemaParser().parse(CorpusDocuments.prelude()).types().keySet());
+    /** The classification corpus's prelude, which every corpus document is read over. */
+    private static final Prelude CORPUS = Prelude.of(CorpusDocuments.prelude());
 
     /**
      * The output-field coordinates the {@code selection} touches, parent type to field names.
@@ -128,7 +127,7 @@ public final class QueryViewRenderer {
      * the fixture, would let the two halves of one example disagree about what the example is.
      */
     public static Map<String, Set<String>> touchedCoordinates(String fixtureSdl, String selection) {
-        String full = CorpusDocuments.prelude() + "\n" + fixtureSdl;
+        String full = CORPUS.text() + "\n" + fixtureSdl;
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
         GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
 
@@ -140,7 +139,13 @@ public final class QueryViewRenderer {
 
     /** Renders the SDL closure the {@code selection} (a query/mutation or fragment document) touches over {@code fixtureSdl}. */
     public static String render(String fixtureSdl, String selection) {
-        String full = CorpusDocuments.prelude() + "\n" + fixtureSdl;
+        return render(CORPUS, fixtureSdl, selection);
+    }
+
+    /** The same rendering over a fixture read with another {@code prelude}, a fact document's. */
+    static String render(Prelude prelude, String fixtureSdl, String selection) {
+        Set<String> internal = prelude.directives();
+        String full = prelude.text() + "\n" + fixtureSdl;
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
         GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
 
@@ -153,7 +158,7 @@ public final class QueryViewRenderer {
         for (var entry : touched.fieldsByParent.entrySet()) {
             TypeDefinition<?> def = merged(registry, entry.getKey());
             if (def != null) {
-                append(sb, prune(def, entry.getValue()));
+                append(sb, prune(def, entry.getValue(), internal));
             }
         }
         // 2. Abstract output types referenced but not field-selected (unions; interfaces reached only via fragments).
@@ -161,7 +166,7 @@ public final class QueryViewRenderer {
             if (!touched.fieldsByParent.containsKey(name)) {
                 TypeDefinition<?> def = merged(registry, name);
                 if (def != null) {
-                    append(sb, stripInternalDirectives(def));
+                    append(sb, stripInternalDirectives(def, internal));
                 }
             }
         }
@@ -169,17 +174,17 @@ public final class QueryViewRenderer {
         for (String name : touched.inputTypes) {
             TypeDefinition<?> def = merged(registry, name);
             if (def != null) {
-                append(sb, stripInternalDirectives(def));
+                append(sb, stripInternalDirectives(def, internal));
             }
         }
         // 4. Leaf types the fixture declares and the excerpt names (closure honesty).
         for (String name : touched.leafTypes) {
-            if (PRELUDE_TYPES.contains(name) || ScalarInfo.isGraphqlSpecifiedScalar(name)) {
+            if (prelude.types().contains(name) || ScalarInfo.isGraphqlSpecifiedScalar(name)) {
                 continue;
             }
             TypeDefinition<?> def = merged(registry, name);
             if (def != null) {
-                append(sb, stripInternalDirectives(def));
+                append(sb, stripInternalDirectives(def, internal));
             }
         }
         return sb.toString().strip();
@@ -342,43 +347,43 @@ public final class QueryViewRenderer {
     }
 
     /** Keeps only the touched fields of {@code def} and strips the internal directives from what remains. */
-    private static TypeDefinition<?> prune(TypeDefinition<?> def, Set<String> keep) {
+    private static TypeDefinition<?> prune(TypeDefinition<?> def, Set<String> keep, Set<String> internal) {
         return switch (def) {
             case ObjectTypeDefinition o -> o.transform(b -> b
-                .fieldDefinitions(keptFields(o.getFieldDefinitions(), keep))
-                .directives(realDirectives(o.getDirectives())));
+                .fieldDefinitions(keptFields(o.getFieldDefinitions(), keep, internal))
+                .directives(realDirectives(o.getDirectives(), internal)));
             case InterfaceTypeDefinition i -> i.transform(b -> b
-                .definitions(keptFields(i.getFieldDefinitions(), keep))
-                .directives(realDirectives(i.getDirectives())));
-            default -> stripInternalDirectives(def);
+                .definitions(keptFields(i.getFieldDefinitions(), keep, internal))
+                .directives(realDirectives(i.getDirectives(), internal)));
+            default -> stripInternalDirectives(def, internal);
         };
     }
 
     /** Emits a type whole (all fields kept), stripping only the internal test directives at every level. */
-    private static TypeDefinition<?> stripInternalDirectives(TypeDefinition<?> def) {
+    private static TypeDefinition<?> stripInternalDirectives(TypeDefinition<?> def, Set<String> internal) {
         return switch (def) {
-            case ObjectTypeDefinition o -> o.transform(b -> b.directives(realDirectives(o.getDirectives())));
-            case InterfaceTypeDefinition i -> i.transform(b -> b.directives(realDirectives(i.getDirectives())));
-            case UnionTypeDefinition u -> u.transform(b -> b.directives(realDirectives(u.getDirectives())));
-            case EnumTypeDefinition e -> e.transform(b -> b.directives(realDirectives(e.getDirectives())));
-            case ScalarTypeDefinition s -> s.transform(b -> b.directives(realDirectives(s.getDirectives())));
+            case ObjectTypeDefinition o -> o.transform(b -> b.directives(realDirectives(o.getDirectives(), internal)));
+            case InterfaceTypeDefinition i -> i.transform(b -> b.directives(realDirectives(i.getDirectives(), internal)));
+            case UnionTypeDefinition u -> u.transform(b -> b.directives(realDirectives(u.getDirectives(), internal)));
+            case EnumTypeDefinition e -> e.transform(b -> b.directives(realDirectives(e.getDirectives(), internal)));
+            case ScalarTypeDefinition s -> s.transform(b -> b.directives(realDirectives(s.getDirectives(), internal)));
             case InputObjectTypeDefinition io -> io.transform(b -> b
-                .directives(realDirectives(io.getDirectives()))
+                .directives(realDirectives(io.getDirectives(), internal))
                 .inputValueDefinitions(io.getInputValueDefinitions().stream()
-                    .map(iv -> iv.transform(vb -> vb.directives(realDirectives(iv.getDirectives()))))
+                    .map(iv -> iv.transform(vb -> vb.directives(realDirectives(iv.getDirectives(), internal))))
                     .toList()));
             default -> def;
         };
     }
 
-    private static List<FieldDefinition> keptFields(List<FieldDefinition> fields, Set<String> keep) {
+    private static List<FieldDefinition> keptFields(List<FieldDefinition> fields, Set<String> keep, Set<String> internal) {
         return fields.stream()
             .filter(f -> keep.contains(f.getName()))
-            .map(f -> f.transform(b -> b.directives(realDirectives(f.getDirectives()))))
+            .map(f -> f.transform(b -> b.directives(realDirectives(f.getDirectives(), internal))))
             .toList();
     }
 
-    private static List<Directive> realDirectives(List<Directive> directives) {
-        return directives.stream().filter(d -> !INTERNAL_DIRECTIVES.contains(d.getName())).toList();
+    private static List<Directive> realDirectives(List<Directive> directives, Set<String> internal) {
+        return directives.stream().filter(d -> !internal.contains(d.getName())).toList();
     }
 }

@@ -97,6 +97,7 @@
                                         <include>images/**</include>
                                         <include>_includes/**</include>
                                         <include>manual/**/*.adoc</include>
+                                        <include>manual/**/examples/*.graphqls</include>
                                         <include>architecture/**/*.adoc</include>
                                         <include>architecture/**/images/**</include>
                                         <include>history/**/*.adoc</include>

@@ -47,19 +47,7 @@ A `Field<TableRecord<?>>` lift via `DSL.row(...).convertFrom(...)`. The lifted `
 
 [source,graphql]
 ----
-type Inventory @table(name: "inventory") {
-    inventoryId: Int! @field(name: "INVENTORY_ID")
-    filmRef: FilmCard @externalField(reference: {
-        className: "com.example.InventoryExtensions",
-        method:    "filmRef"
-    })
-}
-
-# FilmCard is backed by com.example.jooq.tables.records.FilmRecord, the element
-# type of the Field<TableRecord<?>> the filmRef lift returns.
-type FilmCard {
-    filmId: Int @field(name: "film_id")
-}
+include::examples/external-field-film-ref.graphqls[tag=example]
 ----
 
 A `Field<CustomJavaRecord>` lift returning a developer-defined record whose canonical accessor returns a typed jOOQ record. The classifier auto-derives an accessor-keyed batch key (single-record accessor) from the typed accessor, so a child `@table`-returning field on the wrapper resolves through a `DataLoader` keyed on the lifted record's PK:

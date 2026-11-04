@@ -332,7 +332,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
 * **The readers read the paths, and the old path relations go** `blocked`, on "`scenarios/path-rules` runs".
   The condition, lookup-key, node-id and `argMapping` readers move, and the relations
   "Path model (draft)" lists as replaced go.
-* **The manual states the path rules** `blocked`, on "The readers read the paths, and the old path relations go" and "A manual example is a query over a fact document".
+* **The manual states the path rules** `blocked`, on "The readers read the paths, and the old path relations go".
   `reference.adoc`, `referenceFor.adoc` and `how-to/polymorphic-types.adoc` take the docs draft below,
   its examples rendered from query files over `scenarios/path-rules`.
 * **A `@referenceFor` the classification never reaches draws no participant defect** `open`.
@@ -373,14 +373,6 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   "Encode and decode read the target type, and the old node-id relations go" lands. Neither side
   checks where a `@referenceFor` route lands today; it becomes a landing arm here.
   `NodeIdDecodeCoverage` stays, comparing the census with the walk's ledger, until the walk goes.
-* **A manual example is a query over a fact document** `open`. A `.graphql` file beside a manual page
-  holds one operation or fragment carrying `@factDocument(path:)`, naming the fact document it
-  selects from; `QueryViewRenderer` renders the selection against that document's schema to a
-  `.graphqls` beside it, real directives kept and test directives stripped, and the page includes
-  the result. The outputs are committed and approval-checked, as the corpus fragments are, with the
-  same placement floors: a query without an output, an output without a query, an output no page
-  includes, and a query naming a document that does not exist. Proven on an existing fact document
-  before the path rules' examples use it.
 
 ### A reference resolves where its directive is decoded `open`
 
