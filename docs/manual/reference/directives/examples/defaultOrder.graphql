@@ -1,0 +1,16 @@
+fragment PrimaryKey on Query @factDocument(path: "scenarios/default-order") {
+  stores { __typename }
+  filmsConnection { __typename }
+}
+
+fragment CollatedColumns on Query @factDocument(path: "scenarios/default-order") {
+  customers { __typename }
+}
+
+fragment RelatedTableColumn on Query @factDocument(path: "scenarios/default-order") {
+  filmsByOriginalLanguage { __typename }
+}
+
+fragment IndexDescending on Query @factDocument(path: "scenarios/default-order") {
+  filmsByTitleDescending { __typename }
+}

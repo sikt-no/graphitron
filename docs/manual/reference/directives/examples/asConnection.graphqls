@@ -1,0 +1,50 @@
+# Rendered by ManualExampleTest from asConnection.graphql. Do not edit.
+
+# tag::RootConnection[]
+type Query {
+  stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
+}
+# end::RootConnection[]
+
+# tag::UnionConnection[]
+type Address @table(name: "address") {
+  occupants: [AddressOccupant!]!
+  occupantsConnection: [AddressOccupant!]! @asConnection(defaultFirstValue: 5)
+}
+
+union AddressOccupant = Customer | Staff
+# end::UnionConnection[]
+
+# tag::SplitQueryConnection[]
+type Film @table(name: "film") {
+  actorsConnection(first: Int, last: Int, after: String, before: String): ActorsConnection!
+      @splitQuery
+      @reference(path: [{key : "film_actor_film_id_fkey"}, {key : "film_actor_actor_id_fkey"}])
+      @defaultOrder(primaryKey: true)
+}
+# end::SplitQueryConnection[]
+
+# tag::OrderedSplitQueryConnection[]
+type Film @table(name: "film") {
+  actorsOrderedConnection(
+      order: [ActorOrderBy] @orderBy,
+      first: Int,
+      last: Int,
+      after: String,
+      before: String
+  ): ActorsConnection!
+      @splitQuery
+      @reference(path: [{key : "film_actor_film_id_fkey"}, {key : "film_actor_actor_id_fkey"}])
+      @defaultOrder(primaryKey: true)
+}
+
+input ActorOrderBy {
+  field: ActorSort!
+  direction: SortDirection
+}
+
+enum ActorSort {
+  ACTOR_ID @order(primaryKey: true)
+  LAST_NAME @order(fields: [{name : "last_name"}])
+}
+# end::OrderedSplitQueryConnection[]

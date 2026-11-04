@@ -115,6 +115,10 @@ CREATE TABLE film (
 CREATE INDEX idx_title ON film(title);
 CREATE INDEX idx_fk_language_id ON film(language_id);
 
+-- A collation that compares text without regard to case, which @defaultOrder(fields:) names with
+-- collate: so customers sort by name as a reader expects.
+CREATE COLLATION case_insensitive (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+
 -- The catalog census captures a table's and a column's database comment, and this is the only
 -- place in the fixture that declares any, so it is what pins that path from the database through
 -- the jOOQ crawler to the MCP catalog tools' wire. Deliberately partial rather than thorough:

@@ -33,35 +33,21 @@ A bare list on a `@table` parent (`Query.stores`): `@asConnection` rewrites the 
 
 [source,graphql]
 ----
-type Query {
-    stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
-}
+include::examples/asConnection.graphqls[tag=RootConnection]
 ----
 
 A union-typed list (`Address.occupantsConnection`): the multi-table polymorphic emitter wraps the per-branch `UNION ALL` in a derived table so `seek/limit` and cursor pagination apply across the union; `totalCount` counts only this parent's occupants:
 
 [source,graphql]
 ----
-type Address @table(name: "address") {
-    occupants:           [AddressOccupant!]!
-    occupantsConnection: [AddressOccupant!]! @asConnection(defaultFirstValue: 5)
-}
-
-union AddressOccupant = Customer | Staff
+include::examples/asConnection.graphqls[tag=UnionConnection]
 ----
 
 Per-parent paginated children with xref:splitQuery.adoc[`@splitQuery`] (`Film.actorsConnection`): a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own paginated slice, and a `DataLoader` batches the dispatch:
 
 [source,graphql]
 ----
-type Film @table(name: "film") {
-    actorsConnection(
-        first: Int, last: Int, after: String, before: String
-    ): ActorsConnection! @splitQuery @reference(path: [
-        {key: "film_actor_film_id_fkey"},
-        {key: "film_actor_actor_id_fkey"}
-    ]) @defaultOrder(primaryKey: true)
-}
+include::examples/asConnection.graphqls[tag=SplitQueryConnection]
 ----
 
 When the schema declares the connection type explicitly (the `ActorsConnection!` shape above), the rewrite reuses it instead of synthesising a fresh one. Otherwise a Connection type, an Edge type, and `PageInfo` are generated alongside the field, and their names are derived from the field's coordinate: `Query.stores` above gets `QueryStoresConnection` and `QueryStoresConnectionEdge`. The deprecated `connectionName:` argument replaces the Connection name, and the Edge name follows it, so an override of `SharedMoviesConnection` mints `SharedMoviesConnectionEdge`. Both are the names the legacy generator emitted, so an upgraded schema publishes the connection types its clients already hold fragments against.
@@ -74,13 +60,7 @@ Dynamic order via xref:orderBy.adoc[`@orderBy`] composes naturally:
 
 [source,graphql]
 ----
-actorsOrderedConnection(
-    order: [ActorOrderBy] @orderBy,
-    first: Int, last: Int, after: String, before: String
-): ActorsConnection! @splitQuery @reference(path: [
-    {key: "film_actor_film_id_fkey"},
-    {key: "film_actor_actor_id_fkey"}
-]) @defaultOrder(primaryKey: true)
+include::examples/asConnection.graphqls[tag=OrderedSplitQueryConnection]
 ----
 
 The cursor encodes the active order columns (the `@orderBy` selection if the client supplied one, otherwise `@defaultOrder`), including the primary key graphitron appends when those columns do not identify a row, so that rows tying on the listed columns are neither skipped nor repeated between pages; decoding rejects cursors whose embedded sort doesn't match the request's effective order. See xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers].

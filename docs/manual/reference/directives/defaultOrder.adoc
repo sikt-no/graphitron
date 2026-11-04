@@ -45,54 +45,30 @@ The example schema's connection fields default to primary-key order:
 
 [source,graphql]
 ----
-type Query {
-    stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
-
-    filmsConnection(
-        first: Int, last: Int, after: String, before: String
-    ): FilmsConnection! @defaultOrder(primaryKey: true)
-
-    filmsOrderedConnection(
-        rating: MpaaRating @field(name: "RATING"),
-        order: [FilmOrderBy] @orderBy,
-        first: Int, last: Int, after: String, before: String
-    ): FilmsConnection! @defaultOrder(primaryKey: true)
-}
+include::examples/defaultOrder.graphqls[tag=PrimaryKey]
 ----
 
-`stores` and `filmsConnection` have no `@orderBy` argument: every page is sorted by primary key. `filmsOrderedConnection` accepts a dynamic `order` argument; when the client omits it, the field falls back to `@defaultOrder(primaryKey: true)`. The keyset-pagination cursor binds to whichever order is active.
+`stores` and `filmsConnection` have no `@orderBy` argument: every page is sorted by primary key. A field that also takes an xref:orderBy.adoc[`@orderBy`] argument falls back to its `@defaultOrder` when the client omits that argument. The keyset-pagination cursor binds to whichever order is active.
 
 Field-based with collation:
 
 [source,graphql]
 ----
-type Query {
-    customers(first: Int = 100, after: String): CustomerConnection
-        @defaultOrder(fields: [
-            {name: "LAST_NAME",  collate: "case_insensitive"},
-            {name: "FIRST_NAME", collate: "case_insensitive"}
-        ])
-}
+include::examples/defaultOrder.graphqls[tag=CollatedColumns]
 ----
 
 By a column on a related table, here the name of each film's original language:
 
 [source,graphql]
 ----
-type Query {
-    filmsByOriginalLanguage(first: Int, last: Int, after: String, before: String): FilmsConnection!
-        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
-}
+include::examples/defaultOrder.graphqls[tag=RelatedTableColumn]
 ----
 
 Index-based with descending direction:
 
 [source,graphql]
 ----
-type Query {
-    films(orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection
-        @defaultOrder(index: "IDX_TITLE", direction: DESC)
-}
+include::examples/defaultOrder.graphqls[tag=IndexDescending]
 ----
 
 == Constraints

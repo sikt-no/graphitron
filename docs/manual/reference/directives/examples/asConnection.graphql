@@ -1,0 +1,16 @@
+fragment RootConnection on Query @factDocument(path: "scenarios/default-order") {
+  stores { __typename }
+}
+
+fragment UnionConnection on Address @factDocument(path: "scenarios/as-connection") {
+  occupants { __typename }
+  occupantsConnection { __typename }
+}
+
+fragment SplitQueryConnection on Film @factDocument(path: "scenarios/as-connection") {
+  actorsConnection { __typename }
+}
+
+fragment OrderedSplitQueryConnection on Film @factDocument(path: "scenarios/as-connection") {
+  actorsOrderedConnection { __typename }
+}

@@ -1,0 +1,70 @@
+# What a list is ordered by when the request asks for no order: @defaultOrder names the primary key,
+# columns of the field's own table or of a table a key reaches, or a database index, each in a
+# direction.
+
+type Store @table(name: "store") {
+    storeId: Int! @field(name: "store_id")
+}
+
+type Film @table(name: "film") {
+    filmId: Int!   @field(name: "film_id")
+    title:  String @field(name: "title")
+}
+
+type Customer @table(name: "customer") {
+    lastName:  String @field(name: "last_name")
+    firstName: String @field(name: "first_name")
+}
+
+type FilmsConnection {
+    edges: [FilmsEdge!]!
+    nodes: [Film!]!
+    pageInfo: PageInfo!
+}
+
+type FilmsEdge {
+    cursor: String!
+    node: Film!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+extend type Query {
+    stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
+
+    filmsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+
+    customers: [Customer!]! @asConnection
+        @defaultOrder(fields: [
+            {name: "last_name",  collate: "case_insensitive"},
+            {name: "first_name", collate: "case_insensitive"}
+        ])
+
+    filmsByOriginalLanguage: [Film!]! @asConnection
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+
+    filmsByTitleDescending: [Film!]! @asConnection @defaultOrder(index: "idx_title", direction: DESC)
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_default_order_entry", rows: """
+  index_ref, primary_key, direction
+  ,          TRUE,
+  ,          TRUE,
+  ,          ,
+  ,          ,
+  idx_title, ,            DESC
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_default_order_field_entry", rows: """
+  name_ref,   collate
+  last_name,  case_insensitive
+  first_name, case_insensitive
+  name,
+  """)

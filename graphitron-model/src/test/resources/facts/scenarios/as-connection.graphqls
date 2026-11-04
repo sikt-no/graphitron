@@ -1,0 +1,84 @@
+# A list made a connection: @asConnection wraps a list in a generated connection type with a page
+# size, and a field returning a connection type an author declared pages the same way. A child
+# connection under a table is fetched in its own query when it carries @splitQuery.
+
+type Address @table(name: "address") {
+    occupants:           [AddressOccupant!]!
+    occupantsConnection: [AddressOccupant!]! @asConnection(defaultFirstValue: 5)
+}
+
+union AddressOccupant = Customer | Staff
+
+type Customer @table(name: "customer") {
+    firstName: String @field(name: "first_name")
+}
+
+type Staff @table(name: "staff") {
+    firstName: String @field(name: "first_name")
+}
+
+type Film @table(name: "film") {
+    actorsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): ActorsConnection! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
+
+    actorsOrderedConnection(
+        order: [ActorOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): ActorsConnection! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
+}
+
+type Actor @table(name: "actor") {
+    actorId:  Int!    @field(name: "actor_id")
+    lastName: String! @field(name: "last_name")
+}
+
+enum ActorSort {
+    ACTOR_ID  @order(primaryKey: true)
+    LAST_NAME @order(fields: [{name: "last_name"}])
+}
+
+input ActorOrderBy {
+    field:     ActorSort!
+    direction: SortDirection
+}
+
+type ActorsConnection {
+    edges: [ActorsEdge!]!
+    nodes: [Actor!]!
+    pageInfo: PageInfo!
+}
+
+type ActorsEdge {
+    cursor: String!
+    node: Actor!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+extend type Query {
+    addresses: [Address!]! @defaultOrder(primaryKey: true)
+    films: [Film!]! @defaultOrder(primaryKey: true)
+}
+
+extend schema @assertContains(relation: "graphitron_split_query_entry", rows: """
+  type_name, field_name
+  Film,      actorsConnection
+  Film,      actorsOrderedConnection
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_connection_entry", rows: """
+  default_first_value, connection_name
+  5,
+  """)

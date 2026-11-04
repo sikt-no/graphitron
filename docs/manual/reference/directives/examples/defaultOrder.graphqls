@@ -1,0 +1,31 @@
+# Rendered by ManualExampleTest from defaultOrder.graphql. Do not edit.
+
+# tag::PrimaryKey[]
+type Query {
+  stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
+  filmsConnection(first: Int, last: Int, after: String, before: String): FilmsConnection!
+      @defaultOrder(primaryKey: true)
+}
+# end::PrimaryKey[]
+
+# tag::CollatedColumns[]
+type Query {
+  customers: [Customer!]!
+      @asConnection
+      @defaultOrder(fields: [{name : "last_name", collate : "case_insensitive"}, {name : "first_name", collate : "case_insensitive"}])
+}
+# end::CollatedColumns[]
+
+# tag::RelatedTableColumn[]
+type Query {
+  filmsByOriginalLanguage: [Film!]!
+      @asConnection
+      @defaultOrder(fields: [{name : "name", path : [{key : "film_original_language_id_fkey"}]}])
+}
+# end::RelatedTableColumn[]
+
+# tag::IndexDescending[]
+type Query {
+  filmsByTitleDescending: [Film!]! @asConnection @defaultOrder(index: "idx_title", direction: DESC)
+}
+# end::IndexDescending[]
