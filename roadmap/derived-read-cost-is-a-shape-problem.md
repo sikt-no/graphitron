@@ -68,26 +68,16 @@ restated here; the history and `## Retired vocabulary` keep it.
 
 **Root: an expensive derived read is a modelling defect, so fix the shape rather than the cost.**
 
-**Destination: a `@service` field is generated from the store alone.** Its call, what fills each
-parameter and the result its fields read are store facts the generator emits from, so neither
-`ServiceCatalog` nor the walk resolves anything for it. The critical path, by node title:
+**Destination: a `@service` field is generated from the store alone.** Its fetcher is assembled by
+emitters that each own a jOOQ query over the store, `multiset` for what nests, so neither
+`ServiceCatalog` nor the walk resolves anything for it. Additive, flip, subtract; the critical path,
+by node title:
 
 ```text
-A service call is emitted from the store
-├── A call is the one overload every parameter of which is filled
-│   └── Every call's parameter states what fills it
-│       ├── A parameter states its type's first argument
-│       ├── A `Configuration` parameter is the jOOQ context
-│       ├── A parameter's fill states how its value is built
-│       ├── An object result is lifted onto a key row
-│       │   ├── The result and path model is stated before it is built
-│       │   ├── An error-carrying payload's data element holds its class
-│       │   ├── A field's key row is stated
-│       │   ├── A type an `@externalField` returns holds an OBJECT
-│       │   └── A binding that names several tables is a row of none of them
-│       └── `$tenant` in argMapping routes a service call
-└── A field's source is its parent's result
-    └── The result and path model is stated before it is built
+The walk's service path is gone
+└── The service fields are emitted from the store
+    └── A producer's fetcher parts are emitted from the store
+        └── What an occurrence takes is a binding   (the fills only)
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -439,32 +429,42 @@ static method needs no holder.
   `graphitron_outbox_leaf` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
-* **A parameter's fill states how its value is built** `blocked`, E's, on "A scalar's column is read at its path's end". A scalar, a list, or a Java record,
-  bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
-  replacing the delivery `intent_argmapping_bound_parameter_type` derives. A jOOQ record's settable
-  columns are the input fields' columns at their path ends, `graphitron_occurrence_column`, not its class's members.
-* **Every call's parameter states what fills it** `blocked`, E's, on "A parameter's fill states how its value is built", "An object result is lifted onto a key row" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
-  `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`): jOOQ
-  context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
-  matched by argMapping, by name, by type or as the one unmatched pair. A routine step's
-  `graphitron_field_path_parameter` rows become its rows.
-* **A call is the one overload every parameter of which is filled** `blocked`, E's, on "Every call's parameter states what fills it". `graphitron_code_reference` pins it among the
-  overloads of the written name, which are `code_method`'s rows, for a `@condition` as for any call;
-  `@service`, `@externalField` and `FieldSort.method` still need the name to have one. Every argMapping
-  left side names one of its parameters; none is an unmatched parameter and several an ambiguous call,
-  defects beside facts in the corpus.
 * **`$tenant` in argMapping routes a service call** `open`, E's. The sigil on a pair's left side names
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
-* **A service call is emitted from the store** `blocked`, E's, on "A call is the one overload every parameter of which is filled". `ServiceMethodCallEmitter` reads the call, its fills and its holder from `graphitron_service_holder`, and
-  `ServiceCatalog`'s decode, claim and bind phases go; `@service` then admits a `$context` pair, reading `graphitron_call_context_key`.
+* **A producer's fetcher parts are emitted from the store** `open`, E's. Additive: beside today's
+  emitters, each part a fetcher is built from gets an emitter of its own, reading the store through a
+  jOOQ query of its own, `multiset` for what nests, and unit-tested from captured fact documents; read
+  off the generated code, they are the same for every kind of producer but the call:
+  * the frame, `x(env)`: the jOOQ context and its tenant routing (none, named from argument slots,
+    divined from the parent, global), the error routing or the `Outcome` claim, and under an object the
+    loader, partitioned by tenant where it routes, and the key off the parent;
+  * the fills: each parameter's value, from its call's `PARAMETER` bindings, the validation of input
+    elements before the call, and the one overload they all bind;
+  * the call: the service on its holder, the routine, or the write;
+  * the re-read: the rows at a path's end for keys on its start, in the keys' order, per parent under
+    an object; a service's path is empty, a routine write's runs its chain;
+  * the polymorphic re-read: each participant's rows with its type, or the discriminator's.
+
+  Routine writes, already emitted from the store, take the re-read first, which orders their re-read
+  (today an unordered `IN`, a bug), then the frame, which drops the error channel and tenancy their
+  caller hands `RoutineWriteEmitter` as values; services then take all five, the fills last. A carrier
+  payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
+  takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
+  at a time", where the per-field `rowsX`, `loadX` and decode copies go.
+* **The service fields are emitted from the store** `blocked`, E's, on "A producer's fetcher parts are emitted from the store". The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
+  the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
+  changes on purpose, its behaviour does not.
+* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+  `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
+  a `$context` pair, reading `graphitron_call_context_key`.
 * **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **The outbox on a service is emitted where the service call is** `blocked`, on "A service call is emitted from the store".
+  * **The outbox on a service is emitted where the service call is** `blocked`, on "The service fields are emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
     `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write
     in the same commit, so a service `@outbox` is never accepted without being emitted. It also waits
@@ -489,7 +489,7 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
   every argument or input field `override: true` switches off that no call consumes, and every
   `@lookupKey` or `@orderBy` argument a call does consume. Both lists empty, or only author errors,
   is the evidence the flag can go; anything else comes to Alf before the nodes below.
-* **An argument's consumer is stated** `blocked`, on "Every call's parameter states what fills it".
+* **An argument's consumer is stated** `blocked`, on "A producer's fetcher parts are emitted from the store".
   A relation over every argument and input-field occurrence, derived from the parameter fills: the
   calls that consume it, or the generator, or none. Consuming an input-typed argument consumes every
   field inside it; consuming one input field leaves its siblings to the generator. None is the entry
