@@ -1809,12 +1809,19 @@ public record TenantBindingIndex(
                 return true;
             }
 
+            /**
+             * Whether a guaranteed slot's emitted predicate compares {@code table}'s own tenant
+             * column. The slot the fold keeps for the anchor's name must be guaranteed too, so the
+             * pruned binding still holds a guaranteed slot and reads as it did before.
+             */
             private boolean anchoredOn(TableRef table) {
                 return mints.values().stream().flatMap(List::stream).anyMatch(m ->
                     m.filter() != null
                         && m.filter().table().equals(table)
                         && m.filter().predicate() == ColumnBindingLedger.ImplicitPredicate.OWN_TABLE
-                        && guaranteed(m));
+                        && guaranteed(m)
+                        && slots.stream().anyMatch(kept -> kept.slotName().equals(m.slotName())
+                            && kept.presence() instanceof TenantBinding.SlotPresence.Guaranteed));
             }
 
             private boolean guaranteed(Mint mint) {
