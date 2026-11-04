@@ -49,11 +49,7 @@ class GraphCountGrowthGateTest {
      * ends it. Not a ratchet: a known table can dip under the bound on a quiet run, so one that stops
      * growing comes off by hand.
      */
-    private static final Map<String, String> KNOWN = Map.of(
-        "WRITE GRAPHITRON_ARGMAPPING_LANDING",
-        "graphitron_argmapping_step is a view over a recursive query, and H2 does not push the graph "
-            + "filter into its recursion, so the landing's rule scans every graph's calls and "
-            + "occurrences; it comes off when the step is a stored relation written a step at a time");
+    private static final Map<String, String> KNOWN = Map.of();
 
     @Test
     @DisplayName("one graph's time per relation, written or read, does not grow with the other graphs")

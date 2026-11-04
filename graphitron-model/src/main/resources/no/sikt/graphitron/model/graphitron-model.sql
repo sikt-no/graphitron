@@ -5368,57 +5368,113 @@ COMMENT ON VIEW graphitron_argmapping_call IS 'One written argMapping entry bind
 -- COMMENT ON COLUMN graphitron_argmapping_call.head IS 'its first name';
 -- COMMENT ON COLUMN graphitron_argmapping_call.rest IS 'what follows the first name and its dot, empty where there is one name';
 
--- Each step a written argMapping path takes through the occurrences under its call.
-CREATE VIEW graphitron_argmapping_step
-  (graph_name, source_name, source_line, source_column, position, call_coordinate, bound_to,
-   segments, consumed, rest, step_coordinate, repeats_own_name) AS
-WITH RECURSIVE
-step (graph_name, source_name, source_line, source_column, position, call_coordinate, bound_to,
-      segments, consumed, rest, step_coordinate, repeats_own_name) AS (
-  -- The head. On a field it names one of the field's arguments; on an argument or an input field it
-  -- names a field of what that opens into, or the call's own name, which the coordinate's own name
-  -- wins where an input field shares it.
-  SELECT e.graph_name, e.source_name, e.source_line, e.source_column, e.position, e.call_coordinate,
-         e.bound_to, e.segments, 1, e.rest, o.coordinate, FALSE
-    FROM graphitron_argmapping_call e
-    JOIN graphitron_occurrence o
-      ON o.graph_name = e.graph_name AND o.parent_coordinate = e.call_coordinate AND o.name = e.head
-   WHERE (e.call_kind = 'FIELD' AND o.kind = 'FIELD_ARGUMENT')
-      OR (e.call_kind <> 'FIELD' AND o.kind = 'INPUT_FIELD' AND e.head <> e.call_name)
-  UNION ALL
-  SELECT e.graph_name, e.source_name, e.source_line, e.source_column, e.position, e.call_coordinate,
-         e.bound_to, e.segments, 1, e.rest, e.call_coordinate, TRUE
-    FROM graphitron_argmapping_call e
-   WHERE e.call_kind <> 'FIELD' AND e.head = e.call_name
-  UNION ALL
-  -- Every later segment names an input field of what the step before reached.
-  SELECT s.graph_name, s.source_name, s.source_line, s.source_column, s.position, s.call_coordinate,
-         s.bound_to, s.segments, s.consumed + 1,
-         CASE WHEN POSITION('.', s.rest) = 0 THEN ''
-              ELSE SUBSTRING(s.rest, POSITION('.', s.rest) + 1) END,
-         o.coordinate, s.repeats_own_name
-    FROM step s
-    JOIN graphitron_occurrence o
-      ON o.graph_name = s.graph_name AND o.parent_coordinate = s.step_coordinate
-     AND o.name = REGEXP_REPLACE(s.rest, '\..*$', '') AND o.kind = 'INPUT_FIELD'
-   WHERE s.consumed < s.segments
-)
-SELECT graph_name, source_name, source_line, source_column, position, call_coordinate, bound_to,
-       segments, consumed, rest, step_coordinate, repeats_own_name
-  FROM step;
-COMMENT ON VIEW graphitron_argmapping_step IS 'One segment a written argMapping path consumes under one occurrence of its call, and the occurrence it reaches. For example filter.minLength on @routine at Actor.filmsNested reaches Actor.filmsNested(filter:) at 1 and Actor.filmsNested(filter.minLength:) at 2.';
--- COMMENT ON COLUMN graphitron_argmapping_step.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_argmapping_step.source_name IS 'the file the mapping string was written in, the first of the four columns that are the string''s key';
--- COMMENT ON COLUMN graphitron_argmapping_step.source_line IS 'source line of the mapping string';
--- COMMENT ON COLUMN graphitron_argmapping_step.source_column IS 'source column of the mapping string';
--- COMMENT ON COLUMN graphitron_argmapping_step.position IS 'the entry''s position in its mapping, completing the entry''s key';
--- COMMENT ON COLUMN graphitron_argmapping_step.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on that this path is taken under';
--- COMMENT ON COLUMN graphitron_argmapping_step.bound_to IS 'the right-hand side as written';
--- COMMENT ON COLUMN graphitron_argmapping_step.segments IS 'how many dot-separated names it has';
--- COMMENT ON COLUMN graphitron_argmapping_step.consumed IS 'how many of them this step has consumed, 1 at the head';
--- COMMENT ON COLUMN graphitron_argmapping_step.rest IS 'the names not yet consumed, dot-separated, empty where every name is';
--- COMMENT ON COLUMN graphitron_argmapping_step.step_coordinate IS 'the occurrence the consumed names reach';
--- COMMENT ON COLUMN graphitron_argmapping_step.repeats_own_name IS 'whether the head was the call''s own name rather than something it opens into';
+-- Each step a written argMapping path takes through the occurrences under its call, stored so a
+-- graph's steps are taken over its own rows: a recursive view is evaluated whole, every graph's
+-- paths with it, before a reader's graph reaches it.
+CREATE TABLE graphitron_argmapping_step (
+  graph_name       VARCHAR   NOT NULL,
+  source_name      VARCHAR   NOT NULL,
+  source_line      INT       NOT NULL,
+  source_column    INT       NOT NULL,
+  position         INT       NOT NULL,
+  call_coordinate  VARCHAR   NOT NULL,
+  consumed         INT       NOT NULL,
+  bound_to         VARCHAR   NOT NULL,
+  segments         INT       NOT NULL,
+  rest             VARCHAR   NOT NULL,
+  step_coordinate  VARCHAR   NOT NULL,
+  repeats_own_name BOOLEAN   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position, call_coordinate,
+               consumed),
+  -- The entry as written, so a step cannot outlive what an author wrote.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
+    REFERENCES graphitron_ast_argmapping_pair_entry (graph_name, source_name, source_line, source_column, position)
+    ON DELETE CASCADE,
+  -- The call's occurrence and the step's, so a place the corpus no longer reaches takes its rows.
+  FOREIGN KEY (graph_name, call_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, step_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (consumed BETWEEN 1 AND segments)
+);
+COMMENT ON TABLE graphitron_argmapping_step IS 'One segment a written argMapping path consumes under one occurrence of its call, and the occurrence it reaches. For example filter.minLength on @routine at Actor.filmsNested reaches Actor.filmsNested(filter:) at 1 and Actor.filmsNested(filter.minLength:) at 2.';
+COMMENT ON COLUMN graphitron_argmapping_step.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_argmapping_step.source_name IS 'the file the mapping string was written in, the first of the four columns that are the string''s key';
+COMMENT ON COLUMN graphitron_argmapping_step.source_line IS 'source line of the mapping string';
+COMMENT ON COLUMN graphitron_argmapping_step.source_column IS 'source column of the mapping string';
+COMMENT ON COLUMN graphitron_argmapping_step.position IS 'the entry''s position in its mapping, completing the entry''s key';
+COMMENT ON COLUMN graphitron_argmapping_step.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on that this path is taken under';
+COMMENT ON COLUMN graphitron_argmapping_step.consumed IS 'how many names this step has consumed, 1 at the head, completing the key: each name reaches one occurrence under the one before, so one entry and call have one step per count';
+COMMENT ON COLUMN graphitron_argmapping_step.bound_to IS 'the right-hand side as written';
+COMMENT ON COLUMN graphitron_argmapping_step.segments IS 'how many dot-separated names it has';
+COMMENT ON COLUMN graphitron_argmapping_step.rest IS 'the names not yet consumed, dot-separated, empty where every name is';
+COMMENT ON COLUMN graphitron_argmapping_step.step_coordinate IS 'the occurrence the consumed names reach';
+COMMENT ON COLUMN graphitron_argmapping_step.repeats_own_name IS 'whether the head was the call''s own name rather than something it opens into';
+COMMENT ON COLUMN graphitron_argmapping_step.touched_at IS 'the reading that last wrote this row; the next step reads only this reading''s, and the sweep deletes the rows an older reading wrote';
+
+-- The head. On a field it names one of the field's arguments; on an argument or an input field it
+-- names a field of what that opens into, or the call's own name, which the coordinate's own name
+-- wins where an input field shares it.
+CREATE VIEW graphitron_argmapping_step_head_rule
+  (graph_name, source_name, source_line, source_column, position, call_coordinate, consumed,
+   bound_to, segments, rest, step_coordinate, repeats_own_name) AS
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column, e.position, e.call_coordinate,
+       1, e.bound_to, e.segments, e.rest, o.coordinate, FALSE
+  FROM graphitron_argmapping_call e
+  JOIN graphitron_occurrence o
+    ON o.graph_name = e.graph_name AND o.parent_coordinate = e.call_coordinate AND o.name = e.head
+ WHERE (e.call_kind = 'FIELD' AND o.kind = 'FIELD_ARGUMENT')
+    OR (e.call_kind <> 'FIELD' AND o.kind = 'INPUT_FIELD' AND e.head <> e.call_name)
+UNION ALL
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column, e.position, e.call_coordinate,
+       1, e.bound_to, e.segments, e.rest, e.call_coordinate, TRUE
+  FROM graphitron_argmapping_call e
+ WHERE e.call_kind <> 'FIELD' AND e.head = e.call_name;
+COMMENT ON VIEW graphitron_argmapping_step_head_rule IS 'One head step the argMapping step rule computes, in the shape graphitron_argmapping_step stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_step at 1, before the next steps.';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.source_name IS 'the file the mapping string was written in';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.source_line IS 'source line of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.source_column IS 'source column of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.position IS 'the entry''s position in its mapping';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.call_coordinate IS 'the call occurrence the path is taken under';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.consumed IS 'always 1';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.bound_to IS 'the right-hand side as written';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.segments IS 'how many dot-separated names it has';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.rest IS 'the names after the head';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.step_coordinate IS 'the occurrence the head reaches';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.repeats_own_name IS 'whether the head was the call''s own name';
+
+-- Every later segment names an input field of what the step before reached: one step down from the
+-- stored steps, with what the writer needs to take only this reading's at one count.
+CREATE VIEW graphitron_argmapping_step_next_rule
+  (graph_name, source_name, source_line, source_column, position, call_coordinate, consumed,
+   bound_to, segments, rest, step_coordinate, repeats_own_name, from_consumed, from_touched_at) AS
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, s.position, s.call_coordinate,
+       s.consumed + 1, s.bound_to, s.segments,
+       CASE WHEN POSITION('.', s.rest) = 0 THEN ''
+            ELSE SUBSTRING(s.rest, POSITION('.', s.rest) + 1) END,
+       o.coordinate, s.repeats_own_name, s.consumed, s.touched_at
+  FROM graphitron_argmapping_step s
+  JOIN graphitron_occurrence o
+    ON o.graph_name = s.graph_name AND o.parent_coordinate = s.step_coordinate
+   AND o.name = REGEXP_REPLACE(s.rest, '\..*$', '') AND o.kind = 'INPUT_FIELD'
+ WHERE s.consumed < s.segments;
+COMMENT ON VIEW graphitron_argmapping_step_next_rule IS 'One next step the argMapping step rule computes from a stored step, in the shape graphitron_argmapping_step stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph and one count into graphitron_argmapping_step, a count at a time.';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.source_name IS 'the file the mapping string was written in';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.source_line IS 'source line of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.source_column IS 'source column of the mapping string';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.position IS 'the entry''s position in its mapping';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.call_coordinate IS 'the call occurrence the path is taken under';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.consumed IS 'the names consumed with this step';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.bound_to IS 'the right-hand side as written';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.segments IS 'how many dot-separated names it has';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.rest IS 'the names not yet consumed';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.step_coordinate IS 'the occurrence this step reaches';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.repeats_own_name IS 'carried from the head';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.from_consumed IS 'the count of the stored step this one follows, which the writer pins';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.from_touched_at IS 'the instant of the stored step this one follows, which the writer pins to this reading';
 
 CREATE VIEW graphitron_argmapping_landing_rule
   (graph_name, source_name, source_line, source_column, position, call_coordinate,
@@ -19536,7 +19592,15 @@ INSERT INTO meta_relation VALUES
   ('graphitron_argmapping_step', 'sdl-argmapping-pair-call-step', 'graphitron',
    'One segment a written argMapping path consumes under one occurrence of its call, and the occurrence it reaches.',
    'For example filter.minLength on @routine at Actor.filmsNested reaches Actor.filmsNested(filter:) at 1 and Actor.filmsNested(filter.minLength:) at 2.',
-   'The path taken a name at a time over the occurrences, one keyed join per name on their parent and name, which is what lets the landing and the defect telling a misspelt name from a cycle read the same steps. Recursive because a path has as many names as its author wrote; it ends because each step consumes one, whatever the input types do.'),
+   'The path taken a name at a time over the occurrences, one keyed join per name on their parent and name, which is what lets the landing and the defect telling a misspelt name from a cycle read the same steps. Stored rather than a recursive view, because H2 evaluates a recursive view whole, every graph''s paths with it, before a reader''s graph reaches it; written a count at a time, so each statement is over one graph''s rows, and it ends because each step consumes a name, whatever the input types do.'),
+  ('graphitron_argmapping_step_head_rule', 'sdl-argmapping-pair-call-step', 'graphitron',
+   'One head step the argMapping step rule computes, in the shape graphitron_argmapping_step stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_step at 1, before the next steps.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_argmapping_step_next_rule', 'sdl-argmapping-pair-call-step', 'graphitron',
+   'One next step the argMapping step rule computes from a stored step, in the shape graphitron_argmapping_step stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron assembly inserts this view''s rows for one graph and one count into graphitron_argmapping_step, a count at a time.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it. It reads the stored steps rather than itself, so the graph a writer pins reaches every join.'),
   ('graphitron_argmapping_landing', 'sdl-argmapping-pair-call', 'graphitron',
    'Where one written argMapping entry''s argument path lands under one occurrence of its call: one row per entry and call occurrence whose path resolves.',
    'For example input.ids on @service at Query.filmsByPath lands on Query.filmsByPath(input.ids:).',
