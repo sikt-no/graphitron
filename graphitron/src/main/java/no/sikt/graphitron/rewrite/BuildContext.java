@@ -2287,7 +2287,7 @@ class BuildContext {
                 switch (resolveConditionRef(condMap)) {
                     case ConditionResolution.Failed fail -> { errors.add(fail.message()); return; }
                     case ConditionResolution.Unresolved u -> {
-                        errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+                        errors.add(unresolvedConditionMessage(condMap));
                         return;
                     }
                     case ConditionResolution.Resolved r -> whereFilter = new JoinConditionRef(r.ref());
@@ -2317,7 +2317,7 @@ class BuildContext {
                 switch (resolveConditionRef(condMap)) {
                     case ConditionResolution.Failed fail -> { errors.add(fail.message()); return; }
                     case ConditionResolution.Unresolved u -> {
-                        errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+                        errors.add(unresolvedConditionMessage(condMap));
                         return;
                     }
                     case ConditionResolution.Resolved r -> whereFilter = new JoinConditionRef(r.ref());
@@ -2355,7 +2355,7 @@ class BuildContext {
             switch (resolveConditionRef(condMap)) {
                 case ConditionResolution.Failed fail -> errors.add(fail.message());
                 case ConditionResolution.Unresolved u ->
-                    errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+                    errors.add(unresolvedConditionMessage(condMap));
                 case ConditionResolution.Resolved cr -> {
                     // The positional rule stays here, at the call site: `declaredTarget` is *this
                     // hop's* declared target, and only a chain-ending element has one. Handing it
@@ -2812,7 +2812,7 @@ class BuildContext {
         record Resolved(MethodRef ref) implements ConditionResolution {}
         /** Resolution failed with an actionable {@code message} the caller surfaces directly. */
         record Failed(String message) implements ConditionResolution {}
-        /** No class/method named and no reflective match; the caller emits its own generic message. */
+        /** The reference names no class and method to reflect on; the caller renders the generic message. */
         record Unresolved() implements ConditionResolution {}
     }
 
@@ -2855,7 +2855,14 @@ class BuildContext {
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of());
-        return result.failed() ? new ConditionResolution.Unresolved() : new ConditionResolution.Resolved(result.ref());
+        return result.failed()
+            ? new ConditionResolution.Failed("path-step @condition: " + result.rejection().message())
+            : new ConditionResolution.Resolved(result.ref());
+    }
+
+    /** The generic message for a path-step condition reference that names no class and method. */
+    private String unresolvedConditionMessage(Map<String, Object> conditionMap) {
+        return "path-step @condition: " + extractConditionQualifiedName(conditionMap) + " could not be resolved";
     }
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {

@@ -43,11 +43,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
-| `R1136` | A @referenceFor condition that cannot be resolved does not say why | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](referencefor-condition-failure-names-the-reason.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-10-29 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
+| `R1136` | A @referenceFor condition that cannot be resolved does not say why | In Progress | 2026-11-04 <sub>created 2026-10-30</sub> | [plan](referencefor-condition-failure-names-the-reason.md) |
 | `R1131` | A clean build runs in under five minutes | In Progress | 2026-10-30 | [plan](clean-build-under-five-minutes.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
@@ -479,7 +479,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R931` [**Reject a synthesised Connection or Edge name that exactly collides with another registered type**](synthesised-type-exact-name-collision.md) — Backlog, bug
-- `R1136` [**A @referenceFor condition that cannot be resolved does not say why**](referencefor-condition-failure-names-the-reason.md) — Ready, bug
+- `R1136` [**A @referenceFor condition that cannot be resolved does not say why**](referencefor-condition-failure-names-the-reason.md) — In Progress, bug
 - `R1137` [**A rejected @error type cascades into misleading diagnostics on the types around it**](rejected-type-cascades-into-secondary-diagnostics.md) — Ready, bug
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R557` [**Completeness sweep for @splitQuery applications: every marker consumed, inert-by-construction, or rejected**](split-query-marker-sweep.md) — Backlog, validation

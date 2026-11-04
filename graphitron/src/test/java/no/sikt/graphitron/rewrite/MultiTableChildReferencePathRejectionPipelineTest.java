@@ -67,8 +67,10 @@ class MultiTableChildReferencePathRejectionPipelineTest {
             """);
         var rejection = rejectionOf(schema.field("Film", "referrer"));
         assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
+        // The validator prefixes the field coordinate when it reports the rejection, so the
+        // reason does not state it itself.
         assertThat(rejection.message())
-            .contains("Film.referrer")
+            .doesNotContain("Film.referrer")
             .contains("an explicit @reference is not supported on a multi-table interface/union child field")
             .contains("auto-discovered")
             .contains("Remove the @reference directive");

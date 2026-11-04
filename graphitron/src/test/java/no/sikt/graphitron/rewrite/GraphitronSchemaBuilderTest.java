@@ -1372,7 +1372,8 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Film", "actors");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("could not be resolved");
+                    .contains("path-step @condition")
+                    .contains("class 'no.sikt.graphitron.rewrite.NoSuchStub' could not be loaded");
             });
 
         final String sdl;

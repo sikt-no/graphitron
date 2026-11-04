@@ -135,6 +135,19 @@ class TestConditionStub {
     }
 
     /**
+     * Fixture: an overload set whose declarations disagree at parameter 0, one over jOOQ tables
+     * and one over fields, the shape of a private helper beside public table-typed overloads. A
+     * path-step {@code condition:} naming it cannot pick one declaration.
+     */
+    public static Condition overloadedPathCondition(org.jooq.Table<?> source, org.jooq.Table<?> target) {
+        throw new UnsupportedOperationException();
+    }
+
+    public static Condition overloadedPathCondition(org.jooq.Field<Long> source, org.jooq.Field<Long> target) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Fixture: {@code @condition(override: true)} on an input field whose name does not
      * match any column on the resolving table. Parameter name {@code sakskode} matches the
      * GraphQL input field name used in {@link GraphitronSchemaBuilderTest}'s override-condition cases.

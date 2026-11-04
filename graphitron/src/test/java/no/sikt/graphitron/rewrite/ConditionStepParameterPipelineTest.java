@@ -44,7 +44,8 @@ class ConditionStepParameterPipelineTest {
         var refused = TestSchemaHelper.buildSchema(customerToAddress("agreeingOnBoth"));
         assertThat(refused.field("Customer", "address")).isInstanceOf(UnclassifiedField.class);
         assertThat(((UnclassifiedField) refused.field("Customer", "address")).rejection().message())
-            .contains("agreeingOnBoth").contains("could not be resolved");
+            .contains("agreeingOnBoth").contains("has 2 declarations")
+            .contains("they declare different numbers of parameters");
         var control = TestSchemaHelper.buildSchema(customerToAddress("agreeingOnArrival"));
         assertThat(control.field("Customer", "address")).isNotInstanceOf(UnclassifiedField.class);
     }

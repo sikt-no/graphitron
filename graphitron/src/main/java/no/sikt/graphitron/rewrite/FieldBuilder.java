@@ -9469,11 +9469,10 @@ class FieldBuilder {
             GraphQLFieldDefinition fieldDef, String fieldName, String parentTypeName,
             SourceLocation location, TableRef parentTable, List<ParticipantRef> participants,
             boolean isList) {
-        String fieldLabel = "Field '" + parentTypeName + "." + fieldName + "'";
         // Rule 1a: a field-level @reference cannot express a distinct join per participant.
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             return ChildPolymorphicJoinPaths.fail(Rejection.structural(
-                fieldLabel + ": an explicit @reference is not supported on a multi-table "
+                "an explicit @reference is not supported on a multi-table "
                 + "interface/union child field. Per-participant join paths are auto-discovered (one "
                 + "unique single-hop foreign key from each participant table to the parent table '"
                 + parentTable.tableName() + "'); a field-level @reference applies one stated path to "
@@ -9496,18 +9495,18 @@ class FieldBuilder {
             String type = typeArg != null && typeArg.getValue() != null ? typeArg.getValue().toString() : null;
             if (type == null || type.isBlank()) {
                 return ChildPolymorphicJoinPaths.fail(Rejection.structural(
-                    fieldLabel + ": a @referenceFor application is missing its 'type' argument."));
+                    "a @referenceFor application is missing its 'type' argument."));
             }
             if (explicitRoutes.containsKey(type)) {
                 return ChildPolymorphicJoinPaths.fail(Rejection.structural(
-                    fieldLabel + ": @referenceFor names participant '" + type + "' more than once. "
+                    "@referenceFor names participant '" + type + "' more than once. "
                     + "Repeated @referenceFor applications are independent, one per participant; each "
                     + "participant may have at most one route (unlike @reference, they do not "
                     + "concatenate)."));
             }
             if (!tableBoundByName.containsKey(type)) {
                 return ChildPolymorphicJoinPaths.fail(Rejection.structural(
-                    fieldLabel + ": @referenceFor names '" + type + "', which is not a table-bound "
+                    "@referenceFor names '" + type + "', which is not a table-bound "
                     + "participant of the field's return type. Valid participant names: "
                     + tableBoundByName.keySet() + "."));
             }
@@ -9529,7 +9528,7 @@ class FieldBuilder {
                     tb.table().tableName(), tb.table(), isList)
                 : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table(), isList);
 
-            var outcome = classifyParticipantRoute(explicit, isList, parsed, tb, fieldLabel, parentTable);
+            var outcome = classifyParticipantRoute(explicit, isList, parsed, tb, parentTable);
             if (outcome.rejection() != null) {
                 errors.add(outcome.rejection());
             } else {
@@ -9574,18 +9573,19 @@ class FieldBuilder {
      */
     private ParticipantRouteOutcome classifyParticipantRoute(boolean explicit, boolean isList,
             BuildContext.ParsedPath parsed,
-            ParticipantRef.TableBound tb, String fieldLabel, TableRef parentTable) {
+            ParticipantRef.TableBound tb, TableRef parentTable) {
         String type = tb.typeName();
         no.sikt.graphitron.rewrite.model.ParticipantCorrelation correlation;
         if (explicit) {
             if (parsed.hasError()) {
                 return ParticipantRouteOutcome.fail(Rejection.structural(
-                    fieldLabel + ": @referenceFor route for participant '" + type + "' could not be "
-                    + "resolved: " + parsed.errorMessage() + "."));
+                    "@referenceFor route for participant '" + type + "' could not be "
+                    + "resolved: " + parsed.errorMessage()
+                    + (parsed.errorMessage().endsWith(".") ? "" : ".")));
             }
             if (parsed.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
                 return ParticipantRouteOutcome.fail(Rejection.structural(
-                    fieldLabel + ": @referenceFor route for participant '" + type + "' does not land "
+                    "@referenceFor route for participant '" + type + "' does not land "
                     + "on that participant's table. " + mismatch.diagnostic()));
             }
             // Hop-0 filter() reject: a {key:, condition:} (or {table:, condition:}) element heading the
@@ -9601,7 +9601,7 @@ class FieldBuilder {
             if (!parsed.elements().isEmpty()
                     && parsed.elements().get(0) instanceof JoinStep.Hop hop0 && hop0.filter() != null) {
                 return ParticipantRouteOutcome.fail(Rejection.structural(
-                    fieldLabel + ": @referenceFor route for participant '" + type + "' carries a filter "
+                    "@referenceFor route for participant '" + type + "' carries a filter "
                     + "(a condition: alongside a key:/table:) on its first hop. On a multi-table "
                     + "interface/union child field the parent side of the first hop correlates by value, "
                     + "not a joined alias, so the filter's parent-table source parameter has nothing to "
@@ -9631,7 +9631,7 @@ class FieldBuilder {
                 // tables match. A structural steer to @referenceFor: a self-FK participant is
                 // author-correctable by stating the self-referencing key.
                 return ParticipantRouteOutcome.fail(Rejection.structural(
-                    fieldLabel + ": participant '" + type + "' is backed by the same table as the "
+                    "participant '" + type + "' is backed by the same table as the "
                     + "parent/hub ('" + parentTable.tableName() + "'), so no foreign-key correlation from "
                     + "parent to participant can be auto-discovered. State the self-referencing key with "
                     + "@referenceFor(type: \"" + type + "\", path: [{key: \"<self-fk>\"}])."));
@@ -9642,12 +9642,12 @@ class FieldBuilder {
                 // so the KeyTupleWhere non-empty-slots invariant is never violated by a future producer
                 // change rather than crashing in the emitter.
                 return ParticipantRouteOutcome.fail(Rejection.structural(
-                    fieldLabel + ": participant '" + type + "' resolved to an unsupported multi-table child "
+                    "participant '" + type + "' resolved to an unsupported multi-table child "
                     + "join shape (only a single-hop foreign key is auto-discovered). " + REFERENCE_FOR_USAGE_SKETCH));
             }
             correlation = new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get());
         }
-        Rejection gapC = parentHoldsFkListReject(isList, correlation, tb, fieldLabel, parentTable);
+        Rejection gapC = parentHoldsFkListReject(isList, correlation, tb, parentTable);
         if (gapC != null) return ParticipantRouteOutcome.fail(gapC);
         return ParticipantRouteOutcome.ok(correlation);
     }
@@ -9677,7 +9677,7 @@ class FieldBuilder {
      */
     private Rejection parentHoldsFkListReject(boolean isList,
             no.sikt.graphitron.rewrite.model.ParticipantCorrelation correlation,
-            ParticipantRef.TableBound tb, String fieldLabel, TableRef parentTable) {
+            ParticipantRef.TableBound tb, TableRef parentTable) {
         if (!isList) return null;
         On hop0On = switch (correlation) {
             case no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere k -> k.on();
@@ -9690,7 +9690,7 @@ class FieldBuilder {
         if (offKey.isEmpty()) return null;
         String cols = offKey.stream().map(ColumnRef::sqlName).collect(Collectors.joining(", "));
         return Rejection.deferred(
-            fieldLabel + ": participant '" + tb.typeName() + "' correlates through a foreign key held "
+            "participant '" + tb.typeName() + "' correlates through a foreign key held "
             + "on the parent/hub table '" + parentTable.tableName() + "' (parent-side column(s) " + cols
             + " outside its primary key). A parent-holds-FK participant is single-valued (at most one "
             + "row per parent), so it is served at single cardinality; batching it through the "
