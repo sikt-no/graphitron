@@ -171,7 +171,9 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         boolean routineWrite = onMutationRoot && fieldDef != null && writeCapable
             && fieldDef.hasAppliedDirective(BuildContext.DIR_ROUTINE);
         boolean writeTrigger = writeRow.isPresent() || routineWrite;
-        boolean nodeTrigger = isRoot && !onMutationRoot && fieldDef != null
+        // The node signature resolves ids only where nothing is written: a @service on the field
+        // takes it over, its method being what the field runs.
+        boolean nodeTrigger = !serviceTrigger && isRoot && !onMutationRoot && fieldDef != null
             && "Node".equals(baseTypeName(fieldDef))
             && types.get("Node") instanceof GraphitronType.InterfaceType;
         boolean pivotTrigger = fieldDef != null && fieldDef.hasAppliedDirective(BuildContext.DIR_PIVOT);
