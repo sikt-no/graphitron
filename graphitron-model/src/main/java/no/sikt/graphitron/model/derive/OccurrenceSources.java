@@ -81,11 +81,12 @@ public final class OccurrenceSources {
             .fetchOne(0, Integer.class);
         if (deepest != null) {
             for (int depth = 0; depth <= deepest; depth++) {
-                // The producers of this depth's occurrences are stated here, once their step exists,
-                // before the sources that read them.
+                // The producers of this depth's occurrences, before the sources that read them.
+                OccurrenceProducers.writeDepth(dsl, graph, depth, touchedAt);
                 write(dsl, graph, candidates(graph, touchedAt, depth).asTable("c"), touchedAt);
             }
         }
+        OccurrenceProducers.sweep(dsl, graph, touchedAt);
         dsl.deleteFrom(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT)
             .where(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.GRAPH_NAME.eq(graph))
             .and(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.TOUCHED_AT.ne(touchedAt))

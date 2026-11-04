@@ -13829,6 +13829,368 @@ COMMENT ON COLUMN graphitron_service_holder.constructor_class_name IS 'the class
 COMMENT ON COLUMN graphitron_service_holder.constructor_descriptor IS 'the constructor''s descriptor; what fills each of its positions is the jOOQ context, read off code_constructor_parameter';
 COMMENT ON COLUMN graphitron_service_holder.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- What each producing occurrence runs, today read off the field-keyed producer relations through the
+-- occurrence's declared field, so a field produces at every occurrence of it as it does today. A
+-- connection's count and facets are the connection model's to state on this relation, not this rule's.
+CREATE VIEW graphitron_occurrence_producer_rule (graph_name, coordinate, kind, start) AS
+SELECT o.graph_name, o.coordinate, p.kind,
+       CASE WHEN o.parent_coordinate IS NULL
+             AND EXISTS (SELECT 1 FROM graphql_root_operation r
+                          WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name)
+            THEN 'ROOT' ELSE 'CHILD' END
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_producer p
+    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
+ WHERE o.kind = 'FIELD' AND p.kind NOT IN ('COUNT', 'FACETS');
+COMMENT ON VIEW graphitron_occurrence_producer_rule IS 'One row the occurrence producer rule computes, in the shape graphitron_occurrence_producer stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_rule.start IS 'the start of a row of this rule, which the stage writes into graphitron_occurrence_producer.start';
+
+CREATE TABLE graphitron_occurrence_producer (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  start      VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  -- What each subtype references, so a subtype row can only hang under a producer of its own kind.
+  UNIQUE (graph_name, coordinate, kind),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (kind IN ('SELECT', 'LOOKUP', 'COUNT', 'FACETS', 'INSERT', 'UPDATE', 'DELETE',
+                  'ROUTINE', 'SERVICE')),
+  CHECK (start IN ('ROOT', 'CHILD'))
+);
+COMMENT ON TABLE graphitron_occurrence_producer IS 'An occurrence that executes something and produces a result, and what kind of thing it runs: one row per producing occurrence. For example Query.films with nothing written is a ROOT SELECT, and Customer.address under a record-backed parent a CHILD LOOKUP from the key the record carries.';
+COMMENT ON COLUMN graphitron_occurrence_producer.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer.coordinate IS 'the producing occurrence, at its nested coordinate, the whole key: a field of a nested type produces once per place it is reached';
+COMMENT ON COLUMN graphitron_occurrence_producer.kind IS 'what it runs, in graphitron_producer''s vocabulary: SELECT, LOOKUP, COUNT, FACETS, a write, ROUTINE or SERVICE';
+COMMENT ON COLUMN graphitron_occurrence_producer.start IS 'ROOT for an occurrence on a root type, which has no source and executes from nothing; CHILD for one that starts its own query from what its parent produced';
+COMMENT ON COLUMN graphitron_occurrence_producer.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_producer_key_row_rule
+  (graph_name, coordinate, key_kind, table_source_name, table_schema, table_name, arity) AS
+-- A child producer that takes its keys off the object its parent holds starts on the key's table.
+SELECT p.graph_name, p.coordinate, k.kind, k.table_source_name, k.table_schema, k.table_name, k.arity
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_key_row k
+    ON k.graph_name = f.graph_name AND k.type_name = f.type_name AND k.field_name = f.field_name
+ WHERE p.start = 'CHILD';
+COMMENT ON VIEW graphitron_occurrence_producer_key_row_rule IS 'One row the key-row start rule computes, in the shape graphitron_occurrence_producer_key_row stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_key_row, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.key_kind IS 'the key_kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.key_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.arity IS 'the arity of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.arity';
+
+CREATE TABLE graphitron_occurrence_producer_key_row (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  key_kind          VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  arity             VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (key_kind IN ('COLUMNS', 'ACCESSOR')),
+  CHECK (arity IN ('ONE', 'MANY'))
+);
+COMMENT ON TABLE graphitron_occurrence_producer_key_row IS 'Where a child producer starts when its parent holds an object: the key it takes off that object, lifted onto the key''s table; one row per such producer. For example FilmDetailsCarrier.language under a FilmRecord starts on film, taking film''s columns off the record.';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.coordinate IS 'the producing occurrence, the whole key: one start per producer';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.key_kind IS 'how it takes the key, as graphitron_field_key_row says: COLUMNS, the record''s own columns, or ACCESSOR, a member returning another table''s record';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.table_source_name IS 'the catalog entry of the key''s table, with the schema and the name a sql_table key';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.table_schema IS 'the key''s table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.table_name IS 'the key''s table, the table the producer''s query starts on';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.arity IS 'ONE or MANY keys per parent, as graphitron_field_key_row says';
+COMMENT ON COLUMN graphitron_occurrence_producer_key_row.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_producer_service_rule
+  (graph_name, coordinate, kind, method_source_name, method_class_name, method_name,
+   method_descriptor, constructor_source_name, constructor_class_name, constructor_descriptor) AS
+-- The method a SERVICE producer calls and, where it is an instance method, the constructor its
+-- object is made with.
+SELECT p.graph_name, p.coordinate, p.kind, s.method_source_name, s.method_class_name,
+       s.method_name, s.method_descriptor, h.constructor_source_name, h.constructor_class_name,
+       h.constructor_descriptor
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_producer_service s
+    ON s.graph_name = f.graph_name AND s.type_name = f.type_name AND s.field_name = f.field_name
+  LEFT JOIN graphitron_service_holder h
+    ON h.graph_name = s.graph_name AND h.type_name = s.type_name AND h.field_name = s.field_name
+ WHERE p.kind = 'SERVICE';
+COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_service, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_source_name IS 'the method_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_class_name IS 'the method_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_name IS 'the method_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_descriptor IS 'the method_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_descriptor';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_source_name IS 'the constructor_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_class_name IS 'the constructor_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_descriptor IS 'the constructor_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_descriptor';
+
+CREATE TABLE graphitron_occurrence_producer_service (
+  graph_name              VARCHAR   NOT NULL,
+  coordinate              VARCHAR   NOT NULL,
+  kind                    VARCHAR   NOT NULL,
+  method_source_name      VARCHAR   NOT NULL,
+  method_class_name       VARCHAR   NOT NULL,
+  method_name             VARCHAR   NOT NULL,
+  method_descriptor       VARCHAR   NOT NULL,
+  constructor_source_name VARCHAR,
+  constructor_class_name  VARCHAR,
+  constructor_descriptor  VARCHAR,
+  touched_at              TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate, kind)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate, kind) ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  FOREIGN KEY (constructor_source_name, constructor_class_name, constructor_descriptor)
+    REFERENCES code_constructor (source_name, class_name, descriptor) ON DELETE SET NULL,
+  CHECK (kind = 'SERVICE'),
+  CHECK ((constructor_source_name IS NULL) = (constructor_descriptor IS NULL))
+);
+COMMENT ON TABLE graphitron_occurrence_producer_service IS 'The call a SERVICE producer makes: the method and, for an instance method, the constructor its object is made with; one row per service producer whose method resolved. For example Query.titleByFilmIdViaInstance calls SampleInstanceService.titleByFilmId on an object SampleInstanceService(DSLContext) makes.';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.coordinate IS 'the producing occurrence, the whole key: one call per producer';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.kind IS 'always SERVICE, pinned so the foreign key holds the producer to a service';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.method_class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.method_descriptor IS 'the method''s descriptor, which tells overloads apart';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_source_name IS 'the classpath entry of the constructor making the object an instance method runs on, with the class and the descriptor a code_constructor key; NULL for a static method, and where the class has no buildable constructor';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_class_name IS 'the class that constructor makes';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_descriptor IS 'the constructor''s descriptor';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_producer_routine_rule
+  (graph_name, coordinate, kind, routine_source_name, table_schema, routine_name) AS
+-- The routine a ROUTINE producer calls.
+SELECT p.graph_name, p.coordinate, p.kind, r.routine_source_name, r.table_schema, r.routine_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_producer_routine r
+    ON r.graph_name = f.graph_name AND r.type_name = f.type_name AND r.field_name = f.field_name
+ WHERE p.kind = 'ROUTINE';
+COMMENT ON VIEW graphitron_occurrence_producer_routine_rule IS 'One row the routine call rule computes, in the shape graphitron_occurrence_producer_routine stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_routine, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.routine_source_name IS 'the routine_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.routine_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.routine_name IS 'the routine_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.routine_name';
+
+CREATE TABLE graphitron_occurrence_producer_routine (
+  graph_name          VARCHAR   NOT NULL,
+  coordinate          VARCHAR   NOT NULL,
+  kind                VARCHAR   NOT NULL,
+  routine_source_name VARCHAR   NOT NULL,
+  table_schema        VARCHAR   NOT NULL,
+  routine_name        VARCHAR   NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate, kind)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate, kind) ON DELETE CASCADE,
+  FOREIGN KEY (routine_source_name, table_schema, routine_name)
+    REFERENCES sql_routine (source_name, table_schema, routine_name) ON DELETE CASCADE,
+  CHECK (kind = 'ROUTINE')
+);
+COMMENT ON TABLE graphitron_occurrence_producer_routine IS 'The routine a ROUTINE producer calls, its first @routine with no table before it; one row per routine producer whose routine resolved to one callable. For example Query.filmsForActor @routine(name: "films_for_actor") calls public.films_for_actor.';
+COMMENT ON COLUMN graphitron_occurrence_producer_routine.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_routine.coordinate IS 'the producing occurrence, the whole key: one call per producer';
+COMMENT ON COLUMN graphitron_occurrence_producer_routine.kind IS 'always ROUTINE, pinned so the foreign key holds the producer to a routine';
+COMMENT ON COLUMN graphitron_occurrence_producer_routine.routine_source_name IS 'the catalog entry the routine was read from; with the schema and the name a sql_routine key';
+COMMENT ON COLUMN graphitron_occurrence_producer_routine.table_schema IS 'the routine''s schema';
+COMMENT ON COLUMN graphitron_occurrence_producer_routine.routine_name IS 'the routine';
+COMMENT ON COLUMN graphitron_occurrence_producer_routine.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_producer_write_rule
+  (graph_name, coordinate, kind, matches, table_source_name, table_schema, table_name) AS
+-- The table a write producer writes and, for an identifying write, how many rows one input may match.
+SELECT p.graph_name, p.coordinate, p.kind, w.matches, w.table_source_name, w.table_schema,
+       w.table_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_producer_write w
+    ON w.graph_name = f.graph_name AND w.type_name = f.type_name AND w.field_name = f.field_name
+ WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE');
+COMMENT ON VIEW graphitron_occurrence_producer_write_rule IS 'One row the write call rule computes, in the shape graphitron_occurrence_producer_write stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_write, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.matches IS 'the matches of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.matches';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.table_name';
+
+CREATE TABLE graphitron_occurrence_producer_write (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  matches           VARCHAR,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate, kind)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate, kind) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (kind IN ('INSERT', 'UPDATE', 'DELETE')),
+  CHECK (matches IN ('ONE', 'MANY')),
+  CHECK ((kind = 'INSERT') = (matches IS NULL))
+);
+COMMENT ON TABLE graphitron_occurrence_producer_write IS 'The statement a write producer runs: the table it mutates and, for an identifying write, how many rows one input may match; one row per write producer whose table resolved. For example Mutation.dropFilms @mutation(typeName: DELETE, multiRow: true, table: "film") deletes from film, MANY a key.';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.coordinate IS 'the producing occurrence, the whole key: one statement per producer';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.kind IS 'INSERT, UPDATE or DELETE, pinned so the foreign key holds the producer to a write';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.matches IS 'ONE or MANY rows one input may match, NULL for an INSERT, which matches none';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.table_source_name IS 'the catalog entry of the table it writes; with the schema and the name a sql_table key';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.table_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.table_name IS 'the table it writes';
+COMMENT ON COLUMN graphitron_occurrence_producer_write.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_producer_result_rule
+  (graph_name, coordinate, shape, class_name, runtime_kind, table_source_name, table_schema,
+   table_name) AS
+WITH produced (graph_name, coordinate, kind, is_list, connection, target_kind, payload,
+               bound_source_name, bound_schema, bound_table, polymorphic,
+               routine_source_name, routine_schema, routine_table,
+               delivery, element_class, element_source_name, element_schema, element_table) AS (
+  SELECT p.graph_name, p.coordinate, p.kind, f.is_list, ft.wrapper_type_name IS NOT NULL, tt.kind,
+         -- A type with no table that a producer returns and whose data field re-reads is a payload.
+         EXISTS (SELECT 1 FROM graphitron_producer rr
+                  WHERE rr.graph_name = ft.graph_name AND rr.type_name = ft.target_type_name
+                    AND rr.kind = 'LOOKUP'),
+         b.table_source_name, b.table_schema, b.table_name,
+         EXISTS (SELECT 1 FROM graphql_poly_member pm
+                   JOIN graphitron_tabletype mb
+                     ON mb.graph_name = pm.graph_name AND mb.type_name = pm.member_type_name
+                  WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name),
+         rr.table_source_name, rr.table_schema, rr.table_name,
+         m.result_delivery, m.result_element_class, et.source_name, et.table_schema, et.table_name
+    FROM graphitron_occurrence_producer p
+    JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+    JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+    LEFT JOIN graphitron_type tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+    LEFT JOIN graphitron_tabletype b ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+    LEFT JOIN graphitron_routine_result rr
+      ON rr.graph_name = f.graph_name AND rr.type_name = f.type_name AND rr.field_name = f.field_name
+    LEFT JOIN graphitron_occurrence_producer_service s
+      ON s.graph_name = p.graph_name AND s.coordinate = p.coordinate
+    LEFT JOIN code_method m
+      ON m.source_name = s.method_source_name AND m.class_name = s.method_class_name
+     AND m.method_name = s.method_name AND m.descriptor = s.method_descriptor
+    -- The table whose record class a service's element is, where one is.
+    LEFT JOIN (SELECT gs.graph_name, st.source_name, st.table_schema, st.table_name, st.record_class_fqn
+                 FROM store_graph_source gs JOIN sql_table st ON st.source_name = gs.source_name) et
+      ON et.graph_name = p.graph_name AND et.record_class_fqn = m.result_element_class
+),
+shaped (graph_name, coordinate, kind, shape, element_class, table_source_name, table_schema,
+        table_name) AS (
+  SELECT graph_name, coordinate, kind,
+         CASE WHEN connection THEN 'CONNECTION'
+              WHEN target_kind IN ('SCALAR', 'ENUM') THEN 'SCALAR'
+              -- A service hands back what its method declares: records of a table, or an object.
+              WHEN kind = 'SERVICE' THEN
+                CASE WHEN element_table IS NULL THEN 'OBJECT'
+                     WHEN delivery = 'MANY' THEN 'RECORD_LIST' ELSE 'SINGLE_RECORD' END
+              -- A select, a lookup and a routine produce rows, as a write does onto a table-bound
+              -- type; a write's or a routine's payload is an object.
+              WHEN kind IN ('SELECT', 'LOOKUP') OR bound_table IS NOT NULL OR polymorphic
+                   OR (kind = 'ROUTINE' AND NOT payload)
+                THEN CASE WHEN is_list THEN 'RECORD_LIST' ELSE 'SINGLE_RECORD' END
+              ELSE 'OBJECT' END,
+         element_class,
+         CASE WHEN kind = 'SERVICE' THEN element_source_name
+              WHEN kind = 'ROUTINE' THEN COALESCE(routine_source_name, bound_source_name)
+              ELSE bound_source_name END,
+         CASE WHEN kind = 'SERVICE' THEN element_schema
+              WHEN kind = 'ROUTINE' THEN COALESCE(routine_schema, bound_schema)
+              ELSE bound_schema END,
+         CASE WHEN kind = 'SERVICE' THEN element_table
+              WHEN kind = 'ROUTINE' THEN COALESCE(routine_table, bound_table)
+              ELSE bound_table END
+    FROM produced
+)
+SELECT s.graph_name, s.coordinate, s.shape,
+       CASE WHEN s.shape IN ('SCALAR', 'CONNECTION') THEN CAST(NULL AS VARCHAR)
+            WHEN s.kind = 'SERVICE' THEN s.element_class
+            WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN t.record_class_fqn
+            ELSE CAST(NULL AS VARCHAR) END,
+       CASE WHEN s.shape = 'CONNECTION' THEN 'CONNECTION_RESULT' END,
+       -- The lift: a result of records is lifted onto the table whose rows they are.
+       CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_source_name END,
+       CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_schema END,
+       CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_name END
+  FROM shaped s
+  LEFT JOIN sql_table t
+    ON t.source_name = s.table_source_name AND t.table_schema = s.table_schema
+   AND t.table_name = s.table_name;
+COMMENT ON VIEW graphitron_occurrence_producer_result_rule IS 'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_result, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.shape IS 'the shape of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.shape';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.runtime_kind IS 'the runtime_kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.runtime_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_name';
+
+CREATE TABLE graphitron_occurrence_producer_result (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  shape             VARCHAR   NOT NULL,
+  class_name        VARCHAR,
+  runtime_kind      VARCHAR,
+  table_source_name VARCHAR,
+  table_schema      VARCHAR,
+  table_name        VARCHAR,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (runtime_kind) REFERENCES graphitron_runtime_class (kind),
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE SET NULL,
+  CHECK (shape IN ('SINGLE_RECORD', 'RECORD_LIST', 'CONNECTION', 'OBJECT', 'SCALAR')),
+  CHECK (class_name IS NULL OR runtime_kind IS NULL),
+  CHECK ((table_source_name IS NULL) = (table_name IS NULL)),
+  CHECK (table_name IS NULL OR shape IN ('SINGLE_RECORD', 'RECORD_LIST'))
+);
+COMMENT ON TABLE graphitron_occurrence_producer_result IS 'What a producer produces: one row per producer, its shape, the class its values are where one is named, and for records the table they are rows of. For example Query.films produces a RECORD_LIST of FilmRecord lifted onto film, and a connection-returning field a CONNECTION of the page class graphitron generates.';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.coordinate IS 'the producing occurrence, the whole key: one result per producer';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.shape IS 'SINGLE_RECORD, RECORD_LIST, CONNECTION, OBJECT or SCALAR: a connection''s count, stated by the connection model, is a SCALAR and its facets an OBJECT';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name IS 'the class its values are instances of: a record class, or the element class a @service method declares; NULL for a scalar, a connection, records of no single table and a payload graphitron builds';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.runtime_kind IS 'the class graphitron generates for it, a graphitron_runtime_class kind: CONNECTION_RESULT for a connection''s page';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.table_source_name IS 'the lift: for records, the catalog entry of the table they are rows of, with the schema and the name a sql_table key; NULL for records of several tables or of none named';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.table_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.table_name IS 'that table, where the producer''s children''s source starts';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- A nullable list of a union or an interface with members, every one of them @error. A field whose
 -- union or interface lists an @error type and falls short of this is a defect where it was written.
 CREATE VIEW graphitron_errors_field_rule (graph_name, type_name, field_name, container_name) AS
@@ -18571,6 +18933,54 @@ INSERT INTO meta_relation VALUES
    'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path.',
    'For example Store.people with @referenceFor(type: "Staff") is the claim (Store.people, Staff), of kind REFERENCE_FOR.',
    'A path can be followed from another file, an inherited path from an implementation in one file to the interface''s field in another, and a written position moves when the file around it is edited, so a path names what it follows by names an author chose: the declared element and the type the path reaches, which tells two @referenceFor on one field apart. The position it stands for within its own file is kept beside them as an attribute, where the written elements are keyed. The element and the type are referenced through copies of their keys that their removal sets null, so the sweep, not a cascade, removes a claim the reading no longer finds.'),
+  ('graphitron_occurrence_producer_result', 'graph-occurrence', 'graphitron',
+   'What a producer produces: one row per producer, its shape, the class its values are where one is named, and for records the table they are rows of.',
+   'For example Query.films produces a RECORD_LIST of FilmRecord lifted onto film, and a connection-returning field a CONNECTION of the page class graphitron generates.',
+   'The producer knows what it produces (Alf, 2026-11-03): stated per producing occurrence, it is what the type-keyed graphitron_result family said per type, which a type reached under two producers could only say twice. Read off what the producer runs, its target, the method a service declares and the routine its field ends on, never off the result relations it replaces, and written per depth beside the producer.'),
+  ('graphitron_occurrence_producer_result_rule', 'graph-occurrence', 'graphitron',
+   'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_result, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer', 'graph-occurrence', 'graphitron',
+   'An occurrence that executes something and produces a result, and what kind of thing it runs: one row per producing occurrence.',
+   'For example Query.films with nothing written is a ROOT SELECT, and Customer.address under a record-backed parent a CHILD LOOKUP from the key the record carries.',
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+  ('graphitron_occurrence_producer_rule', 'graph-occurrence', 'graphitron',
+   'One row the occurrence producer rule computes, in the shape graphitron_occurrence_producer stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_key_row', 'graph-occurrence', 'graphitron',
+   'Where a child producer starts when its parent holds an object: the key it takes off that object, lifted onto the key''s table; one row per such producer.',
+   'For example FilmDetailsCarrier.language under a FilmRecord starts on film, taking film''s columns off the record.',
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+  ('graphitron_occurrence_producer_key_row_rule', 'graph-occurrence', 'graphitron',
+   'One row the key-row start rule computes, in the shape graphitron_occurrence_producer_key_row stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_key_row, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_service', 'graph-occurrence', 'graphitron',
+   'The call a SERVICE producer makes: the method and, for an instance method, the constructor its object is made with; one row per service producer whose method resolved.',
+   'For example Query.titleByFilmIdViaInstance calls SampleInstanceService.titleByFilmId on an object SampleInstanceService(DSLContext) makes.',
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+  ('graphitron_occurrence_producer_service_rule', 'graph-occurrence', 'graphitron',
+   'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_service, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_routine', 'graph-occurrence', 'graphitron',
+   'The routine a ROUTINE producer calls, its first @routine with no table before it; one row per routine producer whose routine resolved to one callable.',
+   'For example Query.filmsForActor @routine(name: "films_for_actor") calls public.films_for_actor.',
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+  ('graphitron_occurrence_producer_routine_rule', 'graph-occurrence', 'graphitron',
+   'One row the routine call rule computes, in the shape graphitron_occurrence_producer_routine stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_routine, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_write', 'graph-occurrence', 'graphitron',
+   'The statement a write producer runs: the table it mutates and, for an identifying write, how many rows one input may match; one row per write producer whose table resolved.',
+   'For example Mutation.dropFilms @mutation(typeName: DELETE, multiRow: true, table: "film") deletes from film, MANY a key.',
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+  ('graphitron_occurrence_producer_write_rule', 'graph-occurrence', 'graphitron',
+   'One row the write call rule computes, in the shape graphitron_occurrence_producer_write stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_write, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_source', 'graph-occurrence', 'graphitron',
    'What one occurrence''s values come from: one row per occurrence that has a source.',
    'For example Film.title''s values are rows of film, of kind TABLE, and Query.filmBlurbHolder.blurb''s are read off an instance of FilmBlurbHolder, of kind OBJECT.',

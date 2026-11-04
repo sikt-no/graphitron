@@ -478,6 +478,18 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_producer_service_rule", Arm.DERIVED);
         registrations.put("graphitron_service_holder", Arm.DERIVED);
         registrations.put("graphitron_service_holder_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_key_row", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_key_row_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_service", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_service_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_routine", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_routine_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_write", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_write_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_result", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_result_rule", Arm.DERIVED);
         registrations.put("graphitron_errors_field", Arm.DERIVED);
         registrations.put("graphitron_errors_field_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_outcome", Arm.DERIVED);

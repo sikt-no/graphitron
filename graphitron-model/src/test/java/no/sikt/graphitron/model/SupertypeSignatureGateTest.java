@@ -305,6 +305,11 @@ class SupertypeSignatureGateTest {
         // first for the one link that opts the graph in, plus what graphitron applies itself. Decided:
         // the entry is per application, and the anchor per graph.
         Set.of("graphitron_ast_link_import_entry", "graphitron_federation_link_import"),
+        // A producer's call stated per declared field and per occurrence: the occurrence producer's
+        // write and routine are read off the field-keyed ones through the occurrence's field, and the
+        // field-keyed ones leave this roster with the producer family when its readers have moved.
+        Set.of("graphitron_occurrence_producer_write", "graphitron_producer_write"),
+        Set.of("graphitron_occurrence_producer_routine", "graphitron_producer_routine"),
         // The enum-value site's two sorting pairs, on the terms every pair above is on: an
         // as-written relation beside the resolved one it will be derived into, both coming off this
         // roster together on the day that derivation lands.

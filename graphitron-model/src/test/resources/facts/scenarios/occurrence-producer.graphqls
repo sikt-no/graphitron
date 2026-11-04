@@ -1,0 +1,49 @@
+# An occurrence that executes something and produces a result is a producer: a root field, which has
+# no source and runs from nothing, or a child that starts a query of its own, as a @splitQuery child
+# does from its parent's key. A field the query of its producer reads, a column or an inline child,
+# produces nothing. What a producer calls is a subtype of it: a service's method and, for an instance
+# method, the constructor its object is made with.
+
+type Language @table(name: "language") { name: String }
+type Film @table(name: "film") {
+  title: String
+  language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+extend type Query {
+  producedFilms: [Film]
+  greetingByUser: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet"}, contextArguments: ["userId"])
+  titleByFilmIdViaInstance(filmId: Int!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleInstanceService",
+      method: "titleByFilmId"})
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_producer", rows: """
+  coordinate,                     kind,    start
+  Query.producedFilms,            SELECT,  ROOT
+  Query.greetingByUser,           SERVICE, ROOT
+  Query.titleByFilmIdViaInstance, SERVICE, ROOT
+  Film.language,                  SELECT,  CHILD
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_producer", rows: """
+  coordinate
+  Film.title
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_producer_service", rows: """
+  coordinate,                     method_name,  constructor_class_name
+  Query.greetingByUser,           greet,
+  Query.titleByFilmIdViaInstance, titleByFilmId, no.sikt.graphitron.rewrite.test.services.SampleInstanceService
+  """)
+
+# What each produces: records lifted onto the table they are rows of, or a scalar a service hands back.
+extend schema @assertContains(relation: "graphitron_occurrence_producer_result", rows: """
+  coordinate,                     shape,         table_name
+  Query.producedFilms,            RECORD_LIST,   film
+  Query.greetingByUser,           SCALAR,
+  Query.titleByFilmIdViaInstance, SCALAR,
+  Film.language,                  SINGLE_RECORD, language
+  """)

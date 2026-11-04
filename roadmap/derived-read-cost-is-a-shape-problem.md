@@ -660,6 +660,17 @@ classified records have no reader left and can go with the walk.
   key row and a depth's sources read that depth's producers, E's producer step, at the marked place
   in the source's depth loop, writes a depth's key rows and producers before its sources, both swept
   after the loop. The rules and the relations are E's, the cadence the source's.
+* **The producer's readers read the occurrence producer, and the field-keyed family goes** `blocked`, E's, on "The result relations dissolve into the producer's result".
+  `graphitron_occurrence_producer` and its start and call subtypes state per occurrence what
+  `graphitron_producer`, `_service`, `_routine`, `_write` and `graphitron_service_holder` state per
+  field, read today off them through the occurrence's field; the readers move, the rule reads the
+  occurrence's source rather than the field, and the field-keyed relations go with
+  `graphitron_reader` and `graphitron_fetcher`.
+* **The forced producers become join-path continuations** `open`. A union or interface child with a
+  table-bound participant, a child `@routine` and a connection child produce today because the
+  generator builds no inline form for them, and the occurrence producer keeps them so (Alf,
+  2026-11-04); each stops producing, its join path continuing its producer's query, when the
+  generator learns to join it.
 * **An object result is lifted onto a key row** `open`, E's.
   Under an object parent the producer that starts a field lifts it onto its key row's table, a lift
   the producer states over E's key row while the field's source names only that table
@@ -2047,6 +2058,16 @@ other way), a table at the call's path end or a step's from and to table, the so
 or keys, `$context`, `$session`, `$tenant` or the jOOQ context. Each holder owns its parameter rows,
 keyed by the holder, the method and the position, and a `PARAMETER` binding's place is spelled from
 the same key.
+
+**Stated so far.** `graphitron_occurrence_producer`, one row per producing occurrence with its kind
+and `ROOT` or `CHILD` start, and its subtypes `_key_row` (a child's start off its parent's object),
+`_service` (the method and the constructor), `_routine` and `_write`, written per depth at the marked
+place in the source's loop and read today off the field-keyed producer relations through the
+occurrence's field: on the six stores every field producer but a connection's count and facets is a
+producer at each of its occurrences and nothing else is. `_result` states what each produces, its
+shape (`SINGLE_RECORD`, `RECORD_LIST`, `CONNECTION`, `OBJECT`, `SCALAR`), its class and, for records,
+the table they are rows of. A connection's `COUNT` and `FACETS` producers are G's, stated on this
+family by the connection model (Alf, 2026-11-04).
 
 **What this replaces.** `graphitron_code_reference`, keyed by a reference's written position,
 dissolves into the calls' methods; `graphitron_producer_service` and `graphitron_producer_routine`
