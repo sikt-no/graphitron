@@ -12260,7 +12260,7 @@ node_table (graph_name, table_source_name, table_schema, table_name, node_type_n
 SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin, r.position,
        CASE WHEN r.bound_to = '$result' THEN 'RESULT_ROOT'
             WHEN r.bound_to LIKE '$result.%'
-              THEN CASE WHEN nid.field_name IS NOT NULL THEN 'RESULT_NODE_ID' ELSE 'RESULT_COLUMN' END
+              THEN CASE WHEN nid.coordinate IS NOT NULL THEN 'RESULT_NODE_ID' ELSE 'RESULT_COLUMN' END
             WHEN r.bound_to LIKE '$scope.%' THEN 'SCOPE'
             WHEN r.bound_to LIKE '$session.%' THEN 'SESSION'
             ELSE 'ARGUMENT' END,
@@ -12270,7 +12270,7 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin,
             WHEN r.bound_to LIKE '$session.%' THEN SUBSTRING(r.bound_to, 10)
             ELSE r.bound_to END,
        tc.column_name,
-       CASE WHEN r.bound_to = '$result' OR (r.bound_to LIKE '$result.%' AND nid.field_name IS NOT NULL)
+       CASE WHEN r.bound_to = '$result' OR (r.bound_to LIKE '$result.%' AND nid.coordinate IS NOT NULL)
             THEN nt.node_type_name END
   FROM ranked r
   LEFT JOIN graphitron_producer_write w
@@ -12280,9 +12280,10 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin,
   LEFT JOIN node_table nt
     ON nt.graph_name = r.graph_name AND nt.table_source_name = w.table_source_name
    AND nt.table_schema = w.table_schema AND nt.table_name = w.table_name AND nt.node_types = 1
-  LEFT JOIN graphitron_field_node_id_entry nid
-    ON nid.graph_name = r.graph_name AND nid.type_name = ft.target_type_name
-   AND nid.field_name = SUBSTRING(r.bound_to, 9) AND r.bound_to LIKE '$result.%'
+  LEFT JOIN graphitron_binding_claim nid
+    ON nid.graph_name = r.graph_name AND nid.kind = 'NODE_ID'
+   AND nid.coordinate = ft.target_type_name || '.' || SUBSTRING(r.bound_to, 9)
+   AND r.bound_to LIKE '$result.%'
   LEFT JOIN graphitron_field_target_column tc
     ON tc.graph_name = r.graph_name AND tc.type_name = ft.target_type_name
    AND tc.field_name = SUBSTRING(r.bound_to, 9) AND r.bound_to LIKE '$result.%'
@@ -12296,8 +12297,8 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin,
          AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
      OR (r.origin = 'MESSAGE' AND r.bound_to LIKE '$result.%' AND w.kind IS NOT NULL
          AND POSITION('.', SUBSTRING(r.bound_to, 9)) = 0
-         AND ((nid.field_name IS NOT NULL AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
-              OR (nid.field_name IS NULL AND tc.column_name IS NOT NULL AND w.kind <> 'DELETE')))
+         AND ((nid.coordinate IS NOT NULL AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
+              OR (nid.coordinate IS NULL AND tc.column_name IS NOT NULL AND w.kind <> 'DELETE')))
      OR (r.bound_to LIKE '$scope.%'
          AND SUBSTRING(r.bound_to, 8) IN ('coordinate', 'operationName', 'alias'))
      -- One member of the session handle, offered by exactly one accessor whose yield a payload can
@@ -12362,9 +12363,10 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin,
                         AND cs.descriptor = last.slot_descriptor
                         AND cs.slot_type IN (SELECT class_name FROM carriable)))
      OR (rec.step IS NOT NULL
-         AND EXISTS (SELECT 1 FROM graphitron_field_node_id_entry nd
-                      WHERE nd.graph_name = rec.graph_name AND nd.type_name = rec.next_type_name
-                        AND nd.field_name = REGEXP_REPLACE(r.bound_to, '^.*[.]', ''))
+         AND EXISTS (SELECT 1 FROM graphitron_binding_claim nd
+                      WHERE nd.graph_name = rec.graph_name AND nd.kind = 'NODE_ID'
+                        AND nd.coordinate = rec.next_type_name || '.'
+                                            || REGEXP_REPLACE(r.bound_to, '^.*[.]', ''))
          AND EXISTS (SELECT 1 FROM graphitron_tabletype tt
                        JOIN node_table nt
                          ON nt.graph_name = tt.graph_name AND nt.table_source_name = tt.table_source_name
