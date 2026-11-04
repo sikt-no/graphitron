@@ -1,0 +1,6 @@
+fragment SingleTableInterface on Content @factDocument(path: "scenarios/discriminated-interface") {
+  contentId
+  title
+  ... on FilmContent { contentId title length rating }
+  ... on ShortContent { contentId title description }
+}

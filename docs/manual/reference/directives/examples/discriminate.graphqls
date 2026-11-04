@@ -1,0 +1,29 @@
+# Rendered by ManualExampleTest from discriminate.graphql. Do not edit.
+
+# tag::SingleTableInterface[]
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+  length: Int @field(name: "LENGTH")
+  rating: MpaaRating @reference(path: [{key : "content_film_id_fkey"}]) @field(name: "RATING")
+}
+
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+  description: String @field(name: "SHORT_DESCRIPTION")
+}
+
+enum MpaaRating {
+  G
+  PG
+  PG_13
+  R
+  NC_17
+}
+# end::SingleTableInterface[]

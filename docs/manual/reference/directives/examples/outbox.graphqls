@@ -1,0 +1,20 @@
+# Rendered by ManualExampleTest from outbox.graphql. Do not edit.
+
+# tag::TwoEvents[]
+type Mutation {
+  createFilm(in: FilmCreateInput!): Film
+      @mutation(typeName: INSERT)
+      @outbox(event: "FilmCreated", argMapping: "filmId: $result.id, title: in.title, languageId: in.languageId")
+      @outbox(event: "FilmCatalogued", argMapping: "filmId: $result.id, releaseYear: in.releaseYear")
+}
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+}
+
+input FilmCreateInput {
+  title: String
+  languageId: Int @field(name: "language_id")
+  releaseYear: Int @field(name: "release_year")
+}
+# end::TwoEvents[]

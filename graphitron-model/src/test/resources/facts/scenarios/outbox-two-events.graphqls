@@ -1,0 +1,41 @@
+# One write emitting two messages: each @outbox application names its event and maps its payload
+# from the result and the input, and the field's applications are kept in the order written.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmCreateInput {
+  title: String
+  languageId: Int @field(name: "language_id")
+  releaseYear: Int @field(name: "release_year")
+}
+
+extend schema @withConfiguration(outboxTable: "outbox")
+
+type Mutation {
+  createFilm(in: FilmCreateInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "FilmCreated",
+            argMapping: "filmId: $result.id, title: in.title, languageId: in.languageId")
+    @outbox(event: "FilmCatalogued",
+            argMapping: "filmId: $result.id, releaseYear: in.releaseYear")
+}
+
+extend schema @expectEquals(relation: "graphitron_outbox_entry", rows: """
+  type_name, field_name, ordinal, event_ref,      event
+  Mutation,  createFilm, 0,       FilmCreated,    FilmCreated
+  Mutation,  createFilm, 1,       FilmCatalogued, FilmCatalogued
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_leaf", rows: """
+  type_name, field_name, ordinal, key_name,    origin,  position, source_kind,    source_path
+  Mutation,  createFilm, 0,       filmId,      MESSAGE, 0,        RESULT_NODE_ID, id
+  Mutation,  createFilm, 0,       title,       MESSAGE, 1,        ARGUMENT,       in.title
+  Mutation,  createFilm, 0,       languageId,  MESSAGE, 2,        ARGUMENT,       in.languageId
+  Mutation,  createFilm, 1,       filmId,      MESSAGE, 0,        RESULT_NODE_ID, id
+  Mutation,  createFilm, 1,       releaseYear, MESSAGE, 1,        ARGUMENT,       in.releaseYear
+  """)

@@ -25,23 +25,7 @@ From the example schema's `Content` family:
 
 [source,graphql]
 ----
-interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
-    contentId: Int!    @field(name: "CONTENT_ID")
-    title:     String! @field(name: "TITLE")
-}
-
-type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
-    contentId: Int!       @field(name: "CONTENT_ID")
-    title:     String!    @field(name: "TITLE")
-    length:    Int        @field(name: "LENGTH")
-    rating:    MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
-}
-
-type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
-    contentId:   Int!    @field(name: "CONTENT_ID")
-    title:       String! @field(name: "TITLE")
-    description: String  @field(name: "SHORT_DESCRIPTION")
-}
+include::examples/discriminate.graphqls[tag=SingleTableInterface]
 ----
 
 Each implementer also carries `@table(name: "content")` (the same table as the interface) and `@discriminator(value: ...)`. At row-mapping time the fetcher reads `content_type`; rows where `content_type = 'FILM'` map to `FilmContent`, rows where `content_type = 'SHORT'` map to `ShortContent`. Rows with any other discriminator value fail to map and surface as a runtime error.

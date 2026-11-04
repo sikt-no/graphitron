@@ -1,0 +1,3 @@
+fragment TwoEvents on Mutation @factDocument(path: "scenarios/outbox-two-events") {
+  createFilm { id }
+}

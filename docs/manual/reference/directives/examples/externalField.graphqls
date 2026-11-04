@@ -3,7 +3,8 @@
 # tag::ComputedBoolean[]
 type Film @table(name: "film") {
   "A computed boolean; the method is named for the field, so the reference leaves method: out."
-  isEnglish: Boolean @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+  isEnglish: Boolean
+      @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
 }
 # end::ComputedBoolean[]
 
@@ -11,7 +12,8 @@ type Film @table(name: "film") {
 type Inventory @table(name: "inventory") {
   inventoryId: Int @field(name: "inventory_id")
   "Field<FilmRecord>: a table's own record, read through the Record API."
-  filmRef: FilmCard @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+  filmRef: FilmCard
+      @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
 }
 
 type FilmCard {
@@ -22,7 +24,8 @@ type FilmCard {
 # tag::JavaRecordLift[]
 type Inventory @table(name: "inventory") {
   "Field<FilmCardData>: a Java record wrapping one."
-  filmCardData: FilmCardWrapper @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+  filmCardData: FilmCardWrapper
+      @externalField(reference: {className : "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
 }
 
 type FilmCardWrapper {

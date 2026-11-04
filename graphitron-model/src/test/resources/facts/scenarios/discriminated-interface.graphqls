@@ -1,0 +1,43 @@
+# A single-table interface whose members share one table and are told apart by a column: the
+# interface names the column with @discriminate, and each member the value that means a row is it
+# with @discriminator. Every one of them is a row of content, so each has a result of its own.
+
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+    contentId: Int!    @field(name: "CONTENT_ID")
+    title:     String! @field(name: "TITLE")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int!       @field(name: "CONTENT_ID")
+    title:     String!    @field(name: "TITLE")
+    length:    Int        @field(name: "LENGTH")
+    rating:    MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+}
+
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+    contentId:   Int!    @field(name: "CONTENT_ID")
+    title:       String! @field(name: "TITLE")
+    description: String  @field(name: "SHORT_DESCRIPTION")
+}
+
+enum MpaaRating { G PG PG_13 R NC_17 }
+
+extend type Query { content: [Content!]! }
+
+extend schema @assertContains(relation: "graphitron_ast_discriminate_entry", rows: """
+  on_column
+  CONTENT_TYPE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_discriminator_entry", rows: """
+  discriminator_value
+  FILM
+  SHORT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_result_table", where: "type_name IN ('Content', 'FilmContent', 'ShortContent')", rows: """
+  type_name,    table_name
+  Content,      content
+  FilmContent,  content
+  ShortContent, content
+  """)

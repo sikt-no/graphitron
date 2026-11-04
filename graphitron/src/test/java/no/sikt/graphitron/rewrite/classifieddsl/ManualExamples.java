@@ -132,10 +132,61 @@ final class ManualExamples {
                 new IllegalArgumentException(query + "'s " + example.name() + " names the fact"
                     + " document '" + example.path() + "', which does not exist"));
             out.append("\n# tag::").append(example.name()).append("[]\n")
-                .append(QueryViewRenderer.render(prelude, document.sdl(), example.selection()))
+                .append(wrapDirectives(
+                    QueryViewRenderer.render(prelude, document.sdl(), example.selection())))
                 .append("\n# end::").append(example.name()).append("[]\n");
         }
         return out.toString();
+    }
+
+    /** The width past which a line's directives go one to a line beneath it. */
+    private static final int WIDTH = 100;
+
+    /**
+     * The rendered SDL with each over-long line's directives one to a line, indented beneath the
+     * coordinate they apply to, as an author writes a field carrying several. The printer puts a
+     * field and all its directives on one line, which a page cannot show without scrolling.
+     */
+    static String wrapDirectives(String sdl) {
+        var out = new StringBuilder();
+        for (String line : sdl.split("\n", -1)) {
+            if (out.length() > 0) {
+                out.append('\n');
+            }
+            List<Integer> breaks = directiveStarts(line);
+            if (line.length() <= WIDTH || breaks.isEmpty()) {
+                out.append(line);
+                continue;
+            }
+            String indent = line.substring(0, line.length() - line.stripLeading().length()) + "    ";
+            int from = 0;
+            for (int at : breaks) {
+                out.append(line, from, at).append('\n').append(indent);
+                from = at + 1;
+            }
+            out.append(line.substring(from));
+        }
+        return out.toString();
+    }
+
+    /** Where each directive on the line starts, outside strings and parentheses: the space before its {@code @}. */
+    private static List<Integer> directiveStarts(String line) {
+        var starts = new java.util.ArrayList<Integer>();
+        int depth = 0;
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"' && (i == 0 || line.charAt(i - 1) != '\\')) {
+                quoted = !quoted;
+            } else if (!quoted && (c == '(' || c == '[' || c == '{')) {
+                depth++;
+            } else if (!quoted && (c == ')' || c == ']' || c == '}')) {
+                depth--;
+            } else if (!quoted && depth == 0 && c == '@' && i > 0 && line.charAt(i - 1) == ' ') {
+                starts.add(i - 1);
+            }
+        }
+        return starts;
     }
 
     static String read(Path file) {

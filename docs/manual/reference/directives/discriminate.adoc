@@ -27,23 +27,7 @@ The example schema's `Content` interface is single-table polymorphic: all rows l
 
 [source,graphql]
 ----
-interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
-    contentId: Int!    @field(name: "CONTENT_ID")
-    title:     String! @field(name: "TITLE")
-}
-
-type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
-    contentId: Int!       @field(name: "CONTENT_ID")
-    title:     String!    @field(name: "TITLE")
-    length:    Int        @field(name: "LENGTH")
-    rating:    MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
-}
-
-type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
-    contentId:   Int!    @field(name: "CONTENT_ID")
-    title:       String! @field(name: "TITLE")
-    description: String  @field(name: "SHORT_DESCRIPTION")
-}
+include::examples/discriminate.graphqls[tag=SingleTableInterface]
 ----
 
 A query selecting `... on FilmContent { length }` and `... on ShortContent { description }` produces a single `SELECT content.content_id, content.title, content.length, content.short_description, content.content_type FROM content`; the row mapper inspects `content_type` per row and dispatches to the matching type. Subtype-only fields are read as nullable from the unified projection (the row mapper ignores them on the wrong subtype).

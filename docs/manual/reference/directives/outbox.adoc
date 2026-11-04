@@ -41,14 +41,7 @@ Keys are flat, one JSON key per entry. An object or an array in the payload come
 
 [source,graphql]
 ----
-type Mutation {
-  createFilm(in: FilmCreateInput!): Film
-    @mutation(typeName: INSERT)
-    @outbox(event: "FilmCreated",
-            argMapping: "filmId: $result.id, title: in.title, languageId: in.languageId")
-    @outbox(event: "FilmCatalogued",
-            argMapping: "filmId: $result.id, releaseYear: in.releaseYear")
-}
+include::examples/outbox.graphqls[tag=TwoEvents]
 ----
 
 == When
