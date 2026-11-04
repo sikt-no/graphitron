@@ -1,7 +1,7 @@
 ---
 id: R1130
 title: "A node id in a query filter does not vote on the tenant when another slot already binds it"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: runtime-connection
