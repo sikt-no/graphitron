@@ -1,0 +1,204 @@
+# The types each occurrence with a table source must reach, one need per occurrence and target type,
+# with the source table it starts on and the table it lands on. A field reaches its target where the
+# target has a table of its own, landing there; each member with a table where it is a union or an
+# interface, a single-table interface's implementations included and never the interface; and
+# otherwise its own type, landing on its start, or on no table yet where its declaration writes a
+# path. An argument reaches what its field reaches, starting where the field lands; under a root
+# field with no path it expands its field's target the same way, starting on each type's table, or on
+# its own source table, the write's, where the type has none. An input field copies its parent's.
+# Every start is one of the occurrence's source table rows, start_table_ref saying so. The schema is
+# scenarios/occurrence-source's, with two fields added on FilmActor for the polymorphic targets.
+
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
+  title: String
+}
+
+type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
+  title: String
+  details: FilmDetails
+  # A scalar that writes a path: its arguments wait for the join path.
+  languageName(upper: Boolean): String
+    @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
+  # A plain type reached by a written path: its fields start where the path lands, film_translation,
+  # so they wait for the join path.
+  titleTexts: TranslatedTexts
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
+  # A connection under a table-bound parent, its path inferred from film_actor's one key to film, split
+  # into its own query as the generator requires of a connection on a table field.
+  actorRows: [FilmActor!]! @asConnection @splitQuery
+}
+
+type FilmActor @table(name: "film_actor") {
+  actorId: Int @field(name: "actor_id")
+  # A single-table interface target: a need per implementation with a table, never the interface.
+  media: MediaItem @reference(path: [{key: "film_actor_film_id_fkey"}])
+  # A union target: a need per member with a table.
+  credits: [Searchable]
+    @referenceFor(type: "Film", path: [{key: "film_actor_film_id_fkey"}])
+    @referenceFor(type: "Language", path: [{key: "film_actor_film_id_fkey"}, {key: "film_language_id_fkey"}])
+}
+
+type FilmDetails { length: Int }
+
+enum PivotLang {
+  nn @field(name: "nno")
+  en @field(name: "eng")
+}
+
+type TranslatedTexts { nn: String en: String }
+
+interface Node { id: ID! }
+
+type Language implements Node @table(name: "language") @node { id: ID! name: String }
+
+union Searchable = Film | Language
+
+input FilmFilter {
+  title: String
+  span: YearSpan
+}
+
+input YearSpan { from: Int @field(name: "release_year") }
+
+type Row { title: String }
+
+# Backed by the FilmRecord list the service hands back: filmId reads the record, language its key row.
+type FilmDetailsCarrier {
+  filmId: Int @field(name: "film_id")
+  language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+# Backed by the FilmRecord the service hands back, whose film field refetches by its key row.
+type FilmServicePayload {
+  film: Film
+}
+
+# A plain class whose films() returns FilmRecords: an ACCESSOR key row, so films reads the object.
+type CreateFilmsPayload {
+  films: [Film!]!
+}
+
+# A plain class whose blurb() is what blurb reads.
+type FilmBlurbHolder {
+  blurb: FilmBlurb
+}
+
+type FilmBlurb { description: String }
+
+input FilmInput @table(name: "film") { title: String }
+
+type FilmInvalid @error(handlers: [{handler: DATABASE}]) { path: [String!]!, message: String! }
+union FilmFailure = FilmInvalid
+
+type AddFilmOutcome { film: Film, errors: [FilmFailure] }
+
+input LanguageDeleteInput { languageId: Int! @field(name: "language_id") }
+
+# A delete's payload: the ids of the deleted languages, which read off what the write produced.
+type DeletedLanguagesPayload { deletedIds: [ID!] }
+
+extend type Query {
+  films(filter: FilmFilter, first: Int): [Film!]!
+  search(languageId: Int @field(name: "language_id")): [Searchable]
+  topMedia(title: String): MediaItem
+  rows(actorId: Int!, minLength: Int!): [Row!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  serviceFilmById(id: Int!): FilmServicePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  recentlyCreatedFilmsBatched: [CreateFilmsPayload!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService", method: "recentlyCreatedFilmsBatched"})
+  filmBlurbHolder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+}
+
+type Mutation {
+  addFilm(input: FilmInput): AddFilmOutcome @mutation(typeName: INSERT)
+  deleteLanguages(in: [LanguageDeleteInput!]!): DeletedLanguagesPayload
+    @mutation(typeName: DELETE, table: "language")
+}
+
+extend schema @expectEquals(relation: "graphitron_path_need",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                               target_type,             start_table,     start_table_ref, landing_table
+  Film.actorRows,                           FilmActor,               film,            film,            film_actor
+  Film.actorRows(after:),                   FilmActor,               film_actor,      film_actor,      film_actor
+  Film.actorRows(first:),                   FilmActor,               film_actor,      film_actor,      film_actor
+  FilmActor.actorId,                        Int,                     film_actor,      film_actor,      film_actor
+  FilmActor.credits,                        Film,                    film_actor,      film_actor,      film
+  FilmActor.credits,                        Language,                film_actor,      film_actor,      language
+  FilmActor.media,                          Film,                    film_actor,      film_actor,      film
+  Film.details,                             FilmDetails,             film,            film,            film
+  Film.details.length,                      Int,                     film,            film,            film
+  Film.languageName,                        String,                  film,            film,
+  Film.title,                               String,                  film,            film,            film
+  Film.titleTexts,                          TranslatedTexts,         film,            film,
+  Language.id,                              ID,                      language,        language,        language
+  Language.name,                            String,                  language,        language,        language
+  MediaItem.title,                          String,                  film,            film,            film
+  Mutation.addFilm(input:),                 AddFilmOutcome,          film,            film,            film
+  Mutation.addFilm(input.title:),           AddFilmOutcome,          film,            film,            film
+  Mutation.addFilm.film,                    Film,                    film,            film,            film
+  Mutation.deleteLanguages(in:),            DeletedLanguagesPayload, language,        language,        language
+  Mutation.deleteLanguages(in.languageId:), DeletedLanguagesPayload, language,        language,        language
+  Query.filmDetailsBatch.filmId,            Int,                     film,            film,            film
+  Query.filmDetailsBatch.language,          Language,                film,            film,            language
+  Query.films(filter:),                     Film,                    film,            film,            film
+  Query.films(filter.span:),                Film,                    film,            film,            film
+  Query.films(filter.span.from:),           Film,                    film,            film,            film
+  Query.films(filter.title:),               Film,                    film,            film,            film
+  Query.films(first:),                      Film,                    film,            film,            film
+  Query.rows,                               Row,                     films_for_actor, films_for_actor, films_for_actor
+  Query.rows(actorId:),                     Row,                     films_for_actor, films_for_actor, films_for_actor
+  Query.rows(minLength:),                   Row,                     films_for_actor, films_for_actor, films_for_actor
+  Query.rows.title,                         String,                  films_for_actor, films_for_actor, films_for_actor
+  Query.search(languageId:),                Film,                    film,            film,            film
+  Query.search(languageId:),                Language,                language,        language,        language
+  Query.serviceFilmById.film,               Film,                    film,            film,            film
+  Query.topMedia(title:),                   Film,                    film,            film,            film
+  """)
+
+# Occurrences with no table source have no needs: a root field with no @routine, a write, the
+# arguments of a scalar that writes a path, a field of a plain type a written path reaches, an errors
+# field, a payload field whose target binds no table, a field and its children read off an object,
+# and a connection's fields.
+extend schema @assertContains(relation: "graphitron_occurrence", rows: """
+  coordinate
+  Query.films
+  Query.search
+  Mutation.addFilm
+  Mutation.deleteLanguages
+  Query.filmBlurbHolder(filmId:)
+  Film.languageName(upper:)
+  Film.titleTexts.nn
+  Mutation.addFilm.errors
+  Mutation.deleteLanguages.deletedIds
+  Query.filmBlurbHolder.blurb
+  Query.filmBlurbHolder.blurb.description
+  Query.recentlyCreatedFilmsBatched.films
+  Film.actorRows.edges
+  Film.actorRows.nodes
+  Film.actorRows.totalCount
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
+  coordinate
+  Query.films
+  Query.search
+  Mutation.addFilm
+  Mutation.deleteLanguages
+  Query.filmBlurbHolder(filmId:)
+  Film.languageName(upper:)
+  Film.titleTexts.nn
+  Mutation.addFilm.errors
+  Mutation.deleteLanguages.deletedIds
+  Query.filmBlurbHolder.blurb
+  Query.filmBlurbHolder.blurb.description
+  Query.recentlyCreatedFilmsBatched.films
+  Film.actorRows.edges
+  Film.actorRows.nodes
+  Film.actorRows.totalCount
+  """)

@@ -281,10 +281,17 @@ are among the costliest statements the build plans: the argument step targets, `
 with its methods, and the field reference step hops hold about 265 CPU-seconds of preparation over a
 `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 
-* **Every path a field needs is a need, and a need without a path is a defect** `blocked`, on "A field's path needs are stated per coordinate".
+* **Every path a field needs is a need, and a need without a path is a defect** `open`.
   Every output field, argument and input-field occurrence with a table source has its needs in
-  `graphitron_path_need`, an empty path included, and one no written, inherited, single inferred or
-  empty path meets is a defect at its claim.
+  `graphitron_path_need`, written by `PathNeeds`, and one no written, inherited, single inferred or
+  empty path meets is a defect at its claim. This node writes `graphitron_path`, its subtypes, the
+  steps and the stops, matching a need to its claim by the rule the need's comment states, and
+  raises what needs the join path: an inferred-key step whose two tables share no foreign key is
+  `NO_ROUTE_TO_TARGET` and one sharing several `ROUTE_AMBIGUOUS`, a scalar path whose last element
+  names no table `PATH_LANDING_UNKNOWN`, and a `@nodeId` path landing on a table
+  `NODE_ID_LANDS_ON_TABLE`, which a bare `@nodeId` on a `@reference` field can only be judged at,
+  its node type being inferred from where the path lands. The step's from and to tables still
+  reference `sql_table` with a cascade; this node moves them to `_ref` copies when it writes steps.
   * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
     an implementer of a `@table` interface to carry the same `@table`; without one it has no
     `graphitron_tabletype` row and its fields no source, and nothing says so.
@@ -300,20 +307,14 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
       classes and the members the connection's fields bind to being stated there already.
     * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
       producer's source and argument values, its statement counted, and runs only when queried.
-  * **A field's path needs are stated per coordinate** `open`, F's.
-    Every occurrence with a table source needs one join path per target type, keyed (coordinate,
-    target type), by the rules of "Source, path, bind" in the path model below: a fork is a target of
-    its own, an empty path has origin `EMPTY`, and `PathRelationConstraintTest`'s cascades become
-    incremental fact documents, its hand-written refusals going. An inferred-key step whose two tables share no
-    foreign key is `NO_ROUTE_TO_TARGET` and one sharing several `ROUTE_AMBIGUOUS`, a `@reference` on a target with no one table
-    `REFERENCE_WITHOUT_TARGET_TABLE`, a scalar path whose last element names no table
-    `PATH_LANDING_UNKNOWN`, and a `@nodeId` one landing on a table `NODE_ID_LANDS_ON_TABLE`.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
 * **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
   The one foreign key between two tables is a path of origin `INFERRED`, and a path written on an
   interface's field is a row per implementation of origin `INHERITED`, resolved from the
   implementation's own table; an implementation's own path overrides it. This settles
-  "Every field has a path, the written one or the one discovery implies".
+  "Every field has a path, the written one or the one discovery implies". An implementation's own
+  claim beats the interface's, and an implementation of two interfaces that both claim the field is
+  a defect (Alf, 2026-11-04).
 * **A path is keyed per pair of tables** `blocked`, on "Inference and inheritance are written into the store".
   Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
   to `graphitron_path`, their readers with them, with a sis timing before and after, and
@@ -607,7 +608,7 @@ classified records have no reader left and can go with the walk.
     its kind, so their accessors are unknown.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
-* **What an occurrence takes is a binding** `blocked`, G's, on "A field's path needs are stated per coordinate".
+* **What an occurrence takes is a binding** `open`, G's.
   `graphitron_occurrence_binding` holds one place an occurrence binds, keyed by (graph, coordinate,
   bound), a `VALUE`'s bound being its class and member, with its kind (`COLUMN`, `TABLE`,
   `NODE_ID`, `VALUE`, `PARAMETER`, `EXPRESSION`, `RESULT_EXPRESSION`) an attribute and a subtype
@@ -644,6 +645,10 @@ classified records have no reader left and can go with the walk.
   key row and a depth's sources read that depth's producers, E's producer step, at the marked place
   in the source's depth loop, writes a depth's key rows and producers before its sources, both swept
   after the loop. The rules and the relations are E's, the cadence the source's.
+* **A `@mutation(table:)` that disagrees with its return's table is a defect** `open`, E's. The
+  manual rejects a `@mutation(table:)` naming another table than the one the return names; the store
+  gives that write no `graphitron_producer_write` row and raises nothing, so the defect is the write
+  producer's, at the `@mutation` application with both tables in the detail.
 * **The producer's readers read the occurrence producer, and the field-keyed family goes** `blocked`, E's, on "The result relations dissolve into the producer's result".
   `graphitron_occurrence_producer` and its start and call subtypes state per occurrence what
   `graphitron_producer`, `_service`, `_routine`, `_write` and `graphitron_service_holder` state per
@@ -1641,9 +1646,9 @@ where it rebuilds them per edge today.
 **Owners and order.** Agreed with A, F, E and Alf (2026-11-03); the graph's nodes carry it.
 
 1. G: the input-field spelling in `graphitron_occurrence_step_rule` and its fact document, done.
-2. F: the path writer, "A field's path needs are stated per coordinate" widened to every
-   occurrence: needs with their forks, paths with `EMPTY` beside the other origins, steps and stops,
-   by the rules the path model below states.
+2. F: the path writer, widened to every occurrence: needs with their forks (written
+   2026-11-04), then paths with `EMPTY` beside the other origins, steps and stops, by the rules the
+   path model below states.
 3. G: `graphitron_occurrence_column` and the `@nodeId` unpack, once paths stand. Then
    `graphitron_field_target_column` and the `graphitron_node_id_decode_*` family go, the editor's
    column scope moves off `intent_field_column_table` onto it, and `graphitron_field_target_table`
@@ -1768,7 +1773,7 @@ row for a single-table interface target, where the needs want one per member, an
 whose binding names several tables.
 
 **The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
-the claim and the source are written, and nothing writes the rest yet. The SQL carries the names
+the claim, the source and the need are written, and nothing writes the rest yet. The SQL carries the names
 decided on 2026-11-03 (2026-11-04), and `graphitron_ast_path_entry` keeps its name as the written
 entry.
 
@@ -1822,32 +1827,43 @@ entry.
   `graphitron_field_path_start`, which starts only fields that wrote a path, and of
   `graphitron_field_source_table`. E's per-depth producer step runs in the source's loop before each
   depth's sources, as agreed with E; the writer marks the place.
-* `graphitron_path_need`, anchoring: one type an occurrence with a source must reach. Keyed by
-  (graph, coordinate, target type), as the claim is keyed by its element and target type, with a
-  foreign key to the source; on the table side its start is a foreign key to the table source row
-  (coordinate, start table) and the landing table an attribute with a nullable reference, on the
-  object side the start class and the landing class. The target type is the field's target, each member of a single-table
-  interface (`FilmItem`, `ShortItem`), never the interface, each table-bound member of a union or
-  multi-table interface, each type a write's payload forks to, and for a `@mutation(table:)` the
-  field's own target type, its one declared table the landing. An argument or input field reaches
-  its field's target types, its start for each being where its field lands for that type. A scalar's
-  target type is the scalar; it lands on its start for an empty path, or the table its last written
-  element resolves to, which may be one no type exposes. Every source has its needs, and no need is
-  without one.
+* `graphitron_path_need`, anchoring, written by `PathNeeds` a depth at a time: one type an
+  occurrence with a table source must reach. Keyed by (graph, coordinate, target type), as the claim
+  is keyed by its element and target type, with a cascading foreign key to the occurrence. Its start
+  is a reference to one of the occurrence's table source rows (coordinate, start table), and its
+  landing table an attribute, each through nullable `_ref` copies a removal sets null, as is the
+  target type's reference to `graphitron_type`. Only an occurrence with a table source has needs; one
+  waiting on a join path has no source and none. A field reaches its target where it has a table of
+  its own and is no interface; each member with a table of a single-table interface (`FilmItem`,
+  `ShortItem`, never the interface), a union or a multi-table interface; and otherwise its own type, a
+  scalar, an enum, a plain object or a carrier, landing on its start, or on no table yet where its
+  declaration writes a path. A write's payload fields follow the same rules; the write itself has no
+  source and no needs. An argument copies its field's needs, starting where the field lands for each
+  type; under a field with no needs, a root field with no path, it expands its field's target the
+  same way, starting on each type's table, or on its own one source table, the write's, where the
+  type has none, which is what its source rows already state. An input field copies its parent's
+  needs unchanged. A path follows the claim matching its need: an argument's or input field's need
+  the `@referenceFor` claim naming its target type, else the element's one claim. The object side,
+  the start class and the landing class, waits on value objects being bound.
 * `graphitron_path`, anchoring: how one need is met, in either world. A supertype keyed by the
-  need's key, so one-to-one with it, with its kind (`JOIN` from a table source, `ACCESSOR` from an
-  object source) and its origin (`WRITTEN`, `INHERITED`, `INFERRED`, `EMPTY`); `EMPTY` is its own
-  origin so the defects cannot read an empty path as a failed inference. A need with no path is the
-  defect.
+  need's key, so one-to-one with it, with a cascading foreign key to the need, its kind (`JOIN` from
+  a table source, `ACCESSOR` from an object source) and its origin (`WRITTEN`, `INHERITED`,
+  `INFERRED`, `EMPTY`); `EMPTY` is its own origin so the defects cannot read an empty path as a
+  failed inference. The kind is copied into each subtype's key, a UNIQUE on the key and the kind
+  being what a subtype's foreign key names, as `graphitron_occurrence_source` does. A need with no
+  path is the defect.
   ** `graphitron_join_path`: the path is joins, with its target table, never null, its start where
-     it is empty. `graphitron_join_path_claimed` names the claim a `WRITTEN` or `INHERITED` one
-     follows, (element coordinate, target type), as a nullable copy a swept claim sets null; an
+     it is empty, referenced through `_ref` copies. `graphitron_join_path_claimed`, keyed by the
+     path, names the claim a `WRITTEN` or `INHERITED` one follows, (element coordinate, target
+     type), as a nullable copy a swept claim sets null, the origin being the supertype's and so out
+     of a check's reach; an
      inherited one is a row per implementation, its claim possibly in another file, so no reader joins
      through implementations. An `INFERRED` one is claimed by nothing: its one step's key is inferred.
   ** `graphitron_accessor_path`: the path is accessor calls, with its target class, written by field
      names and `@field(name:)`; named here, its steps (`graphitron_accessor_path_step`, one member call
      each) built when value objects are bound.
-* `graphitron_join_path_step`: one step a join path takes, per need and position, with its from and
+* `graphitron_join_path_step`: one step a join path takes, keyed by the need's key and the
+  position with a cascading foreign key to the need, with its from and
   to table, the place of the element it resolved in its claim's written list (none where inferred,
   and none for the step a `@routine` takes to its `@table`), and the element's `as:` name. Steps
   hang off the need rather than the path: a met need has its path row and its steps, a stopped need
@@ -1859,7 +1875,8 @@ entry.
   `_method`, the one condition overload whose two table parameters take the step's from and to
   table; `_routine` and its `_parameter` rows. The joined column pairs are
   `graphitron_join_path_step_column` under whichever applies. Inference is a step's, never a path's.
-* `graphitron_join_path_stop`: one need whose path stopped short, keyed by the need, with the position
+* `graphitron_join_path_stop`: one need whose path stopped short, keyed by the need's key with a
+  cascading foreign key to it, with the position
   of the first step not taken, the element's place and the moves it met there. Landing stays a view
   over steps and stops.
 * `graphitron_occurrence_binding`, anchoring, G's: one place an occurrence binds. Keyed by (graph,
@@ -1881,7 +1898,9 @@ whether nothing was written or a written element names only a table, a need whos
 alike giving one row that names them; a written step that resolves to no move or several, which is
 the same pair; no overload for a step's pair
 (`CONDITION_NO_OVERLOAD_FOR_PAIR`); two overloads taking one pair (`CONDITION_OVERLOAD_TIE`);
-`@reference` where there is no one target table (`REFERENCE_WITHOUT_TARGET_TABLE`); two
+a claim on an output field whose target has no one table (`REFERENCE_WITHOUT_TARGET_TABLE`, at
+the claim, which absorbed `CHAIN_WITHOUT_TARGET`; a scalar or enum target, a `@pivot` and a path
+ending on a `@routine` are not one); two
 `@referenceFor` naming one type on one field (`REFERENCE_FOR_DUPLICATE_TYPE`); a scalar path whose
 last element names no table (`PATH_LANDING_UNKNOWN`); a `@nodeId` path landing on a table
 (`NODE_ID_LANDS_ON_TABLE`); a `$path` name no segment carries, and two segments of one path under
@@ -1934,7 +1953,15 @@ payload field a producer lifted from the returned keys (2026-11-03). None holds 
 references its tables through nullable copies a vanished table sets null and the sweep removes,
 so each follows the anchor rule with no exception. Each relation here is written as a plain
 `INSERT .. SELECT` over the occurrence and what the occurrence above it states, the instant bound,
-never as a view over views, and its writer gets a sis timing when it is built.
+never as a view over views, and its writer gets a sis timing when it is built. The need is general,
+keyed by target type with its landing an attribute, and keeps its name; only an occurrence with a
+table source has needs; an argument copies its field's needs, starting where the field lands, and
+under a root field with no path expands the field's target from its own source rows, and an input
+field copies its parent's; every reference a need, a path or a step makes to what it was built from
+follows the anchor rule; an argument's or input field's need follows the `@referenceFor` claim
+naming its target type, else its element's one claim; `CHAIN_WITHOUT_TARGET` is merged into
+`REFERENCE_WITHOUT_TARGET_TABLE`, raised at the claim; a `@mutation(table:)` is accepted where
+`graphitron_producer_write` has its row, a disagreement being E's defect to raise (Alf, 2026-11-04).
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
