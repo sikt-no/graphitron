@@ -8904,7 +8904,8 @@ COMMENT ON VIEW intent_field_navigated_type IS 'Deprecated with the whole intent
 -- COMMENT ON COLUMN intent_field_navigated_type.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins graphitron_resolved_type_binding, intent_poly_member or graphql_type on it according to what it actually needs to know';
 
 -- Where an occurrence chain starts: a field of an object type that is a root, is table-bound or is
--- targeted by no output field, and a field of an interface with a table of its own. A field of a
+-- targeted by no output field, a connection type being targeted by the field that returns it, and a
+-- field of an interface with a table of its own. A field of a
 -- multi-table interface is reached through its participants' own fields, and an input field only
 -- under an argument.
 CREATE VIEW graphitron_occurrence_start_rule
@@ -8915,12 +8916,18 @@ SELECT f.graph_name, f.coordinate, f.coordinate, f.field_name, 'FIELD'
  WHERE (t.kind = 'OBJECT'
         AND (EXISTS (SELECT 1 FROM graphitron_tabletype b
                       WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name)
-             OR NOT EXISTS (SELECT 1 FROM graphitron_field_target ft
-                              JOIN graphitron_type o
-                                ON o.graph_name = ft.graph_name AND o.type_name = ft.type_name
-                               AND o.kind IN ('OBJECT', 'INTERFACE')
-                             WHERE ft.graph_name = t.graph_name
-                               AND ft.target_type_name = t.type_name)))
+             OR (NOT EXISTS (SELECT 1 FROM graphitron_field_target ft
+                               JOIN graphitron_type o
+                                 ON o.graph_name = ft.graph_name AND o.type_name = ft.type_name
+                                AND o.kind IN ('OBJECT', 'INTERFACE')
+                              WHERE ft.graph_name = t.graph_name
+                                AND ft.target_type_name = t.type_name)
+                 AND NOT EXISTS (SELECT 1 FROM graphitron_field_target ft
+                                   JOIN graphitron_type o
+                                     ON o.graph_name = ft.graph_name AND o.type_name = ft.type_name
+                                    AND o.kind IN ('OBJECT', 'INTERFACE')
+                                  WHERE ft.graph_name = t.graph_name
+                                    AND ft.wrapper_type_name = t.type_name))))
     OR (t.kind = 'INTERFACE'
         AND EXISTS (SELECT 1 FROM graphitron_tabletype b
                      WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name));
@@ -8932,7 +8939,8 @@ COMMENT ON VIEW graphitron_occurrence_start_rule IS 'One occurrence a chain star
 -- COMMENT ON COLUMN graphitron_occurrence_start_rule.kind IS 'always FIELD';
 
 -- One step down from an occurrence this reading has written: into the fields of the object type with
--- no table a field targets, onto a field's arguments, and into the fields of the input type an argument
+-- no table a field targets, the connection type for a field returning one rather than the element
+-- the target names, onto a field's arguments, and into the fields of the input type an argument
 -- or an input field is, spelled inside the argument's parentheses, so Type.field.x is only ever a
 -- nested output field. The chain grows only through a nested field, so a target with a table, an
 -- interface or a union ends it, its participants' fields starting their own. The writer adds the
@@ -8952,7 +8960,8 @@ SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '.' || c.field_name,
   JOIN graphitron_field_target ft
     ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
   JOIN graphitron_type t
-    ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name AND t.kind = 'OBJECT'
+    ON t.graph_name = ft.graph_name
+   AND t.type_name = COALESCE(ft.wrapper_type_name, ft.target_type_name) AND t.kind = 'OBJECT'
   JOIN graphitron_field c ON c.graph_name = t.graph_name AND c.type_name = t.type_name
  WHERE p.kind = 'FIELD'
    AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b

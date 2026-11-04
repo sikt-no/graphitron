@@ -2,7 +2,9 @@
 # root or a table-bound type, and grows only through a field whose target is an object type with no
 # table of its own: FilmDetails under Film.details. An argument hangs under its field, and an input
 # type's fields under the argument, spelled inside its parentheses, two deep through YearSpan. A union target ends the chain, so
-# Query.search has nothing under it and its participants' fields start at their own coordinates.
+# Query.search has nothing under it and its participants' fields start at their own coordinates. A
+# connection's fields hang under the field that returns it, the edge's under its edges, and node and
+# nodes end the chain at the table-bound Film.
 
 type Film @table(name: "film") {
   title: String
@@ -28,6 +30,7 @@ input YearSpan { from: Int @field(name: "release_year") }
 extend type Query {
   films(filter: FilmFilter, first: Int): [Film!]!
   search: [Searchable]
+  filmPage: [Film!]! @asConnection
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence",
@@ -44,5 +47,18 @@ extend schema @expectEquals(relation: "graphitron_occurrence",
   Query.films(filter.span.from:),  YearSpan.from,          Query.films(filter.span:), from,  INPUT_FIELD,    3
   Query.films(filter.title:),      FilmFilter.title,       Query.films(filter:),    title,   INPUT_FIELD,    2
   Query.films(first:),             Query.films(first:),    Query.films,             first,   FIELD_ARGUMENT, 1
+  Query.filmPage,                  Query.filmPage,         ,                        filmPage, FIELD,         0
+  Query.filmPage(after:),          Query.filmPage(after:), Query.filmPage,          after,   FIELD_ARGUMENT, 1
+  Query.filmPage(first:),          Query.filmPage(first:), Query.filmPage,          first,   FIELD_ARGUMENT, 1
+  Query.filmPage.edges,            QueryFilmPageConnection.edges, Query.filmPage,   edges,   FIELD,          1
+  Query.filmPage.edges.cursor,     QueryFilmPageConnectionEdge.cursor, Query.filmPage.edges, cursor, FIELD, 2
+  Query.filmPage.edges.node,       QueryFilmPageConnectionEdge.node, Query.filmPage.edges, node, FIELD,     2
+  Query.filmPage.nodes,            QueryFilmPageConnection.nodes, Query.filmPage,   nodes,   FIELD,          1
+  Query.filmPage.pageInfo,         QueryFilmPageConnection.pageInfo, Query.filmPage, pageInfo, FIELD,       1
+  Query.filmPage.pageInfo.endCursor, PageInfo.endCursor,   Query.filmPage.pageInfo, endCursor, FIELD,       2
+  Query.filmPage.pageInfo.hasNextPage, PageInfo.hasNextPage, Query.filmPage.pageInfo, hasNextPage, FIELD,   2
+  Query.filmPage.pageInfo.hasPreviousPage, PageInfo.hasPreviousPage, Query.filmPage.pageInfo, hasPreviousPage, FIELD, 2
+  Query.filmPage.pageInfo.startCursor, PageInfo.startCursor, Query.filmPage.pageInfo, startCursor, FIELD,   2
+  Query.filmPage.totalCount,       QueryFilmPageConnection.totalCount, Query.filmPage, totalCount, FIELD,   1
   Query.search,                    Query.search,           ,                        search,  FIELD,          0
   """)

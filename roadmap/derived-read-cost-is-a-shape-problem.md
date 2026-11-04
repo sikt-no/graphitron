@@ -288,13 +288,12 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
     an implementer of a `@table` interface to carry the same `@table`; without one it has no
     `graphitron_tabletype` row and its fields no source, and nothing says so.
-  * **A connection's fields hang under the field that returns it** `open`, G's.
-    The step rule descends from a field returning a connection into its connection type, so its
-    fields and its edge's are occurrences under the returning field, binding into what that
-    field's producer produces, a page of records with its ordering in the class graphitron
-    generates. `nodes` binds the page's records, `edges` each record with its cursor, `edges.node`
-    the record, `edges.cursor` a function of the record and the page's ordering (`RESULT_EXPRESSION`) and
-    `pageInfo` the page; only `totalCount` runs a query.
+  * **A connection's fields bind into its producer's page** `blocked`, G's, on "What an occurrence takes is a binding".
+    The occurrences already hang under the returning field, the connection's fields and its edge's;
+    they bind into what that field's producer produces, a page of records with its ordering in the
+    class graphitron generates: `nodes` the page's records, `edges` each record with its cursor,
+    `edges.node` the record, `edges.cursor` a function of the record and the page's ordering
+    (`RESULT_EXPRESSION`) and `pageInfo` the page; only `totalCount` runs a query.
     * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
       The result a producer states for a field returning a connection is a page of
       `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
@@ -1738,7 +1737,7 @@ are bound.
   scope; the source reads its class off its producer's result, the parent field's own producer's
   result class, else the type's one class. A root field with no `@routine` has no source. A carrier
   graphitron builds has the class it generates; a connection's fields take their source from the
-  returning producer's result once they hang under it ("A connection's fields hang under the field that returns it");
+  returning producer's result ("A connection's fields bind into its producer's page");
   an errors field's subtree has no source yet. Where the parent forks, the occurrence has a table
   source row per table.
 * *Path*: how it gets from its source to one type it reaches, one path per occurrence and target
