@@ -13881,6 +13881,26 @@ COMMENT ON VIEW graphitron_occurrence_producer_rule IS 'One row the occurrence p
 -- COMMENT ON COLUMN graphitron_occurrence_producer_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer.kind';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_rule.start IS 'the start of a row of this rule, which the stage writes into graphitron_occurrence_producer.start';
 
+CREATE TABLE graphitron_occurrence_binding (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  bound      VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- What each subtype references, so a subtype row can only hang under a binding of its own kind.
+  UNIQUE (graph_name, coordinate, bound, kind),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'PARAMETER', 'EXPRESSION', 'RESULT_EXPRESSION'))
+);
+COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and an argument a call consumes binds the parameter that takes it, once per candidate overload until the call is pinned.';
+COMMENT ON COLUMN graphitron_occurrence_binding.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_binding.coordinate IS 'the binding occurrence, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the holder''s key, the method and the position for PARAMETER; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
+COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; PARAMETER, the parameter of a call that consumes the value; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
+COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 CREATE TABLE graphitron_occurrence_producer (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -18348,6 +18368,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence',
    'one use of one declared field, argument or input field reached along a chain, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('graph-occurrence-binding',
+   'one place one occurrence binds, in one graph',
+   'graph_name, coordinate, bound', 'sdl'),
   ('producer-claim',
    'one kind of producer one declared field claims, in one graph',
    'graph_name, coordinate, kind', 'sdl'),
@@ -18972,6 +18995,10 @@ INSERT INTO meta_relation VALUES
    'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_result, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_binding', 'graph-occurrence-binding', 'graphitron',
+   'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place.',
+   'For example Film.title binds the column title at public.film, and an argument a call consumes binds the parameter that takes it, once per candidate overload until the call is pinned.',
+   'The supertype of what an occurrence takes, each kind''s subtype keyed by its key and pinned to its kind by the unique key beside it, as the producer family is; keyed by the bound place as well as the occurrence, since an occurrence binds once per table a forked end reaches and once per candidate overload of a call until the pin. Declared ahead of its writers so the subtypes of every kind can reference it: the column and node-id rows are written beside the path needs, the parameter and expression rows by the call''s owner.'),
   ('graphitron_occurrence_producer', 'graph-occurrence', 'graphitron',
    'An occurrence that executes something and produces a result, and what kind of thing it runs: one row per producing occurrence.',
    'For example Query.films with nothing written is a ROOT SELECT, and Customer.address under a record-backed parent a CHILD LOOKUP from the key the record carries.',
