@@ -728,7 +728,7 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-  * **`graphitron_node_id_candidate` takes the shape** `blocked`, on "The target type of a `@nodeId` coordinate is the entry's", until the two are merged.
+  * **`graphitron_node_id_candidate` takes the shape** `open`. It merges with "The target type of a `@nodeId` coordinate is the entry's" into one relation.
 * **The claims go** `open`. `BindingUsages`, `SchemaQueries`, `DiagnosticFacets` and
   `AuthoredClaimConflicts` read the producers, the target and its column instead, and
   `intent_authored_field_claim`, `intent_column_match_claim` and `intent_resolved_field_claim`
@@ -1045,8 +1045,8 @@ relations keep a private model of the route; both are replaced from scratch, rea
   foreign keys and grain sentences before anything writes them.
 * **The corpus is written against the model** `open`. Fact documents state what each schema gives
   the new relations at a node type, an interface and a union, for every written and inferred form.
-* **The target type of a `@nodeId` coordinate is the entry's** `blocked`, on
-  "`graphitron_node_id_candidate` takes the shape", until the two are merged. The entry carries the type
+* **The target type of a `@nodeId` coordinate is the entry's** `blocked`, on "`graphitron_node_id_candidate` takes the shape".
+  The entry carries the type
   the id names and the rung it came from (`WRITTEN`, `IMPLIED`, `BY_NAME`, `RETURN_TYPE`,
   `TABLE_NODE`), and a shape the manual refuses is a defect row, never a capture failure.
 * **An input field's use site is a graphitron_ relation** `open`. A definition joined to the
