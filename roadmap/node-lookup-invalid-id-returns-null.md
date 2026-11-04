@@ -27,6 +27,20 @@ id is not valid. `kregNode` is kreg's `Query` field over the generated node disp
 `@nodeId` directive of its own, which is likely why R1036's decode-failure path does not cover it.
 A client cannot tell a malformed id from a well-formed id that names nothing.
 
+## Decision
+
+Ruled by Alf on 2026-11-04: an id that is not well formed is an error, and an id that is well formed
+but matches nothing this subgraph has yields `null`. "Not well formed" means the id cannot be read as
+a node id at all; "matches nothing" covers a well-formed id whose row is absent. This item delivers
+the first half, since the second already holds today.
+
+Open before Ready: a federation node-subgraph fans a `node(id:)` call out to every subgraph's
+`<name>(id: ID!): Node` field, and an id well formed under the gateway's scheme can name a type this
+subgraph does not own. That id must stay `null`, not become the malformed-id error, so the spec has
+to say how "well formed" is told apart from "owned elsewhere" (the kreg session has not verified
+whether non-owning subgraphs are called at all, and what they receive). Check how the node subgraph
+calls these fields before moving to Ready.
+
 ## Direction
 
 Route the node dispatch's decode failure through the same client error R1036 gives `@nodeId`
