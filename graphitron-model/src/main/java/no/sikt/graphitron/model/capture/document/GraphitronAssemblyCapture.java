@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
@@ -80,6 +81,9 @@ public final class GraphitronAssemblyCapture {
         // What each field's written directives claim it runs, off the anchor's fields and
         // applications; the fetchers and the entry defects below read it.
         ProducerClaims.derive(dsl, graph, readAt);
+        // And what each field, input field and argument's written directives claim it binds to, off
+        // the same elements and applications; the bindings and their defects read it.
+        BindingClaims.derive(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could
         // take, which read it. Every input either was captured before this gatherer ran or is a

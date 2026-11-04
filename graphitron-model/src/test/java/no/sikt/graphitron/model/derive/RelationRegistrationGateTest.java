@@ -460,6 +460,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_target_rule", Arm.DERIVED);
         registrations.put("graphitron_fetcher", Arm.DERIVED);
         registrations.put("graphitron_producer", Arm.DERIVED);
+        registrations.put("graphitron_binding_claim", Arm.DERIVED);
+        registrations.put("graphitron_binding_claim_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_claim", Arm.DERIVED);
         registrations.put("graphitron_producer_claim_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_rule", Arm.DERIVED);

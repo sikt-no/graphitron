@@ -359,6 +359,11 @@ class SupertypeSignatureGateTest {
         // set above gives.
         "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg",
         "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
+        // What an element claims it binds to, read where @field and @nodeId were written on a field
+        // or on an input value: the claim it stores is the one statement of the payload, which a
+        // reader joins instead of these entries.
+        "graphitron_binding_claim_rule|graphitron_ast_field_binding_entry,graphitron_ast_input_value_binding_entry",
+        "graphitron_binding_claim_rule|graphitron_ast_field_node_id_entry,graphitron_ast_input_value_node_id_entry",
         "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry");
 
 

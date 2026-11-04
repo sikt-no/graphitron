@@ -5653,6 +5653,112 @@ COMMENT ON VIEW graphitron_producer_claim_rule IS 'One row the producer claim ru
 -- COMMENT ON COLUMN graphitron_producer_claim_rule.element_graph_ref IS 'the graph, as the element reference';
 -- COMMENT ON COLUMN graphitron_producer_claim_rule.element_coordinate_ref IS 'the field, as the element reference';
 
+-- What an element's written directives say it binds to, before any rule decides between them: an
+-- element with one claim binds that way, and an element with two is the defect.
+CREATE TABLE graphitron_binding_claim (
+  graph_name             VARCHAR   NOT NULL,
+  coordinate             VARCHAR   NOT NULL,
+  kind                   VARCHAR   NOT NULL,
+  named                  VARCHAR,
+  source_name            VARCHAR,
+  source_line            INT,
+  source_column          INT,
+  touched_at             TIMESTAMP NOT NULL,
+  element_graph_ref      VARCHAR,
+  element_coordinate_ref VARCHAR,
+  PRIMARY KEY (graph_name, coordinate, kind),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The claiming element through the claim's own copy of its key: a key to what a claim was built
+  -- from does not cascade, and the sweep removes the row the reading no longer finds.
+  FOREIGN KEY (element_graph_ref, element_coordinate_ref)
+    REFERENCES graphitron_element (graph_name, coordinate) ON DELETE SET NULL,
+  CHECK (element_graph_ref IS NULL OR element_graph_ref = graph_name),
+  CHECK (element_coordinate_ref IS NULL OR element_coordinate_ref = coordinate),
+  CHECK (kind IN ('COLUMN', 'NODE_ID', 'EXPRESSION')),
+  -- An expression names nothing here; its method is the binding's.
+  CHECK (kind <> 'EXPRESSION' OR named IS NULL),
+  -- A position is all three or none: an application nobody wrote has none.
+  CHECK ((source_name IS NULL) = (source_line IS NULL)
+     AND (source_line IS NULL) = (source_column IS NULL))
+);
+COMMENT ON TABLE graphitron_binding_claim IS 'One kind of binding an element claims: one row per field, input field or argument and kind. For example a field carrying both @field(name:) and @externalField has two rows, which is the conflict a defect reports, and a field claiming nothing has none.';
+COMMENT ON COLUMN graphitron_binding_claim.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN graphitron_binding_claim.coordinate IS 'the declared element claiming, as graphitron_element spells it: Film.title, FilmInput.title or Query.films(title:). A declaration and not an occurrence, a claim being written once where the element is declared';
+COMMENT ON COLUMN graphitron_binding_claim.kind IS 'the graphitron_occurrence_binding kind claimed: COLUMN from @field(name:), NODE_ID from @nodeId, EXPRESSION from @externalField. With the element the key, so another spelling of the same claim changes no row';
+COMMENT ON COLUMN graphitron_binding_claim.named IS 'what the claim names, as written: the column for COLUMN, the node type for NODE_ID. Null for a bare @nodeId, whose node type the binding infers, and for EXPRESSION';
+COMMENT ON COLUMN graphitron_binding_claim.source_name IS 'the file the claim was written in; null for an application nobody wrote';
+COMMENT ON COLUMN graphitron_binding_claim.source_line IS 'the claim''s source line, 1-based';
+COMMENT ON COLUMN graphitron_binding_claim.source_column IS 'the claim''s source column. The first written of two claiming one kind is kept. An attribute and not a reference, for a defect to point at';
+COMMENT ON COLUMN graphitron_binding_claim.touched_at IS 'when the reading that last stated this claim ran: the mark the sweep reads';
+COMMENT ON COLUMN graphitron_binding_claim.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_binding_claim.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to coordinate while the element stands';
+
+-- What each field, input field and argument's written directives claim it binds to, the first
+-- written of two claiming one kind on one element kept. An enum value's @field names a value, not
+-- a place, and claims nothing here.
+CREATE VIEW graphitron_binding_claim_rule (graph_name, coordinate, kind, named, source_name,
+                                           source_line, source_column, element_graph_ref,
+                                           element_coordinate_ref) AS
+WITH claimed (graph_name, coordinate, kind, named, source_name, source_line, source_column) AS (
+-- @field(name:), the column written.
+SELECT e.graph_name, e.coordinate, 'COLUMN', COALESCE(fb.name_ref, ib.name_ref),
+       da.source_name, da.source_line, da.source_column
+  FROM graphitron_element e
+  JOIN graphitron_directive_application da
+    ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
+   AND da.directive_name = 'field'
+  LEFT JOIN graphitron_ast_field_binding_entry fb
+    ON fb.graph_name = da.graph_name AND fb.source_name = da.source_name
+   AND fb.source_line = da.source_line AND fb.source_column = da.source_column
+  LEFT JOIN graphitron_ast_input_value_binding_entry ib
+    ON ib.graph_name = da.graph_name AND ib.source_name = da.source_name
+   AND ib.source_line = da.source_line AND ib.source_column = da.source_column
+ WHERE e.element_kind IN ('FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT')
+UNION ALL
+-- @nodeId, with the node type when one is written.
+SELECT e.graph_name, e.coordinate, 'NODE_ID', COALESCE(fn.node_type_ref, inn.node_type_ref),
+       da.source_name, da.source_line, da.source_column
+  FROM graphitron_element e
+  JOIN graphitron_directive_application da
+    ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
+   AND da.directive_name = 'nodeId'
+  LEFT JOIN graphitron_ast_field_node_id_entry fn
+    ON fn.graph_name = da.graph_name AND fn.source_name = da.source_name
+   AND fn.source_line = da.source_line AND fn.source_column = da.source_column
+  LEFT JOIN graphitron_ast_input_value_node_id_entry inn
+    ON inn.graph_name = da.graph_name AND inn.source_name = da.source_name
+   AND inn.source_line = da.source_line AND inn.source_column = da.source_column
+ WHERE e.element_kind IN ('FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT')
+UNION ALL
+-- @externalField, on an output field.
+SELECT e.graph_name, e.coordinate, 'EXPRESSION', CAST(NULL AS VARCHAR),
+       da.source_name, da.source_line, da.source_column
+  FROM graphitron_element e
+  JOIN graphitron_directive_application da
+    ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
+   AND da.directive_name = 'externalField'
+ WHERE e.element_kind = 'FIELD'
+)
+SELECT graph_name, coordinate, kind, named, source_name, source_line, source_column, graph_name,
+       coordinate
+  FROM (SELECT c.graph_name, c.coordinate, c.kind, c.named, c.source_name, c.source_line,
+               c.source_column,
+               ROW_NUMBER() OVER (PARTITION BY c.graph_name, c.coordinate, c.kind
+                                  ORDER BY c.source_name NULLS LAST, c.source_line,
+                                           c.source_column) AS written
+          FROM claimed c) first_written
+ WHERE written = 1;
+COMMENT ON VIEW graphitron_binding_claim_rule IS 'One row the binding claim rule computes, in the shape graphitron_binding_claim stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_binding_claim, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.coordinate IS 'the declared element claiming';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.kind IS 'the graphitron_occurrence_binding kind claimed';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.named IS 'the column or node type the first claim of the kind names';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.source_name IS 'the file the first claim of the kind was written in';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.element_graph_ref IS 'the graph, as the element reference';
+-- COMMENT ON COLUMN graphitron_binding_claim_rule.element_coordinate_ref IS 'the element, as the element reference';
+
 CREATE TABLE graphitron_method_reference_entry (
   graph_name    VARCHAR NOT NULL,
   site          VARCHAR NOT NULL,
@@ -18371,6 +18477,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence-binding',
    'one place one occurrence binds, in one graph',
    'graph_name, coordinate, bound', 'sdl'),
+  ('binding-claim',
+   'one kind of binding one declared field, input field or argument claims, in one graph',
+   'graph_name, coordinate, kind', 'sdl'),
   ('producer-claim',
    'one kind of producer one declared field claims, in one graph',
    'graph_name, coordinate, kind', 'sdl'),
@@ -20137,6 +20246,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_producer_claim_rule', 'producer-claim', 'graphitron',
    'One row the producer claim rule computes, in the shape graphitron_producer_claim stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_claim, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_binding_claim', 'binding-claim', 'graphitron',
+   'One kind of binding an element claims: one row per field, input field or argument and kind.',
+   'For example a field carrying both @field(name:) and @externalField has two rows, which is the conflict a defect reports, and a field claiming nothing has none.',
+   'Kept apart from the binding so the conflict and the binding read one statement of what was claimed, at the declaration where it was written rather than at each occurrence. Keyed by what is claimed, the element and the kind, and not by the directive that claims it; what the claim names and where it was written are kept beside the key, the first for the binding to resolve and the second for a defect to point at. The element is referenced through a copy of its key that its removal sets null, so the sweep, not a cascade, removes a claim the reading no longer finds.'),
+  ('graphitron_binding_claim_rule', 'binding-claim', 'graphitron',
+   'One row the binding claim rule computes, in the shape graphitron_binding_claim stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_binding_claim, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_producer_rule', 'graph-field', 'graphitron',
    'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk.',

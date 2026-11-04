@@ -1,0 +1,40 @@
+"A binding claim is what a field, input field or argument claims it binds to, by the element and the kind, not by the directive that said it: @field(name:) a column, @nodeId a node id, @externalField an expression. What the claim names rides along, null for a bare @nodeId, whose node type the binding infers, and for an expression. An element claiming nothing has no row."
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  "A bare @nodeId: a claim naming no node type."
+  id: ID! @nodeId
+  "A column written: a claim naming it."
+  name: String @field(name: "title")
+  "Nothing written: no claim."
+  description: String
+  "An expression: a claim naming nothing, the method being the binding's."
+  isEnglish: Boolean
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+}
+
+input FilmFilter {
+  "An input field naming its node type."
+  filmId: ID @nodeId(typeName: "Film")
+  "An input field naming its column."
+  name: String @field(name: "title")
+}
+
+extend type Query {
+  "An argument naming its column."
+  filmsByTitle(name: String @field(name: "title"), filter: FilmFilter): [Film!]!
+}
+
+# Empty cells are nulls; the prelude's own claim is left out.
+extend schema @expectEquals(relation: "graphitron_binding_claim", where: """
+  coordinate NOT LIKE 'FactAnchor.%'
+  """, rows: """
+  coordinate,                named, kind
+  Film.id,                        , NODE_ID
+  Film.name,                 title, COLUMN
+  Film.isEnglish,                 , EXPRESSION
+  FilmFilter.filmId,         Film,  NODE_ID
+  FilmFilter.name,           title, COLUMN
+  Query.filmsByTitle(name:), title, COLUMN
+  """)
