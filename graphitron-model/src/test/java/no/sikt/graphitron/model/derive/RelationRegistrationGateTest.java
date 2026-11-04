@@ -346,18 +346,22 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_fanout", Arm.DERIVED);
         registrations.put("graphitron_field_path_landing", Arm.DERIVED);
         // The paths keyed per need, derived from the entries and the catalog like the field paths
-        // above; what pins them is the schema's own keys and checks, PathRelationConstraintTest.
-        registrations.put("graphitron_path_claim", Arm.DERIVED);
+        // above; what pins them is the schema's own keys and checks.
+        registrations.put("graphitron_join_path_claim", Arm.DERIVED);
         registrations.put("graphitron_path_need", Arm.DERIVED);
         registrations.put("graphitron_path", Arm.DERIVED);
-        registrations.put("graphitron_path_step", Arm.DERIVED);
-        registrations.put("graphitron_path_step_column", Arm.DERIVED);
-        registrations.put("graphitron_path_step_key", Arm.DERIVED);
-        registrations.put("graphitron_path_step_primary_key", Arm.DERIVED);
-        registrations.put("graphitron_path_step_method", Arm.DERIVED);
-        registrations.put("graphitron_path_step_routine", Arm.DERIVED);
-        registrations.put("graphitron_path_step_parameter", Arm.DERIVED);
-        registrations.put("graphitron_path_stop", Arm.DERIVED);
+        registrations.put("graphitron_join_path", Arm.DERIVED);
+        registrations.put("graphitron_join_path_claimed", Arm.DERIVED);
+        registrations.put("graphitron_accessor_path", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_column", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_key", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_inferred_key", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_primary_key", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_method", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_routine", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_parameter", Arm.DERIVED);
+        registrations.put("graphitron_join_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_participant_path", Arm.DERIVED);
         registrations.put("graphitron_element", Arm.DERIVED);
         registrations.put("graphitron_type", Arm.DERIVED);

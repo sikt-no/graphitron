@@ -209,8 +209,8 @@ class SupertypeSignatureGateTest {
         // column pairs and a routine step's parameters say what they said, keyed by the need rather
         // than by the field and its start. Successor and incumbent, not siblings; each pair goes to
         // one member when the field-path relations do.
-        Set.of("graphitron_field_path_column", "graphitron_path_step_column"),
-        Set.of("graphitron_field_path_parameter", "graphitron_path_step_parameter"),
+        Set.of("graphitron_field_path_column", "graphitron_join_path_step_column"),
+        Set.of("graphitron_field_path_parameter", "graphitron_join_path_step_parameter"),
         // Two members where there were six. The five that left were the argument relations of the
         // five application sites, and they shared a payload because they were one fact keyed five
         // ways; they are one relation now, keyed at the coordinate, so the sharing they were

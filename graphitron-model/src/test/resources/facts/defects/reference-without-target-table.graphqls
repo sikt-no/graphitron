@@ -1,0 +1,52 @@
+# A path written at an output field, or a @referenceFor naming a member, that reaches a type with no
+# one table: reported at the claim, the declaration that wrote the path, with the target type as the
+# detail. A scalar or an enum read through a path takes its column from where the path arrives, and a
+# @pivot reads its projection from the path's last table, so neither is one. A union target is one
+# where the path is written on the field, and a @referenceFor naming a member with a table is not.
+
+type Film @table(name: "film") {
+  languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+  rating: Rating @field(name: "rating") @reference(path: [{key: "film_language_id_fkey"}])
+  translations: Translations
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
+  # An object with no table of its own behind a path: nowhere to arrive.
+  summary: Summary @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+enum Rating { G PG }
+type Language @table(name: "language") { name: String }
+type Category @table(name: "category") { name: String }
+union Tagged = Language | Category
+
+type Store @table(name: "store") {
+  # A union has no one table, so a path written on the field has nowhere to arrive.
+  tagged: Tagged @reference(path: [{key: "store_address_id_fkey"}])
+  # Each @referenceFor names a member with a table: nothing to report.
+  sorted: Tagged
+    @referenceFor(type: "Language", path: [{table: "language"}])
+    @referenceFor(type: "Category", path: [{table: "category"}])
+}
+enum PivotLang { EN NO }
+type Translations { EN: String NO: String }
+type Summary { name: String }
+
+extend type Query { film: Film store: Store }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'REFERENCE_WITHOUT_TARGET_TABLE'", rows: """
+  coordinate,    detail
+  Film.summary,  Summary
+  Store.tagged,  Tagged
+  """)
+
+# Each at the claim's own written position, the declaration, rather than at an element of its path.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code = 'REFERENCE_WITHOUT_TARGET_TABLE'
+  AND (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column FROM graphitron_join_path_claim)
+  """, rows: """
+  coordinate,    detail
+  Film.summary,  Summary
+  Store.tagged,  Tagged
+  """)

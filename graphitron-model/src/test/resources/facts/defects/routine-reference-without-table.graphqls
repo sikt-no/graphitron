@@ -1,6 +1,7 @@
 # A @reference takes its target from the return type's @table, a @routine before it included, so a
-# path ending on a @reference whose return type has no @table has nowhere to arrive. A path ending on
-# the @routine does: its type's rows are the function's result, which needs no table.
+# path ending on a @reference whose return type has no @table has nowhere to arrive, reported at the
+# claim, the field declaration. A path ending on the @routine does: its type's rows are the
+# function's result, which needs no table.
 
 type FilmRow {
   title: String
@@ -28,12 +29,16 @@ extend type Query {
     @reference(path: [{table: "film"}])
 }
 
-extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
-  code,                 coordinate
-  CHAIN_WITHOUT_TARGET, Query.recentFilmRows
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code = 'REFERENCE_WITHOUT_TARGET_TABLE'
+  AND (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column FROM graphitron_join_path_claim)
+  """, rows: """
+  coordinate,           detail
+  Query.recentFilmRows, FilmRow
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
-  code,                 coordinate
-  CHAIN_WITHOUT_TARGET, Film.castFilms
+  code,                           coordinate
+  REFERENCE_WITHOUT_TARGET_TABLE, Film.castFilms
   """)

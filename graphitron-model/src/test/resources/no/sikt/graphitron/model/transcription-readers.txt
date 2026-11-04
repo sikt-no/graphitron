@@ -57,8 +57,6 @@ graphitron_connection_carrier graphql_field
 # the table its read arrives at and report at the field's own line, or at its @field. Both are the
 # author's: a minted field has no line to report at, and none of the macro's minted fields is a
 # scalar read off a column, so the expanded population would add rows they can only skip.
-# CHAIN_WITHOUT_TARGET reaches a field's written path through the declaration
-# graphql_field anchored, on the walk's terms below.
 graphitron_entry_defect_rule graphql_field
 
 # Adjudicated and kept: the tags the configuration applies.

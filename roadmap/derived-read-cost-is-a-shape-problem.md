@@ -1768,11 +1768,9 @@ row for a single-table interface target, where the needs want one per member, an
 whose binding names several tables.
 
 **The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
-the claim and the source are written, and nothing writes the rest yet. The names below are the ones decided on
-2026-11-03; the SQL takes them in the commit that builds the need writer, so until then
-`graphitron_path_claim`, `graphitron_path_step` and its children and `graphitron_path_stop` stand
-there for `graphitron_join_path_claim`, `graphitron_join_path_step` and `graphitron_join_path_stop`,
-and `graphitron_ast_path_entry` keeps its name as the written entry.
+the claim and the source are written, and nothing writes the rest yet. The SQL carries the names
+decided on 2026-11-03 (2026-11-04), and `graphitron_ast_path_entry` keeps its name as the written
+entry.
 
 * `graphitron_join_path_claim`, written by `PathClaims`: one place a path is written, by the declared
   element it is written on and the type it reaches. Keyed by (graph, element coordinate, target
@@ -2166,6 +2164,15 @@ the item's life. Already swept once, with seven survivors found and fixed.
 speaks of, and `graphitron_ast_path_entry`'s `anchor_line` and `anchor_column`. `graphitron_path_holder`
 went into `graphitron_occurrence`, a holder being just a coordinate. The anchor's spelling
 `Store.people[Staff]` and the argument spelling `Query.people.storeId` are retired with them.
+
+**Path relations renamed into the join path's names** (2026-11-04). `graphitron_path_claim` is
+`graphitron_join_path_claim`; `graphitron_path_step` and its children `graphitron_path_step_column`,
+`graphitron_path_step_key`, `graphitron_path_step_primary_key`, `graphitron_path_step_method`,
+`graphitron_path_step_routine` and `graphitron_path_step_parameter` are `graphitron_join_path_step`
+and `graphitron_join_path_step_*`; `graphitron_path_stop` is `graphitron_join_path_stop`. The need's
+columns `landing_kind`, `landing`, `landing_type`, `start_coordinate` and `start_as` are dropped, a
+need being keyed by its target type with its landing an attribute. The defect code
+`CHAIN_WITHOUT_TARGET` is merged into `REFERENCE_WITHOUT_TARGET_TABLE`, reported at the claim.
 
 **Relations retired.** Eight per-site argMapping tables into `graphitron_arg_mapping_pair`:
 `graphitron_argument_condition_arg_mapping_pair`,

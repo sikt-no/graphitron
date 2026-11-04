@@ -92,7 +92,7 @@ extend schema @expectEquals(relation: "graphitron_ast_path_entry", where: """
 # its implementation writing nothing; people's two @referenceFor name two members and are two anchors;
 # managers names Staff twice and keeps the first written; the argument and the input field reach the
 # type they name. Both references stand.
-extend schema @expectEquals(relation: "graphitron_path_claim", rows: """
+extend schema @expectEquals(relation: "graphitron_join_path_claim", rows: """
   element_coordinate,       target_type, claim_kind,   source_line, source_column, element_coordinate_ref,   target_type_ref, touched_at
   Customer.city,            String,      FIELD,         10,          3,             Customer.city,            String,          1000000000
   Located.address,          Address,     FIELD,         17,          3,             Located.address,          Address,         1000000000

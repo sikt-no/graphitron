@@ -11,7 +11,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
@@ -25,7 +25,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 /**
- * The capture-cadence writer of {@code graphitron_path_claim}: every place a path is written, by the
+ * The capture-cadence writer of {@code graphitron_join_path_claim}: every place a path is written, by the
  * declared element it is written on and the type it reaches, marked and swept.
  *
  * <p>The claims are the positions {@code graphitron_ast_path_entry} keys its elements under. A
@@ -48,7 +48,7 @@ public final class PathClaims {
 
     /** Re-derives the graph's claims and sweeps what the reading no longer finds. */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        var a = GRAPHITRON_PATH_CLAIM;
+        var a = GRAPHITRON_JOIN_PATH_CLAIM;
         var p = GRAPHITRON_AST_PATH_ENTRY;
         var positions = selectDistinct(p.GRAPH_NAME, p.SOURCE_NAME, p.ANCHOR_LINE, p.ANCHOR_COLUMN)
             .from(p)
