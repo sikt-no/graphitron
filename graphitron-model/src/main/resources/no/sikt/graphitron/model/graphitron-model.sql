@@ -5618,7 +5618,7 @@ CREATE TABLE graphitron_producer_claim (
     REFERENCES graphitron_element (graph_name, coordinate) ON DELETE SET NULL,
   CHECK (element_graph_ref IS NULL OR element_graph_ref = graph_name),
   CHECK (element_coordinate_ref IS NULL OR element_coordinate_ref = coordinate),
-  CHECK (kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'LOOKUP')),
+  CHECK (kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT', 'LOOKUP')),
   -- A position is all three or none: an application nobody wrote has none.
   CHECK ((source_name IS NULL) = (source_line IS NULL)
      AND (source_line IS NULL) = (source_column IS NULL))
@@ -5626,7 +5626,7 @@ CREATE TABLE graphitron_producer_claim (
 COMMENT ON TABLE graphitron_producer_claim IS 'One kind of producer a field claims it runs: one row per field and kind. For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field claiming nothing has none.';
 COMMENT ON COLUMN graphitron_producer_claim.graph_name IS 'the owning graph''s partition, anchored by store_graph';
 COMMENT ON COLUMN graphitron_producer_claim.coordinate IS 'the declared field claimed, as graphitron_field spells it: Query.films. A declaration and not an occurrence, a claim being written once where the field is declared';
-COMMENT ON COLUMN graphitron_producer_claim.kind IS 'the graphitron_producer kind claimed: SERVICE, ROUTINE, INSERT, UPDATE, DELETE or LOOKUP. With the field the key, so what the field claims is the row and not the directive that said it; another spelling of the same claim changes no row';
+COMMENT ON COLUMN graphitron_producer_claim.kind IS 'the kind of producer claimed: SERVICE, ROUTINE, INSERT, UPDATE, DELETE, UPSERT or LOOKUP, a graphitron_producer kind but for UPSERT, a write graphitron does not generate yet, which is refused at its entry and so is no producer while still conflicting with any other claim. With the field the key, so what the field claims is the row and not the directive that said it; another spelling of the same claim changes no row';
 COMMENT ON COLUMN graphitron_producer_claim.source_name IS 'the file the claim was written in; null for an application nobody wrote';
 COMMENT ON COLUMN graphitron_producer_claim.source_line IS 'the claim''s source line, 1-based';
 COMMENT ON COLUMN graphitron_producer_claim.source_column IS 'the claim''s source column: where the application claiming the kind was written, the argument''s @lookupKey for a LOOKUP. The first written of two claiming one kind is kept. An attribute and not a reference, for a defect to point at';
@@ -5662,7 +5662,8 @@ SELECT f.graph_name, f.coordinate, 'ROUTINE', da.source_name, da.source_line, da
                 WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
                   AND s.directive_name = 'splitQuery')
 UNION ALL
--- @mutation on a mutation-root field, by the verb written. Upsert is retired and claims nothing.
+-- @mutation on a mutation-root field, by the verb written: graphitron generates the write, so it
+-- conflicts with a @service, whose author provides the code, whichever verb is written.
 SELECT f.graph_name, f.coordinate, m.operation, da.source_name, da.source_line, da.source_column
   FROM graphitron_field f
   JOIN graphql_root_operation ro
@@ -5673,7 +5674,7 @@ SELECT f.graph_name, f.coordinate, m.operation, da.source_name, da.source_line, 
   JOIN graphitron_ast_mutation_entry m
     ON m.graph_name = da.graph_name AND m.source_name = da.source_name
    AND m.source_line = da.source_line AND m.source_column = da.source_column
- WHERE m.operation IN ('INSERT', 'UPDATE', 'DELETE')
+ WHERE m.operation IN ('INSERT', 'UPDATE', 'DELETE', 'UPSERT')
 UNION ALL
 -- @lookupKey on an argument, at the query root or on a split child, where the argument's
 -- application was written; inline below a root, the keys narrow the parent's statement and the
@@ -11233,6 +11234,8 @@ root (graph_name, type_name, operation) AS (
 SELECT graph_name, type_name, field_name, kind
   FROM claim_count
  WHERE claims = 1
+   -- An upsert is claimed and refused at its entry, so it runs nothing yet.
+   AND kind <> 'UPSERT'
 UNION ALL
 SELECT graph_name, type_name, field_name, kind
   FROM (
@@ -13491,9 +13494,9 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                   AND de.directive_name = 'error')
 UNION ALL
 -- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
--- holding one result, with neither a producer nor a reader. A field claiming two kinds, the fields of
--- a type holding two shapes, and a field returning a type nobody declared carry their own defect
--- instead.
+-- holding one result, with neither a producer nor a reader. A field claiming two kinds or an upsert,
+-- the fields of a type holding two shapes, and a field returning a type nobody declared carry their
+-- own defect instead.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR)
   FROM graphitron_field f
@@ -13513,6 +13516,9 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                       AND fe.field_name = f.field_name)
    AND (SELECT COUNT(*) FROM graphitron_producer_claim c
          WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate) < 2
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim c
+                    WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate
+                      AND c.kind = 'UPSERT')
 UNION ALL
 -- A field on the subscription root, at the field's own declaration. Meaningful under the
 -- specification and under the directives alike: graphitron generates no subscription resolver
@@ -13525,6 +13531,13 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
   JOIN graphql_root_operation ro
     ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
    AND ro.operation = 'SUBSCRIPTION'
+UNION ALL
+-- An upsert, at its @mutation: meaningful under the directives, and graphitron generates no upsert
+-- yet, so an author works around it rather than fixing it. Its claim still conflicts with a @service.
+SELECT m.graph_name, m.source_name, m.source_line, m.source_column,
+       'MUTATION_UPSERT', CAST(NULL AS VARCHAR)
+  FROM graphitron_ast_mutation_entry m
+ WHERE m.operation = 'UPSERT'
 UNION ALL
 -- An @outbox that is not on a field writing a table with @mutation: no write, no message.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_NOT_A_WRITE',
@@ -19038,6 +19051,8 @@ INSERT INTO graphitron_defect_type VALUES
    'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.', 'graphitron'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.', 'graphitron'),
+  ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
+   '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.', 'graphitron'),
   ('PRODUCER_KINDS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_PRODUCER_KINDS_CONFLICT',
    'A field''s directives name two things for its fetcher to run, such as @service and @routine, and a fetcher runs one.', 'graphitron'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
