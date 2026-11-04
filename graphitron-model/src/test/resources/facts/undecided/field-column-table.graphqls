@@ -23,6 +23,7 @@ type Film @table(name: "film") {
   serviced: [Language] @service(service: {className: "no.example.Svc", method: "langs"})
   pivoted: [Language] @pivot(on: "kind", value: "value")
   venues: [Venue]
+  missings: [Missing]
   # Contested: two claims that exclude each other.
   contested: String @reference(path: [{table: "language"}])
     @service(service: {className: "no.example.Svc", method: "get"})
@@ -40,6 +41,9 @@ type Actor @table(name: "actor") { name: String @field(name: "first_name") }
 
 # Bound to a bare name two schemas declare, so it binds nothing.
 type Venue @table(name: "event") { name: String }
+
+# Bound to a name no table carries, so it binds nothing either.
+type Missing @table(name: "no_such_table") { name: String }
 
 type LanguageConnection { edges: [LanguageEdge] }
 type LanguageEdge { node: Language }
@@ -99,10 +103,11 @@ extend schema @assertAbsent(relation: "graphitron_field_target_column", rows: ""
   Note,      text
   """)
 
-# A binding that names several tables is a row of none of them: Venue is still a row, a table
-# being bound to it, but no one table says which.
-extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'Venue'", rows: """
+# A @table that binds no table, ambiguous or unresolved, is its own defect and a row of no table:
+# Venue and Missing are rows, never their parent's, and no one table says which.
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name IN ('Venue', 'Missing')", rows: """
   type_name, shape
+  Missing,   ROW
   Venue,     ROW
   """)
-extend schema @assertEmpty(relation: "graphitron_result_table", where: "type_name = 'Venue'")
+extend schema @assertEmpty(relation: "graphitron_result_table", where: "type_name IN ('Venue', 'Missing')")

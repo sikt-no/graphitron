@@ -14373,27 +14373,27 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
 SELECT h.graph_name, h.member,
        CASE WHEN dp.coordinate IS NOT NULL THEN 'ROW'
             WHEN h.wrapped OR de.coordinate IS NOT NULL THEN 'OBJECT'
-            WHEN b.type_name IS NOT NULL OR amb.type_name IS NOT NULL THEN 'ROW'
+            WHEN b.type_name IS NOT NULL OR amb.coordinate IS NOT NULL THEN 'ROW'
             ELSE COALESCE(h.shape, 'OBJECT') END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
             WHEN b.type_name IS NOT NULL THEN b.table_source_name
-            WHEN amb.type_name IS NOT NULL THEN NULL
+            WHEN amb.coordinate IS NOT NULL THEN NULL
             ELSE h.table_source_name END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
             WHEN b.type_name IS NOT NULL THEN b.table_schema
-            WHEN amb.type_name IS NOT NULL THEN NULL
+            WHEN amb.coordinate IS NOT NULL THEN NULL
             ELSE h.table_schema END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
             WHEN b.type_name IS NOT NULL THEN b.table_name
-            WHEN amb.type_name IS NOT NULL THEN NULL
+            WHEN amb.coordinate IS NOT NULL THEN NULL
             ELSE h.table_name END,
        CASE WHEN dp.coordinate IS NOT NULL THEN h.field_type
             WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL
-                 OR amb.type_name IS NOT NULL THEN NULL
+                 OR amb.coordinate IS NOT NULL THEN NULL
             ELSE h.pivot_type_name END,
        CASE WHEN dp.coordinate IS NOT NULL THEN h.field_name
             WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL
-                 OR amb.type_name IS NOT NULL THEN NULL
+                 OR amb.coordinate IS NOT NULL THEN NULL
             ELSE h.pivot_field_name END
   FROM handed h
   LEFT JOIN graphitron_directive_application dp
@@ -14402,16 +14402,12 @@ SELECT h.graph_name, h.member,
     ON de.graph_name = h.graph_name AND de.coordinate = h.member AND de.directive_name = 'error'
   LEFT JOIN graphitron_tabletype b
     ON b.graph_name = h.graph_name AND b.type_name = h.member
-  -- A @table spelling several tables answer to binds none, its own defect, and the type is a row of
-  -- no table rather than of whatever its parent holds.
-  LEFT JOIN (SELECT DISTINCT te.graph_name, te.type_name
-               FROM graphitron_table_entry te
-               JOIN graphitron_spelled_table sp
-                 ON sp.graph_name = te.graph_name AND sp.spelling = COALESCE(te.table_ref, te.type_name)
-                AND sp.candidates > 1) amb
-    ON amb.graph_name = h.graph_name AND amb.type_name = h.member
+  -- A written @table that binds no table, unresolved or ambiguous, is its own defect, and the type
+  -- is a row of no table rather than of whatever its parent holds.
+  LEFT JOIN graphitron_directive_application amb
+    ON amb.graph_name = h.graph_name AND amb.coordinate = h.member AND amb.directive_name = 'table'
  WHERE dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL
-    OR b.type_name IS NOT NULL OR amb.type_name IS NOT NULL OR h.shape IS NOT NULL
+    OR b.type_name IS NOT NULL OR amb.coordinate IS NOT NULL OR h.shape IS NOT NULL
     OR h.producer_kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'FACETS')
 UNION
 -- A federation entity holds its table's row, resolved through _entities; graphitron resolves only
