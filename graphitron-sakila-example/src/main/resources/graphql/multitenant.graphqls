@@ -64,6 +64,11 @@ type FilmStock {
 
 input FilmSceneFilter { scene: ID @nodeId(typeName: "FilmScene") }
 
+input FilmActorFilter {
+    filmId: Int! @field(name: "film_id")
+    actors: [ID!] @nodeId(typeName: "FilmActor")
+}
+
 # A federation entity whose key cannot name the tenant (inventory_id is unique within one tenant's
 # database only), so _entities resolves it on the request's entity default tenant, matching only rows
 # whose film_id is that tenant. film is a tenant-scoped batched child the resolved row hands its tenant.
@@ -161,6 +166,12 @@ type Query {
     # tenant column. The wire value is an encoded key rather than the tenant value, so the routed
     # acquisition decodes it and reads slot 1; every id in one call must decode to one tenant.
     filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
+    # A filter id beside a required tenant value only filters: filmId decides the tenant, and the
+    # film_id = ? predicate it compiles to keeps every other tenant's row out, so an actors id
+    # naming another tenant matches nothing rather than failing the field. A connection, so the
+    # totalCount aggregate is filtered the same way.
+    filmActorsWhere(filter: FilmActorFilter!, first: Int, after: String): [FilmActor!]!
+        @asConnection @defaultOrder(primaryKey: true)
     # A keyed lookup over the tenant column: each key names its row's tenant, and an empty key list
     # names none, so it answers the empty list without opening a tenant database.
     filmsByKey(filmId: [Int!]! @field(name: "film_id") @lookupKey): [Film]!

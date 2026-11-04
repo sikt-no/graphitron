@@ -45,9 +45,23 @@ class ColumnBindingLedgerTest {
             List.of(new OperationMember.Condition.OnReturnTable(table, List.of(filter)))));
     }
 
+    private static final ColumnBindingLedger.ImplicitPredicate OWN_TABLE =
+        ColumnBindingLedger.ImplicitPredicate.OWN_TABLE;
+    private static final ColumnBindingLedger.ImplicitPredicate SUPPRESSED =
+        ColumnBindingLedger.ImplicitPredicate.SUPPRESSED;
+    private static final ColumnBindingLedger.ImplicitPredicate REACHED =
+        ColumnBindingLedger.ImplicitPredicate.REACHED;
+
+    /** A slot whose implicit predicate was emitted on the filtered table's own columns. */
     private static ColumnBindingLedger.ColumnBoundSlot slot(String name, List<ColumnRef> columns,
                                                             CallSiteExtraction extraction) {
-        return new ColumnBindingLedger.ColumnBoundSlot(name, columns, extraction);
+        return slot(name, columns, extraction, OWN_TABLE);
+    }
+
+    private static ColumnBindingLedger.ColumnBoundSlot slot(String name, List<ColumnRef> columns,
+                                                            CallSiteExtraction extraction,
+                                                            ColumnBindingLedger.ImplicitPredicate predicate) {
+        return new ColumnBindingLedger.ColumnBoundSlot(name, columns, extraction, predicate);
     }
 
     @Test
@@ -96,10 +110,58 @@ class ColumnBindingLedgerTest {
         var ledger = new ColumnBindingLedger();
         var filter = filterOf(FILM, eq("title", TestFixtures.titleCol(), DIRECT));
         ledger.record(FILMS, FILM, List.of(
-            slot("filmId", List.of(FILM_ID), DIRECT),
+            slot("filmId", List.of(FILM_ID), DIRECT, SUPPRESSED),
             slot("title", List.of(TestFixtures.titleCol()), DIRECT)), List.of(filter));
 
         assertThatCode(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of())).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aSlotMarkedEmittedWhosePredicateIsAbsentFails() {
+        // The tenant fold reads the mark to let a filter id step down beside an anchor, so a mark
+        // claiming a predicate that was never emitted would let it step down with nothing in SQL.
+        var ledger = new ColumnBindingLedger();
+        var filter = filterOf(FILM, eq("title", TestFixtures.titleCol(), DIRECT));
+        ledger.record(FILMS, FILM, List.of(
+            slot("filmId", List.of(FILM_ID), DIRECT, OWN_TABLE),
+            slot("title", List.of(TestFixtures.titleCol()), DIRECT)), List.of(filter));
+
+        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Query.films")
+            .hasMessageContaining("table 'film'")
+            .hasMessageContaining("slot 'filmId'")
+            .hasMessageContaining("no generated predicate reads it");
+    }
+
+    @Test
+    void aSlotMarkedSuppressedWhosePredicateIsPresentFails() {
+        var ledger = new ColumnBindingLedger();
+        var filter = filterOf(FILM, eq("filmId", FILM_ID, DIRECT));
+        ledger.record(FILMS, FILM, List.of(slot("filmId", List.of(FILM_ID), DIRECT, SUPPRESSED)),
+            List.of(filter));
+
+        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Query.films")
+            .hasMessageContaining("table 'film'")
+            .hasMessageContaining("slot 'filmId'");
+    }
+
+    @Test
+    void aRemotePredicateIsNotCoveredByASlotMarkedOwnTable() {
+        var ledger = new ColumnBindingLedger();
+        var tuple = List.of(ACTOR_ID, FILM_ID);
+        var hop = TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"),
+            FILM, List.of(FILM_ID), FILM_ACTOR, List.of(FILM_ID), null, "film_actor_0");
+        var remote = new BodyParam.RemoteColumnPredicate(List.of(hop),
+            new BodyParam.RowEq("actorFilm", tuple, false, DIRECT));
+        var filter = filterOf(FILM, remote);
+        ledger.record(FILMS, FILM, List.of(slot("actorFilm", tuple, DIRECT, OWN_TABLE)), List.of(filter));
+
+        assertThatThrownBy(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("slot 'actorFilm'");
     }
 
     @Test
@@ -111,7 +173,7 @@ class ColumnBindingLedgerTest {
         var remote = new BodyParam.RemoteColumnPredicate(List.of(hop),
             new BodyParam.RowEq("actorFilm", tuple, false, DIRECT));
         var filter = filterOf(FILM, remote);
-        ledger.record(FILMS, FILM, List.of(slot("actorFilm", tuple, DIRECT)), List.of(filter));
+        ledger.record(FILMS, FILM, List.of(slot("actorFilm", tuple, DIRECT, REACHED)), List.of(filter));
 
         assertThatCode(() -> ledger.requireCovers(conditionOn(FILM, filter), Map.of())).doesNotThrowAnyException();
     }

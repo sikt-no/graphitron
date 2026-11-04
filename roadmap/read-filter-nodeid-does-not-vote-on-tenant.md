@@ -114,6 +114,7 @@ A bound slot steps down when all four of these hold. A field may have several an
   - An optional `Raw` tenant slot beside a guaranteed one: both stay (the existing `oneRequiredSlotRoutesAndCarriesTheOptionalOneBesideIt` already pins it).
   - A mutation whose input carries a required id and an optional decoded id (`UpdateFilmSceneParentInput` shape): both stay.
   - A child `@service` table field with the same filter: both stay.
+    - *Implementation note:* this shape does not reach `ArgumentBound` today. A child `@service` table field's filter mints no slot (the field is rejected with "no argument or input field maps to tenant column"), so there is nothing for the rule to keep or prune, and no test pins it. The `SERVICE_CALL` arm of condition 4 stays as a guard for the shape when it starts binding. The `WRITE` arm is pinned by `aWriteKeepsEverySlot`.
 - **Ledger** (`ColumnBindingLedger` coverage): `requireCovers` fails on a slot marked emitted whose predicate is absent, and on one marked suppressed whose predicate is present.
 - **Execution tier** (`TenantDivinedRoutingExecutionTest`, sakila `multitenant.graphqls`). Add the sis shape as a connection, so `totalCount` is exercised as in the sis case:
 

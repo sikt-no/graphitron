@@ -59,6 +59,12 @@ public sealed interface TenantBinding {
      * reads through are non-empty, and {@link ArgumentBound#whenNoTenant()} says what a request
      * whose lists name none gets. Optional slots alone can only narrow a fan-out
      * ({@link FanOut}).
+     *
+     * <p>Not every argument that names the tenant is a bound slot. On a field that only reads, a
+     * node id the client may leave out, used only as a filter graphitron writes itself, steps
+     * down when a guaranteed slot's emitted predicate compares the same table's own tenant
+     * column: that anchor decides the tenant, and the id keeps its predicate and only filters
+     * inside it, so an id naming another tenant matches no row instead of failing the field.
      */
     record BoundSlot(String slotName, SlotRead read, SlotProjection projection, SlotPresence presence) {
         public BoundSlot {
@@ -252,9 +258,10 @@ public sealed interface TenantBinding {
 
     /**
      * Argument / input-object fields whose column mappings resolve to tenant columns. Carries
-     * every co-binding, optional ones included; the first is the documented-precedence primary
-     * (argument declaration order), and the emitter guards at runtime that all divined values
-     * agree. At least one binding is {@linkplain BoundSlot#required required}, so a client cannot
+     * every co-binding, optional ones included, except a filter node id that steps down beside an
+     * anchor on a field that only reads (see {@link BoundSlot}); the first is the
+     * documented-precedence primary (argument declaration order), and the emitter guards at
+     * runtime that all divined values agree. At least one binding is {@linkplain BoundSlot#required required}, so a client cannot
      * leave every slot out; a request still names no tenant when every required slot reads
      * through a list that arrives empty, and {@code whenNoTenant} says what that request gets.
      * It is {@link WhenNoTenant.Unreachable} exactly when some slot is

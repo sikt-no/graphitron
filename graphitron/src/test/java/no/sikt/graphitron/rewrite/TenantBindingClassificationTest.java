@@ -1667,6 +1667,114 @@ class TenantBindingClassificationTest {
         assertThat(error.rejection()).isInstanceOf(Rejection.AuthorError.NoTenantBinding.class);
     }
 
+    // ===== A filter node id beside a required tenant value only filters =====
+
+    private static final String FILM_ACTOR_NODE = """
+        type FilmActor implements Node @table(name: "film_actor")
+                @node(keyColumns: ["actor_id", "film_id"]) {
+            id: ID! @nodeId
+        }
+        """;
+
+    private static List<String> slotNames(GraphitronSchema schema, String type, String field) {
+        return argumentBound(schema, type, field).bindings().stream()
+            .map(TenantBinding.BoundSlot::slotName).toList();
+    }
+
+    @Test
+    void anOptionalIdListBesideARequiredTenantFieldStepsDown() {
+        // The anchor's film_id = ? predicate is ANDed with the id predicate, so an id naming another
+        // tenant matches no row; it no longer votes on the tenant.
+        var schema = build(FILM_ACTOR_NODE + """
+            input FilmActorWhere {
+                filmId: Int! @field(name: "film_id")
+                actors: [ID!] @nodeId(typeName: "FilmActor")
+            }
+            type Query { filmActorsWhere(filter: FilmActorWhere!): [FilmActor!]! }
+            """);
+
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        var bound = argumentBound(schema, "Query", "filmActorsWhere");
+        assertThat(bound.bindings()).extracting(TenantBinding.BoundSlot::slotName).containsExactly("filmId");
+        assertThat(bound.whenNoTenant()).isEqualTo(TenantBinding.WhenNoTenant.Unreachable.INSTANCE);
+    }
+
+    @Test
+    void aGuaranteedIdAnchorsAndTheOptionalIdListBesideItStepsDown() {
+        var schema = build(FILM_ACTOR_NODE + """
+            input FilmActorWhere {
+                id: ID! @nodeId(typeName: "FilmActor")
+                others: [ID!] @nodeId(typeName: "FilmActor")
+            }
+            type Query { filmActorsWhere(filter: FilmActorWhere!): [FilmActor!]! }
+            """);
+
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertThat(slotNames(schema, "Query", "filmActorsWhere")).containsExactly("id");
+    }
+
+    @Test
+    void anIdWhosePredicateAFieldLevelOverrideSuppressesKeepsVoting() {
+        // The authored method is opaque: nothing shows it compares the whole key, so the id may not
+        // be filtering at all and the anchor is no reason to stop checking it.
+        var schema = build(FILM_ACTOR_NODE + """
+            input FilmActorWhere {
+                filmId: Int! @field(name: "film_id")
+                actors: [ID!] @nodeId(typeName: "FilmActor")
+            }
+            type Query { filmActorsWhere(filter: FilmActorWhere!): [FilmActor!]! %s }
+            """.formatted(FIELD_OVERRIDE));
+
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertThat(slotNames(schema, "Query", "filmActorsWhere")).containsExactly("filmId", "actors");
+    }
+
+    @Test
+    void anIdCarryingItsOwnConditionKeepsVoting() {
+        var schema = build("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+                id: ID! @nodeId
+            }
+            input FilmWhere {
+                tenant: Int! @field(name: "film_id")
+                filmId: ID @nodeId(typeName: "Film")
+                    @condition(condition: {className: "%s", method: "filmIdArgCondition"})
+            }
+            type Query { filmsWhere(filter: FilmWhere!): [Film!]! }
+            """.formatted(STUB));
+
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertThat(slotNames(schema, "Query", "filmsWhere")).containsExactly("tenant", "filmId");
+    }
+
+    @Test
+    void aWriteKeepsEverySlot() {
+        // One statement across two tenants has no correct execution, so a write's optional id keeps
+        // voting beside its required one (selfFkReferenceSharingTheTenantColumnCoBindsAfterTheWhereSlot
+        // pins the shape slot by slot).
+        var schema = build(FILM_SCENE_SDL);
+
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertThat(slotNames(schema, "Mutation", "updateFilmSceneParent")).containsExactly("id", "parent");
+    }
+
+    @Test
+    void idsWithNoAnchorBesideThemKeepVoting() {
+        // Nothing else names the tenant, so there is no single tenant to pick: ids that disagree
+        // still refuse.
+        var schema = build(FILM_ACTOR_NODE + """
+            input FilmActorsFilter { ids: [ID!]! @nodeId(typeName: "FilmActor") }
+            type Query {
+                filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
+                filmActorsByFilter(filter: FilmActorsFilter!): [FilmActor!]!
+            }
+            """);
+
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertThat(slotNames(schema, "Query", "filmActorsByNodeId")).containsExactly("ids");
+        assertThat(slotNames(schema, "Query", "filmActorsByFilter")).containsExactly("ids");
+    }
+
     @Test
     void nodeIdFilterInputFieldDivinesTheDecodedSlot() {
         // The filter-input half of the decoded-key read: the nested @nodeId field's slot comes

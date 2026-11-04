@@ -1557,6 +1557,75 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    @Test
+    void readFilteredByNodeIds_idsNamingTwoTenants_isRefusedBeforeAnyConnection() {
+        // Nothing but the ids names the tenant, so there is no one tenant to read: still refused.
+        var result = execute("{ filmActorsByNodeId(ids: [\"" + NodeIdEncoder.encodeFilmActor(10, 1)
+            + "\", \"" + NodeIdEncoder.encodeFilmActor(20, 2) + "\"]) { actorId } }");
+        assertThat(result.getErrors().toString()).contains("Tenant bindings disagree");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("the disagreement precedes acquisition")
+            .isZero();
+    }
+
+    // ===== A filter id beside a required tenant value only filters inside that tenant =====
+
+    private static Map<String, Object> filmActorsWhere(String filter, java.util.Collection<Integer> tenants) {
+        var result = execute("{ filmActorsWhere(filter: " + filter + ", first: 10)"
+            + " { totalCount edges { node { actorId } } } }", tenants);
+        return (Map<String, Object>) data(result, "filmActorsWhere");
+    }
+
+    private static List<Object> actorIds(Map<String, Object> connection) {
+        return ((List<Map<String, Object>>) connection.get("edges")).stream()
+            .map(e -> ((Map<String, Object>) e.get("node")).get("actorId"))
+            .toList();
+    }
+
+    @Test
+    void filterIdsBesideTheTenantValue_aForeignIdMatchesNothing_andTheFieldAnswers() {
+        var connection = filmActorsWhere("{ filmId: 1, actors: [\"" + NodeIdEncoder.encodeFilmActor(10, 1)
+            + "\", \"" + NodeIdEncoder.encodeFilmActor(20, 2) + "\"] }", List.of(1, 2));
+        assertThat(actorIds(connection)).containsExactly(10);
+        assertThat(connection.get("totalCount"))
+            .as("the aggregate runs under the same filter, on the same tenant")
+            .isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get())
+            .as("the id naming tenant 2 decides nothing, so its database is never opened")
+            .isZero();
+    }
+
+    @Test
+    void filterIdsBesideTheTenantValue_onlyForeignIds_answerAnEmptyPage() {
+        var connection = filmActorsWhere("{ filmId: 1, actors: [\""
+            + NodeIdEncoder.encodeFilmActor(20, 2) + "\"] }", List.of(1, 2));
+        assertThat(actorIds(connection)).isEmpty();
+        assertThat(connection.get("totalCount")).isEqualTo(0);
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void filterIdsBesideTheTenantValue_aTenantValueOutsideTheSet_isStillRefused() {
+        // Only the anchor is checked against the request's set; it names a tenant outside it.
+        var result = execute("{ filmActorsWhere(filter: { filmId: 2, actors: [\""
+            + NodeIdEncoder.encodeFilmActor(10, 1) + "\"] }, first: 10) { totalCount } }", List.of(1));
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
+        assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    @Test
+    void nestedChildUnderAnInheritedTenant_aForeignFilterIdMatchesNothing() {
+        // The parent fixes the tenant ahead of any argument, so the filter id was always filter-only.
+        var films = (List<Map<String, Object>>) data(
+            execute("{ films(filmId: 1) { stock { scenesWhere(filter: { scene: \""
+                + NodeIdEncoder.encodeFilmScene(2, 2) + "\" }) { id } } } }"), "films");
+        assertThat(films).hasSize(1);
+        assertThat(scenesWhere(films.get(0))).isEmpty();
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
     // ===== A self-FK reference whose key embeds the tenant: co-bound, agreement-checked =====
 
     @Test

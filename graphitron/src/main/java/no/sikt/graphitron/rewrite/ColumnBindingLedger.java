@@ -41,6 +41,12 @@ import java.util.Objects;
  * asked by an exhaustive switch over the carriers, ahead of every emission guard. The other half,
  * that every predicate the projection emits comes from a slot the ledger holds, is
  * {@link #requireCovers}, run on every schema build.
+ *
+ * <p><b>What became of the predicate.</b> Each slot also states whether its implicit predicate
+ * was emitted, and on which table ({@link ImplicitPredicate}). The fold reads it to let a filter
+ * node id leave the tenant agreement beside a guaranteed slot whose predicate compares the
+ * filtered table's own tenant column; {@link #requireCovers} checks the mark against the emitted
+ * predicates in both directions, so it cannot drift from the SQL.
  */
 public final class ColumnBindingLedger {
 
@@ -50,15 +56,51 @@ public final class ColumnBindingLedger {
      * binds (for a {@code @reference} carrier, the tuple its binding lands on); a list because a
      * node-key carrier binds a tuple. The extraction is the one the predicate carries, so the
      * fold resolves the same read and transform whether or not the predicate was emitted.
+     * {@code predicate} states what became of the slot's implicit predicate, which the fold reads
+     * to decide whether a node id in a filter only filters (see {@link ImplicitPredicate}).
      */
-    public record ColumnBoundSlot(String slotName, List<ColumnRef> columns, CallSiteExtraction extraction) {
+    public record ColumnBoundSlot(String slotName, List<ColumnRef> columns, CallSiteExtraction extraction,
+                                  ImplicitPredicate predicate) {
         public ColumnBoundSlot {
             Objects.requireNonNull(slotName, "slotName");
             Objects.requireNonNull(extraction, "extraction");
+            Objects.requireNonNull(predicate, "predicate");
             columns = List.copyOf(columns);
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException("ColumnBoundSlot '" + slotName + "' binds no column");
             }
+        }
+    }
+
+    /**
+     * What became of a filter slot's implicit predicate, decided where the projection decides
+     * emission. Three arms rather than two flags, because a suppressed predicate binds no table
+     * at all.
+     */
+    public enum ImplicitPredicate {
+        /**
+         * Not emitted: an authored {@code @condition} owns the slot (an enclosing
+         * {@code override: true}, an input field's own {@code @condition}, or a field whose name
+         * resolved a column but whose condition is the whole predicate). The authored method is
+         * opaque, so nothing shows which columns it compares.
+         */
+        SUPPRESSED,
+        /**
+         * Emitted as a plain predicate on the filtered table's own columns: a column-backed
+         * argument or input field, or a {@code @reference} whose binding lifts onto own-table
+         * columns ({@link no.sikt.graphitron.rewrite.model.FilterBinding.Local}).
+         */
+        OWN_TABLE,
+        /**
+         * Emitted inside a correlated {@code EXISTS} over a
+         * {@link no.sikt.graphitron.rewrite.model.FilterBinding.Remote} reference, so it compares
+         * columns on the reached table rather than the filtered one.
+         */
+        REACHED;
+
+        /** Whether the projection emitted a predicate for the slot. */
+        public boolean emitted() {
+            return this != SUPPRESSED;
         }
     }
 
@@ -120,20 +162,24 @@ public final class ColumnBindingLedger {
     }
 
     /**
-     * Every emitted predicate has its slot: for every condition member of {@code members}, and of
-     * every nested instance under a {@link ChildField.NestingField} in {@code fields} (whose
-     * members are leaf-local, {@link OperationMembers#membersOf}), each {@link BodyParam} of its
+     * Every emitted predicate has its slot, and every slot states truthfully whether its predicate
+     * was emitted: for every condition member of {@code members}, and of every nested instance
+     * under a {@link ChildField.NestingField} in {@code fields} (whose members are leaf-local,
+     * {@link OperationMembers#membersOf}), each {@link BodyParam} of its
      * {@link GeneratedConditionFilter}s (unwrapping {@link BodyParam.RemoteColumnPredicate}) must
      * have a slot in the row at the member's {@code (coordinate, table)} with the same name, the
-     * same columns and an equal extraction. The extraction is compared because it is half of what
-     * the tenant fold reads, and the fold reads nested instances as well as flat coordinates.
+     * same columns and an equal extraction, marked {@link ImplicitPredicate#REACHED} when the
+     * param is a remote predicate and {@link ImplicitPredicate#OWN_TABLE} otherwise. The
+     * extraction is compared because it is half of what the tenant fold reads, and the fold reads
+     * nested instances as well as flat coordinates.
      *
-     * <p>Containment in one direction only: a row may hold slots beyond the body params, which is
-     * where the suppressed bindings live. The check reads body params to verify coverage; nothing
-     * reads them to classify.
+     * <p>Conversely, a slot of that row marked emitted must be matched by one of the member's
+     * body params, so a slot marked emitted whose predicate is absent fails as surely as a
+     * predicate with no slot. The suppressed slots are the ones no body param matches. The check
+     * reads body params to verify the ledger; nothing reads them to classify.
      *
      * @throws IllegalStateException naming the coordinate, table and slot of the first predicate
-     *     with no matching slot
+     *     with no matching slot, or of the first slot whose mark disagrees with the predicates
      */
     public void requireCovers(OperationMemberRelation members, Map<FieldCoordinates, GraphitronField> fields) {
         for (var entry : members.byCoordinate().entrySet()) {
@@ -160,19 +206,26 @@ public final class ColumnBindingLedger {
         for (OperationMember member : members) {
             if (!(member instanceof OperationMember.Condition condition)) continue;
             var row = slotsAt(coordinate, condition.table());
+            var matched = new java.util.HashSet<ColumnBoundSlot>();
             for (WhereFilter filter : condition.filters()) {
                 if (!(filter instanceof GeneratedConditionFilter gcf)) continue;
                 for (BodyParam param : gcf.bodyParams()) {
-                    requireSlot(coordinate, condition.table(), row, predicateOf(param));
+                    var mark = param instanceof BodyParam.RemoteColumnPredicate
+                        ? ImplicitPredicate.REACHED : ImplicitPredicate.OWN_TABLE;
+                    for (var expected : expectedSlots(predicateOf(param), mark)) {
+                        requireSlot(coordinate, condition.table(), row, predicateOf(param), expected);
+                        matched.add(expected);
+                    }
                 }
             }
-        }
-    }
-
-    private static void requireSlot(FieldCoordinates coordinate, TableRef table,
-                                    List<ColumnBoundSlot> row, BodyParam.ColumnPredicate predicate) {
-        for (var expected : expectedSlots(predicate)) {
-            requireSlot(coordinate, table, row, predicate, expected);
+            for (var slot : row) {
+                if (slot.predicate().emitted() && !matched.contains(slot)) {
+                    throw new IllegalStateException("generator invariant failure: '" + render(coordinate)
+                        + "' on table '" + condition.table().tableName() + "' records slot '"
+                        + slot.slotName() + "' as emitting its implicit predicate, but no generated"
+                        + " predicate reads it (slot " + slot + ")");
+                }
+            }
         }
     }
 
@@ -181,10 +234,12 @@ public final class ColumnBindingLedger {
      * list-of-input filter's row read: its element fields are recorded one slot each, at their own
      * path below the list, and the row-IN compares exactly those cells.
      */
-    private static List<ColumnBoundSlot> expectedSlots(BodyParam.ColumnPredicate predicate) {
+    private static List<ColumnBoundSlot> expectedSlots(BodyParam.ColumnPredicate predicate,
+                                                       ImplicitPredicate mark) {
         var rows = CallSiteExtraction.ElementRows.of(predicate.extraction());
         if (rows == null) {
-            return List.of(new ColumnBoundSlot(predicate.name(), columnsOf(predicate), predicate.extraction()));
+            return List.of(new ColumnBoundSlot(predicate.name(), columnsOf(predicate), predicate.extraction(),
+                mark));
         }
         String outer = predicate.extraction() instanceof CallSiteExtraction.NestedInputField nif
             ? nif.outerArgName() : predicate.name();
@@ -195,7 +250,7 @@ public final class ColumnBindingLedger {
             var path = new java.util.ArrayList<>(listPath);
             path.addAll(cell.path());
             out.add(new ColumnBoundSlot(cell.path().get(cell.path().size() - 1), List.of(cell.column()),
-                new CallSiteExtraction.NestedInputField(outer, path, cell.leaf())));
+                new CallSiteExtraction.NestedInputField(outer, path, cell.leaf()), mark));
         }
         return out;
     }

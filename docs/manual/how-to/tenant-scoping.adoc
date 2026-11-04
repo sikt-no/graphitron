@@ -109,6 +109,18 @@ The call then routes on that value, which must have your tenant key's Java type.
 
 A node id (and a federation representation) carries its tenant inside the key, and what happens next turns on where it arrives. At a dispatch surface (`node`, `nodes`, `_entities`) the batch partitions per decoded tenant, one statement per tenant. Fields below a node or entity that dispatch resolved read from that node's tenant, so a `nodes` batch spanning tenants keeps each node's subtree on its own database. Anywhere else, a write keyed by ids or a filter reading them, the call is one statement on one connection, so every id in it must decode to the same tenant; a call mixing tenants is refused before any SQL runs, naming the disagreement. This includes a reference id on an update input. An update that repoints a row at a parent in the same table, where the parent's key carries the tenant, is fine as long as the parent lives in the row's own tenant; if it does not, the call is refused the same way. An update never moves a row between tenants, so an input field that writes the tenant column itself is a build error. The asymmetry is the one between reads and writes: a read can be split across databases, and a write cannot.
 
+A filter is the one exception, when the same filter also takes a required tenant value that it compares against the table's own tenant column. That value decides the tenant, and the ids only filter inside it: an id naming another tenant matches no row, as an id that exists nowhere would, and the field answers without an error. With
+
+[source,graphql]
+----
+input FilmActorFilter {
+    filmId: Int! @field(name: "film_id")   # the tenant column
+    actors: [ID!] @nodeId(typeName: "FilmActor")
+}
+----
+
+`filmActors(filter: { filmId: 1, actors: [...] })` reads tenant 1 and returns only the listed actors that belong to it. The exception covers ids the client may leave out, compared by the predicate Graphitron writes. An id whose predicate your own `@condition` takes over still has to agree with the tenant value, because Graphitron cannot see what your condition compares, and so do the ids of a write.
+
 A federation key that cannot carry the tenant column, such as a username unique only within one institution, names no tenant to route on, and such an entity type is a build error unless you mark it xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`]: `_entities` then resolves its representations on the request's entity default tenant (§2, "Naming the tenant for `@defaultTenant` entities"), matching only that tenant's rows.
 
 == 3. Fan a field out across tenants

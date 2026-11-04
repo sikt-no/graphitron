@@ -2984,7 +2984,7 @@ class FieldBuilder {
         path.add(outerArgName);
         path.addAll(leafPath);
         return new SuppressedSlot(containerSummary + ": input field '" + f.name() + "'",
-            List.copyOf(path), boundColumns(columnBindingOf(f, outerArgName, leafPath)),
+            List.copyOf(path), boundColumns(columnBindingOf(f, outerArgName, leafPath, true)),
             f.qualifiedName(), f.location());
     }
 
@@ -3268,8 +3268,7 @@ class FieldBuilder {
                     hadError = true;
                 }
                 case ArgumentRef.ScalarArg.ColumnBackedArg ca -> {
-                    boolean autoSuppressed = ca.suppressedByFieldOverride()
-                        || (ca.argCondition().isPresent() && ca.argCondition().get().override());
+                    boolean autoSuppressed = !implicitPredicateOf(ca).emitted();
                     if (ca.suppressedByFieldOverride() && ca.argCondition().isEmpty() && !ca.isLookupKey()) {
                         suppressedSlots.add(suppressedArgument(ca, fieldDef, useSiteCoordinate));
                     }
@@ -3311,8 +3310,7 @@ class FieldBuilder {
                     // own table and BodyParam.Eq / In binds it with no JOIN. Remote means the FK
                     // targets something else, so the predicate binds the key column on the target
                     // table inside a correlated EXISTS.
-                    boolean autoSuppressed = cra.suppressedByFieldOverride()
-                        || (cra.argCondition().isPresent() && cra.argCondition().get().override());
+                    boolean autoSuppressed = !implicitPredicateOf(cra).emitted();
                     if (cra.suppressedByFieldOverride() && cra.argCondition().isEmpty()) {
                         suppressedSlots.add(suppressedArgument(cra, fieldDef, useSiteCoordinate));
                     }
@@ -3331,8 +3329,7 @@ class FieldBuilder {
                     // RowEq / RowIn predicate over the whole tuple: the lifted tuple on the field's
                     // own table when the binding is Local, the target's key columns inside the
                     // EXISTS when it is Remote.
-                    boolean autoSuppressed = ccra.suppressedByFieldOverride()
-                        || (ccra.argCondition().isPresent() && ccra.argCondition().get().override());
+                    boolean autoSuppressed = !implicitPredicateOf(ccra).emitted();
                     if (ccra.suppressedByFieldOverride() && ccra.argCondition().isEmpty()) {
                         suppressedSlots.add(suppressedArgument(ccra, fieldDef, useSiteCoordinate));
                     }
@@ -3430,7 +3427,7 @@ class FieldBuilder {
             // which SQL is emitted. The lookup clause stays: a lookup-bound field is not on the
             // predicate path at all, and the lookup mapping owns its tenant slot.
             if (!lookupBoundNames.contains(f.name())) {
-                columnBindingOf(f, outerArgName, leafPath).ifPresent(columnSlots::add);
+                columnBindingOf(f, outerArgName, leafPath, enclosingOverride).ifPresent(columnSlots::add);
             }
             switch (f) {
                 case InputField.ColumnBackedField cf -> {
@@ -3438,8 +3435,7 @@ class FieldBuilder {
                     if (enclosingOverride && cf.condition().isEmpty() && !lookupBoundNames.contains(cf.name())) {
                         suppressedSlots.add(suppressedField(cf, containerSummary, outerArgName, leafPath));
                     }
-                    if (!enclosingOverride
-                            && cf.condition().isEmpty()
+                    if (implicitPredicateOf(cf, enclosingOverride).emitted()
                             && !lookupBoundNames.contains(cf.name())) {
                         // The leaf extraction (Direct or NodeIdDecodeKeys.*) flows through to the
                         // BodyParam via NestedInputField(outer, path, leaf), so the call-site
@@ -3487,8 +3483,7 @@ class FieldBuilder {
                     if (enclosingOverride && rf.condition().isEmpty() && !lookupBoundNames.contains(rf.name())) {
                         suppressedSlots.add(suppressedField(rf, containerSummary, outerArgName, leafPath));
                     }
-                    if (!enclosingOverride
-                            && rf.condition().isEmpty()
+                    if (implicitPredicateOf(rf, enclosingOverride).emitted()
                             && !lookupBoundNames.contains(rf.name())) {
                         // The binding names the table the predicate binds against: a Local tuple on
                         // the parent's own table (a direct FK-target @nodeId's lift, or a plain
@@ -3708,7 +3703,7 @@ class FieldBuilder {
             var cellPath = new ArrayList<>(elementPrefix);
             cellPath.add(f.name());
             if (!lookupBoundNames.contains(f.name())) {
-                columnBindingOf(f, outerArgName, leafPath).ifPresent(columnSlots::add);
+                columnBindingOf(f, outerArgName, leafPath, suppressed).ifPresent(columnSlots::add);
             }
             String refusal = switch (f) {
                 case InputField.ColumnBackedField cf when cf.condition().isPresent() -> CONDITION_IN_ELEMENT;
@@ -4016,18 +4011,21 @@ class FieldBuilder {
      * <p>A {@code @lookupKey} argument answers nothing: it is not on the predicate path, and the
      * lookup mapping owns its tenant slot (including a decoded key, whose ids each carry their
      * own tenant). The input arguments answer nothing here because their fields answer in
-     * {@link #walkInputFieldConditions}.
+     * {@link #walkInputFieldConditions}. The slot's {@link ColumnBindingLedger.ImplicitPredicate}
+     * is {@link #implicitPredicateOf(ArgumentRef.ScalarArg.ColumnBackedArg)}, the same answer the
+     * projection's emission guard reads.
      */
     private static Optional<ColumnBindingLedger.ColumnBoundSlot> columnBindingOf(ArgumentRef ref) {
         return switch (ref) {
             case ArgumentRef.ScalarArg.ColumnBackedArg ca -> ca.isLookupKey()
                 ? Optional.empty()
                 : Optional.of(new ColumnBindingLedger.ColumnBoundSlot(
-                    ca.name(), ca.columns(), ca.extraction()));
+                    ca.name(), ca.columns(), ca.extraction(), implicitPredicateOf(ca)));
             // No lookup flag: an FK target is a filter, not a lookup.
             case ArgumentRef.ScalarArg.ColumnBackedReferenceArg cra ->
                 Optional.of(new ColumnBindingLedger.ColumnBoundSlot(
-                    cra.name(), predicateColumns(cra.binding(), cra.columns()), cra.extraction()));
+                    cra.name(), predicateColumns(cra.binding(), cra.columns()), cra.extraction(),
+                    implicitPredicateOf(cra)));
             case ArgumentRef.ScalarArg.ConditionOwnedArg ignored -> Optional.empty();
             case ArgumentRef.ScalarArg.UnboundArg ignored -> Optional.empty();
             case ArgumentRef.UnclassifiedArg ignored -> Optional.empty();
@@ -4042,21 +4040,24 @@ class FieldBuilder {
      * Which columns an input field binds at one use site, asked ahead of the emission decision so
      * an enclosing {@code override: true} or the field's own {@code @condition} (either override
      * value) leaves the binding in place. The extraction is the
-     * {@link CallSiteExtraction.NestedInputField} the field's implicit predicate would carry. A
+     * {@link CallSiteExtraction.NestedInputField} the field's implicit predicate would carry, and
+     * the slot's {@link ColumnBindingLedger.ImplicitPredicate} is
+     * {@link #implicitPredicateOf(InputField, boolean)} under {@code enclosingSuppressed}. A
      * {@link InputField.ConditionOwnedField} answers with the column its name resolved, when one
      * did; a nesting field's own fields answer on the recursive visit.
      */
     private static Optional<ColumnBindingLedger.ColumnBoundSlot> columnBindingOf(
-            InputField field, String outerArgName, List<String> leafPath) {
+            InputField field, String outerArgName, List<String> leafPath, boolean enclosingSuppressed) {
+        var predicate = implicitPredicateOf(field, enclosingSuppressed);
         return switch (field) {
             case InputField.ColumnBackedField cf -> Optional.of(nestedSlot(
-                cf.name(), cf.columns(), cf.extraction(), cf.typeName(), outerArgName, leafPath));
+                cf.name(), cf.columns(), cf.extraction(), cf.typeName(), outerArgName, leafPath, predicate));
             case InputField.ColumnBackedReferenceField rf -> Optional.of(nestedSlot(
                 rf.name(), predicateColumns(rf.binding(), rf.columns()), rf.extraction(),
-                rf.typeName(), outerArgName, leafPath));
+                rf.typeName(), outerArgName, leafPath, predicate));
             case InputField.ConditionOwnedField cof -> cof.resolvedColumn().map(column -> nestedSlot(
                 cof.name(), List.of(column), new CallSiteExtraction.Direct(), cof.typeName(),
-                outerArgName, leafPath));
+                outerArgName, leafPath, predicate));
             case InputField.NestingField ignored -> Optional.empty();
             case InputField.UnboundField ignored -> Optional.empty();
         };
@@ -4064,10 +4065,63 @@ class FieldBuilder {
 
     private static ColumnBindingLedger.ColumnBoundSlot nestedSlot(
             String name, List<ColumnRef> columns, CallSiteExtraction leaf, String graphqlTypeName,
-            String outerArgName, List<String> leafPath) {
+            String outerArgName, List<String> leafPath, ColumnBindingLedger.ImplicitPredicate predicate) {
         return new ColumnBindingLedger.ColumnBoundSlot(name, columns,
             new CallSiteExtraction.NestedInputField(outerArgName, List.copyOf(leafPath),
-                implicitLeaf(leaf, graphqlTypeName, columns.get(0))));
+                implicitLeaf(leaf, graphqlTypeName, columns.get(0))),
+            predicate);
+    }
+
+    /**
+     * What becomes of a column-bound argument's implicit predicate: suppressed by a field-level
+     * {@code override: true} or by its own {@code @condition(override: true)}, otherwise emitted on
+     * the table its {@link FilterBinding} names. The projection's emission guard and the ledger
+     * slot both read this one answer, so the slot cannot disagree with what is emitted.
+     */
+    private static ColumnBindingLedger.ImplicitPredicate implicitPredicateOf(
+            ArgumentRef.ScalarArg.ColumnBackedArg ca) {
+        return implicitPredicateOf(ca.suppressedByFieldOverride()
+            || ca.argCondition().map(ArgConditionRef::override).orElse(false), ca.binding());
+    }
+
+    /** {@link #implicitPredicateOf(ArgumentRef.ScalarArg.ColumnBackedArg)} for an FK-target argument. */
+    private static ColumnBindingLedger.ImplicitPredicate implicitPredicateOf(
+            ArgumentRef.ScalarArg.ColumnBackedReferenceArg cra) {
+        return implicitPredicateOf(cra.suppressedByFieldOverride()
+            || cra.argCondition().map(ArgConditionRef::override).orElse(false), cra.binding());
+    }
+
+    /**
+     * What becomes of an input field's implicit predicate at one use site: suppressed under an
+     * enclosing {@code override: true} ({@code enclosingSuppressed}) or by the field's own
+     * {@code @condition} (either override value), and always for a
+     * {@link InputField.ConditionOwnedField}, whose method is the whole predicate; otherwise
+     * emitted, on the filtered table's own columns unless a {@link FilterBinding.Remote} reference
+     * reaches another table. A lookup-bound field is decided apart, since it records no slot.
+     */
+    private static ColumnBindingLedger.ImplicitPredicate implicitPredicateOf(
+            InputField field, boolean enclosingSuppressed) {
+        return switch (field) {
+            case InputField.ColumnBackedField cf -> enclosingSuppressed || cf.condition().isPresent()
+                ? ColumnBindingLedger.ImplicitPredicate.SUPPRESSED
+                : ColumnBindingLedger.ImplicitPredicate.OWN_TABLE;
+            case InputField.ColumnBackedReferenceField rf ->
+                implicitPredicateOf(enclosingSuppressed || rf.condition().isPresent(), rf.binding());
+            case InputField.ConditionOwnedField ignored -> ColumnBindingLedger.ImplicitPredicate.SUPPRESSED;
+            case InputField.NestingField ignored -> ColumnBindingLedger.ImplicitPredicate.SUPPRESSED;
+            case InputField.UnboundField ignored -> ColumnBindingLedger.ImplicitPredicate.SUPPRESSED;
+        };
+    }
+
+    private static ColumnBindingLedger.ImplicitPredicate implicitPredicateOf(boolean suppressed,
+                                                                              FilterBinding binding) {
+        if (suppressed) {
+            return ColumnBindingLedger.ImplicitPredicate.SUPPRESSED;
+        }
+        return switch (binding) {
+            case FilterBinding.Local ignored -> ColumnBindingLedger.ImplicitPredicate.OWN_TABLE;
+            case FilterBinding.Remote ignored -> ColumnBindingLedger.ImplicitPredicate.REACHED;
+        };
     }
 
     /**

@@ -1697,28 +1697,57 @@ public record TenantBindingIndex(
         }
 
         /**
+         * Where a condition member's slot was minted: the member's filtered {@code table}, and
+         * what became of the slot's implicit predicate there ({@link ColumnBindingLedger.ImplicitPredicate}).
+         */
+        private record FilterMint(TableRef table, ColumnBindingLedger.ImplicitPredicate predicate) {}
+
+        /**
+         * One mint of a slot name, deduped or not: its resolved read and projection, and its
+         * {@link FilterMint} when a condition member minted it, null for every other member
+         * (a lookup, a write, a service-call parameter).
+         */
+        private record Mint(String slotName, SlotAccess.Resolved access, FilterMint filter) {}
+
+        /**
          * Accumulates one coordinate's slots, declines and tenant evidence, deduping slots by name.
          * Every mint site funnels through {@link #add}, which is where a slot's presence is read off
          * the coordinate's own field definition, so no mint site decides it on its own.
+         *
+         * <p>Every mint of a name is remembered beside the deduped slot, with where it came from,
+         * so {@link #result(boolean)} can tell a node id that only filters from one that also
+         * keys a lookup, a write or a service call (see {@link #stepsDown}).
          */
         private static final class SlotCollector {
             private final GraphQLFieldDefinition definition;
             private final List<TenantBinding.BoundSlot> slots = new ArrayList<>();
             private final List<String> declines = new ArrayList<>();
             private final List<String> evidence = new ArrayList<>();
-            private final Set<String> seenNames = new HashSet<>();
+            private final Map<String, List<Mint>> mints = new HashMap<>();
 
             SlotCollector(GraphQLFieldDefinition definition) {
                 this.definition = definition;
             }
 
             void add(String slotName, SlotAccess access) {
+                add(slotName, access, null);
+            }
+
+            /** {@link #add(String, SlotAccess)} for a condition member's column-bound slot. */
+            void addFilter(String slotName, SlotAccess access, TableRef table,
+                           ColumnBindingLedger.ImplicitPredicate predicate) {
+                add(slotName, access, new FilterMint(table, predicate));
+            }
+
+            private void add(String slotName, SlotAccess access, FilterMint filter) {
                 switch (access) {
                     case SlotAccess.Resolved r -> {
-                        if (seenNames.add(slotName)) {
+                        var seen = mints.computeIfAbsent(slotName, k -> new ArrayList<>());
+                        if (seen.isEmpty()) {
                             slots.add(new TenantBinding.BoundSlot(slotName, r.read(), r.projection(),
-                                slotPresence(definition, slotName, r.read())));
+                                presenceOf(slotName, r)));
                         }
+                        seen.add(new Mint(slotName, r, filter));
                     }
                     case SlotAccess.Declined d -> decline(d.detail());
                 }
@@ -1736,10 +1765,64 @@ public record TenantBindingIndex(
                 }
             }
 
-            DirectBinding result() {
-                return slots.isEmpty() && declines.isEmpty() && evidence.isEmpty()
+            /**
+             * The collected binding, with every filter node id that steps down left out when
+             * {@code onlyReads} (the site's members include no write and no service call).
+             * Pruning never empties the slots: a slot steps down only beside an anchor, which
+             * stays, so the {@link Reading} the binding takes does not change.
+             */
+            DirectBinding result(boolean onlyReads) {
+                var kept = onlyReads
+                    ? slots.stream().filter(slot -> !stepsDown(slot.slotName())).toList()
+                    : slots;
+                return kept.isEmpty() && declines.isEmpty() && evidence.isEmpty()
                     ? DirectBinding.NONE
-                    : new DirectBinding(List.copyOf(slots), List.copyOf(declines), List.copyOf(evidence));
+                    : new DirectBinding(List.copyOf(kept), List.copyOf(declines), List.copyOf(evidence));
+            }
+
+            /**
+             * Whether the slot named {@code slotName} only filters inside a tenant another slot
+             * already fixes, and so leaves the agreement fold while its predicate still filters.
+             * Every mint of the name must be a node id ({@link TenantBinding.SlotProjection.DecodedKeySlot})
+             * the client may leave out or send through a list, minted by a condition member whose
+             * implicit predicate graphitron emitted; and on every table it was minted on, an
+             * anchor must stand beside it: a {@linkplain TenantBinding.SlotPresence.Guaranteed
+             * guaranteed} slot whose emitted predicate compares that table's own tenant column
+             * ({@link ColumnBindingLedger.ImplicitPredicate#OWN_TABLE}). The anchor's predicate is
+             * ANDed with the id's, so a row whose id names another tenant carries that tenant in
+             * the column the anchor compares and is excluded, whatever database it lives in.
+             *
+             * <p>A name a lookup, a write or a service call also minted keeps voting, as does one
+             * an authored {@code @condition} suppressed: that method is opaque, so nothing shows
+             * the id is compared at all.
+             */
+            private boolean stepsDown(String slotName) {
+                for (var mint : mints.get(slotName)) {
+                    if (mint.filter() == null
+                            || !mint.filter().predicate().emitted()
+                            || !(mint.access().projection() instanceof TenantBinding.SlotProjection.DecodedKeySlot)
+                            || guaranteed(mint)
+                            || !anchoredOn(mint.filter().table())) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            private boolean anchoredOn(TableRef table) {
+                return mints.values().stream().flatMap(List::stream).anyMatch(m ->
+                    m.filter() != null
+                        && m.filter().table().equals(table)
+                        && m.filter().predicate() == ColumnBindingLedger.ImplicitPredicate.OWN_TABLE
+                        && guaranteed(m));
+            }
+
+            private boolean guaranteed(Mint mint) {
+                return presenceOf(mint.slotName(), mint.access()) instanceof TenantBinding.SlotPresence.Guaranteed;
+            }
+
+            private TenantBinding.SlotPresence presenceOf(String slotName, SlotAccess.Resolved access) {
+                return slotPresence(definition, slotName, access.read());
             }
         }
 
@@ -1755,13 +1838,20 @@ public record TenantBindingIndex(
          * parameters. Deduped by slot name across members (the same
          * argument typically binds on every polymorphic participant, and one slot per name
          * suffices for the agreement fold).
+         *
+         * <p>On a field that only reads (no {@code WRITE} and no {@code SERVICE_CALL} member), a
+         * node id that only filters beside an anchor on its own table is left out of the slots
+         * ({@link SlotCollector#stepsDown}): the anchor decides the tenant and its predicate keeps
+         * another tenant's rows out, so an id naming another tenant matches nothing rather than
+         * failing the field. A write keeps every slot, because one statement across two tenants
+         * has no correct execution; so does a service, whose SQL is opaque.
          */
         private DirectBinding directBinding(Site site) {
             var collector = new SlotCollector(fieldDefinition(site.coord()));
             for (OperationMember member : site.members()) {
                 switch (member) {
-                    case OperationMember.Condition c ->
-                        collectFromColumnBindings(columnBindings.slotsAt(site.coord(), c.table()), collector);
+                    case OperationMember.Condition c -> collectFromColumnBindings(
+                        c.table(), columnBindings.slotsAt(site.coord(), c.table()), collector);
                     case OperationMember.Lookup l -> collectFromLookup(l.lookupMapping(), collector);
                     case OperationMember.Write.Insert i -> collectFromTableInput(i.input(), collector);
                     case OperationMember.Write.Upsert u -> collectFromTableInput(u.input(), collector);
@@ -1775,7 +1865,8 @@ public record TenantBindingIndex(
             }
             // A @routine write contributes nothing here: its only member is the routine call,
             // which carries no filter, lookup or input surface, so it mints no slot at all.
-            return collector.result();
+            return collector.result(!hasKind(site.members(), OperationMember.Kind.WRITE)
+                && !hasKind(site.members(), OperationMember.Kind.SERVICE_CALL));
         }
 
         /**
@@ -1805,13 +1896,13 @@ public record TenantBindingIndex(
          * index; an arity-1 slot reads index 0. A {@code @reference}-reached tenant column divines
          * the operation's tenant exactly as a local one does.
          */
-        private void collectFromColumnBindings(List<ColumnBindingLedger.ColumnBoundSlot> slots,
+        private void collectFromColumnBindings(TableRef table, List<ColumnBindingLedger.ColumnBoundSlot> slots,
                                                SlotCollector collector) {
             for (var slot : slots) {
                 for (int i = 0; i < slot.columns().size(); i++) {
                     if (matchesTenantColumn(slot.columns().get(i))) {
-                        collector.add(slot.slotName(), accessOf(slot.extraction(),
-                            TenantBinding.SlotRead.TopLevelArg.INSTANCE, i));
+                        collector.addFilter(slot.slotName(), accessOf(slot.extraction(),
+                            TenantBinding.SlotRead.TopLevelArg.INSTANCE, i), table, slot.predicate());
                     }
                 }
             }
