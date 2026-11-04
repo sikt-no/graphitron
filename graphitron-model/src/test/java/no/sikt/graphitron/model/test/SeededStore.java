@@ -18,7 +18,6 @@ import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
-import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import org.jooq.DSLContext;
 
@@ -156,7 +155,6 @@ public final class SeededStore {
             SpelledTables.derive(dsl, graph);
             FieldReferenceStepHops.deriveKeyed(dsl, graph);
             FieldReferenceStepHops.deriveKeyless(dsl, graph);
-            ResolvedTypeBindings.derive(dsl, graph);
             FieldReferenceStepTargets.derive(dsl, graph);
             // The derivation stratum's stages, after the gatherer's own above because that is
             // where each one's rule reads from, in the order DerivationStratum runs them. The

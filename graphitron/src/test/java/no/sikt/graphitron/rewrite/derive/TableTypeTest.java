@@ -10,12 +10,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
-import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -76,31 +74,6 @@ class TableTypeTest {
                     .fetchOne(GRAPHITRON_TABLE_ENTRY.TABLE_REF))
                 .as("the entry is the input; a bare @table wrote no name and the column says so")
                 .isNull();
-        }
-    }
-
-    @Test
-    @DisplayName("the settled bindings are exactly the derivation's unambiguous rows")
-    void theSettledBindingsAgreeWithTheDerivation() {
-        try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq())) {
-            var dsl = store.dsl();
-            var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
-            List<String> derived = dsl
-                .select(b.TYPE_NAME, b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME).from(b)
-                .where(b.GRAPH_NAME.eq(GRAPH)).and(b.CANDIDATES.eq(1))
-                .fetch(r -> r.value1() + "|" + r.value2() + "|" + r.value3() + "|" + r.value4());
-            var t = GRAPHITRON_TABLETYPE;
-            List<String> captured = dsl
-                .select(t.TYPE_NAME, t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME).from(t)
-                .where(t.GRAPH_NAME.eq(GRAPH))
-                .fetch(r -> r.value1() + "|" + r.value2() + "|" + r.value3() + "|" + r.value4());
-
-            assertThat(captured)
-                .as("the fixture has to bind something, or this compares two empty sets")
-                .isNotEmpty();
-            assertThat(captured)
-                .as("every settled binding the derivation reports, and no others")
-                .containsExactlyInAnyOrderElementsOf(derived);
         }
     }
 

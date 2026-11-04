@@ -416,7 +416,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argument_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_connection_element_type", Arm.DERIVED);
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
-        registrations.put("graphitron_resolved_type_binding", Arm.DERIVED);
         registrations.put("graphitron_type_backing", Arm.DERIVED);
         registrations.put("graphitron_type_backing_rule", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);

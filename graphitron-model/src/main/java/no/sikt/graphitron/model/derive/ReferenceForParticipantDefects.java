@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_APPLICATION;
@@ -80,7 +80,7 @@ public final class ReferenceForParticipantDefects {
      * table-bound members.
      */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_FIELD_TARGET,
-        GRAPHQL_POLY_MEMBER, GRAPHITRON_RESOLVED_TYPE_BINDING, INTENT_INPUT_OCCURRENCE_PATH, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
+        GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, INTENT_INPUT_OCCURRENCE_PATH, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY, GRAPHITRON_REFERENCE_FOR_ENTRY);
 
     /**
@@ -205,13 +205,12 @@ public final class ReferenceForParticipantDefects {
                                                String typeName, String fieldName) {
         var ft = GRAPHITRON_FIELD_TARGET;
         var m = GRAPHQL_POLY_MEMBER;
-        var bt = GRAPHITRON_RESOLVED_TYPE_BINDING;
-        var cb = GRAPHITRON_RESOLVED_TYPE_BINDING.as("cb");
+        var bt = GRAPHITRON_TABLETYPE;
+        var cb = GRAPHITRON_TABLETYPE.as("cb");
         return dsl.selectDistinct(m.MEMBER_TYPE_NAME)
             .from(ft)
             .join(m).on(m.GRAPH_NAME.eq(ft.GRAPH_NAME), m.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME))
-            .join(bt).on(bt.GRAPH_NAME.eq(m.GRAPH_NAME), bt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME),
-                bt.CANDIDATES.eq(1))
+            .join(bt).on(bt.GRAPH_NAME.eq(m.GRAPH_NAME), bt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME))
             .where(ft.GRAPH_NAME.eq(graphName), ft.TYPE_NAME.eq(typeName), ft.FIELD_NAME.eq(fieldName))
             .andNotExists(selectOne().from(cb)
                 .where(cb.GRAPH_NAME.eq(ft.GRAPH_NAME), cb.TYPE_NAME.eq(ft.TARGET_TYPE_NAME)))

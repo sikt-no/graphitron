@@ -547,8 +547,7 @@ pass and no stratum that clears and recomputes.
 * **`GraphitronAssemblyCapture` is gone, its steps the anchor's own lines** `blocked`, on the child
   below and on "Nothing resolves a path but the walk".
   * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
-    `NodeIdCandidates` and `SpelledTables`; the path steps go with the walk, and `ResolvedTypeBindings`
-    with its relation.
+    `NodeIdCandidates` and `SpelledTables`; the path steps go with the walk.
 * **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
@@ -701,10 +700,6 @@ classified records have no reader left and can go with the walk.
   the table-bound types their members return, a cost accepted until this lands. Its merge is the
   build's second costliest statement to plan, 235 ms a prepare and 221 CPU-seconds over a
   `graphitron` test phase, reaching 29 relations through 3 views (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
-* **`graphitron_resolved_type_binding` dissolves into `graphitron_tabletype`** `open`, G's. It restates
-  `intent_bound_table`, cleared and refilled, where the anchor already binds a type to one table;
-  its readers read `graphitron_tabletype`, an ambiguous or an input type's `@table` being no binding,
-  and `ResolvedTypeBindings` goes.
 * **A routine's result is an object of its function's record class** `open`, off the critical path. An unbound type a
   `@routine` returns is a result, an OBJECT whose class is the function's record off
   `sql_table.record_class_fqn`, whether the routine is a producer (a root, `@splitQuery`, under an
@@ -737,7 +732,7 @@ classified records have no reader left and can go with the walk.
   `intent_authored_field_claim`, `intent_column_match_claim` and `intent_resolved_field_claim`
   dissolve.
 * **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
-  `TypeMemberScope` read `graphitron_resolved_type_binding` or `graphitron_result_table` instead of
+  `TypeMemberScope` read `graphitron_tabletype` or `graphitron_result_table` instead of
   `intent_bound_table`, and `EditorReadsNoViewTest` takes another control.
 * **The directive-argument hover reads a stored relation** `open`. `FieldColumnTable`, behind the
   completion, hover and member diagnostic at a `@field(name:)` or `@defaultOrder` site, reads a
@@ -1548,7 +1543,7 @@ that depend on the parent fall three ways.
   ** `graphitron_field_target_table`: the arriving type is the declared target, or each member of a
      single-table interface, read off `graphitron_field_target`, `graphql_poly_member` and
      `graphitron_tabletype`; the needs carry one per member.
-  ** `graphitron_resolved_type_binding`: `graphitron_tabletype`, by its own node.
+  ** `graphitron_resolved_type_binding`: dissolved into `graphitron_tabletype` (2026-11-04).
   ** `graphitron_join_path_claim` is already keyed by the declared element and target type.
 * Stay keyed on the occurrence, `(graph_name, coordinate)` with a foreign key to it:
   ** `graphitron_occurrence_source`, one per occurrence, and its subtypes on the same key:
@@ -1594,7 +1589,7 @@ that depend on the parent fall three ways.
   ** Its owner is `graphitron`, whose inputs it reads (`graphitron_element`, `graphitron_field`,
      `graphitron_field_target`, `graphitron_tabletype`, `graphitron_argument`, `graphitron_type`).
      A type is table-bound where `graphitron_tabletype` binds it, the anchor's own one-row-per-type
-     binding, not `graphitron_resolved_type_binding`, which restates `intent_bound_table`. It is
+     binding. It is
      written as a step of `GraphitronAssemblyCapture`, ahead of the target table and column, because
      the field targets it reads are written there; it moves with the other steps when that class
      dissolves into the anchor's own lines. Marked and swept.
@@ -2342,6 +2337,11 @@ which now stores it rather than the anchors coalescing to it. Renamed: `SdlEntri
 `SdlEntriesTest` and `SdlSchemaProblemsTest`. The
 gatherer roster row `document` is now `graphql-source`, `graphql-ast`, `graphitron-ast` and
 `graphql-assembly`. Remaining `Sdl` names belong to the incumbent walk and go when it does.
+
+**The resolved type binding.** `graphitron_resolved_type_binding`, its writer `ResolvedTypeBindings`,
+its index `ix_resolved_type_binding_type` and its grain `resolved-type-binding` went into
+`graphitron_tabletype`, which binds a type to its one table and an ambiguous `@table` to none; with
+them the `candidates = 1` guard every reader applied, and `TableTypeTest`'s parity check.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

@@ -22,7 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
@@ -149,14 +149,11 @@ final class InlayFacts {
     record BackingRow(String typeName, String className) {}
 
     /**
-     * One table a type's {@code @table} resolves to.
-     *
-     * @param candidates the binding's own arity, read from the relation rather than counted here,
-     *                   which is what lets an overlay refuse to speak where two tables answer to one name
+     * The one table a type's {@code @table} resolves to; a spelling two tables answer to binds none,
+     * its defect saying so.
      */
     record BoundTableRow(
-        String typeName, Integer candidates,
-        String tableSourceName, String tableSchema, String tableName
+        String typeName, String tableSourceName, String tableSchema, String tableName
     ) {}
 
     /** A candidate backing class read back as the table whose rows jOOQ binds to it. */
@@ -233,13 +230,10 @@ final class InlayFacts {
                 classNamesOf(backingSeeds, typeName), classNamesOf(backingReached, typeName));
         }
 
-        /**
-         * The one table a type is bound to, absent where the binding is ambiguous. The arity is the
-         * relation's own column, so an overlay never re-derives it from the rows this arm brought back.
-         */
+        /** The one table a type is bound to, absent where its {@code @table} resolved to none. */
         Optional<CatalogTable> certainBoundTable(String typeName) {
             return boundTables.stream()
-                .filter(row -> row.typeName().equals(typeName) && Integer.valueOf(1).equals(row.candidates()))
+                .filter(row -> row.typeName().equals(typeName))
                 .findFirst()
                 .map(row -> new CatalogTable(
                     row.tableSourceName(), row.tableSchema(), row.tableName()));
@@ -355,17 +349,12 @@ final class InlayFacts {
             .convertFrom(rows -> rows.map(Records.mapping(BackingRow::new)));
     }
 
-    /**
-     * Every table the region's types are bound to, in the schema then table order {@code BoundTables}
-     * answers in, so an overlay naming the first candidate names the one it would have named. The
-     * arity rides along rather than being filtered here: the same rows serve the overlay, which may
-     * only speak when the binding is certain, and the member scope, which takes every candidate.
-     */
+    /** The table each of the region's types is bound to, for the overlay and the member scope alike. */
     private static Field<List<BoundTableRow>> boundTableArm(
         StoreHandle store, Collection<String> typeNames
     ) {
-        var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
-        return multiset(selectDistinct(b.TYPE_NAME, b.CANDIDATES,
+        var b = GRAPHITRON_TABLETYPE;
+        return multiset(selectDistinct(b.TYPE_NAME,
                 b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
             .from(b)
             .where(b.GRAPH_NAME.eq(store.graphName()))
@@ -465,7 +454,7 @@ final class InlayFacts {
     /** The tables the region's fields' statements land on, through the type that binds each. */
     private static Field<List<TargetTableRow>> targetTableArm(StoreHandle store, Collection<String> typeNames) {
         var tt = GRAPHITRON_FIELD_TARGET_TABLE;
-        var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        var b = GRAPHITRON_TABLETYPE;
         return multiset(selectDistinct(tt.TYPE_NAME, tt.FIELD_NAME, b.TABLE_NAME).from(tt)
             .join(b).on(b.GRAPH_NAME.eq(tt.GRAPH_NAME), b.TYPE_NAME.eq(tt.ARRIVING_TYPE_NAME))
             .where(tt.GRAPH_NAME.eq(store.graphName()), tt.TYPE_NAME.in(typeNames))

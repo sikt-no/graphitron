@@ -55,7 +55,7 @@ extend schema @assertContains(relation: "graphitron_result_table", rows: """
   """)
 
 # A type whose rows are a function's result is bound to no table.
-extend schema @assertAbsent(relation: "graphitron_resolved_type_binding", rows: """
+extend schema @assertAbsent(relation: "graphitron_tabletype", rows: """
   type_name
   Tilgang
   ActorFilm

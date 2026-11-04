@@ -18,7 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -49,7 +49,7 @@ public final class UnlowerableOrderings {
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
         GRAPHITRON_DEFAULT_ORDER_ENTRY, GRAPHITRON_ORDER_BY_ENTRY, GRAPHITRON_FIELD_TARGET,
-        GRAPHQL_POLY_MEMBER, GRAPHITRON_RESOLVED_TYPE_BINDING, INTENT_TYPE_DOMAIN, GRAPHQL_TYPE);
+        GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, INTENT_TYPE_DOMAIN, GRAPHQL_TYPE);
 
     /** Which directive declared the ordering. */
     public enum AvailableVia {
@@ -182,11 +182,10 @@ public final class UnlowerableOrderings {
             return new Container(null, null, List.of());
         }
         var m = GRAPHQL_POLY_MEMBER;
-        var bt = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        var bt = GRAPHITRON_TABLETYPE;
         var participants = dsl.selectDistinct(m.MEMBER_TYPE_NAME)
             .from(m)
-            .join(bt).on(bt.GRAPH_NAME.eq(m.GRAPH_NAME), bt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME),
-                bt.CANDIDATES.eq(1))
+            .join(bt).on(bt.GRAPH_NAME.eq(m.GRAPH_NAME), bt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME))
             .where(m.GRAPH_NAME.eq(graphName), m.CONTAINER_NAME.eq(target.value1()))
             .orderBy(m.MEMBER_TYPE_NAME)
             .fetch(org.jooq.Record1::value1);

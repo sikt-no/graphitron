@@ -10,7 +10,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET_KEYED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET_KEYLESS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 
 /**
  * The capture-cadence writer of the two field-site reference-target relations: where each element
@@ -86,7 +86,7 @@ public final class FieldReferenceStepTargets {
      */
     private static Select<? extends Record> seed(DSLContext dsl, String graphName) {
         var hop = GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
-        var bound = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        var bound = GRAPHITRON_TABLETYPE;
         return dsl
             .select(hop.GRAPH_NAME, hop.TYPE_NAME, hop.FIELD_NAME, hop.ORDINAL, hop.POSITION,
                 hop.VIA, hop.KEY_MATCHED_BY, hop.FROM_SOURCE_NAME, hop.FROM_SCHEMA, hop.FROM_TABLE,

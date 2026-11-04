@@ -21,7 +21,6 @@ import no.sikt.graphitron.model.derive.PathClaims;
 import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
-import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.TypeBackings;
 import org.jooq.DSLContext;
@@ -88,9 +87,6 @@ public final class GraphitronAssemblyCapture {
         RoutineResults.derive(dsl, graph, readAt);
         FieldReferenceStepHops.deriveKeyed(dsl, graph);
         FieldReferenceStepHops.deriveKeyless(dsl, graph);
-        // Then the bindings, which the routine arm reaches through the hops just written, and then
-        // the walk, which seeds from those bindings and steps through those hops.
-        ResolvedTypeBindings.derive(dsl, graph);
         // Every place a field or an argument is reached, off the targets written above and the
         // anchor's table types: a chain grows through a field whose target is an object type with no
         // table. Here rather than as a line of the anchor because the targets are written above; it

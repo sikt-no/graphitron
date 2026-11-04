@@ -13,9 +13,9 @@ import static org.jooq.impl.DSL.val;
  * The writer of {@code graphitron_type_backing}: which Java class stands for each of a graph's
  * types, and through which population.
  *
- * <p>One statement over the rule view beside the target, run by the graphitron gatherer after
- * {@link ResolvedTypeBindings}, whose table the bound-table arm reads. The closure over members that
- * used to need a producer of its own is a recursive statement here: the classpath is read before
+ * <p>One statement over the rule view beside the target, run by the graphitron gatherer after the
+ * anchor writes {@code graphitron_tabletype}, which the bound-table arm reads. The closure over
+ * members that used to need a producer of its own is a recursive statement here: the classpath is read before
  * this gatherer runs, so every edge it walks is a fact already stored.
  *
  * <p>Marked and swept rather than cleared and rewritten: every backing the reading finds is written

@@ -9,7 +9,7 @@ extend schema @assertContains(relation: "sql_table", rows: """
   recordless_note, org.jooq.Record
   """)
 
-extend schema @assertContains(relation: "graphitron_resolved_type_binding", rows: """
+extend schema @assertContains(relation: "graphitron_tabletype", rows: """
   type_name, table_name
   Note,      recordless_note
   """)

@@ -164,15 +164,6 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_implements_interface", "graphql_union_member"),
-        // What a name resolves to in the catalog, under the two keys the question is asked by: a
-        // spelling an author wrote, and a type the graph declares. The payload is the same because
-        // the answer is the same fact, a table triple with the arity of the resolution beside it,
-        // and the keys differ because the askers do. No supertype is owed here and the set is
-        // deliberately left undeclared: one is keyed on a string and the other on a type, so a
-        // relation over both would have to carry a discriminator and neither reader could key into
-        // it. They became visible together when both stopped being registered targets and became
-        // tables this gate's scan reaches.
-        Set.of("graphitron_resolved_type_binding", "graphitron_spelled_table"),
         // Which table a site's own content binds against, under the two keys the question is asked
         // by: the field's coordinate and the argument's. The payload is the same because the
         // argument-site relation is the field-site one fanned out over the field's arguments and
@@ -205,7 +196,7 @@ class SupertypeSignatureGateTest {
                "graphitron_input_field_reference_step_target_keyless"),
         // A path's start and the starts a parent's result and a parent's binding give. Each subtype
         // adds no payload, only the reference that says why the walk starts there, into
-        // graphitron_result_table or graphitron_resolved_type_binding, so its columns are its
+        // graphitron_result_table or graphitron_tabletype, so its columns are its
         // supertype's; that is the supertype and subtype shape, not relations holding one fact. The
         // routine start is not here only because it is keyed by its producer alone.
         // graphitron_occurrence_source joins them on a payload of its kind alone, keyed by the
@@ -365,18 +356,7 @@ class SupertypeSignatureGateTest {
         // set above gives.
         "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg",
         "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
-        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
-        // The scope rule reaching a table by either keying of one resolution, which became visible
-        // here the day the type binding stopped being a registered target and became a capture
-        // table this gate scans. It is not a union of two answers: each arm asks a different
-        // question of the same resolution, one by the type a field's site navigates to and one by
-        // a spelling an author wrote at that site, and coalescing them is the precedence between
-        // the two questions rather than a supertype nobody wrote.
-        "graphitron_field_scope_table_rule|graphitron_resolved_type_binding,graphitron_spelled_table",
-        // The ordering defect asking the scope rule's two questions for the same reason: whether the
-        // target's members bind tables, and whether a @mutation(table:) spelling roots the
-        // statement instead.
-        "graphitron_entry_defect_rule|graphitron_resolved_type_binding,graphitron_spelled_table");
+        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry");
 
 
     @Test

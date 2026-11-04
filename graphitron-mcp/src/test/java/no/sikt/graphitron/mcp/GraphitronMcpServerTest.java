@@ -1068,7 +1068,7 @@ class GraphitronMcpServerTest {
         type FilmSummary { title: String released: Boolean }
         type FilmOwn @table(name: "film") { title: String }
         type Contested @table(name: "actor") { title: String }
-        input FilmFilter @table(name: "film") {
+        input FilmFilter {
           title: String @condition(condition: {className: "%1$sFilmConditions", method: "titled"})
         }
         union Searchable = Film | Language
@@ -1185,12 +1185,9 @@ class GraphitronMcpServerTest {
         assertThat((List<Map<String, Object>>) title.get("methods")).containsExactly(Map.of(
             "methodRef", SCHEMA_FIXTURES + "FilmConditions#titled/1",
             "declaredVia", "CONDITION"));
-        // @condition claims no classification, so the structural reading still wins the coordinate
-        // and the column binding stands beside the method rather than being masked by it.
-        assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
-            .satisfies(claim -> assertThat(claim).containsEntry("classifier", "TABLE_COLUMN"));
-        assertThat((Map<String, Object>) title.get("column"))
-            .containsEntry("table", "public.film").containsEntry("column", "title");
+        // An input type binds no table, so neither a structural claim nor a column stands beside the
+        // method; both wait on the input field's own binding, read at the end of its argument's path.
+        assertThat(title).doesNotContainKeys("claims", "column");
     }
 
     @Test

@@ -5286,7 +5286,7 @@ COMMENT ON TABLE graphitron_field_target IS 'A field''s target type, unwrapped f
 COMMENT ON COLUMN graphitron_field_target.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_target.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_target.field_name IS 'the field whose target this row states; with the two columns above the whole key, one row per field of the graph';
-COMMENT ON COLUMN graphitron_field_target.target_type_name IS 'the target type''s name, unwrapped. A name and never a binding, so a reader joins graphitron_resolved_type_binding, graphql_poly_member or graphql_type on it according to what it needs to know';
+COMMENT ON COLUMN graphitron_field_target.target_type_name IS 'the target type''s name, unwrapped. A name and never a binding, so a reader joins graphitron_tabletype, graphql_poly_member or graphql_type on it according to what it needs to know';
 COMMENT ON COLUMN graphitron_field_target.wrapper_type_name IS 'the connection type the target was unwrapped from, which is the field''s named type; null where the field returns its target directly. List and non-null wrapping are cardinality rather than a wrapper, and stay on graphitron_field';
 COMMENT ON COLUMN graphitron_field_target.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the coordinates a rewriting moved off; a field the author removed takes its row with it through the cascade above, so the two together are what let a second reading of one store land on the first''s rows rather than meeting them on the key';
 
@@ -5496,36 +5496,10 @@ COMMENT ON TABLE graphitron_field_target_table IS 'A type whose table one of a f
 COMMENT ON COLUMN graphitron_field_target_table.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_target_table.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_target_table.field_name IS 'the field; with the column above a reference into graphitron_field_target';
-COMMENT ON COLUMN graphitron_field_target_table.arriving_type_name IS 'the type whose table the statement lands on: the target, or one of its participants. A name and not a table: the table is graphitron_resolved_type_binding''s answer for it, unambiguous by this relation''s rule';
+COMMENT ON COLUMN graphitron_field_target_table.arriving_type_name IS 'the type whose table the statement lands on: the target, or one of its participants. A name and not a table: the table is graphitron_tabletype''s answer for it, unambiguous by this relation''s rule';
 COMMENT ON COLUMN graphitron_field_target_table.basis IS 'which rule named the type, a closed vocabulary of two. TARGET: the target binds a table, a routine result''s binding included. PARTICIPANT: the target binds none, so each member that binds one is a statement of its own. Disjoint by construction';
 COMMENT ON COLUMN graphitron_field_target_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
-CREATE TABLE graphitron_resolved_type_binding (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  candidates        INTEGER NOT NULL,
-  PRIMARY KEY (graph_name, type_name, table_source_name, table_schema, table_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphitron_resolved_type_binding IS 'Which catalog table a graph''s type is bound to by its @table: one row per candidate table. For example a type carrying @table(name: "film") is one row naming film; a type whose rows are a @routine''s result has none, a @routine binding no table.';
-COMMENT ON COLUMN graphitron_resolved_type_binding.graph_name IS 'the owning graph''s partition, carried from the @table binding';
-COMMENT ON COLUMN graphitron_resolved_type_binding.type_name IS 'the type the table stands for';
-COMMENT ON COLUMN graphitron_resolved_type_binding.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN graphitron_resolved_type_binding.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one name apart';
-COMMENT ON COLUMN graphitron_resolved_type_binding.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key; the table''s other facts are one join away, per the referenced-side discipline sql_referential_constraint states';
-COMMENT ON COLUMN graphitron_resolved_type_binding.candidates IS 'how many distinct tables stand for this type across both arms, this row''s table being one of them; 1 on an unambiguous binding, which is the guard a reader that must pick one applies. Recounted here rather than carried from an arm, for the reason the view comment gives';
-
-CREATE INDEX ix_resolved_type_binding_type ON graphitron_resolved_type_binding
-  (graph_name, type_name);
-COMMENT ON INDEX ix_resolved_type_binding_type IS 'Serves the type probe every reader of this relation makes: a rule holding a type name and asking which table stands for it. The registration shipped without one, which cost nothing while every reader spelled its type expression inline, H2 pushing that expression down into the probe. It stopped costing nothing the moment intent_field_navigated_type projected the expression into a column of its own: a join onto a projected column is a join the planner is free to satisfy by scanning, and its readers, graphitron_field_scope_table_rule among them, each began visiting more rows through this table than through the view it replaced. That is the same mirror the condition family met on graphitron_field_scope_table, arriving on a third relation: an inlined view can be evaluated restricted where a table can only be scanned, so an unkeyed target is not a faster shape but a differently shaped one, and which of the two wins depends on what the reader has in hand. The index is what makes the table probeable on the key its readers actually hold, and with it the projection costs no reader anything.';
-
--- The datafetcher axis: every output field of an object type has one fetcher, and it either
--- produces a result or reads one. The supertype carries the key and the side; each side states its
--- own facts in a subtype keyed to it, so a field neither subtype explains is an absent row a gate can
--- find rather than a NULL nobody asked about.
 CREATE TABLE graphitron_fetcher (
   graph_name VARCHAR   NOT NULL,
   type_name  VARCHAR   NOT NULL,
@@ -7041,7 +7015,7 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- graphitron_field_reference_step_target then split a @reference path into its local element
 -- resolutions and the chain that walks them, because only the chain needs recursion and mixing the
 -- two would put a copy of every element arm inside the recursive term. A @routine binds no table:
--- graphitron_resolved_type_binding is the @table population alone, and the type a field whose path
+-- graphitron_tabletype is the @table population alone, and the type a field whose path
 -- ends on a @routine returns has the function's result as its rows, which graphitron_routine_result
 -- states for every reader that asks where such a type is read.
 --
@@ -7652,7 +7626,7 @@ SELECT t.graph_name, t.type_name,
   JOIN graphitron_spelled_table sp
     ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
  WHERE t.type_name NOT IN ('Query', 'Mutation', 'Subscription');
-COMMENT ON VIEW intent_bound_table IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which catalog table an @table-bearing type is bound to: graphitron_table_entry''s reference resolved through graphitron_spelled_table, one row per candidate table. The reference is the name argument as written, or the type name where the argument was omitted, which is the derivation graphitron_table_entry.table_ref''s own comment defers; how a spelling then meets the census is the spelling view''s rule, stated once there and not restated here. What this view adds over that one is the keying: a type, not a string, which is what every reader of a binding actually holds. The three root names are masked, transcribing the walk''s root short-circuit that classifies a root before any table binding is read, which is the same mask the authored type claims carry. A base derivation rather than a resolved_ reduction: it stands directly on a transcription pair and nothing reduces over sibling views to produce it. It is one arm of such a reduction, graphitron_resolved_type_binding coalescing it with the binding a @routine chain''s return derives, and that is where a reader asking which table stands for a type points; this relation answers the narrower question of what the author wrote @table for, which is what an editor locating a written site and any reader of the directive population itself asks. Ambiguity is rows, never a decline: two candidates are two rows and the count says so, so a reader can transcribe the walk''s Ambiguous verdict (require candidates = 1, as the column-match classifier does), offer every candidate (as an editor does, since each is a table the author might mean), or report the ambiguity, without any of them re-spelling the resolution. The reference as written and the application''s position are one join back to graphitron_table_entry, which holds both.';
+COMMENT ON VIEW intent_bound_table IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which catalog table an @table-bearing type is bound to: graphitron_table_entry''s reference resolved through graphitron_spelled_table, one row per candidate table. The reference is the name argument as written, or the type name where the argument was omitted, which is the derivation graphitron_table_entry.table_ref''s own comment defers; how a spelling then meets the census is the spelling view''s rule, stated once there and not restated here. What this view adds over that one is the keying: a type, not a string, which is what every reader of a binding actually holds. The three root names are masked, transcribing the walk''s root short-circuit that classifies a root before any table binding is read, which is the same mask the authored type claims carry. A base derivation rather than a resolved_ reduction: it stands directly on a transcription pair and nothing reduces over sibling views to produce it. A reader asking which table stands for a type reads graphitron_tabletype; this relation answers the narrower question of what the author wrote @table for, which is what an editor locating a written site and any reader of the directive population itself asks. Ambiguity is rows, never a decline: two candidates are two rows and the count says so, so a reader can transcribe the walk''s Ambiguous verdict (require candidates = 1, as the column-match classifier does), offer every candidate (as an editor does, since each is a table the author might mean), or report the ambiguity, without any of them re-spelling the resolution. The reference as written and the application''s position are one join back to graphitron_table_entry, which holds both.';
 -- COMMENT ON COLUMN intent_bound_table.graph_name IS 'the owning graph''s partition, carried from graphitron_table_entry';
 -- COMMENT ON COLUMN intent_bound_table.type_name IS 'the @table-bearing type whose binding this row resolves';
 -- COMMENT ON COLUMN intent_bound_table.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
@@ -8758,7 +8732,7 @@ SELECT c.graph_name, c.type_name, n.named_type
 COMMENT ON VIEW graphitron_connection_element_type IS 'Which type a connection type paginates: one row per type whose shape is a Relay connection, naming the element it delivers. For example a FilmConnection declaring edges whose element declares node: Film draws one row naming Film, and a type that is not a connection draws none, so a reader left-joins this rather than joining it.';
 -- COMMENT ON COLUMN graphitron_connection_element_type.graph_name IS 'the owning graph''s partition, carried from the connection type''s own row; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_connection_element_type.type_name IS 'the connection type itself, the wrapper a field returns; with the graph, the grain';
--- COMMENT ON COLUMN graphitron_connection_element_type.element_type_name IS 'the type the connection paginates, read off the edge type''s node field''s named type with its wrappers already stripped by graphql_field. A name and not a binding: whether the element is bound to a table is graphitron_resolved_type_binding''s answer and deliberately not asked here';
+-- COMMENT ON COLUMN graphitron_connection_element_type.element_type_name IS 'the type the connection paginates, read off the edge type''s node field''s named type with its wrappers already stripped by graphql_field. A name and not a binding: whether the element is bound to a table is graphitron_tabletype''s answer and deliberately not asked here';
 
 CREATE VIEW graphitron_field_target_rule
   (graph_name, type_name, field_name, target_type_name, wrapper_type_name) AS
@@ -8901,7 +8875,7 @@ COMMENT ON VIEW intent_field_navigated_type IS 'Deprecated with the whole intent
 -- COMMENT ON COLUMN intent_field_navigated_type.type_name IS 'the type owning the field';
 -- COMMENT ON COLUMN intent_field_navigated_type.field_name IS 'the field whose navigation this row states; with the two columns above, the grain, and one row per field of the graph';
 -- COMMENT ON COLUMN intent_field_navigated_type.basis IS 'which rung answered, in a closed vocabulary of two: CONNECTION_ELEMENT from the structural edges.node shape of a connection type, NAMED_TYPE from the field''s own named type. A third rung read the pre-expansion type expression a macro had rewritten, and went when the expansion stopped overwriting it: the field''s own row carries what the author wrote, so the expression is a column rather than a rung. Provenance and a pinnable rule both; a reader that means one of them filters on it and owns having chosen';
--- COMMENT ON COLUMN intent_field_navigated_type.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins graphitron_resolved_type_binding, intent_poly_member or graphql_type on it according to what it actually needs to know';
+-- COMMENT ON COLUMN intent_field_navigated_type.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins graphitron_tabletype, intent_poly_member or graphql_type on it according to what it actually needs to know';
 
 -- Where an occurrence chain starts: a field of an object type that is a root, is table-bound or is
 -- targeted by no output field, a connection type being targeted by the field that returns it, and a
@@ -9008,18 +8982,16 @@ CREATE VIEW graphitron_field_target_table_rule
   (graph_name, type_name, field_name, arriving_type_name, basis) AS
 SELECT ft.graph_name, ft.type_name, ft.field_name, ft.target_type_name, 'TARGET'
   FROM graphitron_field_target ft
-  JOIN graphitron_resolved_type_binding b
+  JOIN graphitron_tabletype b
     ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
-   AND b.candidates = 1
 UNION ALL
 SELECT DISTINCT ft.graph_name, ft.type_name, ft.field_name, m.member_type_name, 'PARTICIPANT'
   FROM graphitron_field_target ft
   JOIN graphql_poly_member m
     ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-  JOIN graphitron_resolved_type_binding b
+  JOIN graphitron_tabletype b
     ON b.graph_name = m.graph_name AND b.type_name = m.member_type_name
-   AND b.candidates = 1
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
                     WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name);
 COMMENT ON VIEW graphitron_field_target_table_rule IS 'One row the field target-table rule computes, in the shape graphitron_field_target_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_target_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_field_target_table_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field_target';
@@ -9513,7 +9485,7 @@ CREATE TABLE graphitron_field_path_start_binding (
     REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
                                             start_schema, start_table, kind) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, start_source_name, start_schema, start_table)
-    REFERENCES graphitron_resolved_type_binding (graph_name, type_name, table_source_name,
+    REFERENCES graphitron_tabletype (graph_name, type_name, table_source_name,
                                                  table_schema, table_name) ON DELETE CASCADE,
   CHECK (kind = 'BINDING')
 );
@@ -9523,7 +9495,7 @@ COMMENT ON COLUMN graphitron_field_path_start_binding.type_name IS 'the table-bo
 COMMENT ON COLUMN graphitron_field_path_start_binding.field_name IS 'the field whose path starts here';
 COMMENT ON COLUMN graphitron_field_path_start_binding.start_source_name IS 'the catalog partition of the table bound to the type';
 COMMENT ON COLUMN graphitron_field_path_start_binding.start_schema IS 'the SQL schema of the table bound to the type';
-COMMENT ON COLUMN graphitron_field_path_start_binding.start_table IS 'the table bound to the type: with the type and the two columns before it, a reference into graphitron_resolved_type_binding';
+COMMENT ON COLUMN graphitron_field_path_start_binding.start_table IS 'the table bound to the type: with the type and the two columns before it, a reference into graphitron_tabletype';
 COMMENT ON COLUMN graphitron_field_path_start_binding.kind IS 'always BINDING, the supertype''s kind for this subtype';
 COMMENT ON COLUMN graphitron_field_path_start_binding.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
 
@@ -10687,8 +10659,8 @@ SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_
           FROM (SELECT b.graph_name, g.type_name, g.field_name, b.table_source_name, b.table_schema,
                        b.table_name
                   FROM graphitron_field g
-                  JOIN graphitron_resolved_type_binding b
-                    ON b.graph_name = g.graph_name AND b.type_name = g.type_name AND b.candidates = 1
+                  JOIN graphitron_tabletype b
+                    ON b.graph_name = g.graph_name AND b.type_name = g.type_name
                  WHERE NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
                         JOIN graphitron_ast_field_path_entry pe
                           ON pe.graph_name = fe.graph_name AND pe.source_name = fe.source_name
@@ -10702,7 +10674,7 @@ SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_
                   FROM graphitron_field g
                   JOIN graphitron_routine_result rr
                     ON rr.graph_name = g.graph_name AND rr.target_type_name = g.type_name
-                 WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+                 WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
                                     WHERE b.graph_name = g.graph_name AND b.type_name = g.type_name)
                    AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
                         JOIN graphitron_ast_field_path_entry pe
@@ -10859,9 +10831,8 @@ SELECT graph_name, type_name, field_name, disposition, basis,
                             THEN 'PATH_TERMINAL' ELSE 'NAMED_TYPE_TABLE' END,
                        b.table_source_name, b.table_schema, b.table_name, 2
                   FROM graphitron_field_target_table tt
-                  JOIN graphitron_resolved_type_binding b
+                  JOIN graphitron_tabletype b
                     ON b.graph_name = tt.graph_name AND b.type_name = tt.arriving_type_name
-                   AND b.candidates = 1
                  WHERE tt.basis = 'TARGET'
                    -- With no path written, only an object the field reads by its own navigation:
                    -- not a root's, not a polymorphic target, not one a claiming directive or @pivot
@@ -11003,7 +10974,7 @@ WITH claim_count (graph_name, type_name, field_name, claims, kind) AS (
 -- A type a statement lands on is one with a table, resolved or written: whether @table names a table
 -- the catalog holds is its own defect, not a reason the field runs something else.
 bound (graph_name, type_name) AS (
-  SELECT graph_name, type_name FROM graphitron_resolved_type_binding
+  SELECT graph_name, type_name FROM graphitron_tabletype
   UNION
   SELECT graph_name, coordinate FROM graphitron_directive_application WHERE directive_name = 'table'
 ),
@@ -11049,7 +11020,7 @@ SELECT graph_name, type_name, field_name, kind
              -- edges' fields, nodes and Edge.node among them, run nothing of their own.
              WHEN EXISTS (SELECT 1 FROM graphitron_field_target w
                            WHERE w.graph_name = f.graph_name AND w.wrapper_type_name = f.type_name)
-               OR (NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+               OR (NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
                                 WHERE b.graph_name = f.graph_name AND b.type_name = f.type_name)
                    AND EXISTS (SELECT 1 FROM graphitron_field_target e
                                 WHERE e.graph_name = f.graph_name AND e.target_type_name = f.type_name
@@ -11072,7 +11043,7 @@ SELECT graph_name, type_name, field_name, kind
                                                AND pc2.type_name = pc.type_name
                                                AND pc2.field_name = pc.field_name
                                                AND pc2.kind <> pc.kind))
-              AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding pb
+              AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype pb
                                WHERE pb.graph_name = f.graph_name AND pb.type_name = f.type_name)
               AND EXISTS (SELECT 1 FROM bound b
                            WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
@@ -11201,8 +11172,8 @@ SELECT p.graph_name, gf.type_name, gf.field_name,
     ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
    AND gf.field_name = fd.name AND gf.source_name = fd.source_name
    AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
-  JOIN graphitron_resolved_type_binding b
-    ON b.graph_name = gf.graph_name AND b.type_name = gf.type_name AND b.candidates = 1
+  JOIN graphitron_tabletype b
+    ON b.graph_name = gf.graph_name AND b.type_name = gf.type_name
  WHERE p.position = 0
    AND NOT EXISTS (SELECT 1 FROM graphitron_result r
                     WHERE r.graph_name = gf.graph_name AND r.type_name = gf.type_name)
@@ -11454,8 +11425,8 @@ move (graph_name, type_name, field_name, start_source_name, start_schema, start_
      AND fn.table_name = fr.from_table AND fn.table_type = 'FUNCTION'
     JOIN graphitron_field_target ft
       ON ft.graph_name = fr.graph_name AND ft.type_name = fr.type_name AND ft.field_name = fr.field_name
-    JOIN graphitron_resolved_type_binding b
-      ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name AND b.candidates = 1
+    JOIN graphitron_tabletype b
+      ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
     JOIN sql_name_matched_key_column n
       ON n.source_name = fr.from_source_name AND n.table_schema = fr.from_schema
      AND n.table_name = fr.from_table
@@ -12656,8 +12627,8 @@ SELECT DISTINCT p.graph_name, p.element_source_name, p.element_source_line, p.el
   FROM graphitron_field_path p
   JOIN graphitron_field_target_table tt
     ON tt.graph_name = p.graph_name AND tt.type_name = p.type_name AND tt.field_name = p.field_name
-  JOIN graphitron_resolved_type_binding b
-    ON b.graph_name = tt.graph_name AND b.type_name = tt.arriving_type_name AND b.candidates = 1
+  JOIN graphitron_tabletype b
+    ON b.graph_name = tt.graph_name AND b.type_name = tt.arriving_type_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_field_path nx
                     WHERE nx.graph_name = p.graph_name AND nx.type_name = p.type_name
                       AND nx.field_name = p.field_name AND nx.start_source_name = p.start_source_name
@@ -13140,12 +13111,11 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
    AND EXISTS (SELECT 1 FROM graphitron_field_target ft
                  JOIN graphql_poly_member m
                    ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-                 JOIN graphitron_resolved_type_binding bt
+                 JOIN graphitron_tabletype bt
                    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-                  AND bt.candidates = 1
                 WHERE ft.graph_name = o.graph_name AND ft.type_name = o.type_name
                   AND ft.field_name = o.field_name
-                  AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
+                  AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
                                    WHERE cb.graph_name = ft.graph_name
                                      AND cb.type_name = ft.target_type_name))
    AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry mu
@@ -14336,7 +14306,7 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
     FROM edge e
     JOIN graphitron_type t
       ON t.graph_name = e.graph_name AND t.type_name = e.target AND t.kind = 'INTERFACE'
-   WHERE EXISTS (SELECT 1 FROM graphitron_resolved_type_binding ib
+   WHERE EXISTS (SELECT 1 FROM graphitron_tabletype ib
                   WHERE ib.graph_name = e.graph_name AND ib.type_name = e.target)
 )
 -- What each handed row becomes. A pivot field's type is the row its aggregate makes; a connection's
@@ -14351,43 +14321,56 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
 SELECT h.graph_name, h.member,
        CASE WHEN dp.coordinate IS NOT NULL THEN 'ROW'
             WHEN h.wrapped OR de.coordinate IS NOT NULL THEN 'OBJECT'
-            WHEN b.type_name IS NOT NULL THEN 'ROW'
+            WHEN b.type_name IS NOT NULL OR amb.type_name IS NOT NULL THEN 'ROW'
             ELSE COALESCE(h.shape, 'OBJECT') END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
-            WHEN b.type_name IS NOT NULL THEN CASE WHEN b.candidates = 1 THEN b.table_source_name END
+            WHEN b.type_name IS NOT NULL THEN b.table_source_name
+            WHEN amb.type_name IS NOT NULL THEN NULL
             ELSE h.table_source_name END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
-            WHEN b.type_name IS NOT NULL THEN CASE WHEN b.candidates = 1 THEN b.table_schema END
+            WHEN b.type_name IS NOT NULL THEN b.table_schema
+            WHEN amb.type_name IS NOT NULL THEN NULL
             ELSE h.table_schema END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
-            WHEN b.type_name IS NOT NULL THEN CASE WHEN b.candidates = 1 THEN b.table_name END
+            WHEN b.type_name IS NOT NULL THEN b.table_name
+            WHEN amb.type_name IS NOT NULL THEN NULL
             ELSE h.table_name END,
        CASE WHEN dp.coordinate IS NOT NULL THEN h.field_type
-            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL THEN NULL
+            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL
+                 OR amb.type_name IS NOT NULL THEN NULL
             ELSE h.pivot_type_name END,
        CASE WHEN dp.coordinate IS NOT NULL THEN h.field_name
-            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL THEN NULL
+            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL
+                 OR amb.type_name IS NOT NULL THEN NULL
             ELSE h.pivot_field_name END
   FROM handed h
   LEFT JOIN graphitron_directive_application dp
     ON dp.graph_name = h.graph_name AND dp.coordinate = h.coordinate AND dp.directive_name = 'pivot'
   LEFT JOIN graphitron_directive_application de
     ON de.graph_name = h.graph_name AND de.coordinate = h.member AND de.directive_name = 'error'
-  LEFT JOIN graphitron_resolved_type_binding b
+  LEFT JOIN graphitron_tabletype b
     ON b.graph_name = h.graph_name AND b.type_name = h.member
+  -- A @table spelling several tables answer to binds none, its own defect, and the type is a row of
+  -- no table rather than of whatever its parent holds.
+  LEFT JOIN (SELECT DISTINCT te.graph_name, te.type_name
+               FROM graphitron_table_entry te
+               JOIN graphitron_spelled_table sp
+                 ON sp.graph_name = te.graph_name AND sp.spelling = COALESCE(te.table_ref, te.type_name)
+                AND sp.candidates > 1) amb
+    ON amb.graph_name = h.graph_name AND amb.type_name = h.member
  WHERE dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL
-    OR b.type_name IS NOT NULL OR h.shape IS NOT NULL
+    OR b.type_name IS NOT NULL OR amb.type_name IS NOT NULL OR h.shape IS NOT NULL
     OR h.producer_kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'FACETS')
 UNION
 -- A federation entity holds its table's row, resolved through _entities; graphitron resolves only
 -- table-bound entities.
 SELECT da.graph_name, da.coordinate, 'ROW',
-       CASE WHEN b.candidates = 1 THEN b.table_source_name END,
-       CASE WHEN b.candidates = 1 THEN b.table_schema END,
-       CASE WHEN b.candidates = 1 THEN b.table_name END,
+       b.table_source_name,
+       b.table_schema,
+       b.table_name,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM graphitron_directive_application da
-  JOIN graphitron_resolved_type_binding b
+  JOIN graphitron_tabletype b
     ON b.graph_name = da.graph_name AND b.type_name = da.coordinate
  WHERE da.directive_name = 'key';
 COMMENT ON VIEW graphitron_result_rule IS 'One round of the result rule: the results the producers seed and the ones a reader hands on from what graphitron_result already holds, in the shape graphitron_result and its two row subtypes store. For example the graphitron anchor merges this view''s rows into graphitron_result until a round adds nothing, which is the closure.';
@@ -14446,19 +14429,18 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
     -- The parent's own rows: the table bound to it, or, a @routine binding no table, the function
     -- whose result a field's path ending on one returns it from.
     JOIN (SELECT graph_name, type_name, table_source_name, table_schema, table_name
-            FROM graphitron_resolved_type_binding
-           WHERE candidates = 1
+            FROM graphitron_tabletype
           UNION ALL
           SELECT rr.graph_name, rr.target_type_name, rr.table_source_name, rr.table_schema,
                  rr.table_name
             FROM graphitron_routine_result rr
-           WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding rb
+           WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype rb
                               WHERE rb.graph_name = rr.graph_name
                                 AND rb.type_name = rr.target_type_name)) b
       ON b.graph_name = p.graph_name AND b.type_name = p.type_name
     JOIN graphitron_type t
       ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype nb
                       WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
      AND NOT EXISTS (SELECT 1 FROM graphitron_routine_result nr
                       WHERE nr.graph_name = p.graph_name AND nr.target_type_name = p.target_type_name)
@@ -14483,7 +14465,7 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
     JOIN graphitron_type t
       ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
    WHERE POSITION(',' || p.target_type_name || ',' IN i.visited) = 0
-     AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
+     AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype nb
                       WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
      AND NOT EXISTS (SELECT 1 FROM graphitron_routine_result nr
                       WHERE nr.graph_name = p.graph_name AND nr.target_type_name = p.target_type_name)
@@ -14503,8 +14485,8 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
 SELECT f.graph_name, f.type_name, f.field_name,
        b.table_source_name, b.table_schema, b.table_name, 'SOURCE_TYPE'
   FROM graphitron_field f
-  JOIN graphitron_resolved_type_binding b
-    ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.candidates = 1
+  JOIN graphitron_tabletype b
+    ON b.graph_name = f.graph_name AND b.type_name = f.type_name
 UNION ALL
 -- A type whose rows are a function's result is read on that function, once however many fields
 -- return it from there.
@@ -14513,7 +14495,7 @@ SELECT DISTINCT f.graph_name, f.type_name, f.field_name,
   FROM graphitron_field f
   JOIN graphitron_routine_result rr
     ON rr.graph_name = f.graph_name AND rr.target_type_name = f.type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
                     WHERE b.graph_name = f.graph_name AND b.type_name = f.type_name)
 UNION ALL
 SELECT f.graph_name, f.type_name, f.field_name,
@@ -14532,7 +14514,7 @@ SELECT f.graph_name, f.type_name, f.field_name, st.source_name, st.table_schema,
   JOIN store_graph_source gs ON gs.graph_name = f.graph_name
   JOIN sql_table st
     ON st.source_name = gs.source_name AND st.record_class_fqn = tb.class_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype nb
                     WHERE nb.graph_name = f.graph_name AND nb.type_name = f.type_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_routine_result nr
                     WHERE nr.graph_name = f.graph_name AND nr.target_type_name = f.type_name);
@@ -14702,7 +14684,7 @@ closure (graph_name, type_name, class_name, path) AS (
    WHERE NOT (h.to_type || '|' || h.to_class) = ANY (c.path)
 )
 SELECT b.graph_name, b.type_name, t.record_class_fqn, 'BOUND_TABLE'
-  FROM graphitron_resolved_type_binding b
+  FROM graphitron_tabletype b
   JOIN sql_table t
     ON t.source_name = b.table_source_name AND t.table_schema = b.table_schema
    AND t.table_name = b.table_name
@@ -14777,8 +14759,8 @@ written (graph_name, type_name) AS (
 target (graph_name, type_name, field_name, source_name, table_schema, table_name) AS (
   SELECT fa.graph_name, fa.type_name, fa.field_name, b.table_source_name, b.table_schema, b.table_name
     FROM field_at fa
-    JOIN graphitron_resolved_type_binding b
-      ON b.graph_name = fa.graph_name AND b.type_name = fa.target_type_name AND b.candidates = 1
+    JOIN graphitron_tabletype b
+      ON b.graph_name = fa.graph_name AND b.type_name = fa.target_type_name
    WHERE NOT fa.polymorphic
 ),
 first_key (graph_name, type_name, field_name, source_name, table_schema, table_name,
@@ -14878,10 +14860,9 @@ SELECT graph_name, type_name, field_name, basis,
                        'NAMED_TYPE_TABLE' AS basis, bt.table_source_name, bt.table_schema,
                        bt.table_name, 0 AS precedence
                   FROM intent_field_navigated_type nv
-                  JOIN graphitron_resolved_type_binding bt
+                  JOIN graphitron_tabletype bt
                     ON bt.graph_name = nv.graph_name
                    AND bt.type_name = nv.navigated_type_name
-                   AND bt.candidates = 1
                 UNION ALL
                 -- An insert or update returning a type whose one field beside its errors re-reads
                 -- the written row by key.
@@ -14897,9 +14878,8 @@ SELECT graph_name, type_name, field_name, basis,
                   JOIN graphitron_producer rr
                     ON rr.graph_name = df.graph_name AND rr.type_name = df.type_name
                    AND rr.field_name = df.field_name AND rr.kind = 'LOOKUP'
-                  JOIN graphitron_resolved_type_binding bt
+                  JOIN graphitron_tabletype bt
                     ON bt.graph_name = df.graph_name AND bt.type_name = df.named_type
-                   AND bt.candidates = 1
                  WHERE p.kind IN ('INSERT', 'UPDATE')
                    AND NOT EXISTS (SELECT 1 FROM graphitron_field d2
                                     WHERE d2.graph_name = df.graph_name
@@ -14926,10 +14906,9 @@ SELECT DISTINCT ft.graph_name, ft.type_name, ft.field_name, 'PARTICIPANT_TABLE',
   FROM graphitron_field_target ft
   JOIN graphql_poly_member m
     ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-  JOIN graphitron_resolved_type_binding bt
+  JOIN graphitron_tabletype bt
     ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-   AND bt.candidates = 1
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
                     WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry mu
                     JOIN graphitron_spelled_table sp
@@ -16996,10 +16975,9 @@ SELECT DISTINCT r.graph_name, 'INPUT_FIELD', r.type_name, r.field_name,
   JOIN graphql_poly_member m
     ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
    AND m.member_type_name = r.participant_type_ref
-  JOIN graphitron_resolved_type_binding bt
+  JOIN graphitron_tabletype bt
     ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-   AND bt.candidates = 1
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
                     WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name)
  UNION ALL
 SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, a.ordinal,
@@ -17012,10 +16990,9 @@ SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, a.o
   JOIN graphql_poly_member m
     ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
    AND m.member_type_name = a.participant_type_ref
-  JOIN graphitron_resolved_type_binding bt
+  JOIN graphitron_tabletype bt
     ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-   AND bt.candidates = 1
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
                     WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name);
 COMMENT ON VIEW intent_reference_for_application IS 'One @referenceFor application paired with a consuming coordinate that offers the participant it names: one row per application and consumer whose participant set holds the spelling. For example an application naming Film under an input type two queries consume draws a row for the query whose union holds Film and none for the query whose does not.';
 -- COMMENT ON COLUMN intent_reference_for_application.graph_name IS 'the owning graph''s partition, carried from the application';
@@ -18451,9 +18428,6 @@ INSERT INTO meta_grain VALUES
   ('reference-step-keyless-hop',
    'one candidate table pair one field-site @reference path element joins without a foreign key, in one graph',
    'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'catalog'),
-  ('resolved-type-binding',
-   'one graph type that resolved to one catalog table, in one graph',
-   'graph_name, type_name, table_source_name, table_schema, table_name', 'catalog'),
   ('reference-step-keyed-target',
    'one foreign-key route one field-site @reference path element reaches, in one orientation, in one graph',
    'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from', 'catalog'),
@@ -18864,7 +18838,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_path_start_binding', 'field-path-start', 'graphitron',
    'A field''s path walked from its parent''s binding: one row per field of a table-bound type no field returns, on the table bound to it.',
    'For example Film.language starts on film where no field in the schema returns Film, so the editor shows the path it would take all the same.',
-   'The start a type''s @table gives where no result does, referencing graphitron_resolved_type_binding so the walk goes when the binding does. Without it a type no field returns had no walk, so the editor, which reads where a path lands, offered nothing on its fields. A type that some field returns has a RESULT start instead.'),
+   'The start a type''s @table gives where no result does, referencing graphitron_tabletype so the walk goes when the binding does. Without it a type no field returns had no walk, so the editor, which reads where a path lands, offered nothing on its fields. A type that some field returns has a RESULT start instead.'),
   ('graphitron_field_path_start_result', 'field-path-start', 'graphitron',
    'A field''s path walked from its parent''s result: one row per field and table the parent type''s result is a row of.',
    'For example Film.language starts on film, and a field of a type nested under customer and store starts on each.',
@@ -19963,7 +19937,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_target_table', 'field-arriving-type', 'graphitron',
    'A type whose table one of a field''s statements lands on: one row per field and arriving type, the target where it binds a table and each table-bound participant where it does not.',
    'For example Actor.films lands on Film, and a field returning a union of Book and Movie, which binds no table, lands on Book and on Movie.',
-   'The table side of a field''s target, at the grain a statement is: a polymorphic target with no table of its own is read once per table-bound participant, and the path family is resolved per statement. A name and not a table, so the table is stated once, in graphitron_resolved_type_binding, and two participants on one table stay two statements.'),
+   'The table side of a field''s target, at the grain a statement is: a polymorphic target with no table of its own is read once per table-bound participant, and the path family is resolved per statement. A name and not a table, so the table is stated once, in graphitron_tabletype, and two participants on one table stay two statements.'),
   ('graphitron_field_target_table_rule', 'field-arriving-type', 'graphitron',
    'One row the field target-table rule computes, in the shape graphitron_field_target_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
@@ -20067,7 +20041,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_target', 'graph-field', 'graphitron',
    'A field''s target type, unwrapped from a connection where the field returns one, with the connection beside it: one row per field.',
    'For example films: [Film!]! @asConnection has the target Film and the wrapper the macro minted, and title: String has the target String and no wrapper.',
-   'A field has a target type, and a target type is what is bound to a table. Five rules spelled the same COALESCE over the synthesis record, and all five navigated a connection only where the generator had built it, so an author-declared connection fell through to its wrapper and bound nothing. Stated once here, the wrapper''s name and not a flag, so a reader asking about the connection joins it. Total over graphitron_field, minted fields and scalar returns included, so a reader joins this rather than left-joining it. Kind, participants and table are each a join on the target''s name rather than columns here: graphql_type, graphql_poly_member and graphitron_resolved_type_binding. A mutation''s target is its payload type; the refetch is the outcome''s LOOKUP field and that field''s own target. Stored rather than left to its rule view because readers join on the target''s name, which as a column an index can lead with.'),
+   'A field has a target type, and a target type is what is bound to a table. Five rules spelled the same COALESCE over the synthesis record, and all five navigated a connection only where the generator had built it, so an author-declared connection fell through to its wrapper and bound nothing. Stated once here, the wrapper''s name and not a flag, so a reader asking about the connection joins it. Total over graphitron_field, minted fields and scalar returns included, so a reader joins this rather than left-joining it. Kind, participants and table are each a join on the target''s name rather than columns here: graphql_type, graphql_poly_member and graphitron_tabletype. A mutation''s target is its payload type; the refetch is the outcome''s LOOKUP field and that field''s own target. Stored rather than left to its rule view because readers join on the target''s name, which as a column an index can lead with.'),
   ('graphitron_field_target_rule', 'graph-field', 'graphitron',
    'One row the field target rule computes, in the shape graphitron_field_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
@@ -20176,10 +20150,6 @@ INSERT INTO meta_relation VALUES
    'One row the type-backing rule computes, in the shape graphitron_type_backing stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_scope_table_rule''s terms. Recursive over a cyclic graph, which H2 cannot detect a cycle in: the path of type and class pairs a step has visited rides along as an array, and a step never lands on a pair already on it. On a consumer schema of 2345 types the closure walks 136 paths, at most four deep, to 130 backings. Stored by its step because H2 evaluates a recursive view again for every row joined to it.'),
-  ('graphitron_resolved_type_binding', 'resolved-type-binding', 'graphitron',
-   'Which catalog table a graph''s type is bound to by its @table: one row per candidate table.',
-   'For example a type carrying @table(name: "film") is one row naming film; a type whose rows are a @routine''s result has none, a @routine binding no table.',
-   'What a reader of a binding asks is which table stands for the type, and only the author''s @table answers it: a @routine binds no table, the type a path ending on one returns having the function''s result as its rows, which graphitron_routine_result states. Ambiguity is rows and never a decline, the count beside each row being the arity over the type''s whole partition, so a reader that needs certainty demands one candidate and a reader that offers alternatives reads them all. Written once per capture by a stage of the graphitron gatherer, before the reference walk that seeds from these rows. It was a registered rule until then, refilled by the register on the same cadence for the same reason: fifteen namings across thirteen view bodies each paid a whole evaluation of a rule carrying a window function no outer predicate prunes. ix_resolved_type_binding_type serves the type probe every one of those readers makes, which the key''s own leading columns do not, the key leading with the graph and the type but continuing into the table triple a probe does not hold.'),
   ('graphitron_field_reference_step_target_keyed', 'reference-step-keyed-target', 'graphitron',
    'One foreign-key route one field-site @reference path element reaches, in one orientation: the element the chain walked to, with the key it joins through.',
    'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws one row per position, each departing where the one before it arrived.',

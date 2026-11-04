@@ -16,7 +16,7 @@ import java.util.stream.Stream;
 import static java.util.stream.Collectors.toUnmodifiableSet;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
@@ -60,7 +60,7 @@ public final class StoreNodeTables {
      * caller, so repointing it edits one set.
      */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_NODE_KEYCOLUMN,
-        GRAPHITRON_NODE, GRAPHITRON_RESOLVED_TYPE_BINDING, SQL_COLUMN,
+        GRAPHITRON_NODE, GRAPHITRON_TABLETYPE, SQL_COLUMN,
         SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY, SQL_SCHEMA, SQL_TABLE);
 
     /**
@@ -135,12 +135,11 @@ public final class StoreNodeTables {
                            String tableSchema, String tableName) {}
 
     private static List<Binding> bindings(DSLContext dsl, String graphName) {
-        var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        var b = GRAPHITRON_TABLETYPE;
         var i = GRAPHITRON_NODE;
         return dsl.select(i.TYPE_NAME, i.TYPE_ID, b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
             .from(i)
-            .join(b).on(b.GRAPH_NAME.eq(i.GRAPH_NAME), b.TYPE_NAME.eq(i.TYPE_NAME),
-                b.CANDIDATES.eq(1))
+            .join(b).on(b.GRAPH_NAME.eq(i.GRAPH_NAME), b.TYPE_NAME.eq(i.TYPE_NAME))
             .where(i.GRAPH_NAME.eq(graphName))
             .orderBy(i.TYPE_NAME)
             .fetch(row -> new Binding(row.value1(), row.value2(), row.value3(), row.value4(),

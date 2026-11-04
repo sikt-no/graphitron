@@ -22,7 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
@@ -149,7 +149,7 @@ public final class FieldInformation {
             .as("info_columns");
 
         var tt = GRAPHITRON_FIELD_TARGET_TABLE;
-        var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        var b = GRAPHITRON_TABLETYPE;
         targetTables = multiset(select(tt.ARRIVING_TYPE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME).from(tt)
             .join(b).on(b.GRAPH_NAME.eq(tt.GRAPH_NAME), b.TYPE_NAME.eq(tt.ARRIVING_TYPE_NAME))
             .where(tt.GRAPH_NAME.eq(graph), tt.TYPE_NAME.eq(typeName), tt.FIELD_NAME.eq(fieldName))
