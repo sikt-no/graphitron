@@ -27,11 +27,7 @@ The tutorial's `Customer` type binds to the `customer` table:
 
 [source,graphql]
 ----
-type Customer implements Node @table(name: "customer") @node {
-    customerId: Int!     @field(name: "CUSTOMER_ID")
-    firstName:  String!  @field(name: "FIRST_NAME")
-    address:    Address  @reference(path: [{key: "customer_address_id_fkey"}])
-}
+include::examples/table.graphqls[tag=TableBoundNode]
 ----
 
 A query that selects `customers { firstName }` produces a `SELECT customer.first_name` against this binding. Because the type carries `@table`, every `@field`-annotated column inside resolves against the `customer` table by default; nested types like `Address` re-bind via their own `@table` and join to `Customer` through `@reference`.

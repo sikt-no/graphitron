@@ -1,0 +1,32 @@
+# Rendered by ManualExampleTest from orderBy.graphql. Do not edit.
+
+# tag::OrderedConnection[]
+type Query {
+  filmsOrderedConnection(
+      rating: MpaaRating @field(name: "RATING"),
+      order: [FilmOrderBy] @orderBy,
+      first: Int,
+      last: Int,
+      after: String,
+      before: String
+  ): FilmsConnection! @defaultOrder(primaryKey: true)
+}
+
+input FilmOrderBy {
+  field: FilmSort!
+  direction: SortDirection
+}
+
+enum MpaaRating {
+  G
+  PG
+  PG_13
+  R
+  NC_17
+}
+
+enum FilmSort {
+  FILM_ID @order(primaryKey: true)
+  TITLE @order(fields: [{name : "title"}])
+}
+# end::OrderedConnection[]

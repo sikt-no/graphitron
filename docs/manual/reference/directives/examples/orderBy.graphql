@@ -1,0 +1,3 @@
+fragment OrderedConnection on Query @factDocument(path: "scenarios/order-by-argument") {
+  filmsOrderedConnection { __typename }
+}

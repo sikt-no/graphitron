@@ -1,0 +1,23 @@
+# A GraphQL enum bound to the Java enum jOOQ generates for a database enum: film.rating is an
+# mpaa_rating column, and MpaaRating is the class jOOQ reads it as, so each GraphQL value pairs with
+# the constant of the same name.
+
+enum MpaaRating @enum(enumReference: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating"}) {
+    G
+    PG
+    PG_13
+    R
+    NC_17
+}
+
+type Film @table(name: "film") {
+    title:  String
+    rating: MpaaRating
+}
+
+extend type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_ast_enum_entry", rows: """
+  class_name
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating
+  """)

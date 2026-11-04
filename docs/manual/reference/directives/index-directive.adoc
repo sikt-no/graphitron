@@ -26,19 +26,18 @@ directive @index(name: String) on ENUM_VALUE
 
 == Canonical example
 
+The legacy spelling, ordering films by the `idx_fk_language_id` and `idx_title` indexes:
+
 [source,graphql]
 ----
-# Legacy
-enum FilmOrderByField {
-    LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
-    TITLE    @index(name: "IDX_TITLE")
-}
+include::examples/index-directive.graphqls[tag=Legacy]
+----
 
-# Equivalent, modern
-enum FilmOrderByField {
-    LANGUAGE @order(index: "IDX_FK_LANGUAGE_ID")
-    TITLE    @order(index: "IDX_TITLE")
-}
+The equivalent modern spelling:
+
+[source,graphql]
+----
+include::examples/index-directive.graphqls[tag=Modern]
 ----
 
 The two forms generate identical code. The migration is a mechanical rename plus a parameter shape change (`name:` becomes `index:`).

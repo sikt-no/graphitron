@@ -1,0 +1,29 @@
+# A type bound to a table with @table: its fields read the table's columns, and a field reaching
+# another table follows the foreign key @reference names. A node is a table-bound type that also
+# carries @node and implements Node.
+
+interface Node { id: ID! }
+
+type Customer implements Node @table(name: "customer") @node {
+    id:         ID!      @nodeId
+    customerId: Int!     @field(name: "CUSTOMER_ID")
+    firstName:  String!  @field(name: "FIRST_NAME")
+    address:    Address  @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+type Address @table(name: "address") {
+    addressId: Int! @field(name: "ADDRESS_ID")
+}
+
+extend type Query { customers: [Customer!]! }
+
+extend schema @expectEquals(relation: "graphitron_result_table", where: "type_name IN ('Customer', 'Address')", rows: """
+  type_name, table_name
+  Customer,  customer
+  Address,   address
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node", rows: """
+  type_name
+  Customer
+  """)

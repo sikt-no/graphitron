@@ -1,0 +1,7 @@
+fragment Legacy on Query @factDocument(path: "scenarios/order-by-index-legacy") {
+  films { title }
+}
+
+fragment Modern on Query @factDocument(path: "scenarios/order-by-index") {
+  films { title }
+}

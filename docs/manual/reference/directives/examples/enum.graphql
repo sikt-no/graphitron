@@ -1,0 +1,3 @@
+fragment JavaEnum on Film @factDocument(path: "scenarios/enum-binding") {
+  rating
+}

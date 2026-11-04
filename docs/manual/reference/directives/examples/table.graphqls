@@ -1,0 +1,14 @@
+# Rendered by ManualExampleTest from table.graphql. Do not edit.
+
+# tag::TableBoundNode[]
+type Customer implements Node @table(name: "customer") @node {
+  id: ID! @nodeId
+  customerId: Int! @field(name: "CUSTOMER_ID")
+  firstName: String! @field(name: "FIRST_NAME")
+  address: Address @reference(path: [{key : "customer_address_id_fkey"}])
+}
+
+type Address @table(name: "address") {
+  addressId: Int! @field(name: "ADDRESS_ID")
+}
+# end::TableBoundNode[]

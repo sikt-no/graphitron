@@ -25,13 +25,10 @@ A GraphQL enum mapped to a Java enum class via a jOOQ converter:
 
 [source,graphql]
 ----
-enum Mood @enum(enumReference: {className: "no.sikt.graphitron.codereferences.dummyreferences.MoodEnum"}) {
-    HAPPY
-    SAD
-}
+include::examples/enum.graphqls[tag=JavaEnum]
 ----
 
-Each member of the GraphQL `Mood` enum is paired with the same-named constant on `MoodEnum` at code-generation time. At read time the converter produces a `MoodEnum` instance from the column's stored representation; at write time the Java constant is converted back. Mismatches between the GraphQL enum members and the Java enum's constants surface as a build-time validation error.
+Each member of the GraphQL `MpaaRating` enum is paired with the same-named constant on the `MpaaRating` class jOOQ generates for the `mpaa_rating` column type at code-generation time. At read time the converter produces an `MpaaRating` constant from the column's stored representation; at write time the Java constant is converted back. Mismatches between the GraphQL enum members and the Java enum's constants surface as a build-time validation error.
 
 `className:` must be a fully-qualified class name; the carrying artifact must be a dependency the module declares itself, per xref:../../how-to/external-code.adoc#make-the-class-nameable[Make the class nameable] (a `<plugin><dependencies>` block does not make a class nameable).
 

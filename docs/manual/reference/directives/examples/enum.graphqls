@@ -1,0 +1,16 @@
+# Rendered by ManualExampleTest from enum.graphql. Do not edit.
+
+# tag::JavaEnum[]
+type Film @table(name: "film") {
+  rating: MpaaRating
+}
+
+enum MpaaRating
+    @enum(enumReference: {className : "no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating"}) {
+  G
+  PG
+  PG_13
+  R
+  NC_17
+}
+# end::JavaEnum[]

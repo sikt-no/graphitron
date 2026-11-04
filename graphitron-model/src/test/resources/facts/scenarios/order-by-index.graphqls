@@ -1,0 +1,26 @@
+# An order that follows a database index: @order(index:) names it, and the sort columns are the index's own.
+
+type Film @table(name: "film") {
+    filmId: Int!   @field(name: "film_id")
+    title:  String @field(name: "title")
+}
+
+enum FilmOrderByField {
+    LANGUAGE @order(index: "idx_fk_language_id")
+    TITLE    @order(index: "idx_title")
+}
+
+input FilmOrderBy {
+    field:     FilmOrderByField!
+    direction: SortDirection
+}
+
+extend type Query {
+    films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_order_entry", rows: """
+  index_ref,          primary_key
+  idx_fk_language_id,
+  idx_title,
+  """)

@@ -116,6 +116,24 @@ public final class QueryViewRenderer {
         }
     }
 
+    /**
+     * The types graphitron's bundled directive document declares, {@code SortDirection} among them.
+     * An author never declares them, so an excerpt that printed one would teach a schema the build
+     * refuses as a redefinition.
+     */
+    private static final Set<String> BUNDLED_TYPES = bundledTypes();
+
+    private static Set<String> bundledTypes() {
+        try (var in = no.sikt.graphitron.model.schema.SchemaLoader.class
+                .getResourceAsStream("directives.graphqls")) {
+            if (in == null) throw new IllegalStateException("directives.graphqls not found on classpath");
+            String text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            return Set.copyOf(new graphql.schema.idl.SchemaParser().parse(text).types().keySet());
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
     /** The classification corpus's prelude, which every corpus document is read over. */
     private static final Prelude CORPUS = Prelude.of(CorpusDocuments.prelude());
 
@@ -172,6 +190,9 @@ public final class QueryViewRenderer {
         }
         // 3. Input-object closure reached from the kept fields' arguments.
         for (String name : touched.inputTypes) {
+            if (BUNDLED_TYPES.contains(name)) {
+                continue;
+            }
             TypeDefinition<?> def = merged(registry, name);
             if (def != null) {
                 append(sb, stripInternalDirectives(def, internal));
@@ -179,7 +200,8 @@ public final class QueryViewRenderer {
         }
         // 4. Leaf types the fixture declares and the excerpt names (closure honesty).
         for (String name : touched.leafTypes) {
-            if (prelude.types().contains(name) || ScalarInfo.isGraphqlSpecifiedScalar(name)) {
+            if (prelude.types().contains(name) || BUNDLED_TYPES.contains(name)
+                    || ScalarInfo.isGraphqlSpecifiedScalar(name)) {
                 continue;
             }
             TypeDefinition<?> def = merged(registry, name);

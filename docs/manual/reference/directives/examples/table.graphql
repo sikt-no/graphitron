@@ -1,0 +1,6 @@
+fragment TableBoundNode on Customer @factDocument(path: "scenarios/table-binding") {
+  id
+  customerId
+  firstName
+  address { addressId }
+}

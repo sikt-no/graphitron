@@ -1,0 +1,62 @@
+# A connection ordered at run time: the @orderBy argument takes a list of keys from an enum whose
+# values each say how they sort with @order, by primary key or by named columns, and @defaultOrder
+# is the order when the argument is left out.
+
+type Film @table(name: "film") {
+    filmId: Int!   @field(name: "film_id")
+    title:  String @field(name: "title")
+}
+
+enum MpaaRating { G PG PG_13 R NC_17 }
+
+extend type Query {
+    filmsOrderedConnection(
+        rating: MpaaRating @field(name: "RATING"),
+        order: [FilmOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+}
+
+input FilmOrderBy {
+    field:     FilmSort!
+    direction: SortDirection
+}
+
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+type FilmsConnection {
+    edges: [FilmsEdge!]!
+    nodes: [Film!]!
+    pageInfo: PageInfo!
+}
+
+type FilmsEdge {
+    cursor: String!
+    node: Film!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_order_entry", rows: """
+  index_ref, primary_key
+  ,          TRUE
+  ,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_order_field_entry", rows: """
+  name_ref
+  title
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_default_order_entry", rows: """
+  index_ref, primary_key
+  ,          TRUE
+  """)

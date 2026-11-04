@@ -111,6 +111,10 @@ CREATE TABLE film (
     last_update            timestamp       NOT NULL DEFAULT now()
 );
 
+-- The indexes real sakila puts on film, which @order(index:) and the deprecated @index name.
+CREATE INDEX idx_title ON film(title);
+CREATE INDEX idx_fk_language_id ON film(language_id);
+
 -- The catalog census captures a table's and a column's database comment, and this is the only
 -- place in the fixture that declares any, so it is what pins that path from the database through
 -- the jOOQ crawler to the MCP catalog tools' wire. Deliberately partial rather than thorough:

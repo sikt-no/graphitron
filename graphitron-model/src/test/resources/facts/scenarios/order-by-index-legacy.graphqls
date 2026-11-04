@@ -1,0 +1,26 @@
+# The deprecated spelling: @index names the database index an order follows, as @order(index:) does.
+
+type Film @table(name: "film") {
+    filmId: Int!   @field(name: "film_id")
+    title:  String @field(name: "title")
+}
+
+enum FilmOrderByField {
+    LANGUAGE @index(name: "idx_fk_language_id")
+    TITLE    @index(name: "idx_title")
+}
+
+input FilmOrderBy {
+    field:     FilmOrderByField!
+    direction: SortDirection
+}
+
+extend type Query {
+    films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_index_entry", rows: """
+  index_ref
+  idx_fk_language_id
+  idx_title
+  """)

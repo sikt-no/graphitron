@@ -1,0 +1,3 @@
+fragment LibraryScalar on Payment @factDocument(path: "scenarios/scalar-type-binding") {
+  amount
+}

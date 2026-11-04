@@ -1,0 +1,9 @@
+# Rendered by ManualExampleTest from scalarType.graphql. Do not edit.
+
+# tag::LibraryScalar[]
+type Payment @table(name: "payment") {
+  amount: BigDecimal!
+}
+
+scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+# end::LibraryScalar[]

@@ -1,0 +1,41 @@
+# Rendered by ManualExampleTest from index-directive.graphql. Do not edit.
+
+# tag::Legacy[]
+type Query {
+  films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+}
+
+type Film @table(name: "film") {
+  title: String @field(name: "title")
+}
+
+input FilmOrderBy {
+  field: FilmOrderByField!
+  direction: SortDirection
+}
+
+enum FilmOrderByField {
+  LANGUAGE @index(name: "idx_fk_language_id")
+  TITLE @index(name: "idx_title")
+}
+# end::Legacy[]
+
+# tag::Modern[]
+type Query {
+  films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+}
+
+type Film @table(name: "film") {
+  title: String @field(name: "title")
+}
+
+input FilmOrderBy {
+  field: FilmOrderByField!
+  direction: SortDirection
+}
+
+enum FilmOrderByField {
+  LANGUAGE @order(index: "idx_fk_language_id")
+  TITLE @order(index: "idx_title")
+}
+# end::Modern[]

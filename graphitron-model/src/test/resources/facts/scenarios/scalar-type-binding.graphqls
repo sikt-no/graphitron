@@ -1,0 +1,16 @@
+# A custom scalar bound to the graphql-java scalar that implements it, here the extended scalars'
+# BigDecimal over payment's numeric amount column.
+
+scalar BigDecimal
+  @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+
+type Payment @table(name: "payment") {
+    amount: BigDecimal!
+}
+
+extend type Query { payments: [Payment!]! }
+
+extend schema @expectEquals(relation: "graphitron_ast_scalar_type_entry", rows: """
+  scalar_ref
+  graphql.scalars.ExtendedScalars.GraphQLBigDecimal
+  """)

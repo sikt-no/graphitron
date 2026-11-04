@@ -143,13 +143,18 @@ final class ManualExamples {
     private static final int WIDTH = 100;
 
     /**
-     * The rendered SDL with each over-long line's directives one to a line, indented beneath the
-     * coordinate they apply to, as an author writes a field carrying several. The printer puts a
-     * field and all its directives on one line, which a page cannot show without scrolling.
+     * The rendered SDL with each over-long line laid out as an author writes a busy field: its
+     * arguments one to a line inside the parentheses, and its directives one to a line beneath it.
+     * The printer puts a field, its arguments and all its directives on one line, which a page
+     * cannot show without scrolling.
      */
     static String wrapDirectives(String sdl) {
-        var out = new StringBuilder();
+        var lines = new java.util.ArrayList<String>();
         for (String line : sdl.split("\n", -1)) {
+            lines.addAll(wrapArguments(line));
+        }
+        var out = new StringBuilder();
+        for (String line : lines) {
             if (out.length() > 0) {
                 out.append('\n');
             }
@@ -169,6 +174,53 @@ final class ManualExamples {
         return out.toString();
     }
 
+    /**
+     * A field whose name and arguments alone run past the width, split into the field and its
+     * opening parenthesis, one line per argument, and the closing parenthesis with what follows it.
+     * A short signature stays whole, its directives wrapping beneath it.
+     */
+    private static List<String> wrapArguments(String line) {
+        int open = line.indexOf('(');
+        if (line.length() <= WIDTH || open < 0 || line.stripLeading().startsWith("@")
+                || line.substring(0, open).contains("@")) {
+            return List.of(line);
+        }
+        int depth = 0;
+        boolean quoted = false;
+        int close = -1;
+        var commas = new java.util.ArrayList<Integer>();
+        for (int i = open; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"' && line.charAt(i - 1) != '\\') {
+                quoted = !quoted;
+            } else if (!quoted && (c == '(' || c == '[' || c == '{')) {
+                depth++;
+            } else if (!quoted && (c == ')' || c == ']' || c == '}')) {
+                depth--;
+                if (depth == 0) {
+                    close = i;
+                    break;
+                }
+            } else if (!quoted && depth == 1 && c == ',') {
+                commas.add(i);
+            }
+        }
+        if (close < 0 || close + 1 <= WIDTH) {
+            return List.of(line);
+        }
+        String indent = line.substring(0, line.length() - line.stripLeading().length());
+        var out = new java.util.ArrayList<String>();
+        out.add(line.substring(0, open + 1));
+        int from = open + 1;
+        for (int at : commas) {
+            out.add(indent + "    " + line.substring(from, at + 1).strip());
+            from = at + 1;
+        }
+        out.add(indent + "    " + line.substring(from, close).strip());
+        out.add(indent + line.substring(close));
+        return out;
+    }
+
     /** Where each directive on the line starts, outside strings and parentheses: the space before its {@code @}. */
     private static List<Integer> directiveStarts(String line) {
         var starts = new java.util.ArrayList<Integer>();
@@ -181,7 +233,8 @@ final class ManualExamples {
             } else if (!quoted && (c == '(' || c == '[' || c == '{')) {
                 depth++;
             } else if (!quoted && (c == ')' || c == ']' || c == '}')) {
-                depth--;
+                // A wrapped field's closing line opens on the parenthesis its arguments closed.
+                depth = Math.max(0, depth - 1);
             } else if (!quoted && depth == 0 && c == '@' && i > 0 && line.charAt(i - 1) == ' ') {
                 starts.add(i - 1);
             }

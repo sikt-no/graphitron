@@ -19,25 +19,7 @@ The example schema's `filmsOrderedConnection` exposes a dynamic order argument:
 
 [source,graphql]
 ----
-type Query {
-    filmsOrderedConnection(
-        rating: MpaaRating @field(name: "RATING"),
-        order: [FilmOrderBy] @orderBy,
-        first: Int, last: Int, after: String, before: String
-    ): FilmsConnection! @defaultOrder(primaryKey: true)
-}
-
-input FilmOrderBy {
-    field:     FilmSort!
-    direction: SortDirection
-}
-
-enum FilmSort {
-    FILM_ID @order(primaryKey: true)
-    TITLE   @order(fields: [{name: "title"}])
-}
-
-enum SortDirection { ASC, DESC }
+include::examples/orderBy.graphqls[tag=OrderedConnection]
 ----
 
 A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films sorted by `film.title` ascending. The `[FilmOrderBy]` list shape lets the client compose multi-key orderings. On a connection, graphitron appends the primary key after the composed sequence when it does not already contain a key, so `[{ field: TITLE }]` pages on `title, film_id`; sending `FILM_ID` after `TITLE` yourself gives the same order.
