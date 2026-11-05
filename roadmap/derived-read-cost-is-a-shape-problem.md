@@ -161,10 +161,12 @@ built-in directive means what graphql-java executes.
   application, and what is written inside one, by names, keeping where it was written only for a
   defect to point at, since a stable key is what spares its readers churn. `graphitron_directive_application`
   is keyed so already.
-  * **An argMapping entry and a code reference are anchored by name** `open`, E's. `graphitron_argmapping_landing`, `graphitron_call_context_key`,
-    `graphitron_argmapping_site` and `graphitron_code_reference` key on written positions; each re-keys onto an anchored relation
-    named by the element coordinate, the directive and its ordinal, the path step where one sits and, for an entry, the
-    parameter, keeping the entry only for where a defect is reported.
+  * **A code reference below its application is a subtype of the reference** `open`, E's. `graphitron_code_reference`,
+    `graphitron_argmapping_site`, `_pair`, `_landing`, `_step` and `graphitron_call_context_key` are keyed by name: the
+    element coordinate, the directive and its ordinal, the owner the reference was written under (`service`, `path.0`,
+    `fields.1`, `fields.1.path.0`) and, for a pair, the parameter, the written position kept only for a defect. What is
+    left is a subtype per owner below the application, `PATH_ELEMENT`, `ORDER_FIELD`, `ORDER_FIELD_PATH`, referencing what
+    owns it: F's path element for a path's condition, the `@order` field's ordinal for its method.
   * **The emitted applications number their own** `open`. A configured or minted application keeps
     an ordinal of its own, and the authored ones rank by position instead of copying one.
 * **The schema-file extensions are a set, keyed by the extension** `open`.
