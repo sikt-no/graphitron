@@ -727,7 +727,22 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-* **The claims go** `open`, B's. `BindingUsages`, `SchemaQueries` and `ColumnMatchShadowTest` read
+* **A claim conflict is an entry defect over the claim supertype** `blocked`, on the child below.
+  `graphitron_claim` holds every claim an element makes, keyed (element, kind, claimer) with the
+  priority and stage that claimed it and where it was written, written claims at priority 0 and an
+  inference at the strength its stage claims; `graphitron_claim_kind` catalogs each kind with its
+  family and owning stage, and the producer and binding claims become its subtypes. The relation
+  states the claims and decides nothing; each reader picks its own winner. The conflict rule's is
+  the strongest claims per element and family, an overridden claim no defect, and two of them at
+  one element are one `CLAIMS_CONFLICT` at its declaration unless `graphitron_claim_inclusion`
+  admits the pair, `ROUTINE` with `LOOKUP` an `UNSUPPORTED` deferral, an inferred tie the family's
+  own ambiguity defect, and a family an element needs and lacks an unmet-need defect. The build, the
+  editor and the MCP read it, and `AuthoredClaimConflicts`, `AuthoredClaimRejectionRows`,
+  `intent_authored_type_claim`, `intent_authored_claim_rejection` and `PRODUCER_KINDS_CONFLICT` go.
+  * **A type's authored claim is stored, by kind** `open`. A type claims to be rows of a table or
+    an error, `TABLE_TYPE` written by `@table` and `ERROR_TYPE` by `@error`, as `graphitron_claim`
+    rows of the type family.
+* **The claims go** `blocked`, B's, on "A claim conflict is an entry defect over the claim supertype". `BindingUsages`, `SchemaQueries` and `ColumnMatchShadowTest` read
   the occurrence's producer, bindings, column and node id, and the corpus's claim expectations are
   deleted rather than restated. `intent_column_match_claim`, `intent_resolved_field_claim` and
   `intent_authored_field_claim` dissolve, the last once `intent_field_column_table` stops reading
@@ -1091,11 +1106,6 @@ Stating the seeded cases as documents put real schemas in front of rules that ha
 hand-written rows, and six of those rules answered wrongly, threw, or never fired. Each is fixed
 here with a document that shows it.
 
-* **The claim views keep only the presence branches capture reaches** `open`. The decodes of
-  `@service`, `@externalField`, `@nodeId`, `@table` and `@error` always write an entry, so the
-  branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
-  application with no entry beside it never return a row, and they go. `@routine` and `@mutation`
-  decline what they cannot read, so theirs stay.
 * **A `@nodeId` beside `@field(name:)` names a target of the decode's shape** `blocked`, G's, on "A table class's column fields are stated" and "What an occurrence takes is a binding".
   The name is the `NODE_ID` claim's target: under a table source a column, under an object source a
   member, and its type, a column's generated `Field<T>` or the member's, matches the shape the encode
