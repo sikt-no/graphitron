@@ -9,7 +9,7 @@ Trunk-based, fast-forward-only flow for `graphitron-rewrite`. One invocation = b
 
 ## When to skip
 
-Do NOT run this skill if any of the following hold (the work is not trunk-bound):
+Skip the trunk fast-forward if any of the following hold (the work is not trunk-bound):
 
 - A commit in `origin/claude/graphitron-rewrite..HEAD` fails the subject check below (a `wip`, `draft` or `spike` type, or a subject not of the Conventional Commits shape).
 - The current branch is named `wip/...`, `draft/...`, or `spike/...`.
