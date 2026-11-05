@@ -69,14 +69,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * at commit, or in a nested transaction the service caught, a query field that fails without
  * touching the database, a rejected mount, a cancel before execution, a cancel noticed while a
  * field completes, a cancel and a thrown exception during the synchronous dispatch of a later
- * root field, and the multi-tenant carrier's own release loop. Each failure path also
+ * root field, the multi-tenant carrier's own release loop, and a consumer unmount that clears
+ * nothing, which the PostgreSQL reset at release backs up. Each failure path also
  * checks that the failure the log recorded is the one the case names, not an earlier permission
  * error.
  *
  * <p>Not yet covered, because each is a known defect today and a case here would either fail or
  * assert the defect:
  * <ul>
- *   <li>a consumer unmount that clears nothing;</li>
  *   <li>a fetcher on the single-tenant carrier that takes a connection after the operation has
  *       released, which leaves a mounted connection no one returns;</li>
  *   <li>what the pool does after a rejected mount: Graphitron evicts with {@code abort()}, which
@@ -222,6 +222,25 @@ class SessionIdentityPoolIsolationExecutionTest {
         assertThat(backendOnNextBorrow(pool))
             .as("no connection was destroyed, so both requests ran on one database session")
             .isEqualTo(backend);
+    }
+
+    @Test
+    void unmountThatClearsNothing_isBackstoppedByTheResetAtRelease() throws SQLException {
+        // set_config(..., true) in autocommit reverts at the end of its own statement: this unmount
+        // clears nothing, and only the reset graphitron runs after it keeps Alice off the connection.
+        String claims = "{\"sub\":\"" + ALICE + "\"}";
+        var defective = no.sikt.graphitron.generated.schema.SessionState.of(
+            session -> no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity.mount(session.configuration(), claims),
+            (session, handle) -> session.configuration().dsl().execute("select set_config('app.user_id', '', true)"));
+        var before = Counts.of(pool);
+
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(defective, claims, ALICE)
+            .query("{ secureNotes { note } }")
+            .build());
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(notes(result, "secureNotes")).containsExactlyElementsOf(ALICE_NOTES);
+
+        assertLeftNoIdentity(before, new Counts(1, 0));
     }
 
     @Test

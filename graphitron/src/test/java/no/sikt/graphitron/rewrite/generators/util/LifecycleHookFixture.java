@@ -17,6 +17,8 @@ public final class LifecycleHookFixture {
     public static List<String> sink = new ArrayList<>();
     public static RuntimeException mountThrows;
     public static RuntimeException unmountThrows;
+    /** When set, the unmount switches autocommit off on its connection, breaking the hook contract. */
+    public static boolean unmountLeavesAutoCommitOff;
     private static int mounts;
 
     private LifecycleHookFixture() {}
@@ -26,6 +28,7 @@ public final class LifecycleHookFixture {
         sink = events;
         mountThrows = null;
         unmountThrows = null;
+        unmountLeavesAutoCommitOff = false;
         mounts = 0;
     }
 
@@ -43,6 +46,13 @@ public final class LifecycleHookFixture {
         sink.add("disconnect:" + handle);
         if (unmountThrows != null) {
             throw unmountThrows;
+        }
+        if (unmountLeavesAutoCommitOff) {
+            try {
+                connection.setAutoCommit(false);
+            } catch (java.sql.SQLException e) {
+                throw new IllegalStateException(e);
+            }
         }
     }
 }

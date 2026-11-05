@@ -159,6 +159,17 @@ In `docs/architecture/reference/runtime-extension-points.adoc`: the owned-connec
 - **Reset named variables only.** The consumer lists the GUCs their mount sets, and Graphitron resets those. The backstop then depends on the consumer listing them correctly, the same class of mistake as the unmount it is backing up.
 - **An opt-out flag.** A switch that disables a security backstop, for costs (custom variables set by init SQL, one query per request) the first of which has a fix keeping the reset on. Not offered; reconsider if a consumer shows a setting that can only be applied after connecting.
 
+## Implementation notes
+
+Two places where the plan met a trunk that R1151 had already changed:
+
+- `SessionState.of(mount)` no longer exists, so the unit case "a mount-only state still gets the reset" is written as `reset_runsWhenTheUnmountDoesNothing`: a state whose unmount is a no-op, the form R1151's manual tells a mount with no database state to use.
+- The manual's "The unmount is optional" section is now "The unmount is required", so its rewrite from the Documentation draft does not apply; that section instead gains one sentence that the reset backs the unmount up without standing in for it (it leaves a role switch, and other databases have no reset). The reset paragraph itself landed as drafted.
+
+The unit tier's other harness tests over a hooked PostgreSQL build (`TenantConnectionsGeneratorTest`, `TenantScatterSubstrateTest`, `TenantAuthorizationSubstrateTest`) needed their fake connections to answer the capture and the reset, through the shared `FakeSessionSettings`; the scatter fake now logs its settle probe on `execute` rather than `createStatement`, since the capture also creates a statement, and the tenant fakes track autocommit, since release now reads it after the unmount. `TenantConnectionsGeneratorTest` logs the reset per tenant entry and pins `disconnect → reset → close` for each, which is the multi-tenant inheritance the plan claims.
+
+R1153's pool suite reached trunk first, so this item wrote its reserved case in: `SessionIdentityPoolIsolationExecutionTest.unmountThatClearsNothing_isBackstoppedByTheResetAtRelease` runs a request whose unmount is `set_config(..., true)` through the Agroal pool of one and ends on the suite's own `assertLeftNoIdentity`, and the suite's javadoc moves the case from "not yet covered" to covered. In `SessionHookExecutionTest` the connect-time connection is opened through `SakilaDatabase.connect` with `options` in the URL, since `SakilaDatabaseGuardTest` refuses a test that calls `DriverManager` itself.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready, request revisions (session_01FY5Uvv7pp1sZHXYZeTPkah, 2026-11-05)

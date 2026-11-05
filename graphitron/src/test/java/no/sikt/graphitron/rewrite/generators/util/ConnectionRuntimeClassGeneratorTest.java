@@ -116,7 +116,7 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned);
 
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
     }
 
     @Test
@@ -130,7 +130,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
         // Connection acquired, mount attempted and failed, connection evicted (aborted) rather
         // than returned; unmount never runs and no connection is handed back for SQL.
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect->H1", "abort");
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "capture", "connect->H1", "abort");
     }
 
     @Test
@@ -143,9 +143,9 @@ class ConnectionRuntimeClassGeneratorTest {
             .isInstanceOf(Throwable.class);
 
         // Unmount attempted and failed, so the physical connection is aborted, never close()d
-        // back into the pool.
+        // back into the pool, and the reset never runs on it.
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "abort");
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "abort");
     }
 
     @Test
@@ -155,20 +155,20 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned); // e.g. completion signal
 
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
     }
 
     @Test
     void release_isOutcomeAgnostic_unmountFiresOnEveryCompletionPath() throws Throwable {
         // Success path: the operation completed and the caller releases.
         assertThat(driveRelease(() -> { /* normal completion */ })).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
 
         // Error path: the operation threw; the caller still releases in its finally.
         resetEvents();
         assertThat(driveRelease(() -> { throw new RuntimeException("operation failed"); }))
             .containsExactly(
-                "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+                "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
     }
 
     @Test
@@ -199,8 +199,8 @@ class ConnectionRuntimeClassGeneratorTest {
         acquire(fakeDataSource());
 
         assertThat(events)
-            .as("autocommit is asserted after pinning and before the mount")
-            .startsWith("getConnection", "setAutoCommit:true", "connect->H1");
+            .as("autocommit is asserted after pinning, then the settings captured, before the mount")
+            .startsWith("getConnection", "setAutoCommit:true", "capture", "connect->H1");
     }
 
     @Test
@@ -215,10 +215,10 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned);
 
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1",
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1",
             "setAutoCommit:false",                       // the simulated abandoned mutation transaction
             "rollback", "setAutoCommit:true",            // release settles before unmounting
-            "disconnect:H1", "close");
+            "disconnect:H1", "reset", "close");
     }
 
     @Test
@@ -260,6 +260,97 @@ class ConnectionRuntimeClassGeneratorTest {
             .as("a null unmount is refused at construction, not discovered at release")
             .isInstanceOf(NullPointerException.class)
             .hasMessage("unmount");
+    }
+
+    // --- the PostgreSQL reset at release, the backstop to the unmount ---------------------------
+
+    @Test
+    void reset_restoresExactlyTheSettingsTheCaptureReadAtAcquire() throws Throwable {
+        captureRows = List.of(
+            new String[]{"default_transaction_isolation", "serializable"},
+            new String[]{"search_path", "app, \"My Schema\", public"});
+
+        release(acquire(fakeDataSource()));
+
+        assertThat(resetBound)
+            .as("names and values bound at release are what the capture returned at acquire, in order")
+            .containsExactly(
+                new Object[]{"default_transaction_isolation", "search_path"},
+                new Object[]{"serializable", "app, \"My Schema\", public"});
+    }
+
+    @Test
+    void reset_withNothingCaptured_bindsEmptyArraysAndStillResets() throws Throwable {
+        release(acquire(fakeDataSource()));
+
+        assertThat(events).containsSubsequence("disconnect:H1", "reset", "close");
+        assertThat(resetBound).containsExactly(new Object[0], new Object[0]);
+    }
+
+    @Test
+    void captureFailure_evictsBeforeTheMount_andPropagatesAsItselfNotAsARejectedMount() {
+        captureThrows = new IllegalStateException("pg_settings unreadable");
+
+        assertThatThrownBy(() -> acquire(fakeDataSource()))
+            .as("a failed capture is a deployment fault, never mapped as an identity rejection")
+            .isSameAs(captureThrows);
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "capture", "abort");
+    }
+
+    @Test
+    void resetFailure_evictsInsteadOfReturningToPool() throws Throwable {
+        resetThrows = new java.sql.SQLException("permission denied to set parameter", "42501");
+
+        Object pinned = acquire(fakeDataSource());
+        assertThatThrownBy(() -> release(pinned))
+            .as("a failed reset surfaces, wrapped as the release's unchecked rethrow")
+            .hasCause(resetThrows);
+        assertThat(events).containsExactly(
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "abort");
+    }
+
+    @Test
+    void unmountLeavingAutocommitOff_isEvictedWithoutAReset() throws Throwable {
+        // RESET ALL is transactional: run inside the transaction the unmount left open, the pool's
+        // return-rollback would revert it. The runtime evicts rather than settling for the callback.
+        LifecycleHookFixture.unmountLeavesAutoCommitOff = true;
+
+        Object pinned = acquire(fakeDataSource());
+        assertThatThrownBy(() -> release(pinned))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("autocommit off");
+        assertThat(events).containsExactly(
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1",
+            "disconnect:H1", "setAutoCommit:false", "abort");
+    }
+
+    @Test
+    void nonPostgresDialect_neitherCapturesNorResets() throws Throwable {
+        Object pinned = acquire(fakeDataSource(), SQLDialect.H2,
+            RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
+        release(pinned);
+
+        assertThat(events).containsExactly(
+            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+    }
+
+    @Test
+    void reset_runsWhenTheUnmountDoesNothing() throws Throwable {
+        // The consumer's unmount is the clear; the reset backs it up whatever it does, including
+        // nothing at all.
+        Class<?> state = harness.load(SCHEMA_PACKAGE + ".SessionState");
+        Class<?> mount = harness.load(SCHEMA_PACKAGE + ".SessionState$Mount");
+        Class<?> unmount = harness.load(SCHEMA_PACKAGE + ".SessionState$Unmount");
+        Object aMount = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{mount},
+            (proxy, method, args) -> method.getName().equals("mount")
+                ? "H-noop" : objectMethodOrDefault(proxy, method, args, "aMount"));
+        Object doesNothing = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{unmount},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "doesNothing"));
+        Object sessionState = state.getMethod("of", mount, unmount).invoke(null, aMount, doesNothing);
+
+        release(acquire(fakeDataSource(), SQLDialect.POSTGRES, sessionState));
+
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "capture", "reset", "close");
     }
 
     // --- the fetcher-exception log and response -----------------------------------------------
@@ -539,9 +630,9 @@ class ConnectionRuntimeClassGeneratorTest {
 
     private static final List<String> ROOT_FIELDS = List.of("a", "b");
 
-    /** One connection's whole life: pinned, mounted, unmounted, returned to the pool. */
+    /** One connection's whole life: pinned, captured, mounted, unmounted, reset, returned to the pool. */
     private static final List<String> PIN_AND_RELEASE = List.of(
-        "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+        "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
 
     private CompletableFuture<ExecutionResult> executeOverEngine(String operation, SynchronousAbortDriver.Abort abort)
             throws Throwable {
@@ -556,7 +647,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     /** The pin, mount, unmount and return alone, without the mode switches a transaction adds. */
     private static final List<String> PINNED_MOUNTED_RELEASED = List.of(
-        "getConnection", "connect->H1", "disconnect:H1", "close");
+        "getConnection", "capture", "connect->H1", "disconnect:H1", "reset", "close");
 
     private List<String> lifecycleEvents() {
         return events.stream()
@@ -646,13 +737,16 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     private Object acquire(DataSource dataSource) throws Throwable {
+        return acquire(dataSource, SQLDialect.POSTGRES, RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
+    }
+
+    private Object acquire(DataSource dataSource, SQLDialect dialect, Object sessionState) throws Throwable {
         Executor sameThread = Runnable::run;
         Method acquire = pinnedConnectionClass.getMethod(
             "acquire", DataSource.class, SQLDialect.class, Settings.class, Executor.class,
             harness.load(SCHEMA_PACKAGE + ".SessionState"));
         try {
-            return acquire.invoke(null, dataSource, SQLDialect.POSTGRES, new Settings(), sameThread,
-                RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
+            return acquire.invoke(null, dataSource, dialect, new Settings(), sameThread, sessionState);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -692,11 +786,53 @@ class ConnectionRuntimeClassGeneratorTest {
                 case "getAutoCommit" -> autoCommit[0];
                 case "commit" -> { log.add("commit"); yield null; }
                 case "rollback" -> { log.add("rollback"); yield null; }
-                // The probe a mutation field's settle runs before it commits.
-                case "createStatement" -> Proxy.newProxyInstance(harness.classLoader(),
-                    new Class<?>[]{java.sql.Statement.class},
-                    (statement, m, a) -> objectMethodOrDefault(statement, m, a, "fakeStatement"));
+                // The capture of session settings at acquire (executeQuery, logged), and the probe a
+                // mutation field's settle runs before it commits (execute, not logged).
+                case "createStatement" -> FakeSessionSettings.captureStatement(harness.classLoader(), captureRows,
+                    () -> {
+                        log.add("capture");
+                        if (captureThrows != null) {
+                            throw captureThrows;
+                        }
+                    });
+                case "createArrayOf" -> {
+                    Object elements = args[1];
+                    yield Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{java.sql.Array.class},
+                        (array, m, a) -> m.getName().equals("getArray")
+                            ? elements : objectMethodOrDefault(array, m, a, "fakeArray"));
+                }
+                // The reset at release, the only prepared statement the runtime itself issues.
+                case "prepareStatement" -> resetStatement(log, (String) args[0]);
                 default -> objectMethodOrDefault(proxy, method, args, "fakeConnection");
+            });
+    }
+
+    /** Settings the fake capture answers with, as {@code {name, value}} rows; none by default. */
+    private List<String[]> captureRows = List.of();
+    /** When set, the fake capture throws it. */
+    private RuntimeException captureThrows;
+    /** When set, the fake reset's {@code execute} throws it. */
+    private java.sql.SQLException resetThrows;
+    /** The {@code {names, values}} the last reset bound, as {@code createArrayOf} received them. */
+    private final List<Object[]> resetBound = new ArrayList<>();
+
+    private java.sql.PreparedStatement resetStatement(List<String> log, String sql) {
+        assertThat(FakeSessionSettings.isReset(sql)).as("the runtime prepares no statement but the reset").isTrue();
+        Object[][] bound = new Object[2][];
+        return (java.sql.PreparedStatement) Proxy.newProxyInstance(harness.classLoader(),
+            new Class<?>[]{java.sql.PreparedStatement.class}, (statement, m, a) -> switch (m.getName()) {
+                case "setArray" -> { bound[(Integer) a[0] - 1] = (Object[]) ((java.sql.Array) a[1]).getArray(); yield null; }
+                case "execute" -> {
+                    log.add("reset");
+                    resetBound.clear();
+                    resetBound.add(bound[0]);
+                    resetBound.add(bound[1]);
+                    if (resetThrows != null) {
+                        throw resetThrows;
+                    }
+                    yield false;
+                }
+                default -> objectMethodOrDefault(statement, m, a, "fakeResetStatement");
             });
     }
 

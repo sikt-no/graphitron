@@ -579,6 +579,147 @@ class SessionHookExecutionTest {
         }
     }
 
+    // ===== the reset at release: the backstop to a defective unmount =====
+
+    @Test
+    void defectiveUnmount_isBackstoppedByTheResetAtRelease() throws Exception {
+        Connection raw = probeConnection();
+        try {
+            // First prove the unmount really is defective: set_config(..., true) in autocommit
+            // reverts at the end of its own statement and clears nothing.
+            var handle = no.sikt.graphitron.generated.schema.GraphitronSessionHook
+                .mount(defectiveState("alice"), raw, SQLDialect.POSTGRES, new Settings());
+            no.sikt.graphitron.generated.schema.GraphitronSessionHook
+                .unmount(defectiveState("alice"), raw, SQLDialect.POSTGRES, new Settings(), handle);
+            assertThat(userIdSetting(raw)).as("the defective unmount left alice on the connection").isEqualTo("alice");
+
+            // Then the same callbacks through the emitted lifecycle, on a pool of one.
+            var pool = new PoolOfOne(raw);
+            var pinned = acquire(pool, defectiveState("alice"));
+            assertThat(notesVisible(raw)).contains("a1").doesNotContain("b1");
+            pinned.release();
+
+            assertThat(userIdSetting(raw))
+                .as("the pool's next borrower finds no identity, not alice's")
+                .isEmpty();
+            assertThat(notesVisible(raw)).as("RLS denies everything (fail closed)").isEmpty();
+            assertThat(pool.returned).as("returned to the pool, not evicted").isEqualTo(1);
+            assertThat(pool.aborted).isFalse();
+        } finally {
+            raw.close();
+        }
+    }
+
+    @Test
+    void poolConfiguredSettingsSurviveTheReset() throws Exception {
+        Connection raw = probeConnection();
+        try {
+            // What a pool does to a new connection: HikariCP's setupConnection calls the JDBC
+            // setters, which pgjdbc issues as session SETs, and init SQL runs plain SETs.
+            String applicationName = setting(raw, "application_name");
+            raw.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            raw.setSchema("public");
+            try (Statement st = raw.createStatement()) {
+                st.execute("set statement_timeout = '4321ms'");
+            }
+
+            var pool = new PoolOfOne(raw);
+            acquire(pool, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}")).release();
+
+            assertThat(setting(raw, "default_transaction_isolation")).isEqualTo("serializable");
+            assertThat(setting(raw, "search_path")).isEqualTo("public");
+            assertThat(setting(raw, "statement_timeout")).isEqualTo("4321ms");
+            assertThat(setting(raw, "application_name")).isEqualTo(applicationName).isNotEmpty();
+            assertThat(pool.returned).isEqualTo(1);
+        } finally {
+            raw.close();
+        }
+    }
+
+    @Test
+    void mountChangedBuiltinIsUndone() throws Exception {
+        Connection raw = probeConnection();
+        try {
+            String before = setting(raw, "search_path");
+            no.sikt.graphitron.generated.schema.SessionState state =
+                no.sikt.graphitron.generated.schema.SessionState.of(
+                    session -> {
+                        var handle = no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity
+                            .mount(session.configuration(), "{\"sub\":\"alice\"}");
+                        session.configuration().dsl().execute("select set_config('search_path', 'pg_catalog', false)");
+                        return handle;
+                    },
+                    (session, handle) -> session.configuration().dsl()
+                        .execute("select set_config('app.user_id', '', true)"));
+
+            var pinned = acquire(new PoolOfOne(raw), state);
+            assertThat(setting(raw, "search_path")).as("the mount's tenancy is in effect").isEqualTo("pg_catalog");
+            pinned.release();
+
+            assertThat(setting(raw, "search_path")).as("undone to its value from before the mount").isEqualTo(before);
+            assertThat(userIdSetting(raw)).isEmpty();
+        } finally {
+            raw.close();
+        }
+    }
+
+    @Test
+    void customVariableFromInitSqlHoldsForTheFirstRequestOnly() throws Exception {
+        // pgjdbc's options property, sent in the startup packet: "-c app.region=eu", URL-encoded.
+        String atConnectUrl = jdbcUrl + (jdbcUrl.contains("?") ? "&" : "?") + "options=-c%20app.region%3Deu";
+        Connection afterConnect = probeConnection();
+        Connection atConnect = SakilaDatabase.connect(atConnectUrl, PROBE_USER, PROBE_PASSWORD);
+        try {
+            try (Statement st = afterConnect.createStatement()) {
+                st.execute("set app.region = 'eu'"); // what connectionInitSql would do
+            }
+            for (Connection raw : List.of(afterConnect, atConnect)) {
+                assertThat(setting(raw, "app.region")).isEqualTo("eu");
+                acquire(new PoolOfOne(raw),
+                    no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}")).release();
+            }
+
+            assertThat(setting(afterConnect, "app.region"))
+                .as("a custom variable set after connecting is cleared with the identity")
+                .isEmpty();
+            assertThat(setting(atConnect, "app.region"))
+                .as("the same variable sent at connect time is where the reset leaves it")
+                .isEqualTo("eu");
+        } finally {
+            afterConnect.close();
+            atConnect.close();
+        }
+    }
+
+    @Test
+    void serverPreparedStatementsSurviveTheReset() throws Exception {
+        // pgjdbc server-prepares a statement after prepareThreshold (5) executions; the later
+        // cycles run on a statement prepared before an earlier reset, which RESET ALL (unlike
+        // DISCARD ALL) leaves in place.
+        Connection raw = probeConnection();
+        try {
+            var pool = new PoolOfOne(raw);
+            for (int cycle = 0; cycle < 10; cycle++) {
+                var pinned = acquire(pool, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"));
+                var notes = DSL.using(pinned.connection(), SQLDialect.POSTGRES)
+                    .select(DSL.field("note", String.class))
+                    .from(DSL.table("rls_probe"))
+                    .where(DSL.field("id", Integer.class).eq(1))
+                    .fetch(0, String.class);
+                assertThat(notes).as("cycle " + cycle).containsExactly("a1");
+                pinned.release();
+            }
+            assertThat(pool.returned).isEqualTo(10);
+            try (Statement st = raw.createStatement();
+                 ResultSet rs = st.executeQuery("select count(*) from pg_prepared_statements")) {
+                rs.next();
+                assertThat(rs.getInt(1)).as("server-prepared statements outlived the resets").isPositive();
+            }
+        } finally {
+            raw.close();
+        }
+    }
+
     // ===== helpers =====
 
     private static graphql.GraphQL ownedEngine() throws Exception {
@@ -660,6 +801,71 @@ class SessionHookExecutionTest {
             @Override public <T> T unwrap(Class<T> iface) throws SQLException { throw new SQLException("not a wrapper"); }
             @Override public boolean isWrapperFor(Class<?> iface) { return false; }
         };
+    }
+
+    /** The facade's mount with the defective, transaction-scoped unmount the reset backs up. */
+    private static no.sikt.graphitron.generated.schema.SessionState defectiveState(String principal) {
+        return no.sikt.graphitron.generated.schema.SessionState.of(
+            session -> no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity
+                .mount(session.configuration(), "{\"sub\":\"" + principal + "\"}"),
+            (session, handle) -> session.configuration().dsl()
+                .execute("select set_config('app.user_id', '', true)"));
+    }
+
+    private static no.sikt.graphitron.generated.schema.PinnedConnection acquire(
+            javax.sql.DataSource pool, no.sikt.graphitron.generated.schema.SessionState state) throws SQLException {
+        Executor sameThread = Runnable::run;
+        return no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
+            pool, SQLDialect.POSTGRES, new Settings(), sameThread, state);
+    }
+
+    /** A setting as a borrower reads it; a custom variable that was never set reads empty. */
+    private static String setting(Connection conn, String name) throws SQLException {
+        try (var st = conn.prepareStatement("select coalesce(current_setting(?, true), '')")) {
+            st.setString(1, name);
+            try (ResultSet rs = st.executeQuery()) {
+                rs.next();
+                return rs.getString(1);
+            }
+        }
+    }
+
+    /**
+     * A pool of one: hands out a wrapper over {@code raw} whose {@code close()} returns it to the
+     * pool without closing the physical connection, so a test can read what the next borrower
+     * would see; {@code abort} is recorded instead of performed.
+     */
+    private static final class PoolOfOne implements javax.sql.DataSource {
+        private final Connection raw;
+        int returned;
+        boolean aborted;
+
+        PoolOfOne(Connection raw) {
+            this.raw = raw;
+        }
+
+        @Override public Connection getConnection() {
+            return (Connection) java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
+                    case "close" -> { returned++; yield null; }
+                    case "abort" -> { aborted = true; yield null; }
+                    default -> {
+                        try {
+                            yield method.invoke(raw, args);
+                        } catch (java.lang.reflect.InvocationTargetException e) {
+                            throw e.getCause();
+                        }
+                    }
+                });
+        }
+        @Override public Connection getConnection(String u, String p) { return getConnection(); }
+        @Override public PrintWriter getLogWriter() { return null; }
+        @Override public void setLogWriter(PrintWriter out) { }
+        @Override public void setLoginTimeout(int seconds) { }
+        @Override public int getLoginTimeout() { return 0; }
+        @Override public java.util.logging.Logger getParentLogger() { return null; }
+        @Override public <T> T unwrap(Class<T> iface) throws SQLException { throw new SQLException("not a wrapper"); }
+        @Override public boolean isWrapperFor(Class<?> iface) { return false; }
     }
 
     private static no.sikt.graphitron.generated.multischemamutation.schema.SessionState multischemaState() {

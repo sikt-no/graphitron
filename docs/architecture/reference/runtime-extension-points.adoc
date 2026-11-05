@@ -61,9 +61,11 @@ For that operation Graphitron takes one connection when a field first needs it,
 runs your mount callback on it to mount identity, executes (each top-level
 mutation field, payload included, in its own transaction that commits or rolls
 back independently, see <<owned-path-transactions>>; queries in autocommit),
-then runs your unmount callback and releases the
+then runs your unmount callback, on PostgreSQL follows it with a reset
+(`RESET ALL` and a restore of the settings captured before the mount, see
+<<hook-state-contract>>), and releases the
 connection on every completion path, including a query cancelled through
-`ExecutionInput.cancel()` or abandoned by an exception during dispatch. A connection whose unmount failed is evicted, never returned to the
+`ExecutionInput.cancel()` or abandoned by an exception during dispatch. A connection whose unmount or reset failed is evicted, never returned to the
 pool.
 
 === Session identity through `<sessionState>`
@@ -113,6 +115,15 @@ contract is stated here and holds for every `<sessionState>`:
   acquisition, not silently worked around), and release settles any transaction
   the operation left open before unmount runs (so your clears take effect
   immediately rather than being reverted by the pool's return-rollback).
+* *On PostgreSQL a reset backs your unmount up.* Graphitron captures the
+  connection's session-set built-in settings (those `pg_settings` lists with
+  `source = 'session'` and `context = 'user'`) before the mount and, after the
+  unmount, issues `RESET ALL` and restores them, so a defective unmount leaves
+  the next borrower with no identity rather than the previous caller's. It
+  neither relaxes this contract nor reverts the role: reverting an init-SQL
+  `SET ROLE` would hand the next borrower the table owner, whom RLS does not
+  apply to. An unmount that leaves autocommit off is evicted rather than reset,
+  since `RESET ALL` inside its transaction would be rolled back.
 
 A mount that violates the first two points can leave identity mounted for the
 pool's next borrower or drop it mid-operation; both are security defects, not

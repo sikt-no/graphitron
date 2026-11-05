@@ -47,17 +47,27 @@ import java.util.Optional;
  * <h2>The lifecycle contract (unit-pinned in {@code ConnectionRuntimeClassGeneratorTest})</h2>
  * <ul>
  *   <li><b>Acquire.</b> {@code DataSource.getConnection()}, then {@code setAutoCommit(true)}, then
- *       the mount method with the typed payload, capturing its returned handle. <b>Fail
- *       closed:</b> if mount throws (it may have partially mounted session state first), the
- *       connection is evicted, never returned, and the failure propagates before any operation
- *       SQL runs.</li>
+ *       (on PostgreSQL, when the build mounts) the capture of the built-in settings the connection
+ *       carries session-set, then the mount method with the typed payload, capturing its returned
+ *       handle. <b>Fail closed:</b> if mount throws (it may have partially mounted session state
+ *       first), the connection is evicted, never returned, and the failure propagates before any
+ *       operation SQL runs.</li>
  *   <li><b>Release.</b> Any transaction the operation left open is rolled back and autocommit
  *       asserted, then the unmount method (when configured) fires on <em>every</em> completion
- *       path (success, error, cancellation), bound to the captured handle when it takes one;
- *       release is idempotent. <b>Evict on unmount failure:</b> if unmount throws or cannot run,
- *       the physical connection is aborted and never returned to the pool, so a connection whose
- *       identity cannot be proven unmounted gets no next borrower.</li>
+ *       path (success, error, cancellation), bound to the captured handle when it takes one,
+ *       then, on PostgreSQL, the reset: {@code RESET ALL} and a restore of the captured settings,
+ *       before the connection goes back to the pool; release is idempotent. <b>Evict on unmount
+ *       failure:</b> if unmount or the reset throws or cannot run, the physical connection is
+ *       aborted and never returned to the pool, so a connection whose identity cannot be proven
+ *       unmounted gets no next borrower.</li>
  * </ul>
+ * The reset is a backstop to the consumer's unmount, not a replacement: an unmount that clears
+ * nothing (a transaction-scoped {@code set_config(..., true)} in autocommit) leaves the next
+ * borrower with no identity rather than the previous caller's. {@code RESET ALL} clears every
+ * custom variable, which is where identity lives and which {@code pg_settings} cannot enumerate;
+ * the restore puts back the built-in settings the pool configured after connecting, captured
+ * before the mount so a mount's own change to one is undone too. The role is left alone, since
+ * reverting an init-SQL {@code SET ROLE} would hand the next borrower the table owner.
  * Eviction uses {@link java.sql.Connection#abort(java.util.concurrent.Executor)} (JDBC, valid Java
  * 17): pool wrappers (Agroal/HikariCP) honour it as a true physical evict where {@code close()}
  * merely reclaims the connection to the pool. The runtime supplies a same-thread executor.
@@ -159,6 +169,10 @@ public final class ConnectionRuntimeClassGenerator {
 
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
     private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
+    private static final ClassName STATEMENT = ClassName.get("java.sql", "Statement");
+    private static final ClassName PREPARED_STATEMENT = ClassName.get("java.sql", "PreparedStatement");
+    private static final ClassName RESULT_SET = ClassName.get("java.sql", "ResultSet");
+    private static final TypeName STRING_TABLE = ArrayTypeName.of(ArrayTypeName.of(String.class));
     private static final ClassName DATA_SOURCE = ClassName.get("javax.sql", "DataSource");
     private static final ClassName SETTINGS = ClassName.get("org.jooq.conf", "Settings");
     private static final ClassName EXECUTOR = ClassName.get("java.util.concurrent", "Executor");
@@ -206,6 +220,11 @@ public final class ConnectionRuntimeClassGenerator {
      * plausible in exactly these builds.
      */
     static final String MOUNTED_TENANT = "mountedTenant";
+    /**
+     * The {@code PinnedConnection} field (and {@code acquire} local) holding the built-in settings
+     * captured at acquire for release to restore after its reset.
+     */
+    static final String RESTORE = "restore";
 
     /** The graphQLContext key the request tenant set is published under. */
     public static final String TENANTS_KEY_FIELD = "TENANTS_KEY";
@@ -347,6 +366,11 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("The tenant this connection was mounted for, handed to the unmount callback as it\n"
                 + "was to the mount.\n")
             .build();
+        var restoreField = FieldSpec.builder(STRING_TABLE, RESTORE, Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The built-in settings the connection carried session-set when it was taken, captured\n"
+                + "before the mount as {@code {names, values}}, for release to restore after its reset;\n"
+                + "{@code null} when the dialect is not PostgreSQL, which is what tells release not to reset.\n")
+            .build();
         var releasedField = FieldSpec.builder(boolean.class, "released", Modifier.PRIVATE).build();
 
         var constructorBuilder = MethodSpec.constructorBuilder()
@@ -363,6 +387,7 @@ public final class ConnectionRuntimeClassGenerator {
             if (multiTenant) {
                 constructorBuilder.addParameter(mountedTenantType, MOUNTED_TENANT);
             }
+            constructorBuilder.addParameter(STRING_TABLE, RESTORE);
         }
         constructorBuilder
             .addStatement("this.connection = connection")
@@ -377,6 +402,7 @@ public final class ConnectionRuntimeClassGenerator {
             if (multiTenant) {
                 constructorBuilder.addStatement("this.$L = $L", MOUNTED_TENANT, MOUNTED_TENANT);
             }
+            constructorBuilder.addStatement("this.$L = $L", RESTORE, RESTORE);
         }
         var constructor = constructorBuilder.build();
 
@@ -399,6 +425,9 @@ public final class ConnectionRuntimeClassGenerator {
         if (handleType != null) {
             acquireBuilder.addStatement("$T handle", handleType);
         }
+        if (mounts) {
+            acquireBuilder.addStatement("$T $L", STRING_TABLE, RESTORE);
+        }
         acquireBuilder
             .beginControlFlow("try")
             .addComment("Graphitron asserts the connection's transaction mode: autocommit-on is the resting")
@@ -410,6 +439,12 @@ public final class ConnectionRuntimeClassGenerator {
         if (mounts) {
             String args = mountCallArgs(multiTenant);
             acquireBuilder
+                .addComment("On PostgreSQL, capture the built-in settings the connection carries session-set (what")
+                .addComment("the pool configured after connecting) before the mount can change any, so release can")
+                .addComment("put them back after its RESET ALL. Outside the rejection mapping below: a failed")
+                .addComment("capture is a deployment fault, like a failed autocommit assertion.")
+                .addStatement("$L = dialect.family() == $T.POSTGRES ? captureSessionSettings(connection) : null",
+                    RESTORE, SQL_DIALECT)
                 .addComment("Only the mount itself is a rejected identity: a failed autocommit assertion above is")
                 .addComment("a deployment fault and must not reach a consumer's mapping of identity rejections.")
                 .beginControlFlow("try");
@@ -440,16 +475,19 @@ public final class ConnectionRuntimeClassGenerator {
             if (multiTenant) {
                 constructed.append(", ").append(MOUNTED_TENANT);
             }
+            constructed.append(", ").append(RESTORE);
         }
         acquireBuilder.addStatement("return new $T($L)", pinnedConnection, constructed.toString());
         var acquire = acquireBuilder
             .addJavadoc(mounts
-                ? "Pins one connection, asserts autocommit on it, and mounts identity through the generated\n"
-                    + "hook's static {@code mount}, with the typed payload. The mount therefore always runs\n"
-                    + "outside any transaction, as its own committed statement, whatever the pool's\n"
-                    + "configuration. Fail-closed: a throwing mount (or a failed autocommit assertion)\n"
-                    + "evicts the connection and propagates before any operation SQL runs; the mount's own\n"
-                    + "throw propagates as {@code SessionMountException}, the assertion's as itself.\n"
+                ? "Pins one connection, asserts autocommit on it, on PostgreSQL captures the built-in\n"
+                    + "settings it carries session-set (for release to restore after its reset), and mounts\n"
+                    + "identity through the generated hook's static {@code mount}, with the typed payload.\n"
+                    + "The mount therefore always runs outside any transaction, as its own committed\n"
+                    + "statement, whatever the pool's configuration. Fail-closed: a throwing mount (or a\n"
+                    + "failed autocommit assertion or capture) evicts the connection and propagates before\n"
+                    + "any operation SQL runs; the mount's own throw propagates as\n"
+                    + "{@code SessionMountException}, the assertion's and the capture's as themselves.\n"
                 : "Pins one connection and asserts autocommit on it (the resting state graphitron holds an\n"
                     + "owned connection in). No {@code <sessionState>} is configured, so no identity is\n"
                     + "mounted and no hook runs. Fail-closed: a failed assertion evicts the connection.\n")
@@ -498,6 +536,25 @@ public final class ConnectionRuntimeClassGenerator {
             String handleArg = unmountTakesHandle ? ", handle" : "";
             releaseBuilder.addStatement("$T.unmount($L, connection, dialect, settings$L$L)", sessionHookImpl,
                 SESSION_STATE_SLOT, tenantArg, handleArg);
+            releaseBuilder
+                .addComment("The backstop to the unmount: on PostgreSQL clear every custom variable (where identity")
+                .addComment("lives) and put back the built-in settings captured before the mount, so a defective")
+                .addComment("unmount leaves the next borrower with no identity rather than this one's. The role is")
+                .addComment("left alone: reverting an init-SQL SET ROLE would hand the next borrower the owner.")
+                .beginControlFlow("if ($L != null)", RESTORE)
+                .addComment("RESET ALL is transactional: an unmount that switched autocommit off would leave it in a")
+                .addComment("transaction the pool's return-rollback reverts. Evict instead of settling.")
+                .beginControlFlow("if (!connection.getAutoCommit())")
+                .addStatement("throw new $T($S)", IllegalStateException.class,
+                    "the unmount left autocommit off; identity cannot be proven reset")
+                .endControlFlow()
+                .beginControlFlow("try ($T reset = connection.prepareStatement($S\n$>$>+ $S$<$<))", PREPARED_STATEMENT,
+                    "RESET ALL;", " select set_config(n, v, false) from unnest(?::text[], ?::text[]) as t(n, v)")
+                .addStatement("reset.setArray(1, connection.createArrayOf($S, $L[0]))", "text", RESTORE)
+                .addStatement("reset.setArray(2, connection.createArrayOf($S, $L[1]))", "text", RESTORE)
+                .addStatement("reset.execute()")
+                .endControlFlow()
+                .endControlFlow();
         }
         var release = releaseBuilder
             .nextControlFlow("catch ($T releaseFailure)", Throwable.class)
@@ -510,8 +567,11 @@ public final class ConnectionRuntimeClassGenerator {
                 ? "Unmounts identity and releases the connection, settling any transaction the operation\n"
                     + "left open first so the unmount runs outside any transaction. Fires unmount on every\n"
                     + "completion path (success, error, cancellation); idempotent, so a redundant\n"
-                    + "cancel-then-complete release unmounts exactly once. Evicts on unmount failure (and on\n"
-                    + "a failed pre-unmount settle, which equally leaves identity unprovable).\n"
+                    + "cancel-then-complete release unmounts exactly once. On PostgreSQL the unmount is\n"
+                    + "followed by a reset, {@code RESET ALL} and a restore of the built-in settings captured\n"
+                    + "at acquire, so the connection goes back to the pool as it arrived whatever the unmount\n"
+                    + "cleared. Evicts on unmount or reset failure (and on a failed pre-unmount settle, or an\n"
+                    + "unmount that left autocommit off, which equally leave identity unprovable).\n"
                 : "Releases the connection, settling any transaction the operation left open and asserting\n"
                     + "autocommit (the resting state graphitron returns an owned connection in).\n"
                     + "Idempotent; evicts on a failed settle.\n"))
@@ -594,6 +654,7 @@ public final class ConnectionRuntimeClassGenerator {
             if (multiTenant) {
                 builder.addField(mountedTenantField);
             }
+            builder.addField(restoreField);
         }
         builder.addField(releasedField)
             .addMethod(constructor)
@@ -613,11 +674,49 @@ public final class ConnectionRuntimeClassGenerator {
         if (multiTenant) {
             builder.addMethod(abortMethod());
         }
-        return builder
+        builder
             .addMethod(close)
             .addMethod(evict)
             .addMethod(closeReturningToPool)
-            .addMethod(rethrow)
+            .addMethod(rethrow);
+        if (mounts) {
+            builder.addMethod(captureSessionSettings());
+        }
+        return builder.build();
+    }
+
+    /**
+     * {@code private static String[][] captureSessionSettings(Connection)}: reads, on PostgreSQL, the
+     * built-in settings a connection carries with {@code source = 'session'} and
+     * {@code context = 'user'}, the pool's post-connect configuration, as {@code {names, values}}.
+     * Custom variables never appear in {@code pg_settings}, so they are not captured and the reset
+     * clears them; settings only a superuser may change are left out, since restoring one under a
+     * non-superuser role would fail every release.
+     */
+    private static MethodSpec captureSessionSettings() {
+        var listOfString = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
+        return MethodSpec.methodBuilder("captureSessionSettings")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(STRING_TABLE)
+            .addParameter(CONNECTION, "connection")
+            .addException(SQL_EXCEPTION)
+            .addStatement("$T names = new $T<>()", listOfString, ARRAY_LIST)
+            .addStatement("$T values = new $T<>()", listOfString, ARRAY_LIST)
+            .beginControlFlow("try ($T capture = connection.createStatement();\n$>$>$T settings = capture.executeQuery($S\n$>$>+ $S$<$<))$<$<",
+                STATEMENT, RESULT_SET, "select name, current_setting(name) from pg_settings",
+                " where source = 'session' and context = 'user'")
+            .beginControlFlow("while (settings.next())")
+            .addStatement("names.add(settings.getString(1))")
+            .addStatement("values.add(settings.getString(2))")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return new $T[][] {names.toArray(new $T[0]), values.toArray(new $T[0])}",
+                String.class, String.class, String.class)
+            .addJavadoc("The built-in settings this connection carries session-set, as {@code {names, values}}:\n"
+                + "what the pool configured after connecting, read before the mount so release can restore\n"
+                + "it after {@code RESET ALL}. Custom variables never appear in {@code pg_settings}, so the\n"
+                + "reset clears them; superuser-only settings are left out, since restoring one under a\n"
+                + "non-superuser role would fail.\n")
             .build();
     }
 
@@ -3529,6 +3628,8 @@ public final class ConnectionRuntimeClassGenerator {
                 + "its own committed transaction, so a later transaction's rollback cannot revert it, and\n"
                 + "what the callback sets must be <em>session-scoped</em> state in the database's own\n"
                 + "vocabulary (transaction-scoped storage is gone by this call's own implicit commit).\n"
+                + "On PostgreSQL the runtime has already captured the built-in settings the connection\n"
+                + "carries session-set, so a built-in setting changed here is undone at release.\n"
                 + "A thrown exception fails the request closed: the connection is evicted, never pooled.\n")
             .build();
 
@@ -3555,8 +3656,11 @@ public final class ConnectionRuntimeClassGenerator {
                 + (handleType == null ? "" : ", with the handle mount returned") + ". Fires at release on\n"
                 + "every completion path, outside any transaction (the runtime rolls back anything the\n"
                 + "operation left open and asserts autocommit first), so the clears take effect\n"
-                + "immediately. If this throws, the runtime evicts the physical connection rather than\n"
-                + "returning tainted state to the pool.\n")
+                + "immediately. On PostgreSQL the runtime follows it with a reset ({@code RESET ALL} and\n"
+                + "a restore of the built-in settings captured before the mount) as a backstop; the role\n"
+                + "is not reset, so a role switch the mount made is this callback's to undo. If this\n"
+                + "throws, the runtime evicts the physical connection rather than returning tainted state\n"
+                + "to the pool.\n")
             .build();
 
         return TypeSpec.classBuilder(SESSION_HOOK_IMPL_CLASS_NAME)

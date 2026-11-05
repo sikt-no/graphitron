@@ -131,12 +131,13 @@ class TenantConnectionsGeneratorTest {
         events.clear();
         releaseAll(tc);
         // The unified carrier's map is concurrent, so cross-key release order is unspecified;
-        // within one key the unmount always precedes the close.
+        // within one key the unmount precedes the reset, and the reset the close: every tenant
+        // entry is released through PinnedConnection.release() and inherits the backstop.
         assertThat(events).containsExactlyInAnyOrder(
-            "disconnect:A", "close:A",
-            "disconnect:B", "close:B");
-        assertThat(events.indexOf("disconnect:A")).isLessThan(events.indexOf("close:A"));
-        assertThat(events.indexOf("disconnect:B")).isLessThan(events.indexOf("close:B"));
+            "disconnect:A", "reset:A", "close:A",
+            "disconnect:B", "reset:B", "close:B");
+        assertThat(events).containsSubsequence("disconnect:A", "reset:A", "close:A");
+        assertThat(events).containsSubsequence("disconnect:B", "reset:B", "close:B");
     }
 
     @Test
@@ -156,7 +157,7 @@ class TenantConnectionsGeneratorTest {
 
         assertThat(events)
             .as("A returns to its pool, B is evicted (aborted); neither is orphaned by the other's outcome")
-            .containsExactlyInAnyOrder("disconnect:A", "close:A", "disconnect:B", "abort:B");
+            .containsExactlyInAnyOrder("disconnect:A", "reset:A", "close:A", "disconnect:B", "abort:B");
         assertThat(events.indexOf("disconnect:A")).isLessThan(events.indexOf("close:A"));
         assertThat(events.indexOf("disconnect:B")).isLessThan(events.indexOf("abort:B"));
     }
@@ -267,15 +268,24 @@ class TenantConnectionsGeneratorTest {
     }
 
     private Connection fakeConnection(String label, boolean failDisconnect) {
+        boolean[] autoCommit = {false};
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 // The RecordingSessionState callbacks run prepareStatement for both mount and unmount;
                 // the unmount SQL is the one that clears to the empty string. Label the phase off the SQL.
+                // The reset release issues after the unmount is the third prepareStatement.
                 case "prepareStatement" -> {
+                    if (FakeSessionSettings.isReset((String) args[0])) {
+                        events.add("reset:" + label);
+                        yield fakePreparedStatement(false);
+                    }
                     boolean disconnect = ((String) args[0]).contains("'', false");
                     events.add((disconnect ? "disconnect:" : "connect:") + label);
                     yield fakePreparedStatement(disconnect && failDisconnect);
                 }
+                case "createStatement" -> FakeSessionSettings.captureStatement(harness.classLoader(), List.of(), () -> {});
+                case "setAutoCommit" -> { autoCommit[0] = (Boolean) args[0]; yield null; }
+                case "getAutoCommit" -> autoCommit[0];
                 case "close" -> { events.add("close:" + label); yield null; }
                 case "abort" -> { events.add("abort:" + label); yield null; }
                 default -> objectMethodOrDefault(proxy, method, args, label);

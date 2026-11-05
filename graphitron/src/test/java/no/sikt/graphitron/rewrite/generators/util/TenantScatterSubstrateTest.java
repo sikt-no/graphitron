@@ -866,11 +866,16 @@ class TenantScatterSubstrateTest {
     }
 
     private Connection fakeConnection(String label, boolean failDisconnect) {
+        boolean[] autoCommit = {false};
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 // The <variables> hook runs prepareStatement for both connect and disconnect; the disconnect
-                // SQL is the one that clears to the empty string. Label the hook phase off the SQL.
+                // SQL is the one that clears to the empty string. Label the hook phase off the SQL. The
+                // reset release issues after the unmount is answered quietly.
                 case "prepareStatement" -> {
+                    if (FakeSessionSettings.isReset((String) args[0])) {
+                        yield fakePreparedStatement(false);
+                    }
                     boolean disconnect = ((String) args[0]).contains("'', false");
                     // The connect event fires mid-pin, before entryFor's quarantine post-check:
                     // it is not a worker-is-settled signal, so never synchronize a test on it.
@@ -885,18 +890,17 @@ class TenantScatterSubstrateTest {
                         if (stall != null) stall.await();
                         if (failOpenFor.contains(label)) throw new SQLException("autocommit refused", "08003");
                     }
+                    autoCommit[0] = (Boolean) args[0];
                     yield null;
                 }
+                case "getAutoCommit" -> autoCommit[0];
                 case "commit" -> {
                     events.add("commit:" + label);
                     if (uncheckedCommitFor.contains(label)) throw new UnsupportedOperationException("pool wrapper failed");
                     if (failCommitFor.contains(label)) throw new SQLException("deferred constraint violated", "23503");
                     yield null;
                 }
-                case "createStatement" -> {
-                    events.add("probe:" + label);
-                    yield fakeStatement(label);
-                }
+                case "createStatement" -> fakeStatement(label);
                 case "rollback" -> { events.add("rollback:" + label); yield null; }
                 case "close" -> { events.add("close:" + label); yield null; }
                 case "abort" -> { events.add("abort:" + label); yield null; }
@@ -909,8 +913,16 @@ class TenantScatterSubstrateTest {
         return (java.sql.Statement) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{java.sql.Statement.class},
             (proxy, method, args) -> {
-                if (method.getName().equals("execute") && failProbeFor.contains(label)) {
-                    throw new SQLException("current transaction is aborted", "25P02");
+                // The acquire-time capture of session settings reads an empty result.
+                if (method.getName().equals("executeQuery")) {
+                    return FakeSessionSettings.resultSet(harness.classLoader(), List.of());
+                }
+                // A mutation field's settle probe.
+                if (method.getName().equals("execute")) {
+                    events.add("probe:" + label);
+                    if (failProbeFor.contains(label)) {
+                        throw new SQLException("current transaction is aborted", "25P02");
+                    }
                 }
                 return objectMethodOrDefault(proxy, method, args, "fakeStatement");
             });

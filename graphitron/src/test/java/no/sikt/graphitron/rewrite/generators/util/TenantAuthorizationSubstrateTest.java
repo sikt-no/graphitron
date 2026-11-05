@@ -300,6 +300,7 @@ class TenantAuthorizationSubstrateTest {
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 case "prepareStatement" -> fakePreparedStatement();
+                case "createStatement" -> FakeSessionSettings.captureStatement(harness.classLoader(), List.of(), () -> {});
                 case "getAutoCommit" -> true;
                 default -> objectMethodOrDefault(proxy, method, args, label + "-conn");
             });
