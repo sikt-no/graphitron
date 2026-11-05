@@ -1,7 +1,7 @@
 ---
 id: R1156
 title: "A commit on trunk says what kind of change it is"
-status: In Progress
+status: In Review
 bucket: process
 priority: 2
 theme: tooling
@@ -33,6 +33,10 @@ Commits reaching trunk follow [Conventional Commits 1.0.0](https://www.conventio
 * **Cut-over.** The convention holds from the commit that lands this item. History is not rewritten.
 
 Edit sites: `CLAUDE.md`, Git Workflow (the subject shape and the not-for-trunk types, written with the placeholder `<type>(R<n>)` because `check-transient-citations` fails the build on a concrete id there); `roadmap/workflow.adoc`, Publishing (the subject shape with concrete examples); the publish skill's check, widened from the tip's subject to the range and from a literal prefix to the shape; the roadmap skill, which gains a line under `status` giving a transition's subject as `chore(R<n>): <from> -> <to>`; the `classified-corpus` skill's step 8, whose `corpus: add the <id> example for <verdict>` becomes `test(corpus): add the <id> example for <verdict>`; `.github/dependabot.yml`. `srp` needs no edit: its `\bR<n>\b` grep over subjects matches `chore(R<n>)`.
+
+## Implementation
+
+Shipped as planned, every edit site touched in one commit. Two notes from round 4, taken: Dependabot gets `include: "scope"` beside `prefix: "build"` for both ecosystems, so its subjects read `build(deps): ...`; and a failing range check in the publish skill skips only the trunk fast-forward (step 4), the feature-branch push still going ahead, as the skill did for a not-for-trunk tip. The check runs after step 2's fetch so its range is current. `roadmap/workflow.adoc`'s examples use real R876 and R1158 changes where one exists and a placeholder for `revert`.
 
 ## Out of scope
 

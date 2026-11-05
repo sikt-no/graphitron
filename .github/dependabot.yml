@@ -7,6 +7,10 @@ updates:
   target-branch: "claude/graphitron-rewrite"
   schedule:
     interval: "weekly"
+  # Conventional Commits subject: build(deps): ...
+  commit-message:
+    prefix: "build"
+    include: "scope"
   groups:
     jackson-dependencies:
       patterns:
@@ -27,3 +31,6 @@ updates:
   target-branch: "claude/graphitron-rewrite"
   schedule:
     interval: "weekly"
+  commit-message:
+    prefix: "build"
+    include: "scope"

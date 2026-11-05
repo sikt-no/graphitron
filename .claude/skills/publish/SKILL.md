@@ -11,11 +11,27 @@ Trunk-based, fast-forward-only flow for `graphitron-rewrite`. One invocation = b
 
 Do NOT run this skill if any of the following hold (the work is not trunk-bound):
 
-- The most recent commit message starts with `wip:`, `draft:`, or `spike:`.
+- A commit in `origin/claude/graphitron-rewrite..HEAD` fails the subject check below (a `wip`, `draft` or `spike` type, or a subject not of the Conventional Commits shape).
 - The current branch is named `wip/...`, `draft/...`, or `spike/...`.
 - The user has said out-loud "don't ship this to trunk yet".
 
-If any apply, push the feature branch only and tell the user trunk was deliberately skipped.
+If any apply, push the feature branch only and tell the user trunk was deliberately skipped, naming each offending commit. A failing subject check never blocks the feature-branch push: pushing a `wip` branch to its own remote is what the not-for-trunk types exist to allow.
+
+## Subject check
+
+Every commit reaching trunk follows Conventional Commits, the item id as the scope (CLAUDE.md "Git Workflow"; examples in `roadmap/workflow.adoc` § Publishing). Check every subject in the range, not just the tip:
+
+```bash
+git log --format='%h %s' origin/claude/graphitron-rewrite..HEAD | while read -r sha subject; do
+  if printf '%s\n' "$subject" | grep -qE '^(wip|draft|spike)(\(|!|:)'; then
+    echo "not for trunk: $sha $subject"
+  elif ! printf '%s\n' "$subject" | grep -qE '^(feat|fix|refactor|perf|test|docs|build|ci|chore|revert)(\([^)]+\))?!?: .+'; then
+    echo "subject not of the shape <type>(<scope>)[!]: <description>: $sha $subject"
+  fi
+done
+```
+
+Any output fails the check. A `wip`, `draft` or `spike` subject means the work is not trunk-bound yet. A malformed subject, including git's own `Revert "..."`, is reworded (`revert(<scope>): ...`, the body naming the reverted hash) before trunk is fast-forwarded; on your own unpushed commits, offer to reword them and re-invoke the skill. Commits from before the convention's cut-over are already on trunk, so they never fall in the range.
 
 ## Procedure
 
@@ -26,9 +42,10 @@ Which build counts as that verification depends on what your own commits touch. 
 1. **Inspect state.** Run `git status --porcelain` and `git branch --show-current`.
    - If the working tree is dirty, stop and ask the user whether to commit, stash, or abort.
    - If the current branch is `claude/graphitron-rewrite`, stop. This skill never pushes from trunk directly; the user is on the wrong branch.
-   - Read the most recent commit subject (`git log -1 --pretty=%s`). If it starts with one of the skip prefixes above, follow the "When to skip" rules.
 
 2. **Sync trunk first.** `git fetch origin claude/graphitron-rewrite`. If `origin/claude/graphitron-rewrite` has commits not reachable from `HEAD`, trunk moved after your rebase, so your verification build no longer covers the tree you would push and the fast-forward would fail anyway. Tell the user, then recover: `git rebase origin/claude/graphitron-rewrite`, re-establish verification coverage (see CLAUDE.md "Building and testing": full rebuild by default; a rebase that brought in only plainly non-interacting changes carries your green build forward; a roadmap-only diff re-establishes coverage with the scoped `mvn verify -pl roadmap-tool,docs`), re-invoke this skill. Stop here; do not push a tree no verification covers.
+
+   Then run the subject check above over `origin/claude/graphitron-rewrite..HEAD`; the fetch keeps the range current. If it reports anything, push the feature branch (step 3), skip the trunk fast-forward (step 4), and report each offending commit.
 
 3. **Push the feature branch.** `git push -u origin <branch>`. On network failure (not on rejection), retry up to 4 times with 2s, 4s, 8s, 16s back-off. On non-network failure (rejection, hook failure), stop and report.
 

@@ -140,6 +140,18 @@ The per-item front-matter is the source of truth. The roll-up README is derived.
 
 This matters most at the reviewer-rule gates: a stale local view of an item can miss a sign-off, a reopen, or a competing edit that another session already landed on trunk. Syncing before means the reviewer rule is evaluated against the true latest history; syncing after means the next party sees your transition without a gap. If trunk moved while you were working, rebase and repeat both ends.
 
+*Commit subjects say what kind of change they are.* Every commit reaching trunk follows link:https://www.conventionalcommits.org/en/v1.0.0/[Conventional Commits 1.0.0], the item id as the scope: `<type>(<scope>)[!]: <description>`, the description a sentence stating what is now true. Types are `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore` and `revert`; `wip`, `draft` and `spike` are types that never reach trunk. A commit no single item covers takes its area as the scope (`roadmap`, `docs`, `deps`, `corpus`). `!` marks a breaking change, with a `BREAKING-CHANGE:` footer saying what a consumer must change. Examples:
+
+* `feat(R876): graphitron:dev compiles its own module first` (an author can do something new)
+* `fix(R1158): release pinned connections when execution aborts synchronously`
+* `refactor(R876)!: @routine no longer takes columnMapping`, with a `BREAKING-CHANGE:` footer saying what a schema using it writes instead
+* `chore(R1156): Ready -> In Progress` (a transition, filing or review round on one item)
+* `chore(roadmap): regenerate README` (a regeneration, or a commit touching several items)
+* `revert(R<n>): <the reverted subject's description>`, the body naming the reverted hash; git's own `Revert "..."` subject is reworded to this before it is pushed
+* `build(deps): bump the maven-plugins group` (Dependabot)
+
+The publish skill checks every subject between trunk and `HEAD` before fast-forwarding trunk, and skips the fast-forward on a not-for-trunk type or a subject not of this shape. The convention holds from the commit that introduced it; earlier history keeps its `R<n>: ...` and `roadmap: ...` subjects.
+
 *A transition commit owes the scoped verification build, not the full reactor.* Every bracketed transition above is a diff entirely under `roadmap/`, and `CLAUDE.md` ("Building and testing") verifies such a tree with `mvn verify -pl roadmap-tool,docs`: every build step that reads `roadmap/`, and nothing else. That is the whole bill for a state change, a filed Backlog item, an appended reviewer round or a deletion at Done. It is not a waiver, and the two faults it catches are the two that actually happen here: forgetting to regenerate the README after hand-editing front-matter, and an item body whose prose breaks the docs render. The moment your own commits touch one file outside `roadmap/`, the full build is back.
 
 == Adding to the roadmap

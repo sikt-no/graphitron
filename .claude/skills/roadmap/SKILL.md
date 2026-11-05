@@ -83,6 +83,8 @@ For `In Review → Done`, delete the file rather than editing it; if the milesto
 
 The `status` subcommand regenerates the README as part of its run; no separate regenerate step needed.
 
+Commit the transition as `chore(R<n>): <from> -> <to>` (for example `chore(R24): Spec -> Ready`); the subject convention is in CLAUDE.md "Git Workflow".
+
 ### revive `<R<n>>`
 
 For an item whose Done verdict turned out to be wrong. It comes back as itself: same id, same plan body, same reviewer rounds. **Read the discriminator first** (`roadmap/workflow.adoc` § Revive): revive when the item's own `## Goal` still states an outcome that is not delivered; file a successor (the `add` intent above) when the goal was met and a different goal has appeared. A change that breaks a consumer's development process is undelivered, whatever the Done round said.

@@ -119,7 +119,7 @@ instead).
 
 ### 8. Commit + publish
 One commit per verdict, subject naming the verdict and the example id (e.g.
-`corpus: add the <id> example for <verdict>`). Publish via the **publish** skill (push feature branch +
+`test(corpus): add the <id> example for <verdict>`). Publish via the **publish** skill (push feature branch +
 fast-forward trunk).
 
 ## Guardrails
