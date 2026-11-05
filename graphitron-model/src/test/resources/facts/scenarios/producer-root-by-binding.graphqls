@@ -8,12 +8,12 @@ schema { query: Api }
 type Film @table(name: "film") { title: String }
 
 type Api {
-  films: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  films: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method: "filmCount"})
   allFilms: [Film!]!
 }
 
 extend type Query {
-  rated: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  rated: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method: "filmCount"})
   notRoot: [Film!]!
 }
 

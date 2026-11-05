@@ -1,0 +1,24 @@
+# A service call's parameter that nothing fills, or that two written fills reach. The first takes a
+# method whose ids parameter has no argument of its name and no pair; the second names the userId
+# parameter in argMapping and in contextArguments both, so nothing says which fills it.
+
+extend type Query {
+  unfilledFilms(other: [Int!]): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByService"})
+  greetedTwice(name: String): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet", argMapping: "userId: name"}, contextArguments: ["userId"])
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_call_parameter_defect", rows: """
+  coordinate,          position, parameter_name, code
+  Query.unfilledFilms, 1,        ids,            PARAMETER_UNFILLED
+  Query.greetedTwice,  0,        userId,         PARAMETER_FILLED_TWICE
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter", rows: """
+  coordinate,          position
+  Query.unfilledFilms, 1
+  Query.greetedTwice,  0
+  """)

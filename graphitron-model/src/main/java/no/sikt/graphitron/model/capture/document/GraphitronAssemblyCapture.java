@@ -18,6 +18,7 @@ import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
+import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
 import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
 import no.sikt.graphitron.model.derive.PathClaims;
@@ -141,6 +142,9 @@ public final class GraphitronAssemblyCapture {
         // then the column each other scalar occurrence reads or binds there.
         OccurrenceNodeIds.derive(dsl, graph, readAt);
         OccurrenceColumns.derive(dsl, graph, readAt);
+        // What fills each parameter of each service call, off the calls, landings and sources above,
+        // with the PARAMETER binding of each argument a call takes.
+        OccurrenceCallParameters.derive(dsl, graph, readAt);
         // Then each field's path, off the producers and results just written: walked from every
         // table its parent's result is a row of, or from a root routine's own table, one written
         // element at a time.

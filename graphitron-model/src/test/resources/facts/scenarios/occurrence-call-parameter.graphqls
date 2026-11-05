@@ -1,0 +1,49 @@
+# What fills each parameter of a service call. Written fills come first: an argument path an
+# argMapping pair names, and a context key. Where nothing is written, the jOOQ context fills a
+# parameter of its type, an argument of the call fills the parameter of its name, and a collection
+# at a call with a source takes what the source hands it. An argument a call takes is bound to the
+# parameter that takes it, seen from the argument.
+
+type Film @table(name: "film") {
+  title: String
+  titleUppercase: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "titleUppercase"})
+}
+
+extend type Query {
+  callFilms(ids: [Int!]): [Film] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByService"})
+  callFilmsRenamed(ids: [Int!]): [Film] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByServiceRenamed", argMapping: "filmIds: ids"})
+  callGreeting: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet"}, contextArguments: ["userId"])
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", rows: """
+  coordinate,            position, parameter_name, fill,        landing_coordinate,            context_key
+  Query.callFilms,        0,       dsl,            DSL_CONTEXT, ,
+  Query.callFilms,        1,       ids,            ARGUMENT,    Query.callFilms(ids:),
+  Query.callFilmsRenamed, 0,       dsl,            DSL_CONTEXT, ,
+  Query.callFilmsRenamed, 1,       filmIds,        ARGUMENT,    Query.callFilmsRenamed(ids:),
+  Query.callGreeting,     0,       userId,         CONTEXT_KEY, ,                              userId
+  Film.titleUppercase,    0,       filmIds,        SOURCE,      ,
+  Film.titleUppercase,    1,       dsl,            DSL_CONTEXT, ,
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_parameter", rows: """
+  coordinate,                   call_coordinate,        position
+  Query.callFilms(ids:),        Query.callFilms,        1
+  Query.callFilmsRenamed(ids:), Query.callFilmsRenamed, 1
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defect", rows: """
+  coordinate
+  Query.callFilms
+  Query.callFilmsRenamed
+  Query.callGreeting
+  Film.titleUppercase
+  """)
