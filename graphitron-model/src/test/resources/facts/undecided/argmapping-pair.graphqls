@@ -94,16 +94,16 @@ extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", ro
 # Where each mapping sits, one row per mapping that wrote an entry: the directive and its repeat,
 # the element and its kind, and the path step where the reference is a path element's.
 extend schema @expectEquals(relation: "graphitron_argmapping_site", rows: """
-  directive_name, ordinal, coordinate,         element_kind,     step_position
-  service,        0,       Film.rating,        FIELD_DEFINITION,
-  externalField,  0,       Film.lengthBand,    FIELD_DEFINITION,
-  condition,      0,       Film.actors(name:), FIELD_ARGUMENT,
-  condition,      0,       Film.actors,        FIELD_DEFINITION,
-  condition,      0,       FilmFilter.title,   INPUT_FIELD,
-  reference,      0,       Actor.films,        FIELD_DEFINITION, 0
-  routine,        0,       Mutation.rentFilm,  FIELD_DEFINITION,
-  service,        0,       Query.sessionFirst, FIELD_DEFINITION,
-  service,        0,       Query.splits,       FIELD_DEFINITION,
+  directive_name, ordinal, coordinate,         element_kind,     owner,      kind
+  service,        0,       Film.rating,        FIELD_DEFINITION, service,    ROOT
+  externalField,  0,       Film.lengthBand,    FIELD_DEFINITION, reference,  ROOT
+  condition,      0,       Film.actors(name:), FIELD_ARGUMENT,   condition,  ROOT
+  condition,      0,       Film.actors,        FIELD_DEFINITION, condition,  ROOT
+  condition,      0,       FilmFilter.title,   INPUT_FIELD,      condition,  ROOT
+  reference,      0,       Actor.films,        FIELD_DEFINITION, path.0,     PATH_ELEMENT
+  routine,        0,       Mutation.rentFilm,  FIELD_DEFINITION, argMapping, ROOT
+  service,        0,       Query.sessionFirst, FIELD_DEFINITION, service,    ROOT
+  service,        0,       Query.splits,       FIELD_DEFINITION, service,    ROOT
   """)
 
 # A sigil is something a right-hand side may name, so it has a candidate at the coordinate it is

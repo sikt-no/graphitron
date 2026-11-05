@@ -2440,6 +2440,9 @@ CREATE TABLE graphitron_ast_argmapping_pair_entry (
   touched_at    TIMESTAMP NOT NULL,
   param_name    VARCHAR NOT NULL,
   bound_to      VARCHAR NOT NULL,
+  argument_name  VARCHAR NOT NULL,
+  argument_index INT,
+  path_index     INT,
   root_name     VARCHAR GENERATED ALWAYS AS (REGEXP_REPLACE(bound_to, '\..*$', '')),
   head_path     VARCHAR GENERATED ALWAYS AS
                   (CASE WHEN POSITION('.', bound_to) = 0 THEN NULL
@@ -2467,6 +2470,9 @@ COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.head_path IS 'what the en
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.tail_name IS 'the last segment of what the entry binds to, the whole of it where there is one. Generated';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.tail_name_upper IS 'the upper-cased form of the column beside it, for the one crossing where an authored spelling meets a catalog name: a trailing name matched against a node type''s key columns. Generated, the expression repeated rather than read, a generated column not being allowed to read another';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.bound_to IS 'what the entry binds the parameter to, as written: a dotted path into the arguments, or a sigil such as $session. Which sites admit a sigil is a rule about the site and not about the string, so nothing here judges it';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.argument_name IS 'the application''s argument the mapping string is written under: the code reference''s argument, service or condition or path, where the string is a reference''s field, and argMapping where the application takes it as its own, as @routine and @outbox do';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.argument_index IS 'the string''s index in its argument''s list, NULL where the argument is no list: the path element whose reference it is a field of';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.path_index IS 'the string''s index in a path below its argument, NULL where it sits in none';
 
 CREATE TABLE graphitron_ast_code_reference_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2500,12 +2506,20 @@ COMMENT ON COLUMN graphitron_ast_code_reference_entry.argument_index IS 'the ref
 COMMENT ON COLUMN graphitron_ast_code_reference_entry.path_index IS 'the reference''s index in a path below its argument, NULL where it sits in none: the condition in fields[1].path[0] is 0. An argument that is itself the path has its index as argument_index';
 
 CREATE VIEW graphitron_argmapping_site_rule
-  (graph_name, source_name, source_line, source_column, directive_name, ordinal, coordinate,
-   element_kind, reference_line, reference_column, step_position) AS
-SELECT v.graph_name, v.source_name, v.source_line, v.source_column,
-       da.name, gd.ordinal, el.coordinate, en.entry_kind,
-       r.source_line, r.source_column, step.position
-  FROM (SELECT DISTINCT graph_name, source_name, source_line, source_column
+  (graph_name, coordinate, directive_name, ordinal, owner, kind, element_kind,
+   source_name, source_line, source_column) AS
+SELECT v.graph_name, el.coordinate, da.name, gd.ordinal,
+       m.argument_name
+         || COALESCE('.' || CAST(m.argument_index AS VARCHAR), '')
+         || COALESCE('.path.' || CAST(m.path_index AS VARCHAR), ''),
+       CASE WHEN m.argument_index IS NULL THEN 'ROOT'
+            WHEN m.argument_name = 'path' THEN 'PATH_ELEMENT'
+            WHEN m.argument_name = 'fields' AND m.path_index IS NULL THEN 'ORDER_FIELD'
+            WHEN m.argument_name = 'fields' THEN 'ORDER_FIELD_PATH'
+            WHEN m.argument_name = 'routes' THEN 'ROUTE_PATH' END,
+       en.entry_kind, v.source_name, v.source_line, v.source_column
+  FROM (SELECT DISTINCT graph_name, source_name, source_line, source_column, argument_name,
+               argument_index, path_index
           FROM graphitron_ast_argmapping_pair_entry) m
   JOIN graphql_ast_value_entry v
     ON v.graph_name = m.graph_name AND v.source_name = m.source_name
@@ -2526,70 +2540,63 @@ SELECT v.graph_name, v.source_name, v.source_line, v.source_column,
   JOIN graphql_ast_entry en
     ON en.graph_name = el.graph_name AND en.source_name = el.source_name
    AND en.source_line = el.source_line AND en.source_column = el.source_column
-  LEFT JOIN graphql_directive_application gd
+  -- The application anchored: where it was written names its element, directive and ordinal.
+  JOIN graphql_directive_application gd
     ON gd.graph_name = da.graph_name AND gd.source_name = da.source_name
    AND gd.source_line = da.source_line AND gd.source_column = da.source_column
-   AND gd.directive_name = da.name
-  -- The code reference the string is a field of, where it is one: @routine takes its mapping as
-  -- an argument of its own, so its strings have none.
-  LEFT JOIN graphitron_ast_code_reference_entry r
-    ON r.graph_name = v.graph_name AND r.source_name = v.source_name
-   AND r.source_line = v.parent_line AND r.source_column = v.parent_column
-  -- And the path element that reference sits in, where it sits in one, at its index in the path.
-  LEFT JOIN graphql_ast_value_entry rv
-    ON rv.graph_name = r.graph_name AND rv.source_name = r.source_name
-   AND rv.source_line = r.source_line AND rv.source_column = r.source_column
-  LEFT JOIN graphql_ast_value_entry step
-    ON step.graph_name = rv.graph_name AND step.source_name = rv.source_name
-   AND step.source_line = rv.parent_line AND step.source_column = rv.parent_column;
+   AND gd.directive_name = da.name;
 COMMENT ON VIEW graphitron_argmapping_site_rule IS 'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_argmapping_site_rule.graph_name IS 'the graph_name of a row of this rule, which the anchor writes into graphitron_argmapping_site.graph_name';
+-- COMMENT ON COLUMN graphitron_argmapping_site_rule.coordinate IS 'the coordinate of a row of this rule, which the anchor writes into graphitron_argmapping_site.coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_site_rule.directive_name IS 'the directive_name of a row of this rule, which the anchor writes into graphitron_argmapping_site.directive_name';
+-- COMMENT ON COLUMN graphitron_argmapping_site_rule.ordinal IS 'the ordinal of a row of this rule, which the anchor writes into graphitron_argmapping_site.ordinal';
+-- COMMENT ON COLUMN graphitron_argmapping_site_rule.owner IS 'the owner of a row of this rule, which the anchor writes into graphitron_argmapping_site.owner';
+-- COMMENT ON COLUMN graphitron_argmapping_site_rule.kind IS 'the kind of a row of this rule, which the anchor writes into graphitron_argmapping_site.kind';
+-- COMMENT ON COLUMN graphitron_argmapping_site_rule.element_kind IS 'the element_kind of a row of this rule, which the anchor writes into graphitron_argmapping_site.element_kind';
 -- COMMENT ON COLUMN graphitron_argmapping_site_rule.source_name IS 'the source_name of a row of this rule, which the anchor writes into graphitron_argmapping_site.source_name';
 -- COMMENT ON COLUMN graphitron_argmapping_site_rule.source_line IS 'the source_line of a row of this rule, which the anchor writes into graphitron_argmapping_site.source_line';
 -- COMMENT ON COLUMN graphitron_argmapping_site_rule.source_column IS 'the source_column of a row of this rule, which the anchor writes into graphitron_argmapping_site.source_column';
--- COMMENT ON COLUMN graphitron_argmapping_site_rule.directive_name IS 'the directive_name of a row of this rule, which the anchor writes into graphitron_argmapping_site.directive_name';
--- COMMENT ON COLUMN graphitron_argmapping_site_rule.ordinal IS 'the ordinal of a row of this rule, which the anchor writes into graphitron_argmapping_site.ordinal';
--- COMMENT ON COLUMN graphitron_argmapping_site_rule.coordinate IS 'the coordinate of a row of this rule, which the anchor writes into graphitron_argmapping_site.coordinate';
--- COMMENT ON COLUMN graphitron_argmapping_site_rule.element_kind IS 'the element_kind of a row of this rule, which the anchor writes into graphitron_argmapping_site.element_kind';
--- COMMENT ON COLUMN graphitron_argmapping_site_rule.reference_line IS 'the reference_line of a row of this rule, which the anchor writes into graphitron_argmapping_site.reference_line';
--- COMMENT ON COLUMN graphitron_argmapping_site_rule.reference_column IS 'the reference_column of a row of this rule, which the anchor writes into graphitron_argmapping_site.reference_column';
--- COMMENT ON COLUMN graphitron_argmapping_site_rule.step_position IS 'the step_position of a row of this rule, which the anchor writes into graphitron_argmapping_site.step_position';
 
 CREATE TABLE graphitron_argmapping_site (
   graph_name       VARCHAR NOT NULL,
+  coordinate       VARCHAR NOT NULL,
+  directive_name   VARCHAR NOT NULL,
+  ordinal          INT     NOT NULL,
+  owner            VARCHAR NOT NULL,
+  kind             VARCHAR NOT NULL,
+  element_kind     VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL,
   source_line      INT     NOT NULL,
   source_column    INT     NOT NULL,
-  directive_name   VARCHAR NOT NULL,
-  ordinal          INT,
-  coordinate       VARCHAR NOT NULL,
-  element_kind     VARCHAR NOT NULL,
-  reference_line   INT,
-  reference_column INT,
-  step_position    INT,
   touched_at       TIMESTAMP NOT NULL,
-  -- A string is written in one place, so the mapping is the whole grain.
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  -- A mapping is named by its application and what it is written under there, the code reference
+  -- whose field it is, or the application itself where it takes the mapping as its own.
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner),
+  -- Where the string was written, for a reader holding a pair entry to find its mapping by.
+  UNIQUE (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
+    REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
+    ON DELETE CASCADE,
   -- The string as written, so where a mapping sits cannot outlive the mapping.
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
+    ON DELETE CASCADE,
+  CHECK (kind IN ('ROOT', 'PATH_ELEMENT', 'ORDER_FIELD', 'ORDER_FIELD_PATH', 'ROUTE_PATH'))
 );
 -- A @routine's mapping is found from the application it is written on.
 CREATE INDEX graphitron_argmapping_site_application_ix
   ON graphitron_argmapping_site (graph_name, coordinate, directive_name, ordinal);
 COMMENT ON TABLE graphitron_argmapping_site IS 'Where one written argMapping sits: the directive and its repeat, the element it is written on, the code reference it is a field of and the path element that reference sits in. For example @reference(path: [{table: "film", condition: {className: "no.example.Conditions", method: "byActor", argMapping: "actorId: id"}}]) on Actor.films sits under reference at ordinal 0, on Actor.films, in the condition''s reference, at step 0.';
 COMMENT ON COLUMN graphitron_argmapping_site.graph_name IS 'the owning graph''s partition, carried from the written mapping';
-COMMENT ON COLUMN graphitron_argmapping_site.source_name IS 'the file the mapping was written in, the first of the four columns that are the mapping string''s key, which graphitron_ast_argmapping_pair_entry''s rows hang on';
+COMMENT ON COLUMN graphitron_argmapping_site.source_name IS 'the file the mapping was written in; with the line and the column, where the string sits, an attribute a reader holding a pair entry finds its mapping by and a defect points at, unique but no longer the key';
 COMMENT ON COLUMN graphitron_argmapping_site.source_line IS 'source line of the string the mapping was written as';
-COMMENT ON COLUMN graphitron_argmapping_site.source_column IS 'source column of the same, completing the key';
+COMMENT ON COLUMN graphitron_argmapping_site.source_column IS 'source column of the same';
 COMMENT ON COLUMN graphitron_argmapping_site.directive_name IS 'the directive whose application wrote the mapping, reached through the argument holding the string at any depth';
 COMMENT ON COLUMN graphitron_argmapping_site.ordinal IS 'that application''s repeat on its element, as graphql_directive_application numbers it, which is what tells two applications of a repeatable directive on one element apart';
 COMMENT ON COLUMN graphitron_argmapping_site.coordinate IS 'the element the application is written on, as graphql_ast_element_entry spells it';
 COMMENT ON COLUMN graphitron_argmapping_site.element_kind IS 'what kind of element that is, a field, an argument, an input field or a type, as graphql_ast_entry names its kinds';
-COMMENT ON COLUMN graphitron_argmapping_site.reference_line IS 'source line of the code reference the mapping is a field of, with the column beside it a key into graphitron_ast_code_reference_entry in the same file; NULL at @routine, whose mapping is an argument of its own, and where the reference names no class';
-COMMENT ON COLUMN graphitron_argmapping_site.reference_column IS 'source column of the same';
-COMMENT ON COLUMN graphitron_argmapping_site.step_position IS 'the index in its path of the path element the reference sits in, NULL where the reference is not a path element''s, as at @service and @condition';
+COMMENT ON COLUMN graphitron_argmapping_site.owner IS 'what the mapping is written under in its application, spelled as graphitron_code_reference''s owner, completing the key: the code reference whose field the string is (service, path.0), so a mapping and its reference share a key, or argMapping where the application takes the mapping as its own, as @routine and @outbox do';
+COMMENT ON COLUMN graphitron_argmapping_site.kind IS 'which owner that is, as graphitron_code_reference''s kind: ROOT on the application, PATH_ELEMENT on a path element''s reference';
 COMMENT ON COLUMN graphitron_argmapping_site.touched_at IS 'when the reading that derived this row ran. Swept per graph after the reading upserts, so a mapping whose site no longer derives leaves; a mapping the author removed goes through the cascade on its written string';
 
 CREATE VIEW graphitron_code_reference_site
@@ -2961,27 +2968,31 @@ COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.touched
 COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.name IS 'the context key as written. Not nullable, unlike the payload of a decode: an element written as some other shape contributes no row at all rather than a row of NULL, so what stands here is always something the author typed';
 
 CREATE VIEW graphitron_call_context_key_written
-  (graph_name, source_name, source_line, source_column, parameter_name, context_key, origin,
-   origin_line, origin_column, origin_position) AS
+  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, context_key, origin,
+   source_name, origin_line, origin_column, origin_position) AS
 -- A $context pair names its parameter on the left and its key after the dot, exactly one name. Its
--- call is the code reference its string is a field of; a mapping with none, a @routine's, has no
--- call to fill here and is refused where the sigil is judged.
-SELECT p.graph_name, s.source_name, s.reference_line, s.reference_column, p.param_name,
-       SUBSTRING(p.bound_to, 10), 'PAIR', p.source_line, p.source_column, p.position
+-- call is the code reference its string is a field of, which shares the mapping's key; a mapping
+-- with none, a @routine's, has no call to fill here and is refused where the sigil is judged.
+SELECT p.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, p.param_name,
+       SUBSTRING(p.bound_to, 10), 'PAIR', p.source_name, p.source_line, p.source_column, p.position
   FROM graphitron_ast_argmapping_pair_entry p
   JOIN graphitron_argmapping_site s
     ON s.graph_name = p.graph_name AND s.source_name = p.source_name
    AND s.source_line = p.source_line AND s.source_column = p.source_column
  WHERE p.bound_to LIKE '$context.%'
    AND CHAR_LENGTH(p.bound_to) > 9 AND POSITION('.', SUBSTRING(p.bound_to, 10)) = 0
-   AND s.reference_line IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_code_reference_site r
+                WHERE r.graph_name = s.graph_name AND r.coordinate = s.coordinate
+                  AND r.directive_name = s.directive_name AND r.ordinal = s.ordinal
+                  AND r.owner = s.owner)
 UNION ALL
 -- A contextArguments element is the pair naming the parameter of its own name: a string written in
 -- the list a @service or @condition application takes under that name. Its call is the code
 -- reference written as the application's other argument, the object at that argument's top. A
 -- lone string is the list holding it, as an input list coerces one value.
-SELECT v.graph_name, r.source_name, r.source_line, r.source_column, v.written_text,
-       v.written_text, 'CONTEXT_ARGUMENTS', v.source_line, v.source_column, COALESCE(v.position, 0)
+SELECT v.graph_name, r.coordinate, r.directive_name, r.ordinal, r.owner, v.written_text,
+       v.written_text, 'CONTEXT_ARGUMENTS', v.source_name, v.source_line, v.source_column,
+       COALESCE(v.position, 0)
   FROM graphql_ast_applied_argument_entry a
   JOIN graphql_ast_directive_application_entry da
     ON da.graph_name = a.graph_name AND da.source_name = a.source_name
@@ -2997,73 +3008,81 @@ SELECT v.graph_name, r.source_name, r.source_line, r.source_column, v.written_te
     ON rv.graph_name = ra.graph_name AND rv.source_name = ra.source_name
    AND rv.holder_line = ra.source_line AND rv.holder_column = ra.source_column
    AND rv.parent_line IS NULL
-  JOIN graphitron_ast_code_reference_entry r
+  JOIN graphitron_code_reference_site r
     ON r.graph_name = rv.graph_name AND r.source_name = rv.source_name
    AND r.source_line = rv.source_line AND r.source_column = rv.source_column
  WHERE a.name = 'contextArguments' AND da.name IN ('service', 'condition');
 COMMENT ON VIEW graphitron_call_context_key_written IS 'One context key written for one parameter of one call, at the place it was written: a $context pair, or a contextArguments element read as the pair naming its own parameter. For example contextArguments: ["tenantId"] on a @service writes tenantId for the parameter tenantId of the method its service names.';
 -- COMMENT ON COLUMN graphitron_call_context_key_written.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_call_context_key_written.source_name IS 'the file the call''s code reference was written in; with the line and column, a graphitron_ast_code_reference_entry key';
--- COMMENT ON COLUMN graphitron_call_context_key_written.source_line IS 'the code reference''s source line';
--- COMMENT ON COLUMN graphitron_call_context_key_written.source_column IS 'the code reference''s source column';
--- COMMENT ON COLUMN graphitron_call_context_key_written.parameter_name IS 'the parameter the key fills, as written: a pair''s left side, or a contextArguments element itself';
--- COMMENT ON COLUMN graphitron_call_context_key_written.context_key IS 'the key the request context carries the value under: what follows $context., or the element';
--- COMMENT ON COLUMN graphitron_call_context_key_written.origin IS 'PAIR for a $context pair, CONTEXT_ARGUMENTS for a contextArguments element';
--- COMMENT ON COLUMN graphitron_call_context_key_written.origin_line IS 'source line of what wrote it: the mapping string for a pair, the element for contextArguments';
--- COMMENT ON COLUMN graphitron_call_context_key_written.origin_column IS 'source column of the same';
--- COMMENT ON COLUMN graphitron_call_context_key_written.origin_position IS 'the pair''s position in its mapping, or the element''s in its list';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.coordinate IS 'the element the call''s application is on';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.directive_name IS 'the call''s directive';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.ordinal IS 'its application''s ordinal';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.owner IS 'what the call''s code reference is written under in it; with the three before it, the reference''s key';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.parameter_name IS 'the parameter the key fills';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.context_key IS 'the key';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin IS 'PAIR or CONTEXT_ARGUMENTS';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.source_name IS 'the file the key was written in';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin_line IS 'where it was written, the pair''s string or the element';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin_column IS 'the same';
+-- COMMENT ON COLUMN graphitron_call_context_key_written.origin_position IS 'the pair''s position in its mapping or the element''s in its list';
 
 CREATE VIEW graphitron_call_context_key_rule
-  (graph_name, source_name, source_line, source_column, parameter_name, context_key, origin,
-   origin_line, origin_column, origin_position) AS
+  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, context_key, origin,
+   source_name, origin_line, origin_column, origin_position) AS
 -- A parameter written once. One written twice, by two elements or by an element and a pair, fills
 -- nothing here and is CONTEXT_KEY_DUPLICATE at each place it was written.
-SELECT w.graph_name, w.source_name, w.source_line, w.source_column, w.parameter_name,
-       w.context_key, w.origin, w.origin_line, w.origin_column, w.origin_position
+SELECT w.graph_name, w.coordinate, w.directive_name, w.ordinal, w.owner, w.parameter_name,
+       w.context_key, w.origin, w.source_name, w.origin_line, w.origin_column, w.origin_position
   FROM graphitron_call_context_key_written w
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
-                    WHERE o.graph_name = w.graph_name AND o.source_name = w.source_name
-                      AND o.source_line = w.source_line AND o.source_column = w.source_column
-                      AND o.parameter_name = w.parameter_name
+                    WHERE o.graph_name = w.graph_name AND o.coordinate = w.coordinate
+                      AND o.directive_name = w.directive_name AND o.ordinal = w.ordinal
+                      AND o.owner = w.owner AND o.parameter_name = w.parameter_name
                       AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
                            OR o.origin_position <> w.origin_position));
 COMMENT ON VIEW graphitron_call_context_key_rule IS 'One row the context-key rule computes, in the shape graphitron_call_context_key stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_call_context_key, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_call_context_key_rule.graph_name IS 'the graph_name of a row of this rule, which the anchor writes into graphitron_call_context_key.graph_name';
--- COMMENT ON COLUMN graphitron_call_context_key_rule.source_name IS 'the source_name of a row of this rule, which the anchor writes into graphitron_call_context_key.source_name';
--- COMMENT ON COLUMN graphitron_call_context_key_rule.source_line IS 'the source_line of a row of this rule, which the anchor writes into graphitron_call_context_key.source_line';
--- COMMENT ON COLUMN graphitron_call_context_key_rule.source_column IS 'the source_column of a row of this rule, which the anchor writes into graphitron_call_context_key.source_column';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.coordinate IS 'the coordinate of a row of this rule, which the anchor writes into graphitron_call_context_key.coordinate';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.directive_name IS 'the directive_name of a row of this rule, which the anchor writes into graphitron_call_context_key.directive_name';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.ordinal IS 'the ordinal of a row of this rule, which the anchor writes into graphitron_call_context_key.ordinal';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.owner IS 'the owner of a row of this rule, which the anchor writes into graphitron_call_context_key.owner';
 -- COMMENT ON COLUMN graphitron_call_context_key_rule.parameter_name IS 'the parameter_name of a row of this rule, which the anchor writes into graphitron_call_context_key.parameter_name';
 -- COMMENT ON COLUMN graphitron_call_context_key_rule.context_key IS 'the context_key of a row of this rule, which the anchor writes into graphitron_call_context_key.context_key';
 -- COMMENT ON COLUMN graphitron_call_context_key_rule.origin IS 'the origin of a row of this rule, which the anchor writes into graphitron_call_context_key.origin';
+-- COMMENT ON COLUMN graphitron_call_context_key_rule.source_name IS 'the source_name of a row of this rule, which the anchor writes into graphitron_call_context_key.source_name';
 -- COMMENT ON COLUMN graphitron_call_context_key_rule.origin_line IS 'the origin_line of a row of this rule, which the anchor writes into graphitron_call_context_key.origin_line';
 -- COMMENT ON COLUMN graphitron_call_context_key_rule.origin_column IS 'the origin_column of a row of this rule, which the anchor writes into graphitron_call_context_key.origin_column';
 -- COMMENT ON COLUMN graphitron_call_context_key_rule.origin_position IS 'the origin_position of a row of this rule, which the anchor writes into graphitron_call_context_key.origin_position';
 
 CREATE TABLE graphitron_call_context_key (
   graph_name      VARCHAR   NOT NULL,
-  source_name     VARCHAR   NOT NULL,
-  source_line     INT       NOT NULL,
-  source_column   INT       NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  directive_name  VARCHAR   NOT NULL,
+  ordinal         INT       NOT NULL,
+  owner           VARCHAR   NOT NULL,
   parameter_name  VARCHAR   NOT NULL,
   context_key     VARCHAR   NOT NULL,
   origin          VARCHAR   NOT NULL,
+  source_name     VARCHAR   NOT NULL,
   origin_line     INT       NOT NULL,
   origin_column   INT       NOT NULL,
   origin_position INT       NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   -- A parameter is filled once per call; one written twice is a defect and no row.
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, parameter_name),
-  -- The call as written, so a key cannot outlive the reference it fills a parameter of.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphitron_ast_code_reference_entry (graph_name, source_name, source_line, source_column)
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name),
+  -- The call's application, so a key cannot outlive what it fills a parameter of.
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
+    REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
     ON DELETE CASCADE,
   CHECK (origin IN ('PAIR', 'CONTEXT_ARGUMENTS'))
 );
 COMMENT ON TABLE graphitron_call_context_key IS 'The context key that fills one parameter of one call: one row per code reference and parameter a $context pair or a contextArguments element names once. For example contextArguments: ["tenantId"] on a @service fills the parameter tenantId of the method its service names with the value the request context carries under tenantId.';
 COMMENT ON COLUMN graphitron_call_context_key.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_call_context_key.source_name IS 'the file the call''s code reference was written in; with the line and column, the reference as written, which is what a call is until its method resolves';
-COMMENT ON COLUMN graphitron_call_context_key.source_line IS 'the code reference''s source line';
-COMMENT ON COLUMN graphitron_call_context_key.source_column IS 'the code reference''s source column';
+COMMENT ON COLUMN graphitron_call_context_key.coordinate IS 'the element the call''s application is on';
+COMMENT ON COLUMN graphitron_call_context_key.directive_name IS 'the call''s directive, @service or @condition';
+COMMENT ON COLUMN graphitron_call_context_key.ordinal IS 'the application''s ordinal';
+COMMENT ON COLUMN graphitron_call_context_key.owner IS 'what the call''s code reference is written under in its application; with the three before it, the reference''s key in graphitron_code_reference, which is what a call is until its method resolves';
+COMMENT ON COLUMN graphitron_call_context_key.source_name IS 'the file the key was written in, with the origin columns where a defect about it points';
 COMMENT ON COLUMN graphitron_call_context_key.parameter_name IS 'the parameter the key fills, completing the key: a pair''s left side, or a contextArguments element itself';
 COMMENT ON COLUMN graphitron_call_context_key.context_key IS 'the key the request context carries the value under, which a pair may spell apart from the parameter it fills';
 COMMENT ON COLUMN graphitron_call_context_key.origin IS 'PAIR where a $context pair wrote it, CONTEXT_ARGUMENTS where a contextArguments element did, for the surfaces that point back at the writing';
@@ -5316,7 +5335,7 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position, 
     ON c.graph_name = s.graph_name AND c.element_coordinate = s.coordinate
  WHERE p.bound_to NOT LIKE '$%'
    AND s.directive_name IN ('service', 'routine', 'condition')
-   AND s.step_position IS NULL;
+   AND s.kind = 'ROOT';
 COMMENT ON VIEW graphitron_argmapping_call IS 'One written argMapping entry binding a parameter to an argument path, under one occurrence of the field, argument or input field its directive is written on. For example filter.minLength on @routine at Actor.filmsNested, under Actor.filmsNested.';
 -- COMMENT ON COLUMN graphitron_argmapping_call.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_argmapping_call.source_name IS 'the file the mapping string was written in, the first of the four columns that are the string''s key';
@@ -12571,14 +12590,11 @@ SELECT pair.graph_name, pair.source_name, pair.source_line, pair.source_column, 
   JOIN graphitron_argmapping_site site
     ON site.graph_name = pair.graph_name AND site.source_name = pair.source_name
    AND site.source_line = pair.source_line AND site.source_column = pair.source_column
-  -- The mapping's code reference, reached through where it was written, and resolved by name.
-  JOIN graphitron_code_reference_site reference_written
-    ON reference_written.graph_name = site.graph_name AND reference_written.source_name = site.source_name
-   AND reference_written.source_line = site.reference_line AND reference_written.source_column = site.reference_column
+  -- The mapping's code reference, which shares its key.
   JOIN graphitron_code_reference reference
-    ON reference.graph_name = reference_written.graph_name AND reference.coordinate = reference_written.coordinate
-   AND reference.directive_name = reference_written.directive_name AND reference.ordinal = reference_written.ordinal
-   AND reference.owner = reference_written.owner
+    ON reference.graph_name = site.graph_name AND reference.coordinate = site.coordinate
+   AND reference.directive_name = site.directive_name AND reference.ordinal = site.ordinal
+   AND reference.owner = site.owner
   JOIN code_method_parameter parameter
     ON parameter.source_name = reference.method_source_name
    AND parameter.class_name = reference.method_class_name
@@ -12740,9 +12756,9 @@ SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, w.origin_pos
   FROM graphitron_call_context_key_written w
  WHERE w.origin = 'PAIR'
    AND EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
-                WHERE o.graph_name = w.graph_name AND o.source_name = w.source_name
-                  AND o.source_line = w.source_line AND o.source_column = w.source_column
-                  AND o.parameter_name = w.parameter_name
+                WHERE o.graph_name = w.graph_name AND o.coordinate = w.coordinate
+                  AND o.directive_name = w.directive_name AND o.ordinal = w.ordinal
+                  AND o.owner = w.owner AND o.parameter_name = w.parameter_name
                   AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
                        OR o.origin_position <> w.origin_position))
 UNION ALL
@@ -14084,9 +14100,9 @@ SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY
   FROM graphitron_call_context_key_written w
  WHERE w.origin = 'CONTEXT_ARGUMENTS'
    AND EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
-                WHERE o.graph_name = w.graph_name AND o.source_name = w.source_name
-                  AND o.source_line = w.source_line AND o.source_column = w.source_column
-                  AND o.parameter_name = w.parameter_name
+                WHERE o.graph_name = w.graph_name AND o.coordinate = w.coordinate
+                  AND o.directive_name = w.directive_name AND o.ordinal = w.ordinal
+                  AND o.owner = w.owner AND o.parameter_name = w.parameter_name
                   AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
                        OR o.origin_position <> w.origin_position))
 UNION ALL
@@ -15475,15 +15491,15 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     -- The @service mapping written on this reference, if one names the parameter. Keyed to the
     -- reference the mapping is a field of rather than to the coordinate, so another directive's
     -- mapping on the same field redirects nothing here.
-    LEFT JOIN (SELECT ms.graph_name, ms.source_name, ms.reference_line, ms.reference_column,
+    LEFT JOIN (SELECT ms.graph_name, ms.coordinate, ms.directive_name, ms.ordinal, ms.owner,
                       p.param_name, p.root_name
                  FROM graphitron_ast_argmapping_pair_entry p
                  JOIN graphitron_argmapping_site ms
                    ON ms.graph_name = p.graph_name AND ms.source_name = p.source_name
                   AND ms.source_line = p.source_line AND ms.source_column = p.source_column
                 WHERE ms.directive_name = 'service') am
-      ON am.graph_name = s.graph_name AND am.source_name = s.source_name
-     AND am.reference_line = s.source_line AND am.reference_column = s.source_column
+      ON am.graph_name = s.graph_name AND am.coordinate = s.coordinate
+     AND am.directive_name = s.directive_name AND am.ordinal = s.ordinal AND am.owner = s.owner
      AND am.param_name = mp.parameter_name
     JOIN graphql_argument a
       ON a.graph_name = s.graph_name AND a.type_name = s.type_name
@@ -16426,13 +16442,10 @@ WITH resolved (graph_name, source_name, source_line, source_column, position, pa
     JOIN graphitron_argmapping_site s
       ON s.graph_name = p.graph_name AND s.source_name = p.source_name
      AND s.source_line = p.source_line AND s.source_column = p.source_column
-    JOIN graphitron_code_reference_site cr_written
-      ON cr_written.graph_name = s.graph_name AND cr_written.source_name = s.source_name
-     AND cr_written.source_line = s.reference_line AND cr_written.source_column = s.reference_column
     JOIN graphitron_code_reference cr
-      ON cr.graph_name = cr_written.graph_name AND cr.coordinate = cr_written.coordinate
-     AND cr.directive_name = cr_written.directive_name AND cr.ordinal = cr_written.ordinal
-     AND cr.owner = cr_written.owner
+      ON cr.graph_name = s.graph_name AND cr.coordinate = s.coordinate
+     AND cr.directive_name = s.directive_name AND cr.ordinal = s.ordinal
+     AND cr.owner = s.owner
     JOIN code_method_parameter mp
       ON mp.source_name = cr.method_source_name AND mp.class_name = cr.method_class_name
      AND mp.method_name = cr.method_name AND mp.descriptor = cr.method_descriptor
@@ -19261,15 +19274,18 @@ INSERT INTO meta_grain VALUES
   ('sdl-code-reference',
    'one Java code reference written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('graph-call-parameter',
+   'one parameter of one call, the call named by its code reference''s application and owner, in one graph',
+   'graph_name, coordinate, directive_name, ordinal, owner, parameter_name', 'sdl'),
+  ('graph-argmapping-site',
+   'one written argMapping, named by its application and what it is written under there, in one graph',
+   'graph_name, coordinate, directive_name, ordinal, owner', 'sdl'),
   ('graph-code-reference',
    'one Java code reference, named by its application and what it was written under there, in one graph',
    'graph_name, coordinate, directive_name, ordinal, owner', 'sdl'),
-  ('sdl-call-parameter',
-   'one parameter, by name, of the call one Java code reference written in one SDL document makes',
-   'graph_name, source_name, source_line, source_column, parameter_name', 'sdl'),
   ('sdl-context-key-writing',
    'one context key written in one SDL document for a parameter of a call, at the place it was written',
-   'graph_name, source_name, source_line, source_column, parameter_name, origin_line, origin_column, origin_position', 'sdl'),
+   'graph_name, coordinate, directive_name, ordinal, owner, parameter_name, origin_line, origin_column, origin_position', 'sdl'),
   ('sdl-entry-position',
    'one position in one SDL document, whatever the parse read there',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -20220,11 +20236,11 @@ INSERT INTO meta_relation VALUES
    'The one method a written Java code reference names, where the graph''s classpath answers with exactly one.',
    'For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws none.',
    'The written reference met with the classpath, once for every site, as a reference into code_method rather than as the two strings again. Only a settled resolution is a row, on graphitron_tabletype''s terms: a reference naming nothing and one naming two overloads both draw none, so the anti-join against the written reference is every one that does not resolve, and graphitron_entry_defect says which of the three ways it failed. Resolved against every public method rather than a directive''s admission arm, because a method a site may not name is a different fault from one that does not exist. A reference naming a class only is not in this population; its resolution is to a class. Written by the graphitron anchor, which runs after the classpath is read.'),
-  ('graphitron_argmapping_site', 'sdl-written-value', 'graphitron',
+  ('graphitron_argmapping_site', 'graph-argmapping-site', 'graphitron',
    'Where one written argMapping sits: the directive and its repeat, the element it is written on, the code reference it is a field of and the path element that reference sits in.',
    'For example @reference(path: [{table: "film", condition: {className: "no.example.Conditions", method: "byActor", argMapping: "actorId: id"}}]) on Actor.films sits under reference at ordinal 0, on Actor.films, in the condition''s reference, at step 0.',
    'What a reader of the pair relation needs to know about a mapping and the string does not say. The decode the pair relation replaces carried it as one site literal welding the directive, the element kind and the path step together, and a reader filtered on nine spellings of it; these are the parts. Each is a fixed hop through keys the transcription declares, the holder of a value being its applied argument at any depth. Stored rather than left a view because every reader of a mapping joins it into a stack of views of its own, and H2 climbed it again inside each: the argMapping key-projection relations ran an order of magnitude slower over the view than over this table. The code reference is what the method a mapping binds into is resolved through, graphitron_code_reference holding it, so no reader matches a method by name again.'),
-  ('graphitron_argmapping_site_rule', 'sdl-written-value', 'graphitron',
+  ('graphitron_argmapping_site_rule', 'graph-argmapping-site', 'graphitron',
    'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the anchor step that runs it, on the terms every stage rule is kept on: the EXCEPT between this view and the table it fills stays runnable for as long as both exist.'),
@@ -20236,11 +20252,11 @@ INSERT INTO meta_relation VALUES
    'One row the holder rule computes, in the shape graphitron_service_holder stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron assembly inserts this view''s rows for one graph into graphitron_service_holder, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
-  ('graphitron_call_context_key', 'sdl-call-parameter', 'graphitron',
+  ('graphitron_call_context_key', 'graph-call-parameter', 'graphitron',
    'The context key that fills one parameter of one call: one row per code reference and parameter a $context pair or a contextArguments element names once.',
    'For example contextArguments: ["tenantId"] on a @service fills the parameter tenantId of the method its service names with the value the request context carries under tenantId.',
    'What a call''s parameter row reads where a context value fills it, and what decides whether the context can fill a parameter at all. contextArguments is the pair naming its own parameter, so both spellings are one fact here and nothing downstream knows which was written. Keyed by the code reference as written rather than by the method it resolves to, because a key is written whether or not the method is found. Stored rather than read through the rule because its readers join it into the fill and constructor rules, and the climb from a contextArguments element to its reference crosses five relations. A parameter written twice has no row: which of the two to believe is not the store''s to pick, and CONTEXT_KEY_DUPLICATE says so where each was written.'),
-  ('graphitron_call_context_key_rule', 'sdl-call-parameter', 'graphitron',
+  ('graphitron_call_context_key_rule', 'graph-call-parameter', 'graphitron',
    'One row the context-key rule computes, in the shape graphitron_call_context_key stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_call_context_key, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the anchor step that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),

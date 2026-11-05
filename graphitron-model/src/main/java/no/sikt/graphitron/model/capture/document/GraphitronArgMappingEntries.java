@@ -39,7 +39,8 @@ final class GraphitronArgMappingEntries {
     private static final String MAPPING_NAME = "argMapping";
 
     /** One entry of one mapping, at the string it was written in. */
-    private record Pair(StringValue mapping, int position, ArgMappingSigil.Entry entry) {}
+    private record Pair(StringValue mapping, int position, ArgMappingSigil.Entry entry,
+                        VocabularyWalk.Trail trail) {}
 
     /**
      * Makes {@code source}'s rows under {@code graph} be the mappings {@code applications} write,
@@ -61,7 +62,7 @@ final class GraphitronArgMappingEntries {
                     return;
                 }
                 for (int position = 0; position < entries.size(); position++) {
-                    pairs.add(new Pair(mapping, position, entries.get(position)));
+                    pairs.add(new Pair(mapping, position, entries.get(position), trail));
                 }
             });
         }
@@ -75,15 +76,22 @@ final class GraphitronArgMappingEntries {
             pair -> val(pair.position(), t.POSITION),
             pair -> val(touchedAt, t.TOUCHED_AT),
             pair -> val(pair.entry().parameter(), t.PARAM_NAME),
-            pair -> val(pair.entry().boundTo(), t.BOUND_TO)));
+            pair -> val(pair.entry().boundTo(), t.BOUND_TO),
+            pair -> val(pair.trail().argument(), t.ARGUMENT_NAME),
+            pair -> val(pair.trail().argumentIndex(), t.ARGUMENT_INDEX),
+            pair -> val(pair.trail().pathIndex(), t.PATH_INDEX)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.POSITION, t.TOUCHED_AT, t.PARAM_NAME, t.BOUND_TO)
+                    t.POSITION, t.TOUCHED_AT, t.PARAM_NAME, t.BOUND_TO, t.ARGUMENT_NAME,
+                    t.ARGUMENT_INDEX, t.PATH_INDEX)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARAM_NAME, excluded(t.PARAM_NAME))
-                .set(t.BOUND_TO, excluded(t.BOUND_TO)));
+                .set(t.BOUND_TO, excluded(t.BOUND_TO))
+                .set(t.ARGUMENT_NAME, excluded(t.ARGUMENT_NAME))
+                .set(t.ARGUMENT_INDEX, excluded(t.ARGUMENT_INDEX))
+                .set(t.PATH_INDEX, excluded(t.PATH_INDEX)));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, List.of(t));
     }
 }

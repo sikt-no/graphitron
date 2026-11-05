@@ -15,7 +15,7 @@ extend type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_call_context_key", rows: """
-  parameter_name, context_key, origin,            origin_position
-  userId,         userId,      CONTEXT_ARGUMENTS, 0
-  userId,         userId,      CONTEXT_ARGUMENTS, 0
+  coordinate,                directive_name, ordinal, owner,     parameter_name, context_key, origin,            origin_position
+  Query.greetingByUser,      service,        0,       service,   userId,         userId,      CONTEXT_ARGUMENTS, 0
+  Query.customersSeenByUser, condition,      0,       condition, userId,         userId,      CONTEXT_ARGUMENTS, 0
   """)

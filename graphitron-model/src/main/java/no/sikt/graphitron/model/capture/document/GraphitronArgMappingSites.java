@@ -26,22 +26,20 @@ final class GraphitronArgMappingSites {
         var r = GRAPHITRON_ARGMAPPING_SITE_RULE;
         var t = GRAPHITRON_ARGMAPPING_SITE;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.DIRECTIVE_NAME,
-                t.ORDINAL, t.COORDINATE, t.ELEMENT_KIND, t.REFERENCE_LINE, t.REFERENCE_COLUMN,
-                t.STEP_POSITION, t.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
-                    r.DIRECTIVE_NAME, r.ORDINAL, r.COORDINATE, r.ELEMENT_KIND, r.REFERENCE_LINE,
-                    r.REFERENCE_COLUMN, r.STEP_POSITION, val(touchedAt, t.TOUCHED_AT))
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.KIND,
+                t.ELEMENT_KIND, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER,
+                    r.KIND, r.ELEMENT_KIND, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
+                    val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onDuplicateKeyUpdate()
-            .set(t.DIRECTIVE_NAME, excluded(t.DIRECTIVE_NAME))
-            .set(t.ORDINAL, excluded(t.ORDINAL))
-            .set(t.COORDINATE, excluded(t.COORDINATE))
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER)
+            .doUpdate()
+            .set(t.KIND, excluded(t.KIND))
             .set(t.ELEMENT_KIND, excluded(t.ELEMENT_KIND))
-            .set(t.REFERENCE_LINE, excluded(t.REFERENCE_LINE))
-            .set(t.REFERENCE_COLUMN, excluded(t.REFERENCE_COLUMN))
-            .set(t.STEP_POSITION, excluded(t.STEP_POSITION))
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
 

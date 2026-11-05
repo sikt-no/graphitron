@@ -25,17 +25,18 @@ final class GraphitronCallContextKeys {
         var r = GRAPHITRON_CALL_CONTEXT_KEY_RULE;
         var t = GRAPHITRON_CALL_CONTEXT_KEY;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARAMETER_NAME,
-                t.CONTEXT_KEY, t.ORIGIN, t.ORIGIN_LINE, t.ORIGIN_COLUMN, t.ORIGIN_POSITION,
-                t.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
-                    r.PARAMETER_NAME, r.CONTEXT_KEY, r.ORIGIN, r.ORIGIN_LINE, r.ORIGIN_COLUMN,
-                    r.ORIGIN_POSITION, val(touchedAt, t.TOUCHED_AT))
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER,
+                t.PARAMETER_NAME, t.CONTEXT_KEY, t.ORIGIN, t.SOURCE_NAME, t.ORIGIN_LINE,
+                t.ORIGIN_COLUMN, t.ORIGIN_POSITION, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER,
+                    r.PARAMETER_NAME, r.CONTEXT_KEY, r.ORIGIN, r.SOURCE_NAME, r.ORIGIN_LINE,
+                    r.ORIGIN_COLUMN, r.ORIGIN_POSITION, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
             .onDuplicateKeyUpdate()
             .set(t.CONTEXT_KEY, excluded(t.CONTEXT_KEY))
             .set(t.ORIGIN, excluded(t.ORIGIN))
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
             .set(t.ORIGIN_LINE, excluded(t.ORIGIN_LINE))
             .set(t.ORIGIN_COLUMN, excluded(t.ORIGIN_COLUMN))
             .set(t.ORIGIN_POSITION, excluded(t.ORIGIN_POSITION))
