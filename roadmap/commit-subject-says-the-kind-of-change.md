@@ -144,3 +144,13 @@ Not a gate verdict. Read against trunk `90eb4d31f`. The narrowed goal is right: 
    *Response:* Accepted. The file is renamed `commit-subject-says-the-kind-of-change.md`, and the one reference to the old slug, in `changelog-prose-first-entries-escape-the-invariant`, follows.
 
 Sound: the narrowed goal, the type list with roadmap commits as `chore`, the not-for-trunk types matched as types, the Dependabot prefix, the `<type>(R<n>)` placeholder in `CLAUDE.md`, the cut-over without rewriting history, and the out-of-scope split.
+
+### Round 4: Backlog, no blocking findings (session_01WkW2JFGZ8sg6MFqgv3yaP3, 2026-11-05)
+
+Not a gate verdict. Read against trunk `0176960ff`. Round 3 is answered in full: the range check gives the "Who" rule a place where it holds, the out-of-scope section states honestly what that leaves unchecked, and the edit sites are complete. I would take it to Spec; two small precisions, either of which can ride in that revision.
+
+1. **Dependabot needs `include: "scope"` for `(deps)`.** `commit-message: prefix: "build"` alone makes Dependabot write `build: bump ...`; the `(deps)` scope the plan states comes from adding `include: "scope"` beside the prefix. Either add it to both ecosystems or state the subject as `build: ...`, which the shape regex accepts as well.
+
+2. **Say which push the range check gates.** Today a `wip`/`draft`/`spike` tip means "push the feature branch, skip trunk", not "stop". The plan says the check "stops", which read literally also blocks pushing a `wip` branch to its own remote, the very thing the not-for-trunk types exist to allow. State that a failing range skips the trunk fast-forward (step 4) and reports, while the feature-branch push still goes ahead.
+
+Sound: everything round 3 asked for, the two regexes (the shape one correctly excludes the not-for-trunk types and the `Revert "..."` subject git writes), the rename and its one follow-on reference, and `srp` left alone.
