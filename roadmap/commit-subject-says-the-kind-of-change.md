@@ -1,7 +1,7 @@
 ---
 id: R1156
 title: "A commit on trunk says what kind of change it is"
-status: Ready
+status: In Progress
 bucket: process
 priority: 2
 theme: tooling
