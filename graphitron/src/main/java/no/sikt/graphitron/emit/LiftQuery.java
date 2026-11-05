@@ -62,13 +62,15 @@ public final class LiftQuery {
     }
 
     /**
-     * One lifting occurrence: its coordinate, whether it lifts one record or a list, whether it
-     * starts at a root or under an object, the lifted table and its key.
+     * One lifting occurrence: its coordinate, the type its rows are projected as, whether it lifts
+     * one record or a list, whether it starts at a root or under an object, the lifted table and
+     * its key.
      */
-    public record Row(String coordinate, boolean list, boolean root, Table table,
+    public record Row(String coordinate, String targetType, boolean list, boolean root, Table table,
                       List<KeyColumn> key) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
+            Objects.requireNonNull(targetType, "targetType");
             Objects.requireNonNull(table, "table");
             key = List.copyOf(key);
         }
@@ -85,7 +87,7 @@ public final class LiftQuery {
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
         return store.dsl()
-            .select(p.COORDINATE, r.SHAPE, p.START, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
+            .select(p.COORDINATE, ft.TARGET_TYPE_NAME, r.SHAPE, p.START, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
                 t.JOOQ_NAME, t.RECORD_CLASS_FQN, key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME))
             .from(p)
             .join(r).on(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE))
@@ -103,10 +105,10 @@ public final class LiftQuery {
             .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"),
                 r.SHAPE.in("SINGLE_RECORD", "RECORD_LIST"))
             .orderBy(p.COORDINATE)
-            .fetch(rec -> new Row(rec.value1(), "RECORD_LIST".equals(rec.value2()),
-                "ROOT".equals(rec.value3()),
-                new Table(rec.value4(), rec.value5(), rec.value6(), rec.value7(), rec.value8()),
-                rec.value9()));
+            .fetch(rec -> new Row(rec.value1(), rec.value2(), "RECORD_LIST".equals(rec.value3()),
+                "ROOT".equals(rec.value4()),
+                new Table(rec.value5(), rec.value6(), rec.value7(), rec.value8(), rec.value9()),
+                rec.value10()));
     }
 
     /** The table's primary key, in key order. */

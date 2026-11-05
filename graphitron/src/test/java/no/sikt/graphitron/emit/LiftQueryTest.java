@@ -72,6 +72,7 @@ class LiftQueryTest {
         assertThat(row).isNotNull();
         assertThat(row.list()).isTrue();
         assertThat(row.root()).isTrue();
+        assertThat(row.targetType()).isEqualTo("Film");
         assertThat(row.table().sqlName()).isEqualTo("film");
         assertThat(row.table().javaFieldName()).isEqualTo("FILM");
         assertThat(row.key()).extracting(LiftQuery.KeyColumn::sqlName).containsExactly("film_id");
