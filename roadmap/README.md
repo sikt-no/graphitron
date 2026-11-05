@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R1153` | Execution tests that identity never crosses requests through a real pool | Spec | 2026-11-05 | [plan](session-identity-pool-isolation-execution-tests.md) |
-| `R1150` | A nesting field named like a column of its parent binds the column, not its nested fields | In Progress | 2026-11-05 <sub>created 2026-11-04</sub> | [plan](nesting-field-named-like-a-column-binds-the-column.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-21 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
+| `R1150` | A nesting field named like a column of its parent binds the column, not its nested fields | In Review | 2026-11-05 <sub>created 2026-11-04</sub> | [plan](nesting-field-named-like-a-column-binds-the-column.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R1133` | A single @error type as the errors field's element is not recognised as an error channel | Spec | 2026-11-03 <sub>created 2026-10-30</sub> | [plan](payload-errors-accessor-disables-error-channel.md) |
@@ -422,7 +422,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### classification-model
 
-- `R1150` [**A nesting field named like a column of its parent binds the column, not its nested fields**](nesting-field-named-like-a-column-binds-the-column.md) — In Progress, bug
+- `R1150` [**A nesting field named like a column of its parent binds the column, not its nested fields**](nesting-field-named-like-a-column-binds-the-column.md) — In Review, bug
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R846` [**A field returning an author-declared connection type has no scope table**](authored-connection-type-scope-silence.md) — Backlog, bug
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
