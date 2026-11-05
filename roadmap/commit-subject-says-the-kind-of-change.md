@@ -1,7 +1,7 @@
 ---
 id: R1156
 title: "A commit on trunk says what kind of change it is"
-status: In Review
+status: Ready
 bucket: process
 priority: 2
 theme: tooling
@@ -167,3 +167,11 @@ Read against trunk `c5cd6c3aa`. Rounds 1 to 4 were this gate's review, labelled 
 * **Fits the architecture we have.** Yes. It widens the publish skill's existing not-for-trunk check rather than standing a new mechanism beside it, sets prefixes in the existing `.github/dependabot.yml`, and rewrites subject conventions where skills already state them. The build gate is deferred with the gap it leaves stated.
 
 Round 4's two points carry to the implementer as notes, not conditions: add `include: "scope"` beside the Dependabot prefix if `build(deps):` is the wanted subject, and keep the feature-branch push going ahead when the range check fails, skipping only the trunk fast-forward, as the skill does today for a not-for-trunk tip.
+
+### Round 6: In Review → Ready, rework (session_01WkW2JFGZ8sg6MFqgv3yaP3, 2026-11-05)
+
+Read against trunk `7888b80dc`; implementer session `01WkW2JGHHpmT26aS7nfdXNU`, delivery `59885887b`. Every edit site the plan names is touched and matches it, round 4's two notes are taken, and the delivery is the change the spec approved. The publish skill's range check does what it says: run over fixture commits it flags `wip(R2)!:`, `spike:`, `Revert "..."`, an old-style `R5:` subject and `feat(R1) :`, and passes `feat(R1):`, `fix:`, `chore(roadmap):` and `docs!:`. Completeness is demonstrated where it can be: every subject on trunk after the cut-over conforms, from four sessions, so the convention is being read and followed. One finding blocks.
+
+1. **The item's own motivating changes have no type, and the worked example gives them the wrong one.** The Problem's cases are a removed argument (`@routine` loses `columnMapping`), a removed slot (MCP `demand`) and new refusals (`@table` on a table-valued function, UPSERT beside `@service`). The convention glosses `feat` as "an author or consumer can do something new" and `fix` as "behaviour corrected"; neither covers taking something away or refusing what was accepted, and no other type is glossed. `roadmap/workflow.adoc`'s example fills the gap with `refactor(R876)!: @routine no longer takes columnMapping`, but `refactor` conventionally means no behaviour change, and the follow-up release notes this item enables list `feat`, `fix`, `perf` and `revert` and drop `refactor` unless it carries `!`. So the next author copies the example for a consumer-visible change that is not breaking, a relaxed refusal or a changed message, writes `refactor`, and the release notes lose it. Name the type for a consumer-visible change that is neither new capability nor correction (`feat` with the gloss widened to "what an author or consumer can do changes", which is the common reading, is the smallest fix), gloss `refactor` as changing nothing an author or consumer sees, and change the example to match. Bears on correctness: the delivered convention cannot classify the changes it exists to surface.
+
+Not blocking: the publish skill's "When to skip" still opens "Do NOT run this skill if", while the subject check is now run inside the skill at step 2 and the skill then pushes the feature branch; "Skip the trunk fast-forward if" would read true.
