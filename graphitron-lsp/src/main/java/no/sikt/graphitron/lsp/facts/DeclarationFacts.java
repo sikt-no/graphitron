@@ -550,8 +550,9 @@ public final class DeclarationFacts {
             .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(r.METHOD_DESCRIPTOR)));
         return multiset(producerReferences(select(site.CLASS_NAME, site.METHOD_NAME, arity)
                 .from(site)
-                .leftJoin(r).on(r.GRAPH_NAME.eq(site.GRAPH_NAME), r.SOURCE_NAME.eq(site.SOURCE_NAME),
-                    r.SOURCE_LINE.eq(site.SOURCE_LINE), r.SOURCE_COLUMN.eq(site.SOURCE_COLUMN)),
+                .leftJoin(r).on(r.GRAPH_NAME.eq(site.GRAPH_NAME), r.COORDINATE.eq(site.COORDINATE),
+                    r.DIRECTIVE_NAME.eq(site.DIRECTIVE_NAME), r.ORDINAL.eq(site.ORDINAL),
+                    r.OWNER.eq(site.OWNER)),
                 store, coord)
             .orderBy(site.DIRECTIVE_NAME, r.METHOD_DESCRIPTOR))
             .convertFrom(rows -> rows.map(Records.mapping(FieldProducerMethods.Reference::new)));

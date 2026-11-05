@@ -24,6 +24,10 @@ import static org.jooq.impl.DSL.val;
  * {@code graphitron_code_reference_site}, which states the {@code @externalField} default once for
  * this and for the defects that report what does not resolve.
  *
+ * <p>Keyed by the reference's names, its application and what it was written under in it, so an
+ * edit above it in the file changes no row; where it was written rides along for a defect to point
+ * at.
+ *
  * <p>Only a settled resolution is a row: the count is per reference, and a name two overloads or two
  * classpath entries answer draws none, which the anti-join reports. Marked and swept: the statement
  * upserts on the reading's instant and the delete after it takes the references this reading no
@@ -41,12 +45,13 @@ final class GraphitronCodeReferences {
 
         // Aliased to the target's names: the written position and the method each carry a
         // source_name, one a file and one a classpath entry.
-        var resolved = dsl.select(s.GRAPH_NAME, s.SOURCE_NAME, s.SOURCE_LINE, s.SOURCE_COLUMN,
+        var resolved = dsl.select(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL, s.OWNER,
+                s.KIND, s.SOURCE_NAME, s.SOURCE_LINE, s.SOURCE_COLUMN,
                 m.SOURCE_NAME.as(t.METHOD_SOURCE_NAME.getName()),
                 m.CLASS_NAME.as(t.METHOD_CLASS_NAME.getName()), m.METHOD_NAME,
                 m.DESCRIPTOR.as(t.METHOD_DESCRIPTOR.getName()),
-                count().over(partitionBy(s.GRAPH_NAME, s.SOURCE_NAME, s.SOURCE_LINE,
-                    s.SOURCE_COLUMN)).as("candidates"))
+                count().over(partitionBy(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL,
+                    s.OWNER)).as("candidates"))
             .from(s)
             .join(gs).on(gs.GRAPH_NAME.eq(s.GRAPH_NAME))
             .join(m).on(m.SOURCE_NAME.eq(gs.SOURCE_NAME), m.CLASS_NAME.eq(s.CLASS_NAME),
@@ -55,11 +60,15 @@ final class GraphitronCodeReferences {
             .asTable("resolved");
 
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.KIND,
+                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                 t.METHOD_SOURCE_NAME, t.METHOD_CLASS_NAME, t.METHOD_NAME, t.METHOD_DESCRIPTOR,
                 t.TOUCHED_AT)
             .select(dsl.select(
-                    resolved.field(s.GRAPH_NAME), resolved.field(s.SOURCE_NAME),
+                    resolved.field(s.GRAPH_NAME), resolved.field(s.COORDINATE),
+                    resolved.field(s.DIRECTIVE_NAME), resolved.field(s.ORDINAL),
+                    resolved.field(s.OWNER), resolved.field(s.KIND),
+                    resolved.field(s.SOURCE_NAME),
                     resolved.field(s.SOURCE_LINE), resolved.field(s.SOURCE_COLUMN),
                     resolved.field(t.METHOD_SOURCE_NAME.getName(), String.class),
                     resolved.field(t.METHOD_CLASS_NAME.getName(), String.class),
@@ -68,7 +77,12 @@ final class GraphitronCodeReferences {
                     val(touchedAt, t.TOUCHED_AT))
                 .from(resolved)
                 .where(field(name("resolved", "candidates"), Integer.class).eq(1)))
-            .onDuplicateKeyUpdate()
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER)
+            .doUpdate()
+            .set(t.KIND, excluded(t.KIND))
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.METHOD_SOURCE_NAME, excluded(t.METHOD_SOURCE_NAME))
             .set(t.METHOD_CLASS_NAME, excluded(t.METHOD_CLASS_NAME))
             .set(t.METHOD_NAME, excluded(t.METHOD_NAME))

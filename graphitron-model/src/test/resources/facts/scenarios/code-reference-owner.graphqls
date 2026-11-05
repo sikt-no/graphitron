@@ -31,3 +31,12 @@ extend schema @expectEquals(relation: "graphitron_ast_code_reference_entry", row
   no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys,                     latestStockStore,          fields,                     1,
   no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures,   customerToAddressConcrete, path,                       0,
   """)
+
+# Each resolved reference is named by its application and the names it was written under there,
+# with no position in its key.
+extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
+  coordinate,                             directive_name, ordinal, owner,    kind,         method_name
+  Query.filmsByIds,                       service,        0,       service,  ROOT,         filmsByIds
+  Query.filmsByLatestStock,               defaultOrder,   0,       fields.1, ORDER_FIELD,  latestStockStore
+  Query.customersByConditionDistrict(district:), reference, 0,      path.0,   PATH_ELEMENT, customerToAddressConcrete
+  """)

@@ -897,9 +897,9 @@ final class SchemaQueries {
                 .on(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(site.GRAPH_NAME)
                     .and(GRAPHQL_FIELD_ELEMENT.COORDINATE.eq(site.COORDINATE)))
                 .join(r)
-                .on(r.GRAPH_NAME.eq(site.GRAPH_NAME).and(r.SOURCE_NAME.eq(site.SOURCE_NAME))
-                    .and(r.SOURCE_LINE.eq(site.SOURCE_LINE))
-                    .and(r.SOURCE_COLUMN.eq(site.SOURCE_COLUMN)))
+                .on(r.GRAPH_NAME.eq(site.GRAPH_NAME).and(r.COORDINATE.eq(site.COORDINATE))
+                    .and(r.DIRECTIVE_NAME.eq(site.DIRECTIVE_NAME))
+                    .and(r.ORDINAL.eq(site.ORDINAL)).and(r.OWNER.eq(site.OWNER)))
                 .where(site.DIRECTIVE_NAME.in(SERVICE_DIRECTIVE, EXTERNAL_FIELD_DIRECTIVE,
                         CONDITION_DIRECTIVE)
                     .and(ofField(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME, GRAPHQL_FIELD_ELEMENT.TYPE_NAME,

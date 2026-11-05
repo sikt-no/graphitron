@@ -26,7 +26,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static org.jooq.impl.DSL.multiset;
@@ -177,20 +176,14 @@ public final class FieldInformation {
             .convertFrom(rows -> rows.map(Records.mapping(Node::new)))
             .as("info_nodes");
 
-        // A code reference is keyed by the object value it was written as, two levels under the
-        // directive: the application, its argument, the value.
+        // A code reference is named by its application: the references written on the application
+        // itself, not in a path element or an @order field below it.
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
-        var arg = GRAPHQL_AST_ENTRY.as("info_arg");
-        var val = GRAPHQL_AST_ENTRY.as("info_val");
         var r = GRAPHITRON_CODE_REFERENCE;
         methods = multiset(select(d.DIRECTIVE_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME, r.METHOD_DESCRIPTOR)
             .from(d)
-            .join(arg).on(arg.GRAPH_NAME.eq(d.GRAPH_NAME), arg.SOURCE_NAME.eq(d.SOURCE_NAME),
-                arg.PARENT_LINE.eq(d.SOURCE_LINE), arg.PARENT_COLUMN.eq(d.SOURCE_COLUMN))
-            .join(val).on(val.GRAPH_NAME.eq(arg.GRAPH_NAME), val.SOURCE_NAME.eq(arg.SOURCE_NAME),
-                val.PARENT_LINE.eq(arg.SOURCE_LINE), val.PARENT_COLUMN.eq(arg.SOURCE_COLUMN))
-            .join(r).on(r.GRAPH_NAME.eq(val.GRAPH_NAME), r.SOURCE_NAME.eq(val.SOURCE_NAME),
-                r.SOURCE_LINE.eq(val.SOURCE_LINE), r.SOURCE_COLUMN.eq(val.SOURCE_COLUMN))
+            .join(r).on(r.GRAPH_NAME.eq(d.GRAPH_NAME), r.COORDINATE.eq(d.COORDINATE),
+                r.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME), r.ORDINAL.eq(d.ORDINAL), r.KIND.eq("ROOT"))
             .where(d.GRAPH_NAME.eq(graph), d.COORDINATE.eq(coordinate), d.ORIGIN.eq("AUTHORED"))
             .orderBy(d.DIRECTIVE_NAME, d.ORDINAL))
             .convertFrom(rows -> rows.map(Records.mapping(Method::new)))

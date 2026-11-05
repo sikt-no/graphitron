@@ -26,7 +26,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -429,23 +428,17 @@ final class InlayFacts {
     }
 
     /**
-     * The methods the code references written at the region's fields resolve to. A reference is
-     * keyed by the object value it was written as, two levels under the directive.
+     * The methods the code references written at the region's fields resolve to: the references on
+     * each application itself, named by it.
      */
     private static Field<List<MethodRow>> methodArm(StoreHandle store, Collection<String> typeNames) {
         var f = GRAPHITRON_FIELD;
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
-        var arg = GRAPHQL_AST_ENTRY.as("inlay_arg");
-        var val = GRAPHQL_AST_ENTRY.as("inlay_val");
         var r = GRAPHITRON_CODE_REFERENCE;
         return multiset(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME).from(f)
             .join(d).on(d.GRAPH_NAME.eq(f.GRAPH_NAME), d.COORDINATE.eq(f.COORDINATE), d.ORIGIN.eq("AUTHORED"))
-            .join(arg).on(arg.GRAPH_NAME.eq(d.GRAPH_NAME), arg.SOURCE_NAME.eq(d.SOURCE_NAME),
-                arg.PARENT_LINE.eq(d.SOURCE_LINE), arg.PARENT_COLUMN.eq(d.SOURCE_COLUMN))
-            .join(val).on(val.GRAPH_NAME.eq(arg.GRAPH_NAME), val.SOURCE_NAME.eq(arg.SOURCE_NAME),
-                val.PARENT_LINE.eq(arg.SOURCE_LINE), val.PARENT_COLUMN.eq(arg.SOURCE_COLUMN))
-            .join(r).on(r.GRAPH_NAME.eq(val.GRAPH_NAME), r.SOURCE_NAME.eq(val.SOURCE_NAME),
-                r.SOURCE_LINE.eq(val.SOURCE_LINE), r.SOURCE_COLUMN.eq(val.SOURCE_COLUMN))
+            .join(r).on(r.GRAPH_NAME.eq(d.GRAPH_NAME), r.COORDINATE.eq(d.COORDINATE),
+                r.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME), r.ORDINAL.eq(d.ORDINAL), r.KIND.eq("ROOT"))
             .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
             .orderBy(f.TYPE_NAME, f.FIELD_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(MethodRow::new)));

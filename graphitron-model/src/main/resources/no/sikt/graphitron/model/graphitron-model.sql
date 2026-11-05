@@ -2594,15 +2594,28 @@ COMMENT ON COLUMN graphitron_argmapping_site.touched_at IS 'when the reading tha
 
 CREATE VIEW graphitron_code_reference_site
   (graph_name, source_name, source_line, source_column,
-   directive_name, coordinate, type_name, field_name, class_name, method_name) AS
+   directive_name, coordinate, type_name, field_name, class_name, method_name,
+   ordinal, owner, kind) AS
 SELECT w.graph_name, w.source_name, w.source_line, w.source_column,
        da.name, el.coordinate, ef.type_name, ef.field_name, w.class_name,
        -- The one site whose omitted method has a default: an @externalField names its field.
-       COALESCE(w.method, CASE WHEN da.name = 'externalField' THEN ef.field_name END)
+       COALESCE(w.method, CASE WHEN da.name = 'externalField' THEN ef.field_name END),
+       app.ordinal,
+       -- The names the reference was written under, spelled: the argument, its index in the
+       -- argument's list, its index in a path below it.
+       w.argument_name
+         || COALESCE('.' || CAST(w.argument_index AS VARCHAR), '')
+         || COALESCE('.path.' || CAST(w.path_index AS VARCHAR), ''),
+       CASE WHEN w.argument_index IS NULL THEN 'ROOT'
+            WHEN w.argument_name = 'path' THEN 'PATH_ELEMENT'
+            WHEN w.argument_name = 'fields' AND w.path_index IS NULL THEN 'ORDER_FIELD'
+            WHEN w.argument_name = 'fields' THEN 'ORDER_FIELD_PATH'
+            WHEN w.argument_name = 'routes' THEN 'ROUTE_PATH' END
   FROM (
     -- The value's holder is the applied argument, at any depth, and the argument's parent is the
     -- application.
     SELECT r.graph_name, r.source_name, r.source_line, r.source_column, r.class_name, r.method,
+           r.argument_name, r.argument_index, r.path_index,
            arg.parent_line AS application_line, arg.parent_column AS application_column
       FROM graphitron_ast_code_reference_entry r
       JOIN graphql_ast_value_entry v
@@ -2621,6 +2634,10 @@ SELECT w.graph_name, w.source_name, w.source_line, w.source_column,
   JOIN graphql_ast_element_entry el
     ON el.graph_name = an.graph_name AND el.source_name = an.source_name
    AND el.source_line = an.parent_line AND el.source_column = an.parent_column
+  -- The application anchored: where it was written names its element, directive and ordinal.
+  JOIN graphql_directive_application app
+    ON app.graph_name = da.graph_name AND app.source_name = da.source_name
+   AND app.source_line = da.source_line AND app.source_column = da.source_column
   LEFT JOIN graphql_element_field ef
     ON ef.graph_name = el.graph_name AND ef.coordinate = el.coordinate;
 COMMENT ON VIEW graphitron_code_reference_site IS 'Where one written Java code reference sits: the directive that wrote it, the element it is on, and the method it names once that site''s default applies. For example isEnglish: Boolean @externalField(reference: {className: "no.example.FilmExtensions"}) sits at Film.isEnglish under externalField and names isEnglish.';
@@ -2634,6 +2651,9 @@ COMMENT ON VIEW graphitron_code_reference_site IS 'Where one written Java code r
 -- COMMENT ON COLUMN graphitron_code_reference_site.field_name IS 'the field that element is or belongs to, NULL where it is a type';
 -- COMMENT ON COLUMN graphitron_code_reference_site.class_name IS 'the class the reference names, as written';
 -- COMMENT ON COLUMN graphitron_code_reference_site.method_name IS 'the method the reference names: as written, or the field''s own name where an @externalField wrote none, which is the one default any site applies. NULL where the reference names a class only, as @enum does';
+-- COMMENT ON COLUMN graphitron_code_reference_site.ordinal IS 'the application''s ordinal, graphql_directive_application''s, which with the coordinate and the directive names the application';
+-- COMMENT ON COLUMN graphitron_code_reference_site.owner IS 'the names the reference was written under in its application, spelled: service for a root reference, path.0 for a path element''s condition, fields.1 for an @order field''s method, fields.1.path.0 for a condition in that field''s path';
+-- COMMENT ON COLUMN graphitron_code_reference_site.kind IS 'which of those the reference is: ROOT, PATH_ELEMENT, ORDER_FIELD, ORDER_FIELD_PATH, or ROUTE_PATH under the removed @multitableReference';
 
 CREATE TABLE graphitron_ast_service_entry (
   graph_name    VARCHAR NOT NULL,
@@ -8501,6 +8521,11 @@ COMMENT ON VIEW graphitron_directive_application_arg_minted IS 'One of the three
 
 CREATE TABLE graphitron_code_reference (
   graph_name         VARCHAR NOT NULL,
+  coordinate         VARCHAR NOT NULL,
+  directive_name     VARCHAR NOT NULL,
+  ordinal            INT     NOT NULL,
+  owner              VARCHAR NOT NULL,
+  kind               VARCHAR NOT NULL,
   source_name        VARCHAR NOT NULL,
   source_line        INT     NOT NULL,
   source_column      INT     NOT NULL,
@@ -8509,20 +8534,32 @@ CREATE TABLE graphitron_code_reference (
   method_name        VARCHAR NOT NULL,
   method_descriptor  VARCHAR NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  -- The reference as written, so a resolution cannot outlive the writing it resolves.
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner),
+  UNIQUE (graph_name, coordinate, directive_name, ordinal, owner, kind),
+  -- The application the reference is written in, so a reference cannot outlive it.
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
+    REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
+    ON DELETE CASCADE,
+  -- The reference as written, kept for a defect to point at, so a resolution cannot outlive the
+  -- writing it resolves.
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphitron_ast_code_reference_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
   -- The method, so a reading that no longer finds it takes the resolution with it.
   FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
-    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (kind IN ('ROOT', 'PATH_ELEMENT', 'ORDER_FIELD', 'ORDER_FIELD_PATH', 'ROUTE_PATH'))
 );
 COMMENT ON TABLE graphitron_code_reference IS 'The one method a written Java code reference names, where the graph''s classpath answers with exactly one. For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws none.';
 COMMENT ON COLUMN graphitron_code_reference.graph_name IS 'the owning graph''s partition, carried from the written reference';
-COMMENT ON COLUMN graphitron_code_reference.source_name IS 'the file the reference was written in, the first of the four columns that are the written reference''s key in graphitron_ast_code_reference_entry';
+COMMENT ON COLUMN graphitron_code_reference.coordinate IS 'the element the application writing the reference is on: a type, a field, an argument or an input field';
+COMMENT ON COLUMN graphitron_code_reference.directive_name IS 'the directive whose application wrote the reference';
+COMMENT ON COLUMN graphitron_code_reference.ordinal IS 'the application''s ordinal, with the coordinate and the directive naming the application in graphql_directive_application';
+COMMENT ON COLUMN graphitron_code_reference.owner IS 'the names the reference was written under in its application, spelled, completing the key: service for a root reference, path.0 for a path element''s condition, fields.1 for an @order field''s method, fields.1.path.0 for a condition in that field''s path. Names and ordinals and no position, so editing the file above it changes no row';
+COMMENT ON COLUMN graphitron_code_reference.kind IS 'which owner the reference has: ROOT on the application itself, PATH_ELEMENT on a path element, ORDER_FIELD on an @order field, ORDER_FIELD_PATH on an element of that field''s path, ROUTE_PATH under the removed @multitableReference';
+COMMENT ON COLUMN graphitron_code_reference.source_name IS 'the file the reference was written in; with the line and the column, where a defect about it points, and the reference''s key in graphitron_ast_code_reference_entry. An attribute and not the key';
 COMMENT ON COLUMN graphitron_code_reference.source_line IS 'source line of the node the reference was written as';
-COMMENT ON COLUMN graphitron_code_reference.source_column IS 'source column of the same, completing the key. One reference resolves to at most one method, so the reference is the whole grain';
+COMMENT ON COLUMN graphitron_code_reference.source_column IS 'source column of the same';
 COMMENT ON COLUMN graphitron_code_reference.method_source_name IS 'the classpath entry the resolved method was read from, the first of the four columns naming one code_method row; one of the entries the graph reached through store_graph_source';
 COMMENT ON COLUMN graphitron_code_reference.method_class_name IS 'the class declaring the resolved method, equal to what the author wrote, the match being exact: Java names are case-sensitive and a misspelling resolves to nothing rather than to a near match';
 COMMENT ON COLUMN graphitron_code_reference.method_name IS 'the resolved method''s name: the reference''s, or the field''s where an @externalField wrote none, as graphitron_code_reference_site states it';
@@ -12479,8 +12516,8 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin,
          -- The method the field's @service reference resolved to, read off the reference itself.
          AND EXISTS (SELECT 1 FROM graphitron_code_reference_site cr
                        JOIN graphitron_code_reference rr
-                         ON rr.graph_name = cr.graph_name AND rr.source_name = cr.source_name
-                        AND rr.source_line = cr.source_line AND rr.source_column = cr.source_column
+                         ON rr.graph_name = cr.graph_name AND rr.coordinate = cr.coordinate
+                        AND rr.directive_name = cr.directive_name AND rr.ordinal = cr.ordinal AND rr.owner = cr.owner
                        JOIN code_method m
                          ON m.source_name = rr.method_source_name AND m.class_name = rr.method_class_name
                         AND m.method_name = rr.method_name AND m.descriptor = rr.method_descriptor
@@ -12534,9 +12571,14 @@ SELECT pair.graph_name, pair.source_name, pair.source_line, pair.source_column, 
   JOIN graphitron_argmapping_site site
     ON site.graph_name = pair.graph_name AND site.source_name = pair.source_name
    AND site.source_line = pair.source_line AND site.source_column = pair.source_column
+  -- The mapping's code reference, reached through where it was written, and resolved by name.
+  JOIN graphitron_code_reference_site reference_written
+    ON reference_written.graph_name = site.graph_name AND reference_written.source_name = site.source_name
+   AND reference_written.source_line = site.reference_line AND reference_written.source_column = site.reference_column
   JOIN graphitron_code_reference reference
-    ON reference.graph_name = site.graph_name AND reference.source_name = site.source_name
-   AND reference.source_line = site.reference_line AND reference.source_column = site.reference_column
+    ON reference.graph_name = reference_written.graph_name AND reference.coordinate = reference_written.coordinate
+   AND reference.directive_name = reference_written.directive_name AND reference.ordinal = reference_written.ordinal
+   AND reference.owner = reference_written.owner
   JOIN code_method_parameter parameter
     ON parameter.source_name = reference.method_source_name
    AND parameter.class_name = reference.method_class_name
@@ -13275,9 +13317,9 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
           FROM graphitron_code_reference_site c
          WHERE c.method_name IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
-                            WHERE r.graph_name = c.graph_name AND r.source_name = c.source_name
-                              AND r.source_line = c.source_line
-                              AND r.source_column = c.source_column)
+                            WHERE r.graph_name = c.graph_name AND r.coordinate = c.coordinate
+                              AND r.directive_name = c.directive_name
+                              AND r.ordinal = c.ordinal AND r.owner = c.owner)
            -- A graph whose classpath was never read has told the store nothing about any class, so
            -- no name it writes is wrong yet: a store before its first build, or a capture with no
            -- classpath at all. Only a reading that read something can say a class is absent.
@@ -14055,8 +14097,8 @@ SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
        'SERVICE_HOLDER_UNBUILDABLE', cr.method_class_name
   FROM graphitron_code_reference_site site
   JOIN graphitron_code_reference cr
-    ON cr.graph_name = site.graph_name AND cr.source_name = site.source_name
-   AND cr.source_line = site.source_line AND cr.source_column = site.source_column
+    ON cr.graph_name = site.graph_name AND cr.coordinate = site.coordinate
+   AND cr.directive_name = site.directive_name AND cr.ordinal = site.ordinal AND cr.owner = site.owner
   JOIN code_method m
     ON m.source_name = cr.method_source_name AND m.class_name = cr.method_class_name
    AND m.method_name = cr.method_name AND m.descriptor = cr.method_descriptor
@@ -14096,9 +14138,10 @@ CREATE TABLE graphitron_producer_service (
   type_name          VARCHAR   NOT NULL,
   field_name         VARCHAR   NOT NULL,
   kind               VARCHAR   NOT NULL,
-  source_name        VARCHAR   NOT NULL,
-  source_line        INT       NOT NULL,
-  source_column      INT       NOT NULL,
+  reference_coordinate VARCHAR   NOT NULL,
+  reference_directive  VARCHAR   NOT NULL,
+  reference_ordinal    INT       NOT NULL,
+  reference_owner      VARCHAR   NOT NULL,
   method_source_name VARCHAR   NOT NULL,
   method_class_name  VARCHAR   NOT NULL,
   method_name        VARCHAR   NOT NULL,
@@ -14107,9 +14150,10 @@ CREATE TABLE graphitron_producer_service (
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name, kind)
     REFERENCES graphitron_producer (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphitron_code_reference (graph_name, source_name, source_line, source_column)
+  FOREIGN KEY (graph_name, reference_coordinate, reference_directive, reference_ordinal, reference_owner)
+    REFERENCES graphitron_code_reference (graph_name, coordinate, directive_name, ordinal, owner)
     ON DELETE CASCADE,
+  CHECK (reference_directive = 'service'),
   FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
     REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
   CHECK (kind = 'SERVICE')
@@ -14119,9 +14163,10 @@ COMMENT ON COLUMN graphitron_producer_service.graph_name IS 'the owning graph''s
 COMMENT ON COLUMN graphitron_producer_service.type_name IS 'the type declaring the field';
 COMMENT ON COLUMN graphitron_producer_service.field_name IS 'the field; with the type and the kind, a graphitron_producer key';
 COMMENT ON COLUMN graphitron_producer_service.kind IS 'always SERVICE, pinned so the foreign key holds the producer to a service';
-COMMENT ON COLUMN graphitron_producer_service.source_name IS 'the file the reference was written in; with the line and column, its graphitron_code_reference';
-COMMENT ON COLUMN graphitron_producer_service.source_line IS 'the reference''s source line';
-COMMENT ON COLUMN graphitron_producer_service.source_column IS 'the reference''s source column';
+COMMENT ON COLUMN graphitron_producer_service.reference_coordinate IS 'the element the @service reference is written on, the field itself; with the directive, the ordinal and the owner, its graphitron_code_reference';
+COMMENT ON COLUMN graphitron_producer_service.reference_directive IS 'always service, carried so the reference''s key is whole';
+COMMENT ON COLUMN graphitron_producer_service.reference_ordinal IS 'the @service application''s ordinal';
+COMMENT ON COLUMN graphitron_producer_service.reference_owner IS 'the names the reference was written under, service';
 COMMENT ON COLUMN graphitron_producer_service.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
 COMMENT ON COLUMN graphitron_producer_service.method_class_name IS 'the class declaring the method';
 COMMENT ON COLUMN graphitron_producer_service.method_name IS 'the method';
@@ -14262,18 +14307,19 @@ COMMENT ON VIEW graphitron_producer_routine_rule IS 'One row the routine rule co
 -- resolved it. graphitron_code_reference holds a settled resolution only, so an overload or a
 -- missing method is no row here.
 CREATE VIEW graphitron_producer_service_rule
-  (graph_name, type_name, field_name, kind, source_name, source_line, source_column,
+  (graph_name, type_name, field_name, kind, reference_coordinate, reference_directive,
+   reference_ordinal, reference_owner,
    method_source_name, method_class_name, method_name, method_descriptor) AS
 SELECT p.graph_name, p.type_name, p.field_name, p.kind,
-       cr.source_name, cr.source_line, cr.source_column,
+       cr.coordinate, cr.directive_name, cr.ordinal, cr.owner,
        cr.method_source_name, cr.method_class_name, cr.method_name, cr.method_descriptor
   FROM graphitron_producer p
   JOIN graphitron_code_reference_site site
     ON site.graph_name = p.graph_name AND site.type_name = p.type_name
    AND site.field_name = p.field_name AND site.directive_name = 'service'
   JOIN graphitron_code_reference cr
-    ON cr.graph_name = site.graph_name AND cr.source_name = site.source_name
-   AND cr.source_line = site.source_line AND cr.source_column = site.source_column
+    ON cr.graph_name = site.graph_name AND cr.coordinate = site.coordinate
+   AND cr.directive_name = site.directive_name AND cr.ordinal = site.ordinal AND cr.owner = site.owner
  WHERE p.kind = 'SERVICE';
 COMMENT ON VIEW graphitron_producer_service_rule IS 'One row the service rule computes, in the shape graphitron_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_service, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_producer_service_rule.graph_name IS 'the owning graph''s partition';
@@ -15361,8 +15407,8 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
               ELSE m.result_first_argument_class END
     FROM graphitron_code_reference_site s
     JOIN graphitron_code_reference r
-      ON r.graph_name = s.graph_name AND r.source_name = s.source_name
-     AND r.source_line = s.source_line AND r.source_column = s.source_column
+      ON r.graph_name = s.graph_name AND r.coordinate = s.coordinate
+     AND r.directive_name = s.directive_name AND r.ordinal = s.ordinal AND r.owner = s.owner
     JOIN code_method m
       ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
      AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
@@ -15382,8 +15428,8 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
   SELECT s.graph_name, d.target_type_name, m.result_element_class
     FROM graphitron_code_reference_site s
     JOIN graphitron_code_reference r
-      ON r.graph_name = s.graph_name AND r.source_name = s.source_name
-     AND r.source_line = s.source_line AND r.source_column = s.source_column
+      ON r.graph_name = s.graph_name AND r.coordinate = s.coordinate
+     AND r.directive_name = s.directive_name AND r.ordinal = s.ordinal AND r.owner = s.owner
     JOIN code_method m
       ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
      AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
@@ -15421,8 +15467,8 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
   SELECT s.graph_name, a.named_type, mp.element_class
     FROM graphitron_code_reference_site s
     JOIN graphitron_code_reference r
-      ON r.graph_name = s.graph_name AND r.source_name = s.source_name
-     AND r.source_line = s.source_line AND r.source_column = s.source_column
+      ON r.graph_name = s.graph_name AND r.coordinate = s.coordinate
+     AND r.directive_name = s.directive_name AND r.ordinal = s.ordinal AND r.owner = s.owner
     JOIN code_method_parameter mp
       ON mp.source_name = r.method_source_name AND mp.class_name = r.method_class_name
      AND mp.method_name = r.method_name AND mp.descriptor = r.method_descriptor
@@ -16380,9 +16426,13 @@ WITH resolved (graph_name, source_name, source_line, source_column, position, pa
     JOIN graphitron_argmapping_site s
       ON s.graph_name = p.graph_name AND s.source_name = p.source_name
      AND s.source_line = p.source_line AND s.source_column = p.source_column
+    JOIN graphitron_code_reference_site cr_written
+      ON cr_written.graph_name = s.graph_name AND cr_written.source_name = s.source_name
+     AND cr_written.source_line = s.reference_line AND cr_written.source_column = s.reference_column
     JOIN graphitron_code_reference cr
-      ON cr.graph_name = s.graph_name AND cr.source_name = s.source_name
-     AND cr.source_line = s.reference_line AND cr.source_column = s.reference_column
+      ON cr.graph_name = cr_written.graph_name AND cr.coordinate = cr_written.coordinate
+     AND cr.directive_name = cr_written.directive_name AND cr.ordinal = cr_written.ordinal
+     AND cr.owner = cr_written.owner
     JOIN code_method_parameter mp
       ON mp.source_name = cr.method_source_name AND mp.class_name = cr.method_class_name
      AND mp.method_name = cr.method_name AND mp.descriptor = cr.method_descriptor
@@ -19211,6 +19261,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-code-reference',
    'one Java code reference written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('graph-code-reference',
+   'one Java code reference, named by its application and what it was written under there, in one graph',
+   'graph_name, coordinate, directive_name, ordinal, owner', 'sdl'),
   ('sdl-call-parameter',
    'one parameter, by name, of the call one Java code reference written in one SDL document makes',
    'graph_name, source_name, source_line, source_column, parameter_name', 'sdl'),
@@ -20163,7 +20216,7 @@ INSERT INTO meta_relation VALUES
    'Where one written Java code reference sits: the directive that wrote it, the element it is on, and the method it names once that site''s default applies.',
    'For example isEnglish: Boolean @externalField(reference: {className: "no.example.FilmExtensions"}) sits at Film.isEnglish under externalField and names isEnglish.',
    'What both the resolution and the defects that report it need to know about a reference and the written relation does not say: which directive wrote it and on what. Both are a fixed climb through keys the transcription declares, the holder of a value being the applied argument at any depth and an argument''s parent its application, so it is a view and not a grain. The @externalField default is stated here because both readers apply it; stated twice, the two could disagree about which method a reference names.'),
-  ('graphitron_code_reference', 'sdl-code-reference', 'graphitron',
+  ('graphitron_code_reference', 'graph-code-reference', 'graphitron',
    'The one method a written Java code reference names, where the graph''s classpath answers with exactly one.',
    'For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws none.',
    'The written reference met with the classpath, once for every site, as a reference into code_method rather than as the two strings again. Only a settled resolution is a row, on graphitron_tabletype''s terms: a reference naming nothing and one naming two overloads both draw none, so the anti-join against the written reference is every one that does not resolve, and graphitron_entry_defect says which of the three ways it failed. Resolved against every public method rather than a directive''s admission arm, because a method a site may not name is a different fault from one that does not exist. A reference naming a class only is not in this population; its resolution is to a class. Written by the graphitron anchor, which runs after the classpath is read.'),
