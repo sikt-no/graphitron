@@ -36,8 +36,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * under an object is not a root's to render.
  *
  * <p>The projection unit and the selection scaffold the methods call are stubs here, standing in for
- * the generated ones, so what compiles is the lift itself: its derived table, its typed key cells
- * and its join.
+ * the generated ones, so what compiles is the lift itself: its derived source table with its
+ * constants, its typed key cells and its join.
  */
 @PipelineTier
 class LiftEmitterPipelineTest {
@@ -81,27 +81,30 @@ class LiftEmitterPipelineTest {
     void theRootLiftsCompileAndTakeWhatTheCallHandedBack() throws Exception {
         var selection = ClassName.get(PACKAGE, "SelectionOccurrences");
         var host = TypeSpec.classBuilder("Lifts").addModifiers(Modifier.PUBLIC);
+        var units = new java.util.HashMap<String, TypeSpec>();
         for (var coordinate : List.of("Query.filmsByIds", "Query.filmById", "Query.filmActorsByIds")) {
             var row = rows.get(coordinate);
             assertThat(row).as(coordinate).isNotNull();
-            host.addMethod(LiftEmitter.render(row, "lift" + row.coordinate().replace(".", ""),
+            var source = ClassName.get(PACKAGE, row.targetType() + "Source");
+            units.put(source.canonicalName(), LiftEmitter.sourceTable(source, row.table(), row.key()));
+            host.addMethod(LiftEmitter.lift(row, "lift" + row.coordinate().replace(".", ""), source,
                 ClassName.get(PACKAGE, row.targetType()), selection));
         }
-        var units = Map.of(
-            PACKAGE + ".Lifts", host.build(),
-            PACKAGE + ".SelectionOccurrences", selectionStub(),
-            PACKAGE + ".Film", projectionStub("Film"),
-            PACKAGE + ".FilmActor", projectionStub("FilmActor"));
+        units.put(PACKAGE + ".Lifts", host.build());
+        units.put(PACKAGE + ".SelectionOccurrences", selectionStub());
+        units.put(PACKAGE + ".Film", projectionStub("Film"));
+        units.put(PACKAGE + ".FilmActor", projectionStub("FilmActor"));
         try (var harness = EmittedCodeHarness.compile(units)) {
             var methods = Arrays.stream(harness.load(PACKAGE + ".Lifts").getDeclaredMethods())
                 .collect(Collectors.toMap(Method::getName, Function.identity()));
             assertThat(methods.get("liftQueryfilmsByIds").getReturnType()).isEqualTo(List.class);
             assertThat(methods.get("liftQueryfilmsByIds").getParameterTypes())
-                .containsExactly(List.class, graphql.schema.DataFetchingEnvironment.class,
-                    org.jooq.DSLContext.class);
+                .containsExactly(graphql.schema.DataFetchingEnvironment.class,
+                    org.jooq.DSLContext.class, List.class);
             assertThat(methods.get("liftQueryfilmById").getReturnType()).isEqualTo(org.jooq.Record.class);
-            assertThat(methods.get("liftQueryfilmById").getParameterTypes()[0])
+            assertThat(methods.get("liftQueryfilmById").getParameterTypes()[2])
                 .isEqualTo(org.jooq.Record.class);
+            assertThat(harness.load(PACKAGE + ".FilmActorSource").getField("ACTOR_ID")).isNotNull();
             assertThat(methods.get("liftQueryfilmActorsByIds").getReturnType()).isEqualTo(List.class);
         }
     }
@@ -110,14 +113,14 @@ class LiftEmitterPipelineTest {
     void aLiftUnderAnObjectIsNotARootsToRender() {
         var row = rows.get("Film.languageByService");
         assertThat(row).isNotNull();
-        assertThatThrownBy(() -> LiftEmitter.render(row, "lift", ClassName.get(PACKAGE, "Language"),
-                ClassName.get(PACKAGE, "SelectionOccurrences")))
+        assertThatThrownBy(() -> LiftEmitter.lift(row, "lift", ClassName.get(PACKAGE, "LanguageSource"),
+                ClassName.get(PACKAGE, "Language"), ClassName.get(PACKAGE, "SelectionOccurrences")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Film.languageByService");
     }
 
     /** {@code SelectionOccurrences.ownFields(selectionSet)}: what the projection is handed. */
-    private static TypeSpec selectionStub() {
+    static TypeSpec selectionStub() {
         return TypeSpec.classBuilder("SelectionOccurrences").addModifiers(Modifier.PUBLIC)
             .addMethod(MethodSpec.methodBuilder("ownFields")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -129,7 +132,7 @@ class LiftEmitterPipelineTest {
     }
 
     /** A projection unit's {@code $project(selection, table, env)}: the fields it selects. */
-    private static TypeSpec projectionStub(String type) {
+    static TypeSpec projectionStub(String type) {
         TypeName fields = ParameterizedTypeName.get(ClassName.get(List.class),
             ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), WildcardTypeName.subtypeOf(Object.class)));
         return TypeSpec.classBuilder(type).addModifiers(Modifier.PUBLIC)
