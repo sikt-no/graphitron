@@ -197,6 +197,18 @@ class LiftEmitterExecutionTest {
         assertThat(lifted.get(3).get(2)).isNull();
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void aBatchHandingBackNothingRunsNoStatementAndKeepsItsParents() throws Exception {
+        var perParent = new java.util.ArrayList<List<FilmActorRecord>>();
+        perParent.add(null);
+        perParent.add(List.of());
+        var lifted = (List<List<Record>>) lifts.get("FilmcastMembers").invoke(null, ENV, dsl(), perParent);
+        assertThat(lifted).hasSize(2);
+        assertThat(lifted.get(0)).isNull();
+        assertThat(lifted.get(1)).isEmpty();
+    }
+
     private static LanguageRecord language(int id) {
         var r = new LanguageRecord();
         r.set(Tables.LANGUAGE.LANGUAGE_ID, id);
