@@ -23,14 +23,14 @@ extend type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
-  call_coordinate,      landing_coordinate,          trailing_name, repeats_own_name
-  Query.byIds,          Query.byIds(input.ids:),     ,              FALSE
-  Query.byIds,          Query.byIds(input.ref.key:), ,              FALSE
-  Query.byIds,          Query.byIds(input.ref:),     actor_id, FALSE
-  Query.byFilter(filter:), Query.byFilter(filter.title:), , FALSE
-  Query.byFilter(filter:), Query.byFilter(filter.title:), , TRUE
-  Query.shelfA.titles,  Query.shelfA.titles(ids.ids:), , FALSE
-  Query.shelfB.titles,  Query.shelfB.titles(ids.ids:), , FALSE
+  coordinate,              directive_name, owner,     parameter_name, call_coordinate,         landing_coordinate,               trailing_name, repeats_own_name
+  Query.byIds,             service,        service,   a,              Query.byIds,             Query.byIds(input.ids:),          ,              FALSE
+  Query.byIds,             service,        service,   b,              Query.byIds,             Query.byIds(input.ref.key:),      ,              FALSE
+  Query.byIds,             service,        service,   c,              Query.byIds,             Query.byIds(input.ref:),          actor_id,      FALSE
+  Query.byFilter(filter:), condition,      condition, t,              Query.byFilter(filter:), Query.byFilter(filter.title:),    ,              FALSE
+  Query.byFilter(filter:), condition,      condition, u,              Query.byFilter(filter:), Query.byFilter(filter.title:),    ,              TRUE
+  Shelf.titles,            service,        service,   p,              Query.shelfA.titles,     Query.shelfA.titles(ids.ids:),    ,              FALSE
+  Shelf.titles,            service,        service,   p,              Query.shelfB.titles,     Query.shelfB.titles(ids.ids:),    ,              FALSE
   """)
 
 extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """

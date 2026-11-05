@@ -38,15 +38,15 @@ public final class ArgMappingLandings {
         var r = GRAPHITRON_ARGMAPPING_LANDING_RULE;
         var t = GRAPHITRON_ARGMAPPING_LANDING;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.PARAMETER_NAME,
                 t.CALL_COORDINATE, t.LANDING_COORDINATE, t.TRAILING_NAME, t.REPEATS_OWN_NAME,
                 t.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
-                    r.POSITION, r.CALL_COORDINATE, r.LANDING_COORDINATE, r.TRAILING_NAME,
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.DIRECTIVE_NAME, r.ORDINAL,
+                    r.OWNER, r.PARAMETER_NAME, r.CALL_COORDINATE, r.LANDING_COORDINATE, r.TRAILING_NAME,
                     r.REPEATS_OWN_NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.PARAMETER_NAME,
                 t.CALL_COORDINATE)
             .doUpdate()
             .set(t.LANDING_COORDINATE, excluded(t.LANDING_COORDINATE))
@@ -64,16 +64,16 @@ public final class ArgMappingLandings {
     /** The heads, then each count from the one before, then the sweep of what no count reached. */
     private static void steps(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var h = GRAPHITRON_ARGMAPPING_STEP_HEAD_RULE;
-        upsert(dsl, dsl.select(h.GRAPH_NAME, h.SOURCE_NAME, h.SOURCE_LINE, h.SOURCE_COLUMN,
-                h.POSITION, h.CALL_COORDINATE, h.CONSUMED, h.BOUND_TO, h.SEGMENTS, h.REST,
+        upsert(dsl, dsl.select(h.GRAPH_NAME, h.COORDINATE, h.DIRECTIVE_NAME, h.ORDINAL,
+                h.OWNER, h.PARAMETER_NAME, h.CALL_COORDINATE, h.CONSUMED, h.BOUND_TO, h.SEGMENTS, h.REST,
                 h.STEP_COORDINATE, h.REPEATS_OWN_NAME, val(touchedAt, GRAPHITRON_ARGMAPPING_STEP.TOUCHED_AT))
             .from(h)
             .where(h.GRAPH_NAME.eq(graph)));
         // Each count takes this reading's paths one name further, until none has a name left.
         var n = GRAPHITRON_ARGMAPPING_STEP_NEXT_RULE;
         for (int count = 1; ; count++) {
-            int taken = upsert(dsl, dsl.select(n.GRAPH_NAME, n.SOURCE_NAME, n.SOURCE_LINE,
-                    n.SOURCE_COLUMN, n.POSITION, n.CALL_COORDINATE, n.CONSUMED, n.BOUND_TO,
+            int taken = upsert(dsl, dsl.select(n.GRAPH_NAME, n.COORDINATE, n.DIRECTIVE_NAME,
+                    n.ORDINAL, n.OWNER, n.PARAMETER_NAME, n.CALL_COORDINATE, n.CONSUMED, n.BOUND_TO,
                     n.SEGMENTS, n.REST, n.STEP_COORDINATE, n.REPEATS_OWN_NAME,
                     val(touchedAt, GRAPHITRON_ARGMAPPING_STEP.TOUCHED_AT))
                 .from(n)
@@ -95,11 +95,11 @@ public final class ArgMappingLandings {
     private static int upsert(DSLContext dsl, Select<? extends Record> rows) {
         var s = GRAPHITRON_ARGMAPPING_STEP;
         return dsl.insertInto(s)
-            .columns(List.of(s.GRAPH_NAME, s.SOURCE_NAME, s.SOURCE_LINE, s.SOURCE_COLUMN,
-                s.POSITION, s.CALL_COORDINATE, s.CONSUMED, s.BOUND_TO, s.SEGMENTS, s.REST,
+            .columns(List.of(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL,
+                s.OWNER, s.PARAMETER_NAME, s.CALL_COORDINATE, s.CONSUMED, s.BOUND_TO, s.SEGMENTS, s.REST,
                 s.STEP_COORDINATE, s.REPEATS_OWN_NAME, s.TOUCHED_AT))
             .select(rows)
-            .onConflict(s.GRAPH_NAME, s.SOURCE_NAME, s.SOURCE_LINE, s.SOURCE_COLUMN, s.POSITION,
+            .onConflict(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL, s.OWNER, s.PARAMETER_NAME,
                 s.CALL_COORDINATE, s.CONSUMED)
             .doUpdate()
             .set(s.BOUND_TO, excluded(s.BOUND_TO))

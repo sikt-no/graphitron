@@ -122,6 +122,8 @@ public final class GraphitronAstCapture {
         GraphitronCodeReferences.write(dsl, graph.name(), readAt);
         // Where each written argMapping sits, which its readers join into views of their own.
         GraphitronArgMappingSites.write(dsl, graph.name(), readAt);
+        // And each pair of each, named by its mapping and the parameter it binds.
+        GraphitronArgMappingPairs.write(dsl, graph.name(), readAt);
         // The context key filling each parameter of each call, which finds a pair's call through
         // the sites just written.
         GraphitronCallContextKeys.write(dsl, graph.name(), readAt);
