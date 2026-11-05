@@ -178,3 +178,20 @@ extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
   FilmCardWrapper,    example
   RecordExample,      fieldA
   """)
+
+# The same reads at each occurrence, where the path lands: the nesting type's fields once per table
+# they are reached from, and the record-backed carrier's under the service that returns it. A field
+# whose declaration writes a path has no landing until its steps say where it arrives, so plainKey,
+# twoHop, twiceComposed and langName have no row here yet.
+extend schema @expectEquals(relation: "graphitron_occurrence_column", rows: """
+  coordinate,                    bound,                    column_name, matched_by
+  FactAnchor.paymentId,          public.payment,           payment_id,  SQL_NAME
+  Film.details.lastUpdate,       public.film,              last_update, SQL_NAME
+  Film.details.title,            public.film,              title,       SQL_NAME
+  Film.name,                     public.film,              title,       SQL_NAME
+  Film.title,                    public.film,              title,       SQL_NAME
+  Lang.info.name,                public.language,          name,        SQL_NAME
+  Language.details.lastUpdate,   public.language,          last_update, SQL_NAME
+  Query.filmDetailsBatch.filmId, public.film,              film_id,     SQL_NAME
+  Twins.capital,                 nodeidfixture.case_twins, Code,        JOOQ_NAME
+  """)

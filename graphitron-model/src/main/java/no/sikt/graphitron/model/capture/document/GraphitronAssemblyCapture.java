@@ -18,6 +18,7 @@ import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
+import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.PathClaims;
 import no.sikt.graphitron.model.derive.PathNeeds;
 import no.sikt.graphitron.model.derive.PathElements;
@@ -127,6 +128,8 @@ public final class GraphitronAssemblyCapture {
         // Then the types each occurrence with a table source must reach, a depth at a time, off the
         // sources just written and the needs of the depth above.
         PathNeeds.derive(dsl, graph, readAt);
+        // The column each scalar occurrence reads or binds, where the needs just written land.
+        OccurrenceColumns.derive(dsl, graph, readAt);
         // Then each field's path, off the producers and results just written: walked from every
         // table its parent's result is a row of, or from a root routine's own table, one written
         // element at a time.

@@ -14004,6 +14004,129 @@ COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spell
 COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; PARAMETER, the parameter of a call that consumes the value; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The column a scalar occurrence reads where its path lands: the COLUMN subtype of the binding,
+-- keyed as the binding is and pinned to its kind through the binding's unique key.
+CREATE TABLE graphitron_occurrence_column (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  column_name       VARCHAR   NOT NULL,
+  matched_by        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  column_source_ref VARCHAR,
+  column_schema_ref VARCHAR,
+  column_table_ref  VARCHAR,
+  column_name_ref   VARCHAR,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  -- The column through the binding's own copy of its key: a catalog column a reading no longer
+  -- finds sets these null, and the sweep, not a cascade, removes the row.
+  FOREIGN KEY (column_source_ref, column_schema_ref, column_table_ref, column_name_ref)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE SET NULL,
+  CHECK (kind = 'COLUMN'),
+  CHECK (bound = table_schema || '.' || table_name),
+  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
+  CHECK (column_source_ref IS NULL OR column_source_ref = table_source_name),
+  CHECK (column_schema_ref IS NULL OR column_schema_ref = table_schema),
+  CHECK (column_table_ref IS NULL OR column_table_ref = table_name),
+  CHECK (column_name_ref IS NULL OR column_name_ref = column_name)
+);
+COMMENT ON TABLE graphitron_occurrence_column IS 'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table. For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.';
+COMMENT ON COLUMN graphitron_occurrence_column.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_column.coordinate IS 'the scalar occurrence, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_column.bound IS 'the landing table, schema-qualified, as the binding spells it; with the coordinate the key, since an occurrence under a union lands on one table per member';
+COMMENT ON COLUMN graphitron_occurrence_column.kind IS 'always COLUMN, carried so the foreign key into graphitron_occurrence_binding holds the kind as well as the place';
+COMMENT ON COLUMN graphitron_occurrence_column.table_source_name IS 'the catalog source of the landing table';
+COMMENT ON COLUMN graphitron_occurrence_column.table_schema IS 'the landing table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_column.table_name IS 'the landing table';
+COMMENT ON COLUMN graphitron_occurrence_column.column_name IS 'the column, as the catalog spells it';
+COMMENT ON COLUMN graphitron_occurrence_column.matched_by IS 'which name the spelling met, folded by case: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no SQL name on the table does';
+COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+COMMENT ON COLUMN graphitron_occurrence_column.column_source_ref IS 'the source half of the column''s key, equal to table_source_name while the column stands';
+COMMENT ON COLUMN graphitron_occurrence_column.column_schema_ref IS 'the schema half of the column''s key, equal to table_schema while the column stands';
+COMMENT ON COLUMN graphitron_occurrence_column.column_table_ref IS 'the table half of the column''s key, equal to table_name while the column stands';
+COMMENT ON COLUMN graphitron_occurrence_column.column_name_ref IS 'the name half of the column''s key, equal to column_name while the column stands';
+
+-- A scalar or enum occurrence that reads or binds a column, on each table its path lands on: the
+-- @field(name:) where one is claimed and the element's own name otherwise, folded by case, the SQL
+-- name before the generated one, and exactly one column answering. An occurrence claiming a node id
+-- or an expression, or running a call or a pivot of its own, reads no column here, and neither does
+-- an id: ID with no @field on a type implementing Node, which is the node's identity. A scalar
+-- whose declaration writes a path has no landing until its steps say where, and no row until then.
+-- The candidates are counted per row rather than by a window, which would stop H2 restricting the
+-- view to one graph.
+CREATE VIEW graphitron_occurrence_column_rule
+  (graph_name, coordinate, bound, table_source_name, table_schema, table_name, column_name,
+   matched_by) AS
+WITH scalar (graph_name, coordinate, spelling) AS (
+  SELECT o.graph_name, o.coordinate, COALESCE(cl.named, o.name)
+    FROM graphitron_occurrence o
+    LEFT JOIN graphitron_field f
+      ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    LEFT JOIN graphitron_argument a
+      ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+    JOIN graphitron_type t
+      ON t.graph_name = o.graph_name AND t.type_name = COALESCE(f.named_type, a.named_type)
+     AND t.kind IN ('SCALAR', 'ENUM')
+    LEFT JOIN graphitron_binding_claim cl
+      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+     AND cl.kind = 'COLUMN'
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                      WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                        AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                      WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                        AND d.directive_name IN ('service', 'routine', 'pivot'))
+     AND NOT (cl.named IS NULL AND o.kind = 'FIELD' AND o.name = 'id' AND f.named_type = 'ID'
+              AND EXISTS (SELECT 1 FROM graphql_implements_interface ii
+                           WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
+                             AND ii.interface_name = 'Node'))
+),
+landing (graph_name, coordinate, spelling, table_source_name, table_schema, table_name) AS (
+  SELECT DISTINCT s.graph_name, s.coordinate, s.spelling, n.landing_source_name,
+         n.landing_schema, n.landing_table
+    FROM scalar s
+    JOIN graphitron_path_need n
+      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate
+   WHERE n.landing_table IS NOT NULL
+)
+SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
+       l.table_schema, l.table_name, c.column_name, 'SQL_NAME'
+  FROM landing l
+  JOIN sql_column c
+    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
+   AND c.table_name = l.table_name AND c.column_name_upper = UPPER(l.spelling)
+ WHERE (SELECT COUNT(*) FROM sql_column n
+         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
+           AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling)) = 1
+UNION ALL
+SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
+       l.table_schema, l.table_name, c.column_name, 'JOOQ_NAME'
+  FROM landing l
+  JOIN sql_column c
+    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
+   AND c.table_name = l.table_name AND c.jooq_name_upper = UPPER(l.spelling)
+ WHERE NOT EXISTS (SELECT 1 FROM sql_column n
+                    WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
+                      AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling))
+   AND (SELECT COUNT(*) FROM sql_column n
+         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
+           AND n.table_name = l.table_name AND n.jooq_name_upper = UPPER(l.spelling)) = 1;
+COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.coordinate IS 'the scalar occurrence';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.bound IS 'the landing table, schema-qualified';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_source_name IS 'the landing table''s catalog source';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_schema IS 'its schema';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_name IS 'the landing table';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.column_name IS 'the one column the spelling names there';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.matched_by IS 'which name it met';
+
 CREATE TABLE graphitron_occurrence_producer (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -19107,6 +19230,14 @@ INSERT INTO meta_relation VALUES
    'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place.',
    'For example Film.title binds the column title at public.film, and an argument a call consumes binds the parameter that takes it, once per candidate overload until the call is pinned.',
    'The supertype of what an occurrence takes, each kind''s subtype keyed by its key and pinned to its kind by the unique key beside it, as the producer family is; keyed by the bound place as well as the occurrence, since an occurrence binds once per table a forked end reaches and once per candidate overload of a call until the pin. Declared ahead of its writers so the subtypes of every kind can reference it: the column and node-id rows are written beside the path needs, the parameter and expression rows by the call''s owner.'),
+  ('graphitron_occurrence_column', 'graph-occurrence-binding', 'graphitron',
+   'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table.',
+   'For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.',
+   'The COLUMN subtype of graphitron_occurrence_binding, on its key and pinned to its kind by the unique key beside it. Read at the occurrence rather than at the field, since one field read through a nesting type reached from two tables lands on each, and at the landing rather than the start, since the path decides where the column is. Stored because a foreign key can reference a column only where it is written down, and every reader of a scalar''s column, the generator''s projection, the editor''s scope and the defects alike, asks this one question. The column is referenced through a copy of its key that a catalog change sets null, so the sweep, not a cascade, removes a binding the reading no longer finds.'),
+  ('graphitron_occurrence_column_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the tables are what readers join, and the rule stays runnable beside them.'),
   ('graphitron_occurrence_producer', 'graph-occurrence', 'graphitron',
    'An occurrence that executes something and produces a result, and what kind of thing it runs: one row per producing occurrence.',
    'For example Query.films with nothing written is a ROOT SELECT, and Customer.address under a record-backed parent a CHILD LOOKUP from the key the record carries.',
