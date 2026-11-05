@@ -1,6 +1,6 @@
 ---
 id: R1156
-title: "The changelog announces a delivery when it lands, not only at Done"
+title: "A delivery is announced when it lands, by its commit"
 status: Backlog
 bucket: process
 priority: 2
@@ -10,31 +10,33 @@ created: 2026-11-05
 last-updated: 2026-11-05
 ---
 
-# The changelog announces a delivery when it lands, not only at Done
+# A delivery is announced when it lands, by its commit
 
 ## Goal
 
-A consumer learns of a change to what graphitron accepts, refuses or generates when that change reaches trunk, not when the item carrying it reaches Done. Today `roadmap/workflow.adoc` describes a changelog entry only as part of the Done verdict, so a long item that ships behaviour in steps announces none of it until it closes, which can be weeks after the first breaking change landed.
+A consumer learns of a change to what graphitron accepts, refuses or generates when that change reaches trunk, not when the item carrying it reaches Done, and can ask what changed between the release candidate they run and the one they are moving to, breaking changes first. Today `roadmap/workflow.adoc` describes a changelog entry only as part of the Done verdict, so a long item that ships behaviour in steps announces none of it until it closes.
 
 ## Problem
 
-The rule is convention, not mechanism. The roadmap tool's invariant, that an id is either a Done entry in `changelog.md` or on the board but never both, reads only a bullet that begins with the id (`^- R\d+`), and every real entry begins with prose and names its id in its parenthetical. So an entry for an item still on the board already passes the tool; only the workflow text keeps it out.
+Behaviour reaches consumers long before Done. R876's "For the changelog at Done" section holds changes that landed on trunk, which release candidates are cut from, weeks before the item can close: `@table` naming a table-valued function is refused; `@routine` loses `columnMapping`; the MCP schema tool's `demand` slot is removed; `graphitron:capture` no longer fails over a schema that parses; a reactor sibling is read from its own output; `graphitron:dev` compiles its own module first. A further breaking change, `@mutation(typeName: UPSERT)` beside `@service` refused (`6733135`), is not in that section at all. A consumer moving from one release candidate to the next has no record of any of them.
 
-The cost is real on a long-running item. In the first days of November three changes reached trunk on one open item that change what an author or a consumer sees, each recorded only in the item's own "For the changelog at Done" section: a `@mutation(typeName: UPSERT)` beside `@service` became an error; a same-table `@table` field narrowed by an argument became an error, and the example schema's `Film.sameTableById` was removed; and a same-table `@table` child without `@reference` is refused, which an fs-plattform consumer build hit on eleven fields.
+Writing a changelog entry with every such delivery (this item as first filed) answers that, but makes `changelog.md` a file every behaviour-changing push prepends to, which conflicts across concurrent sessions, and needs entry shapes the tool must tell apart: Done, delivery, revert.
 
 ## Plan
 
-A *delivery entry* is a changelog entry written when a delivery lands on trunk, whatever state its item is in.
+The commit is the announcement. Commits reaching trunk follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/), the item id as the scope, and a release's notes are generated from the commits between two release-candidate tags.
 
-* **When.** A commit on trunk changes what an author or consumer sees: a breaking change, a new refusal, a new capability. A restructuring that changes no behaviour gets none.
-* **Shape.** The Done entry's prose shape, its parenthetical marking the item in progress and naming the landing commit, for example `(slug, R<n> in progress, <sha>)`. Like every entry it never begins with the id.
-* **Who.** Whoever puts the commit on trunk writes it, in the same push, so the entry and the change arrive together.
-* **At Done.** The Done entry covers what no delivery entry announced and points back to the delivery entries rather than repeating them. The item body's "For the changelog at Done" section holds only what is not yet announced; a line moves out when its delivery entry is written.
-* **On revive.** Delivery entries stay, since those deliveries landed; the retraction removes only entries headed by the id, which a delivery entry never is. A delivery later reverted gets an entry of its own saying so.
+* **Subject.** `<type>(<scope>)[!]: <description>`. The description keeps the house style, a sentence stating what is now true. The scope is the item id (`R876`); a commit no item covers takes the module or area (`roadmap`, `docs`). `!` marks a breaking change, and a `BREAKING CHANGE:` footer says what a consumer must change.
+* **Types.** `feat` (an author or consumer can do something new), `fix` (behaviour corrected), `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, and `revert`, whose body names the hash it reverts. Release notes list `feat`, `fix`, `perf` and `revert`, and every `!` whatever its type; the rest are left out.
+* **Not for trunk.** `wip`, `draft` and `spike` stay as types that never reach trunk, so the not-for-trunk check in `CLAUDE.md` and the publish skill reads the same prefixes. A harvest replaces them with the type the change is.
+* **Who chooses the type.** Whoever puts the commit on trunk: the harvester for harvested work, the author for a direct push.
+* **Release notes.** A `roadmap-tool` command, `release-notes <from-tag> <to-tag>`, reads `git log` between two tags and renders breaking changes first, then features, fixes and reverts, each with its scope and short hash. No new dependency.
+* **The changelog.** `changelog.md` stays Done-only, the narrative of why an item happened; a Done entry may point at the release notes the item's deliveries appeared in rather than repeating them. An item's "For the changelog at Done" section stays a convention for that narrative and no longer carries the burden of announcing deliveries; R876's opening sentence restating the Done-only rule changes to say so.
+* **Gate.** A check in `roadmap-tool`, run in the build, fails on a commit between a fixed cut-over commit and `HEAD` whose subject is not of this shape. History before the cut-over is not rewritten; the first release notes start at the first release candidate after it.
 
-Edits: the changelog paragraphs in `roadmap/workflow.adoc` (the state table's Done row, the revive paragraph, and the In Review → Done step); the javadoc on `Main.readChangelogDoneIds` in roadmap-tool, saying a delivery entry falls outside the invariant by construction; and the roadmap skill's Done step. Open for Spec: whether the tool should also reject an in-progress marker naming an id that is not on the board.
+Edit sites: `CLAUDE.md` (Git Workflow: the subject shape, the not-for-trunk types); `roadmap/workflow.adoc` (Publishing, and the In Review -> Done step's changelog sentence); the publish skill's wip check; the roadmap skill's In Review -> Done step; the harvest practice for co-author sessions; R876's "For the changelog at Done" opening; `roadmap-tool` for the release-notes command and the subject gate.
 
-The first application is the three changes above, written from the open item's "For the changelog at Done" lines.
+The revive retraction gap the round 1 review found in `changelog.md` is its own item, `changelog-prose-first-entries-escape-the-invariant`, and this one no longer depends on it.
 
 ## Reviewer findings
 
@@ -60,3 +62,14 @@ Not a gate verdict; findings to settle before the item moves to Spec. Read again
 6. **A revert entry needs a shape.** "A delivery later reverted gets an entry of its own" should state its form (a `Reverted:` prefix, like `Discarded:`) so neither a reader nor the tool can take it for a Done or a delivery entry.
 
 Sound as filed: the goal, the when and who rules, the Done entry pointing back to delivery entries rather than repeating them, and delivery entries surviving a revive.
+
+### Response to round 1 (2026-11-05)
+
+The plan is retargeted from delivery entries in `changelog.md` to Conventional Commits with generated release notes.
+
+1. Accepted: the premise was false. The Problem no longer rests on it.
+2. Accepted as a real defect, filed as `changelog-prose-first-entries-escape-the-invariant`. With `changelog.md` Done-only, this item no longer draws a line between entry kinds, so it does not depend on that fix.
+3. Accepted. The Problem now uses R876's section as the review suggests, plus the UPSERT refusal as the case missing from it. The narrowed same-table field was in the harvest queue, not on trunk, and the same-table child refusal is R1115's.
+4. Accepted. R876's opening sentence and the roadmap skill's In Review -> Done step are listed edit sites.
+5. Answered by the retarget: an announcement is the commit itself, so no push prepends to a shared file.
+6. Answered by the retarget: a revert is the `revert` type, its body naming the hash it reverts.
