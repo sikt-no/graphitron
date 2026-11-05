@@ -1,12 +1,10 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
 /**
- * Test producer stub. Reflection-only record binding (the deprecated {@code @record}
- * directive no longer drives a backing class) means a test type acquires its backing by being the
- * return type of a producer field. These methods exist purely so a test SDL can declare
+ * Test producer stub. A test type acquires its backing class by being the return type of a
+ * producer field. These methods exist purely so a test SDL can declare
  * {@code field: SomeType @service(service: {className: "...DummyService", method: "makeX"})} and
- * have {@code SomeType} bind to the method's reflected return class, exactly as the old
- * {@code @record(record: {className: "..."})} idiom did, but through the real reflection path.
+ * have {@code SomeType} bind to the method's reflected return class.
  *
  * <p>Bodies never run: {@code ServiceCatalog} reads only the declared return type. One method per
  * distinct backing class referenced by the migrated tests.
@@ -31,7 +29,7 @@ public final class DummyService {
     // ===== Input-axis producers: a method parameter grounds the input type's backing class
     // (reflection-only input binding). The SDL @service arg name must match the parameter name
     // ("in"). Used by InputTypeCase to exercise the PojoInputType.Backed / JavaRecordInputType /
-    // JooqTableRecordInputType leaves without the removed @record-className idiom. =====
+    // JooqTableRecordInputType leaves. =====
     public static String consumeDummyRecord(DummyRecord in) { return unused(); }
     public static String consumeTestRecordDto(TestRecordDto in) { return unused(); }
     public static String consumeFilmRecord(no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord in) { return unused(); }

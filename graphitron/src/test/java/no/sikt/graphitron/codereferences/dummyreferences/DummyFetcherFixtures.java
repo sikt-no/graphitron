@@ -1,12 +1,10 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
 /**
- * Backing fixtures for {@code FetcherPipelineTest}'s generic result-type emission tests.
- * Under reflection-only binding a standalone {@code @record} no longer fabricates a backing class,
- * so these tests bind their result type through a {@code @service} producer (in {@link DummyService})
- * returning one of these records. The component shapes match the test SDL field shapes so the
- * inner-field accessor classification (a RecordReadField carrying a JavaAccessor locator)
- * resolves exactly as the {@code @record} idiom used to set up.
+ * Backing fixtures for {@code FetcherPipelineTest}'s generic result-type emission tests, which
+ * bind their result type through a {@code @service} producer (in {@link DummyService}) returning
+ * one of these records. The component shapes match the test SDL field shapes so the inner-field
+ * accessor classification (a RecordReadField carrying a JavaAccessor locator) resolves.
  */
 public final class DummyFetcherFixtures {
 

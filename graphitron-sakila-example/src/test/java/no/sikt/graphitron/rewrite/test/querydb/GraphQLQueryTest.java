@@ -1114,7 +1114,7 @@ class GraphQLQueryTest {
 
     @Test
     void filmCardWrapper_recordExample_resolvesAllThreeAccessorArms() {
-        // Execution-tier fixture: a @record-Java-backed type whose three SDL fields each
+        // Execution-tier fixture: a Java-record-backed type whose three SDL fields each
         // exercise a different accessor-resolution arm — bare-name (Java record component
         // fieldA()), get-prefixed (getFieldB()), and @field(name:) override redirecting to
         // get-prefixed (getRebound()). The classifier resolves each arm at validate-time,
@@ -3895,7 +3895,7 @@ class GraphQLQueryTest {
                 .doesNotContain("Reference:"));
     }
 
-    // ===== Record-sourced BatchedTableField: @record parent + DataLoader language batch =====
+    // ===== Record-sourced BatchedTableField: record parent + DataLoader language batch =====
 
     @Test
     void recordTableField_singleFilm_returnsLanguage() {
@@ -4009,7 +4009,7 @@ class GraphQLQueryTest {
             .containsAll(SEEDED_FILM_TITLES);
     }
 
-    // ===== Record-sourced lookup-keyed batched read: @record parent + @splitQuery + @lookupKey =====
+    // ===== Record-sourced lookup-keyed batched read: record parent + @splitQuery + @lookupKey =====
 
     @Test
     void recordLookupTableField_singleFilm_returnsFilteredActors() {

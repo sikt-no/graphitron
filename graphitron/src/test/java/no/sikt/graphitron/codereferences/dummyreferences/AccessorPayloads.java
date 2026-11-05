@@ -13,8 +13,7 @@ import java.util.Set;
  * shapes the classifier tests pin down.
  *
  * <p>Co-located with the other dummy references so the SDL fixtures inside
- * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilderTest} can name them by FQN through
- * the same {@code @record(record: {className: "..."})} form the lifter cases use.
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilderTest} can name them by FQN.
  */
 public final class AccessorPayloads {
 

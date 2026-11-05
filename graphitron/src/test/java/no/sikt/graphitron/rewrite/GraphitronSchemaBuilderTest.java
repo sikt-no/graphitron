@@ -2984,7 +2984,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         SINGLE_RECORD_PAYLOAD_DATA_FIELD_ORPHAN(
-            "Plain Object carrier (no @record/@table) wrapping a single @table-element data field, "
+            "Plain Object carrier (no @table) wrapping a single @table-element data field, "
                 + "consumed by a Query field with no producing mutation → orphan carrier; no "
                 + "producer site registers the data field, and graphql-java's never-traverse-"
                 + "unproduced-fields guarantee makes the missing registration structurally safe.",
@@ -3437,7 +3437,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ResultType backing-class classification (reflection-only) =====
     // A result type's backing comes from the producing @service field's reflected return
-    // type, or, for a DML carrier, a DML RETURNING payload, never the @record directive.
+    // type, or, for a DML carrier, a DML RETURNING payload.
     // The bare backing verdicts (PojoResultType.Backed, JavaRecordType, JooqTableRecordType) live
     // in the spec-by-example corpus (`result-backing` corpus document, confirmed by
     // VariantCoverageTest); the resultTypeBackingProjectionsCarryClassNameAndTablePayloads
@@ -4221,10 +4221,6 @@ class GraphitronSchemaBuilderTest {
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordInputType.class); }
         };
-        // The @table + @record directive-ignored warning is covered by
-        // RecordDirectiveIgnoredWarningTest at the classifier level; this enum carries no
-        // applied @record.
-
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
         InputTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
@@ -6368,9 +6364,6 @@ class GraphitronSchemaBuilderTest {
                     .contains("message");
             });
 
-        // The `@error co-located with @record -> ErrorType` precedence rule (@record is
-        // deprecated and silently ignored on an @error type; @error wins) lives in the
-        // spec-by-example corpus (the `error-type` corpus document's RecordIgnoredError).
         // This enum keeps the slot-asserting ErrorTypeCase rows and the projection test below.
 
         final String sdl;
@@ -10966,10 +10959,6 @@ class GraphitronSchemaBuilderTest {
                     .contains("must return")
                     .contains("FilmRecord");
             }),
-
-        // The @service "Disagrees" directive-ignored warning case lives in
-        // RecordDirectiveIgnoredWarningTest; reflection-wins-over-the-directive binding is covered
-        // by R96RecordBindingPipelineTest without any applied @record.
 
         MUTATION_SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
             "@service on mutation field with mismatched return type → UnclassifiedField (strict-return applies on mutation arm too)",

@@ -207,8 +207,8 @@ class HoversTest {
 
     /**
      * That the parent resolves against a class, and which one, comes from the store: a producer in the
-     * captured graph grounds {@code FilmCard} on the fixture record, with no SDL directive saying so,
-     * so the member hover resolves without an applied {@code @record}. What the class offers comes from
+     * captured graph grounds {@code FilmCard} on the fixture record, with no SDL directive saying so.
+     * What the class offers comes from
      * the census, so the rendered type is the one a compiler recorded for the component rather than one
      * this fixture chose.
      */

@@ -34,7 +34,7 @@ class TestServiceStub {
     public static String get() { throw new UnsupportedOperationException(); }
 
     /**
-     * No-arg query-side producer for the {@code FilmDetails @record} fixture payload,
+     * No-arg query-side producer for the {@code FilmDetails} fixture payload,
      * returning the {@link TestFilmDetailsDto} backing so the payload grounds via reflection
      * (the dangling-type-reference soundness pass rejects unbacked payload returns).
      */
@@ -210,7 +210,7 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== LanguageRecord-returning methods (for child @service on FilmDetails @record) =====
+    // ===== LanguageRecord-returning methods (for child @service on FilmDetails) =====
 
     /** Returns {@link LanguageRecord} — used by {@code @service} on a {@code Language} return. */
     public static LanguageRecord getLanguage() { throw new UnsupportedOperationException(); }

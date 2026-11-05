@@ -6,9 +6,8 @@ import java.util.List;
 
 /**
  * Test fixture record used by the @mutation classifier for a record-backed DML
- * return whose wrapper exposes both a data channel and an errors channel. Used as
- * {@code @record(record: {className: "...DeleteFilmPayload"})} on a {@code @mutation(typeName:
- * DELETE)} field over the {@code film} table; routes through {@code MutationDmlRecordField}
+ * return whose wrapper exposes both a data channel and an errors channel, returned by a
+ * {@code @mutation(typeName: DELETE)} field over the {@code film} table; routes through {@code MutationDmlRecordField}
  * with the error channel on the typed {@code Outcome} transport.
  *
  * <p>The {@code FilmRecord} component is informational metadata: emit no longer

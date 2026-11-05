@@ -104,11 +104,6 @@ class R58TypedRejectionPipelineTest {
     // conflict is no longer a builder tombstone, and the typed directives-list assertion now
     // reads the minted ValidationError's rejection.
 
-    // TableRecordCombination_recordIgnored_noLongerRejects moved to
-    // RecordDirectiveIgnoredWarningTest (the one place applied @record remains), which pins that
-    // @table + @record classifies table-backed rather than demoting to UnclassifiedType. Only
-    // @table vs @error remains mutually exclusive here.
-
     // The ConditionJoinReportable capability and its three sibling tests
     // (conditionJoinReportable_implementedByExpectedSixVariants,
     //  inlineTableField_conditionJoinStep_rejectedAtBuildTime,

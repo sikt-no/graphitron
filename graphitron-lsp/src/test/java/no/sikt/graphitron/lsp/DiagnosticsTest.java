@@ -230,8 +230,7 @@ class DiagnosticsTest {
 
     @Test
     void unknownRecordComponentProducesError() {
-        // Two answers meet here and neither is an SDL directive on the buffer, which is why the arm
-        // fires without an applied @record. That the parent resolves to a class, and which class, is
+        // Two answers meet here and neither is an SDL directive on the buffer. That the parent resolves to a class, and which class, is
         // the store's: a producer in the captured graph grounds FilmCard on the fixture record. What
         // the class offers is the census's, so the accept line is the compiler's record header rather
         // than a list this fixture wrote, and the word the message uses for the member comes from the

@@ -11,10 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline-tier coverage: reflection-driven SDL → backing-class binding through the
  * {@link no.sikt.graphitron.rewrite.RecordBindingResolver}.
  *
- * <p>Binding is reflection-only and {@code @record} is inert for it, so these fixtures carry
- * no applied {@code @record}; the directive-ignored warning's three variants, its suppression, and
- * the reachability gate live in {@link RecordDirectiveIgnoredWarningTest}. What stays here is the
- * binding behaviour itself: a producer's reflected return type grounds the SDL type, list carriers
+ * <p>Binding is reflection-only. What stays here is the binding behaviour itself: a producer's reflected return type grounds the SDL type, list carriers
  * unify on the element's table record, and a multi-producer disagreement surfaces a typed rejection.
  */
 @PipelineTier

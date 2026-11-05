@@ -148,10 +148,6 @@ class SingleRecordPayloadPipelineTest {
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
 
-    // No case for a bare @record on a single-record DML payload: @record is deprecated and
-    // ignored, so it is the same fixture as the no-@record single-payload case above, which
-    // already pins the cardinality-ONE BatchedTableField leaf.
-
     // ===== DELETE-with-carrier admission =====
 
     @Test

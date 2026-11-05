@@ -9,8 +9,7 @@ import graphql.schema.DataFetchingEnvironment;
  *
  * <p>Co-located with the other dummy references so SDL fixtures inside
  * {@link no.sikt.graphitron.rewrite.validation.RecordFieldAccessorValidationTest} can name them
- * by FQN through the same {@code @record(record: {className: "..."})} form the rest of the
- * fixtures use.
+ * by FQN.
  */
 public final class R88AccessorFixtures {
 

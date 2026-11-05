@@ -36,8 +36,7 @@ class NestedArgsTest {
 
     @Test
     void cursorInsideObjectFieldOfPlainObjectValueResolves() {
-        // service: {className: ""} — cursor inside the className empty quotes. (Uses @service rather
-        // than the deprecated/ignored @record; both share the nested ExternalCodeReference shape.)
+        // service: {className: ""}: cursor inside the className empty quotes.
         String source = """
             type Foo {
                 bar: Int @service(service: {className: ""})

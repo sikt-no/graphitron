@@ -5,8 +5,8 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 /**
  * Test producer for the classifier pipeline test, which is in graphitron-maven-plugin because
  * its subject is the classifier and the editor agreeing. Reflection-only record binding means a type
- * acquires its backing class by being the reflected return type of a producer field; the
- * deprecated {@code @record} directive no longer binds. These methods let the test SDL bind
+ * acquires its backing class by being the reflected return type of a producer field. These
+ * methods let the test SDL bind
  * {@code FilmCard} / {@code FilmPojoView} to {@link R157FilmRecord} / {@link R157FilmPojo} through
  * a real {@code @service} producer. Bodies never run, only the declared return type is reflected.
  */

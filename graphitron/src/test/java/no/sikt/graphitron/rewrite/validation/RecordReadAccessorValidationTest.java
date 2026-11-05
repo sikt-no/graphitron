@@ -41,9 +41,7 @@ class RecordReadAccessorValidationTest {
 
     private static GraphitronSchema buildWithRecord(String fixtureSimpleName, String typeBody) {
         // Bind TestType through the real reflection path, a @service producer whose method
-        // returns the fixture class, rather than the removed @record(className) idiom. The
-        // backing class (and therefore the inner-field accessor classification under test) is
-        // identical; only the binding source changes from directive to reflected return type.
+        // returns the fixture class.
         // DummyService declares one r88<FixtureSimpleName>() method per fixture.
         return TestSchemaHelper.buildSchema("""
             type Query {

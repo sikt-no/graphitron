@@ -172,7 +172,7 @@ public final class EntryFamilyFixture {
           fullName: String @field(name: "full_name")
         }
 
-        type Agency @record(record: {className: "no.example.AgencyRecord"}) {
+        type Agency {
           id: ID!
         }
 
