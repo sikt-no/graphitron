@@ -16,7 +16,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_START_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_STEP_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
-import static org.jooq.impl.DSL.castNull;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.val;
@@ -53,12 +52,11 @@ public final class Occurrences {
             .execute();
     }
 
-    /** The chains' starts, at depth 0 with no parent. */
+    /** The chains' starts, at depth 0. */
     private static void starts(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var o = GRAPHITRON_OCCURRENCE;
         var s = GRAPHITRON_OCCURRENCE_START_RULE;
-        var source = selectDistinct(s.GRAPH_NAME, s.COORDINATE, s.ELEMENT_COORDINATE,
-                castNull(o.PARENT_COORDINATE).as(o.PARENT_COORDINATE.getName()), s.NAME, s.KIND)
+        var source = selectDistinct(s.GRAPH_NAME, s.COORDINATE, s.ELEMENT_COORDINATE, s.NAME, s.KIND)
             .from(s)
             .where(s.GRAPH_NAME.eq(graph))
             .asTable("s");
@@ -104,7 +102,6 @@ public final class Occurrences {
         var o = GRAPHITRON_OCCURRENCE;
         var coordinate = source.field(o.COORDINATE.getName(), String.class);
         var element = source.field(o.ELEMENT_COORDINATE.getName(), String.class);
-        var parent = source.field(o.PARENT_COORDINATE.getName(), String.class);
         var name = source.field(o.NAME.getName(), String.class);
         var kind = source.field(o.KIND.getName(), String.class);
         var mark = val(touchedAt, o.TOUCHED_AT);
@@ -114,18 +111,15 @@ public final class Occurrences {
             .on(o.GRAPH_NAME.eq(graphField).and(o.COORDINATE.eq(coordinate)))
             .whenMatchedAnd(o.TOUCHED_AT.ne(mark)).thenUpdate()
             .set(o.ELEMENT_COORDINATE, element)
-            .set(o.PARENT_COORDINATE, parent)
             .set(o.NAME, name)
             .set(o.KIND, kind)
             .set(o.DEPTH, at)
             .set(o.TOUCHED_AT, mark)
             .set(o.ELEMENT_GRAPH_REF, graphField)
             .set(o.ELEMENT_COORDINATE_REF, element)
-            .whenNotMatchedThenInsert(o.GRAPH_NAME, o.COORDINATE, o.ELEMENT_COORDINATE,
-                o.PARENT_COORDINATE, o.NAME, o.KIND, o.DEPTH, o.TOUCHED_AT, o.ELEMENT_GRAPH_REF,
-                o.ELEMENT_COORDINATE_REF)
-            .values(graphField, coordinate, element, parent, name, kind, at, mark, graphField,
-                element)
+            .whenNotMatchedThenInsert(o.GRAPH_NAME, o.COORDINATE, o.ELEMENT_COORDINATE, o.NAME,
+                o.KIND, o.DEPTH, o.TOUCHED_AT, o.ELEMENT_GRAPH_REF, o.ELEMENT_COORDINATE_REF)
+            .values(graphField, coordinate, element, name, kind, at, mark, graphField, element)
             .execute();
     }
 }

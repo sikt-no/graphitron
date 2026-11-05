@@ -5276,13 +5276,26 @@ CREATE TABLE graphitron_occurrence (
   graph_name             VARCHAR   NOT NULL,
   coordinate             VARCHAR   NOT NULL,
   element_coordinate     VARCHAR   NOT NULL,
-  parent_coordinate      VARCHAR,
   name                   VARCHAR   NOT NULL,
   kind                   VARCHAR   NOT NULL,
   depth                  INT       NOT NULL,
   touched_at             TIMESTAMP NOT NULL,
   element_graph_ref      VARCHAR,
   element_coordinate_ref VARCHAR,
+  -- The ancestors, each a function of the coordinate's grammar rather than a fact a writer states.
+  parent_coordinate      VARCHAR GENERATED ALWAYS AS (CASE
+    WHEN POSITION('(', coordinate) = 0 THEN
+      CASE WHEN CHAR_LENGTH(coordinate) - CHAR_LENGTH(REPLACE(coordinate, '.', '')) > 1
+           THEN REGEXP_REPLACE(coordinate, '\.[^.]+$', '') END
+    WHEN POSITION('.', SUBSTRING(coordinate, POSITION('(', coordinate))) = 0
+      THEN SUBSTRING(coordinate, 1, POSITION('(', coordinate) - 1)
+    ELSE REGEXP_REPLACE(coordinate, '\.[^.]+:\)$', ':)') END),
+  field_coordinate       VARCHAR GENERATED ALWAYS AS (CASE
+    WHEN POSITION('(', coordinate) = 0 THEN coordinate
+    ELSE SUBSTRING(coordinate, 1, POSITION('(', coordinate) - 1) END),
+  argument_coordinate    VARCHAR GENERATED ALWAYS AS (CASE
+    WHEN POSITION('(', coordinate) = 0 THEN NULL
+    ELSE REGEXP_REPLACE(coordinate, '\(([^.:]+)[.:].*$', '($1:)') END),
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   -- The occurrence it hangs under; a parent the corpus no longer reaches takes its subtree with it.
@@ -5303,7 +5316,9 @@ COMMENT ON TABLE graphitron_occurrence IS 'One occurrence of an element, a use o
 COMMENT ON COLUMN graphitron_occurrence.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_occurrence.coordinate IS 'where the field or argument is reached, spelled TypeName.nestingField.nestedField from the nearest field whose parent is not nested, an argument as (argument:) and an input field inside its argument''s parentheses, (argument.inputField:); with the graph, the key. A field whose parent is a root, is table-bound or is targeted by no field has its own Type.field';
 COMMENT ON COLUMN graphitron_occurrence.element_coordinate IS 'the declared field, input field or argument this is an occurrence of, as graphitron_element spells it';
-COMMENT ON COLUMN graphitron_occurrence.parent_coordinate IS 'the occurrence this one hangs under: the field a nested field or an argument is reached through, or the argument or input field an input field is under; null where a chain starts';
+COMMENT ON COLUMN graphitron_occurrence.parent_coordinate IS 'the occurrence this one hangs under: the field a nested field or an argument is reached through, or the argument or input field an input field is under; null where a chain starts. Generated from the coordinate''s grammar: Type.a.b hangs under Type.a, Type.f(arg:) under Type.f and Type.f(arg.x:) under Type.f(arg:), so a change to how a coordinate is spelled lands in this expression';
+COMMENT ON COLUMN graphitron_occurrence.field_coordinate IS 'the field occurrence this one is reached through or is: the coordinate itself for a field, the part before the parentheses for an argument or input field. Generated from the coordinate''s grammar, so a change to how a coordinate is spelled lands in this expression';
+COMMENT ON COLUMN graphitron_occurrence.argument_coordinate IS 'the argument occurrence an argument or input field is under or is, Type.f(arg:) for both Type.f(arg:) and Type.f(arg.x.y:); null for a field. Generated from the coordinate''s grammar, so a change to how a coordinate is spelled lands in this expression';
 COMMENT ON COLUMN graphitron_occurrence.name IS 'the field or argument name at this step, the last segment of the coordinate, stated so a reader walks a path by name without parsing the coordinate';
 COMMENT ON COLUMN graphitron_occurrence.kind IS 'what the element is, in graphitron_element''s vocabulary: FIELD, INPUT_FIELD or FIELD_ARGUMENT, so an argument and an input field are told apart without parsing';
 COMMENT ON COLUMN graphitron_occurrence.depth IS 'how many steps the occurrence is below where its chain starts, 0 at the start';
