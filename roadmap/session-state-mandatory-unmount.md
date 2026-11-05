@@ -1,7 +1,7 @@
 ---
 id: R1151
 title: "Require an unmount on SessionState so identity never rests on a pooled connection"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: runtime-connection
@@ -80,6 +80,15 @@ A required unmount can still be `s -> {}` on a mount that does set state. The co
 ## Provenance
 
 Found in an adversarial review of the owned-connection session lifecycle, prompted by a consumer asking whether `app.claims` can leak between requests. Siblings filed from the same review: R1152 (reset at release), R1153 (pool execution tests), R1154 (single-tenant carrier acquisition after release), R1155 (escape-hatch identity example).
+
+## Implementation notes
+
+Landed in commit "R1151: SessionState takes a mount and an unmount, and nothing less". Every Implementation and Tests bullet above shipped as written, with two notes for the Done reviewer:
+
+- The unreachable `mounts`-only clause in `PinnedConnection.release()`'s javadoc (named in Round 1 below) is gone with the rest of the retired vocabulary.
+- R1153's pool suite had not landed, so the bookkeeping took that arm: R1151 is out of the sibling list in R1153's Scope section, which now names three gaps.
+
+Still owed at Done: the `Breaking:` changelog entry described in the Implementation list.
 
 ## Reviewer findings
 
