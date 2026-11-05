@@ -96,6 +96,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
   `graphitron_field_path_landing`'s row with no place. Ends at "A routine's result is an object of its function's record class".
 * Argument and input-field paths from `graphitron_field_scope_table` beside the path relations. Ends at
   "The readers read the paths, and the old path relations go".
+* An output field's walk in `graphitron_field_path*` and in `graphitron_join_path_step*`, both every
+  capture, the defects the new one's alone. Ends at "The old walk's readers read the join path, and the old family goes".
 * `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
@@ -315,17 +317,10 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   is chosen by its two tables on `graphitron_join_path_step_method`, where `CONDITION_NO_OVERLOAD_FOR_PAIR`,
   `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
   `graphitron_field_path_method_candidate` goes with the old family.
-  * **Written and inherited claims are walked into steps** `open`, F's. The output fields' claims
-    are walked, own first, then the `@referenceFor` naming the member, then inherited by
-    precedence, writing the steps, their subtypes and the `WRITTEN` or `INHERITED` path with its
-    `_claimed` row and target, or a stop, and the `INFERRED` paths' single step, with the stop,
-    condition-overload and unbound-routine-parameter defects moved over and a sis timing before and
-    after. The walk is a flat per-position rule view over base tables, with graph, position and
-    instant bound, merged by a Java loop that counts moves.
-  * **One per-depth loop states producers, sources, needs and paths** `blocked`, F's, on "Written and inherited claims are walked into steps".
+  * **One per-depth loop states producers, sources, needs and paths** `open`, F's.
     An occurrence waiting on a join path gets its sources and needs from the walked landing.
-  * **A walked landing judges `PATH_LANDING_UNKNOWN` and `NODE_ID_LANDS_ON_TABLE`** `blocked`, F's, on "Written and inherited claims are walked into steps".
-  * **The old walk's readers read the join path, and the old family goes** `blocked`, F's, on "Written and inherited claims are walked into steps".
+  * **A walked landing judges `PATH_LANDING_UNKNOWN` and `NODE_ID_LANDS_ON_TABLE`** `open`, F's.
+  * **The old walk's readers read the join path, and the old family goes** `open`, F's.
     MCP `joinPath` and `pathStops`, the fanout lint, `RoutineWriteQuery`,
     `graphitron_field_target_column_match`, the gate tests and the fact documents move to the join
     path; then `FieldPaths` and `graphitron_field_path*` go.
@@ -335,8 +330,8 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   start on the step of their field's path an author named with `as:`, or at its landing, and land on
   their target type, the `@nodeId` type where one decodes.
 * **`scenarios/path-rules` runs** `blocked`, on "Arguments and input fields have paths from their field's path".
-  The draft below becomes a fact document, its `PathRulesFixtures` and defect codes added, and the
-  condition cases of the six documents it lists move into it.
+  Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
+  the condition cases of the six documents the draft below lists move into it.
 * **The readers read the paths, and the old path relations go** `blocked`, on "`scenarios/path-rules` runs".
   The condition, lookup-key, node-id and `argMapping` readers move, and the relations
   "Path model (draft)" lists as replaced go.
@@ -1785,7 +1780,10 @@ row for a single-table interface target, where the needs want one per member, an
 whose binding names several tables.
 
 **The relations, with their grains.** Declared in `graphitron-model.sql`, owned by `graphitron`;
-the claim, the source and the need are written, and nothing writes the rest yet. The SQL carries the names
+the claim, the source and the need are written, the empty and inferred paths by `Paths`, and the
+written and inherited paths with their `_claimed` rows, every output field's steps with their
+subtypes and columns, the inferred paths' one step and the stops by `Steps`. The argument and
+input-field paths and the accessor path are not written yet. The SQL carries the names
 decided on 2026-11-03 (2026-11-04), and `graphitron_ast_path_entry` keeps its name as the written
 entry.
 
@@ -2021,6 +2019,17 @@ inferred routine result, a written `{table:}` element from a function and the st
 ending on a `@routine`; `_primary_key` stays the `{key:}` self-join. `NODE_ID_LANDS_ON_TABLE` is a
 bare `@nodeId` whose walked landing table has no single `@node` type, or a named node whose table
 differs from the landing. The old walk runs beside the new one until "The old walk's readers read the join path, and the old family goes" moves its readers.
+The claim a need follows is picked by `graphitron_join_path_claimed_rule`, one row per output-field
+need a claim covers and walks to: the field's own `@referenceFor` naming the type, then its own
+claim where it walks to the type, then exactly one inherited, and it is the rule for
+`graphitron_join_path_claimed`, written for the needs whose walk reaches the target. The walk's
+defects, `ROUTE_AMBIGUOUS`, `NO_ROUTE_FROM_DEPARTURE`, `ELEMENT_UNRESOLVED`,
+`ROUTINE_PARAMETER_UNBOUND`, `NO_ROUTE_TO_TARGET` for a walk ending off its target and the two
+condition-overload codes, moved to the new walk when it landed, raised at the written element, an
+inherited claim's being the interface's. A stopped need keeps the steps
+it took. A condition alone whose second parameter takes any table (`Table<?>`, `TableLike<?>`) says
+nowhere to arrive and is not supported: it stays `NO_ROUTE_FROM_DEPARTURE`, its detail naming the
+remedy, and sakila's fixtures type both parameters (Alf, 2026-11-05).
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a

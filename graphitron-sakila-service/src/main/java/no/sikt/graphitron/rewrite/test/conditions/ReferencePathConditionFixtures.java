@@ -5,11 +5,12 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Address;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmEndorsement;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Rental;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterParent;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterTarget;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Store;
 import org.jooq.Condition;
-import org.jooq.Table;
 import org.jooq.impl.DSL;
 
 /**
@@ -22,11 +23,9 @@ import org.jooq.impl.DSL;
  * intentionally non-novel so the execution-tier asserts the SQL shape itself (parent + condition
  * + parentInput JOIN; correlated subquery in the inline shape) rather than the predicate.
  *
- * <p>Parameter typing splits the class in two, and which half a fixture belongs to is decided by
- * where the path is read, not by taste. An output field's chain-ending hop is handed its return
- * type's {@code @table} binding as a declared target, so a {@code Table<?>} signature is enough
- * there. A filter path never has one, so its target is read off the method's second parameter and
- * the signature must name concrete generated jOOQ tables.
+ * <p>Every parameter names the concrete generated jOOQ table it joins: a condition alone says where
+ * its path arrives by its second parameter, so one taking any table leaves the path with nowhere
+ * to go, which is a defect.
  */
 public final class ReferencePathConditionFixtures {
 
@@ -38,9 +37,8 @@ public final class ReferencePathConditionFixtures {
      * to exercise the inline emission shape (correlated subquery wrapped in
      * {@code DSL.multiset(...)} with the condition method providing the WHERE-side predicate).
      */
-    public static Condition customerToAddress(Table<?> customerTable, Table<?> addressTable) {
-        return customerTable.field("address_id", Integer.class)
-            .eq(addressTable.field("address_id", Integer.class));
+    public static Condition customerToAddress(Customer customer, Address address) {
+        return customer.ADDRESS_ID.eq(address.ADDRESS_ID);
     }
 
     /**
@@ -50,14 +48,12 @@ public final class ReferencePathConditionFixtures {
      * parentInput ON film.film_id = parentInput.film_id}). The EXISTS subquery is the only way
      * to express a junction-mediated relationship as a two-arg condition predicate.
      */
-    public static Condition filmActorsViaCondition(Table<?> filmTable, Table<?> actorTable) {
+    public static Condition filmActorsViaCondition(Film film, Actor actor) {
         return DSL.exists(
             DSL.selectOne()
                 .from(FilmActor.FILM_ACTOR)
-                .where(FilmActor.FILM_ACTOR.FILM_ID
-                    .eq(filmTable.field("film_id", Integer.class)))
-                .and(FilmActor.FILM_ACTOR.ACTOR_ID
-                    .eq(actorTable.field("actor_id", Integer.class)))
+                .where(FilmActor.FILM_ACTOR.FILM_ID.eq(film.FILM_ID))
+                .and(FilmActor.FILM_ACTOR.ACTOR_ID.eq(actor.ACTOR_ID))
         );
     }
 
@@ -68,13 +64,13 @@ public final class ReferencePathConditionFixtures {
      * junction; this method is the second (terminal) hop joining the junction to {@code actor}, so
      * its parameters are the junction (source) and the leaf (target).
      *
-     * <p>Unlike the {@code Table<?>}-typed fixtures above, the parameters are the concrete jOOQ
-     * table types {@link FilmActor} and {@link Actor}. These are mutually incompatible, so the
+     * <p>The parameters are the concrete jOOQ table types {@link FilmActor} and {@link Actor},
+     * which are mutually incompatible, so the
      * argument order is type-checked at compile time: if the split-rows emitter reverses the two
      * aliases on this bridging hop (calling {@code filmActorJunctionToActor(actorAlias,
      * filmActorAlias)}), the generated resolver fails to compile in {@code compile-spec}. That is
      * the regression guard for the opptak {@code samordnaOrganisasjoner} incompatible-types defect,
-     * which the {@code Table<?>}-typed first-hop fixtures could not catch.
+     * which first-hop fixtures typed with the same table at both ends could not catch.
      */
     public static Condition filmActorJunctionToActor(FilmActor filmActor, Actor actor) {
         return filmActor.ACTOR_ID.eq(actor.ACTOR_ID);
@@ -102,8 +98,7 @@ public final class ReferencePathConditionFixtures {
     /**
      * Filter-path fixture: the natural {@code customer.address_id = address.address_id} FK as a
      * predicate, with <em>concrete</em> parameter types. A filter site carries no return-type
-     * {@code @table} binding, so the target table is read off this signature; the wildcard-typed
-     * {@link #customerToAddress} above cannot be used there. Reaching a joined column from a
+     * {@code @table} binding, so the target table is read off this signature. Reaching a joined column from a
      * filter is the same relationship the inline fixture navigates, expressed for the position
      * that has to reflect.
      */
@@ -147,7 +142,7 @@ public final class ReferencePathConditionFixtures {
      * below a tenant-bound root. Store and endorsement are both global, so the statement stays on
      * the default source.
      */
-    public static Condition everyTenantFixtureEndorsement(Table<?> storeTable, Table<?> endorsementTable) {
-        return endorsementTable.field("note", String.class).eq(TENANT_ENDORSEMENT_NOTE);
+    public static Condition everyTenantFixtureEndorsement(Store store, FilmEndorsement endorsement) {
+        return endorsement.NOTE.eq(TENANT_ENDORSEMENT_NOTE);
     }
 }

@@ -51,9 +51,9 @@ import static org.jooq.impl.DSL.when;
  * parent's service or write. Where an output field starts and lands on two different tables joined
  * by exactly one route it is {@code INFERRED}, its target its landing: one foreign key in either
  * direction, or, from the derived table a routine returns, the landing's primary key, every column
- * of it matched by name among the routine's result columns. The one step it takes is the steps' to
- * write. Any other uncovered field between two tables, the same table included, is a defect, which
- * {@code graphitron_entry_defect_rule} raises.
+ * of it matched by name among the routine's result columns. The one step it takes is
+ * {@link Steps}'s to write. Any other uncovered field between two tables, the same table included,
+ * is a defect, which {@code graphitron_entry_defect_rule} raises.
  *
  * <p>The foreign keys are counted off {@code sql_table_reference}, which holds the count per ordered
  * pair of tables, both orders summed; a self-referencing key never counts, a field starting where
@@ -70,16 +70,15 @@ public final class Paths {
     private static final String EMPTY = "EMPTY";
     private static final String INFERRED = "INFERRED";
 
-    /** States the graph's uncovered paths and sweeps what the reading no longer finds. */
+    /** States the graph's uncovered paths and sweeps the ones of its origins the reading no longer finds. */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var c = candidates(graph, touchedAt).asTable("c");
         write(dsl, graph, c, touchedAt);
-        dsl.deleteFrom(GRAPHITRON_JOIN_PATH)
-            .where(GRAPHITRON_JOIN_PATH.GRAPH_NAME.eq(graph))
-            .and(GRAPHITRON_JOIN_PATH.TOUCHED_AT.ne(touchedAt))
-            .execute();
+        // Only the origins written here: a written or inherited path is the steps' to sweep, and its
+        // join path goes with it.
         dsl.deleteFrom(GRAPHITRON_PATH)
             .where(GRAPHITRON_PATH.GRAPH_NAME.eq(graph))
+            .and(GRAPHITRON_PATH.ORIGIN.in(EMPTY, INFERRED))
             .and(GRAPHITRON_PATH.TOUCHED_AT.ne(touchedAt))
             .execute();
     }

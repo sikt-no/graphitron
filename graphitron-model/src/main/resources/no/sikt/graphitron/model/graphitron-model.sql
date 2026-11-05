@@ -11098,6 +11098,387 @@ COMMENT ON COLUMN graphitron_join_path_stop.element_place IS 'the place of the w
 COMMENT ON COLUMN graphitron_join_path_stop.moves IS 'how many moves were found from where the path stood: none, where nothing leads on, or several, where more than one way does; never one, one being a step';
 COMMENT ON COLUMN graphitron_join_path_stop.touched_at IS 'when the reading that last stopped here ran: the mark the sweep reads';
 
+
+CREATE VIEW graphitron_join_path_claimed_rule
+  (graph_name, coordinate, target_type, claim_coordinate, claim_target_type, origin) AS
+-- An output field's needs, each with the field it is an occurrence of.
+WITH need (graph_name, coordinate, target_type, element_coordinate, type_name, field_name) AS (
+  SELECT n.graph_name, n.coordinate, n.target_type, f.coordinate, f.type_name, f.field_name
+    FROM graphitron_path_need n
+    JOIN graphitron_occurrence o
+      ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate AND o.kind = 'FIELD'
+    JOIN graphitron_field f
+      ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+),
+-- Each claim an interface's same-named field makes for a need of an implementation: its
+-- @referenceFor naming the need's type first, else its field claim where that walks to the type,
+-- the type itself or a member of the single-table interface it targets. Only where the field's own
+-- declaration claims nothing covering the need.
+inherited (graph_name, coordinate, target_type, interface_name, claim_coordinate,
+           claim_target_type) AS (
+  SELECT n.graph_name, n.coordinate, n.target_type, ii.interface_name,
+         COALESCE(irf.element_coordinate, ifc.element_coordinate),
+         COALESCE(irf.target_type, ifc.target_type)
+    FROM need n
+    JOIN graphql_implements_interface ii
+      ON ii.graph_name = n.graph_name AND ii.type_name = n.type_name
+    JOIN graphitron_field inf
+      ON inf.graph_name = ii.graph_name AND inf.type_name = ii.interface_name
+     AND inf.field_name = n.field_name
+    LEFT JOIN graphitron_join_path_claim irf
+      ON irf.graph_name = inf.graph_name AND irf.element_coordinate = inf.coordinate
+     AND irf.claim_kind = 'REFERENCE_FOR' AND irf.target_type = n.target_type
+    LEFT JOIN graphitron_join_path_claim ifc
+      ON ifc.graph_name = inf.graph_name AND ifc.element_coordinate = inf.coordinate
+     AND ifc.claim_kind = 'FIELD'
+     AND (ifc.target_type = n.target_type
+          OR EXISTS (SELECT 1 FROM graphitron_tabletype it
+                       JOIN graphql_implements_interface im
+                         ON im.graph_name = it.graph_name AND im.interface_name = it.type_name
+                      WHERE it.graph_name = ifc.graph_name AND it.type_name = ifc.target_type
+                        AND im.type_name = n.target_type))
+   WHERE (irf.graph_name IS NOT NULL OR ifc.graph_name IS NOT NULL)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim own
+                      WHERE own.graph_name = n.graph_name
+                        AND own.element_coordinate = n.element_coordinate
+                        AND (own.claim_kind <> 'REFERENCE_FOR' OR own.target_type = n.target_type))
+)
+-- The field's own @referenceFor naming the need's type.
+SELECT n.graph_name, n.coordinate, n.target_type, rf.element_coordinate, rf.target_type, 'WRITTEN'
+  FROM need n
+  JOIN graphitron_join_path_claim rf
+    ON rf.graph_name = n.graph_name AND rf.element_coordinate = n.element_coordinate
+   AND rf.claim_kind = 'REFERENCE_FOR' AND rf.target_type = n.target_type
+UNION ALL
+-- Else its own field claim, where it walks to the need's type: the field's target itself, or a
+-- member of the single-table interface it targets. On a union or a multi-table interface it covers
+-- the members and walks to none.
+SELECT n.graph_name, n.coordinate, n.target_type, fc.element_coordinate, fc.target_type, 'WRITTEN'
+  FROM need n
+  JOIN graphitron_join_path_claim fc
+    ON fc.graph_name = n.graph_name AND fc.element_coordinate = n.element_coordinate
+   AND fc.claim_kind = 'FIELD'
+ WHERE (fc.target_type = n.target_type
+        OR EXISTS (SELECT 1 FROM graphitron_tabletype it
+                     JOIN graphql_implements_interface im
+                       ON im.graph_name = it.graph_name AND im.interface_name = it.type_name
+                    WHERE it.graph_name = fc.graph_name AND it.type_name = fc.target_type
+                      AND im.type_name = n.target_type))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim rf
+                    WHERE rf.graph_name = n.graph_name AND rf.element_coordinate = n.element_coordinate
+                      AND rf.claim_kind = 'REFERENCE_FOR' AND rf.target_type = n.target_type)
+UNION ALL
+-- Else the one claim inherited: an interface extending another overrides it, and two interfaces
+-- neither extending the other leave none, which INHERITED_PATH_AMBIGUOUS reports.
+SELECT i.graph_name, i.coordinate, i.target_type, MIN(i.claim_coordinate),
+       MIN(i.claim_target_type), 'INHERITED'
+  FROM inherited i
+ WHERE NOT EXISTS (SELECT 1 FROM inherited j
+                     JOIN graphql_implements_interface x
+                       ON x.graph_name = j.graph_name AND x.type_name = j.interface_name
+                      AND x.interface_name = i.interface_name
+                    WHERE j.graph_name = i.graph_name AND j.coordinate = i.coordinate
+                      AND j.target_type = i.target_type)
+ GROUP BY i.graph_name, i.coordinate, i.target_type
+HAVING COUNT(*) = 1;
+COMMENT ON VIEW graphitron_join_path_claimed_rule IS 'The claim an output field''s need follows: one row per need of a field occurrence that a claim covers and walks to, with the claim and whether it is the field''s own or inherited. For example Staff.homeAddress, writing nothing, follows (Person.homeAddress, Address) as INHERITED, and Store.people''s need for Staff follows its own @referenceFor, (Store.people, Staff).';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.graph_name IS 'the owning graph''s partition, carried from the need';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.coordinate IS 'the field occurrence whose need this is';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.target_type IS 'the type the need reaches; with the two columns before it, the need''s key';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.claim_coordinate IS 'the declared element the followed claim is written on: the field itself, or an interface''s same-named field';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.claim_target_type IS 'the type the followed claim reaches; with the coordinate before it, the claim''s key';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.origin IS 'WRITTEN for the field''s own claim and INHERITED for an interface field''s, as graphitron_path.origin takes it';
+
+CREATE VIEW graphitron_join_path_step_rule
+  (graph_name, claim_coordinate, claim_target_type, position, element_place,
+   element_source_name, element_line, element_column, as_name, resolved, last_element,
+   from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, move,
+   constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
+   routine_source_name, routine_schema, routine_name) AS
+-- Each claim on an output field: where it was written, which of its places the path starts at, a
+-- root field's leading @routine being its producer's call and so no step, whether the field reads
+-- one row, which is the way a key from a table to itself is ridden, and whether it is a mutation's,
+-- which never takes the step after a routine. The flags are CASE expressions rather than bare
+-- EXISTS: H2 pushes a predicate onto a view's boolean column and writes one over a bare EXISTS it
+-- cannot parse back.
+WITH claim (graph_name, claim_coordinate, claim_target_type, source_name, anchor_line,
+            anchor_column, first_place, single_valued, on_mutation) AS (
+  SELECT c.graph_name, c.element_coordinate, c.target_type, c.source_name, c.source_line,
+         c.source_column,
+         CASE WHEN ro.type_name IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM graphitron_ast_path_entry e0
+                                 JOIN graphitron_path_element_routine r0
+                                   ON r0.graph_name = e0.graph_name AND r0.source_name = e0.source_name
+                                  AND r0.source_line = e0.element_line
+                                  AND r0.source_column = e0.element_column
+                                WHERE e0.graph_name = c.graph_name AND e0.source_name = c.source_name
+                                  AND e0.anchor_line = c.source_line
+                                  AND e0.anchor_column = c.source_column AND e0.place = 0)
+              THEN 1 ELSE 0 END,
+         CASE WHEN NOT (f.is_list OR nv.wrapper_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM')
+              THEN TRUE ELSE FALSE END,
+         CASE WHEN ro.operation = 'MUTATION' THEN TRUE ELSE FALSE END
+    FROM graphitron_join_path_claim c
+    JOIN graphitron_field f
+      ON f.graph_name = c.graph_name AND f.coordinate = c.element_coordinate
+    JOIN graphitron_field_target nv
+      ON nv.graph_name = f.graph_name AND nv.type_name = f.type_name AND nv.field_name = f.field_name
+    JOIN graphitron_type nt ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
+    LEFT JOIN graphql_root_operation ro ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+),
+-- Each written element from the path's first place on, at the position its step takes, with
+-- whether it is the claim's only element and whether it names a key or a table.
+element (graph_name, claim_coordinate, claim_target_type, position, place, source_name,
+         element_line, element_column, as_name, single_valued, last_element, sole, has_key,
+         has_table) AS (
+  SELECT cl.graph_name, cl.claim_coordinate, cl.claim_target_type, e.place - cl.first_place,
+         e.place, e.source_name, e.element_line, e.element_column, e.as_name, cl.single_valued,
+         CASE WHEN NOT EXISTS (SELECT 1 FROM graphitron_ast_path_entry e1
+                                WHERE e1.graph_name = e.graph_name AND e1.source_name = e.source_name
+                                  AND e1.anchor_line = e.anchor_line
+                                  AND e1.anchor_column = e.anchor_column AND e1.place = e.place + 1)
+              THEN TRUE ELSE FALSE END,
+         CASE WHEN e.place = 0
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_path_entry e1
+                                    WHERE e1.graph_name = e.graph_name AND e1.source_name = e.source_name
+                                      AND e1.anchor_line = e.anchor_line
+                                      AND e1.anchor_column = e.anchor_column AND e1.place = 1)
+              THEN TRUE ELSE FALSE END,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_path_element_key k
+                            WHERE k.graph_name = e.graph_name AND k.source_name = e.source_name
+                              AND k.source_line = e.element_line AND k.source_column = e.element_column)
+                OR EXISTS (SELECT 1 FROM graphitron_path_element_primary_key pk
+                            WHERE pk.graph_name = e.graph_name AND pk.source_name = e.source_name
+                              AND pk.source_line = e.element_line
+                              AND pk.source_column = e.element_column)
+              THEN TRUE ELSE FALSE END,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_path_element_table t
+                            WHERE t.graph_name = e.graph_name AND t.source_name = e.source_name
+                              AND t.source_line = e.element_line AND t.source_column = e.element_column)
+              THEN TRUE ELSE FALSE END
+    FROM claim cl
+    JOIN graphitron_ast_path_entry e
+      ON e.graph_name = cl.graph_name AND e.source_name = cl.source_name
+     AND e.anchor_line = cl.anchor_line AND e.anchor_column = cl.anchor_column
+     AND e.place >= cl.first_place
+)
+-- The element itself, with no destination, whether or not it allows a move: what a stop reports,
+-- with whether the element names anything. A @routine moves from wherever the path stands, so one
+-- with no move names no routine with a generated call.
+SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name,
+       CASE WHEN el.has_key OR el.has_table
+              OR EXISTS (SELECT 1 FROM graphitron_path_element_method m
+                          WHERE m.graph_name = el.graph_name AND m.source_name = el.source_name
+                            AND m.source_line = el.element_line
+                            AND m.source_column = el.element_column)
+            THEN TRUE ELSE FALSE END,
+       el.last_element,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+UNION ALL
+-- A written key ridden away from its declaring table; one from a table to itself only where the
+-- field reads one row.
+SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       rc.source_name, rc.table_schema, rc.table_name,
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table, 'KEY',
+       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, TRUE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+  JOIN graphitron_path_element_key k
+    ON k.graph_name = el.graph_name AND k.source_name = el.source_name
+   AND k.source_line = el.element_line AND k.source_column = el.element_column
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = k.constraint_source_name AND rc.table_schema = k.constraint_schema
+   AND rc.table_name = k.constraint_table AND rc.constraint_name = k.constraint_name
+ WHERE NOT (rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
+            AND rc.table_name = rc.referenced_table)
+    OR el.single_valued
+UNION ALL
+-- The same key ridden toward its declaring table; one from a table to itself only where the field
+-- reads many rows.
+SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
+       rc.source_name, rc.table_schema, rc.table_name, 'KEY',
+       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, FALSE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+  JOIN graphitron_path_element_key k
+    ON k.graph_name = el.graph_name AND k.source_name = el.source_name
+   AND k.source_line = el.element_line AND k.source_column = el.element_column
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = k.constraint_source_name AND rc.table_schema = k.constraint_schema
+   AND rc.table_name = k.constraint_table AND rc.constraint_name = k.constraint_name
+ WHERE NOT (rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
+            AND rc.table_name = rc.referenced_table)
+    OR NOT el.single_valued
+UNION ALL
+-- A table's own primary key, joining each row to itself: the claim's only element, on a field
+-- reading one row.
+SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       pk.table_source_name, pk.table_schema, pk.table_name,
+       pk.table_source_name, pk.table_schema, pk.table_name, 'PRIMARY_KEY',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+  JOIN graphitron_path_element_primary_key pk
+    ON pk.graph_name = el.graph_name AND pk.source_name = el.source_name
+   AND pk.source_line = el.element_line AND pk.source_column = el.element_column
+ WHERE el.sole AND el.single_valued
+UNION ALL
+-- A table, reached over each foreign key it declares toward the table the path stands at.
+SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
+       t.table_source_name, t.table_schema, t.table_name, 'INFERRED_KEY',
+       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, FALSE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+  JOIN graphitron_path_element_table t
+    ON t.graph_name = el.graph_name AND t.source_name = el.source_name
+   AND t.source_line = el.element_line AND t.source_column = el.element_column
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = t.table_source_name AND rc.table_schema = t.table_schema
+   AND rc.table_name = t.table_name
+ WHERE NOT el.has_key
+   AND (NOT (rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
+             AND rc.table_name = rc.referenced_table)
+        OR NOT el.single_valued)
+UNION ALL
+-- A table, reached over each foreign key the table the path stands at declares toward it.
+SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       rc.source_name, rc.table_schema, rc.table_name,
+       t.table_source_name, t.table_schema, t.table_name, 'INFERRED_KEY',
+       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, TRUE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+  JOIN graphitron_path_element_table t
+    ON t.graph_name = el.graph_name AND t.source_name = el.source_name
+   AND t.source_line = el.element_line AND t.source_column = el.element_column
+  JOIN sql_referential_constraint rc
+    ON rc.referenced_source_name = t.table_source_name AND rc.referenced_schema = t.table_schema
+   AND rc.referenced_table = t.table_name
+ WHERE NOT el.has_key
+   AND (NOT (rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
+             AND rc.table_name = rc.referenced_table)
+        OR el.single_valued)
+UNION ALL
+-- A table, reached from a function's derived table by the named table's primary key, its columns
+-- matched by name among the derived table's.
+SELECT DISTINCT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       n.source_name, n.table_schema, n.table_name,
+       t.table_source_name, t.table_schema, t.table_name, 'MATCHED_KEY',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+  JOIN graphitron_path_element_table t
+    ON t.graph_name = el.graph_name AND t.source_name = el.source_name
+   AND t.source_line = el.element_line AND t.source_column = el.element_column
+  JOIN sql_name_matched_key_column n
+    ON n.to_source_name = t.table_source_name AND n.to_schema = t.table_schema
+   AND n.to_table = t.table_name
+ WHERE NOT el.has_key
+UNION ALL
+-- A @routine: a call made from whichever table the path stands at, landing on its function's
+-- derived table, one move per routine the element names.
+SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       fn.source_name, fn.table_schema, fn.table_name, 'ROUTINE',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN), er.routine_source_name, er.table_schema, er.routine_name
+  FROM element el
+  JOIN graphitron_path_element_routine er
+    ON er.graph_name = el.graph_name AND er.source_name = el.source_name
+   AND er.source_line = el.element_line AND er.source_column = el.element_column
+  JOIN sql_table fn
+    ON fn.source_name = er.routine_source_name AND fn.table_schema = er.table_schema
+   AND fn.table_name = er.routine_name
+UNION ALL
+-- A condition alone: its method's second parameter names where it lands, one move per table it
+-- names, and its first, where it names a table, is the only table it departs; a first parameter
+-- naming no table departs any.
+SELECT DISTINCT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
+       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       d.source_name, d.table_schema, d.table_name,
+       arrives.source_name, arrives.table_schema, arrives.table_name, 'METHOD',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM element el
+  JOIN graphitron_path_element_method pm
+    ON pm.graph_name = el.graph_name AND pm.source_name = el.source_name
+   AND pm.source_line = el.element_line AND pm.source_column = el.element_column
+  JOIN code_method_parameter ap
+    ON ap.source_name = pm.method_source_name AND ap.class_name = pm.method_class_name
+   AND ap.method_name = pm.method_name AND ap.descriptor = pm.method_descriptor AND ap.position = 1
+  JOIN store_graph_source am ON am.graph_name = el.graph_name
+  JOIN sql_table arrives ON arrives.source_name = am.source_name AND arrives.class_fqn = ap.erased_class
+  LEFT JOIN code_method_parameter dp
+    ON dp.source_name = pm.method_source_name AND dp.class_name = pm.method_class_name
+   AND dp.method_name = pm.method_name AND dp.descriptor = pm.method_descriptor AND dp.position = 0
+  LEFT JOIN sql_table d ON d.source_name = am.source_name AND d.class_fqn = dp.erased_class
+ WHERE NOT el.has_key AND NOT el.has_table
+UNION ALL
+-- The step no element writes: where a read's written path has ended on a function's derived table
+-- and the claim reaches a @table type, from the derived table to that table by its primary key's
+-- columns matched by name. A derived table exposing none of them leaves the path on the function.
+SELECT DISTINCT cl.graph_name, cl.claim_coordinate, cl.claim_target_type,
+       e.place + 1 - cl.first_place, CAST(NULL AS INT), CAST(NULL AS VARCHAR), CAST(NULL AS INT),
+       CAST(NULL AS INT), CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+       n.source_name, n.table_schema, n.table_name,
+       b.table_source_name, b.table_schema, b.table_name, 'MATCHED_KEY',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM claim cl
+  JOIN graphitron_ast_path_entry e
+    ON e.graph_name = cl.graph_name AND e.source_name = cl.source_name
+   AND e.anchor_line = cl.anchor_line AND e.anchor_column = cl.anchor_column
+  JOIN graphitron_tabletype b
+    ON b.graph_name = cl.graph_name AND b.type_name = cl.claim_target_type
+  JOIN sql_name_matched_key_column n
+    ON n.to_source_name = b.table_source_name AND n.to_schema = b.table_schema
+   AND n.to_table = b.table_name
+ WHERE NOT cl.on_mutation
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_path_entry nx
+                    WHERE nx.graph_name = e.graph_name AND nx.source_name = e.source_name
+                      AND nx.anchor_line = e.anchor_line AND nx.anchor_column = e.anchor_column
+                      AND nx.place = e.place + 1);
+COMMENT ON VIEW graphitron_join_path_step_rule IS 'A move one written element of a claim allows from a table: one row per claim, position, departure and move, and one row per element with no destination. For example {key: "customer_address_id_fkey"} on Customer.address allows customer to address, and {table: "language"} on a Film field allows film to language over each of film''s two keys.';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.graph_name IS 'the owning graph''s partition, carried from the claim';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.claim_coordinate IS 'the declared element the claim is written on';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.claim_target_type IS 'the type the claim reaches; with the coordinate before it, the claim''s key';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.position IS 'the position of the step the move takes: the element''s place, less one on a root field whose first element is its producer''s @routine';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.element_place IS 'the element''s place in the claim''s written list, as graphitron_ast_path_entry numbers it; NULL for the step after a routine, which no element writes';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.element_source_name IS 'the file the element was written in; NULL where no element writes the move';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.element_line IS 'the element''s source line';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.element_column IS 'the element''s source column';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.as_name IS 'the element''s as: name, where it has one';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.resolved IS 'on the element''s row with no destination, whether it names a key, a table or a condition method that resolved; NULL on a move';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.last_element IS 'on the element''s row with no destination, whether it is the last its claim writes; NULL on a move';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.from_source_name IS 'the catalog partition of the table the move departs; NULL where it departs any';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.from_schema IS 'the departure''s SQL schema';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.from_table IS 'the table the move departs; NULL where the move departs any, a @routine or a condition whose first parameter names no table';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.to_source_name IS 'the catalog partition of the table the move arrives at';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.to_schema IS 'the arrival''s SQL schema';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.to_table IS 'the table the move arrives at; NULL on the element''s own row, which is no move';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.move IS 'how the move joins: KEY a written foreign key, INFERRED_KEY a foreign key a table element rides, PRIMARY_KEY the self-join, MATCHED_KEY a primary key matched by name from a derived table, ROUTINE a call, METHOD a condition alone';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.constraint_source_name IS 'the ridden foreign key''s catalog partition, for KEY and INFERRED_KEY';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.constraint_schema IS 'the ridden foreign key''s schema';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.constraint_table IS 'the table declaring the ridden foreign key';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.constraint_name IS 'the ridden foreign key''s name';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.fk_on_from IS 'whether the ridden foreign key is declared on the departure';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.routine_source_name IS 'the called routine''s catalog partition, for ROUTINE';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.routine_schema IS 'the called routine''s schema';
+-- COMMENT ON COLUMN graphitron_join_path_step_rule.routine_name IS 'the called routine''s name';
+
 CREATE VIEW intent_column_match_claim
   (graph_name, type_name, field_name, classifier, matched_name, matched_by,
    table_source_name, table_schema, table_name, column_name,
@@ -13054,70 +13435,6 @@ SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
   JOIN head h
     ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
  WHERE ob.source_name IS NOT NULL
-UNION ALL
--- A step with more than one move from where its walk stands, at the element that wrote it: two keys
--- between the table the walk stands at and a named table, or a key name two schemas share and both
--- of them touch. One row per element however many walks stopped there.
-SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
-       st.element_source_column, 'ROUTE_AMBIGUOUS', CAST(NULL AS VARCHAR)
-  FROM graphitron_field_path_stop st
- WHERE st.moves > 1
-UNION ALL
--- Where a walk broke: an element it could not step through, with no move from where it stood. The
--- element names nothing, or it names something and none of it leaves from there. A @routine moves
--- from wherever the walk stands, so one with no move names no routine with a generated call.
-SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
-       st.element_source_column,
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_path_element_key k
-                          WHERE k.graph_name = st.graph_name AND k.source_name = st.element_source_name
-                            AND k.source_line = st.element_source_line
-                            AND k.source_column = st.element_source_column)
-              OR EXISTS (SELECT 1 FROM graphitron_path_element_primary_key pk
-                          WHERE pk.graph_name = st.graph_name AND pk.source_name = st.element_source_name
-                            AND pk.source_line = st.element_source_line
-                            AND pk.source_column = st.element_source_column)
-              OR EXISTS (SELECT 1 FROM graphitron_path_element_table t
-                          WHERE t.graph_name = st.graph_name AND t.source_name = st.element_source_name
-                            AND t.source_line = st.element_source_line
-                            AND t.source_column = st.element_source_column)
-              OR EXISTS (SELECT 1 FROM graphitron_path_element_method m
-                          WHERE m.graph_name = st.graph_name AND m.source_name = st.element_source_name
-                            AND m.source_line = st.element_source_line
-                            AND m.source_column = st.element_source_column)
-            THEN 'NO_ROUTE_FROM_DEPARTURE' ELSE 'ELEMENT_UNRESOLVED' END, CAST(NULL AS VARCHAR)
-  FROM graphitron_field_path_stop st
- WHERE st.moves = 0
-UNION ALL
--- A routine step's parameter that binds nothing, at the @routine: an argMapping entry naming no
--- argument, a $source entry naming no column of the table the step departs, or a parameter no entry
--- names whose own name is no argument. The call has no value for it. One row per @routine however
--- many of its parameters do; which ones is graphitron_field_path_parameter_binding's to say.
-SELECT DISTINCT b.graph_name, b.element_source_name, b.element_source_line, b.element_source_column,
-       'ROUTINE_PARAMETER_UNBOUND', CAST(NULL AS VARCHAR)
-  FROM graphitron_field_path_parameter_binding b
- WHERE b.argument_name IS NULL AND b.from_column IS NULL
-UNION ALL
--- Where a walk took every written step and ended somewhere other than its target, at the last step,
--- whose element is the one that lands there: a walk with no stop, read at its last step. A target
--- with no table of its own, a scalar or a pivot read off the last table, has no table to miss.
-SELECT DISTINCT p.graph_name, p.element_source_name, p.element_source_line, p.element_source_column,
-       'NO_ROUTE_TO_TARGET', CAST(NULL AS VARCHAR)
-  FROM graphitron_field_path p
-  JOIN graphitron_field_target_table tt
-    ON tt.graph_name = p.graph_name AND tt.type_name = p.type_name AND tt.field_name = p.field_name
-  JOIN graphitron_tabletype b
-    ON b.graph_name = tt.graph_name AND b.type_name = tt.arriving_type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_field_path nx
-                    WHERE nx.graph_name = p.graph_name AND nx.type_name = p.type_name
-                      AND nx.field_name = p.field_name AND nx.start_source_name = p.start_source_name
-                      AND nx.start_schema = p.start_schema AND nx.start_table = p.start_table
-                      AND nx.position > p.position)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_path_stop st
-                    WHERE st.graph_name = p.graph_name AND st.type_name = p.type_name
-                      AND st.field_name = p.field_name AND st.start_source_name = p.start_source_name
-                      AND st.start_schema = p.start_schema AND st.start_table = p.start_table)
-   AND NOT (b.table_source_name = p.to_source_name AND b.table_schema = p.to_schema
-            AND b.table_name = p.to_table)
 UNION ALL
 -- An output field's need for a table-bound type that no claim covers, neither one at the field nor
 -- one at the same-named field of an interface its type implements, between two tables the paths
@@ -19285,6 +19602,9 @@ INSERT INTO meta_grain VALUES
   ('path-step',
    'one step one join path takes, in one graph',
    'graph_name, coordinate, target_type, position', 'sdl'),
+  ('path-step-move',
+   'one move one written element of one claim allows from one table, in one graph',
+   'graph_name, claim_coordinate, claim_target_type, position, from_table, to_table, move', 'sdl'),
   ('path-step-column',
    'one column pair one step of a join path joins on, in one graph',
    'graph_name, coordinate, target_type, position, ordinal', 'sdl'),
@@ -20186,6 +20506,14 @@ INSERT INTO meta_relation VALUES
    'One need whose join path stopped short: one row per need whose path met a step it could not take, with where and how many moves it found there.',
    'For example {key: "film_actor_actor_id_fkey"} written on a Film field stops the path from film at position 0, no move leaving film.',
    'A stop is a step not taken, which graphitron_join_path_step cannot hold, a row there being a step; a stopped need has its steps and its stop and no path row, a met need its path and its steps. It is the break the editor and the messages name, at the written element the author edits where there is one.'),
+  ('graphitron_join_path_claimed_rule', 'path-need', 'graphitron',
+   'The claim an output field''s need follows: one row per need of a field occurrence that a claim covers and walks to, with the claim and whether it is the field''s own or inherited.',
+   'For example Staff.homeAddress, writing nothing, follows (Person.homeAddress, Address) as INHERITED, and Store.people''s need for Staff follows its own @referenceFor, (Store.people, Staff).',
+   'The rule for graphitron_join_path_claimed, kept in the catalog where the gates reading stored definitions see what it reads. The precedence is the manual''s: the field''s own @referenceFor naming the type, then its own claim, then exactly one inherited, an extending interface overriding the one it extends and @referenceFor inherited member by member. The step stage walks each row and writes it beside the path once the walk reaches the target.'),
+  ('graphitron_join_path_step_rule', 'path-step-move', 'graphitron',
+   'A move one written element of a claim allows from a table: one row per claim, position, departure and move, and one row per element with no destination.',
+   'For example {key: "customer_address_id_fkey"} on Customer.address allows customer to address, and {table: "language"} on a Film field allows film to language over each of film''s two keys.',
+   'The walk as a flat rule over base tables: what one element allows from a table, independent of any need, so the step stage reads it once per position with the graph, the position and the instant bound and counts the moves each need finds. The row with no destination is what lets a need finding no move still name the element it stopped at.'),
   ('build_warning_stale_module_hint', 'stale-module-hint', 'derivation',
    'One graph whose run read a workspace module stale, and the clause its errors carry for it.',
    'For example a graph whose run read opptak-service stale, whose errors then end saying that one module was read stale and may be why.',

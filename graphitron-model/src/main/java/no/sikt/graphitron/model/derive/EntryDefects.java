@@ -39,8 +39,8 @@ import static org.jooq.impl.DSL.val;
  * being a number that moves.
  *
  * <p>The deciding argument is not the number, though, and would hold at a smaller one: the walk
- * already runs once per capture. {@link FieldPaths} stores every step the walk takes and every
- * place it stops, and a chain defect is read off those.
+ * already runs once per capture. {@link Steps} stores every step the walk takes and every place it
+ * stops, and writes the walk's own defects as it goes.
  * Computing them again per read is a second evaluation of a rule the capture has already run, which
  * is the shape this whole arc exists to remove rather than a cost to be weighed. The same holds
  * inside this stage: the chain arms read the stored walk rather than walking, because a walk named

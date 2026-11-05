@@ -28,6 +28,7 @@ import no.sikt.graphitron.model.derive.ProducerClaims;
 import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.SpelledTables;
+import no.sikt.graphitron.model.derive.Steps;
 import no.sikt.graphitron.model.derive.TypeBackings;
 import org.jooq.DSLContext;
 
@@ -133,6 +134,9 @@ public final class GraphitronAssemblyCapture {
         // Then the paths of the needs no claim covers, off the needs and the claims above: an empty
         // path where the need starts on its landing, an inferred one over the one foreign key.
         Paths.derive(dsl, graph, readAt);
+        // Then the needs a claim covers, walked a position at a time into their steps, each to its
+        // written or inherited path or to a stop, and the one step of each inferred path above.
+        Steps.derive(dsl, graph, readAt);
         // The key columns each node id at an occurrence carries, where the needs just written land,
         // then the column each other scalar occurrence reads or binds there.
         OccurrenceNodeIds.derive(dsl, graph, readAt);

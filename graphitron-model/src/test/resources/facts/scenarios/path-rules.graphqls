@@ -1,0 +1,164 @@
+# The path rules for output fields, one field per rule, over the sakila catalog. customer and staff
+# each have one key to address; customer has one key to store, staff two (staff.store_id, and
+# store.manager_staff_id back to it); film has two keys to language.
+#
+# A need a claim covers follows the claim: the field's own @referenceFor naming the type first, then
+# its own @reference, then the one claim inherited from an interface's same-named field. Its path is
+# walked one written element at a time and is WRITTEN or INHERITED once the walk reaches the target,
+# its target table the last step's. A need nothing covers is INFERRED over the one key joining its
+# two tables, and its one step rides that key. The defects these rules raise are
+# defects/path-rule-defects.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Store @table(name: "store") {
+  storeId: Int @field(name: "store_id")
+  "A key the departing table declares, ridden toward what it references."
+  manager: Staff @reference(path: [{key: "store_manager_staff_id_fkey"}])
+  "A target with no table of its own: Customer inferred, Staff stated."
+  people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+  "One method reused across members, one @referenceFor each: each overload is taken by its pair."
+  peopleByCondition: [Person!]!
+    @referenceFor(type: "Customer", path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "storePerson"}}])
+    @referenceFor(type: "Staff", path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "storePerson"}}])
+}
+
+"An interface no table backs: each implementation's path starts at its own table."
+interface Person {
+  "Inherited, and inferred from each implementation's one key to address."
+  address: Address
+  "Inherited, one condition, an overload per starting table: homeAddress(Customer, Address), homeAddress(Staff, Address)."
+  homeAddress: Address @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "homeAddress"}}])
+  "Inferred for Customer; ambiguous for Staff, which states its own."
+  store: Store
+}
+
+type Customer implements Person @table(name: "customer") {
+  address: Address
+  homeAddress: Address
+  store: Store
+  "A scalar path: a column reached through two keys."
+  city: String @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}]) @field(name: "city")
+}
+
+type Staff implements Person @table(name: "staff") {
+  address: Address
+  homeAddress: Address
+  "Overrides the inherited path, which cannot be inferred from staff."
+  store: Store @reference(path: [{key: "staff_store_id_fkey"}])
+}
+
+"A single-table interface: one table, members told apart by a column."
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
+type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+type ShortItem implements MediaItem @table(name: "film") @discriminator(value: "short") { title: String }
+
+type Language @table(name: "language") {
+  "The interface's own path, walked once for each member."
+  media: [MediaItem!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+extend type Query {
+  customers: [Customer!]!
+  staff: [Staff!]!
+  stores: [Store!]!
+  languages: [Language!]!
+}
+
+# Every path that is not empty, by where it came from: a row per type the need reaches, each member
+# of a single-table interface its own row.
+extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPTY'", rows: """
+  coordinate,                target_type, kind, origin
+  Customer.address,          Address,     JOIN, INFERRED
+  Customer.city,             String,      JOIN, WRITTEN
+  Customer.homeAddress,      Address,     JOIN, INHERITED
+  Customer.store,            Store,       JOIN, INFERRED
+  Language.media,            FilmItem,    JOIN, WRITTEN
+  Language.media,            ShortItem,   JOIN, WRITTEN
+  Staff.address,             Address,     JOIN, INFERRED
+  Staff.homeAddress,         Address,     JOIN, INHERITED
+  Staff.store,               Store,       JOIN, WRITTEN
+  Store.manager,             Staff,       JOIN, WRITTEN
+  Store.people,              Customer,    JOIN, INFERRED
+  Store.people,              Staff,       JOIN, WRITTEN
+  Store.peopleByCondition,   Customer,    JOIN, WRITTEN
+  Store.peopleByCondition,   Staff,       JOIN, WRITTEN
+  """)
+
+# What each reaches: a written path the last step's table, a scalar's included.
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,                target_type, target_table
+  Customer.city,             String,      city
+  Customer.homeAddress,      Address,     address
+  Language.media,            FilmItem,    film
+  Language.media,            ShortItem,   film
+  Staff.homeAddress,         Address,     address
+  Staff.store,               Store,       store
+  Store.people,              Staff,       staff
+  Store.peopleByCondition,   Customer,    customer
+  Store.peopleByCondition,   Staff,       staff
+  """)
+
+# The claim each written or inherited path follows: an inherited one the interface's field, in
+# whichever file it lies; a member of a single-table interface the field's own, the interface's.
+extend schema @expectEquals(relation: "graphitron_join_path_claimed", rows: """
+  coordinate,                target_type, claim_coordinate,         claim_target_type
+  Customer.city,             String,      Customer.city,            String
+  Customer.homeAddress,      Address,     Person.homeAddress,       Address
+  Language.media,            FilmItem,    Language.media,           MediaItem
+  Language.media,            ShortItem,   Language.media,           MediaItem
+  Staff.homeAddress,         Address,     Person.homeAddress,       Address
+  Staff.store,               Store,       Staff.store,              Store
+  Store.manager,             Staff,       Store.manager,            Staff
+  Store.people,             Staff,       Store.people,             Staff
+  Store.peopleByCondition,   Customer,    Store.peopleByCondition,  Customer
+  Store.peopleByCondition,   Staff,       Store.peopleByCondition,  Staff
+  """)
+
+# The scalar's two steps, each the written key at its place, and the inferred path's one step.
+extend schema @expectEquals(relation: "graphitron_join_path_step",
+    where: "coordinate IN ('Customer.city', 'Store.people')", rows: """
+  coordinate,     target_type, position, element_place, from_table, to_table
+  Customer.city,  String,      0,        0,             customer,   address
+  Customer.city,  String,      1,        1,             address,    city
+  Store.people,   Customer,    0,        ,              store,      customer
+  Store.people,   Staff,       0,        0,             store,      staff
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_key",
+    where: "coordinate = 'Customer.city'", rows: """
+  coordinate,     position, constraint_name
+  Customer.city,  0,        customer_address_id_fkey
+  Customer.city,  1,        address_city_id_fkey
+  """)
+
+extend schema @assertContains(relation: "graphitron_join_path_step_inferred_key", rows: """
+  coordinate,    target_type, position, constraint_name
+  Store.people,  Customer,    0,        customer_store_id_fkey
+  """)
+
+# A key ridden from its declaring table joins its own column to the one it references, store's
+# manager_staff_id to staff's staff_id; ridden against it, store to staff, store's key to staff's
+# column.
+extend schema @expectEquals(relation: "graphitron_join_path_step_column",
+    where: "coordinate IN ('Store.people', 'Store.manager')", rows: """
+  coordinate,    target_type, position, ordinal, from_table, from_column,      to_table, to_column
+  Store.manager, Staff,       0,        0,       store,      manager_staff_id, staff,    staff_id
+  Store.people,  Customer,    0,        0,       store,      store_id,         customer, store_id
+  Store.people,  Staff,       0,        0,       store,      store_id,         staff,    store_id
+  """)
+
+# One written condition resolved twice, by the overload each starting table takes, and one method
+# reused across two @referenceFor, each taken by its own pair.
+extend schema @expectEquals(relation: "graphitron_join_path_step_method", rows: """
+  coordinate,               target_type, position, method_name, method_descriptor
+  Customer.homeAddress,     Address,     0,        homeAddress, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  Staff.homeAddress,        Address,     0,        homeAddress, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Staff;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  Store.peopleByCondition,  Customer,    0,        storePerson, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Store;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;)Lorg/jooq/Condition;
+  Store.peopleByCondition,  Staff,       0,        storePerson, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Store;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Staff;)Lorg/jooq/Condition;
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_join_path_stop", rows: """
+  coordinate
+  Staff.store
+  Store.peopleByCondition
+  """)

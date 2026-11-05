@@ -23,7 +23,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
  * both or because several do with none more specific. The verdict is the stored
  * {@code graphitron_entry_defect} row at the {@code {condition:}} element, which the editor reads
  * through the {@code diagnostic} view; what this class adds is the field the element belongs to and
- * the message, which names the method and quotes the row's detail. {@link FieldPaths} writes the
+ * the message, which names the method and quotes the row's detail. {@link Steps} writes the
  * rows, in the pass that picks each step's method.
  *
  * <p>Every relation it names is a table, so it expands no rule on a read. Every row is read: a row
@@ -34,10 +34,10 @@ public final class ConditionOverloadDefects {
     private ConditionOverloadDefects() {}
 
     /** The defect code for a step no declaration of the method takes. */
-    public static final String NO_OVERLOAD = FieldPaths.NO_OVERLOAD_FOR_PAIR;
+    public static final String NO_OVERLOAD = Steps.NO_OVERLOAD_FOR_PAIR;
 
     /** The defect code for a step several declarations take with none more specific. */
-    public static final String TIE = FieldPaths.OVERLOAD_TIE;
+    public static final String TIE = Steps.OVERLOAD_TIE;
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,

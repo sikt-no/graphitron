@@ -95,14 +95,30 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   INHERITED_PATH_AMBIGUOUS, Staff.address,       Addressed and Located
   """)
 
-# The defective needs have no path, nor do the covered ones; the needs nothing covers that one key
-# joins are inferred, and the narrowed field's argument starts and lands on film, an empty path.
+# The defective needs have no path; the needs nothing covers that one key joins are inferred, and the
+# narrowed field's argument starts and lands on film, an empty path. A covered need's path is its
+# claim's, walked: an inherited claim INHERITED, the one Derived overrides Base with included, and the
+# field's own WRITTEN, the root routine's on the derived table it returns.
 extend schema @expectEquals(relation: "graphitron_path",
     where: "origin <> 'EMPTY' OR coordinate = 'Film.sameTableById(filmId:)'", rows: """
-  coordinate,                    target_type, kind, origin
-  Film.sameTableById(filmId:),   Film,        JOIN, EMPTY
-  Mutation.rentFilm.rental,      Rental,      JOIN, INFERRED
-  Store.peopleInferred,          Customer,    JOIN, INFERRED
+  coordinate,                    target_type,     kind, origin
+  Customer.address,              Address,         JOIN, INHERITED
+  Customer.home,                 Address,         JOIN, INHERITED
+  Film.sameTableById(filmId:),   Film,            JOIN, EMPTY
+  Mutation.rentFilm,             RentFilmPayload, JOIN, WRITTEN
+  Mutation.rentFilm.rental,      Rental,          JOIN, INFERRED
+  Store.people,                  Customer,        JOIN, INHERITED
+  Store.people,                  Staff,           JOIN, WRITTEN
+  Store.peopleInferred,          Customer,        JOIN, INFERRED
+  Store.peopleInferred,          Staff,           JOIN, WRITTEN
+  """)
+
+# Derived's key, not Base's table, is the inherited path Customer.home follows.
+extend schema @expectEquals(relation: "graphitron_join_path_claimed",
+    where: "coordinate IN ('Customer.address', 'Customer.home')", rows: """
+  coordinate,        target_type, claim_coordinate,  claim_target_type
+  Customer.address,  Address,     Addressed.address, Address
+  Customer.home,     Address,     Derived.home,      Address
   """)
 
 extend schema @assertAbsent(relation: "graphitron_path", rows: """
@@ -111,10 +127,7 @@ extend schema @assertAbsent(relation: "graphitron_path", rows: """
   Film.sameTableById
   Film.language
   Mutation.rentFilm.customer
-  Customer.address
-  Customer.home
   Staff.address
-  Store.people
   """)
 
 # Interface-to-interface implementation is a row of its own, which is what lets Derived override

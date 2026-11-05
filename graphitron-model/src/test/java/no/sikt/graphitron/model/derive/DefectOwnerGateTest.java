@@ -139,7 +139,7 @@ class DefectOwnerGateTest {
      * runs them, with the codes each states beside its statement.
      */
     private static Map<String, List<String>> javaWriters() {
-        return Map.of("graphitron", FieldPaths.ENTRY_DEFECT_CODES);
+        return Map.of("graphitron", Steps.ENTRY_DEFECT_CODES);
     }
 
     private static String ownerOf(DSLContext dsl, String relation) {

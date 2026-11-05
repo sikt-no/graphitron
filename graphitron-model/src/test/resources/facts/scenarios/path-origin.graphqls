@@ -1,10 +1,10 @@
-# The paths of the needs no claim covers, each a JOIN path with the table it reaches. A need starting
+# The paths of the needs, each a JOIN path with the table it reaches. A need starting
 # where it lands is EMPTY, its target its start: an argument or input field with nothing written, a
 # target bound to no table, a scalar or a nested object, and a field a producer lifted onto its
 # target's table: a write payload's data field, a field read off a handed-back record, and a child
 # whose own service hands back its target's records. An output field between two tables one foreign
-# key joins is INFERRED, its target its landing. A need a claim covers has no path here: its path is
-# the claim's, written once its steps reach the target. The schema is scenarios/path-need's, with
+# key joins is INFERRED, its target its landing. A need a claim covers has the claim's path, WRITTEN
+# once its steps reach the target. The schema is scenarios/path-need's, with
 # FilmActor.film added for a plain inferred field and Film.languageByService for a child service.
 
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
@@ -135,11 +135,22 @@ type Mutation {
 }
 
 
-# Every path that is not empty: the two output fields between two tables one key joins.
+# Every path that is not empty: the two output fields between two tables one key joins, and each
+# need a claim covers, its path walked: a written path, a @referenceFor, a single-table interface's
+# implementation, the field of a service's carrier, a scalar, a plain type reached by a path, and a
+# root field's @routine, its path ending on the derived table it returns.
 extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPTY'", rows: """
-  coordinate,      target_type, kind, origin
-  Film.actorRows,  FilmActor,   JOIN, INFERRED
-  FilmActor.film,  Film,        JOIN, INFERRED
+  coordinate,                      target_type,     kind, origin
+  Film.actorRows,                  FilmActor,       JOIN, INFERRED
+  Film.castFilms,                  ActorFilm,       JOIN, WRITTEN
+  Film.languageName,               String,          JOIN, WRITTEN
+  Film.titleTexts,                 TranslatedTexts, JOIN, WRITTEN
+  FilmActor.credits,               Film,            JOIN, WRITTEN
+  FilmActor.credits,               Language,        JOIN, WRITTEN
+  FilmActor.film,                  Film,            JOIN, INFERRED
+  FilmActor.media,                 Film,            JOIN, WRITTEN
+  Query.filmDetailsBatch.language, Language,        JOIN, WRITTEN
+  Query.rows,                      Row,             JOIN, WRITTEN
   """)
 
 # An empty path for a scalar, a nested object and its field, an argument, an input field, a write
@@ -178,14 +189,12 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
   Film.languageByService,  language
   """)
 
-# A need its own claim covers has no path yet, a written path, a @referenceFor and the field of a
-# service's carrier alike; nor does a need landing on no table yet.
-extend schema @assertAbsent(relation: "graphitron_path", rows: """
-  coordinate
-  FilmActor.media
-  FilmActor.credits
-  Query.filmDetailsBatch.language
-  Film.languageName
-  Film.titleTexts
-  Film.castFilms
+# A written path reaches where its last step lands: a scalar the table its column is read from, a
+# plain type the table a path names, and a path ending on a @routine the function's derived table.
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,         target_type,     target_table
+  Film.languageName,  String,          language
+  Film.titleTexts,    TranslatedTexts, film_translation
+  Film.castFilms,     ActorFilm,       films_for_actor
+  Query.rows,         Row,             films_for_actor
   """)

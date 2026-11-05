@@ -1,0 +1,137 @@
+# The path rules' defects for output fields, beside scenarios/path-rules. A walked claim reports at
+# the written element it is about, which for an inherited claim is the interface's: an element with
+# no move from where the path stands is NO_ROUTE_FROM_DEPARTURE, naming why where a condition alone
+# takes any table as its second parameter, one with several ROUTE_AMBIGUOUS, a
+# walk taking every step and ending off its target NO_ROUTE_TO_TARGET at its last step's element, and
+# a condition step whose two tables no overload takes, or two take with neither more specific,
+# CONDITION_NO_OVERLOAD_FOR_PAIR or CONDITION_OVERLOAD_TIE. A stopped need keeps the steps it took
+# and has no path; a walk that reached its target has one, whatever its condition's overload. A need
+# nothing covers is judged at the field's declaration, and a claim on a target with no one table at
+# the claim.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Film @table(name: "film") { title: String }
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
+type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+type ShortItem implements MediaItem @table(name: "film") @discriminator(value: "short") { title: String }
+
+interface Person {
+  "Only customerOnlyAddress(Customer, Address) is declared, so no move leaves staff."
+  customerAddress: Address @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "customerOnlyAddress"}}])
+  "A table and a condition: staff reaches address by its one key, and no overload takes the pair."
+  filteredAddress: Address @reference(path: [{table: "address", condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "customerOnlyAddress"}}])
+}
+
+type Customer implements Person @table(name: "customer") {
+  customerAddress: Address
+  filteredAddress: Address
+  "tiedAddress(Customer, Table<?>) and tiedAddress(Table<?>, Address) each take customer to address, neither more specific."
+  tied: Address @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.PathRulesFixtures", method: "tiedAddress"}}])
+  """
+  A condition alone whose second parameter takes any table, customerToAnyTable(Customer, Table<?>):
+  it says nowhere to arrive, which is not supported, so no move leaves customer.
+  """
+  anyTable: Address @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "customerToAnyTable"}}])
+  "Every step taken, and the path ends on store rather than address."
+  wrongAddress: Address @reference(path: [{key: "customer_store_id_fkey"}])
+  "The first step taken, the second leaving from film, which the path does not stand at."
+  brokenCity: String @reference(path: [{key: "customer_address_id_fkey"}, {key: "film_language_id_fkey"}]) @field(name: "city")
+}
+
+type Staff implements Person @table(name: "staff") {
+  customerAddress: Address
+  filteredAddress: Address
+}
+
+type Language @table(name: "language") {
+  """
+  A member of a single-table interface reached by another key. The store walks it; the generator
+  refuses @referenceFor on a field with no participant set, so it is not in scenarios/path-rules.
+  """
+  mediaByMember: [MediaItem!]!
+    @reference(path: [{key: "film_language_id_fkey"}])
+    @referenceFor(type: "ShortItem", path: [{key: "film_original_language_id_fkey"}])
+  "Two keys from language to film and no path: ambiguous, at the declaration."
+  films: [Film!]!
+  "Two keys from language to film, and the written table names neither: ambiguous, at the element."
+  filmsByTable: [Film!]! @reference(path: [{table: "film"}])
+}
+
+type Store @table(name: "store") {
+  storeId: Int @field(name: "store_id")
+  "A @reference on a target with no table to land on."
+  peopleByKey: [Person!]! @reference(path: [{key: "customer_store_id_fkey"}])
+}
+
+extend type Query {
+  customers: [Customer!]!
+  staff: [Staff!]!
+  languages: [Language!]!
+  stores: [Store!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('NO_ROUTE_FROM_DEPARTURE', 'ROUTE_AMBIGUOUS', 'NO_ROUTE_TO_TARGET', 'CONDITION_NO_OVERLOAD_FOR_PAIR', 'CONDITION_OVERLOAD_TIE', 'REFERENCE_WITHOUT_TARGET_TABLE', 'ELEMENT_UNRESOLVED')", rows: """
+  code,                           detail,                                                                                     coordinate
+  CONDITION_NO_OVERLOAD_FOR_PAIR, staff to address,                                                                           Person.filteredAddress
+  CONDITION_OVERLOAD_TIE,         "customer to address: tiedAddress(Customer, Table<?>), tiedAddress(Table<?>, Address)",     Customer.tied
+  NO_ROUTE_FROM_DEPARTURE,        "the condition's second parameter takes any table, so the path does not say where it arrives; type the parameter with the table it joins to", Customer.anyTable
+  NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Customer.brokenCity
+  NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Person.customerAddress
+  NO_ROUTE_TO_TARGET,             ,                                                                                           Customer.wrongAddress
+  REFERENCE_WITHOUT_TARGET_TABLE, Person,                                                                                     Store.peopleByKey
+  ROUTE_AMBIGUOUS,                public.language to public.film by film_language_id_fkey or film_original_language_id_fkey,  Language.films
+  ROUTE_AMBIGUOUS,                ,                                                                                           Language.filmsByTable
+  """)
+
+# Under the overload defects, the declarations they are about: for a tie the two competing, for no
+# overload every declaration the element names.
+extend schema @expectEquals(relation: "graphitron_entry_defect_method", rows: """
+  code,                           method_name,          method_descriptor
+  CONDITION_NO_OVERLOAD_FOR_PAIR, customerOnlyAddress,  (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  CONDITION_OVERLOAD_TIE,         tiedAddress,          (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lorg/jooq/Table;)Lorg/jooq/Condition;
+  CONDITION_OVERLOAD_TIE,         tiedAddress,          (Lorg/jooq/Table;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
+  """)
+
+# Where each walk stopped, with the moves it found; the step before a stop is kept.
+extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
+  coordinate,              target_type, position, element_place, moves
+  Customer.anyTable,       Address,     0,        0,             0
+  Customer.brokenCity,     String,      1,        1,             0
+  Language.filmsByTable,   Film,        0,        0,             2
+  Staff.customerAddress,   Address,     0,        0,             0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step",
+    where: "coordinate IN ('Customer.brokenCity', 'Customer.wrongAddress')", rows: """
+  coordinate,             target_type, position, from_table, to_table
+  Customer.brokenCity,    String,      0,        customer,   address
+  Customer.wrongAddress,  Address,     0,        customer,   store
+  """)
+
+# A stopped need has no path, nor does a walk ending off its target; a walk that reached its target
+# has one, its condition's overload being the defect's to judge.
+extend schema @expectEquals(relation: "graphitron_path", where: "origin IN ('WRITTEN', 'INHERITED')", rows: """
+  coordinate,                target_type, origin
+  Customer.customerAddress,  Address,     INHERITED
+  Customer.filteredAddress,  Address,     INHERITED
+  Customer.tied,             Address,     WRITTEN
+  Language.mediaByMember,    FilmItem,    WRITTEN
+  Language.mediaByMember,    ShortItem,   WRITTEN
+  Staff.filteredAddress,     Address,     INHERITED
+  """)
+
+# Each member follows its own @referenceFor where it has one, else the field's own claim.
+extend schema @expectEquals(relation: "graphitron_join_path_claimed",
+    where: "coordinate = 'Language.mediaByMember'", rows: """
+  coordinate,              target_type, claim_coordinate,        claim_target_type
+  Language.mediaByMember,  FilmItem,    Language.mediaByMember,  MediaItem
+  Language.mediaByMember,  ShortItem,   Language.mediaByMember,  ShortItem
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_key",
+    where: "coordinate = 'Language.mediaByMember'", rows: """
+  coordinate,              target_type, position, constraint_name
+  Language.mediaByMember,  FilmItem,    0,        film_language_id_fkey
+  Language.mediaByMember,  ShortItem,   0,        film_original_language_id_fkey
+  """)
