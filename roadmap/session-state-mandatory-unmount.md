@@ -1,7 +1,7 @@
 ---
 id: R1151
 title: "Require an unmount on SessionState so identity never rests on a pooled connection"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: runtime-connection
@@ -80,3 +80,14 @@ A required unmount can still be `s -> {}` on a mount that does set state. The co
 ## Provenance
 
 Found in an adversarial review of the owned-connection session lifecycle, prompted by a consumer asking whether `app.claims` can leak between requests. Siblings filed from the same review: R1152 (reset at release), R1153 (pool execution tests), R1154 (single-tenant carrier acquisition after release), R1155 (escape-hatch identity example).
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, signed off (session_01FY5UvsFUbYCtxEERLrkDPp, 2026-11-05)
+
+Read against trunk `a5b2aea`. The plan was written by session `01FY5UvuWneQFNFz7rjEhBEJ` (`22b2409`); this session wrote only this round and the status flip.
+
+* **Goal well communicated and viable.** Yes. The first paragraph says what a consumer sees change (a mount-only `SessionState` no longer compiles; every released connection has run the consumer's clear) and why the overwrite argument it retires does not hold. Every edit site the plan names exists as described: `of(Mount)` with its `null` unmount, the `if (unmount != null)` guard, the three javadoc sites, `SessionStateBinding`, `SessionStates.convertedTenant` as the one mount-only caller, and the three doc pages.
+* **Fits the architecture we have.** Yes. Release already unmounts on every session-identity build (`pinnedConnection` derives `unmounts` from `emitsHookImplementation()`), so the change narrows the emitted factory rather than adding a mechanism.
+
+One site the Implementation list misses, which the retirement sweep catches: the `release()` javadoc in `pinnedConnection` carries a `mounts`-only clause ("the next request's mount overwrites this one's identity wholesale, the mount-only contract") inside the `!unmounts` arm. Since `mounts` and `unmounts` are the same fact, that clause is unreachable; drop it with the rest of the retired vocabulary.
