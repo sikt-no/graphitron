@@ -1,7 +1,7 @@
 ---
 id: R1158
 title: "Release pinned connections when execution aborts synchronously"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: runtime-connection
@@ -89,7 +89,7 @@ Interaction with R1154: on a synchronous abort, a consumer fetcher that returned
 
 ## Documentation
 
-`docs/architecture/reference/runtime-extension-points.adoc`, owned-connection section: the sentence that release runs "on every completion path" gains "including a query cancelled through `ExecutionInput.cancel()` or abandoned by an exception during dispatch", so a consumer wiring client disconnects to cancellation knows it is safe.
+`docs/architecture/reference/runtime-extension-points.adoc`, owned-connection section: the sentence that Graphitron "runs your unmount callback and releases the connection" gains "on every completion path, including a query cancelled through `ExecutionInput.cancel()` or abandoned by an exception during dispatch", so a consumer wiring client disconnects to cancellation knows it is safe.
 
 ## Other solutions we've considered
 
