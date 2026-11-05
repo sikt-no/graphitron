@@ -299,9 +299,8 @@ public final class EmittedAnchor {
      *
      * <p>Nor may one of them be picked. That would put a shape in the emitted population no
      * application asked for and nothing records. So the coordinate is withheld from every arm below
-     * and a row here says why, on {@code intent_authored_claim_conflict}'s terms. What each
-     * application would have written is not copied: the minted relations keep it, keyed by the
-     * coordinate that coined each.
+     * and a row here says why. What each application would have written is not copied: the minted
+     * relations keep it, keyed by the coordinate that coined each.
      *
      * <p>Cleared and refilled rather than upserted, which the anchors themselves cannot be: nothing
      * keys into this relation, so emptying it takes nothing with it, and a conflict an edit resolved

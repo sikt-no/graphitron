@@ -1,8 +1,8 @@
 # What an author says a type stands for is its claim: rows of a table (TABLE_TYPE), or an error
 # its handlers fill from an exception (ERROR_TYPE). A type claims where it is declared, whether or
 # not any field reaches it, and an extension's directive claims for the type it extends. A type
-# claiming both is a conflict, which is the claims-conflict document's; here it is two rows. A type
-# with no claiming directive has none.
+# claiming both is a conflict, which the claims-conflict document holds. A type with no claiming
+# directive has none.
 
 type Film @table(name: "film") { title: String }
 
@@ -11,8 +11,6 @@ interface Content @table(name: "film") { title: String }
 input FilmInput @table(name: "film") { title: String }
 
 type FilmNotFound @error(handlers: [{handler: DATABASE}]) { message: String }
-
-type Both @table(name: "film") @error(handlers: [{handler: DATABASE}]) { title: String }
 
 type Extended { title: String }
 extend type Extended @table(name: "film")
@@ -28,8 +26,6 @@ extend schema @expectEquals(relation: "graphitron_claim", where: """
   kind IN ('TABLE_TYPE', 'ERROR_TYPE') AND coordinate <> 'FactAnchor'
   """, rows: """
   coordinate,   kind,       priority
-  Both,         ERROR_TYPE, 0
-  Both,         TABLE_TYPE, 0
   Content,      TABLE_TYPE, 0
   Extended,     TABLE_TYPE, 0
   Film,         TABLE_TYPE, 0

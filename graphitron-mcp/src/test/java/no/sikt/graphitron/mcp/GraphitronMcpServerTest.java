@@ -1094,7 +1094,7 @@ class GraphitronMcpServerTest {
         assertThat(claims).singleElement().satisfies(claim -> assertThat(claim)
             .containsEntry("classifier", "TABLE")
             .containsEntry("trigger", "@table")
-            .containsEntry("decoded", true));
+            .doesNotContainKey("decoded"));
 
         // The binding carries the table's full key and the arity of the reference that reached it.
         assertThat((List<Map<String, Object>>) film.get("tables"))

@@ -37,10 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the argument types of the specification's own directives, which survive into the emitted schema
  * and therefore seed exactly as an author's directive definition does.
  *
- * <p>What a consumer makes of these rows is not asked here. The authored-claim conflict detection
- * joins them as its build-error population and
- * {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} carries that. What stands
- * here is that an author's schema reaches the membership the seed rule promises.
+ * <p>What a consumer makes of these rows is not asked here. What stands here is that an author's
+ * schema reaches the membership the seed rule promises.
  */
 @PipelineTier
 class ClassificationDomainTest {

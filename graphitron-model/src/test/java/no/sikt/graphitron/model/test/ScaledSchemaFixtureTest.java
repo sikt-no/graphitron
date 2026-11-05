@@ -22,7 +22,6 @@ class ScaledSchemaFixtureTest {
         "graphitron_entry_defect",
         "graphql_schema_problem",
         "graphitron_minted_conflict",
-        "intent_authored_claim_rejection",
         "rejection_validation_error",
         "rejection_validation_error_directive",
         "intent_argmapping_projection_defect",

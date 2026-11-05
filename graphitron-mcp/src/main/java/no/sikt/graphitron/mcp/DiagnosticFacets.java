@@ -19,9 +19,11 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
 
@@ -248,10 +250,11 @@ final class DiagnosticFacets {
         /**
          * A directive name the finding's claims include, without the leading {@code @}. Reaches the
          * two arms that carry directives at all: the residue's ordered directive child under its
-         * error's key, and the store-native pilot's claim rows under the violated coordinate.
+         * error's key, and a claim defect's claims and path steps under the defect's own key.
          *
-         * <p>Correlated on the identity the view publishes for a directive-bearing row, which is
-         * its graph, its variant and its coordinate. Two findings of one variant at one coordinate
+         * <p>Correlated on the identity the view publishes for a directive-bearing row: the
+         * residue's graph, variant and coordinate, and an entry defect's position and code. Two
+         * findings of one variant at one coordinate
          * would answer as one, which is a grain this filter states rather than hides; the axis it
          * replaced could not distinguish them either.
          */
@@ -303,10 +306,9 @@ final class DiagnosticFacets {
      * Whether the diagnostic's own claims include {@code directive}: the membership join behind
      * {@link Filter#DIRECTIVE}, one arm per relation that holds a finding's directives as rows.
      *
-     * <p>The pilot arms correlate through {@code intent_authored_claim_rejection} rather than by
-     * testing the view's {@code variant} against a spelled class name. The minted row carries the
-     * spelling, so the correlation proves the arm instead of restating it, and a rejection leaf's
-     * rename cannot leave a stale literal here.
+     * <p>A claim defect's claims are rows under it, correlated to the diagnostic row by the defect's
+     * position and its code's editor spelling, and each claim's directive is the application written
+     * at the claim's position; a path step under it is a {@code @routine}.
      */
     private static Condition involvesDirective(String directive) {
         var residue = DSL.exists(DSL.selectOne()
@@ -321,35 +323,30 @@ final class DiagnosticFacets {
                 REJECTION_VALIDATION_ERROR.TYPE_NAME.isNotDistinctFrom(DIAGNOSTIC.TYPE_NAME),
                 REJECTION_VALIDATION_ERROR.FIELD_NAME.isNotDistinctFrom(DIAGNOSTIC.FIELD_NAME),
                 REJECTION_VALIDATION_ERROR_DIRECTIVE.DIRECTIVE.eq(directive)));
-        var pilotTypeGrain = DSL.exists(DSL.selectOne()
-            .from(INTENT_AUTHORED_CLAIM_REJECTION)
-            .join(INTENT_AUTHORED_TYPE_CLAIM)
-            .on(INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME
-                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME),
-                INTENT_AUTHORED_TYPE_CLAIM.TYPE_NAME
-                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME))
-            .where(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME),
-                INTENT_AUTHORED_CLAIM_REJECTION.VARIANT.eq(DIAGNOSTIC.VARIANT),
-                INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME.isNotDistinctFrom(DIAGNOSTIC.TYPE_NAME),
-                INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME.isNull(),
-                DIAGNOSTIC.FIELD_NAME.isNull(),
-                INTENT_AUTHORED_TYPE_CLAIM.TRIGGER.eq(directive)));
-        var pilotFieldGrain = DSL.exists(DSL.selectOne()
-            .from(INTENT_AUTHORED_CLAIM_REJECTION)
-            .join(INTENT_AUTHORED_FIELD_CLAIM)
-            .on(INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME
-                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME),
-                INTENT_AUTHORED_FIELD_CLAIM.TYPE_NAME
-                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME),
-                INTENT_AUTHORED_FIELD_CLAIM.FIELD_NAME
-                    .eq(INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME))
-            .where(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME),
-                INTENT_AUTHORED_CLAIM_REJECTION.VARIANT.eq(DIAGNOSTIC.VARIANT),
-                INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME.isNotDistinctFrom(DIAGNOSTIC.TYPE_NAME),
-                INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME
-                    .isNotDistinctFrom(DIAGNOSTIC.FIELD_NAME),
-                INTENT_AUTHORED_FIELD_CLAIM.TRIGGER.eq(directive)));
-        return residue.or(pilotTypeGrain).or(pilotFieldGrain);
+        var ec = GRAPHITRON_ENTRY_DEFECT_CLAIM;
+        var c = GRAPHITRON_CLAIM;
+        var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var type = GRAPHITRON_DEFECT_TYPE;
+        var claim = DSL.exists(DSL.selectOne()
+            .from(ec)
+            .join(type).on(type.CODE.eq(ec.CODE))
+            .join(c).on(c.GRAPH_NAME.eq(ec.GRAPH_NAME), c.COORDINATE.eq(ec.COORDINATE),
+                c.KIND.eq(ec.KIND), c.CLAIMER.eq(ec.CLAIMER))
+            .join(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.SOURCE_NAME.eq(c.SOURCE_NAME),
+                da.SOURCE_LINE.eq(c.SOURCE_LINE), da.SOURCE_COLUMN.eq(c.SOURCE_COLUMN))
+            .where(ec.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ec.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
+                ec.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
+                ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), type.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE),
+                da.DIRECTIVE_NAME.eq(directive)));
+        var ps = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
+        var step = DSL.exists(DSL.selectOne()
+            .from(ps)
+            .join(type).on(type.CODE.eq(ps.CODE))
+            .where(ps.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ps.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
+                ps.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
+                ps.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), type.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE),
+                DSL.inline("routine").eq(directive)));
+        return residue.or(claim).or(step);
     }
 
     /**

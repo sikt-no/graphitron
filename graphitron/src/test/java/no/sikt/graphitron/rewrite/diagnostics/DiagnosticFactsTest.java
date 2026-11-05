@@ -9,7 +9,7 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;
 import no.sikt.graphitron.model.compile.CompileRound;
-import no.sikt.graphitron.model.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.model.derive.ClaimConflicts;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -41,6 +41,9 @@ import static no.sikt.graphitron.model.test.FactWriters.compileFacts;
 import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
@@ -49,6 +52,8 @@ import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX_EDIT;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
+import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.select;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -307,8 +312,8 @@ class DiagnosticFactsTest {
     }
 
     @Test
-    @DisplayName("the pilot arm carries the report's own message and the canonical file spelling")
-    void pilotArmMessageMatchesTheReports() {
+    @DisplayName("a claim conflict's row names the report's directives and the canonical file spelling")
+    void claimConflictRowNamesTheReportsDirectives() {
         var sdl = """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node {
@@ -319,22 +324,35 @@ class DiagnosticFactsTest {
         Path file = write(tmp, sdl);
         withStore(dsl -> {
             CapturedStore.capture(dsl, graph(), CapturedStore.corpusOf(List.of(file), tmp), null);
-            var expected = AuthoredClaimConflicts.detect(dsl, GRAPH).violations();
-            assertThat(expected).hasSize(1);
+            var expected = ClaimConflicts.detect(dsl, GRAPH).violations();
+            assertThat(expected).extracting(v -> v.message())
+                .containsExactly("Field 'Film.id': @service, @nodeId are mutually exclusive");
 
-            var rows = dsl.selectFrom(DIAGNOSTIC).where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).fetch();
+            var ec = GRAPHITRON_ENTRY_DEFECT_CLAIM;
+            var c = GRAPHITRON_CLAIM;
+            var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+            var directives = multiset(select(da.DIRECTIVE_NAME)
+                    .from(ec)
+                    .join(c).on(c.GRAPH_NAME.eq(ec.GRAPH_NAME), c.COORDINATE.eq(ec.COORDINATE),
+                        c.KIND.eq(ec.KIND), c.CLAIMER.eq(ec.CLAIMER))
+                    .join(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.SOURCE_NAME.eq(c.SOURCE_NAME),
+                        da.SOURCE_LINE.eq(c.SOURCE_LINE), da.SOURCE_COLUMN.eq(c.SOURCE_COLUMN))
+                    .where(ec.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ec.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
+                        ec.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
+                        ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN)))
+                .convertFrom(r -> r.map(x -> x.value1()));
+            var rows = dsl.select(DIAGNOSTIC.COORDINATE, DIAGNOSTIC.LSP_CODE, DIAGNOSTIC.FILE, directives)
+                .from(DIAGNOSTIC).where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).fetch();
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
-            assertThat(row.getMessage())
-                .as("the view's rendered message is byte-identical to the report's for this family")
-                .isEqualTo(expected.getFirst().message());
-            assertThat(row.getVariant())
-                .as("the variant is minted from the rejection's own class, not spelled in SQL")
-                .isEqualTo("Rejection.InvalidSchema.DirectiveConflict");
-            assertThat(row.getCoordinate()).isEqualTo("Film.id");
-            assertThat(row.getFile())
-                .as("the pilot arm projects capture's own source name, one spelling with the "
-                    + "loaded arms and no conversion between them")
+            assertThat(row.value1()).isEqualTo("Film.id");
+            assertThat(row.value2()).isEqualTo("GRAPHITRON_CLAIMS_CONFLICT");
+            assertThat(row.value4())
+                .as("the claims under the defect were written by the directives the report names")
+                .containsExactlyInAnyOrder("service", "nodeId");
+            assertThat(row.value3())
+                .as("the entry-defect arm projects capture's own source name, one spelling with "
+                    + "the loaded arms and no conversion between them")
                 .isEqualTo(file.toString());
         });
     }

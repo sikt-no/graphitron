@@ -43,10 +43,9 @@ import static org.jooq.impl.DSL.selectOne;
  * in one line of the author's own signature, or by binding the argument onto a key column with
  * {@code argMapping}, and no arm here fails while promising an emitter later.
  *
- * <p>The population is the view's and this class narrows it once more, on the terms
- * {@link AuthoredClaimConflicts} settled: the view states its whole predicate and no consumer's
- * filter, and this is the <em>build-error</em> consumer, so it joins {@code intent_type_domain} on
- * the refused coordinate's owning type. Only a coordinate the generator intends to classify can fail
+ * <p>The population is the view's and this class narrows it once more: the view states its whole
+ * predicate and no consumer's filter, and this is the <em>build-error</em> consumer, so it joins
+ * {@code intent_type_domain} on the refused coordinate's owning type. Only a coordinate the generator intends to classify can fail
  * a build. The editor's diagnostic arm asks a different question of the same rows and joins nothing,
  * a refused instruction at an unreached coordinate being exactly where an author most needs to be
  * told, which is why the filter lives here rather than in the view.

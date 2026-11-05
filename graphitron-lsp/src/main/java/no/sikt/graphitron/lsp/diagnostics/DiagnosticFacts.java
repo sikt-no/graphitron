@@ -9,6 +9,7 @@ import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
+import no.sikt.graphitron.model.derive.AuthoredClaim;
 import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
@@ -19,16 +20,24 @@ import org.jooq.Select;
 import org.jooq.TableField;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
@@ -837,7 +846,8 @@ final class DiagnosticFacts {
     /**
      * What the last build recorded about the batch's files, read from the one surface the diagnostics
      * stratum publishes. Every schema-side arm of that view rides in: the walk's rejection residue,
-     * the claim-conflict detection, the lint findings and the advisory warnings, and the parser's and
+     * the entry defects with a claim conflict's directives quoted back from its claims, the lint
+     * findings and the advisory warnings, and the parser's and
      * the schema assembler's own refusals, which the language server never surfaced before because a
      * schema that would not assemble produced no report to replay.
      *
@@ -847,8 +857,36 @@ final class DiagnosticFacts {
      * reads.
      */
     private static Field<List<ReplayRow>> replayArm(StoreHandle store, Collection<String> files) {
+        // A claim defect's directives, the application written at each claim's position and
+        // @routine for each path step, quoted back after the message the way the view quotes a
+        // defect's detail, in the order a build names them.
+        var ec = GRAPHITRON_ENTRY_DEFECT_CLAIM;
+        var c = GRAPHITRON_CLAIM;
+        var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var dt = GRAPHITRON_DEFECT_TYPE;
+        var ps = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
+        var claimDirectives = multiset(select(da.DIRECTIVE_NAME)
+                .from(ec)
+                .join(dt).on(dt.CODE.eq(ec.CODE))
+                .join(c).on(c.GRAPH_NAME.eq(ec.GRAPH_NAME), c.COORDINATE.eq(ec.COORDINATE),
+                    c.KIND.eq(ec.KIND), c.CLAIMER.eq(ec.CLAIMER))
+                .join(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.SOURCE_NAME.eq(c.SOURCE_NAME),
+                    da.SOURCE_LINE.eq(c.SOURCE_LINE), da.SOURCE_COLUMN.eq(c.SOURCE_COLUMN))
+                .where(ec.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ec.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
+                    ec.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
+                    ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+            .convertFrom(rows -> rows.map(r -> r.value1()));
+        var stepDirectives = multiset(select(inline(AuthoredClaim.ROUTINE.directive()))
+                .from(ps)
+                .join(dt).on(dt.CODE.eq(ps.CODE))
+                .where(ps.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ps.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
+                    ps.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
+                    ps.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN),
+                    dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+            .convertFrom(rows -> rows.map(r -> r.value1()));
         return multiset(select(DIAGNOSTIC.FILE, DIAGNOSTIC.SEVERITY, DIAGNOSTIC.MESSAGE,
-                DIAGNOSTIC.LSP_CODE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN)
+                DIAGNOSTIC.LSP_CODE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN, claimDirectives,
+                stepDirectives)
             .from(DIAGNOSTIC)
             .where(DIAGNOSTIC.GRAPH_NAME.eq(store.graphName()))
             .and(DIAGNOSTIC.SOURCE.eq(SCHEMA_CHANNEL))
@@ -856,7 +894,26 @@ final class DiagnosticFacts {
             .and(DIAGNOSTIC.SOURCE_LINE.isNotNull())
             .orderBy(DIAGNOSTIC.FILE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN,
                 DIAGNOSTIC.MESSAGE))
-            .convertFrom(rows -> rows.map(Records.mapping(ReplayRow::new)));
+            .convertFrom(rows -> rows.map(r -> {
+                var named = claimOrder(Stream.concat(r.value7().stream(),
+                    r.value8().stream()).toList());
+                return new ReplayRow(r.value1(), r.value2(), named.isEmpty() ? r.value3()
+                    : r.value3() + " (" + String.join(", ", named.stream().map(n -> "@" + n).toList())
+                        + ")",
+                    r.value4(), r.value5(), r.value6());
+            }));
+    }
+
+    /** A defect's directive names, distinct, in {@link AuthoredClaim}'s order, any other after. */
+    private static List<String> claimOrder(List<String> names) {
+        var order = new HashMap<String, Integer>();
+        for (var claim : AuthoredClaim.values()) {
+            order.put(claim.directive(), claim.ordinal());
+        }
+        return names.stream().distinct()
+            .sorted(Comparator.comparing((String n) -> order.getOrDefault(n, Integer.MAX_VALUE))
+                .thenComparing(Comparator.naturalOrder()))
+            .toList();
     }
 
     /** One arm out of a probe per spelling, empty where the document asked about none of this kind. */

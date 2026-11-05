@@ -5699,6 +5699,23 @@ COMMENT ON TABLE graphitron_claim_kind IS 'One kind of thing an element can clai
 COMMENT ON COLUMN graphitron_claim_kind.kind IS 'the kind claimed, and the whole key; unique across families, so a claim''s kind names its family alone';
 COMMENT ON COLUMN graphitron_claim_kind.family IS 'which question the kind answers: PRODUCER, what a field runs, BINDING, what an occurrence of the element takes, or TYPE, what a type stands for. A reader picks among the claims of one family at one element; kinds of different families answer different questions';
 
+-- Which pairs of claims may stand at one element. Any two claims at one element conflict unless a
+-- row here admits the pair, or names the defect the pair is reported under instead.
+CREATE TABLE graphitron_claim_inclusion (
+  kind_a VARCHAR NOT NULL,
+  kind_b VARCHAR NOT NULL,
+  code   VARCHAR,
+  PRIMARY KEY (kind_a, kind_b),
+  FOREIGN KEY (kind_a) REFERENCES graphitron_claim_kind (kind),
+  FOREIGN KEY (kind_b) REFERENCES graphitron_claim_kind (kind),
+  -- A pair is stated once, its two kinds in order.
+  CHECK (kind_a < kind_b)
+);
+COMMENT ON TABLE graphitron_claim_inclusion IS 'One pair of claims that may stand at one element, or the defect the pair is reported under instead of a conflict. For example LOOKUP with ROUTINE is reported as ROUTINE_LOOKUP_DEFERRED, a combination graphitron does not generate yet.';
+COMMENT ON COLUMN graphitron_claim_inclusion.kind_a IS 'the pair''s first kind, the lesser of the two';
+COMMENT ON COLUMN graphitron_claim_inclusion.kind_b IS 'the pair''s second kind';
+COMMENT ON COLUMN graphitron_claim_inclusion.code IS 'the defect the pair is reported under instead of CLAIMS_CONFLICT; null where the two may stand together without a defect';
+
 -- Every claim an element makes, by any stage, before any reader decides between them.
 CREATE TABLE graphitron_claim (
   graph_name             VARCHAR   NOT NULL,
@@ -5752,7 +5769,7 @@ SELECT c.graph_name, c.coordinate, c.kind, c.claimer, c.source_name, c.source_li
 COMMENT ON VIEW graphitron_producer_claim IS 'One producer claim a field has: one row per field, kind and claimer. For example a field carrying both @service and @routine has two rows of two kinds, which is the conflict the entry defects report, and a field claiming nothing has none.';
 -- COMMENT ON COLUMN graphitron_producer_claim.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_producer_claim.coordinate IS 'the declared field claimed';
--- COMMENT ON COLUMN graphitron_producer_claim.kind IS 'the producer kind claimed: SERVICE, ROUTINE, INSERT, UPDATE, DELETE, UPSERT or LOOKUP, a graphitron_producer kind but for UPSERT, a write graphitron does not generate yet, which is refused at its entry and so is no producer while still conflicting with any other claim';
+-- COMMENT ON COLUMN graphitron_producer_claim.kind IS 'the producer kind claimed: SERVICE, ROUTINE, INSERT, UPDATE, DELETE, UPSERT, WRITE or LOOKUP, a graphitron_producer kind but for UPSERT, a write graphitron does not generate yet, which is refused at its entry, and WRITE, a @mutation whose verb the decode could not read; neither is a producer, and both still conflict with any other claim';
 -- COMMENT ON COLUMN graphitron_producer_claim.claimer IS 'the field, or the argument for a LOOKUP';
 -- COMMENT ON COLUMN graphitron_producer_claim.source_name IS 'the file the claim was written in';
 -- COMMENT ON COLUMN graphitron_producer_claim.source_line IS 'its line';
@@ -5789,19 +5806,21 @@ SELECT f.graph_name, f.coordinate, 'ROUTINE', f.coordinate, da.source_name, da.s
                   AND s.directive_name = 'splitQuery')
 UNION ALL
 -- @mutation on a mutation-root field, by the verb written: graphitron generates the write, so it
--- conflicts with a @service, whose author provides the code, whichever verb is written.
-SELECT f.graph_name, f.coordinate, m.operation, f.coordinate, da.source_name, da.source_line,
-       da.source_column
+-- conflicts with a @service, whose author provides the code, whichever verb is written. A verb the
+-- decode could not read is a WRITE, the generated write all the same.
+SELECT f.graph_name, f.coordinate,
+       CASE WHEN m.operation IN ('INSERT', 'UPDATE', 'DELETE', 'UPSERT') THEN m.operation
+            ELSE 'WRITE' END,
+       f.coordinate, da.source_name, da.source_line, da.source_column
   FROM graphitron_field f
   JOIN graphql_root_operation ro
     ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
   JOIN graphitron_directive_application da
     ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
    AND da.directive_name = 'mutation'
-  JOIN graphitron_ast_mutation_entry m
+  LEFT JOIN graphitron_ast_mutation_entry m
     ON m.graph_name = da.graph_name AND m.source_name = da.source_name
    AND m.source_line = da.source_line AND m.source_column = da.source_column
- WHERE m.operation IN ('INSERT', 'UPDATE', 'DELETE', 'UPSERT')
 UNION ALL
 -- @lookupKey on an argument, at the query root or on a split child, where the argument's
 -- application was written; inline below a root, the keys narrow the parent's statement and the
@@ -9123,6 +9142,73 @@ COMMENT ON COLUMN graphitron_entry_defect_method.method_name IS 'the method''s n
 COMMENT ON COLUMN graphitron_entry_defect_method.method_descriptor IS 'the declaration''s descriptor, completing the method''s key and telling one overload from another';
 COMMENT ON COLUMN graphitron_entry_defect_method.touched_at IS 'when the reading that last named this method under this defect ran: the mark the owner''s defect sweep reads, so a method no longer named under a defect still found goes, as a defect no longer found takes its rows by the foreign key';
 
+-- The claims a claim defect is about, one row per claim the rule weighed and found in conflict: the
+-- defect names the element, and each claim where it was written.
+CREATE TABLE graphitron_entry_defect_claim (
+  graph_name    VARCHAR   NOT NULL,
+  source_name   VARCHAR   NOT NULL,
+  source_line   INT       NOT NULL,
+  source_column INT       NOT NULL,
+  code          VARCHAR   NOT NULL,
+  coordinate    VARCHAR   NOT NULL,
+  kind          VARCHAR   NOT NULL,
+  claimer       VARCHAR   NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, coordinate, kind,
+               claimer),
+  -- The defect it details, so a swept defect takes its claims with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE,
+  -- The claim, so a claim the reading no longer makes is named by nothing.
+  FOREIGN KEY (graph_name, coordinate, kind, claimer)
+    REFERENCES graphitron_claim (graph_name, coordinate, kind, claimer) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_entry_defect_claim IS 'One claim a claim defect is about: one row per defect and claim in conflict. For example a field carrying both @service and @mutation draws a CLAIMS_CONFLICT at the field with a SERVICE row and an INSERT row under it, each claim pointing at where it was written.';
+COMMENT ON COLUMN graphitron_entry_defect_claim.graph_name IS 'the owning graph''s partition, carried from the defect';
+COMMENT ON COLUMN graphitron_entry_defect_claim.source_name IS 'the defect''s file';
+COMMENT ON COLUMN graphitron_entry_defect_claim.source_line IS 'the defect''s line, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_claim.source_column IS 'the defect''s column, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_claim.code IS 'the defect''s code, CLAIMS_CONFLICT or ROUTINE_LOOKUP_DEFERRED; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_claim.coordinate IS 'the element the claim is for, the one the defect sits at';
+COMMENT ON COLUMN graphitron_entry_defect_claim.kind IS 'the claim''s kind';
+COMMENT ON COLUMN graphitron_entry_defect_claim.claimer IS 'the element that makes the claim; with the two columns before it, the claim''s key';
+COMMENT ON COLUMN graphitron_entry_defect_claim.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
+
+-- The @routine a field's written path steps through, under a claim defect it is in: a path step and
+-- no claim, so it has a detail of its own.
+CREATE TABLE graphitron_entry_defect_path_step (
+  graph_name         VARCHAR   NOT NULL,
+  source_name        VARCHAR   NOT NULL,
+  source_line        INT       NOT NULL,
+  source_column      INT       NOT NULL,
+  code               VARCHAR   NOT NULL,
+  step_source_name   VARCHAR   NOT NULL,
+  step_source_line   INT       NOT NULL,
+  step_source_column INT       NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, step_source_name,
+               step_source_line, step_source_column),
+  -- The defect it details, so a swept defect takes its steps with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE,
+  -- The step's written @routine, so one the document stops writing is named by nothing.
+  FOREIGN KEY (graph_name, step_source_name, step_source_line, step_source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_entry_defect_path_step IS 'One @routine a field''s written path steps through, under the claim defect it conflicts in: one row per defect and step. For example a field carrying @service and a @routine below a root without @splitQuery draws a CLAIMS_CONFLICT with a SERVICE claim and this row for the routine.';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.graph_name IS 'the owning graph''s partition, carried from the defect';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.source_name IS 'the defect''s file';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.source_line IS 'the defect''s line, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.source_column IS 'the defect''s column, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.code IS 'the defect''s code, CLAIMS_CONFLICT; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.step_source_name IS 'the file the @routine is written in';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.step_source_line IS 'the @routine''s line, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.step_source_column IS 'the @routine''s column, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
+
 CREATE VIEW graphitron_entry_defect_site
   (graph_name, source_name, source_line, source_column, code, detail,
    coordinate, type_name, field_name) AS
@@ -11434,7 +11520,7 @@ SELECT g.graph_name, g.type_name, g.field_name,
   JOIN graphql_field gf
     ON gf.graph_name = g.graph_name AND gf.type_name = g.type_name
    AND gf.field_name = g.field_name;
-COMMENT ON VIEW intent_authored_claim_conflict IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it, and that is the whole predicate: the relation is total over the authored claims and carries no population filter of its own. An authored contradiction is a contradiction wherever it sits, so each consumer applies the population its own question needs (the build-error surface joins intent_type_domain, type grain directly and field grain through the claim''s owning type, because only the emitted surface can fail a build; the editor''s diagnostic arm reads these rows ungated, a type no field reaches being precisely where an author most needs the signal). What this relation does not carry is any accept line: a filter wearing the view''s name would substitute one consumer''s population for the fact. Nor does it carry the claiming directives or the violation''s message. The claims are rows on the two claim views under this relation''s own key, so a consumer wanting their names joins them and asks membership as well as set equality; the message is a render whose naming order is AuthoredClaim''s declaration order, which is not a captured fact and so is no view''s to express, and it is minted post-capture into intent_authored_claim_rejection instead. One piece of Java logic still lives in this SQL and is pinned by the registered agreement anchor (no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest): the routine-plus-lookup carve-out, exactly that claim pair being the recognised-but-unsupported combination, which yields DEFERRED instead of CONFLICT. Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
+COMMENT ON VIEW intent_authored_claim_conflict IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it, and that is the whole predicate: the relation is total over the authored claims and carries no population filter of its own. An authored contradiction is a contradiction wherever it sits, so each consumer applies the population its own question needs (the build-error surface joins intent_type_domain, type grain directly and field grain through the claim''s owning type, because only the emitted surface can fail a build; the editor''s diagnostic arm reads these rows ungated, a type no field reaches being precisely where an author most needs the signal). What this relation does not carry is any accept line: a filter wearing the view''s name would substitute one consumer''s population for the fact. Nor does it carry the claiming directives or the violation''s message. The claims are rows on the two claim views under this relation''s own key, so a consumer wanting their names joins them and asks membership as well as set equality. Its one reader left is intent_field_column_table; the build''s conflicts are the CLAIMS_CONFLICT entry defects. The routine-plus-lookup carve-out lives in this SQL: exactly that claim pair is the recognised-but-unsupported combination, which yields DEFERRED instead of CONFLICT. Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
 -- COMMENT ON COLUMN intent_authored_claim_conflict.graph_name IS 'the owning graph''s partition, carried from the claim views';
 -- COMMENT ON COLUMN intent_authored_claim_conflict.type_name IS 'the violated coordinate''s owning type (the coordinate itself at the type grain)';
 -- COMMENT ON COLUMN intent_authored_claim_conflict.field_name IS 'the violated coordinate''s field name; NULL exactly on type-grain rows, which is what a union over two grains costs in a key';
@@ -11442,26 +11528,6 @@ COMMENT ON VIEW intent_authored_claim_conflict IS 'Deprecated with the whole int
 -- COMMENT ON COLUMN intent_authored_claim_conflict.source_name IS 'the violated coordinate''s own declaration file (the field''s position at the field grain, the base declaration''s at the type grain); NULL where the declaration carries no position';
 -- COMMENT ON COLUMN intent_authored_claim_conflict.source_line IS 'source line of the violated coordinate''s declaration, 1-based';
 -- COMMENT ON COLUMN intent_authored_claim_conflict.source_column IS 'source column of the violated coordinate''s declaration, 1-based';
-
-CREATE TABLE intent_authored_claim_rejection (
-  graph_name VARCHAR NOT NULL,
-  ordinal    INT     NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR,
-  kind       VARCHAR NOT NULL CHECK (kind IN ('INVALID_SCHEMA', 'DEFERRED')),
-  variant    VARCHAR NOT NULL,
-  message    VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, ordinal),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE intent_authored_claim_rejection IS 'The rejection each row of intent_authored_claim_conflict mints, minted post-capture rather than derived: one row per violated coordinate, carrying the sealed Rejection hierarchy''s verdict on it and the message a report would print. For example a field two directives each claim to produce draws one row, at the ordinal its conflict was minted in, carrying the message a build report prints.';
-COMMENT ON COLUMN intent_authored_claim_rejection.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_authored_claim_rejection.ordinal IS 'mint order over the graph''s violated coordinates, 0-based; the key''s tie-breaker on rejection_validation_error.ordinal''s convention, which this relation needs because its natural key is the coordinate pair and that pair carries a NULL at the type grain where a key may not';
-COMMENT ON COLUMN intent_authored_claim_rejection.type_name IS 'the violated coordinate''s owning type, joining intent_authored_claim_conflict''s own';
-COMMENT ON COLUMN intent_authored_claim_rejection.field_name IS 'the violated coordinate''s field name; NULL exactly on type-grain rows, the two-grain shape the conflict view is keyed by';
-COMMENT ON COLUMN intent_authored_claim_rejection.kind IS 'RejectionKind.name() for the minted rejection, a closed CHECK over the two values this family can reach: INVALID_SCHEMA for the mutual-exclusivity conflict, DEFERRED for the recognised routine-plus-lookup pair. Minted rather than mapped from verdict in SQL, because the projection is RejectionKind''s and a CASE restating it here would be a second copy of a fork the hierarchy already owns';
-COMMENT ON COLUMN intent_authored_claim_rejection.variant IS 'the minted rejection leaf''s class name with its package stripped, enclosing classes kept, on rejection_validation_error.variant''s spelling rule and through the same one Java site, so the two relations cannot spell one family two ways and a rename cannot leave a stale spelling behind';
-COMMENT ON COLUMN intent_authored_claim_rejection.message IS 'the violation''s full report message, coordinate prefix included, byte-identical to what the report carries for this family (the agreement anchor pins the spelling); display material, never a dimension';
 
 CREATE VIEW intent_field_column_table
   (graph_name, type_name, field_name, disposition, basis,
@@ -11668,8 +11734,9 @@ root (graph_name, type_name, operation) AS (
 SELECT graph_name, type_name, field_name, kind
   FROM claim_count
  WHERE claims = 1
-   -- An upsert is claimed and refused at its entry, so it runs nothing yet.
-   AND kind <> 'UPSERT'
+   -- An upsert is claimed and refused at its entry, so it runs nothing yet, and a write whose verb
+   -- the decode could not read runs nothing at all.
+   AND kind NOT IN ('UPSERT', 'WRITE')
 UNION ALL
 SELECT graph_name, type_name, field_name, kind
   FROM (
@@ -14264,6 +14331,43 @@ root_reference (graph_name, type_name, field_name, source_name, source_line, sou
                         AND (r.source_line < fr.source_line
                              OR (r.source_line = fr.source_line
                                  AND r.source_column < fr.source_column)))
+),
+-- What the claim conflict rule weighs at each element. This rule's winners are the strongest claims
+-- of each family, an overridden claim being no defect; beside them, a @routine a field's written
+-- path steps through and no producer claim holds, which no claim can share a field with.
+contender (graph_name, coordinate, kind) AS (
+  SELECT DISTINCT c.graph_name, c.coordinate, c.kind
+    FROM graphitron_claim c
+    JOIN graphitron_claim_kind k ON k.kind = c.kind
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_claim s
+                       JOIN graphitron_claim_kind sk ON sk.kind = s.kind
+                      WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
+                        AND sk.family = k.family AND s.priority < c.priority)
+  UNION ALL
+  SELECT DISTINCT pc.graph_name, pc.element_coordinate, 'ROUTINE_STEP'
+    FROM graphitron_join_path_claim pc
+    JOIN graphitron_ast_path_entry pe
+      ON pe.graph_name = pc.graph_name AND pe.source_name = pc.source_name
+     AND pe.anchor_line = pc.source_line AND pe.anchor_column = pc.source_column
+    JOIN graphitron_ast_routine_entry re
+      ON re.graph_name = pe.graph_name AND re.source_name = pe.source_name
+     AND re.source_line = pe.element_line AND re.source_column = pe.element_column
+   WHERE pc.claim_kind = 'FIELD'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_claim r
+                      WHERE r.graph_name = pc.graph_name AND r.coordinate = pc.element_coordinate
+                        AND r.kind = 'ROUTINE')
+),
+-- Each element two contenders cannot share: CLAIMS_CONFLICT where any pair is one no inclusion row
+-- admits, else the code the inclusion names for the pair it reports.
+claim_conflict (graph_name, coordinate, code) AS (
+  SELECT a.graph_name, a.coordinate,
+         CASE WHEN COUNT(*) > COUNT(i.kind_a) THEN 'CLAIMS_CONFLICT' ELSE MIN(i.code) END
+    FROM contender a
+    JOIN contender b
+      ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate AND b.kind > a.kind
+    LEFT JOIN graphitron_claim_inclusion i ON i.kind_a = a.kind AND i.kind_b = b.kind
+   WHERE i.kind_a IS NULL OR i.code IS NOT NULL
+   GROUP BY a.graph_name, a.coordinate
 )
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
@@ -15154,18 +15258,19 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
            AND CAST(ga.default_value_sdl AS BIGINT) > mx.max_page_size) p
  WHERE p.source_line IS NOT NULL
 UNION ALL
--- A field whose written directives claim two kinds of producer, at the field's own declaration: a
--- fetcher runs one thing. @lookupKey with @routine is deferred rather than refused.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'PRODUCER_KINDS_CONFLICT', CAST(NULL AS VARCHAR)
-  FROM (SELECT f.graph_name, f.type_name, f.field_name
-          FROM graphitron_producer_claim pc
-          JOIN graphitron_field f ON f.graph_name = pc.graph_name AND f.coordinate = pc.coordinate
-         GROUP BY f.graph_name, f.type_name, f.field_name
-        HAVING COUNT(DISTINCT pc.kind) > 1
-           AND NOT (COUNT(*) = 2 AND MIN(pc.kind) = 'LOOKUP' AND MAX(pc.kind) = 'ROUTINE')) c
+-- Two claims a field cannot hold together, at the field's own declaration.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR)
+  FROM claim_conflict x
+  JOIN graphitron_field f ON f.graph_name = x.graph_name AND f.coordinate = x.coordinate
   JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+UNION ALL
+-- Two claims a type cannot hold together, at its base declaration: an extension adds to the type
+-- it extends, and the author fixes the type where it is declared.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR)
+  FROM claim_conflict x
+  JOIN graphql_ast_type_declaration_entry d
+    ON d.graph_name = x.graph_name AND d.name = x.coordinate AND NOT d.is_extension
 UNION ALL
 -- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
 -- rule, and every field of the type would be fetched both ways.
@@ -15271,7 +15376,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
          WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate) < 2
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim c
                     WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate
-                      AND c.kind = 'UPSERT')
+                      AND c.kind IN ('UPSERT', 'WRITE'))
 UNION ALL
 -- A field on the subscription root, at the field's own declaration. Meaningful under the
 -- specification and under the directives alike: graphitron generates no subscription resolver
@@ -17822,9 +17927,8 @@ COMMENT ON VIEW intent_argmapping_projection_defect IS 'Deprecated with the whol
 -- ==== Diagnostics stratum =========================================================
 -- Violations as facts: six arms behind one prefix-less union view (diagnostic, at the
 -- section's tail), and nothing reads a base relation of this stratum directly. The arms, and
--- the many-to-one arm-to-source mapping stated so it is reviewed: the store-native pilot
--- (intent_authored_claim_conflict, a derivation with no writer), the rejection_ residue, the
--- lint_ arm, the build_warning_ advisory arm and the
+-- the many-to-one arm-to-source mapping stated so it is reviewed: the rejection_ residue, the
+-- entry defects (graphitron_entry_defect, the claim conflicts among them), the lint_ arm, the build_warning_ advisory arm and the
 -- SDL-toolchain arm (graphql_schema_problem) all carry source = 'schema'; only
 -- javac_diagnostic carries 'compile'. A new arm grows neither the closed source taxonomy nor
 -- the wire vocabulary. The per-vocabulary split keeps severity honest: for rejection rows it
@@ -19148,6 +19252,10 @@ COMMENT ON COLUMN meta_stated_relation.example IS 'one concrete row, on meta_rel
 COMMENT ON COLUMN meta_stated_relation.rationale IS 'why the rows are the file''s rather than a gatherer''s. The bar is not that the rows change rarely: a gathered relation whose corpus never changes is still gathered. It is that no corpus outside the store could be read to produce them, because they are the vocabulary this file itself declares, so a refresh has nothing to re-read and a gate has nothing to compare against but the DDL';
 
 INSERT INTO meta_stated_relation VALUES
+  ('graphitron_claim_inclusion',
+   'One pair of claims that may stand at one element, or the defect the pair is reported under instead of a conflict.',
+   'For example LOOKUP with ROUTINE is reported as ROUTINE_LOOKUP_DEFERRED, a combination graphitron does not generate yet.',
+   'The exceptions to the claim conflict rule, declared once so the rule is one statement over the claims and this vocabulary rather than a pair list in SQL. Which claims may stand together is a property of this generator and not of anybody''s schema, graphitron_defect_type''s reason beside it.'),
   ('graphitron_claim_kind',
    'One kind of thing an element can claim, with the family it belongs to.',
    'For example SERVICE is a PRODUCER kind and NODE_ID a BINDING kind.',
@@ -19553,19 +19661,6 @@ SELECT r.graph_name, 'schema', 'error', r.kind <> 'DEFERRED', r.kind, r.variant,
        r.source_line, r.source_column, r.message || COALESCE((SELECT h.hint FROM build_warning_stale_module_hint h WHERE h.graph_name = r.graph_name), '')
   FROM rejection_validation_error r
 UNION ALL
-SELECT c.graph_name, 'schema', 'error', m.kind <> 'DEFERRED', m.kind, m.variant,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-       CAST(NULL AS VARCHAR),
-       c.type_name, c.field_name,
-       CASE WHEN c.field_name IS NULL THEN c.type_name
-            ELSE c.type_name || '.' || c.field_name END,
-       c.source_name,
-       c.source_line, c.source_column, m.message || COALESCE((SELECT h.hint FROM build_warning_stale_module_hint h WHERE h.graph_name = c.graph_name), '')
-  FROM intent_authored_claim_conflict c
-  JOIN intent_authored_claim_rejection m
-    ON m.graph_name = c.graph_name AND m.type_name = c.type_name
-   AND m.field_name IS NOT DISTINCT FROM c.field_name
-UNION ALL
 SELECT l.graph_name, 'schema', 'warning', TRUE,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -19642,12 +19737,12 @@ SELECT d.graph_name, 'schema', t.severity, t.basis <> 'UNSUPPORTED',
        || CASE WHEN t.severity = 'error' THEN COALESCE((SELECT h.hint FROM build_warning_stale_module_hint h WHERE h.graph_name = d.graph_name), '') ELSE '' END
   FROM graphitron_entry_defect_site d
   JOIN graphitron_defect_type t ON t.code = d.code;
-COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle, the written-entry arm), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are rows on the claim views and the residue''s own directive child under each arm''s key, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
+COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all six arms (the rejection residue, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle, the written-entry arm, a claim conflict among the entry defects), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are the residue''s own directive child under its key and an entry defect''s claims under the defect''s, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
 -- COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
 -- COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm, classpath for a workspace module the run read stale';
 -- COMMENT ON COLUMN diagnostic.severity IS 'error or warning, the wire''s closed pair: the rejection arms are error by the build''s own finality, lint and advisory rows warning by construction, compile rows javac''s verdict projected as the record''s severity() spells it';
 -- COMMENT ON COLUMN diagnostic.actionable IS 'the triage headline: FALSE exactly on DEFERRED rows (recognised but not yet generator-supported, a workaround rather than a schema fix), TRUE everywhere else including warnings and compile rows';
--- COMMENT ON COLUMN diagnostic.kind IS 'RejectionKind.name() on rejection-bearing rows (residue and pilot); NULL on lint, advisory and compile rows, where the three-way fork does not apply';
+-- COMMENT ON COLUMN diagnostic.kind IS 'RejectionKind.name() on the residue''s rows; NULL on lint, advisory and compile rows, where the three-way fork does not apply';
 -- COMMENT ON COLUMN diagnostic.variant IS 'the producing oracle''s error-class dimension, in whichever of two namespaces minted the row: the rejection leaf''s package-stripped class name on rejection-bearing rows (rejection_validation_error.variant''s spelling rule), and graphql-java''s own error class name on the SDL toolchain''s arm (graphql_schema_problem.error_class, at every one of graphql-java''s three stages it records), and the loading-rewrite refusal''s variant name at its REWRITE stage, a third namespace the stage column tells apart. A PARSE row was rendered here as the literal InvalidSyntaxException while the parser had a relation of its own, on the claim that the stage has exactly one way to refuse. It has several: that name is a base class, and the parser throws subclasses of it (MoreTokensSyntaxException where a document parses and then does not stop). So the column says which, the arm reads it exactly as the two document-wide stages do, and the asymmetry of a literal for one stage and a column for the others is gone with the relation that forced it. The namespaces cannot collide, a rejection leaf keeping its enclosing classes and so always dotted where graphql-java''s are bare, which is the same argument lsp_code makes for carrying two code namespaces in one column. NULL on the lint, advisory and compile arms';
 -- COMMENT ON COLUMN diagnostic.lsp_code IS 'the stable machine code of the row''s producing oracle: the rejection sub-seals'' lspCode() on schema rows that declare one, javac''s Diagnostic.getCode() on compile rows; NULL where neither publishes a code';
 -- COMMENT ON COLUMN diagnostic.attempt_kind IS 'which lookup space a name resolution failed in (AttemptKind.name()), on UnknownName rows only';
@@ -20216,6 +20311,12 @@ INSERT INTO meta_grain VALUES
   ('reachable-input-type',
    'one input type some field argument reaches, in one graph',
    'graph_name, type_name', 'sdl'),
+  ('entry-defect-claim',
+   'one claim one defect is about, in one graph',
+   'graph_name, source_name, source_line, source_column, code, coordinate, kind, claimer', 'sdl'),
+  ('entry-defect-path-step',
+   'one path step one defect is about, in one graph',
+   'graph_name, source_name, source_line, source_column, code, step_source_name, step_source_line, step_source_column', 'sdl'),
   ('entry-defect-method',
    'one method one defect names, in one graph',
    'graph_name, source_name, source_line, source_column, code, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
@@ -20288,10 +20389,6 @@ INSERT INTO meta_grain VALUES
    'one class standing for one type of one graph, as one population answers',
    'graph_name, type_name, class_name, declared_via',
    'classpath'),
-  ('authored-claim-rejection',
-   'one minted rejection of one authored-claim conflict, at its place in the graph''s mint order',
-   'graph_name, ordinal',
-   'sdl'),
   ('argument-scope-table',
    'one table one argument''s column-shaped content binds against, in one graph',
    'graph_name, type_name, field_name, argument_name, table_source_name, table_schema, table_name',
@@ -20631,12 +20728,16 @@ INSERT INTO graphitron_claim_kind VALUES
   ('UPDATE',     'PRODUCER'),
   ('DELETE',     'PRODUCER'),
   ('UPSERT',     'PRODUCER'),
+  ('WRITE',      'PRODUCER'),
   ('LOOKUP',     'PRODUCER'),
   ('COLUMN',     'BINDING'),
   ('NODE_ID',    'BINDING'),
   ('EXPRESSION', 'BINDING'),
   ('TABLE_TYPE', 'TYPE'),
   ('ERROR_TYPE', 'TYPE');
+
+INSERT INTO graphitron_claim_inclusion VALUES
+  ('LOOKUP', 'ROUTINE', 'ROUTINE_LOOKUP_DEFERRED');
 
 INSERT INTO graphitron_defect_type VALUES
   ('READ_SURFACE_ON_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_READ_SURFACE_ON_WRITE',
@@ -20775,10 +20876,12 @@ INSERT INTO graphitron_defect_type VALUES
    'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.', 'graphitron'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.', 'graphitron'),
+  ('CLAIMS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_CLAIMS_CONFLICT',
+   'An element''s directives claim two things it cannot be at once, such as a @service, whose author provides the code, beside a @mutation, whose code graphitron generates.', 'graphitron'),
+  ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
+   '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.', 'graphitron'),
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
    '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.', 'graphitron'),
-  ('PRODUCER_KINDS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_PRODUCER_KINDS_CONFLICT',
-   'A field''s directives name two things for its fetcher to run, such as @service and @routine, and a fetcher runs one.', 'graphitron'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
    'A type is reached both as a row of a statement and as an object in memory, so its fields would be fetched two ways; give each its own type.', 'graphitron'),
   ('FIELD_WITHOUT_FETCHER', 'error', 'GRAPHITRON', 'GRAPHITRON_FIELD_WITHOUT_FETCHER',
@@ -21428,6 +21531,14 @@ INSERT INTO meta_relation VALUES
    'One method a defect names, under the defect: for a condition overload defect, each declaration it is about.',
    'For example a step from customer to address whose condition ambiguousPair ties draws two rows under its CONDITION_OVERLOAD_TIE defect, ambiguousPair(Customer, Table<?>) and ambiguousPair(Table<?>, Address).',
    'A defect''s detail is one string, and a condition overload defect is about a set of declarations an author has to see to fix it. A set held in a string is unreadable to anything but a person, so each declaration is a row under the defect, keyed by the defect''s key with a foreign key to it, the shape graphitron_entry_defect asks of every detail relation. Written by FieldPaths in the pass that writes the defects, and keyed to code_method so the declaration is a fact rather than its spelling.'),
+  ('graphitron_entry_defect_claim', 'entry-defect-claim', 'graphitron',
+   'One claim a claim defect is about: one row per defect and claim in conflict.',
+   'For example a field carrying both @service and @mutation draws a CLAIMS_CONFLICT at the field with a SERVICE row and an INSERT row under it, each claim pointing at where it was written.',
+   'One defect per defect, its claims a relation beneath it: a defect''s detail is one string, and the claims an author has to see to fix a conflict are a set, each with a position. Keyed by the defect and the claim, with a foreign key to each, so a swept defect or a claim the reading no longer makes takes the row with it. What a report calls each claim is its reader''s to compose.'),
+  ('graphitron_entry_defect_path_step', 'entry-defect-path-step', 'graphitron',
+   'One @routine a field''s written path steps through, under the claim defect it conflicts in: one row per defect and step.',
+   'For example a field carrying @service and a @routine below a root without @splitQuery draws a CLAIMS_CONFLICT with a SERVICE claim and this row for the routine.',
+   'A routine below a root and not split is a step of the field''s path and no claim, yet no claim can share a field with it, so the conflict it is in names it beside the claims. Keyed by the defect and the step''s written position, with a foreign key to each.'),
   ('graphitron_entry_defect_site', 'graphitron-entry-defect', 'graphitron',
    'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
@@ -22182,10 +22293,6 @@ INSERT INTO meta_relation VALUES
    'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds.',
    'For example a graph whose Query.films returns Film draws a row for Query and one for Film, and a type nothing reachable names draws none.',
    'Named for the assertion, not the graph operation, because the seeds are generator policy rather than neutral schema reachability: root operation bindings, @node carriers, types declaring implements Node, authored @key carriers, and the argument types of directive definitions that survive into the emitted schema, where survivorship is read from each definition''s own source (graphitron''s bundled directive vocabulary is build-time only) rather than from a name set held in Java, so the seeds are a function of the captured document throughout. Every seed is an SDL fact, which is what makes this a one-corpus derivation: the node arm seeds on the declaration alone, deliberately over-approximating node inference, whose other two conjuncts (a @table binding, well-formed node metadata on the bound table) decide what nodehood means and never whether the author declared it. Seeding is monotone, so the superset answers membership correctly, and a type declaring the Relay contract over no table or over defective metadata is a member that gains diagnostics instead of vanishing. Materialized, not a view: the closure over cyclic type graphs has no safe H2 view form (a recursive UNION does not terminate on cycles, and the path-guarded form enumerates simple paths), and the descent rule is graphql-java''s own child semantics rather than something SQL should restate edge kind by edge kind. Written once per capture by a step of the derivation stratum.'),
-  ('intent_authored_claim_rejection', 'authored-claim-rejection', 'graphitron',
-   'The rejection each row of intent_authored_claim_conflict mints, minted post-capture rather than derived: one row per violated coordinate, carrying the sealed Rejection hierarchy''s verdict on it and the message a report would print.',
-   'For example a field two directives each claim to produce draws one row, at the ordinal its conflict was minted in, carrying the message a build report prints.',
-   'A table because no view over this store can state the rule. The render''s input is AuthoredClaim''s declaration order, which is the conflict messages'' fixed naming order and is not a captured fact of any graph, so the derivation has no relational statement and the enum''s own home in Java is the only place the order can be read without a copy of it going stale. Written by a capture-cadence writer that clears its graph partition and re-mints after every flush, on the derivations'' cadence exactly, so on any settled store these rows stand one-to-one with the conflict view''s and the diagnostics arm reads them by inner join. Every column here is a projection of one Rejection value: kind is RejectionKind.of, variant the leaf class''s stored spelling, message what ValidationError''s coordinate prefix wraps around the rejection''s own text. That is what makes the diagnostics arm over this relation look like its captured siblings rather than like a render assembled in SQL, and it is what binds the two class-valued spellings to the classes they name, a SQL literal spelling a Java class being a copy nothing checks. Not rejection_, whose charter is the legacy walk''s verdicts and whose retirement clock is the walk''s: these rows are the store-native detection''s own, and they outlive it. Written once per capture by a step of the derivation stratum.'),
   ('graphitron_type_backing', 'type-backing', 'graphitron',
    'A Java class stands for a graph''s type, and how the store knows: one row per type, class and population.',
    'For example a type carrying @table(name: "film") is backed by FilmRecord as BOUND_TABLE, a type a @service method returns a FilmDto for is backed by FilmDto as PRODUCER, and the type of a field read off FilmDto.getActors() by ActorDto as ACCESSOR.',

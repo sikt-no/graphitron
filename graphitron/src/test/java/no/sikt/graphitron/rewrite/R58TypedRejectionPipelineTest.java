@@ -99,10 +99,9 @@ class R58TypedRejectionPipelineTest {
         assertThat(unknown.message()).startsWith("service method could not be resolved — ");
     }
 
-    // directiveConflict_serviceMutationCarriesTypedDirectivesList migrated to the store-backed
-    // detection's test (AuthoredClaimConflictsTest.serviceAndMutationMintOneFieldViolation): the
-    // conflict is no longer a builder tombstone, and the typed directives-list assertion now
-    // reads the minted ValidationError's rejection.
+    // The typed directives list on a @service x @mutation conflict is asserted in the store-backed
+    // detection's test (ClaimConflictsTest.serviceAndMutationMintOneFieldViolation), off the
+    // ValidationError's rejection: the conflict is no builder tombstone.
 
     // The ConditionJoinReportable capability and its three sibling tests
     // (conditionJoinReportable_implementedByExpectedSixVariants,

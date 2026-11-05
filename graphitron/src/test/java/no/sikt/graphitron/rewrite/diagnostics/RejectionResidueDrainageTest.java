@@ -84,12 +84,11 @@ class RejectionResidueDrainageTest {
         "Rejection.InvalidSchema.Structural", "Rejection.Deferred");
 
     /**
-     * The rejection families that have migrated store-native, named by their derivation view:
-     * their violations are minted by a detection reading the store and never enter the walk's
-     * error stream, so the residue never holds them. One entry per per-family flip.
+     * The rejection families that have migrated store-native, named by the entry-defect code they
+     * became: their violations are minted by a detection reading the store and never enter the
+     * walk's error stream, so the residue never holds them. One entry per per-family flip.
      */
-    private static final Set<String> MIGRATED_FAMILY_VIEWS = Set.of(
-        "intent_authored_claim_conflict");
+    private static final Set<String> MIGRATED_FAMILIES = Set.of("CLAIMS_CONFLICT");
 
     @Test
     @DisplayName("the declared residue leaf set equals the sealed hierarchy's reflective walk")
@@ -103,7 +102,7 @@ class RejectionResidueDrainageTest {
         assertThat(new LinkedHashSet<>(walked))
             .as("a new Rejection cause edits this declaration; it cannot silently enlarge the residue")
             .containsExactlyInAnyOrderElementsOf(RESIDUE_LEAVES);
-        assertThat(MIGRATED_FAMILY_VIEWS).isNotEmpty();
+        assertThat(MIGRATED_FAMILIES).isNotEmpty();
     }
 
     private static void walk(Class<?> node, java.util.List<String> out) {

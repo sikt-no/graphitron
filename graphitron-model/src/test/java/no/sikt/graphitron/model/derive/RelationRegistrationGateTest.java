@@ -568,10 +568,12 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argmapping_pair_defect", Arm.UNSHADOWED);
         // The methods a condition overload defect names, on the same terms.
         registrations.put("graphitron_entry_defect_method", Arm.UNSHADOWED);
+        registrations.put("graphitron_entry_defect_claim", Arm.UNSHADOWED);
+        registrations.put("graphitron_entry_defect_path_step", Arm.UNSHADOWED);
         registrations.put("graphitron_argmapping_pair_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_claim_kind", Arm.UNSHADOWED);
+        registrations.put("graphitron_claim_inclusion", Arm.UNSHADOWED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
-        registrations.put("intent_authored_claim_rejection", Arm.DERIVED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement
         // is vacuous by construction; the arm-specific derived columns are pinned by
         // DiagnosticFactsTest against their Java spellings.

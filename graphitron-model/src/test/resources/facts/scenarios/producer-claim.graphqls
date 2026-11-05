@@ -58,5 +58,5 @@ extend schema @expectEquals(relation: "graphitron_claim", where: "kind = 'LOOKUP
 # The service on the node field is its producer, not a second claim beside the signature.
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   coordinate, code
-  Query.node, PRODUCER_KINDS_CONFLICT
+  Query.node, CLAIMS_CONFLICT
   """)

@@ -1,19 +1,15 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
-import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
+import no.sikt.graphitron.model.derive.EntryDefectClaims;
 import no.sikt.graphitron.model.derive.OccurrenceProducers;
 import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
-import no.sikt.graphitron.model.derive.Fetchers;
-import no.sikt.graphitron.model.derive.FieldKeyRows;
-import no.sikt.graphitron.model.derive.FieldPaths;
-import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
-import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
@@ -25,13 +21,12 @@ import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
 import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
-import no.sikt.graphitron.model.derive.OccurrenceSources;
-import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.PathClaims;
-import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.PathNeeds;
 import no.sikt.graphitron.model.derive.Paths;
+import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.ProducerClaims;
+import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.Steps;
@@ -155,6 +150,7 @@ public final class GraphitronAssemblyCapture {
         // the reading did not mark.
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
         ConditionShapeDefectMethods.derive(dsl, graph, readAt);
+        EntryDefectClaims.derive(dsl, graph, readAt);
         ArgMappingPairDefects.derive(dsl, graph);
         EntryDefects.sweep(dsl, graph, readAt, EntryDefects.GRAPHITRON.gatherer());
     }

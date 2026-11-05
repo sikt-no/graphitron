@@ -72,11 +72,7 @@ class DetectionReadReachGateTest {
     private static final Map<String, Set<String>> REACH = new LinkedHashMap<>();
 
     static {
-        REACH.put("AuthoredClaimConflicts", Set.of(
-            "intent_authored_claim_conflict",
-            // Expanded here per violated field coordinate by claimsAt.
-            "intent_authored_field_claim",
-            "intent_authored_type_claim"));
+        REACH.put("ClaimConflicts", Set.of());
 
         REACH.put("ArgmappingProjectionDefects", Set.of(
             "graphitron_argmapping_match",

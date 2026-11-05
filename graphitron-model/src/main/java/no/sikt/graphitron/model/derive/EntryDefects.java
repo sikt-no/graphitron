@@ -9,7 +9,9 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -100,8 +102,8 @@ public final class EntryDefects {
      * Deletes the graph's defects of the codes {@code gatherer} owns that the reading at
      * {@code readAt} did not mark. Another gatherer's codes are not touched, so each owner sweeps
      * only what it writes; a detail relation's rows under a swept defect go with it by their
-     * foreign key. A detail row the reading did not mark under a defect it did, a method a
-     * defect no longer names, is swept here first by its own mark.
+     * foreign key. A detail row the reading did not mark under a defect it did, a method, claim or
+     * path step a defect no longer names, is swept here first by its own mark.
      */
     public static void sweep(DSLContext dsl, String graphName, LocalDateTime readAt, String gatherer) {
         var target = GRAPHITRON_ENTRY_DEFECT;
@@ -111,6 +113,18 @@ public final class EntryDefects {
             .where(method.GRAPH_NAME.eq(graphName))
             .and(method.TOUCHED_AT.ne(readAt))
             .and(method.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .execute();
+        var claim = GRAPHITRON_ENTRY_DEFECT_CLAIM;
+        dsl.deleteFrom(claim)
+            .where(claim.GRAPH_NAME.eq(graphName))
+            .and(claim.TOUCHED_AT.ne(readAt))
+            .and(claim.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .execute();
+        var step = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
+        dsl.deleteFrom(step)
+            .where(step.GRAPH_NAME.eq(graphName))
+            .and(step.TOUCHED_AT.ne(readAt))
+            .and(step.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
             .execute();
         dsl.deleteFrom(target)
             .where(target.GRAPH_NAME.eq(graphName))

@@ -44,7 +44,7 @@ public final class FieldProducerMethods {
      * <p>Empty on disagreement rather than a pick, on {@link TypeBackingClass}'s terms and for its
      * reason: a coordinate carrying both directives is a rejection, so the generator binds neither
      * method, and a jump to one of them would report a binding that does not exist. The store already
-     * says so through {@code intent_authored_claim_conflict}; here the two references simply leave
+     * says so as a {@code CLAIMS_CONFLICT} entry defect; here the two references simply leave
      * nothing to name, and the caller falls through to what the parent type's scope offers, which is
      * what an unclaimed field gets.
      *

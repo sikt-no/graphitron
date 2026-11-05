@@ -92,8 +92,6 @@ class StageOrderGateTest {
     private static final List<Step> STRATUM = List.of(
         new Step("ClassificationDomainCapture", null,
             Set.of("intent_type_domain")),
-        new Step("AuthoredClaimRejectionRows", null,
-            Set.of("intent_authored_claim_rejection")),
         new Step("FieldScopeTables", "graphitron_field_scope_table_rule",
             Set.of("graphitron_field_scope_table")),
         new Step("ArgumentScopeTables", "graphitron_argument_scope_table_rule",

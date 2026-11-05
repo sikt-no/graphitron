@@ -577,8 +577,8 @@ pass and no stratum that clears and recomputes.
     path defects among them, since one declaration reused under several fields fails at some and not
     others; one about what was written stays at its position.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
-  * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`
-    and `AuthoredClaimRejectionRows` go with the relations they write.
+  * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture` goes with the
+    relation it writes.
 * **`FactSink` and `FactWrites` are gone, each writer stating its own insert** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". A capture site builds a generated record, sets one column at a time and hands it to a sink that assembles the insert at run time, with `FactWrites` overriding that for thirteen relations; the statement a writer issues is nowhere in its source. Twenty-nine relations still arrive that way: the legacy `graphitron_*_entry` decodes from `GraphitronFactCapture`, which leave with their node, then the schema inputs and extensions from `SdlFactCapture` and `SdlCoordinates`, the configuration from `StoredRecipe`, the Java declarations from `EmittedRegistry`, the build warnings, rejections, lint findings and javac diagnostics, and the `sql_` catalog from `JooqFactCapture`. Each writes through its own statement instead, set-based where it reads the store and bound once per row through `BindBatch` where it reads a corpus, the shape `GraphQLAstEntries` writes in. It absorbs R701, which stated the same end from the column side.
 * **The federation capture writes in the capture's shape, marked and swept** `done`.
   `FederationCapture` writes each `federation_version*` relation through one `BindBatch`
@@ -727,24 +727,10 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-* **A claim conflict is an entry defect over the claim supertype** `blocked`, on the child below.
-  `graphitron_claim` holds every claim an element makes, keyed (element, kind, claimer) with the
-  priority and stage that claimed it and where it was written, written claims at priority 0 and an
-  inference at the strength its stage claims; `graphitron_claim_kind` catalogs each kind with its
-  family and owning stage, and the producer and binding claims become its subtypes. The relation
-  states the claims and decides nothing; each reader picks its own winner. The conflict rule's is
-  the strongest claims per element and family, an overridden claim no defect, and two of them at
-  one element are one `CLAIMS_CONFLICT` at its declaration unless `graphitron_claim_inclusion`
-  admits the pair, `ROUTINE` with `LOOKUP` an `UNSUPPORTED` deferral, an inferred tie the family's
-  own ambiguity defect, and a family an element needs and lacks an unmet-need defect. The build, the
-  editor and the MCP read it, and `AuthoredClaimConflicts`, `AuthoredClaimRejectionRows`,
-  `intent_authored_type_claim`, `intent_authored_claim_rejection` and `PRODUCER_KINDS_CONFLICT` go.
-  * **A type's authored claim is stored, by kind** `open`. A type claims to be rows of a table or
-    an error, `TABLE_TYPE` written by `@table` and `ERROR_TYPE` by `@error`, as `graphitron_claim`
-    rows of the type family.
-* **The claims go** `blocked`, B's, on "A claim conflict is an entry defect over the claim supertype". `BindingUsages`, `SchemaQueries` and `ColumnMatchShadowTest` read
-  the occurrence's producer, bindings, column and node id, and the corpus's claim expectations are
-  deleted rather than restated. `intent_column_match_claim`, `intent_resolved_field_claim` and
+* **The claims go** `open`, B's. `BindingUsages`, `SchemaQueries` and `ColumnMatchShadowTest` read
+  `graphitron_claim` and the occurrence's producer, bindings, column and node id, and the corpus's
+  claim expectations are deleted rather than restated. `intent_column_match_claim`,
+  `intent_resolved_field_claim`, `intent_authored_type_claim`, `intent_authored_claim_conflict` and
   `intent_authored_field_claim` dissolve, the last once `intent_field_column_table` stops reading
   `intent_authored_claim_conflict`.
 * **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
@@ -2273,6 +2259,13 @@ the item's life. Already swept once, with seven survivors found and fixed.
 speaks of, and `graphitron_ast_path_entry`'s `anchor_line` and `anchor_column`. `graphitron_path_holder`
 went into `graphitron_occurrence`, a holder being just a coordinate. The anchor's spelling
 `Store.people[Staff]` and the argument spelling `Query.people.storeId` are retired with them.
+
+**The claim conflict moved into the claim supertype.** `AuthoredClaimConflicts`, its
+`FieldVerdict`, `FieldCoordinate` and `fieldConflicts`, `FieldClaim`, `AuthoredClaimRejectionRows`
+and `intent_authored_claim_rejection` are gone, with the grain `authored-claim-rejection`, the
+`producer-claim` and `binding-claim` grains and the defect code `PRODUCER_KINDS_CONFLICT`; the
+claims are `graphitron_claim` and its catalogs, the conflict `CLAIMS_CONFLICT` and
+`ROUTINE_LOOKUP_DEFERRED` with their detail, read by `ClaimConflicts`.
 
 **Path relations renamed into the join path's names** (2026-11-04). `graphitron_path_claim` is
 `graphitron_join_path_claim`; `graphitron_path_step` and its children `graphitron_path_step_column`,

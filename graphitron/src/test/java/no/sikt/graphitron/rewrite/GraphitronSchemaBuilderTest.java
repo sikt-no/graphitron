@@ -8970,10 +8970,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     // The @service x @routine conflicts (child, root single-node, root chain), the @routine x
-    // @lookupKey root deferral, and the three-directive dominance rule migrated to the
-    // store-backed detection's test (AuthoredClaimConflictsTest) when the walk's detector sites
-    // dissolved into the authored claim views; the coordinates now classify by arm order and the
-    // conflict is a located ValidationError.
+    // @lookupKey root deferral, and the three-directive rule live in the store-backed detection's
+    // test (ClaimConflictsTest); the coordinates classify by arm order and the conflict is a
+    // located ValidationError.
 
     // ===== DML mutation classification (Invariants #1, #7-#13 — see DmlReturnExpression and FieldBuilder.buildDmlField) =====
     //
@@ -11245,11 +11244,11 @@ class GraphitronSchemaBuilderTest {
     }
 
     // ===== Directive mutual exclusivity =====
-    // Mutually exclusive claiming directives no longer tombstone at the builder: every claim is
-    // a row in the store's authored claim views, and the conflict is the grouping rule in
-    // no.sikt.graphitron.model.derive.AuthoredClaimConflicts, reported as a located
-    // ValidationError while the coordinate classifies by arm order. The conflict fixtures live
-    // with that detection's store-backed test (AuthoredClaimConflictsTest).
+    // Mutually exclusive claiming directives do not tombstone at the builder: every claim is a row
+    // of graphitron_claim, and the conflict is an entry defect no.sikt.graphitron.model.derive.
+    // ClaimConflicts reports as a located ValidationError while the coordinate classifies by arm
+    // order. The conflict fixtures live with that detection's store-backed test
+    // (ClaimConflictsTest).
 
     @Test
     void serviceOnQueryWithTableReturnType_classifiesAsQueryServiceTableField() {

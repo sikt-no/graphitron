@@ -1,0 +1,119 @@
+# Two claims one declared element cannot hold together are one CLAIMS_CONFLICT at its declaration,
+# a type's at its base declaration, with each claim the rule weighed a row under it. Any two claims
+# conflict, of one family or of two: a field runs one producer and binds one way. A @routine a
+# field's path steps through without @splitQuery is no claim and still shares a field with none.
+# @routine with @lookupKey alone is deferred rather than refused. A written @service on Query.node
+# is the field's producer and no conflict, the node signature's lookup being no claim, and a
+# @field(name:) beside a @nodeId names where the decoded value goes rather than claiming a column.
+# A claim is what was written, so a @table the catalog lacks conflicts as much as one it answers.
+# film_fn is no routine the catalog has, which is a defect of its own and not this document's.
+
+type Film @table(name: "film") {
+  title: String
+  readTwice: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions", method: "isEnglish"})
+    @nodeId
+  namedAndComputed: String @field(name: "title")
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions", method: "isEnglish"})
+  serviceAndReader: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions", method: "isEnglish"})
+  serviceAndLateral: [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @routine(name: "film_fn")
+  serviceAndSplitRoutine: [Film!]! @splitQuery
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @routine(name: "film_fn")
+  routineOnly: [Film!]! @routine(name: "film_fn")
+}
+
+type Failure @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
+  title: String
+}
+
+type Misspelt @table(name: "flim") @error(handlers: [{handler: DATABASE}]) {
+  title: String
+}
+
+interface Node { id: ID! }
+
+input FilmFilter {
+  filmId: ID @nodeId(typeName: "Film") @field(name: "film_id")
+}
+
+extend type Query {
+  films(filter: FilmFilter): [Film!]!
+  failures: [Failure!]!
+  misspelt: [Misspelt!]!
+  serviceAndRoutine: [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @routine(name: "film_fn")
+  routineAndKey(id: ID @lookupKey): [Film!]! @routine(name: "film_fn")
+  serviceAndKey(id: ID @lookupKey): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  node(id: ID!): Node
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
+
+type Mutation {
+  writeAndService: Film @mutation(typeName: INSERT)
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  upsertAndService: Film @mutation(typeName: UPSERT)
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code IN ('CLAIMS_CONFLICT', 'ROUTINE_LOOKUP_DEFERRED')", rows: """
+  code,                    coordinate
+  CLAIMS_CONFLICT,         Failure
+  CLAIMS_CONFLICT,         Misspelt
+  CLAIMS_CONFLICT,         Film.namedAndComputed
+  CLAIMS_CONFLICT,         Film.readTwice
+  CLAIMS_CONFLICT,         Film.serviceAndLateral
+  CLAIMS_CONFLICT,         Film.serviceAndReader
+  CLAIMS_CONFLICT,         Film.serviceAndSplitRoutine
+  CLAIMS_CONFLICT,         Mutation.upsertAndService
+  CLAIMS_CONFLICT,         Mutation.writeAndService
+  ROUTINE_LOOKUP_DEFERRED, Query.routineAndKey
+  CLAIMS_CONFLICT,         Query.serviceAndKey
+  CLAIMS_CONFLICT,         Query.serviceAndRoutine
+  """)
+
+# Every claim under every claim defect, by its kind.
+extend schema @expectEquals(relation: "graphitron_entry_defect_claim", rows: """
+  code,                    coordinate,                  kind
+  CLAIMS_CONFLICT,         Failure,                     ERROR_TYPE
+  CLAIMS_CONFLICT,         Failure,                     TABLE_TYPE
+  CLAIMS_CONFLICT,         Misspelt,                    ERROR_TYPE
+  CLAIMS_CONFLICT,         Misspelt,                    TABLE_TYPE
+  CLAIMS_CONFLICT,         Film.namedAndComputed,       COLUMN
+  CLAIMS_CONFLICT,         Film.namedAndComputed,       EXPRESSION
+  CLAIMS_CONFLICT,         Film.readTwice,              EXPRESSION
+  CLAIMS_CONFLICT,         Film.readTwice,              NODE_ID
+  CLAIMS_CONFLICT,         Film.serviceAndLateral,      SERVICE
+  CLAIMS_CONFLICT,         Film.serviceAndReader,       EXPRESSION
+  CLAIMS_CONFLICT,         Film.serviceAndReader,       SERVICE
+  CLAIMS_CONFLICT,         Film.serviceAndSplitRoutine, ROUTINE
+  CLAIMS_CONFLICT,         Film.serviceAndSplitRoutine, SERVICE
+  CLAIMS_CONFLICT,         Mutation.upsertAndService,   SERVICE
+  CLAIMS_CONFLICT,         Mutation.upsertAndService,   UPSERT
+  CLAIMS_CONFLICT,         Mutation.writeAndService,    INSERT
+  CLAIMS_CONFLICT,         Mutation.writeAndService,    SERVICE
+  ROUTINE_LOOKUP_DEFERRED, Query.routineAndKey,         LOOKUP
+  ROUTINE_LOOKUP_DEFERRED, Query.routineAndKey,         ROUTINE
+  CLAIMS_CONFLICT,         Query.serviceAndKey,         LOOKUP
+  CLAIMS_CONFLICT,         Query.serviceAndKey,         SERVICE
+  CLAIMS_CONFLICT,         Query.serviceAndRoutine,     ROUTINE
+  CLAIMS_CONFLICT,         Query.serviceAndRoutine,     SERVICE
+  """)
+
+# The one path step a conflict is about: Film.serviceAndLateral's @routine, which no claim holds.
+extend schema @expectEquals(relation: "graphitron_entry_defect_path_step", rows: """
+  code
+  CLAIMS_CONFLICT
+  """)
+
+# What the producer claims make of the one the conflict leaves alone.
+extend schema @assertContains(relation: "graphitron_producer", rows: """
+  type_name, field_name, kind
+  Query,     node,       SERVICE
+  """)

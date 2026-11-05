@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
-import no.sikt.graphitron.model.derive.FieldClaim;
 
 /**
  * The {@code schema} tool's wire shape: what {@link SchemaQueries} read, rendered.
@@ -141,7 +140,6 @@ final class SchemaView {
         var map = new LinkedHashMap<String, Object>();
         map.put("classifier", claim.classifier());
         map.put("trigger", "@" + claim.trigger());
-        map.put("decoded", claim.decoded());
         McpWire.putPosition(map, "location", claim.position());
         return map;
     }

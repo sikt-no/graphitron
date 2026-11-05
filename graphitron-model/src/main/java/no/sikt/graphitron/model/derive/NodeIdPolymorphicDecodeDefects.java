@@ -43,8 +43,8 @@ import static org.jooq.impl.DSL.selectOne;
  * the rule reaches. No arm here fails while promising an emitter later.
  *
  * <p>The population is the view's and this class narrows it once more, on the terms
- * {@link AuthoredClaimConflicts} settled and {@link NodeIdDecodeDefects} restates: the view states
- * its whole predicate and no consumer's filter, and this is the <em>build-error</em> consumer, so it
+ * {@link NodeIdDecodeDefects} states: the view states its whole predicate and no consumer's
+ * filter, and this is the <em>build-error</em> consumer, so it
  * joins {@code intent_type_domain} on the refused coordinate's owning type. The editor's diagnostic
  * arm asks the same rows a different question and joins nothing, a refused instruction at an
  * unreached coordinate being exactly where an author most needs to be told, which is also what makes

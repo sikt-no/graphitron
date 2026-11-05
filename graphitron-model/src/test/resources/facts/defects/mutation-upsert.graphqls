@@ -32,7 +32,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                    coordinate
   MUTATION_UPSERT,         Mutation.upsertFilm
   MUTATION_UPSERT,         Mutation.upsertOrService
-  PRODUCER_KINDS_CONFLICT, Mutation.upsertOrService
+  CLAIMS_CONFLICT,         Mutation.upsertOrService
   """)
 
 extend schema @expectEquals(relation: "graphitron_producer", where: """

@@ -2,6 +2,7 @@ package no.sikt.graphitron.mcp;
 
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
+import no.sikt.graphitron.model.derive.AuthoredClaim;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 import org.jooq.Field;
@@ -10,11 +11,20 @@ import org.jooq.OrderField;
 import org.jooq.Records;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
@@ -26,10 +36,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
@@ -150,15 +157,8 @@ final class SchemaQueries {
         List<MethodBinding> methods
     ) {}
 
-    /**
-     * One authored claim on a type: which classification the author asked for, through which directive.
-     *
-     * @param decoded {@code false} where the application exists and its decode declined, which is a
-     *     claim the walk still honours by diverting
-     */
-    record TypeClaim(
-        String classifier, String trigger, boolean decoded, Optional<McpWire.Position> position
-    ) {}
+    /** One authored claim on a type: which classification the author asked for, through which directive. */
+    record TypeClaim(String classifier, String trigger, Optional<McpWire.Position> position) {}
 
     /**
      * One resolved claim on a field: the classification and which tier decided it, plus the authoring
@@ -417,60 +417,98 @@ final class SchemaQueries {
         return graph.eq(GRAPHQL_TYPE.GRAPH_NAME).and(type.eq(GRAPHQL_TYPE.TYPE_NAME));
     }
 
-    /** What the author claimed the type is, ordered by classifier so two claims read in one order. */
+    /**
+     * What the author claimed the type is, ordered by classifier so two claims read in one order: the
+     * type family of the claims, each with the directive written at its position.
+     */
     private static Field<List<TypeClaim>> typeClaims() {
+        var c = GRAPHITRON_CLAIM;
+        var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var classifier = when(c.KIND.eq("TABLE_TYPE"), "TABLE").otherwise("ERROR");
         return multiset(
-            select(INTENT_AUTHORED_TYPE_CLAIM.CLASSIFIER, INTENT_AUTHORED_TYPE_CLAIM.TRIGGER,
-                INTENT_AUTHORED_TYPE_CLAIM.DECODED, INTENT_AUTHORED_TYPE_CLAIM.SOURCE_NAME,
-                INTENT_AUTHORED_TYPE_CLAIM.SOURCE_LINE, INTENT_AUTHORED_TYPE_CLAIM.SOURCE_COLUMN)
-                .from(INTENT_AUTHORED_TYPE_CLAIM)
-                .where(ofType(INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME,
-                    INTENT_AUTHORED_TYPE_CLAIM.TYPE_NAME))
-                .orderBy(INTENT_AUTHORED_TYPE_CLAIM.CLASSIFIER.asc()))
+            select(classifier, da.DIRECTIVE_NAME, c.SOURCE_NAME, c.SOURCE_LINE, c.SOURCE_COLUMN)
+                .from(c)
+                .join(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.SOURCE_NAME.eq(c.SOURCE_NAME),
+                    da.SOURCE_LINE.eq(c.SOURCE_LINE), da.SOURCE_COLUMN.eq(c.SOURCE_COLUMN))
+                .where(ofType(c.GRAPH_NAME, c.COORDINATE), c.KIND.in("TABLE_TYPE", "ERROR_TYPE"))
+                .orderBy(classifier.asc()))
             .convertFrom(r -> r.map(row -> new TypeClaim(row.value1(), row.value2(),
-                Boolean.TRUE.equals(row.value3()),
-                McpWire.position(row.value4(), row.value5(), row.value6()))));
+                McpWire.position(row.value3(), row.value4(), row.value5()))));
     }
 
     /**
-     * The type-grain claim conflict, which the two-grain relation marks by a null field name: the same
+     * The type-grain claim conflict, which the defect's site marks by a null field name: the same
      * relation carries the field-grain rows and telling them apart on the key is what keeps a field's
      * violation out of its type's slot.
      */
     private static Field<Optional<Conflict>> typeConflict() {
-        return conflicts(ofType(INTENT_AUTHORED_CLAIM_CONFLICT.GRAPH_NAME,
-            INTENT_AUTHORED_CLAIM_CONFLICT.TYPE_NAME)
-            .and(INTENT_AUTHORED_CLAIM_CONFLICT.FIELD_NAME.isNull()));
+        var site = GRAPHITRON_ENTRY_DEFECT_SITE;
+        return conflicts(ofType(site.GRAPH_NAME, site.TYPE_NAME).and(site.FIELD_NAME.isNull()));
     }
 
     /**
-     * The conflict at one coordinate, whichever grain {@code coordinate} names.
-     *
-     * <p>The verdict and the location are the view's; the message is the minted rejection's, read
-     * from {@code intent_authored_claim_rejection} by the same inner join the diagnostics surface
-     * uses. It is minted rather than derived because its naming order is the claim enum's
-     * declaration order, which no view over this store can express, and the mint runs at capture
-     * cadence, so the join is total on any settled store.
+     * The claim conflict at one coordinate, whichever grain {@code coordinate} names: the entry defect
+     * at its site, with the directives that wrote its claims and path steps nested on the defect's
+     * key, composed into the sentence a build reports, naming the directives in the order a build
+     * names them.
      */
     private static Field<Optional<Conflict>> conflicts(Condition coordinate) {
+        var site = GRAPHITRON_ENTRY_DEFECT_SITE;
+        var ec = GRAPHITRON_ENTRY_DEFECT_CLAIM;
+        var c = GRAPHITRON_CLAIM;
+        var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var ps = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
+        var claimDirectives = multiset(select(da.DIRECTIVE_NAME)
+                .from(ec)
+                .join(c).on(c.GRAPH_NAME.eq(ec.GRAPH_NAME), c.COORDINATE.eq(ec.COORDINATE),
+                    c.KIND.eq(ec.KIND), c.CLAIMER.eq(ec.CLAIMER))
+                .join(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.SOURCE_NAME.eq(c.SOURCE_NAME),
+                    da.SOURCE_LINE.eq(c.SOURCE_LINE), da.SOURCE_COLUMN.eq(c.SOURCE_COLUMN))
+                .where(ec.GRAPH_NAME.eq(site.GRAPH_NAME), ec.SOURCE_NAME.eq(site.SOURCE_NAME),
+                    ec.SOURCE_LINE.eq(site.SOURCE_LINE), ec.SOURCE_COLUMN.eq(site.SOURCE_COLUMN),
+                    ec.CODE.eq(site.CODE)))
+            .convertFrom(rows -> rows.map(r -> r.value1()));
+        var stepDirectives = multiset(select(inline(AuthoredClaim.ROUTINE.directive()))
+                .from(ps)
+                .where(ps.GRAPH_NAME.eq(site.GRAPH_NAME), ps.SOURCE_NAME.eq(site.SOURCE_NAME),
+                    ps.SOURCE_LINE.eq(site.SOURCE_LINE), ps.SOURCE_COLUMN.eq(site.SOURCE_COLUMN),
+                    ps.CODE.eq(site.CODE)))
+            .convertFrom(rows -> rows.map(r -> r.value1()));
         return multiset(
-            select(INTENT_AUTHORED_CLAIM_CONFLICT.VERDICT,
-                INTENT_AUTHORED_CLAIM_REJECTION.MESSAGE,
-                INTENT_AUTHORED_CLAIM_CONFLICT.SOURCE_NAME,
-                INTENT_AUTHORED_CLAIM_CONFLICT.SOURCE_LINE,
-                INTENT_AUTHORED_CLAIM_CONFLICT.SOURCE_COLUMN)
-                .from(INTENT_AUTHORED_CLAIM_CONFLICT)
-                .join(INTENT_AUTHORED_CLAIM_REJECTION)
-                .on(INTENT_AUTHORED_CLAIM_REJECTION.GRAPH_NAME
-                        .eq(INTENT_AUTHORED_CLAIM_CONFLICT.GRAPH_NAME),
-                    INTENT_AUTHORED_CLAIM_REJECTION.TYPE_NAME
-                        .eq(INTENT_AUTHORED_CLAIM_CONFLICT.TYPE_NAME),
-                    INTENT_AUTHORED_CLAIM_REJECTION.FIELD_NAME
-                        .isNotDistinctFrom(INTENT_AUTHORED_CLAIM_CONFLICT.FIELD_NAME))
-                .where(coordinate))
-            .convertFrom(r -> r.map(row -> new Conflict(row.value1(), row.value2(),
-                McpWire.position(row.value3(), row.value4(), row.value5()))).stream().findFirst());
+            select(site.CODE, site.TYPE_NAME, site.FIELD_NAME, claimDirectives, stepDirectives,
+                site.SOURCE_NAME, site.SOURCE_LINE, site.SOURCE_COLUMN)
+                .from(site)
+                .where(coordinate, site.CODE.in(CLAIMS_CONFLICT, ROUTINE_LOOKUP_DEFERRED)))
+            .convertFrom(r -> r.map(row -> {
+                boolean deferred = ROUTINE_LOOKUP_DEFERRED.equals(row.value1());
+                String at = row.value3() == null
+                    ? "Type '" + row.value2() + "': "
+                    : "Field '" + row.value2() + "." + row.value3() + "': ";
+                String sentence = deferred
+                    ? "@routine with @lookupKey on a root field classifies but does not emit yet"
+                    : ordered(Stream.concat(row.value4().stream(), row.value5().stream()).toList())
+                        .stream().map(n -> "@" + n).collect(Collectors.joining(", "))
+                        + " are mutually exclusive";
+                return new Conflict(deferred ? "DEFERRED" : "CONFLICT", at + sentence,
+                    McpWire.position(row.value6(), row.value7(), row.value8()));
+            }).stream().findFirst());
     }
+
+    /** A conflict's directive names, distinct, in {@link AuthoredClaim}'s order, any other after. */
+    private static List<String> ordered(List<String> names) {
+        var order = new HashMap<String, Integer>();
+        for (var claim : AuthoredClaim.values()) {
+            order.put(claim.directive(), claim.ordinal());
+        }
+        return names.stream().distinct()
+            .sorted(Comparator.comparing((String n) -> order.getOrDefault(n, Integer.MAX_VALUE))
+                .thenComparing(Comparator.naturalOrder()))
+            .toList();
+    }
+
+    private static final String CLAIMS_CONFLICT = "CLAIMS_CONFLICT";
+
+    private static final String ROUTINE_LOOKUP_DEFERRED = "ROUTINE_LOOKUP_DEFERRED";
 
     /**
      * The catalog tables the type's {@code @table} binding resolves to, ordered by the pair the id is
@@ -784,8 +822,8 @@ final class SchemaQueries {
 
     /** The field-grain claim conflict, told from its type's by carrying a field name. */
     private static Field<Optional<Conflict>> fieldConflict() {
-        return conflicts(ofField(INTENT_AUTHORED_CLAIM_CONFLICT.GRAPH_NAME,
-            INTENT_AUTHORED_CLAIM_CONFLICT.TYPE_NAME, INTENT_AUTHORED_CLAIM_CONFLICT.FIELD_NAME));
+        var site = GRAPHITRON_ENTRY_DEFECT_SITE;
+        return conflicts(ofField(site.GRAPH_NAME, site.TYPE_NAME, site.FIELD_NAME));
     }
 
     /**

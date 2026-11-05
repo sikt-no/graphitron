@@ -605,9 +605,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * wants to jump to a leaf class checks for non-null first.
          *
          * <p>The spelling and not the {@link Class}, on the rule a rejection follows: a rejection
-         * is a fact the store holds, and {@code intent_authored_claim_rejection.variant} holds
-         * exactly this string. Spelling it at construction also means the stored value and this
-         * key cannot drift.
+         * is a fact the store holds, and {@code rejection_validation_error.variant} holds exactly
+         * this string. Spelling it at construction also means the stored value and this key cannot
+         * drift.
          */
         record VariantClass(String variant) implements StubKey {}
     }
@@ -682,11 +682,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * {@code UpdateRowsError.NoUniqueKeyCoverage} versus the {@code DeleteRowsError} leaf), and an
      * ambiguous spelling would fuse two families in the very dimension that exists to split them.
      *
-     * <p>Lives with the hierarchy it spells, so both writers of a rejection's stored variant
-     * ({@code diagnostics.RejectionFacts} and
-     * {@link no.sikt.graphitron.model.derive.AuthoredClaimRejectionRows}) reach one rule and a
-     * rename of a leaf carries into every stored spelling by construction rather than by a reader
-     * remembering to follow it.
+     * <p>Lives with the hierarchy it spells, so the writer of a rejection's stored variant
+     * ({@code diagnostics.RejectionFacts}) reaches one rule and a rename of a leaf carries into
+     * every stored spelling by construction rather than by a reader remembering to follow it.
      */
     static String classSpelling(Class<?> cls) {
         return cls.getCanonicalName().substring(cls.getPackageName().length() + 1);

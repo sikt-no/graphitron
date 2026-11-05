@@ -84,7 +84,7 @@ import java.util.Set;
  * ask a question the pass could have answered. The record is therefore what one open store yielded,
  * violations and emission facts alike.
  */
-public record StoreDetections(AuthoredClaimConflicts.Detection claims,
+public record StoreDetections(ClaimConflicts.Detection claims,
                               ArgmappingProjectionDefects.Detection argmappingProjections,
                               NodeIdDecodeDefects.Detection nodeIdDecodes,
                               NodeIdPolymorphicDecodeDefects.Detection nodeIdPolymorphicDecodes,
@@ -116,7 +116,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
      */
     public static Map<String, Set<Table<?>>> reads() {
         var roster = new LinkedHashMap<String, Set<Table<?>>>();
-        roster.put("AuthoredClaimConflicts", AuthoredClaimConflicts.READS);
+        roster.put("ClaimConflicts", ClaimConflicts.READS);
         roster.put("ArgmappingProjectionDefects", ArgmappingProjectionDefects.READS);
         roster.put("NodeIdDecodeDefects", NodeIdDecodeDefects.READS);
         roster.put("NodeIdPolymorphicDecodeDefects", NodeIdPolymorphicDecodeDefects.READS);
@@ -145,7 +145,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         return switch (classified) {
             case ClassifiedRun.Absent ignored -> StoreDetections.empty();
             case ClassifiedRun.Present present -> {
-                yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graphName),
+                yield new StoreDetections(ClaimConflicts.detect(dsl, graphName),
                     ArgmappingProjectionDefects.detect(dsl, graphName),
                     NodeIdDecodeDefects.detect(dsl, graphName),
                     NodeIdPolymorphicDecodeDefects.detect(dsl, graphName),
@@ -166,7 +166,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
 
     /** The empty detection, for callers running capture without the detection pass. */
     public static StoreDetections empty() {
-        return new StoreDetections(AuthoredClaimConflicts.Detection.empty(),
+        return new StoreDetections(ClaimConflicts.Detection.empty(),
             ArgmappingProjectionDefects.Detection.empty(),
             NodeIdDecodeDefects.Detection.empty(),
             NodeIdPolymorphicDecodeDefects.Detection.empty(),
@@ -198,13 +198,5 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(outboxes.violations());
         out.addAll(conditionOverloads.violations());
         return List.copyOf(out);
-    }
-
-    /**
-     * The authored-claim family's conflict verdicts, the one product a consumer beyond the error
-     * stream reads today.
-     */
-    public List<AuthoredClaimConflicts.FieldVerdict.Conflict> fieldConflicts() {
-        return claims.fieldConflicts();
     }
 }

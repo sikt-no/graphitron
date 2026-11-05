@@ -65,8 +65,8 @@ xref:schema/index.adoc[the generated schema reference] for its columns and its f
   a presence arm falling back to the raw application where the decode declined.
 
 | What did the author claim, on a type?
-| `intent_authored_type_claim`. `@table` and `@error`, decoded arm plus presence fallback each, with
-  the root type names masked out.
+| `graphitron_claim`, its type family: `TABLE_TYPE` from `@table` and `ERROR_TYPE` from `@error`, as
+  written whether or not the table resolves.
 
 | Which catalog table does a type bind?
 | `intent_bound_table`, resolving `@table`'s reference through `graphitron_spelled_table`: the `name`
@@ -82,9 +82,10 @@ xref:schema/index.adoc[the generated schema reference] for its columns and its f
   structural reading that survived the anti-join.
 
 | What contradicts?
-| `intent_authored_claim_conflict`: one row per coordinate two or more distinct classifiers claim,
-  at both grains. That is the whole predicate; the relation carries no population filter, so each
-  consumer applies the population its own question needs.
+| `graphitron_entry_defect`, code `CLAIMS_CONFLICT`: one row per element at whose declaration two
+  claims of `graphitron_claim` cannot stand together, with each claim in
+  `graphitron_entry_defect_claim` under it. `ROUTINE_LOOKUP_DEFERRED` is the one pair
+  `graphitron_claim_inclusion` reports otherwise.
 |===
 
 Two properties of this layer are worth stating outright, because they are what make it the
@@ -95,10 +96,10 @@ written; `intent_resolved_field_claim`'s anti-join does the masking, at the coor
 authored claim at a coordinate masks every structural reading there, presence arms included, because
 a directive whose decode declined still diverted the walk.
 
-*A conflict is a fact, not a failure.* `intent_authored_claim_conflict` is total over the authored
-claims. Whether a violated coordinate fails the build is the consumer's question: the build-error
-surface joins the emitted type domain, while the editor's diagnostic arm reads the rows ungated,
-because a type no field reaches is precisely where an author most needs the signal. What that does
+*A conflict is a fact, not a failure.* A claim defect is written wherever the claims are, and fails
+the build there, a type no field reaches included, which is precisely where an author most needs the
+signal; the editor shows the same rows. Which claims win is each reader's question: the relation
+states the claims and their priorities and decides nothing. What that does
 to generation is xref:../explanation/typed-rejection.adoc[Typed rejection]'s subject, and
 <<when-nothing-is-generated,When nothing is generated>> below.
 
@@ -398,7 +399,7 @@ they stay stated rather than demonstrated.
 
 | Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
 | Unresolvable directives | `UnclassifiedType` | Validation error ; build fails
-| Conflicting type directives (`@table` with `@error`) | Arm-order winner | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails
+| Conflicting type directives (`@table` with `@error`) | Arm-order winner | Validation error from the store-backed conflict detection (`ClaimConflicts`); build fails
 |===
 
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
@@ -918,7 +919,7 @@ first row is the exception, a live pattern still stated rather than shown.
 | `@mutation(typeName: DELETE, multiRow: true, failOnMissing: true)` whose input covers no key | `UnclassifiedField` (typed `DeleteRowsError.FailOnMissingNeedsKey`) | Validation error ; build fails
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification. UPSERT is recognised and deliberately not generated: the write arm has no producer today, so the coordinate defers rather than erroring.
 | Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
-| Both `@service` and `@mutation` | Arm-order winner | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`) ; build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying both claims' decoded slot facts (verb, table, method)
+| Both `@service` and `@mutation` | Arm-order winner | Validation error from the store-backed conflict detection (`ClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying both claims' decoded slot facts (verb, table, method)
 |===
 
 The direct-return `DmlTableField` permit is guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
@@ -1071,7 +1072,7 @@ is the <<nesting-type,unbound object type example>>. What is left is the three r
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| Conflicting directives | Arm-order winner | Validation error from the store-backed conflict detection (`AuthoredClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying the claims
+| Conflicting directives | Arm-order winner | Validation error from the store-backed conflict detection (`ClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying the claims
 | `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
 | `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.
 |===

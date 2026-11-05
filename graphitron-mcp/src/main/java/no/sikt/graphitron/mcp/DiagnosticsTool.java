@@ -1,23 +1,36 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.model.derive.AuthoredClaim;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.tables.records.DiagnosticRecord;
 import org.jooq.Condition;
 
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.select;
 
 /**
  * The {@code diagnostics} read tool: the current diagnostics as a projection of the fact
  * store's {@code diagnostic} union view, closing the authoring loop (an agent edits, then reads
- * its own diagnostics back). The view already unions the five arms (the rejection residue, the
- * store-native claim-conflict pilot, the lint and advisory arms, the compile oracle), so this
+ * its own diagnostics back). The view already unions its arms (the rejection residue, the entry
+ * defects, the lint and advisory arms, the compile oracle), so this
  * tool maps rows to the wire and never re-derives a classification; the {@code source}
  * discriminator ({@code "schema"} / {@code "compile"} / {@code "classpath"}) is the view's own column.
  *
@@ -61,7 +74,35 @@ final class DiagnosticsTool {
         severity.ifPresent(s -> conditions.add(DiagnosticFacets.Dimension.SEVERITY.matches(s)));
         coordinate.ifPresent(c -> conditions.add(DiagnosticFacets.Dimension.COORDINATE.matches(c)));
 
-        var entries = dsl.selectFrom(DIAGNOSTIC)
+        // A claim defect's directives: the application written at each of its claims' positions, and
+        // @routine for each path step, in the order a build names them.
+        var ec = GRAPHITRON_ENTRY_DEFECT_CLAIM;
+        var claim = GRAPHITRON_CLAIM;
+        var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var dt = GRAPHITRON_DEFECT_TYPE;
+        var ps = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
+        var claimDirectives = multiset(select(da.DIRECTIVE_NAME)
+                .from(ec)
+                .join(dt).on(dt.CODE.eq(ec.CODE))
+                .join(claim).on(claim.GRAPH_NAME.eq(ec.GRAPH_NAME),
+                    claim.COORDINATE.eq(ec.COORDINATE), claim.KIND.eq(ec.KIND),
+                    claim.CLAIMER.eq(ec.CLAIMER))
+                .join(da).on(da.GRAPH_NAME.eq(claim.GRAPH_NAME), da.SOURCE_NAME.eq(claim.SOURCE_NAME),
+                    da.SOURCE_LINE.eq(claim.SOURCE_LINE), da.SOURCE_COLUMN.eq(claim.SOURCE_COLUMN))
+                .where(ec.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ec.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
+                    ec.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
+                    ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+            .convertFrom(rows -> rows.map(r -> r.value1()));
+        var stepDirectives = multiset(select(inline(AuthoredClaim.ROUTINE.directive()))
+                .from(ps)
+                .join(dt).on(dt.CODE.eq(ps.CODE))
+                .where(ps.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ps.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
+                    ps.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
+                    ps.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN),
+                    dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+            .convertFrom(rows -> rows.map(r -> r.value1()));
+        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives)
+            .from(DIAGNOSTIC)
             .where(conditions)
             .orderBy(DIAGNOSTIC.SOURCE.asc(),
                 DIAGNOSTIC.FILE.asc().nullsLast(),
@@ -69,7 +110,8 @@ final class DiagnosticsTool {
                 DIAGNOSTIC.SOURCE_COLUMN.asc().nullsLast(),
                 DIAGNOSTIC.COORDINATE.asc().nullsLast(),
                 DIAGNOSTIC.MESSAGE.asc())
-            .fetch(DiagnosticsTool::entry);
+            .fetch(r -> entry(r.into(DIAGNOSTIC), ordered(Stream.concat(
+                r.get(claimDirectives).stream(), r.get(stepDirectives).stream()).toList())));
 
         var paged = McpWire.page(entries, args, DEFAULT_LIMIT);
         var fields = new LinkedHashMap<String, Object>();
@@ -103,12 +145,15 @@ final class DiagnosticsTool {
      * in the root locale, where the enum's own transform used the default one: on a Turkish-locale
      * JVM {@code INVALID_SCHEMA} came out with a dotless i.
      */
-    private static Map<String, Object> entry(DiagnosticRecord row) {
+    private static Map<String, Object> entry(DiagnosticRecord row, List<String> directives) {
         var entry = new LinkedHashMap<String, Object>();
         entry.put("source", row.getSource());
         entry.put("severity", row.getSeverity());
         McpWire.putIfNotNull(entry, "coordinate", row.getCoordinate());
-        entry.put("message", row.getMessage());
+        entry.put("message", directives.isEmpty()
+            ? row.getMessage()
+            : row.getMessage() + " (" + directives.stream().map(n -> "@" + n)
+                .collect(Collectors.joining(", ")) + ")");
         if (row.getKind() != null) {
             entry.put("rejectionKind", row.getKind().toLowerCase(Locale.ROOT).replace('_', '-'));
         }
@@ -121,5 +166,17 @@ final class DiagnosticsTool {
             entry.put("location", location);
         }
         return entry;
+    }
+
+    /** A defect's directive names, distinct, in {@link AuthoredClaim}'s order, any other after. */
+    private static List<String> ordered(List<String> names) {
+        var order = new HashMap<String, Integer>();
+        for (var claim : AuthoredClaim.values()) {
+            order.put(claim.directive(), claim.ordinal());
+        }
+        return names.stream().distinct()
+            .sorted(Comparator.comparing((String n) -> order.getOrDefault(n, Integer.MAX_VALUE))
+                .thenComparing(Comparator.naturalOrder()))
+            .toList();
     }
 }

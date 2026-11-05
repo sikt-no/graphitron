@@ -23,7 +23,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_FANOUT;
  * rather than a flag that changes what the join means.
  *
  * <p>The predicate lives wholly in the view's SQL and what remains here is the decode, which is
- * {@code AuthoredClaimConflicts}' division of labour and has a second consequence worth stating:
+ * the store detections' division of labour and has a second consequence worth stating:
  * the relations this rule reads are the view's own declared reads, inside the declaration
  * machinery the store's gates walk, rather than a set this class could name incompletely. The
  * verdict decode is total over the view's vocabulary with no {@code default} and a drift throw;

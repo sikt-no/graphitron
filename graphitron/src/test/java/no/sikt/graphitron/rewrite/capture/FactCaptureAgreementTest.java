@@ -84,8 +84,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       its reader's test
  *       (the authored-claim views carry their reason in two places, because a rule reading what an
  *       author wrote is asked both what it makes of a set of applications and whether real SDL
- *       reaches it in that shape: {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest}
- *       binds the lookup arm to {@code LookupFacts.triggersFor} over a real capture, while
+ *       reaches it in that shape: {@code no.sikt.graphitron.rewrite.derive.ClaimConflictsTest}
+ *       binds the stored lookup claims to {@code LookupFacts.triggersFor} over a real capture, while
  *       the {@code authored-claim} fact documents in graphitron-model bind each arm pair, its
  *       position mask and its ordinal collapse over SDL captured against the sakila catalog in the
  *       module whose DDL declares them; the column-match view carries its reason in two places for the same reason,
@@ -193,16 +193,10 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       {@code producer-out-of-the-parent-statement.graphqls} and
  *       {@code producer-root-by-binding.graphqls} carrying what the producer rule makes of those
  *       rows;
- *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the
- *       {@code intent_authored_claim_conflict} view to hand-written per-fixture expectations
- *       the view does not produce, the re-aimed anchor left standing after the corpus shadow
- *       proved the cutover and retired with the Java reduction it shadowed, and the two claim
- *       relations it reads are pinned by the {@code authored-claim} fact documents; the same class
- *       binds
- *       {@code intent_authored_claim_rejection}, the post-capture mint over that view, on the one
- *       claim a minted relation can be held to, that it stands one-to-one with the view it mints
- *       from and words each violation exactly as the build-error projection does, which is what
- *       the diagnostics surface's inner join over it rests on). Later derivation
+ *       {@code no.sikt.graphitron.rewrite.derive.ClaimConflictsTest} binds the claim defects to
+ *       hand-written per-fixture expectations the store does not produce, the messages a build
+ *       reports, and the claims and the defects themselves are pinned by the {@code claim} and
+ *       {@code claims-conflict} fact documents). Later derivation
  *       strata land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#UNSHADOWED} for relations the shadowed model has no counterpart for, so that
  *       agreement with it is not a question that can be asked of them. Every other arm answers
