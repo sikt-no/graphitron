@@ -1,7 +1,7 @@
 ---
 id: R1150
 title: "A nesting field named like a column of its parent binds the column, not its nested fields"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: classification-model
