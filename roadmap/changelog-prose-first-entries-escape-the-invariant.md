@@ -20,7 +20,7 @@ Every Done entry in `roadmap/changelog.md` is seen by the roadmap tool, whatever
 
 `Main.changelogDoneIds` and the revive retraction read an entry's id only from a bullet that begins with it (`CHANGELOG_BULLET_HEAD`, `^- (R\d+)\b`). Entries now lead with what changed for a reader and name the id in a parenthetical, `(slug, R<n>, ...)`. Of the 761 top-level bullets, 584 begin `- R<n>`; of the rest, 76 are prose-first entries carrying an id (R1143, R1144, R1142, R1115 among them) and invisible to both. For those items the board-or-changelog check never runs, and a revive leaves the Done entry standing beside the restored item.
 
-Found in the round 1 review of `changelog-announces-deliveries-in-progress`.
+Found in the round 1 review of `commit-subject-says-the-kind-of-change`.
 
 ## Plan
 

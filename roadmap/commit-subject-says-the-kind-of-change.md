@@ -24,19 +24,20 @@ Behaviour reaches consumers long before Done. R876's "For the changelog at Done"
 
 Commits reaching trunk follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/), the item id as the scope.
 
-* **Subject.** `<type>(<scope>)[!]: <description>`. The description keeps the house style, a sentence stating what is now true. The scope is the item id, `feat(R876): ...`; a commit no single item covers takes its area, `roadmap`, `docs`, `deps`. `!` marks a breaking change, and a `BREAKING CHANGE:` footer says what a consumer must change.
+* **Subject.** `<type>(<scope>)[!]: <description>`. The description keeps the house style, a sentence stating what is now true. The scope is the item id, `feat(R876): ...`; a commit no single item covers takes its area, `roadmap`, `docs`, `deps`. `!` marks a breaking change, and a `BREAKING-CHANGE:` footer says what a consumer must change. The hyphenated form is the house form, the synonym Conventional Commits accepts, because only it is a git trailer and so reads in one block with `Co-Authored-By:` and `Claude-Session:`.
 * **Types.** `feat` (an author or consumer can do something new), `fix` (behaviour corrected), `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, and `revert`, whose body names the hash it reverts. Roadmap commits are `chore`: `chore(R1130): Ready -> In Progress` for one item, `chore(roadmap): ...` for a regeneration or several items.
-* **Not for trunk.** `wip`, `draft` and `spike` are types that never reach trunk. The publish skill's check matches them as the type, with or without a scope and `!` (`wip(green)`, `wip(R876)`), where today it matches only a literal `wip:` prefix.
+* **Not for trunk.** `wip`, `draft` and `spike` are types that never reach trunk.
+* **Push check.** The publish skill checks every subject in `origin/claude/graphitron-rewrite..HEAD`, where today it reads only the tip's. It stops on a subject whose type is `wip`, `draft` or `spike`, with or without a scope and `!` (`^(wip|draft|spike)(\(|!|:)`), and on any subject not of the shape (`^(feat|fix|refactor|perf|test|docs|build|ci|chore|revert)(\([^)]+\))?!?: .+`), naming each offending commit. A subject git writes itself, `Revert "..."`, fails the shape, so a revert is reworded `revert(<scope>): ...` before it is pushed.
 * **Who.** Whoever puts a commit on trunk gives it its type, rewriting a `wip`, `draft` or `spike` subject on the way; that covers a co-author's commits taken onto trunk by another session.
 * **Dependabot.** `.github/dependabot.yml` sets `commit-message: prefix: "build"` for both ecosystems, so its subjects read `build(deps): ...`.
 * **Cut-over.** The convention holds from the commit that lands this item. History is not rewritten.
 
-Edit sites: `CLAUDE.md`, Git Workflow (the subject shape and the not-for-trunk types, written with the placeholder `<type>(R<n>)` because `check-transient-citations` fails the build on a concrete id there); `roadmap/workflow.adoc`, Publishing (the subject shape with concrete examples); the publish skill's not-for-trunk check; the roadmap skill's commit subjects; `.github/dependabot.yml`.
+Edit sites: `CLAUDE.md`, Git Workflow (the subject shape and the not-for-trunk types, written with the placeholder `<type>(R<n>)` because `check-transient-citations` fails the build on a concrete id there); `roadmap/workflow.adoc`, Publishing (the subject shape with concrete examples); the publish skill's check, widened from the tip's subject to the range and from a literal prefix to the shape; the roadmap skill, which gains a line under `status` giving a transition's subject as `chore(R<n>): <from> -> <to>`; the `classified-corpus` skill's step 8, whose `corpus: add the <id> example for <verdict>` becomes `test(corpus): add the <id> example for <verdict>`; `.github/dependabot.yml`. `srp` needs no edit: its `\bR<n>\b` grep over subjects matches `chore(R<n>)`.
 
 ## Out of scope
 
 * **Release notes and where a consumer reads them.** Graphitron 10's release candidates are tagged and released in Sikt's internal GitLab, so a release-notes command over two release-candidate tags, and the release body or page it writes into, is a follow-up item that reads this history.
-* **A build gate on the subject shape.** The publish skill's check holds the shape at every push; a gate in the build is a follow-up, needing `fetch-depth: 0` in `rewrite-build.yml` or a loud failure when the cut-over is unreachable.
+* **A build gate on the subject shape.** The publish skill's range check holds the shape at every push made through the skill; a plain `git push` bypasses it, and Dependabot's commits never meet it, until a gate in the build, a follow-up needing `fetch-depth: 0` in `rewrite-build.yml` or a loud failure when the cut-over is unreachable.
 * **`changelog.md`.** Unchanged: it stays the Done narrative. The revive retraction gap round 1 found there is `changelog-prose-first-entries-escape-the-invariant`.
 
 ## Reviewer findings
@@ -124,12 +125,22 @@ Not a gate verdict. Read against trunk `90eb4d31f`. The narrowed goal is right: 
 
 1. **Nothing in the plan holds the shape at push.** The Out of scope section defers a build gate because "the publish skill's check holds the shape at every push", but the plan only widens that check's `wip`/`draft`/`spike` match; no step checks that a subject is `<type>(<scope>)[!]: <description>`. And the check reads only `git log -1 --pretty=%s`, so a `wip(R876)` commit beneath a conforming tip, or any non-conforming commit that is not the tip, still ships. Either the publish skill checks every subject in `origin/claude/graphitron-rewrite..HEAD` for both the shape and the not-for-trunk types (the "Who" rule then has a place where it is enforced), or the Out of scope sentence drops the claim and says the convention is unenforced until the follow-up gate.
 
+   *Response:* Accepted, the first way. The publish skill checks every subject in `origin/claude/graphitron-rewrite..HEAD` for both the not-for-trunk types and the shape (Plan, Push check), so the "Who" rule is enforced where a push is made. Out of scope now says what that leaves unchecked: a plain `git push`, and Dependabot's commits.
+
 2. **`classified-corpus` prescribes a subject.** Its step 8 tells the author to commit as `corpus: add the <id> example for <verdict>`, which the convention makes non-conforming. Add it to the edit sites (`test(corpus): ...` or `docs(corpus): ...`, whichever the plan means by an area scope).
+
+   *Response:* Accepted. Step 8 becomes `test(corpus): add the <id> example for <verdict>`, listed in the edit sites.
 
 3. **The roadmap skill has no commit subjects to edit.** `.claude/skills/roadmap/SKILL.md` names no subject shape today, so "the roadmap skill's commit subjects" is an edit site with nothing at it. Either say what the skill gains (a line stating `chore(R<n>): <from> -> <to>` for a transition) or drop it. For the record, `srp`'s `grep -E '\bR<n>\b'` over subjects keeps working with `chore(R<n>)`, so it needs no edit.
 
+   *Response:* Accepted: the skill gains a line under `status` giving `chore(R<n>): <from> -> <to>`, and the edit site says so. `srp` is noted as needing no edit.
+
 4. **Prefer the hyphenated footer.** Conventional Commits accepts `BREAKING-CHANGE:` as a synonym for `BREAKING CHANGE:`, and only the hyphenated form is a git trailer. With the space it shares a block with `Co-Authored-By:` and `Claude-Session:` that `git interpret-trailers` and `%(trailers)` may then no longer read as trailers. Name `BREAKING-CHANGE:` as the house form.
 
+   *Response:* Accepted. `BREAKING-CHANGE:` is the house form, with the reason.
+
 5. **The slug no longer names the item.** The file is still `changelog-announces-deliveries-in-progress.md` while the item is now the commit subject convention. A slug is filename only, so this is optional, but a rename before Spec costs nothing and keeps a later grep honest.
+
+   *Response:* Accepted. The file is renamed `commit-subject-says-the-kind-of-change.md`, and the one reference to the old slug, in `changelog-prose-first-entries-escape-the-invariant`, follows.
 
 Sound: the narrowed goal, the type list with roadmap commits as `chore`, the not-for-trunk types matched as types, the Dependabot prefix, the `<type>(R<n>)` placeholder in `CLAUDE.md`, the cut-over without rewriting history, and the out-of-scope split.
