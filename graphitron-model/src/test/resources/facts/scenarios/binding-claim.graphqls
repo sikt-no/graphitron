@@ -1,4 +1,4 @@
-"A binding claim is what a field, input field or argument claims it binds to, by the element and the kind, not by the directive that said it: @field(name:) a column, @nodeId a node id, @externalField an expression. What the claim names rides along, null for a bare @nodeId, whose node type the binding infers, and for an expression. An element claiming nothing has no row."
+"A binding claim is what a field, input field or argument claims it binds to, by the element and the kind, not by the directive that said it: @field(name:) a column, @nodeId a node id, @externalField an expression. What the claim names rides along, null for a bare @nodeId, whose node type the binding infers, and for an expression. A @field(name:) beside a @nodeId is where the decoded value goes, a target of that claim and no column claim of its own. An element claiming nothing has no row."
 
 interface Node { id: ID! }
 
@@ -15,8 +15,8 @@ type Film implements Node @table(name: "film") @node {
 }
 
 input FilmFilter {
-  "An input field naming its node type."
-  filmId: ID @nodeId(typeName: "Film")
+  "An input field naming its node type, and the member its decoded value goes to."
+  filmId: ID @nodeId(typeName: "Film") @field(name: "film_id")
   "An input field naming its column."
   name: String @field(name: "title")
 }
@@ -30,11 +30,11 @@ extend type Query {
 extend schema @expectEquals(relation: "graphitron_binding_claim", where: """
   coordinate NOT LIKE 'FactAnchor.%'
   """, rows: """
-  coordinate,                named, kind
-  Film.id,                        , NODE_ID
-  Film.name,                 title, COLUMN
-  Film.isEnglish,                 , EXPRESSION
-  FilmFilter.filmId,         Film,  NODE_ID
-  FilmFilter.name,           title, COLUMN
-  Query.filmsByTitle(name:), title, COLUMN
+  coordinate,                named, kind,       target_name
+  Film.id,                        , NODE_ID,
+  Film.name,                 title, COLUMN,
+  Film.isEnglish,                 , EXPRESSION,
+  FilmFilter.filmId,         Film,  NODE_ID,    film_id
+  FilmFilter.name,           title, COLUMN,
+  Query.filmsByTitle(name:), title, COLUMN,
   """)
