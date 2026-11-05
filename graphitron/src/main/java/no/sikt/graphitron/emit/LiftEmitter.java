@@ -136,6 +136,8 @@ public final class LiftEmitter {
             .addStatement("$T<$T> flat = new $T<>()", LIST, RECORD, arrayList)
             .addStatement("$T<$T> parents = new $T<>()", LIST, Integer.class, arrayList)
             .beginControlFlow("for (int p = 0; p < records.size(); p++)")
+            .addComment("A parent the call handed no list puts no rows here; the lift gives it its null back,")
+            .addComment("reading it off the records themselves rather than off this table.")
             .addStatement("if (records.get(p) == null) continue")
             .beginControlFlow("for ($T r : records.get(p))", RECORD)
             .addStatement("flat.add(r)")
@@ -220,6 +222,8 @@ public final class LiftEmitter {
                 .addStatement("$T result = new $T<>(lifted.size())", perParentType,
                     ClassName.get("java.util", "ArrayList"))
                 .beginControlFlow("for (int p = 0; p < lifted.size(); p++)")
+                .addComment("A parent with no rows in the derived table had no list, which stays null, or an")
+                .addComment("empty one, which stays empty.")
                 .addStatement("result.add(lifted.get(p) == null ? null : byParent.getOrDefault(p, $T.of()))", LIST)
                 .endControlFlow()
                 .addStatement("return result")
