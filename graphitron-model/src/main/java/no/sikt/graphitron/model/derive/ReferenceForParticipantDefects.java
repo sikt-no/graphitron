@@ -11,14 +11,16 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_APPLICATION;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 
@@ -51,14 +53,14 @@ import static org.jooq.impl.DSL.selectOne;
  * two sites spelling them would be the first step towards two answers.
  *
  * <p>Both populations are narrowed to what the generator intends to classify, on
- * {@link NodeIdDecodeDefects}'s terms: the input-field population to applications whose input type
- * has at least one occurrence under some use site, the argument population to a coordinate whose
- * owning type is in the classification domain. An input type nothing consumes fails no build, which
+ * {@link NodeIdDecodeDefects}'s terms: the input-field population to applications whose input field
+ * has at least one occurrence, the argument population to a coordinate whose owning type is in the
+ * classification domain. An input type nothing consumes fails no build, which
  * is what keeps this from reporting on SDL the generator never reads.
  *
- * <p>Output-field applications are excluded structurally rather than by a kind test: an occurrence
- * path's leaf is always an input object type, so an application on an object or interface field
- * matches no occurrence and never enters the population.
+ * <p>Output-field applications are excluded structurally: the input-field arm reads the
+ * {@code INPUT_FIELD} occurrences of the application's own field, so an application on an object or
+ * interface field matches none and never enters the population.
  *
  * <p>Both arms are anti-joins against {@code intent_reference_for_application}, which is the
  * resolution "does this application apply at this consumer, and to which participant" as a relation
@@ -79,8 +81,8 @@ public final class ReferenceForParticipantDefects {
      * {@code participantsOf} once per consumer of one, reading the consumer's target and its
      * table-bound members.
      */
-    public static final Set<Table<?>> READS = Set.of(GRAPHITRON_FIELD_TARGET,
-        GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, INTENT_INPUT_OCCURRENCE_PATH, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
+    public static final Set<Table<?>> READS = Set.of(GRAPHITRON_FIELD_TARGET, GRAPHITRON_FIELD,
+        GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, GRAPHITRON_OCCURRENCE, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY, GRAPHITRON_REFERENCE_FOR_ENTRY);
 
     /**
@@ -127,18 +129,19 @@ public final class ReferenceForParticipantDefects {
     }
 
     /**
-     * The input-field arm: the application's input type is consumed somewhere, and no consumer of it
+     * The input-field arm: the application's input field is reached somewhere, and no consumer of it
      * has a participant by that name.
      */
     private static List<Defect> inputFieldDefects(DSLContext dsl, String graphName) {
         var r = GRAPHITRON_REFERENCE_FOR_ENTRY;
-        var o = INTENT_INPUT_OCCURRENCE_PATH;
+        var o = GRAPHITRON_OCCURRENCE;
         var a = INTENT_REFERENCE_FOR_APPLICATION;
         return dsl.selectFrom(r)
             .where(r.GRAPH_NAME.eq(graphName),
-                // Consumed somewhere: an input type nothing reads is outside what the build classifies.
+                // Reached somewhere: an input field nothing reaches is outside what the build classifies.
                 exists(selectOne().from(o)
-                    .where(o.GRAPH_NAME.eq(graphName), o.LEAF_NAMED_TYPE.eq(r.TYPE_NAME))),
+                    .where(o.GRAPH_NAME.eq(graphName), o.KIND.eq(inline("INPUT_FIELD")),
+                        o.ELEMENT_COORDINATE.eq(r.TYPE_NAME.concat(inline("."), r.FIELD_NAME)))),
                 // And the application applies at no consumer of it.
                 notExists(selectOne().from(a)
                     .where(a.GRAPH_NAME.eq(graphName), a.SITE.eq("INPUT_FIELD"),
@@ -147,7 +150,7 @@ public final class ReferenceForParticipantDefects {
             .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.ORDINAL)
             .fetch(row -> {
                 String coordinate = row.getTypeName() + "." + row.getFieldName();
-                var consumers = consumersOf(dsl, graphName, row.getTypeName());
+                var consumers = consumersOf(dsl, graphName, row.getTypeName(), row.getFieldName());
                 return new Defect(coordinate, row.getParticipantTypeRef(),
                     inputFieldRejection(row.getParticipantTypeRef(), consumers),
                     location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
@@ -185,17 +188,23 @@ public final class ReferenceForParticipantDefects {
     private record Consumer(String coordinate, List<String> participants) {}
 
     /**
-     * Every use site the input type occurs under, each with its own participant names. Distinct on
-     * the consuming field rather than on the occurrence path: two paths reaching one input type under
-     * one query are one consumer offering one participant set, and naming the field twice would tell
-     * the author about their input nesting rather than about their participants.
+     * Every declared field the input field is reached under, each with its own participant names.
+     * Distinct on the declared field rather than on the occurrence: two occurrences of one input field
+     * under one query are one consumer offering one participant set, and naming the field twice would
+     * tell the author about their input nesting rather than about their participants.
      */
-    private static List<Consumer> consumersOf(DSLContext dsl, String graphName, String inputTypeName) {
-        var o = INTENT_INPUT_OCCURRENCE_PATH;
-        return dsl.selectDistinct(o.ROOT_TYPE_NAME, o.ROOT_FIELD_NAME)
+    private static List<Consumer> consumersOf(DSLContext dsl, String graphName, String inputTypeName,
+                                              String inputFieldName) {
+        var o = GRAPHITRON_OCCURRENCE;
+        var fo = GRAPHITRON_OCCURRENCE.as("fo");
+        var cf = GRAPHITRON_FIELD;
+        return dsl.selectDistinct(cf.TYPE_NAME, cf.FIELD_NAME)
             .from(o)
-            .where(o.GRAPH_NAME.eq(graphName), o.LEAF_NAMED_TYPE.eq(inputTypeName))
-            .orderBy(o.ROOT_TYPE_NAME, o.ROOT_FIELD_NAME)
+            .join(fo).on(fo.GRAPH_NAME.eq(o.GRAPH_NAME), fo.COORDINATE.eq(o.FIELD_COORDINATE))
+            .join(cf).on(cf.GRAPH_NAME.eq(fo.GRAPH_NAME), cf.COORDINATE.eq(fo.ELEMENT_COORDINATE))
+            .where(o.GRAPH_NAME.eq(graphName), o.KIND.eq(inline("INPUT_FIELD")),
+                o.ELEMENT_COORDINATE.eq(inputTypeName + "." + inputFieldName))
+            .orderBy(cf.TYPE_NAME, cf.FIELD_NAME)
             .fetch(row -> new Consumer(row.value1() + "." + row.value2(),
                 participantsOf(dsl, graphName, row.value1(), row.value2())));
     }

@@ -49,7 +49,7 @@ extend schema @expectEquals(relation: "intent_node_id_decode_slot", rows: """
   use_site,                   carrier,         param_name, java_type,                                                              root_type_name, root_field_name,  root_argument_name, candidates
   Query.byIds(ids),           NAMED_PARAMETER, ids,        java.lang.String,                                                       Query,          byIds,            ids,                2
   Query.byIds(ids),           NAMED_PARAMETER, ids,        ,                                                                       Query,          byIds,            ids,                2
-  Query.echo(by)/filmId,      NAMED_PARAMETER, by,         no.sikt.graphitron.rewrite.test.conditions.FilmTitleFilter,             Query,          echo,             by,                 1
+  Query.echo(by.filmId:),      NAMED_PARAMETER, by,         no.sikt.graphitron.rewrite.test.conditions.FilmTitleFilter,             Query,          echo,             by,                 1
   Query.film(id),             NAMED_PARAMETER, id,         java.lang.Integer,                                                      Query,          film,             id,                 1
   Query.modifyFilmRecord(in), NAMED_PARAMETER, in,         no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, Query,          modifyFilmRecord, in,                 1
   Query.untyped(ids),         NAMED_PARAMETER, ids,        ,                                                                       Query,          untyped,          ids,                1

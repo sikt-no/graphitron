@@ -13,9 +13,8 @@ import java.util.List;
  * {@code use_site} column, and a Java-side string built to match it is two spellings of one value
  * that agree until one of them changes. A join miss there does not read as a join miss: it reads as
  * a dropped instruction and fails a build that should pass. So every component travels as its own
- * field, read off the relations that state it ({@code intent_input_occurrence_path} and its
- * ordinal-keyed step child on the store side, the walk's own descent on the other) and compared as
- * a record value.
+ * field, read off the relations that state it ({@code graphitron_occurrence} and its parent chain
+ * on the store side, the walk's own descent on the other) and compared as a record value.
  *
  * <p><b>Keyed by use, not by definition.</b> One input field carrying one directive is as many
  * coordinates as there are use sites consuming it, which is the grain the instruction census is

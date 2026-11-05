@@ -77,9 +77,6 @@ public final class DerivationStratum {
         return List.of(
             new Step("ClassificationDomainCapture", Set.of("intent_type_domain"),
                 (dsl, graph) -> ClassificationDomainCapture.derive(dsl, graph, schema)),
-            new Step("InputOccurrencePaths",
-                Set.of("intent_input_occurrence_path", "intent_input_occurrence_path_step"),
-                InputOccurrencePaths::derive),
             step("AuthoredClaimRejectionRows", "intent_authored_claim_rejection",
                 AuthoredClaimRejectionRows::derive),
             step("FieldScopeTables", "graphitron_field_scope_table", FieldScopeTables::derive),

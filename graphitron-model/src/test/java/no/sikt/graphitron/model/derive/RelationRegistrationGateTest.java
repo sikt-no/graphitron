@@ -560,8 +560,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
         registrations.put("graphitron_session_handle_member", Arm.DERIVED);
         registrations.put("graphitron_argmapping_parameter", Arm.DERIVED);
-        registrations.put("intent_input_occurrence_path", Arm.DERIVED);
-        registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         // The defect collapse. UNSHADOWED because the model it would be compared against
         // states no defect population at all: the walk threw, and a thrown error is not a

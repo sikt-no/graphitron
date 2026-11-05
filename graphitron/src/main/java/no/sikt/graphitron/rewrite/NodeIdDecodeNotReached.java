@@ -145,8 +145,7 @@ final class NodeIdDecodeNotReached {
      * arguments that carry the directive, and the input fields reachable by descending through
      * input-object-typed fields under them. The descent's first-visit guard is the classification
      * walk's own ({@code ClassifyContext.expandingTypes}), which is also the rule
-     * {@code intent_input_occurrence_path} stops its expansion by, so the two enumerate one
-     * population.
+     * {@code graphitron_occurrence} stops its descent by, so the two enumerate one population.
      */
     private static List<NodeIdDecodeCoordinate> coordinatesUnder(
             String parentTypeName, GraphQLFieldDefinition fieldDef) {

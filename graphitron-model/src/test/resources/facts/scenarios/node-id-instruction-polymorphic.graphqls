@@ -46,7 +46,7 @@ extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: ""
   ARGUMENT,     Query.mediaItems(someId),  TARGET_TABLE_NODE_TYPE, Film
   ARGUMENT,     Query.occupants(someId),   TARGET_TABLE_NODE_TYPE, Actor
   ARGUMENT,     Query.occupants(someId),   TARGET_TABLE_NODE_TYPE, Film
-  INPUT_FIELD,  Query.films(where)/someId, TARGET_TABLE_NODE_TYPE, Film
+  INPUT_FIELD,  Query.films(where.someId:), TARGET_TABLE_NODE_TYPE, Film
   OUTPUT_FIELD, Actor.id,                  OWN_ID_FIELD,           Actor
   OUTPUT_FIELD, Film.id,                   OWN_ID_FIELD,           Film
   """)

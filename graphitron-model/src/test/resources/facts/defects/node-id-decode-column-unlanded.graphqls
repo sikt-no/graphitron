@@ -40,7 +40,7 @@ type Mutation {
 
 extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
   use_site,                           position, key_column_name, local_column_name
-  Mutation.updateFilm(in)/inCategory, 0,        category_id,
+  Mutation.updateFilm(in.inCategory:), 0,        category_id,
   Query.projectNotes(ofProject),      0,        org_id,          org_id
   Query.projectNotes(ofProject),      1,        name,
   """)

@@ -81,13 +81,13 @@ extend schema @expectEquals(relation: "intent_node_id_polymorphic_decode_defect"
   use_site,                         container_name,  verdict,                      member_type_name
   Customer.occupantId,              AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
   Query.anything(occupant),         Anything,        NO_TABLE_MEMBERS,
-  Query.filtered(filter)/occupantId, AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
+  Query.filtered(filter.occupantId:), AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
   Query.greet(userId),              AddressOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, Customer
   Query.greet(userId),              AddressOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, Staff
   Query.keyless(occupant),          KeylessOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, FilmListing
   Query.inventories(item),          MediaItem,       CONTAINER_NOT_AT_A_SLOT,
   Query.media(occupant),            MediaItem,       SINGLE_TABLE_CONTAINER,
-  Query.mediaItems(filter)/itemId,  MediaItem,       CONTAINER_NOT_AT_A_SLOT,
+  Query.mediaItems(filter.itemId:),  MediaItem,       CONTAINER_NOT_AT_A_SLOT,
   Query.mediaItems(item),           MediaItem,       CONTAINER_NOT_AT_A_SLOT,
   Query.occupants(occupant),        AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
   Query.titleTitlecase(films),      AddressOccupant, SLOT_SHAPE_MISMATCH,
@@ -133,10 +133,10 @@ extend schema @expectEquals(relation: "intent_node_container_member", where: "co
 # MediaItem, so the endpoint's own kind predicate is what keeps it out.
 extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", where: "use_site LIKE 'Query.mediaItems%' OR use_site LIKE 'Query.inventories%' OR use_site LIKE 'Query.filtered%'", rows: """
   use_site,                           node_type_name, navigation,     from_table, to_table
-  Query.filtered(filter)/customerId,  Customer,       SAME_TABLE,     customer,   customer
+  Query.filtered(filter.customerId:),  Customer,       SAME_TABLE,     customer,   customer
   Query.inventories(film),            Film,           AUTHORED_PATH,  inventory,  film
   Query.mediaItems(film),             Film,           SAME_TABLE,     film,       film
-  Query.mediaItems(filter)/filmId,    Film,           SAME_TABLE,     film,       film
+  Query.mediaItems(filter.filmId:),    Film,           SAME_TABLE,     film,       film
   """)
 
 # So the path that stops short is judged for the node type and not for the container.

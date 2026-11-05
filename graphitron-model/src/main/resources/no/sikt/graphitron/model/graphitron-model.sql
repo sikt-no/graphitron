@@ -3735,7 +3735,7 @@ COMMENT ON COLUMN graphitron_reference_for_entry.ordinal IS 'capture-assigned po
 COMMENT ON COLUMN graphitron_reference_for_entry.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphitron_reference_for_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_reference_for_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_reference_for_entry.participant_type_ref IS 'the type argument as written; author-spelled, no FK. It names a participant of the polymorphic type the consuming field returns, and which field that is differs by coordinate: an output field consumes its own named type, while an input field is consumed by every field whose argument surface reaches it, possibly several with different participant sets. That is why a spelling matching no participant is a whole-schema detection over the occurrence paths rather than a check one row can carry, and why no FK could stand here even if the participant set were a relation: at an input coordinate there is no single consumer for it to point at.';
+COMMENT ON COLUMN graphitron_reference_for_entry.participant_type_ref IS 'the type argument as written; author-spelled, no FK. It names a participant of the polymorphic type the consuming field returns, and which field that is differs by coordinate: an output field consumes its own named type, while an input field is consumed by every field whose argument surface reaches it, possibly several with different participant sets. That is why a spelling matching no participant is a whole-schema detection over the input field''s occurrences rather than a check one row can carry, and why no FK could stand here even if the participant set were a relation: at an input coordinate there is no single consumer for it to point at.';
 
 CREATE TABLE graphitron_argument_reference_for_entry (
   graph_name           VARCHAR NOT NULL,
@@ -8969,7 +8969,7 @@ SELECT s.graph_name, s.type_name, s.field_name, s.argument_name, s.ordinal, s.po
   JOIN graphitron_condition_method_route r
     ON r.graph_name = s.graph_name AND r.class_name = s.class_name AND r.method = s.method
  WHERE s.class_name IS NOT NULL AND s.key_ref IS NULL AND s.table_ref IS NULL;
-COMMENT ON VIEW intent_argument_reference_step_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. One argument-site @reference path element''s local resolution: the field-site sibling''s rule at the other coordinate a @reference can be written on. Every arm, every namespace precedence and every orientation is that view''s, and its comment is where they are argued; what differs here is only the relation the elements come from and the key they are keyed by, an argument being its own site. A sibling relation rather than an argument_name column on the field-site view, on the discipline intent_input_occurrence_path_step states for its own shape: the two sites'' coordinates are different lengths, so one relation over both would carry a column that is NULL by kind on half its rows and every reader of either site would then have to say which kind it meant. Two relations say it once each. The duplication is the rule''s statement and not the rule, which is the trade this schema makes wherever a rule is coordinate-shaped. The two statements are no longer comparable as text: the field-site hop is the two jOOQ statements FieldReferenceStepHops runs into two keyed tables, and this one is a view, so the anchor test asserting that the two answer the same path shape the same way is the whole of what keeps them in agreement rather than a check on something a reader could also see. Where a resolution genuinely is shared it is already a relation of its own and both views join it, graphitron_spelled_table for a written table name, sql_name_matched_key_column for a function result''s column pairing and graphitron_condition_method_route for the route a condition method''s signature declares, so what remains here is the coordinate-shaped part alone. Separate from graphitron_argument_reference_step_target for the reason its field-site counterpart is: the local resolution has no recursion in it, and keeping the two apart lets that view''s recursive term be a single join rather than a copy of these arms. A view rather than a stage beside the walk that reads it, and that is a measurement rather than a reading of the shape. The walk names this relation in its recursive term, which is the position that re-expands a view once per accumulated row, and its arms are a four-way union over the catalog where the field-site hop is two keyed tables, so the asymmetry is real. Measured on a capture of the example schema, 915 fields and 305 arguments, eleven argument-site path elements, eighteen rows here, three sweeps with result reuse off: this relation alone visits 2870 rows in 4 to 5 milliseconds, and each of the walk''s two arm statements visits about 3010 in 10 to 12 with this relation a view, against about 175 in 3 with it snapshotted into a table, the snapshot filling in 6. So the recursion expands it about once rather than once per row, the chains there being eight, three of them two elements long and none longer, and storing it would buy about fifteen milliseconds a capture. A consumer whose argument paths run several elements deep is where that reading changes, and the reading to repeat there is the same pair.';
+COMMENT ON VIEW intent_argument_reference_step_hop IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. One argument-site @reference path element''s local resolution: the field-site sibling''s rule at the other coordinate a @reference can be written on. Every arm, every namespace precedence and every orientation is that view''s, and its comment is where they are argued; what differs here is only the relation the elements come from and the key they are keyed by, an argument being its own site. A sibling relation rather than an argument_name column on the field-site view, on the discipline that keeps one relation per coordinate shape: the two sites'' coordinates are different lengths, so one relation over both would carry a column that is NULL by kind on half its rows and every reader of either site would then have to say which kind it meant. Two relations say it once each. The duplication is the rule''s statement and not the rule, which is the trade this schema makes wherever a rule is coordinate-shaped. The two statements are no longer comparable as text: the field-site hop is the two jOOQ statements FieldReferenceStepHops runs into two keyed tables, and this one is a view, so the anchor test asserting that the two answer the same path shape the same way is the whole of what keeps them in agreement rather than a check on something a reader could also see. Where a resolution genuinely is shared it is already a relation of its own and both views join it, graphitron_spelled_table for a written table name, sql_name_matched_key_column for a function result''s column pairing and graphitron_condition_method_route for the route a condition method''s signature declares, so what remains here is the coordinate-shaped part alone. Separate from graphitron_argument_reference_step_target for the reason its field-site counterpart is: the local resolution has no recursion in it, and keeping the two apart lets that view''s recursive term be a single join rather than a copy of these arms. A view rather than a stage beside the walk that reads it, and that is a measurement rather than a reading of the shape. The walk names this relation in its recursive term, which is the position that re-expands a view once per accumulated row, and its arms are a four-way union over the catalog where the field-site hop is two keyed tables, so the asymmetry is real. Measured on a capture of the example schema, 915 fields and 305 arguments, eleven argument-site path elements, eighteen rows here, three sweeps with result reuse off: this relation alone visits 2870 rows in 4 to 5 milliseconds, and each of the walk''s two arm statements visits about 3010 in 10 to 12 with this relation a view, against about 175 in 3 with it snapshotted into a table, the snapshot filling in 6. So the recursion expands it about once rather than once per row, the chains there being eight, three of them two elements long and none longer, and storing it would buy about fifteen milliseconds a capture. A consumer whose argument paths run several elements deep is where that reading changes, and the reading to repeat there is the same pair.';
 -- COMMENT ON COLUMN intent_argument_reference_step_hop.graph_name IS 'the owning graph''s partition, carried from graphitron_argument_reference_step_entry';
 -- COMMENT ON COLUMN intent_argument_reference_step_hop.type_name IS 'the type owning the field the argument sits on';
 -- COMMENT ON COLUMN intent_argument_reference_step_hop.field_name IS 'the field owning the argument the @reference is applied to';
@@ -16749,53 +16749,6 @@ COMMENT ON TABLE intent_type_domain IS 'The classification domain''s type member
 COMMENT ON COLUMN intent_type_domain.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_type_domain.type_name IS 'a member of the graph''s classification domain; lands only on captured types, which is what makes the type FK structural';
 
-CREATE TABLE intent_input_occurrence_path (
-  graph_name         VARCHAR NOT NULL,
-  path               VARCHAR NOT NULL,
-  root_type_name     VARCHAR NOT NULL,
-  root_field_name    VARCHAR NOT NULL,
-  root_argument_name VARCHAR NOT NULL,
-  root_input_type    VARCHAR NOT NULL,
-  leaf_named_type    VARCHAR NOT NULL,
-  depth              INT     NOT NULL,
-  PRIMARY KEY (graph_name, path),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, root_type_name, root_field_name, root_argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE intent_input_occurrence_path IS 'One occurrence of the input surface under a use site: an argument whose named type is an input object, or a nested input field reached from one by descending through input-object-typed fields. For example Mutation.updateFilm(in: FilmUpdateInput!) draws one row for the in argument at depth 0 and one for each of its fields, filmId and title, at depth 1.';
-COMMENT ON COLUMN intent_input_occurrence_path.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_input_occurrence_path.path IS 'the serialized occurrence path; the value key';
-COMMENT ON COLUMN intent_input_occurrence_path.root_type_name IS 'the use site''s owning type';
-COMMENT ON COLUMN intent_input_occurrence_path.root_field_name IS 'the use site''s field name within the owning type';
-COMMENT ON COLUMN intent_input_occurrence_path.root_argument_name IS 'the argument this occurrence descends from';
-COMMENT ON COLUMN intent_input_occurrence_path.root_input_type IS 'the argument''s named input object type, the traversal''s entry type';
-COMMENT ON COLUMN intent_input_occurrence_path.leaf_named_type IS 'the named type of the path''s last step (the argument''s own type at depth 0); the expansion descends from here when the type has kind INPUT_OBJECT and is not already visited on the path';
-COMMENT ON COLUMN intent_input_occurrence_path.depth IS 'the number of input-field steps below the argument; 0 for the argument occurrence itself, and equal to the highest step ordinal otherwise';
-
-CREATE TABLE intent_input_occurrence_path_step (
-  graph_name          VARCHAR NOT NULL,
-  path                VARCHAR NOT NULL,
-  ordinal             INT     NOT NULL,
-  container_type_name VARCHAR NOT NULL,
-  field_name          VARCHAR NOT NULL,
-  named_type          VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, path, ordinal),
-  FOREIGN KEY (graph_name, path) REFERENCES intent_input_occurrence_path (graph_name, path)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, container_type_name, field_name)
-    REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE intent_input_occurrence_path_step IS 'The ordinal-keyed decomposition of an occurrence path: one row per input-field step, 1-based, so no consumer parses the serialized key. For example the path reaching title under Mutation.updateFilm(in:) draws one row at ordinal 1 naming FilmUpdateInput.title.';
-COMMENT ON COLUMN intent_input_occurrence_path_step.graph_name IS 'the owning graph''s partition, anchored through the parent path; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_input_occurrence_path_step.path IS 'the owning occurrence path';
-COMMENT ON COLUMN intent_input_occurrence_path_step.ordinal IS '1-based position of this input-field step below the argument';
-COMMENT ON COLUMN intent_input_occurrence_path_step.container_type_name IS 'the input object type this step''s field is declared on';
-COMMENT ON COLUMN intent_input_occurrence_path_step.field_name IS 'the input field''s name within its container';
-COMMENT ON COLUMN intent_input_occurrence_path_step.named_type IS 'the step''s named type; the type the traversal is in after taking this step';
-
 CREATE TABLE graphitron_input_field_resolving_table (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -16813,15 +16766,20 @@ CREATE TABLE graphitron_input_field_resolving_table (
 CREATE VIEW graphitron_input_field_resolving_table_rule
   (graph_name, type_name, field_name,
    table_source_name, table_schema, table_name) AS
-SELECT DISTINCT p.graph_name, st.container_type_name, st.field_name,
+SELECT DISTINCT o.graph_name, f.type_name, f.field_name,
        sc.table_source_name, sc.table_schema, sc.table_name
-  FROM intent_input_occurrence_path p
-  JOIN intent_input_occurrence_path_step st
-    ON st.graph_name = p.graph_name AND st.path = p.path AND st.ordinal = p.depth
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  -- The declared argument the input field is reached under, whose scope table it is handed.
+  JOIN graphitron_occurrence ao
+    ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
+  JOIN graphitron_argument ra
+    ON ra.graph_name = ao.graph_name AND ra.coordinate = ao.element_coordinate
   JOIN graphitron_argument_scope_table sc
-    ON sc.graph_name = p.graph_name AND sc.type_name = p.root_type_name
-   AND sc.field_name = p.root_field_name AND sc.argument_name = p.root_argument_name
- WHERE p.depth >= 1;
+    ON sc.graph_name = ra.graph_name AND sc.type_name = ra.type_name
+   AND sc.field_name = ra.field_name AND sc.argument_name = ra.argument_name
+ WHERE o.kind = 'INPUT_FIELD';
 COMMENT ON VIEW graphitron_input_field_resolving_table_rule IS 'One row the input-field resolving-table rule computes, in the shape graphitron_input_field_resolving_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_input_field_resolving_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.graph_name, whose comment carries what the value means';
 -- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.type_name, whose comment carries what the value means';
@@ -16830,8 +16788,8 @@ COMMENT ON VIEW graphitron_input_field_resolving_table_rule IS 'One row the inpu
 -- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.table_schema, whose comment carries what the value means';
 -- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.table_name IS 'the table_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.table_name, whose comment carries what the value means';
 COMMENT ON TABLE graphitron_input_field_resolving_table IS 'Which table an input field is classified against, the field and the table together being the grain: a field resolves against a table it is handed rather than one it owns, so one input field reached under two arguments selecting from different tables is two rows. For example a FilmFilter input reached from one argument rooted in film and another rooted in actor draws two rows for each of its fields, one per resolving table.';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.graph_name IS 'the owning graph''s partition, carried from the occurrence path';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.type_name IS 'the input object type the field is declared on, the occurrence step''s container; with the column beside it, graphql_field''s key for an input coordinate';
+COMMENT ON COLUMN graphitron_input_field_resolving_table.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_input_field_resolving_table.type_name IS 'the input object type the field is declared on, the occurrence''s element''s type; with the column beside it, graphql_field''s key for an input coordinate';
 COMMENT ON COLUMN graphitron_input_field_resolving_table.field_name IS 'the input field''s name within its container';
 COMMENT ON COLUMN graphitron_input_field_resolving_table.table_source_name IS 'the resolving table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN graphitron_input_field_resolving_table.table_schema IS 'the resolving table''s SQL schema';
@@ -17397,21 +17355,18 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
     JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
      AND t.kind = 'OBJECT'
    UNION ALL
+  -- One row per place the input field is reached: its occurrences are its use sites.
   SELECT n.graph_name, 'INPUT_FIELD', n.type_name, n.field_name, NULL,
-         p.path, p.path, n.node_type_ref,
+         o.coordinate, o.coordinate, n.node_type_ref,
          CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
                             WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
                               AND s.field_name = n.field_name)
               THEN TRUE ELSE FALSE END,
          n.source_name, n.source_line, n.source_column
     FROM graphitron_field_node_id_entry n
-    JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
-     AND t.kind = 'INPUT_OBJECT'
-    JOIN intent_input_occurrence_path_step st
-      ON st.graph_name = n.graph_name AND st.container_type_name = n.type_name
-     AND st.field_name = n.field_name
-    JOIN intent_input_occurrence_path p
-      ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
+    JOIN graphitron_occurrence o
+      ON o.graph_name = n.graph_name AND o.element_coordinate = n.type_name || '.' || n.field_name
+     AND o.kind = 'INPUT_FIELD'
    UNION ALL
   SELECT n.graph_name, 'ARGUMENT', n.type_name, n.field_name, n.argument_name,
          NULL, n.type_name || '.' || n.field_name || '(' || n.argument_name || ')',
@@ -17464,11 +17419,15 @@ slot_table (graph_name, site, type_name, field_name, argument_name, path,
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
          u.table_source_name, u.table_schema, u.table_name
     FROM instructed i
-    JOIN intent_input_occurrence_path p
-      ON p.graph_name = i.graph_name AND p.path = i.path
+    JOIN graphitron_occurrence o
+      ON o.graph_name = i.graph_name AND o.coordinate = i.path
+    JOIN graphitron_occurrence ao
+      ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
+    JOIN graphitron_argument ra
+      ON ra.graph_name = ao.graph_name AND ra.coordinate = ao.element_coordinate
     JOIN graphitron_argument_scope_table u
-      ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
-     AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
+      ON u.graph_name = ra.graph_name AND u.type_name = ra.type_name
+     AND u.field_name = ra.field_name AND u.argument_name = ra.argument_name
    WHERE i.site = 'INPUT_FIELD'
 ),
 table_node (graph_name, table_source_name, table_schema, table_name, type_name, candidates) AS (
@@ -17571,7 +17530,7 @@ SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NUL
                     WHERE n.graph_name = a.graph_name AND n.type_name = a.type_name
                       AND n.field_name = a.field_name AND n.argument_name = a.argument_name)
  UNION ALL
-SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, p.path, p.path,
+SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, o.coordinate, o.coordinate,
        'TARGET_ID_NAME', tn.type_name, 'NODE_TYPE',
        CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
                           WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
@@ -17579,16 +17538,16 @@ SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, p.path, p.p
             THEN TRUE ELSE FALSE END,
        f.source_name, f.source_line, f.source_column
   FROM graphql_field f
-  JOIN graphql_type t ON t.graph_name = f.graph_name AND t.type_name = f.type_name
-   AND t.kind = 'INPUT_OBJECT'
-  JOIN intent_input_occurrence_path_step st
-    ON st.graph_name = f.graph_name AND st.container_type_name = f.type_name
-   AND st.field_name = f.field_name
-  JOIN intent_input_occurrence_path p
-    ON p.graph_name = st.graph_name AND p.path = st.path AND p.depth = st.ordinal
+  JOIN graphitron_occurrence o
+    ON o.graph_name = f.graph_name AND o.element_coordinate = f.type_name || '.' || f.field_name
+   AND o.kind = 'INPUT_FIELD'
+  JOIN graphitron_occurrence ao
+    ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
+  JOIN graphitron_argument ra
+    ON ra.graph_name = ao.graph_name AND ra.coordinate = ao.element_coordinate
   JOIN graphitron_argument_scope_table u
-    ON u.graph_name = p.graph_name AND u.type_name = p.root_type_name
-   AND u.field_name = p.root_field_name AND u.argument_name = p.root_argument_name
+    ON u.graph_name = ra.graph_name AND u.type_name = ra.type_name
+   AND u.field_name = ra.field_name AND u.argument_name = ra.argument_name
   JOIN table_node tn
     ON tn.graph_name = u.graph_name AND tn.table_source_name = u.table_source_name
    AND tn.table_schema = u.table_schema AND tn.table_name = u.table_name
@@ -17636,8 +17595,8 @@ COMMENT ON COLUMN graphitron_node_id_instruction.site IS 'which SDL site carries
 COMMENT ON COLUMN graphitron_node_id_instruction.type_name IS 'the type owning the slot: an object type on OUTPUT_FIELD, an input object type on INPUT_FIELD, the argument''s owning type on ARGUMENT';
 COMMENT ON COLUMN graphitron_node_id_instruction.field_name IS 'the slot''s field name, or on ARGUMENT the field the argument sits on';
 COMMENT ON COLUMN graphitron_node_id_instruction.argument_name IS 'the argument carrying the instruction on the ARGUMENT site; NULL on the two field sites, determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
-COMMENT ON COLUMN graphitron_node_id_instruction.path IS 'the occurrence path this row''s use site is, on the INPUT_FIELD site; NULL on the other two, whose slot is its own use site. The serialized key of intent_input_occurrence_path, so the use site''s own coordinate and every step of the descent are one join away and nothing here is parsed';
-COMMENT ON COLUMN graphitron_node_id_instruction.use_site IS 'the consuming coordinate serialized: Type.field for an output field, Type.field(argument) for an argument, and the occurrence path itself for an input field, that path already being this serialization. Carried because a message needs one string and the components differ by site; those components are columns beside it, so nothing parses this';
+COMMENT ON COLUMN graphitron_node_id_instruction.path IS 'the occurrence this row''s use site is, on the INPUT_FIELD site; NULL on the other two, whose slot is its own use site. The coordinate of graphitron_occurrence, so the declared argument the use site is reached under and every input field of the descent are reached through the occurrence and its parent chain, and nothing here is parsed';
+COMMENT ON COLUMN graphitron_node_id_instruction.use_site IS 'the consuming coordinate serialized: Type.field for an output field, Type.field(argument) for an argument, and the occurrence''s coordinate for an input field, Type.field(argument.inputField:). Carried because a message needs one string and the components differ by site; those components are columns beside it, so nothing parses this';
 COMMENT ON COLUMN graphitron_node_id_instruction.basis IS 'which rule stated the instruction and resolved its target, in a closed vocabulary of five disjoint rules. EXPLICIT_TYPE_NAME: @nodeId(typeName: T). CONTAINING_NODE_TYPE: bare @nodeId on a non-@reference object field whose containing type is itself a node, the manual''s inference rule (a). TARGET_TABLE_NODE_TYPE: bare @nodeId whose target comes from a table, the manual''s inference rule (b), demanding exactly one node type over that table. OWN_ID_FIELD: a node type''s own id field with no directive, which is a node ID by construction. TARGET_ID_NAME: a slot named for the target''s own id with no directive, an argument of a node-returning field or an input field consumed against a node-backed table. Provenance and shape at once, which is why it is one column and not two: typeName: is rejected outright on a node type''s own id field, so the forms are not interchangeable and a rejection has to be able to say which one the author wrote';
 COMMENT ON COLUMN graphitron_node_id_instruction.resolved_type_name IS 'the type the instruction''s basis resolved, written or inferred; never NULL, the population being instructions whose target resolved to something. A name and never a binding, on graphitron_field_target.target_type_name''s terms: what sort of type it is, and therefore which relation answers for it, is the kind column beside it. Where the kind is NODE_TYPE this is the node type itself and the opaque format''s other end is one join away, graphitron_node_keycolumn on this name and the graph giving the key columns in order and graphitron_node the typeId. Where the kind is POLY_CONTAINER it is a multitable interface or union that resolves no key of its own. Renamed from node_type_name when the container population landed, rather than widening that name''s promise: a container is not a node type, and a column that meant one thing at two kinds would have every reader restating which';
 COMMENT ON COLUMN graphitron_node_id_instruction.resolved_type_kind IS 'which sort of type the name beside it is, in a closed vocabulary of two. NODE_TYPE: a node type, whose key the decode yields directly. POLY_CONTAINER: a multitable interface or union whose @table members are node types, where the wire id''s own type prefix decides which member''s key the decode yields. A column rather than a predicate each reader re-evaluates, on carries_reference_path''s own justification in this relation: three relations fork on it and several more take it as a filter, and re-deriving it would mean each of them joining graphitron_node_type or graphql_type to answer a question this view has already answered. Deliberately not a sixth basis: basis states which authored rule stood the instruction up, and a written typeName: is one rule whatever it resolves to, so splitting it would split one authored predicate on a resolution fact';
@@ -17660,13 +17619,18 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
        sc.table_source_name, sc.table_schema, sc.table_name,
        bt.table_source_name, bt.table_schema, bt.table_name
   FROM graphitron_node_id_instruction i
-  LEFT JOIN intent_input_occurrence_path p
-    ON p.graph_name = i.graph_name AND p.path = i.path AND i.site = 'INPUT_FIELD'
+  -- The declared argument an input field's occurrence is reached under.
+  LEFT JOIN graphitron_occurrence p_o
+    ON i.site = 'INPUT_FIELD' AND p_o.graph_name = i.graph_name AND p_o.coordinate = i.path
+  LEFT JOIN graphitron_occurrence p_a
+    ON p_a.graph_name = p_o.graph_name AND p_a.coordinate = p_o.argument_coordinate
+  LEFT JOIN graphitron_argument p
+    ON p.graph_name = p_a.graph_name AND p.coordinate = p_a.element_coordinate
   JOIN graphitron_argument_scope_table sc
     ON sc.graph_name = i.graph_name
-   AND sc.type_name = COALESCE(p.root_type_name, i.type_name)
-   AND sc.field_name = COALESCE(p.root_field_name, i.field_name)
-   AND sc.argument_name = COALESCE(p.root_argument_name, i.argument_name)
+   AND sc.type_name = COALESCE(p.type_name, i.type_name)
+   AND sc.field_name = COALESCE(p.field_name, i.field_name)
+   AND sc.argument_name = COALESCE(p.argument_name, i.argument_name)
   JOIN graphitron_tabletype bt
     ON bt.graph_name = i.graph_name AND bt.type_name = i.resolved_type_name
  WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD')
@@ -18042,14 +18006,19 @@ WITH rooted (graph_name, site, type_name, field_name, argument_name, path, use_s
              source_name, source_line, source_column) AS (
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
          i.resolved_type_name, i.resolved_type_kind,
-         COALESCE(op.root_type_name, i.type_name),
-         COALESCE(op.root_field_name, i.field_name),
-         COALESCE(op.root_argument_name, i.argument_name),
+         COALESCE(op.type_name, i.type_name),
+         COALESCE(op.field_name, i.field_name),
+         COALESCE(op.argument_name, i.argument_name),
          ga.list_depth,
          i.source_name, i.source_line, i.source_column
     FROM graphitron_node_id_instruction i
-    LEFT JOIN intent_input_occurrence_path op
-      ON i.site = 'INPUT_FIELD' AND op.graph_name = i.graph_name AND op.path = i.path
+    -- The declared argument an input field's occurrence is reached under.
+    LEFT JOIN graphitron_occurrence op_o
+      ON i.site = 'INPUT_FIELD' AND op_o.graph_name = i.graph_name AND op_o.coordinate = i.path
+    LEFT JOIN graphitron_occurrence op_a
+      ON op_a.graph_name = op_o.graph_name AND op_a.coordinate = op_o.argument_coordinate
+    LEFT JOIN graphitron_argument op
+      ON op.graph_name = op_a.graph_name AND op.coordinate = op_a.element_coordinate
     -- The argument's own list wrappers, which the shape is half decided on. Only at the ARGUMENT
     -- site: an input field's slot is a bean member's, and its shape is not this relation's to judge.
     LEFT JOIN graphql_argument ga
@@ -18237,14 +18206,19 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
                  source_name, source_line, source_column) AS (
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
          i.resolved_type_name,
-         COALESCE(op.root_type_name, i.type_name), COALESCE(op.root_field_name, i.field_name),
+         COALESCE(op.type_name, i.type_name), COALESCE(op.field_name, i.field_name),
          i.source_name, i.source_line, i.source_column
     FROM graphitron_node_id_instruction i
     -- The root coordinate, on intent_node_id_decode_slot's own terms: an input field's slot is
     -- resolved at the head of its occurrence path, so that is also the coordinate whose producer
     -- reference the census either reached or did not.
-    LEFT JOIN intent_input_occurrence_path op
-      ON i.site = 'INPUT_FIELD' AND op.graph_name = i.graph_name AND op.path = i.path
+    -- The declared argument an input field's occurrence is reached under.
+    LEFT JOIN graphitron_occurrence op_o
+      ON i.site = 'INPUT_FIELD' AND op_o.graph_name = i.graph_name AND op_o.coordinate = i.path
+    LEFT JOIN graphitron_occurrence op_a
+      ON op_a.graph_name = op_o.graph_name AND op_a.coordinate = op_o.argument_coordinate
+    LEFT JOIN graphitron_argument op
+      ON op.graph_name = op_a.graph_name AND op.coordinate = op_a.element_coordinate
    WHERE i.resolved_type_kind = 'POLY_CONTAINER'
 ),
 shape (graph_name, container_name, container_kind, table_members, non_node_table_members) AS (
@@ -18398,14 +18372,20 @@ CREATE VIEW intent_reference_for_application
    table_source_name, table_schema, table_name) AS
 SELECT DISTINCT r.graph_name, 'INPUT_FIELD', r.type_name, r.field_name,
        CAST(NULL AS VARCHAR), r.ordinal,
-       o.root_type_name, o.root_field_name, m.member_type_name,
+       cf.type_name, cf.field_name, m.member_type_name,
        bt.table_source_name, bt.table_schema, bt.table_name
   FROM graphitron_reference_for_entry r
-  JOIN intent_input_occurrence_path o
-    ON o.graph_name = r.graph_name AND o.leaf_named_type = r.type_name
+  -- Every place the application's input field is reached, and the field it is reached under.
+  JOIN graphitron_occurrence o
+    ON o.graph_name = r.graph_name AND o.element_coordinate = r.type_name || '.' || r.field_name
+   AND o.kind = 'INPUT_FIELD'
+  JOIN graphitron_occurrence fo
+    ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
+  JOIN graphitron_field cf
+    ON cf.graph_name = fo.graph_name AND cf.coordinate = fo.element_coordinate
   JOIN graphitron_field_target ft
-    ON ft.graph_name = o.graph_name AND ft.type_name = o.root_type_name
-   AND ft.field_name = o.root_field_name
+    ON ft.graph_name = cf.graph_name AND ft.type_name = cf.type_name
+   AND ft.field_name = cf.field_name
   JOIN graphql_poly_member m
     ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
    AND m.member_type_name = r.participant_type_ref
@@ -18430,12 +18410,12 @@ SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, a.o
                     WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name);
 COMMENT ON VIEW intent_reference_for_application IS 'One @referenceFor application paired with a consuming coordinate that offers the participant it names: one row per application and consumer whose participant set holds the spelling. For example an application naming Film under an input type two queries consume draws a row for the query whose union holds Film and none for the query whose does not.';
 -- COMMENT ON COLUMN intent_reference_for_application.graph_name IS 'the owning graph''s partition, carried from the application';
--- COMMENT ON COLUMN intent_reference_for_application.site IS 'which SDL site carries the application, in the decode family''s vocabulary: INPUT_FIELD for graphitron_reference_for_entry on an input object''s field, ARGUMENT for graphitron_argument_reference_for_entry. The OUTPUT_FIELD site is absent structurally rather than by a kind test, an occurrence path''s leaf always being an input object type, so an application on an object field matches no occurrence and never enters the population';
+-- COMMENT ON COLUMN intent_reference_for_application.site IS 'which SDL site carries the application, in the decode family''s vocabulary: INPUT_FIELD for graphitron_reference_for_entry on an input object''s field, ARGUMENT for graphitron_argument_reference_for_entry. The OUTPUT_FIELD site is absent structurally, the arm reading the INPUT_FIELD occurrences of the application''s own field, so an application on an object field matches none and never enters the population';
 -- COMMENT ON COLUMN intent_reference_for_application.type_name IS 'the type owning the application''s coordinate: the input object type on INPUT_FIELD, the argument''s owning type on ARGUMENT';
 -- COMMENT ON COLUMN intent_reference_for_application.field_name IS 'the application''s field name, or on ARGUMENT the field the argument sits on';
 -- COMMENT ON COLUMN intent_reference_for_application.argument_name IS 'the argument carrying the application on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the captured relations this reads';
 -- COMMENT ON COLUMN intent_reference_for_application.ordinal IS 'the application''s position in document order, carried from the captured relation; with the four columns above, the application''s own key';
--- COMMENT ON COLUMN intent_reference_for_application.consuming_type_name IS 'the type owning the field whose participant set this row matched against: the occurrence path''s root field''s type on INPUT_FIELD, the argument''s own type on ARGUMENT. One application has one row per consumer that offers the participant, which is the whole reason the consumer is part of the grain: an input type consumed by two queries with different participant sets applies at one and is inert at the other';
+-- COMMENT ON COLUMN intent_reference_for_application.consuming_type_name IS 'the type owning the field whose participant set this row matched against: the type of the field an occurrence of the input field is reached under on INPUT_FIELD, the argument''s own type on ARGUMENT. One application has one row per consumer that offers the participant, which is the whole reason the consumer is part of the grain: an input type consumed by two queries with different participant sets applies at one and is inert at the other';
 -- COMMENT ON COLUMN intent_reference_for_application.consuming_field_name IS 'the consuming field''s name, on the same terms as the type beside it; equal to field_name on ARGUMENT, where an argument''s consumer is the field it sits on';
 -- COMMENT ON COLUMN intent_reference_for_application.participant_type_name IS 'the table-bound participant the application''s participant_type_ref matched at this consumer: a member of the consumer''s target, as graphql_poly_member spells it. The resolved name rather than the authored spelling, so a reader holding this row needs no second match';
 -- COMMENT ON COLUMN intent_reference_for_application.table_source_name IS 'the catalog partition of the table the matched participant binds, carried from the participant relation. With the two columns below it, what says which branch of a polymorphic consumer this application applies to';
@@ -18457,7 +18437,7 @@ WITH judged (graph_name, site, type_name, field_name, argument_name, path, use_s
              source_name, source_line, source_column) AS (
   SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path, e.use_site,
          e.node_type_name,
-         COALESCE(p.root_type_name, e.type_name), COALESCE(p.root_field_name, e.field_name),
+         COALESCE(p.type_name, e.type_name), COALESCE(p.field_name, e.field_name),
          (SELECT CAST(COUNT(*) AS INT) FROM intent_node_id_decode_endpoint b
            WHERE b.graph_name = e.graph_name AND b.site = e.site AND b.use_site = e.use_site
              AND b.node_type_name = e.node_type_name),
@@ -18469,8 +18449,13 @@ WITH judged (graph_name, site, type_name, field_name, argument_name, path, use_s
     JOIN graphitron_node_id_instruction i
       ON i.graph_name = e.graph_name AND i.site = e.site AND i.use_site = e.use_site
      AND i.resolved_type_name = e.node_type_name
-    LEFT JOIN intent_input_occurrence_path p
-      ON e.site = 'INPUT_FIELD' AND p.graph_name = e.graph_name AND p.path = e.path
+    -- The declared argument an input field's occurrence is reached under.
+    LEFT JOIN graphitron_occurrence p_o
+      ON e.site = 'INPUT_FIELD' AND p_o.graph_name = e.graph_name AND p_o.coordinate = e.path
+    LEFT JOIN graphitron_occurrence p_a
+      ON p_a.graph_name = p_o.graph_name AND p_a.coordinate = p_o.argument_coordinate
+    LEFT JOIN graphitron_argument p
+      ON p.graph_name = p_a.graph_name AND p.coordinate = p_a.element_coordinate
    WHERE e.navigation IN ('AUTHORED_PATH', 'DISCOVERED_KEY')
      AND NOT EXISTS (SELECT 1 FROM intent_reference_for_application ra
                       WHERE ra.graph_name = e.graph_name AND ra.site = e.site
@@ -18565,7 +18550,7 @@ COMMENT ON VIEW intent_node_id_decode_landing_defect IS 'One @nodeId decode whos
 -- COMMENT ON COLUMN intent_node_id_decode_landing_defect.path IS 'the occurrence path the use site is on INPUT_FIELD; NULL on ARGUMENT, as on the endpoint relation';
 -- COMMENT ON COLUMN intent_node_id_decode_landing_defect.use_site IS 'the consuming coordinate serialized, carried from the endpoint relation; with the graph, the branch below and the verdict, this relation''s key';
 -- COMMENT ON COLUMN intent_node_id_decode_landing_defect.node_type_name IS 'the node type the instruction named, whose key the landing was computed for; the name a refusal quotes';
--- COMMENT ON COLUMN intent_node_id_decode_landing_defect.root_type_name IS 'the type owning the field that consumes this use site: the occurrence path''s root field''s type on INPUT_FIELD, equal to type_name on ARGUMENT where an argument''s consumer is the field it sits on. Carried rather than left to a join because it is both the coordinate a located error attaches to and the type the build-error consumer''s classification-domain gate reads, which is intent_node_id_decode_defect''s reason for carrying its own root columns';
+-- COMMENT ON COLUMN intent_node_id_decode_landing_defect.root_type_name IS 'the type owning the field that consumes this use site: the type of the field an occurrence of the input field is reached under on INPUT_FIELD, equal to type_name on ARGUMENT where an argument''s consumer is the field it sits on. Carried rather than left to a join because it is both the coordinate a located error attaches to and the type the build-error consumer''s classification-domain gate reads, which is intent_node_id_decode_defect''s reason for carrying its own root columns';
 -- COMMENT ON COLUMN intent_node_id_decode_landing_defect.root_field_name IS 'the consuming field''s name, on the same terms as the type beside it';
 -- COMMENT ON COLUMN intent_node_id_decode_landing_defect.branches IS 'how many endpoint rows the coordinate and node type hold, so a consumer knows whether naming the branch below tells an author anything. Counted over the endpoint population rather than over the judged one: a coordinate with two branches where only one is judged still has two, and a message that named no branch there would leave the author to guess which of their participants it is about';
 -- COMMENT ON COLUMN intent_node_id_decode_landing_defect.origin_source_name IS 'the catalog partition of the table the decode departs from, carried from the endpoint relation. With the two columns below it this is the branch: a slot under a multi-table polymorphic root decodes once per branch, and a branch can mislead where its sibling does not, so a row here is one branch''s verdict rather than the coordinate''s';
@@ -19775,10 +19760,6 @@ INSERT INTO meta_grain VALUES
    'one position of one node type''s key in one branch of one @nodeId decode, in one graph',
    'graph_name, use_site, origin_source_name, origin_schema, origin_table, node_type_name, position',
    'catalog'),
-  ('input-occurrence-path',
-   'one occurrence of an input field under one argument, identified by its path, in one graph',
-   'graph_name, path',
-   'sdl'),
   ('type-backing',
    'one class standing for one type of one graph, as one population answers',
    'graph_name, type_name, class_name, declared_via',
@@ -19786,10 +19767,6 @@ INSERT INTO meta_grain VALUES
   ('authored-claim-rejection',
    'one minted rejection of one authored-claim conflict, at its place in the graph''s mint order',
    'graph_name, ordinal',
-   'sdl'),
-  ('input-occurrence-step',
-   'one input-field step of one occurrence path, at its 1-based ordinal, in one graph',
-   'graph_name, path, ordinal',
    'sdl'),
   ('argument-scope-table',
    'one table one argument''s column-shaped content binds against, in one graph',
@@ -21584,7 +21561,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_input_field_resolving_table', 'input-field-resolving-table', 'graphitron',
    'Which table an input field is classified against, the field and the table together being the grain: a field resolves against a table it is handed rather than one it owns, so one input field reached under two arguments selecting from different tables is two rows.',
    'For example a FilmFilter input reached from one argument rooted in film and another rooted in actor draws two rows for each of its fields, one per resolving table.',
-   'The input-field classifier takes a resolving table from its caller and never re-roots it: the nesting arm carries the same table down into a nested input object, and a @table application on an input object is captured and ignored, so every field in the tree under one argument shares that argument''s table. The table itself is the consuming field''s, read from graphitron_argument_scope_table because the classifier is handed the field''s own target table at both entry points, the read surface''s argument expansion and the write surface''s payload resolution. Where that field returns a multi-table polymorphic container the answer is one table per branch, so the field is classified once per branch and this relation carries a row for each. Deliberately not the argument''s column scope, which is a different question one rung down: an argument-site @reference moves where the argument''s own name resolves and not where its input type''s fields resolve. The domain is intent_input_occurrence_path''s, which already holds every input field any argument reaches and already stops where the classification walk stops, so this relation adds a table to that reach; the DISTINCT collapses the several occurrences of one input field under one table back to the one classification the build performs, and it is what makes the six columns a key. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence.'),
+   'The input-field classifier takes a resolving table from its caller and never re-roots it: the nesting arm carries the same table down into a nested input object, and a @table application on an input object is captured and ignored, so every field in the tree under one argument shares that argument''s table. The table itself is the consuming field''s, read from graphitron_argument_scope_table because the classifier is handed the field''s own target table at both entry points, the read surface''s argument expansion and the write surface''s payload resolution. Where that field returns a multi-table polymorphic container the answer is one table per branch, so the field is classified once per branch and this relation carries a row for each. Deliberately not the argument''s column scope, which is a different question one rung down: an argument-site @reference moves where the argument''s own name resolves and not where its input type''s fields resolve. The domain is graphitron_occurrence''s INPUT_FIELD rows, which already hold every input field any argument reaches and already stop where the classification walk stops, so this relation adds a table to that reach; the DISTINCT collapses the several occurrences of one input field under one table back to the one classification the build performs, and it is what makes the six columns a key. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence.'),
   ('graphitron_input_field_resolving_table_rule', 'input-field-resolving-table', 'graphitron',
    'One row the input-field resolving-table rule computes, in the shape graphitron_input_field_resolving_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_input_field_resolving_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
@@ -21624,7 +21601,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_node_id_decode_hop', 'nodeid-decode-hop', 'graphitron',
    'The foreign-key hops a decode traverses from the slot''s own table to the node type''s, one row per hop in authored order.',
    'For example a @nodeId argument naming Film on a field whose statement is rooted in inventory draws one row, the hop over inventory_film_id_fkey from inventory to film.',
-   'The ordinal-keyed child of intent_node_id_decode_endpoint, following the parent-plus-steps shape intent_input_occurrence_path and its step relation already use, so a reader takes the path as rows in order rather than parsing a serialized one. Two populations reach it and the endpoint relation''s navigation column is what tells them apart, so they are disjoint by construction and not by a predicate stated twice. An authored path contributes the hops a reference-target view resolved, and there are two such views because there are two decoding sites: an argument''s path departs from the argument''s own scope table and an input field''s from the table its consuming field handed the expansion. The argument-site view came first, authoring it being that work''s stated prerequisite, and the input-field one closed the shape this relation once had to name as unwalkable. Which of the two answers is decided by the site rather than by trying both: each is joined under its own site predicate and the columns are read with COALESCE over the pair, so a row can only ever have come from the view its site names. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it.'),
+   'The ordinal-keyed child of intent_node_id_decode_endpoint, following the parent-plus-steps shape, so a reader takes the path as rows in order rather than parsing a serialized one. Two populations reach it and the endpoint relation''s navigation column is what tells them apart, so they are disjoint by construction and not by a predicate stated twice. An authored path contributes the hops a reference-target view resolved, and there are two such views because there are two decoding sites: an argument''s path departs from the argument''s own scope table and an input field''s from the table its consuming field handed the expansion. The argument-site view came first, authoring it being that work''s stated prerequisite, and the input-field one closed the shape this relation once had to name as unwalkable. Which of the two answers is decided by the site rather than by trying both: each is joined under its own site predicate and the columns are read with COALESCE over the pair, so a row can only ever have come from the view its site names. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it.'),
   ('graphitron_node_id_decode_hop_rule', 'nodeid-decode-hop', 'graphitron',
    'One row the @nodeId decode-hop rule computes, in the shape graphitron_node_id_decode_hop stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_node_id_decode_hop, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
@@ -21653,14 +21630,6 @@ INSERT INTO meta_relation VALUES
    'The rejection each row of intent_authored_claim_conflict mints, minted post-capture rather than derived: one row per violated coordinate, carrying the sealed Rejection hierarchy''s verdict on it and the message a report would print.',
    'For example a field two directives each claim to produce draws one row, at the ordinal its conflict was minted in, carrying the message a build report prints.',
    'A table because no view over this store can state the rule. The render''s input is AuthoredClaim''s declaration order, which is the conflict messages'' fixed naming order and is not a captured fact of any graph, so the derivation has no relational statement and the enum''s own home in Java is the only place the order can be read without a copy of it going stale. Written by a capture-cadence writer that clears its graph partition and re-mints after every flush, on the derivations'' cadence exactly, so on any settled store these rows stand one-to-one with the conflict view''s and the diagnostics arm reads them by inner join. Every column here is a projection of one Rejection value: kind is RejectionKind.of, variant the leaf class''s stored spelling, message what ValidationError''s coordinate prefix wraps around the rejection''s own text. That is what makes the diagnostics arm over this relation look like its captured siblings rather than like a render assembled in SQL, and it is what binds the two class-valued spellings to the classes they name, a SQL literal spelling a Java class being a copy nothing checks. Not rejection_, whose charter is the legacy walk''s verdicts and whose retirement clock is the walk''s: these rows are the store-native detection''s own, and they outlive it. Written once per capture by a step of the derivation stratum.'),
-  ('intent_input_occurrence_path', 'input-occurrence-path', 'graphitron',
-   'One occurrence of the input surface under a use site: an argument whose named type is an input object, or a nested input field reached from one by descending through input-object-typed fields.',
-   'For example Mutation.updateFilm(in: FilmUpdateInput!) draws one row for the in argument at depth 0 and one for each of its fields, filmId and title, at depth 1.',
-   'The key is the serialized path, <root type>.<root field>(<argument>)[/<input field>...]: an occurrence path is its own identity (no minted coordinate is involved), the relation is re-derived each run so the value key costs nothing, and the step child carries the same data relationally so no consumer parses the key. Every prefix of a path is itself a row. Materialized by a capture-cadence derivation writer for the same reason as intent_type_domain (cyclic input nesting is legal GraphQL and has no safe recursive H2 view form); the expansion stops descending when the leaf type is already visited on the path, which is the classification walk''s own first-visit guard (ClassifyContext.expandingTypes) restated, so the row population equals the recursion tree the build already walks and simple-path enumeration adds no new asymptotic class here. Written once per capture by a step of the derivation stratum.'),
-  ('intent_input_occurrence_path_step', 'input-occurrence-step', 'graphitron',
-   'The ordinal-keyed decomposition of an occurrence path: one row per input-field step, 1-based, so no consumer parses the serialized key.',
-   'For example the path reaching title under Mutation.updateFilm(in:) draws one row at ordinal 1 naming FilmUpdateInput.title.',
-   'Homogeneous over input-field steps only: the use-site field and argument are fixed by construction (every path has exactly one of each) and live on the parent row, so no column here is nullable by kind. The row at ordinal = depth is the path''s leaf. Written once per capture by a step of the derivation stratum.'),
   ('graphitron_type_backing', 'type-backing', 'graphitron',
    'A Java class stands for a graph''s type, and how the store knows: one row per type, class and population.',
    'For example a type carrying @table(name: "film") is backed by FilmRecord as BOUND_TABLE, a type a @service method returns a FilmDto for is backed by FilmDto as PRODUCER, and the type of a field read off FilmDto.getActors() by ActorDto as ACCESSOR.',

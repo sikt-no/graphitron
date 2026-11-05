@@ -14,7 +14,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_CANDIDATE;
-import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -62,13 +61,6 @@ class ArgMappingCandidateTest {
                     .fetch(c.NAME))
                 .as("a root per argument at the field coordinate, the scalar one included")
                 .containsExactlyInAnyOrder("filter", "limit");
-            assertThat(dsl.selectFrom(INTENT_INPUT_OCCURRENCE_PATH)
-                    .where(INTENT_INPUT_OCCURRENCE_PATH.GRAPH_NAME.eq(GRAPH))
-                    .and(INTENT_INPUT_OCCURRENCE_PATH.DEPTH.eq(0))
-                    .fetch(INTENT_INPUT_OCCURRENCE_PATH.ROOT_ARGUMENT_NAME))
-                .as("the neighbour holds only the argument that descends, which is why it could not"
-                    + " serve as the candidate relation")
-                .containsExactly("filter");
         }
     }
 

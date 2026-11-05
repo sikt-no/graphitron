@@ -52,7 +52,7 @@ extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", rows: ""
   ARGUMENT,    Query.filmActors(actorId),         Actor,          DISCOVERED_KEY, film_actor, actor
   ARGUMENT,    Query.films(ids),                  Film,           SAME_TABLE,     film,       film
   ARGUMENT,    Query.films(inCategory),           Category,       AUTHORED_PATH,  film,       category
-  INPUT_FIELD, Mutation.addCastEntry(in)/actorId, Actor,          DISCOVERED_KEY, film_actor, actor
+  INPUT_FIELD, Mutation.addCastEntry(in.actorId:), Actor,          DISCOVERED_KEY, film_actor, actor
   """)
 
 extend schema @expectEquals(relation: "graphitron_node_id_decode_hop", rows: """
@@ -61,5 +61,5 @@ extend schema @expectEquals(relation: "graphitron_node_id_decode_hop", rows: """
   Query.filmActors(actorId),         0,        DISCOVERED, film_actor,    actor,         film_actor_actor_id_fkey,         TRUE
   Query.films(inCategory),           0,        KEY,        film,          film_category, film_category_film_id_fkey,       FALSE
   Query.films(inCategory),           1,        KEY,        film_category, category,      film_category_category_id_fkey,   TRUE
-  Mutation.addCastEntry(in)/actorId, 0,        DISCOVERED, film_actor,    actor,         film_actor_actor_id_fkey,         TRUE
+  Mutation.addCastEntry(in.actorId:), 0,        DISCOVERED, film_actor,    actor,         film_actor_actor_id_fkey,         TRUE
   """)

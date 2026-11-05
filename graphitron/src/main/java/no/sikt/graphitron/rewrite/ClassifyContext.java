@@ -56,10 +56,10 @@ public record ClassifyContext(Set<String> expandingTypes, boolean enclosingOverr
 
     /**
      * The consuming coordinate an input-surface descent hangs under, and how far down it has got.
-     * The store states the same value relationally, as {@code intent_input_occurrence_path}'s three
-     * root columns plus one ordinal-keyed row per step in its step child, which is why this carries
-     * components rather than the serialized path that relation keys on: two spellings of one value
-     * agree until one changes, and here a disagreement reads as a dropped instruction.
+     * The store states the same value relationally, as an input field's occurrence: the declared
+     * argument it is reached under and the input fields on its parent chain, which is why this
+     * carries components rather than the coordinate the occurrence is keyed on: two spellings of one
+     * value agree until one changes, and here a disagreement reads as a dropped instruction.
      *
      * @param rootTypeName     the object type declaring the consuming field
      * @param rootFieldName    the consuming field

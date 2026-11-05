@@ -187,9 +187,6 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       whole sets where the schema is small enough to write one out, with the two node-seed
  *       widenings and the assembly cliff each carrying their own case, so the relation is pinned to
  *       what its seed rule promises rather than to what the retiring walk reached;
- *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
- *       occurrence-path pair to a structural reference enumeration and to the walk's use-keyed
- *       cascade verdicts;
  *       {@code no.sikt.graphitron.rewrite.derive.ProducerDeliveryTest} binds
  *       {@code graphitron_producer}'s split and fan-out fields to the walk's own gathered delivery
  *       relation over a real capture, and pins a service payload's table child reaching a backing
