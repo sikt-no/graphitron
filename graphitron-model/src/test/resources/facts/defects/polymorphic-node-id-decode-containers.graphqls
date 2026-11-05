@@ -145,3 +145,15 @@ extend schema @expectEquals(relation: "intent_node_id_decode_landing_defect", wh
   Query.inventories(film), inventory,    Film,           PATH_STOPS_SHORT, store,          film
   """)
 
+
+# A container named by typeName: binds once per member node, on that member's own table; a member
+# that is no node binds nothing.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: """
+  coordinate IN ('Query.occupant(occupant:)', 'Query.withRental(occupant:)')
+  """, rows: """
+  coordinate,                  bound,           position, basis,              node_type_name, column_name
+  Query.occupant(occupant:),   public.customer, 0,        EXPLICIT_TYPE_NAME, Customer,       customer_id
+  Query.occupant(occupant:),   public.staff,    0,        EXPLICIT_TYPE_NAME, Staff,          staff_id
+  Query.withRental(occupant:), public.customer, 0,        EXPLICIT_TYPE_NAME, Customer,       customer_id
+  Query.withRental(occupant:), public.staff,    0,        EXPLICIT_TYPE_NAME, Staff,          staff_id
+  """)

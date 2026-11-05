@@ -75,3 +75,15 @@ extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: ""
   OUTPUT_FIELD, Film.id,                          CONTAINING_NODE_TYPE,   Film
   OUTPUT_FIELD, Inventory.filmNodeId,             EXPLICIT_TYPE_NAME,     Film
   """)
+
+# The key columns each id carries, at its occurrence and the node's table. A written typeName:
+# decides at every site; the inferences decide at output fields, and an argument's or input field's
+# bare @nodeId or id named for its target waits for the parameter that receives it.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", rows: """
+  coordinate,                      bound,        position, basis,                node_type_name, column_name
+  Actor.id,                        public.actor, 0,        OWN_ID_FIELD,         Actor,          actor_id
+  Film.id,                         public.film,  0,        CONTAINING_NODE_TYPE, Film,           film_id
+  Inventory.filmNodeId,            public.film,  0,        EXPLICIT_TYPE_NAME,   Film,           film_id
+  Query.inventories(filmId:),      public.film,  0,        EXPLICIT_TYPE_NAME,   Film,           film_id
+  Query.inventories(where.filmId:), public.film, 0,        EXPLICIT_TYPE_NAME,   Film,           film_id
+  """)
