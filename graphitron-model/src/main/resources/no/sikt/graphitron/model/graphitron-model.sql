@@ -5693,11 +5693,11 @@ CREATE TABLE graphitron_claim_kind (
   kind   VARCHAR NOT NULL,
   family VARCHAR NOT NULL,
   PRIMARY KEY (kind),
-  CHECK (family IN ('PRODUCER', 'BINDING'))
+  CHECK (family IN ('PRODUCER', 'BINDING', 'TYPE'))
 );
 COMMENT ON TABLE graphitron_claim_kind IS 'One kind of thing an element can claim, with the family it belongs to. For example SERVICE is a PRODUCER kind and NODE_ID a BINDING kind.';
 COMMENT ON COLUMN graphitron_claim_kind.kind IS 'the kind claimed, and the whole key; unique across families, so a claim''s kind names its family alone';
-COMMENT ON COLUMN graphitron_claim_kind.family IS 'which question the kind answers: PRODUCER, what a field runs, or BINDING, what an occurrence of the element takes. A reader picks among the claims of one family at one element; kinds of different families answer different questions';
+COMMENT ON COLUMN graphitron_claim_kind.family IS 'which question the kind answers: PRODUCER, what a field runs, BINDING, what an occurrence of the element takes, or TYPE, what a type stands for. A reader picks among the claims of one family at one element; kinds of different families answer different questions';
 
 -- Every claim an element makes, by any stage, before any reader decides between them.
 CREATE TABLE graphitron_claim (
@@ -5733,7 +5733,7 @@ COMMENT ON COLUMN graphitron_claim.coordinate IS 'the declared element claimed f
 COMMENT ON COLUMN graphitron_claim.kind IS 'what is claimed, a graphitron_claim_kind; with the element the key, so another spelling of the same claim changes no row';
 COMMENT ON COLUMN graphitron_claim.claimer IS 'the element whose fact implies the claim: the element itself for a claim written on it, the argument for a @lookupKey, which claims its field';
 COMMENT ON COLUMN graphitron_claim.priority IS 'how strong the claim is, claimed by the stage that writes it: 0 for a claim an author wrote, an inference at the strength its stage claims, a lower number stronger. The relation decides nothing; each reader picks its own winner from the claims and their priorities';
-COMMENT ON COLUMN graphitron_claim.stage IS 'the stage that wrote the claim, by its class''s simple name: ProducerClaims or BindingClaims. Each stage sweeps only its own claims';
+COMMENT ON COLUMN graphitron_claim.stage IS 'the stage that wrote the claim, by its class''s simple name: ProducerClaims, BindingClaims or TypeClaims. Each stage sweeps only its own claims';
 COMMENT ON COLUMN graphitron_claim.source_name IS 'the file the claim was written in; null for a claim nobody wrote';
 COMMENT ON COLUMN graphitron_claim.source_line IS 'the claim''s source line, 1-based';
 COMMENT ON COLUMN graphitron_claim.source_column IS 'the claim''s source column: where the application claiming the kind was written. The first written of two one claimer makes of one kind is kept. An attribute and not a reference, for a defect to point at';
@@ -5936,6 +5936,33 @@ COMMENT ON VIEW graphitron_binding_claim_rule IS 'One binding claim the rule com
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.element_graph_ref IS 'the graph, as the element reference';
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.element_coordinate_ref IS 'the element, as the element reference';
+
+-- What each type's written directives claim it stands for: rows of a table from @table, an error
+-- its handlers fill from an exception from @error. A claim is what was written, whether or not it
+-- resolves. Neither directive repeats, so a type's one application of each is its ordinal 0,
+-- whether written on its declaration or an extension; a refused schema repeating one still claims
+-- once.
+CREATE VIEW graphitron_type_claim_rule (graph_name, coordinate, kind, claimer, source_name,
+                                        source_line, source_column, element_graph_ref,
+                                        element_coordinate_ref) AS
+SELECT e.graph_name, e.coordinate,
+       CASE da.directive_name WHEN 'table' THEN 'TABLE_TYPE' ELSE 'ERROR_TYPE' END,
+       e.coordinate, da.source_name, da.source_line, da.source_column, e.graph_name, e.coordinate
+  FROM graphitron_element e
+  JOIN graphitron_directive_application da
+    ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
+   AND da.directive_name IN ('table', 'error') AND da.ordinal = 0
+ WHERE e.element_kind = 'NAMED_TYPE';
+COMMENT ON VIEW graphitron_type_claim_rule IS 'One type claim the rule computes, in the shape graphitron_claim stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_claim, at the priority and under the stage TypeClaims claims.';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.coordinate IS 'the type claimed for';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.kind IS 'TABLE_TYPE or ERROR_TYPE';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.claimer IS 'the type itself';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.source_name IS 'the file the first application was written in';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.element_graph_ref IS 'the graph, as the element reference';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.element_coordinate_ref IS 'the type, as the element reference';
 
 CREATE TABLE graphitron_method_reference_entry (
   graph_name    VARCHAR NOT NULL,
@@ -20607,7 +20634,9 @@ INSERT INTO graphitron_claim_kind VALUES
   ('LOOKUP',     'PRODUCER'),
   ('COLUMN',     'BINDING'),
   ('NODE_ID',    'BINDING'),
-  ('EXPRESSION', 'BINDING');
+  ('EXPRESSION', 'BINDING'),
+  ('TABLE_TYPE', 'TYPE'),
+  ('ERROR_TYPE', 'TYPE');
 
 INSERT INTO graphitron_defect_type VALUES
   ('READ_SURFACE_ON_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_READ_SURFACE_ON_WRITE',
@@ -22052,6 +22081,10 @@ INSERT INTO meta_relation VALUES
   ('graphitron_binding_claim_rule', 'claim', 'graphitron',
    'One binding claim the rule computes, with what it names: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_claim and graphitron_binding_claim, at the priority and under the stage BindingClaims claims.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_type_claim_rule', 'claim', 'graphitron',
+   'One type claim the rule computes, in the shape graphitron_claim stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_claim, at the priority and under the stage TypeClaims claims.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_producer_rule', 'graph-field', 'graphitron',
    'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk.',

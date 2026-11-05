@@ -1,14 +1,19 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
-import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
+import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
 import no.sikt.graphitron.model.derive.OccurrenceProducers;
 import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
+import no.sikt.graphitron.model.derive.Fetchers;
+import no.sikt.graphitron.model.derive.FieldKeyRows;
+import no.sikt.graphitron.model.derive.FieldPaths;
+import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
+import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
@@ -20,16 +25,18 @@ import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
 import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
+import no.sikt.graphitron.model.derive.OccurrenceSources;
+import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.PathClaims;
+import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.PathNeeds;
 import no.sikt.graphitron.model.derive.Paths;
-import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.ProducerClaims;
-import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.Steps;
 import no.sikt.graphitron.model.derive.TypeBackings;
+import no.sikt.graphitron.model.derive.TypeClaims;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -90,6 +97,8 @@ public final class GraphitronAssemblyCapture {
         // And what each field, input field and argument's written directives claim it binds to, off
         // the same elements and applications; the bindings and their defects read it.
         BindingClaims.derive(dsl, graph, readAt);
+        // And what each type's written directives claim it stands for, off the same applications.
+        TypeClaims.derive(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could
         // take, which read it. Every input either was captured before this gatherer ran or is a
