@@ -1,7 +1,7 @@
 ---
 id: R1158
 title: "Release pinned connections when execution aborts synchronously"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: runtime-connection

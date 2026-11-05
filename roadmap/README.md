@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1151` | Require an unmount on SessionState so identity never rests on a pooled connection | Spec | 2026-11-05 | [plan](session-state-mandatory-unmount.md) |
 | `R1152` | Reset session variables at release as a backstop to the consumer's unmount | Spec | 2026-11-05 | [plan](session-identity-reset-on-release.md) |
 | `R1153` | Execution tests that identity never crosses requests through a real pool | Ready | 2026-11-05 | [plan](session-identity-pool-isolation-execution-tests.md) |
-| `R1158` | Release pinned connections when execution aborts synchronously | Ready | 2026-11-05 | [plan](release-pinned-connections-on-synchronous-abort.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-21 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
+| `R1158` | Release pinned connections when execution aborts synchronously | In Progress | 2026-11-05 | [plan](release-pinned-connections-on-synchronous-abort.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R1133` | A single @error type as the errors field's element is not recognised as an error channel | Spec | 2026-11-03 <sub>created 2026-10-30</sub> | [plan](payload-errors-accessor-disables-error-channel.md) |
@@ -612,7 +612,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### runtime-connection
 
 - `R1153` [**Execution tests that identity never crosses requests through a real pool**](session-identity-pool-isolation-execution-tests.md) — Ready, bug
-- `R1158` [**Release pinned connections when execution aborts synchronously**](release-pinned-connections-on-synchronous-abort.md) — Ready, bug
+- `R1158` [**Release pinned connections when execution aborts synchronously**](release-pinned-connections-on-synchronous-abort.md) — In Progress, bug
 - `R1151` [**Require an unmount on SessionState so identity never rests on a pooled connection**](session-state-mandatory-unmount.md) — Spec, bug
 - `R1152` [**Reset session variables at release as a backstop to the consumer's unmount**](session-identity-reset-on-release.md) — Spec, architecture
 - `R1155` [**Fix the escape-hatch identity example, which mounts nothing in autocommit**](escape-hatch-identity-example-fix.md) — Backlog, bug
