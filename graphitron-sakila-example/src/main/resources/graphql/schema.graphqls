@@ -6576,6 +6576,11 @@ extend type Query {
             className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
             method: "queryFailsWithoutDatabase"
         })
+    # Every secure_note row the connection's mounted identity may read
+    # (SessionIdentityPoolIsolationExecutionTest). No condition on purpose: what a caller sees is
+    # decided by the table's row-level security policy alone, so the field shows which identity
+    # the connection it ran on actually carried.
+    secureNotes: [SecureNote!]! @defaultOrder(primaryKey: true)
 }
 
 # Fixture types for the session-reading condition on a child projected into its parent's statement.

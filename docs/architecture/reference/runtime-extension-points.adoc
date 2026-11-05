@@ -122,6 +122,12 @@ committed session state, and a mutation field's transaction settling later
 cannot revert it. Graphitron therefore never re-runs your methods around
 transaction boundaries.
 
+The execution evidence that a connection is returned with identity cleared on
+every completion path is `SessionIdentityPoolIsolationExecutionTest` in
+`graphitron-sakila-example`: it sends requests as different users, and a
+borrower outside Graphitron, through one real connection pool of size one, and
+its class javadoc names the paths it does not yet cover.
+
 [#rejected-mount]
 ==== A rejected identity rejects the request
 
