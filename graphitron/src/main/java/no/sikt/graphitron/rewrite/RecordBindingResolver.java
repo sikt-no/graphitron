@@ -917,9 +917,20 @@ final class RecordBindingResolver {
         }
     }
 
+    /**
+     * Grounds the object types a bound parent's fields return through the accessors on the
+     * parent's class. A parent carrying {@code @table} is not walked, whichever producer bound it:
+     * its fields are projected off its row, never read through its record class's getters, so a
+     * getter there (jOOQ generates one per column) grounds nothing. Walking it would bind a
+     * directiveless nesting type named like a column to that column's Java type, and its fields
+     * would then be looked up as accessors on that type. The store's
+     * {@code graphitron_type_backing_rule} likewise seeds its accessor closure from producers and
+     * never from a table binding.
+     */
     private boolean propagateResultChildren(String parentSdlType, Class<?> parentClass) {
         var named = ctx.schema.getType(parentSdlType);
         if (!(named instanceof GraphQLObjectType obj)) return false;
+        if (obj.hasAppliedDirective(DIR_TABLE)) return false;
         boolean changed = false;
         for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
             // Skip directive-driven fields: their return type is already bound via root producer.
@@ -934,6 +945,7 @@ final class RecordBindingResolver {
             // ground Film <- LanguageRecord, collide with @table's FilmRecord, and knock Film out of
             // its @table classification). The field classifier handles such a mismatch as an
             // author-error rejection on the TableRecord path; the cascade must not pre-empt it.
+            // (The parent itself is never a @table type here; see the method's javadoc.)
             if (resultMemo.get(childSdl) != null) continue;
             // One probe call grounds the child class and names the accessor. The base name is
             // the @field(name:)-resolved accessor name and the argument shape is the SDL field's real

@@ -1,0 +1,36 @@
+"A field returning a type with no @table is a nesting field, read off its parent's row, whatever columns the parent's table has. OutboxMessage.payload shares its name with outbox.payload, a jsonb column whose Java type, org.jooq.JSONB, has no accessor for any of OutboxPayload's fields; the field stays a nesting field and its fields keep the bindings written on them. OutboxMessage.envelope is the same shape under a name no column has, the contrast."
+
+type OutboxMessage @table(name: "outbox") {
+  "Named like the payload column: still a nesting field."
+  payload: OutboxPayload
+  "Named like no column: a nesting field as well."
+  envelope: OutboxPayload
+}
+
+"Read off the outbox row it is nested under."
+type OutboxPayload {
+  "A column of the parent's row."
+  type: String
+  "An expression computed in the parent's query."
+  aggregateKind: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.OutboxExtensions"})
+}
+
+extend type Query { outboxMessages: [OutboxMessage!]! }
+
+# No class backs the nesting type: the parent's record class is not read through accessors, so its
+# payload getter grounds nothing.
+extend schema @assertEmpty(relation: "graphitron_type_backing", where: "type_name = 'OutboxPayload'")
+
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'OutboxPayload'", rows: """
+  type_name,     shape
+  OutboxPayload, ROW
+  """)
+
+extend schema @expectEquals(relation: "graphitron_reader", where: "type_name IN ('OutboxMessage', 'OutboxPayload')", rows: """
+  type_name,     field_name,    reads
+  OutboxMessage, payload,       NESTED
+  OutboxMessage, envelope,      NESTED
+  OutboxPayload, type,          COLUMN
+  OutboxPayload, aggregateKind, EXPRESSION
+  """)
