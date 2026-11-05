@@ -111,6 +111,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
   classification. Ends at "A defect is written by the gatherer whose facts it judges, marked and swept by its owner".
 * A field's column picked by `intent_column_match_claim` and stated by
   `graphitron_field_target_column`. Ends at "The claims go".
+* A scalar's column in `graphitron_field_target_column` and in `graphitron_occurrence_column`. Ends at "A scalar's column is read at its path's end".
 * An `id: ID` without `@nodeId`, a node id to the generator and a column to the store. Ends at "The generator reads an `id: ID` without `@nodeId` as a column".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
@@ -129,7 +130,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The coordinate copies and the position-keyed entries of `@node` and `@table`. Ends at "The coordinate copies go".
 * `graphitron_node_type`, `graphitron_node` and `NodeDeclaration.isNodeType`, each saying what a
   node is. Ends at "A node is what the manual says takes effect".
-* `graphitron_node_id_instruction` with its private route beside the chain. Ends at "Encode and decode read the target type, and the old node-id relations go".
+* `graphitron_node_id_instruction` with its private route beside `graphitron_occurrence_node_id`. Ends at "Encode and decode read the target type, and the old node-id relations go".
 * Walk derivations and their store replacements, pinned by the shadow tests. Ends at "The shadow tests go with their walk side".
 * The vocabulary listed twice, by the editor from `graphitron_directive` and by MCP from
   `graphql_directive`. Ends at "The MCP lists the composed vocabulary".
@@ -285,7 +286,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
     an implementer of a `@table` interface to carry the same `@table`; without one it has no
     `graphitron_tabletype` row and its fields no source, and nothing says so.
-  * **A connection's fields bind into its producer's page** `blocked`, G's, on "What an occurrence takes is a binding".
+  * **A connection's fields bind into its producer's page** `blocked`, G's, on "A connection's producer states its page as its result".
     The occurrences already hang under the returning field, the connection's fields and its edge's;
     they bind into what that field's producer produces, a page of records with its ordering in the
     class graphitron generates: `nodes` the page's records, `edges` each record with its cursor,
@@ -610,25 +611,14 @@ classified records have no reader left and can go with the walk.
     its kind, so their accessors are unknown.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
-* **What an occurrence takes is a binding** `open`, G's.
-  `graphitron_occurrence_binding` holds one place an occurrence binds, keyed by (graph, coordinate,
-  bound), a `VALUE`'s bound being its class and member, with its kind (`COLUMN`, `TABLE`,
-  `NODE_ID`, `VALUE`, `PARAMETER`, `EXPRESSION`, `RESULT_EXPRESSION`) an attribute and a subtype
-  per kind, `EXPRESSION` a value the producer computes in its query and `RESULT_EXPRESSION` one a
-  method computes over the result the producer produced, a cursor; F writes the
-  `TABLE` subtype beside the needs and E the `PARAMETER` and `EXPRESSION` ones, the `VALUE` subtype, a member's value at an
-  accessor path's end, waits on a producer's value object being bound, and the column relation
-  below is its `COLUMN` subtype. `PARAMETER` is decided before `COLUMN`, so a scalar input with no
-  binding under a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and
-  `ARGUMENT_WITHOUT_CONSUMER` only where the generator cannot consume it, under `@service` or
-  `@externalField`, and no parameter does.
-* **A scalar's column is read at its path's end** `blocked`, G's, on "What an occurrence takes is a binding".
-  `graphitron_occurrence_column`, the `COLUMN` subtype on the binding's key, holds a scalar's one
-  column with its `sql_column` and whether the SQL or the jOOQ name matched, and
-  `graphitron_occurrence_node_id`, the `NODE_ID` subtype, the key columns an unbound `id: ID` on a
-  `Node` type or a `@nodeId` unpacks into, one row per ordinal. `graphitron_field_target_column`,
-  `graphitron_field_target_table` and the `graphitron_node_id_decode_*` family go, and the editor's
-  column scope reads the column.
+* **What an occurrence takes is a binding** `open`, F's and E's.
+  `graphitron_occurrence_binding` and its `COLUMN` and `NODE_ID` subtypes stand; F writes the `TABLE`
+  subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
+  `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
+  producer's value object being bound.
+* **A scalar's column is read at its path's end** `blocked`, G's, on "Every path a field needs is a need, and a need without a path is a defect".
+  `graphitron_outbox_leaf`, the entry defects and the editor read `graphitron_occurrence_column`, and
+  `graphitron_field_target_column` and its match go, once a written path's landing is filled.
 * **A field's source is its parent's result** `open`, F's.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read
@@ -726,7 +716,6 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-  * **`graphitron_node_id_candidate` takes the shape** `open`. It merges with "The target type of a `@nodeId` coordinate is the entry's" into one relation.
 * **The claims go** `open`. `BindingUsages`, `SchemaQueries`, `DiagnosticFacets` and
   `AuthoredClaimConflicts` read the producers, the target and its column instead, and
   `intent_authored_field_claim`, `intent_column_match_claim` and `intent_resolved_field_claim`
@@ -1038,21 +1027,23 @@ says only that the value is that type's ID; the route to it is the ordinary forw
 relations keep a private model of the route; both are replaced from scratch, reading nothing from
 `intent_`. `graphitron_node_id_instruction`'s insert costs 23 CPU-seconds of preparation over a
 `graphitron` test phase, reaching 24 relations through 4 views (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
+The replacement is the binding's `NODE_ID` subtype, `graphitron_occurrence_node_id`: at each
+occurrence, the node type, the rule that decided it and the node's key columns on its own table. The
+branch is G's (Alf, 2026-11-05).
 
-* **The model comes first, as tables** `open`. The new node-id relations are declared with keys,
-  foreign keys and grain sentences before anything writes them.
-* **The corpus is written against the model** `open`. Fact documents state what each schema gives
-  the new relations at a node type, an interface and a union, for every written and inferred form.
-* **The target type of a `@nodeId` coordinate is the entry's** `blocked`, on "`graphitron_node_id_candidate` takes the shape".
-  The entry carries the type
-  the id names and the rung it came from (`WRITTEN`, `IMPLIED`, `BY_NAME`, `RETURN_TYPE`,
-  `TABLE_NODE`), and a shape the manual refuses is a defect row, never a capture failure.
-* **An input field's use site is a graphitron_ relation** `open`. A definition joined to the
-  consumer that uses it is modelled in the store rather than read from an `intent_` view.
-* **The chain reaches the target type** `blocked`, on "Arguments and input fields have paths from their field's path". A `@nodeId` coordinate's forward walk ends at a table checked against its target type,
-  or, when bare, the table its `TABLE_NODE` type is read from.
-* **Encode and decode read the target type, and the old node-id relations go** `blocked`, on "The chain reaches the target type". The generator, filter and carrier roles read the new relations,
-  and `graphitron_node_id_instruction` and the `graphitron_node_id_decode_*` relations are deleted.
+* **The corpus is written against the model** `open`, G's. Fact documents state a written
+  `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
+  on a `@reference` field once its path's landing is filled.
+* **An argument's or input field's inferred node id is a `NODE_ID` binding** `blocked`, G's, on "What an occurrence takes is a binding".
+  A bare `@nodeId` or an `id` named for its target takes the node the parameter receiving it binds,
+  an argument its field's return type, and `graphitron_node_id_candidate` dissolves into the rule.
+* **A node id's path end is checked against its node** `blocked`, G's, on "Every path a field needs is a need, and a need without a path is a defect".
+  Where an occurrence's path lands on a table other than its node's, the defect the landing views
+  state today is the binding's, at the claim's written position.
+* **Encode and decode read the target type, and the old node-id relations go** `blocked`, G's, on "A node id's path end is checked against its node" and "An argument's or input field's inferred node id is a `NODE_ID` binding".
+  The generator, filter and carrier roles and E's node-id readers read `graphitron_occurrence_node_id`,
+  and `graphitron_node_id_instruction`, the `graphitron_node_id_decode_*` relations and the census
+  `NodeIdDecodeCoverageFacts` reads go.
 
 ### A polymorphic id resolves per member, to the overload that accepts it `open`
 
@@ -1104,7 +1095,7 @@ here with a document that shows it.
   branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
   application with no entry beside it never return a row, and they go. `@routine` and `@mutation`
   decline what they cannot read, so theirs stay.
-* **What the manual refuses of a `@nodeId` is a defect row** `blocked`, on "The target type of a `@nodeId` coordinate is the entry's". The generator refuses these and the store records nothing:
+* **What the manual refuses of a `@nodeId` is a defect row** `blocked`, on "An argument's or input field's inferred node id is a `NODE_ID` binding". The generator refuses these and the store records nothing:
   a bare `@nodeId` on a field of a type that is not a node, a `typeName:` naming a type without
   `@node`, arguments of a node-returning field matched to columns its table lacks, a `typeName:`
   with no route from the slot's table, and a bare `@nodeId` on an input field under a multi-table
@@ -2246,6 +2237,12 @@ and `graphitron_join_path_step_*`; `graphitron_path_stop` is `graphitron_join_pa
 columns `landing_kind`, `landing`, `landing_type`, `start_coordinate` and `start_as` are dropped, a
 need being keyed by its target type with its landing an attribute. The defect code
 `CHAIN_WITHOUT_TARGET` is merged into `REFERENCE_WITHOUT_TARGET_TABLE`, reported at the claim.
+
+**Per-site `@field` and `@nodeId` entries merged** (2026-11-05). `graphitron_ast_field_binding_entry`,
+`graphitron_ast_input_value_binding_entry` and `graphitron_ast_enum_value_binding_entry` are
+`graphitron_ast_binding_entry`; `graphitron_ast_field_node_id_entry` and
+`graphitron_ast_input_value_node_id_entry` are `graphitron_ast_node_id_entry`, both written by
+`GraphitronBindingEntries` off every site.
 
 **Relations retired.** Eight per-site argMapping tables into `graphitron_arg_mapping_pair`:
 `graphitron_argument_condition_arg_mapping_pair`,
