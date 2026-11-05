@@ -329,7 +329,7 @@ var session = SessionState.of(
 var input = Graphitron.newOwnedExecutionInput(session, userId).query(query).build();
 ----
 
-* The first callback is the mount. It runs on each connection graphitron takes, before any SQL on it, and returns the handle (or nothing, when no `<handle>` is configured). The second is the unmount, optional: `SessionState.of(mount)` mounts and never unmounts. Both may throw any exception.
+* The first callback is the mount. It runs on each connection graphitron takes, before any SQL on it, and returns the handle (or nothing, when no `<handle>` is configured). The second is the unmount. It runs when graphitron gives the connection back to the pool, and clears what the mount set. Both are required, and both may throw any exception.
 * `s` is a `MountedSession`. `s.configuration()` is a jOOQ `Configuration` bound to the connection being mounted and carrying the `Settings` you gave the runtime, so a schema mapping you configured applies to your routine call as it does to graphitron's own SQL. It carries no transaction provider, because both callbacks run outside any transaction, on a connection held in autocommit. Use `s.configuration().dsl()` or `connectionProvider` when you want raw JDBC.
 * Whatever the request carries, such as claims, is captured by the closure when you build the input. The callbacks run on whichever thread first needs a connection, so read no ambient state, thread locals, or request scopes from inside them.
 * Because the handle type is concrete, passing the wrong shape is a compile error rather than a cast failure inside the database. The factory takes the state followed by only your declared `contextArguments`; the identity is no longer a set of payload parameters.
@@ -385,9 +385,18 @@ In a build that configures `<tenantColumn>`, the `MountedSession` also answers `
 
 Graphitron takes a connection when a field first needs one, mounts identity on it, holds it for the rest of the request, and unmounts before returning it to the pool. The mount runs with autocommit on and no transaction open, so what it sets is committed session state: a mutation field's transaction committing or rolling back later cannot revert it, and graphitron does not re-run your callbacks around those boundaries. A throwing mount evicts the connection rather than returning it to the pool, and fails the whole request before any of your query's SQL runs. What this asks of you is that identity be _session_-scoped in your database's own vocabulary, session GUCs on Postgres, a session or global application context on Oracle. Transaction-scoped storage will not work, and will not work from the first query rather than failing later: `set_config(..., true)` and `SET LOCAL` revert at the end of the statement that set them, and rows in an `ON COMMIT DELETE ROWS` temp table are deleted by the mount's own implicit commit. One deployment requirement follows: put graphitron in front of a pool that hands out sessions, not a transaction-pooling proxy such as pgbouncer in transaction mode, which resets session state between transactions and would leave your identity on a backend nobody reads.
 
-=== The unmount is optional
+=== The unmount is required
 
-If your mount establishes identity wholesale rather than adding to whatever the connection already carried, the next request's mount overwrites the last one's, nothing can read stale identity, and the unmount only costs you a round trip per request. Use `SessionState.of(mount)`. Keep an unmount when something other than graphitron reads scoped data on the same pool, your own DAO code, a migration tool, an admin script, because those readers never mount and would inherit the previous caller's identity.
+When a request ends, graphitron gives its connection back to the pool, and the pool hands it to whoever asks next. That may not be a graphitron request: a health check, your own code using the same `DataSource`, a background job, an operation on the escape hatch. None of them mount, so they run as whatever identity the connection still carries. A graphitron request can be caught the same way when its mount sets only some variables, for example an anonymous request whose mount skips the claims it does not have. The unmount closes this: it runs before the connection goes back, so the next borrower always finds a connection with no identity on it. That is why `SessionState.of` takes both callbacks.
+
+Clear to the value your policies treat as "no identity" (on Postgres the empty string, not `NULL`; see below). If your mount sets no database state, for example it only records the request for auditing, say so with an unmount that does nothing:
+
+[source,java]
+----
+var session = SessionState.of(s -> audit.record(claims), s -> {});
+----
+
+If an unmount throws, graphitron evicts the connection instead of returning it to the pool.
 
 === If you have no routine at all
 

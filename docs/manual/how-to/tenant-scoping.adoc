@@ -53,10 +53,12 @@ Your mount can learn which tenant it is mounting for: the `MountedSession` it re
 
 [source,java]
 ----
-var session = SessionState.of(s -> {
-    long institution = s.tenant().orElseThrow();   // or handle the default source
-    return Routines.connect(s.configuration(), institution, claims);
-});
+var session = SessionState.of(
+    s -> {
+        long institution = s.tenant().orElseThrow();   // or handle the default source
+        return Routines.connect(s.configuration(), institution, claims);
+    },
+    (s, handle) -> Routines.disconnect(s.configuration(), handle));
 ----
 
 A connection routed to a tenant receives that tenant; a connection to the default source receives `Optional.empty()`. Tenant keys that share one `DataSource` still get one connection and one mount each, each with its own key. A mount that throws fails the request closed and evicts the connection, so it is also the place for any per-tenant check the tenant set cannot express. The unmount does not receive the tenant separately; if it needs it, put it in the handle your mount returns.

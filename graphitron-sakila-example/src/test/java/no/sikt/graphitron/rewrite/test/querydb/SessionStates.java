@@ -27,9 +27,13 @@ final class SessionStates {
             (session, handle) -> SakilaTenantSessionIdentity.unmount(session.configuration(), handle));
     }
 
-    /** The {@code convertedtenant} package: a handle-less mount that records the tenant in its column form. */
+    /**
+     * The {@code convertedtenant} package: a handle-less mount that records the tenant in its column
+     * form and sets no database state, so its unmount has nothing to clear.
+     */
     static no.sikt.graphitron.generated.convertedtenant.schema.SessionState convertedTenant(String claims) {
         return no.sikt.graphitron.generated.convertedtenant.schema.SessionState.of(
-            session -> OrgTenantSessionIdentity.mount(session.configuration(), session.tenant(), claims));
+            session -> OrgTenantSessionIdentity.mount(session.configuration(), session.tenant(), claims),
+            session -> {});
     }
 }

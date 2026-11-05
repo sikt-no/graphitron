@@ -72,7 +72,8 @@ Identity goes to the database, not to Java. Switching on `<sessionState>` (optio
 naming the `<handle>` type your mount returns) makes the generator emit two types
 in the schema package, `SessionState` and `MountedSession`, and makes the generated
 `newOwnedExecutionInput` factory take a `SessionState` first. You build one per
-request, from code: a mount callback and an optional unmount callback, each handed a
+request, from code: a mount callback and an unmount callback that clears what the
+mount set, both required, each handed a
 `MountedSession` whose `configuration()` is bound to the connection being mounted
 (and whose `tenant()` answers the tenant in a `<tenantColumn>` build). The state
 rides the request's `GraphQLContext`, and the connection-lifecycle instrumentation

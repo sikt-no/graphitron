@@ -234,6 +234,34 @@ class ConnectionRuntimeClassGeneratorTest {
         assertThat(events).contains("disconnect:H1");
     }
 
+    @Test
+    void sessionState_cannotBeBuiltWithoutAnUnmount() throws Throwable {
+        Class<?> state = harness.load(SCHEMA_PACKAGE + ".SessionState");
+        Class<?> mount = harness.load(SCHEMA_PACKAGE + ".SessionState$Mount");
+        Class<?> unmount = harness.load(SCHEMA_PACKAGE + ".SessionState$Unmount");
+
+        List<Method> factories = java.util.Arrays.stream(state.getDeclaredMethods())
+            .filter(m -> m.getName().equals("of") && java.lang.reflect.Modifier.isStatic(m.getModifiers()))
+            .toList();
+        assertThat(factories)
+            .as("one factory, taking both callbacks: a mount-only state has no way to be built")
+            .singleElement()
+            .satisfies(of -> assertThat(of.getParameterTypes()).containsExactly(mount, unmount));
+
+        Object aMount = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{mount},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "aMount"));
+        assertThatThrownBy(() -> {
+            try {
+                factories.get(0).invoke(null, aMount, null);
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+        })
+            .as("a null unmount is refused at construction, not discovered at release")
+            .isInstanceOf(NullPointerException.class)
+            .hasMessage("unmount");
+    }
+
     // --- the fetcher-exception log and response -----------------------------------------------
 
     @Test

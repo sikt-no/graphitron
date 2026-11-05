@@ -7,7 +7,7 @@ package no.sikt.graphitron.rewrite.maven;
  *
  * <p>The block only switches session identity on for the owned-connection engine; the consumer
  * supplies the identity per request as code, a {@code SessionState} built from a mount callback
- * and an optional unmount callback and passed to the generated
+ * and an unmount callback that clears what the mount set, and passed to the generated
  * {@code Graphitron.newOwnedExecutionInput}. {@code <handle>} optionally names the class the mount
  * callback returns, which {@code $session} bindings in {@code argMapping} read members of:
  * <pre>{@code

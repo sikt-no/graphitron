@@ -513,11 +513,8 @@ public final class ConnectionRuntimeClassGenerator {
                     + "cancel-then-complete release unmounts exactly once. Evicts on unmount failure (and on\n"
                     + "a failed pre-unmount settle, which equally leaves identity unprovable).\n"
                 : "Releases the connection, settling any transaction the operation left open and asserting\n"
-                    + "autocommit (the resting state graphitron returns an owned connection in"
-                    + (mounts
-                        ? "; the next\nrequest's mount overwrites this one's identity wholesale, the mount-only contract"
-                        : "")
-                    + ").\nIdempotent; evicts on a failed settle.\n"))
+                    + "autocommit (the resting state graphitron returns an owned connection in).\n"
+                    + "Idempotent; evicts on a failed settle.\n"))
             .build();
 
         var close = MethodSpec.methodBuilder("close")
@@ -3394,9 +3391,10 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code SessionState}: the per-request pair of a mount callback and an optional unmount
-     * callback, which the consumer builds with {@code SessionState.of(mount)} or
-     * {@code SessionState.of(mount, unmount)} and hands to {@code newOwnedExecutionInput}. One
+     * {@code SessionState}: the per-request pair of a mount callback and an unmount callback that
+     * clears what the mount set, which the consumer builds with {@code SessionState.of(mount, unmount)}
+     * and hands to {@code newOwnedExecutionInput}. Both are required, so every connection released
+     * has run the consumer's clear before the pool hands it to a borrower that does not mount. One
      * shape per build, from whether the graph names a handle class: without one the mount returns
      * nothing and the unmount takes the {@code MountedSession} alone; with one the mount returns the
      * handle and the unmount receives it. Not generic, so a build has one {@code of} form and a
@@ -3446,14 +3444,6 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("this.mount = mount")
             .addStatement("this.unmount = unmount")
             .build();
-        var ofMount = MethodSpec.methodBuilder("of")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(self)
-            .addParameter(mountType, "mount")
-            .addStatement("return new $T($T.requireNonNull(mount, $S), null)", self, Objects.class, "mount")
-            .addJavadoc("A session state that mounts and never unmounts: the next request's mount overwrites\n"
-                + "this one's identity wholesale on a pooled connection.\n")
-            .build();
         var ofBoth = MethodSpec.methodBuilder("of")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(self)
@@ -3461,7 +3451,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(unmountType, "unmount")
             .addStatement("return new $T($T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))",
                 self, Objects.class, "mount", Objects.class, "unmount")
-            .addJavadoc("A session state that mounts at acquisition and unmounts at release.\n")
+            .addJavadoc("A session state that mounts at acquisition and unmounts at release. The unmount\n"
+                + "clears what the mount set; when the mount sets no database state, pass one that\n"
+                + "does nothing.\n")
             .build();
 
         var mountCall = MethodSpec.methodBuilder("mount")
@@ -3476,14 +3468,12 @@ public final class ConnectionRuntimeClassGenerator {
             unmountCall.addParameter(handleType, "handle");
         }
         unmountCall.addException(Exception.class)
-            .beginControlFlow("if (unmount != null)")
-            .addStatement(handleType == null ? "unmount.unmount(session)" : "unmount.unmount(session, handle)")
-            .endControlFlow();
+            .addStatement(handleType == null ? "unmount.unmount(session)" : "unmount.unmount(session, handle)");
 
         return TypeSpec.classBuilder(self)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("The request's session identity, as code: a mount callback and an optional unmount\n"
-                + "callback the consumer builds with {@code of} and passes to\n"
+            .addJavadoc("The request's session identity, as code: a mount callback and an unmount callback\n"
+                + "that clears what the mount set, which the consumer builds with {@code of} and passes to\n"
                 + "{@code Graphitron.newOwnedExecutionInput}. Graphitron calls the mount lazily, on whatever\n"
                 + "thread first needs a connection, so the values it needs are captured by the callbacks\n"
                 + "when the input is built rather than looked up from any ambient state.\n")
@@ -3492,7 +3482,6 @@ public final class ConnectionRuntimeClassGenerator {
             .addField(mountField)
             .addField(unmountField)
             .addMethod(constructor)
-            .addMethod(ofMount)
             .addMethod(ofBoth)
             .addMethod(mountCall.build())
             .addMethod(unmountCall.build())
@@ -3562,7 +3551,7 @@ public final class ConnectionRuntimeClassGenerator {
             SESSION_STATE_SLOT);
         var unmount = unmountBuilder
             .addJavadoc("Unmounts the identity {@code mount} mounted by calling the request's unmount\n"
-                + "callback, when it supplied one"
+                + "callback"
                 + (handleType == null ? "" : ", with the handle mount returned") + ". Fires at release on\n"
                 + "every completion path, outside any transaction (the runtime rolls back anything the\n"
                 + "operation left open and asserts autocommit first), so the clears take effect\n"

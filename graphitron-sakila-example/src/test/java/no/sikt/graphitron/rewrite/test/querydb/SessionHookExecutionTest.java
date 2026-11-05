@@ -50,9 +50,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * RLS-scoped read sees only permitted rows; a mutation's post-commit read-back on the same
  * connection still does, with no hook having run in between (the autocommit mount is what
  * carries identity across a transaction boundary), and the rollback complement holds too;
- * identity is absent after unmount, and the next mount overwrites wholesale; and a throwing
- * mount fails closed through the emitted {@code PinnedConnection.acquire}, evicting the
- * connection. The acquire rows run against a {@code DataSource} handing out
+ * identity is absent after unmount, both to RLS and to a borrower that reads the session variable
+ * without mounting; and a throwing mount fails closed through the emitted
+ * {@code PinnedConnection.acquire}, evicting the connection. The acquire rows run against a {@code DataSource} handing out
  * {@code autoCommit=false} connections, the fixture in which deleting the acquire-time
  * assertion would show up as a failure instead of passing on the pool's default.
  */
@@ -133,6 +133,9 @@ class SessionHookExecutionTest {
             assertThat(notesVisible(conn))
                 .as("after unmount the identity is gone: RLS denies everything (fail closed)")
                 .isEmpty();
+            assertThat(userIdSetting(conn))
+                .as("a borrower that never mounts finds no identity on the connection, not alice's")
+                .isEmpty();
         }
     }
 
@@ -194,25 +197,6 @@ class SessionHookExecutionTest {
                 .unmount(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings(), handle);
         } finally {
             dsl.execute("delete from rls_probe where id in (100, 101)"); // superuser cleanup
-        }
-    }
-
-    @Test
-    void nextMountOverwritesWholesale_theMountOnlyContractsGround() throws Exception {
-        try (Connection conn = probeConnection()) {
-            var hook = no.sikt.graphitron.generated.schema.GraphitronSessionHook.class;
-            var mount = hook.getMethod("mount", no.sikt.graphitron.generated.schema.SessionState.class,
-                Connection.class, SQLDialect.class, Settings.class);
-            mount.invoke(null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings());
-            assertThat(notesVisible(conn)).contains("a1");
-
-            // The same mount method runs on every acquisition, so the set of state it writes is
-            // constant and the overwrite is total: bob's mount leaves nothing of alice's behind.
-            mount.invoke(null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"bob\"}"), conn, SQLDialect.POSTGRES, new Settings());
-            assertThat(notesVisible(conn))
-                .as("the next acquisition sees bob's rows, never alice's leftover state")
-                .contains("b1")
-                .doesNotContain("a1", "a2");
         }
     }
 
@@ -648,6 +632,15 @@ class SessionHookExecutionTest {
             }
         }
         return notes;
+    }
+
+    /** The session variable the mount sets, as a borrower that runs no mount would read it. */
+    private static String userIdSetting(Connection conn) throws SQLException {
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("select current_setting('app.user_id', true)")) {
+            rs.next();
+            return rs.getString(1);
+        }
     }
 
     private static void exec(String sql) {
