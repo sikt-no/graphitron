@@ -55,9 +55,9 @@ as columns. Same violation, three correct sentences, so there is nothing for the
 
 An earlier framing of this item proposed a second category, projection views, holding display shapes
 whose prose two consumers must render identically. Withdrawn: no two surfaces need identical prose,
-and the requirement was invented to justify keeping a computed message where it already sat. The one
-computed-prose site in the schema is `intent_authored_claim_conflict.message`, whose removal is
-`conflict-message-leaves-the-intent-view.md` (R696).
+and the requirement was invented to justify keeping a computed message where it already sat. The schema
+holds no computed-prose site any more: a claim conflict is an entry defect whose claims are its rows,
+and the sentence is each reader's to compose.
 
 ## Home, and the sibling editing the same file
 

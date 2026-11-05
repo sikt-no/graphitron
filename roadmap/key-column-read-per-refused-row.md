@@ -63,15 +63,6 @@ covers what the build's detection pass asks the store.
 
 ## Adjacent, and deliberately not in this item
 
-`AuthoredClaimConflicts.fieldGrain` has the same disease and a worse case: per conflicted field
-coordinate it correlates `intent_authored_field_claim`, a `WITH RECURSIVE` view, and then issues one
-further statement per claim row for the arm's slot facts. It is left out of this item on purpose. The
-batched shape it wants is already written next door as `fieldClaims`, and it cannot simply be called,
-because the field grain needs the trigger, the decoded flag, the claim's own source location and then
-the arm's facts; widening it is a real design decision rather than the forced one above. It also edits
-a class R696 edits, and its slot relations are `graphitron_` base tables, which the fact model says
-nest freely as correlated reads, so part of what looks wrong there is idiom rather than cost. Worth
-its own entry when somebody picks it up; recorded here so the next reader of this family finds it.
-
-R696 acts on the same conflict view on a different question, whether it carries prose or semantics,
-and touches `rejectionOf` rather than any read shape. Neither collides with this item.
+The authored-claim conflicts had the same disease, a per-conflict correlated read of a recursive
+view, and no longer do: R876 states every claim in `graphitron_claim` and reads a conflict's claims as
+rows under the defect, so nothing of that family is left for this item to touch.
