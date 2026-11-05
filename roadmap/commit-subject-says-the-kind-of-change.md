@@ -1,7 +1,7 @@
 ---
 id: R1156
 title: "A commit on trunk says what kind of change it is"
-status: Spec
+status: Ready
 bucket: process
 priority: 2
 theme: tooling
@@ -154,3 +154,12 @@ Not a gate verdict. Read against trunk `0176960ff`. Round 3 is answered in full:
 2. **Say which push the range check gates.** Today a `wip`/`draft`/`spike` tip means "push the feature branch, skip trunk", not "stop". The plan says the check "stops", which read literally also blocks pushing a `wip` branch to its own remote, the very thing the not-for-trunk types exist to allow. State that a failing range skips the trunk fast-forward (step 4) and reports, while the feature-branch push still goes ahead.
 
 Sound: everything round 3 asked for, the two regexes (the shape one correctly excludes the not-for-trunk types and the `Revert "..."` subject git writes), the rename and its one follow-on reference, and `srp` left alone.
+
+### Round 5: Spec → Ready, signed off (session_01WkW2JFGZ8sg6MFqgv3yaP3, 2026-11-05)
+
+Read against trunk `c5cd6c3aa`. Rounds 1 to 4 were this gate's review, labelled "before Spec" in error while the item sat in Backlog; this round gives the verdict. The plan text was last revised by session `01WkW2JJ6ffNizo4FZbeRuoU` (`0176960ff`); this session wrote only findings and the Backlog -> Spec flip.
+
+* **Goal well communicated and viable.** Yes. The first paragraph says what changes on its own terms (a subject that tells a capability, a fix and a breaking change apart on the day it lands) and what is deliberately not delivered (release notes, a changelog). Every edit site exists and the outcome needs nothing the tree lacks.
+* **Fits the architecture we have.** Yes. It widens the publish skill's existing not-for-trunk check rather than standing a new mechanism beside it, sets prefixes in the existing `.github/dependabot.yml`, and rewrites subject conventions where skills already state them. The build gate is deferred with the gap it leaves stated.
+
+Round 4's two points carry to the implementer as notes, not conditions: add `include: "scope"` beside the Dependabot prefix if `build(deps):` is the wanted subject, and keep the feature-branch push going ahead when the range check fails, skipping only the trunk fast-forward, as the skill does today for a not-for-trunk tip.
