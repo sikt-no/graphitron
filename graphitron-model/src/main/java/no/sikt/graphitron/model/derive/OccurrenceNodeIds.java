@@ -44,12 +44,11 @@ public final class OccurrenceNodeIds {
         dsl.insertInto(n)
             .columns(n.GRAPH_NAME, n.COORDINATE, n.BOUND, n.POSITION, n.KIND, n.BASIS,
                 n.NODE_TYPE_NAME, n.TABLE_SOURCE_NAME, n.TABLE_SCHEMA, n.TABLE_NAME, n.COLUMN_NAME,
-                n.TOUCHED_AT, n.KEY_GRAPH_REF, n.KEY_TYPE_REF, n.KEY_POSITION_REF)
+                n.TOUCHED_AT)
             .select(dsl
                 .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.POSITION, inline("NODE_ID"),
                     r.BASIS, r.NODE_TYPE_NAME, r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA, r.TABLE_NAME,
-                    r.COLUMN_NAME, val(touchedAt, n.TOUCHED_AT), r.GRAPH_NAME, r.NODE_TYPE_NAME,
-                    r.POSITION)
+                    r.COLUMN_NAME, val(touchedAt, n.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(n.GRAPH_NAME, n.COORDINATE, n.BOUND, n.POSITION)
@@ -61,9 +60,6 @@ public final class OccurrenceNodeIds {
             .set(n.TABLE_NAME, excluded(n.TABLE_NAME))
             .set(n.COLUMN_NAME, excluded(n.COLUMN_NAME))
             .set(n.TOUCHED_AT, excluded(n.TOUCHED_AT))
-            .set(n.KEY_GRAPH_REF, excluded(n.KEY_GRAPH_REF))
-            .set(n.KEY_TYPE_REF, excluded(n.KEY_TYPE_REF))
-            .set(n.KEY_POSITION_REF, excluded(n.KEY_POSITION_REF))
             .execute();
         dsl.deleteFrom(b)
             .where(b.GRAPH_NAME.eq(graph))

@@ -14017,24 +14017,16 @@ CREATE TABLE graphitron_occurrence_column (
   column_name       VARCHAR   NOT NULL,
   matched_by        VARCHAR   NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
-  column_source_ref VARCHAR,
-  column_schema_ref VARCHAR,
-  column_table_ref  VARCHAR,
-  column_name_ref   VARCHAR,
   PRIMARY KEY (graph_name, coordinate, bound),
   FOREIGN KEY (graph_name, coordinate, bound, kind)
     REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
-  -- The column through the binding's own copy of its key: a catalog column a reading no longer
-  -- finds sets these null, and the sweep, not a cascade, removes the row.
-  FOREIGN KEY (column_source_ref, column_schema_ref, column_table_ref, column_name_ref)
-    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE SET NULL,
+  -- A derivation goes with what it was derived from: a recrawled catalog takes the binding with
+  -- its column, and the next reading writes it again.
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
   CHECK (kind = 'COLUMN'),
   CHECK (bound = table_schema || '.' || table_name),
-  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
-  CHECK (column_source_ref IS NULL OR column_source_ref = table_source_name),
-  CHECK (column_schema_ref IS NULL OR column_schema_ref = table_schema),
-  CHECK (column_table_ref IS NULL OR column_table_ref = table_name),
-  CHECK (column_name_ref IS NULL OR column_name_ref = column_name)
+  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME'))
 );
 COMMENT ON TABLE graphitron_occurrence_column IS 'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table. For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.';
 COMMENT ON COLUMN graphitron_occurrence_column.graph_name IS 'the owning graph''s partition';
@@ -14047,10 +14039,6 @@ COMMENT ON COLUMN graphitron_occurrence_column.table_name IS 'the landing table'
 COMMENT ON COLUMN graphitron_occurrence_column.column_name IS 'the column, as the catalog spells it';
 COMMENT ON COLUMN graphitron_occurrence_column.matched_by IS 'which name the spelling met, folded by case: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no SQL name on the table does';
 COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-COMMENT ON COLUMN graphitron_occurrence_column.column_source_ref IS 'the source half of the column''s key, equal to table_source_name while the column stands';
-COMMENT ON COLUMN graphitron_occurrence_column.column_schema_ref IS 'the schema half of the column''s key, equal to table_schema while the column stands';
-COMMENT ON COLUMN graphitron_occurrence_column.column_table_ref IS 'the table half of the column''s key, equal to table_name while the column stands';
-COMMENT ON COLUMN graphitron_occurrence_column.column_name_ref IS 'the name half of the column''s key, equal to column_name while the column stands';
 
 -- A scalar or enum occurrence that reads or binds a column, on each table its path lands on: the
 -- @field(name:) where one is claimed and the element's own name otherwise, folded by case, the SQL
@@ -14143,24 +14131,18 @@ CREATE TABLE graphitron_occurrence_node_id (
   table_name        VARCHAR   NOT NULL,
   column_name       VARCHAR   NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
-  key_graph_ref     VARCHAR,
-  key_type_ref      VARCHAR,
-  key_position_ref  INT,
   PRIMARY KEY (graph_name, coordinate, bound, position),
   FOREIGN KEY (graph_name, coordinate, bound, kind)
     REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
-  -- The key column through the binding's own copy of its key: a node or key a reading no longer
-  -- finds sets these null, and the sweep, not a cascade, removes the row.
-  FOREIGN KEY (key_graph_ref, key_type_ref, key_position_ref)
-    REFERENCES graphitron_node_keycolumn (graph_name, type_name, position) ON DELETE SET NULL,
+  -- A derivation goes with what it was derived from: a node whose key changes takes the binding
+  -- with its key column, and the next reading writes it again.
+  FOREIGN KEY (graph_name, node_type_name, position)
+    REFERENCES graphitron_node_keycolumn (graph_name, type_name, position) ON DELETE CASCADE,
   CHECK (kind = 'NODE_ID'),
   CHECK (basis IN ('EXPLICIT_TYPE_NAME', 'CONTAINING_NODE_TYPE', 'TARGET_TABLE_NODE_TYPE',
                    'OWN_ID_FIELD')),
   CHECK (bound = table_schema || '.' || table_name),
-  CHECK (position >= 0),
-  CHECK (key_graph_ref IS NULL OR key_graph_ref = graph_name),
-  CHECK (key_type_ref IS NULL OR key_type_ref = node_type_name),
-  CHECK (key_position_ref IS NULL OR key_position_ref = position)
+  CHECK (position >= 0)
 );
 COMMENT ON TABLE graphitron_occurrence_node_id IS 'One key column a node id at an occurrence packs or unpacks: one row per occurrence, node table and key position. For example Film.id packs film_id at public.film under Film, and Query.filmsByNodeIdArg(ids:), written @nodeId(typeName: "Film"), unpacks into the same column.';
 COMMENT ON COLUMN graphitron_occurrence_node_id.graph_name IS 'the owning graph''s partition';
@@ -14175,9 +14157,6 @@ COMMENT ON COLUMN graphitron_occurrence_node_id.table_schema IS 'the node table'
 COMMENT ON COLUMN graphitron_occurrence_node_id.table_name IS 'the node''s table';
 COMMENT ON COLUMN graphitron_occurrence_node_id.column_name IS 'the key column at this position, on the node''s table';
 COMMENT ON COLUMN graphitron_occurrence_node_id.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-COMMENT ON COLUMN graphitron_occurrence_node_id.key_graph_ref IS 'the graph half of the key column''s key, equal to graph_name while the key column stands';
-COMMENT ON COLUMN graphitron_occurrence_node_id.key_type_ref IS 'the type half of the key column''s key, equal to node_type_name while the key column stands';
-COMMENT ON COLUMN graphitron_occurrence_node_id.key_position_ref IS 'the position half of the key column''s key, equal to position while the key column stands';
 
 -- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
 -- columns. A written typeName: decides at every site; the inferences decide at output fields only,
@@ -19403,7 +19382,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_column', 'graph-occurrence-binding', 'graphitron',
    'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table.',
    'For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.',
-   'The COLUMN subtype of graphitron_occurrence_binding, on its key and pinned to its kind by the unique key beside it. Read at the occurrence rather than at the field, since one field read through a nesting type reached from two tables lands on each, and at the landing rather than the start, since the path decides where the column is. Stored because a foreign key can reference a column only where it is written down, and every reader of a scalar''s column, the generator''s projection, the editor''s scope and the defects alike, asks this one question. The column is referenced through a copy of its key that a catalog change sets null, so the sweep, not a cascade, removes a binding the reading no longer finds.'),
+   'The COLUMN subtype of graphitron_occurrence_binding, on its key and pinned to its kind by the unique key beside it. Read at the occurrence rather than at the field, since one field read through a nesting type reached from two tables lands on each, and at the landing rather than the start, since the path decides where the column is. Stored because a foreign key can reference a column only where it is written down, and every reader of a scalar''s column, the generator''s projection, the editor''s scope and the defects alike, asks this one question. The column is referenced directly and the binding cascades with it, a derivation going with what it was derived from.'),
   ('graphitron_occurrence_column_rule', 'graph-occurrence-binding', 'graphitron',
    'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.',
@@ -19411,7 +19390,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_node_id', 'occurrence-node-id-key', 'graphitron',
    'One key column a node id at an occurrence packs or unpacks: one row per occurrence, node table and key position.',
    'For example Film.id packs film_id at public.film under Film, and Query.filmsByNodeIdArg(ids:), written @nodeId(typeName: "Film"), unpacks into the same column.',
-   'The NODE_ID subtype of graphitron_occurrence_binding, on its key with the key position added and pinned to its kind by the unique key beside it. The key columns are the node type''s own, on its own table, whatever the occurrence reads: a written typeName takes them from the named node, and only the inference that reads a @reference field''s landing lets a table decide which node it is. Stored because the encode and the decode, the argMapping key projection and the defects all ask which columns an id at this occurrence carries, and a foreign key into graphitron_node_keycolumn holds the answer to the node''s key as it stands; that reference is a copy of the key a node change sets null, so the sweep, not a cascade, removes a binding the reading no longer finds.'),
+   'The NODE_ID subtype of graphitron_occurrence_binding, on its key with the key position added and pinned to its kind by the unique key beside it. The key columns are the node type''s own, on its own table, whatever the occurrence reads: a written typeName takes them from the named node, and only the inference that reads a @reference field''s landing lets a table decide which node it is. Stored because the encode and the decode, the argMapping key projection and the defects all ask which columns an id at this occurrence carries, and a foreign key into graphitron_node_keycolumn holds the answer to the node''s key as it stands, the binding cascading with it as a derivation goes with what it was derived from.'),
   ('graphitron_occurrence_node_id_rule', 'occurrence-node-id-key', 'graphitron',
    'One row the occurrence node id rule computes, in the shape graphitron_occurrence_node_id stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_node_id, which are the names every reader spells.',

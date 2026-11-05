@@ -41,13 +41,11 @@ public final class OccurrenceColumns {
             .execute();
         dsl.insertInto(c)
             .columns(c.GRAPH_NAME, c.COORDINATE, c.BOUND, c.KIND, c.TABLE_SOURCE_NAME,
-                c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.MATCHED_BY, c.TOUCHED_AT,
-                c.COLUMN_SOURCE_REF, c.COLUMN_SCHEMA_REF, c.COLUMN_TABLE_REF, c.COLUMN_NAME_REF)
+                c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.MATCHED_BY, c.TOUCHED_AT)
             .select(dsl
                 .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("COLUMN"), r.TABLE_SOURCE_NAME,
                     r.TABLE_SCHEMA, r.TABLE_NAME, r.COLUMN_NAME, r.MATCHED_BY,
-                    val(touchedAt, c.TOUCHED_AT), r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA,
-                    r.TABLE_NAME, r.COLUMN_NAME)
+                    val(touchedAt, c.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(c.GRAPH_NAME, c.COORDINATE, c.BOUND)
@@ -58,10 +56,6 @@ public final class OccurrenceColumns {
             .set(c.COLUMN_NAME, excluded(c.COLUMN_NAME))
             .set(c.MATCHED_BY, excluded(c.MATCHED_BY))
             .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
-            .set(c.COLUMN_SOURCE_REF, excluded(c.COLUMN_SOURCE_REF))
-            .set(c.COLUMN_SCHEMA_REF, excluded(c.COLUMN_SCHEMA_REF))
-            .set(c.COLUMN_TABLE_REF, excluded(c.COLUMN_TABLE_REF))
-            .set(c.COLUMN_NAME_REF, excluded(c.COLUMN_NAME_REF))
             .execute();
         dsl.deleteFrom(b)
             .where(b.GRAPH_NAME.eq(graph))
