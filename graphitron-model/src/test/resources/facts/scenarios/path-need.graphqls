@@ -129,6 +129,8 @@ type Mutation {
   addFilm(input: FilmInput): AddFilmOutcome @mutation(typeName: INSERT)
   deleteLanguages(in: [LanguageDeleteInput!]!): DeletedLanguagesPayload
     @mutation(typeName: DELETE, table: "language")
+  # A write returning a scalar binds no table either; its arguments read the table it mutates.
+  deleteLanguage(in: LanguageDeleteInput!): ID @mutation(typeName: DELETE, table: "language")
 }
 
 extend schema @expectEquals(relation: "graphitron_path_need",
@@ -153,6 +155,8 @@ extend schema @expectEquals(relation: "graphitron_path_need",
   Mutation.addFilm(input:),                 AddFilmOutcome,          film,            film,            film
   Mutation.addFilm(input.title:),           AddFilmOutcome,          film,            film,            film
   Mutation.addFilm.film,                    Film,                    film,            film,            film
+  Mutation.deleteLanguage(in:),             ID,                      language,        language,        language
+  Mutation.deleteLanguage(in.languageId:),  ID,                      language,        language,        language
   Mutation.deleteLanguages(in:),            DeletedLanguagesPayload, language,        language,        language
   Mutation.deleteLanguages(in.languageId:), DeletedLanguagesPayload, language,        language,        language
   Query.filmDetailsBatch.filmId,            Int,                     film,            film,            film
@@ -182,6 +186,7 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   Query.search
   Mutation.addFilm
   Mutation.deleteLanguages
+  Mutation.deleteLanguage
   Query.filmBlurbHolder(filmId:)
   Film.languageName(upper:)
   Film.titleTexts.nn
@@ -203,6 +208,7 @@ extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
   Query.search
   Mutation.addFilm
   Mutation.deleteLanguages
+  Mutation.deleteLanguage
   Query.filmBlurbHolder(filmId:)
   Film.languageName(upper:)
   Film.titleTexts.nn

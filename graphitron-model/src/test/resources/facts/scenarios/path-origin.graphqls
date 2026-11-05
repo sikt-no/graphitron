@@ -132,6 +132,8 @@ type Mutation {
   addFilm(input: FilmInput): AddFilmOutcome @mutation(typeName: INSERT)
   deleteLanguages(in: [LanguageDeleteInput!]!): DeletedLanguagesPayload
     @mutation(typeName: DELETE, table: "language")
+  # A write returning a scalar: its argument and input field start and land on the table it mutates.
+  deleteLanguage(in: LanguageDeleteInput!): ID @mutation(typeName: DELETE, table: "language")
 }
 
 
@@ -154,7 +156,8 @@ extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPT
   """)
 
 # An empty path for a scalar, a nested object and its field, an argument, an input field, a write
-# payload's data field and a field read off the record a service hands back.
+# payload's data field, a field read off the record a service hands back, and the argument and input
+# field of a write returning a scalar.
 extend schema @assertContains(relation: "graphitron_path", rows: """
   coordinate,                      target_type, kind, origin
   Film.title,                      String,      JOIN, EMPTY
@@ -166,6 +169,8 @@ extend schema @assertContains(relation: "graphitron_path", rows: """
   Query.serviceFilmById.film,      Film,        JOIN, EMPTY
   Query.filmDetailsBatch.filmId,   Int,         JOIN, EMPTY
   Film.languageByService,          Language,    JOIN, EMPTY
+  Mutation.deleteLanguage(in:),    ID,          JOIN, EMPTY
+  Mutation.deleteLanguage(in.languageId:), ID,  JOIN, EMPTY
   """)
 
 # What each reaches: an inferred path its landing, an empty one its start.

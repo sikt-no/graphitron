@@ -1743,8 +1743,9 @@ are bound.
   parent has no path, the tables the parent binds, so a root field's arguments take what the root
   field binds. A write's payload is what the write produces: a payload field with a table-bound
   target is a producer of its own, lifted from the keys the write returned, and its source is its
-  target's table; any other payload field has no source until the producer's result is stated. An
-  input field takes its argument's tables,
+  target's table; any other payload field has no source until the producer's result is stated. A
+  write whose target binds no table, a scalar, an enum or a payload object, gives its arguments the
+  write's table. An input field takes its argument's tables,
   at any depth. A source states only tables or a class. Where a value not of a table's shape becomes
   rows of one, the lift is stated by the producer, E's ("Producer, bind and call on the occurrence (draft)"),
   and the source states the table it lands on: a key row's table for a field with one, a
@@ -2048,6 +2049,9 @@ inherited claim's being the interface's. A stopped need keeps the steps
 it took. A condition alone whose second parameter takes any table (`Table<?>`, `TableLike<?>`) says
 nowhere to arrive and is not supported: it stays `NO_ROUTE_FROM_DEPARTURE`, its detail naming the
 remedy, and sakila's fixtures type both parameters (Alf, 2026-11-05).
+A write whose target binds no table, `ID` or `String` from a `DELETE` among them, gives its
+arguments the table `@mutation(table:)` names, so they and their input fields have a need starting
+and landing there and an `EMPTY` path.
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a

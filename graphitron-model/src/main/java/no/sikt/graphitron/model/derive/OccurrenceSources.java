@@ -573,7 +573,7 @@ public final class OccurrenceSources {
     }
 
     /**
-     * An argument of a write whose target is an object type bound to no table, the payload
+     * An argument of a write whose target binds no table, a scalar, an enum or the payload object
      * graphitron builds, reads the table the write mutates, unless the write writes a path.
      */
     private static Select<Record> argumentWrite(GraphitronOccurrence o, GraphitronOccurrence p,
@@ -593,10 +593,11 @@ public final class OccurrenceSources {
                 ft.FIELD_NAME.eq(pf.FIELD_NAME))
             .join(pw).on(pw.GRAPH_NAME.eq(pf.GRAPH_NAME), pw.TYPE_NAME.eq(pf.TYPE_NAME),
                 pw.FIELD_NAME.eq(pf.FIELD_NAME))
-            .join(gt).on(gt.GRAPH_NAME.eq(ft.GRAPH_NAME), gt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME),
-                gt.KIND.eq("OBJECT"))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"))
             .andNot(writesPath(pf))
+            .and(notExists(selectOne().from(gt)
+                .where(gt.GRAPH_NAME.eq(ft.GRAPH_NAME), gt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME),
+                    gt.KIND.in("INTERFACE", "UNION"))))
             .and(notExists(selectOne().from(tt)
                 .where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))))
             .and(notExists(selectOne().from(pm)
@@ -606,7 +607,7 @@ public final class OccurrenceSources {
 
     /**
      * An argument of a field whose target is bound to no table, a nested object, a scalar or an
-     * enum, reads its field's own tables, the field's path being empty; a write's payload reads the
+     * enum, reads its field's own tables, the field's path being empty; a write's arguments read the
      * write's table instead, and the arguments of a field that writes a path read none.
      */
     private static Select<Record> argumentCopy(GraphitronOccurrence o, GraphitronOccurrence p,
@@ -634,9 +635,11 @@ public final class OccurrenceSources {
                 .join(mt).on(mt.GRAPH_NAME.eq(pm.GRAPH_NAME), mt.TYPE_NAME.eq(pm.MEMBER_TYPE_NAME))
                 .where(pm.GRAPH_NAME.eq(ft.GRAPH_NAME), pm.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME))))
             .and(notExists(selectOne().from(pw)
-                .join(gt).on(gt.GRAPH_NAME.eq(pw.GRAPH_NAME), gt.KIND.eq("OBJECT"))
                 .where(pw.GRAPH_NAME.eq(pf.GRAPH_NAME), pw.TYPE_NAME.eq(pf.TYPE_NAME),
-                    pw.FIELD_NAME.eq(pf.FIELD_NAME), gt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))))
+                    pw.FIELD_NAME.eq(pf.FIELD_NAME))
+                .andNot(exists(selectOne().from(gt)
+                    .where(gt.GRAPH_NAME.eq(ft.GRAPH_NAME), gt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME),
+                        gt.KIND.in("INTERFACE", "UNION"))))))
             .andNot(writesPath(pf));
     }
 

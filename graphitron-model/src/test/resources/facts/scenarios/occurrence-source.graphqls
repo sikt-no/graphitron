@@ -8,8 +8,9 @@
 # object source a field has none yet. A write's payload is what the write produces: a payload field
 # with a table-bound target is lifted from the keys the write returned and reads its target's table,
 # and any other payload field, an id list among them, has none until that result is stated. An
-# argument reads its field's target tables, each member's for a union, the write's table for a write's
-# payload, and its field's own tables where the target binds none; an input field reads its parent's.
+# argument reads its field's target tables, each member's for a union, the write's table for a write
+# whose target binds none, and its field's own tables where the target binds none; an input field
+# reads its parent's.
 # A connection's fields hang under the field returning it and read the page its producer produces,
 # which no table source states, so they have none yet; its arguments read the element's table.
 
@@ -115,6 +116,8 @@ type Mutation {
   addFilm(input: FilmInput): AddFilmOutcome @mutation(typeName: INSERT)
   deleteLanguages(in: [LanguageDeleteInput!]!): DeletedLanguagesPayload
     @mutation(typeName: DELETE, table: "language")
+  # A write returning a scalar binds no table either; its arguments read the table it mutates.
+  deleteLanguage(in: LanguageDeleteInput!): ID @mutation(typeName: DELETE, table: "language")
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_source",
@@ -135,6 +138,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source",
   Mutation.addFilm(input:),                  TABLE
   Mutation.addFilm(input.title:),            TABLE
   Mutation.addFilm.film,                     TABLE
+  Mutation.deleteLanguage(in:),              TABLE
+  Mutation.deleteLanguage(in.languageId:),   TABLE
   Mutation.deleteLanguages(in:),             TABLE
   Mutation.deleteLanguages(in.languageId:),  TABLE
   Query.filmBlurbHolder.blurb,               OBJECT
@@ -173,6 +178,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
   Mutation.addFilm(input:),                  public,       film
   Mutation.addFilm(input.title:),            public,       film
   Mutation.addFilm.film,                     public,       film
+  Mutation.deleteLanguage(in:),              public,       language
+  Mutation.deleteLanguage(in.languageId:),   public,       language
   Mutation.deleteLanguages(in:),             public,       language
   Mutation.deleteLanguages(in.languageId:),  public,       language
   Query.filmDetailsBatch.filmId,             public,       film
