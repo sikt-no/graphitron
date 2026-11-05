@@ -298,17 +298,18 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
       producer's source and argument values, its statement counted, and runs only when queried.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
-* **Inference and inheritance are written into the store** `blocked`, on "Every path a field needs is a need, and a need without a path is a defect".
-  The one foreign key between two tables is a path of origin `INFERRED`, and a path written on an
-  interface's field is a row per implementation of origin `INHERITED`, resolved from the
-  implementation's own table; an implementation's own path overrides it. This settles
-  "Every field has a path, the written one or the one discovery implies". An implementation's own
-  claim beats the interface's, and an implementation of two interfaces that both claim the field is
-  a defect (Alf, 2026-11-04).
-* **A path is keyed per pair of tables** `blocked`, on "Inference and inheritance are written into the store".
+* **A path is keyed per pair of tables** `open`.
   Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
   to `graphitron_path`, their readers with them, with a sis timing before and after, and
-  `graphitron_field_participant_path`, written and read by nothing, goes. A condition step's overload
+  `graphitron_field_participant_path`, written and read by nothing, goes. A claim's path, walked and
+  reaching its target, is a `WRITTEN` or `INHERITED` `graphitron_path` row with its `_claimed` row,
+  and an `INFERRED` path's one step its `_inferred_key` row. A path written on an interface's field
+  is a row per implementation, resolved from the implementation's own table; the implementation's
+  own claim beats the inherited one, an interface extending another overrides the claim it
+  redeclares, `@referenceFor` is inherited member by member, and two interfaces neither extending
+  the other that both claim the field are `INHERITED_PATH_AMBIGUOUS`. The walk's refusals give way
+  to these rows, and with them the generator's own acceptance of a same-table field narrowed by an
+  argument, which the inference node left in place. A condition step's overload
   is chosen by its two tables on `graphitron_join_path_step_method`, where `CONDITION_NO_OVERLOAD_FOR_PAIR`,
   `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
   `graphitron_field_path_method_candidate` goes with the old family.
@@ -1387,25 +1388,24 @@ extend type Query {
   stores: [Store!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_path", rows: """
-  coordinate,                member,     start_table,  target_table,  origin
-  Customer.address,          -,          customer,     address,       INFERRED
-  Customer.city,             -,          customer,     city,          WRITTEN
-  Customer.customerAddress,  -,          customer,     address,       INHERITED
-  Customer.homeAddress,      -,          customer,     address,       INHERITED
-  Customer.store,            -,          customer,     store,         INFERRED
-  Language.media,            -,          language,     film,          WRITTEN
-  Language.media,            ShortItem,  language,     film,          WRITTEN
-  Query.people(storeId:),    Customer,   customer,     store,         INFERRED
-  Query.people(storeId:),    Staff,      staff,        store,         WRITTEN
-  Staff.address,             -,          staff,        address,       INFERRED
-  Staff.customerAddress,     -,          staff,        address,       INHERITED
-  Staff.homeAddress,         -,          staff,        address,       INHERITED
-  Staff.store,               -,          staff,        store,         WRITTEN
-  Store.people,              Customer,   store,        customer,      INFERRED
-  Store.people,              Staff,      store,        staff,         WRITTEN
-  Store.peopleByCondition,   Customer,   store,        customer,      WRITTEN
-  Store.peopleByCondition,   Staff,      store,        staff,         WRITTEN
+extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPTY'", rows: """
+  coordinate,                target_type, start_table,  target_table,  origin
+  Customer.address,          Address,     customer,     address,       INFERRED
+  Customer.city,             String,      customer,     city,          WRITTEN
+  Customer.customerAddress,  Address,     customer,     address,       INHERITED
+  Customer.homeAddress,      Address,     customer,     address,       INHERITED
+  Customer.store,            Store,       customer,     store,         INFERRED
+  Language.media,            FilmItem,    language,     film,          WRITTEN
+  Language.media,            ShortItem,   language,     film,          WRITTEN
+  Query.people(storeId:),    Customer,    customer,     store,         INFERRED
+  Query.people(storeId:),    Staff,       staff,        store,         WRITTEN
+  Staff.address,             Address,     staff,        address,       INFERRED
+  Staff.homeAddress,         Address,     staff,        address,       INHERITED
+  Staff.store,               Store,       staff,        store,         WRITTEN
+  Store.people,              Customer,    store,        customer,      INFERRED
+  Store.people,              Staff,       store,        staff,         WRITTEN
+  Store.peopleByCondition,   Customer,    store,        customer,      WRITTEN
+  Store.peopleByCondition,   Staff,       store,        staff,         WRITTEN
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
@@ -1419,6 +1419,11 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
 ```
 
 What the document pins beyond the rows:
+
+* A row is keyed by the type the need reaches, each member of a single-table interface its own row,
+  as `Language.media`'s `FilmItem` and `ShortItem`; the empty paths are filtered out. A written
+  path's target table comes from its steps, so a path that stops has no row: `Staff.customerAddress`
+  has none, as `Store.tied` has none.
 
 * `Staff.store` states its own path because the inherited one cannot be inferred from `staff`; without
   it the document would carry `ROUTE_AMBIGUOUS` at `Staff.store`, which is how a missing path for one
@@ -1854,7 +1859,16 @@ entry.
   `INFERRED`, `EMPTY`); `EMPTY` is its own origin so the defects cannot read an empty path as a
   failed inference. The kind is copied into each subtype's key, a UNIQUE on the key and the kind
   being what a subtype's foreign key names, as `graphitron_occurrence_source` does. A need with no
-  path is the defect.
+  path is the defect. `Paths` writes the paths of the needs no claim covers, a claim at the need's
+  own element or one inherited from an interface's same-named field: `EMPTY` where the need starts
+  on its landing, an argument or input field, a target bound to no table, a write payload's data
+  field or a field read off a handed-back record, its target its start; `INFERRED` for an output
+  field between two different tables exactly one foreign key joins, counted in both directions, its
+  target its landing. An argument or input field is never inferred, nor is a self-referencing key. A
+  covered need's path is the claim's, written once its steps reach the target, so it has no row
+  until then; a written path's target comes from its steps. A field starting on a routine's derived
+  table, which reaches its table by name, and one whose own `@service` produces its rows have
+  neither a row nor a defect yet; what their paths are is open.
   ** `graphitron_join_path`: the path is joins, with its target table, never null, its start where
      it is empty, referenced through `_ref` copies. `graphitron_join_path_claimed`, keyed by the
      path, names the claim a `WRITTEN` or `INHERITED` one follows, (element coordinate, target
@@ -1898,7 +1912,13 @@ entry.
 **Defects**, as `graphitron_entry_defect` rows at the claim's written position: an inferred-key
 step whose two tables share no foreign key or several (`NO_ROUTE_TO_TARGET`, `ROUTE_AMBIGUOUS`),
 whether nothing was written or a written element names only a table, a need whose members fail
-alike giving one row that names them; a written step that resolves to no move or several, which is
+alike giving one row that names them. Where nothing is written, covered by no claim of its own or
+inherited, an output field between two table-bound types draws them at its declaration, one row per
+field naming the two tables and, for `ROUTE_AMBIGUOUS`, the keys; a field on its parent's own table
+is always `NO_ROUTE_TO_TARGET`, narrowed by an argument or not, its detail naming the primary-key
+self-join or a self-referencing key as the path to write. An implementation's field writing nothing
+whose type implements two interfaces, neither extending the other, that both claim the field for
+one member is `INHERITED_PATH_AMBIGUOUS` at its declaration, naming the two. A written step that resolves to no move or several, which is
 the same pair; no overload for a step's pair
 (`CONDITION_NO_OVERLOAD_FOR_PAIR`); two overloads taking one pair (`CONDITION_OVERLOAD_TIE`);
 a claim on an output field whose target has no one table (`REFERENCE_WITHOUT_TARGET_TABLE`, at
@@ -1967,6 +1987,14 @@ follows the anchor rule; an argument's or input field's need follows the `@refer
 naming its target type, else its element's one claim; `CHAIN_WITHOUT_TARGET` is merged into
 `REFERENCE_WITHOUT_TARGET_TABLE`, raised at the claim; a `@mutation(table:)` is accepted where
 `graphitron_producer_write` has its row, a disagreement being E's defect to raise (Alf, 2026-11-04).
+The claim, the author's statement, and the claim answering a need, which is the path itself, a
+`WRITTEN` or `INHERITED` row with its `_claimed` row once the path is walked and reaches the target,
+are two facts, and no relation stands between a need and its claim; an argument or input field is
+`EMPTY` unless something is written for it, and never inferred; a field on its parent's own table is
+`NO_ROUTE_TO_TARGET`, narrowed by an argument or not; an implementation's own claim beats an
+inherited one, an extending interface's redeclared claim overrides the one it extends,
+`@referenceFor` is inherited member by member, and two unrelated interfaces both claiming the field
+are `INHERITED_PATH_AMBIGUOUS` (Alf, 2026-11-05).
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
@@ -2116,6 +2144,13 @@ remedy, which replaces registrations with stored keys and indexes. The figures f
 The entry is written at Done, the board and the changelog holding an id one place at a time. These
 are what it owes a consumer reading it, each with the subject of the commit it landed in, a hash
 not surviving the harvest, so they are recorded here as they land rather than found afterwards.
+
+* **Breaking: a same-table `@table` field narrowed by an argument needs its path** ("inference is
+  written into the store, and a need nothing covers is a defect"). A field returning a `@table` type
+  on its parent's own table, narrowed by an argument and with no `@reference`, was read uncorrelated,
+  the same rows under every parent; it is now `NO_ROUTE_TO_TARGET` until it writes its path, the
+  primary-key self-join `@reference(path: [{key: "<table>_pkey"}])`, which makes the field
+  single-valued, or a self-referencing key.
 
 * **Breaking: `@table` cannot name a table-valued function** ("a type is not bound to a function"). A schema binding a type to
   a function's result with `@table` stops building, with a message saying to remove the directive.

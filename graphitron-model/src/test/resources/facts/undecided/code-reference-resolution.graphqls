@@ -69,6 +69,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   CODE_REFERENCE_METHOD_NOT_FOUND, Film,      missing,    no.sikt.graphitron.rewrite.test.extensions.FilmExtensions.missing
   CODE_REFERENCE_METHOD_AMBIGUOUS, Film,      topRated,   no.sikt.graphitron.rewrite.test.services.FilmService.topRated
   CODE_REFERENCE_METHOD_AMBIGUOUS, Language,  filmsByTopRated, no.sikt.graphitron.rewrite.test.services.FilmService.topRated
+  NO_ROUTE_TO_TARGET,              Film,      overloaded,      public.film to public.city
+  ROUTE_AMBIGUOUS,                 Language,  filmsByTopRated, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
+  ROUTE_AMBIGUOUS,                 Language,  filmsByPathCondition, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """

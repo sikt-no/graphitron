@@ -22,6 +22,7 @@ import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
 import no.sikt.graphitron.model.derive.PathClaims;
 import no.sikt.graphitron.model.derive.PathNeeds;
+import no.sikt.graphitron.model.derive.Paths;
 import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.ProducerClaims;
 import no.sikt.graphitron.model.derive.FieldKeyRows;
@@ -129,6 +130,9 @@ public final class GraphitronAssemblyCapture {
         // Then the types each occurrence with a table source must reach, a depth at a time, off the
         // sources just written and the needs of the depth above.
         PathNeeds.derive(dsl, graph, readAt);
+        // Then the paths of the needs no claim covers, off the needs and the claims above: an empty
+        // path where the need starts on its landing, an inferred one over the one foreign key.
+        Paths.derive(dsl, graph, readAt);
         // The column each scalar occurrence reads or binds, where the needs just written land.
         OccurrenceColumns.derive(dsl, graph, readAt);
         // And the key columns each node id at an occurrence carries, off the same needs and claims.

@@ -1,0 +1,111 @@
+# An output field no claim covers between two table-bound types takes the one foreign key joining
+# their tables, in either direction. Where none does it is NO_ROUTE_TO_TARGET, which includes a field
+# on its parent's own table, narrowed by an argument or not, a self-referencing key never being
+# inferred; where several do it is ROUTE_AMBIGUOUS. Each sits at the field's declaration, naming the
+# two tables, and the keys to choose between.
+#
+# A field whose own @service produces its rows takes no join to them, so it is neither inferred nor a
+# defect.
+#
+# A claim covers a need at the field itself, a @referenceFor naming the need's type or any other
+# claim there, or at the same-named field of an interface the field's type implements, member by
+# member. An implementation's own claim beats an inherited one, and an interface extending another
+# overrides the claim it redeclares; two interfaces neither extending the other that both claim the
+# field for one member are INHERITED_PATH_AMBIGUOUS at the implementation's field, naming the two.
+
+type Film @table(name: "film") {
+  title: String
+  # No foreign key joins film and city.
+  cities: [City!]!
+  # On film's own table and narrowed by its argument: a written path is needed.
+  sameTableById(filmId: Int @field(name: "film_id")): [Film!]!
+  # film_language_id_fkey and film_original_language_id_fkey both join film and language.
+  language: Language
+  # Its own @service produces its rows, so the two keys raise nothing and nothing is inferred.
+  languageByService: Language
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "languageByService"})
+}
+
+type City @table(name: "city") { cityId: Int @field(name: "city_id") }
+type Language @table(name: "language") { name: String }
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+
+interface Person { email: String }
+
+# Two interfaces neither extending the other, each claiming address.
+interface Addressed { address: Address @reference(path: [{table: "address"}]) }
+interface Located { address: Address @reference(path: [{key: "staff_address_id_fkey"}]) }
+
+# An interface extending another, redeclaring its claim.
+interface Base { home: Address @reference(path: [{table: "address"}]) }
+interface Derived implements Base { home: Address @reference(path: [{key: "customer_address_id_fkey"}]) }
+
+type Customer implements Person & Addressed & Derived & Base @table(name: "customer") {
+  email: String
+  # Inherited from Addressed alone: covered, so no path yet and no inference.
+  address: Address
+  # Derived overrides Base: inherited from Derived, no conflict.
+  home: Address
+}
+
+type Staff implements Person & Addressed & Located @table(name: "staff") {
+  email: String
+  # Inherited from Addressed and from Located: ambiguous.
+  address: Address
+}
+
+interface Staffed {
+  people: [Person!]! @referenceFor(type: "Customer", path: [{key: "customer_store_id_fkey"}])
+}
+
+type Store implements Staffed @table(name: "store") {
+  # Staff written here and Customer inherited from Staffed's @referenceFor: both covered.
+  people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+  # Staff written here and nothing written for Customer anywhere: Customer is inferred over
+  # customer_store_id_fkey, the one key between store and customer.
+  peopleInferred: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+}
+
+extend type Query {
+  films: [Film!]!
+  customers: [Customer!]!
+  staff: [Staff!]!
+  stores: [Store!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('NO_ROUTE_TO_TARGET', 'ROUTE_AMBIGUOUS', 'INHERITED_PATH_AMBIGUOUS')", rows: """
+  code,                     coordinate,          detail
+  NO_ROUTE_TO_TARGET,       Film.cities,         public.film to public.city
+  NO_ROUTE_TO_TARGET,       Film.sameTableById,  "public.film to public.film, which takes a written path: the primary-key self-join {key: ""film_pkey""} or a self-referencing key"
+  ROUTE_AMBIGUOUS,          Film.language,       public.film to public.language by film_language_id_fkey or film_original_language_id_fkey
+  INHERITED_PATH_AMBIGUOUS, Staff.address,       Addressed and Located
+  """)
+
+# The defective needs have no path, nor do the covered ones; the needs nothing covers that one key
+# joins are inferred, and the narrowed field's argument starts and lands on film, an empty path.
+extend schema @expectEquals(relation: "graphitron_path",
+    where: "origin <> 'EMPTY' OR coordinate = 'Film.sameTableById(filmId:)'", rows: """
+  coordinate,                    target_type, kind, origin
+  Film.sameTableById(filmId:),   Film,        JOIN, EMPTY
+  Store.peopleInferred,          Customer,    JOIN, INFERRED
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_path", rows: """
+  coordinate
+  Film.cities
+  Film.sameTableById
+  Film.language
+  Film.languageByService
+  Customer.address
+  Customer.home
+  Staff.address
+  Store.people
+  """)
+
+# Interface-to-interface implementation is a row of its own, which is what lets Derived override
+# Base.
+extend schema @assertContains(relation: "graphql_implements_interface", rows: """
+  type_name, interface_name
+  Derived,   Base
+  """)

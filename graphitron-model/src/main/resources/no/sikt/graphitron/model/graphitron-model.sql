@@ -12819,6 +12819,199 @@ SELECT DISTINCT p.graph_name, p.element_source_name, p.element_source_line, p.el
    AND NOT (b.table_source_name = p.to_source_name AND b.table_schema = p.to_schema
             AND b.table_name = p.to_table)
 UNION ALL
+-- An output field's need for a table-bound type that no claim covers, neither one at the field nor
+-- one at the same-named field of an interface its type implements, between two tables the paths
+-- cannot infer a join for, at the field's declaration. The tables share no foreign key, or they are
+-- one table, a self-referencing key never being inferred, which is NO_ROUTE_TO_TARGET; or more than
+-- one joins them, in either direction, which is ROUTE_AMBIGUOUS, naming the keys to choose between:
+-- both where there are two, else how many, the first and last by name. A need starting where it
+-- lands is no defect where its parent's producer, a service or a write, lifted it onto that table,
+-- which is an empty path. The paths of the needs one key joins are written by the path stage. One
+-- row per field and code, naming a pair of tables, the first by name where the field is reached
+-- from several.
+SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
+       CASE WHEN u.routes = 0 THEN 'NO_ROUTE_TO_TARGET' ELSE 'ROUTE_AMBIGUOUS' END,
+       MIN(u.start_schema || '.' || u.start_table || ' to ' || u.landing_schema || '.'
+           || u.landing_table
+           || CASE WHEN u.routes = 0 AND u.start_schema = u.landing_schema
+                        AND u.start_table = u.landing_table
+                   THEN ', which takes a written path: the primary-key self-join {key: "'
+                        || COALESCE(pk.constraint_name, u.landing_table || '_pkey')
+                        || '"} or a self-referencing key'
+                   WHEN u.routes = 0 THEN ''
+                   -- the first key by name and the last, whichever end declares them
+                   WHEN u.routes = 2
+                   THEN ' by ' || CASE WHEN u.landing_first IS NULL OR u.start_first <= u.landing_first
+                                       THEN COALESCE(u.start_first, u.landing_first)
+                                       ELSE u.landing_first END
+                        || ' or ' || CASE WHEN u.landing_last IS NULL OR u.start_last >= u.landing_last
+                                          THEN COALESCE(u.start_last, u.landing_last)
+                                          ELSE u.landing_last END
+                   ELSE ' by ' || CAST(u.routes AS VARCHAR) || ' keys, '
+                        || CASE WHEN u.landing_first IS NULL OR u.start_first <= u.landing_first
+                                THEN COALESCE(u.start_first, u.landing_first)
+                                ELSE u.landing_first END
+                        || ' to ' || CASE WHEN u.landing_last IS NULL OR u.start_last >= u.landing_last
+                                          THEN COALESCE(u.start_last, u.landing_last)
+                                          ELSE u.landing_last END END)
+  FROM (SELECT x.graph_name, x.element_coordinate, x.start_schema, x.start_table,
+               x.landing_source_name, x.landing_schema, x.landing_table, x.routes,
+               -- the first and last key by name declared on the start, and on the landing
+               CASE WHEN x.routes > 1 THEN
+                 (SELECT MIN(rc.constraint_name) FROM sql_referential_constraint rc
+                   WHERE rc.source_name = x.start_source_name
+                     AND rc.table_schema = x.start_schema AND rc.table_name = x.start_table
+                     AND rc.referenced_source_name = x.landing_source_name
+                     AND rc.referenced_schema = x.landing_schema
+                     AND rc.referenced_table = x.landing_table) END AS start_first,
+               CASE WHEN x.routes > 1 THEN
+                 (SELECT MAX(rc.constraint_name) FROM sql_referential_constraint rc
+                   WHERE rc.source_name = x.start_source_name
+                     AND rc.table_schema = x.start_schema AND rc.table_name = x.start_table
+                     AND rc.referenced_source_name = x.landing_source_name
+                     AND rc.referenced_schema = x.landing_schema
+                     AND rc.referenced_table = x.landing_table) END AS start_last,
+               CASE WHEN x.routes > 1 THEN
+                 (SELECT MIN(rc.constraint_name) FROM sql_referential_constraint rc
+                   WHERE rc.source_name = x.landing_source_name
+                     AND rc.table_schema = x.landing_schema AND rc.table_name = x.landing_table
+                     AND rc.referenced_source_name = x.start_source_name
+                     AND rc.referenced_schema = x.start_schema
+                     AND rc.referenced_table = x.start_table) END AS landing_first,
+               CASE WHEN x.routes > 1 THEN
+                 (SELECT MAX(rc.constraint_name) FROM sql_referential_constraint rc
+                   WHERE rc.source_name = x.landing_source_name
+                     AND rc.table_schema = x.landing_schema AND rc.table_name = x.landing_table
+                     AND rc.referenced_source_name = x.start_source_name
+                     AND rc.referenced_schema = x.start_schema
+                     AND rc.referenced_table = x.start_table) END AS landing_last
+          FROM (SELECT n.graph_name, o.element_coordinate, o.parent_coordinate, n.start_source_name,
+                       n.start_schema, n.start_table, n.landing_source_name, n.landing_schema,
+                       n.landing_table,
+                       -- how many foreign keys join the two tables, none where they are one
+                       CASE WHEN n.start_source_name = n.landing_source_name
+                                 AND n.start_schema = n.landing_schema
+                                 AND n.start_table = n.landing_table THEN 0
+                            ELSE COALESCE((SELECT r.constraints FROM sql_table_reference r
+                                            WHERE r.source_name = n.start_source_name
+                                              AND r.table_schema = n.start_schema
+                                              AND r.table_name = n.start_table
+                                              AND r.referenced_source_name = n.landing_source_name
+                                              AND r.referenced_schema = n.landing_schema
+                                              AND r.referenced_table = n.landing_table), 0)
+                               + COALESCE((SELECT r.constraints FROM sql_table_reference r
+                                            WHERE r.source_name = n.landing_source_name
+                                              AND r.table_schema = n.landing_schema
+                                              AND r.table_name = n.landing_table
+                                              AND r.referenced_source_name = n.start_source_name
+                                              AND r.referenced_schema = n.start_schema
+                                              AND r.referenced_table = n.start_table), 0) END
+                         AS routes
+                  FROM graphitron_path_need n
+                  JOIN graphitron_occurrence o
+                    ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate AND o.kind = 'FIELD'
+                  JOIN graphitron_tabletype tt
+                    ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
+                 WHERE n.landing_table IS NOT NULL
+                   -- a routine's derived table reaches a table by the names its result shares
+                   -- with it, not by a foreign key: the steps' to resolve
+                   AND NOT EXISTS (SELECT 1 FROM sql_table fn
+                                    WHERE fn.source_name = n.start_source_name
+                                      AND fn.table_schema = n.start_schema
+                                      AND fn.table_name = n.start_table
+                                      AND fn.table_type = 'FUNCTION')
+                   -- a field whose own @service produces its rows takes no join to them
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field sf
+                                     JOIN graphitron_producer sp
+                                       ON sp.graph_name = sf.graph_name
+                                      AND sp.type_name = sf.type_name
+                                      AND sp.field_name = sf.field_name
+                                    WHERE sf.graph_name = o.graph_name
+                                      AND sf.coordinate = o.element_coordinate
+                                      AND sp.kind = 'SERVICE')
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim jc
+                                    WHERE jc.graph_name = o.graph_name
+                                      AND jc.element_coordinate = o.element_coordinate
+                                      AND (jc.claim_kind <> 'REFERENCE_FOR'
+                                           OR jc.target_type = n.target_type))
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field f
+                                     JOIN graphql_implements_interface ii
+                                       ON ii.graph_name = f.graph_name AND ii.type_name = f.type_name
+                                     JOIN graphitron_field inf
+                                       ON inf.graph_name = ii.graph_name
+                                      AND inf.type_name = ii.interface_name
+                                      AND inf.field_name = f.field_name
+                                     JOIN graphitron_join_path_claim jc
+                                       ON jc.graph_name = inf.graph_name
+                                      AND jc.element_coordinate = inf.coordinate
+                                    WHERE f.graph_name = o.graph_name
+                                      AND f.coordinate = o.element_coordinate
+                                      AND (jc.claim_kind <> 'REFERENCE_FOR'
+                                           OR jc.target_type = n.target_type))) x
+         WHERE x.routes <> 1
+           AND NOT (x.routes = 0 AND x.start_source_name = x.landing_source_name
+                    AND x.start_schema = x.landing_schema AND x.start_table = x.landing_table
+                    AND EXISTS (SELECT 1 FROM graphitron_occurrence po
+                                  JOIN graphitron_field pf
+                                    ON pf.graph_name = po.graph_name
+                                   AND pf.coordinate = po.element_coordinate
+                                  JOIN graphitron_producer pr
+                                    ON pr.graph_name = pf.graph_name AND pr.type_name = pf.type_name
+                                   AND pr.field_name = pf.field_name
+                                 WHERE po.graph_name = x.graph_name
+                                   AND po.coordinate = x.parent_coordinate AND po.kind = 'FIELD'
+                                   AND pr.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE')))) u
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = u.graph_name AND el.coordinate = u.element_coordinate
+  LEFT JOIN sql_primary_key pk
+    ON pk.source_name = u.landing_source_name AND pk.table_schema = u.landing_schema
+   AND pk.table_name = u.landing_table
+ GROUP BY u.graph_name, el.source_name, el.source_line, el.source_column,
+          CASE WHEN u.routes = 0 THEN 'NO_ROUTE_TO_TARGET' ELSE 'ROUTE_AMBIGUOUS' END
+UNION ALL
+-- An implementation's field with no claim of its own covering a type it needs that inherits one for
+-- it from two interfaces, neither extending the other, at the field's declaration, naming the two,
+-- the first and last by name where there are more. An interface inherited from is one its type
+-- implements whose same-named field has a claim covering the need, and that no other such interface
+-- extends, an extending interface's claim overriding the one it redeclares.
+SELECT a.graph_name, el.source_name, el.source_line, el.source_column, 'INHERITED_PATH_AMBIGUOUS',
+       MIN(a.first_interface) || ' and ' || MAX(a.last_interface)
+  FROM (SELECT n.graph_name, o.element_coordinate, n.target_type,
+               MIN(ii.interface_name) AS first_interface, MAX(ii.interface_name) AS last_interface
+          FROM graphitron_path_need n
+          JOIN graphitron_occurrence o
+            ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate AND o.kind = 'FIELD'
+          JOIN graphitron_field f
+            ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+          JOIN graphql_implements_interface ii
+            ON ii.graph_name = f.graph_name AND ii.type_name = f.type_name
+          JOIN graphitron_field inf
+            ON inf.graph_name = ii.graph_name AND inf.type_name = ii.interface_name
+           AND inf.field_name = f.field_name
+          JOIN graphitron_join_path_claim jc
+            ON jc.graph_name = inf.graph_name AND jc.element_coordinate = inf.coordinate
+         WHERE (jc.claim_kind <> 'REFERENCE_FOR' OR jc.target_type = n.target_type)
+           AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim oc
+                            WHERE oc.graph_name = o.graph_name
+                              AND oc.element_coordinate = o.element_coordinate
+                              AND (oc.claim_kind <> 'REFERENCE_FOR' OR oc.target_type = n.target_type))
+           AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface jj
+                             JOIN graphql_implements_interface ext
+                               ON ext.graph_name = jj.graph_name AND ext.type_name = jj.interface_name
+                              AND ext.interface_name = ii.interface_name
+                             JOIN graphitron_field jf
+                               ON jf.graph_name = jj.graph_name AND jf.type_name = jj.interface_name
+                              AND jf.field_name = f.field_name
+                             JOIN graphitron_join_path_claim xc
+                               ON xc.graph_name = jf.graph_name AND xc.element_coordinate = jf.coordinate
+                            WHERE jj.graph_name = f.graph_name AND jj.type_name = f.type_name
+                              AND (xc.claim_kind <> 'REFERENCE_FOR' OR xc.target_type = n.target_type))
+         GROUP BY n.graph_name, o.element_coordinate, n.target_type
+        HAVING COUNT(DISTINCT ii.interface_name) > 1) a
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = a.graph_name AND el.coordinate = a.element_coordinate
+ GROUP BY a.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
 -- A root field's path with nothing to depart from, at the @reference that starts it.
 SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
        'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR)
@@ -19146,7 +19339,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
    'A @routine write re-reads its committed row by the keys the write returned, which is not a page, so the generator emits nothing for a field @asConnection rewrote.', 'graphitron'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
-   'A chain link reaches its destination by more than one route, so the generator has a join to emit and nothing to pick it by; naming the foreign key rather than the table settles it.', 'graphitron'),
+   'A step reaches its destination by more than one route, a chain link naming a table two keys reach or a field with no path written between two tables more than one foreign key joins, so the generator has a join to emit and nothing to pick it by; naming the foreign key settles it.', 'graphitron'),
   ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',
    'Two @referenceFor applications on one field name the same type, and only the first one written is used.', 'graphitron'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
@@ -19156,7 +19349,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROOT_REFERENCE_WITHOUT_ROUTINE',
    'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.', 'graphitron'),
   ('NO_ROUTE_TO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
-   'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.', 'graphitron'),
+   'A path does not arrive at the table the field''s rows were said to come from: a chain runs to its last link and arrives somewhere else, or a field with no path written starts on a table that shares no foreign key with its target''s, or on its target''s own table, so there is no join to infer and the path has to be written.', 'graphitron'),
+  ('INHERITED_PATH_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_INHERITED_PATH_AMBIGUOUS',
+   'A field with no path written implements the same-named field of two interfaces, neither extending the other, that each write a path for it, so nothing says which one it inherits: write the path on the field itself.', 'graphitron'),
   ('CONDITION_NO_OVERLOAD_FOR_PAIR', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_NO_OVERLOAD_FOR_PAIR',
    'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.', 'graphitron'),
   ('CONDITION_OVERLOAD_SHAPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_SHAPE_DISAGREES',

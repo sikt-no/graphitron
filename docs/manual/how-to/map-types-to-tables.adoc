@@ -193,7 +193,7 @@ type FilmSummary @table(name: "film") {
 
 `film { summary { title } }` returns each film's own title. A nullable `summary` resolves to `null` when the object would hold nothing; see <<single-object-null,When a single object resolves to `null`>>. The primary key is named like a foreign key, by its constraint name or its jOOQ `Keys` constant. It must be the whole path, and the field must be single-valued.
 
-Without the `@reference`, a single field returning a `@table` type on its parent's own table and taking no arguments is a build error: two `@table` types on one table are a join, and Graphitron does not guess which rows it pairs, nor does it infer a self-referencing foreign key. To reach other rows of the table related to the parent, name a self-referencing foreign key with `@reference(path: [{key: ...}])`.
+Without the `@reference`, a field returning a `@table` type on its parent's own table is an error, whether or not an argument narrows it: two `@table` types on one table are a join, and Graphitron does not guess which rows it pairs, nor does it infer a self-referencing foreign key. A field narrowed by an argument writes its path too, and the argument then narrows the rows that path reaches; with the primary key, that is the parent's own row. To reach other rows of the table related to the parent, name a self-referencing foreign key with `@reference(path: [{key: ...}])`.
 
 [#single-object-null]
 == When a single object resolves to `null`
