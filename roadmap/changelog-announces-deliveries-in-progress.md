@@ -73,3 +73,27 @@ The plan is retargeted from delivery entries in `changelog.md` to Conventional C
 4. Accepted. R876's opening sentence and the roadmap skill's In Review -> Done step are listed edit sites.
 5. Answered by the retarget: an announcement is the commit itself, so no push prepends to a shared file.
 6. Answered by the retarget: a revert is the `revert` type, its body naming the hash it reverts.
+
+### Round 2: Backlog, pushback before Spec (session_01WkW2JFGZ8sg6MFqgv3yaP3, 2026-11-05)
+
+Not a gate verdict. Read against trunk `e39ed9e60`. The retarget is the better design: it removes the shared-file contention and the entry-shape problem outright, and round 1 findings 1, 3 to 6 are settled by it. Findings against the new plan:
+
+1. **The goal promises more than the plan delivers.** The goal says a consumer learns of a change when it reaches trunk and can ask what changed between two release candidates. The plan produces a command a contributor can run; nothing puts its output where a consumer reads. Releases are cut as GitHub Releases from `v<MAJOR>.<MINOR>.<PATCH>-RC<n>` tags by `maven-publish.yml`, so the natural surface is that workflow writing `release-notes <previous-tag> <this-tag>` into the Release body (or the docs site rendering it). Name the surface, or narrow the goal to what the command gives. "When it reaches trunk" is then served only by reading `git log`; say so if that is the intent.
+
+2. **No release-candidate tag exists to anchor on.** `git ls-remote --tags origin` lists `v8.x` and `v9.x` tags and no `-RC` tag, though the changelog speaks of Graphitron 10 release candidates. "The first release notes start at the first release candidate after [the cut-over]" holds, but the plan should say what `<from-tag>` is for that first one (the cut-over commit itself, or a tag placed on it) and that every later RC is tagged on this repository.
+
+3. **The subject gate cannot see history in CI as configured.** `rewrite-build.yml` checks out with `actions/checkout`'s default depth of one; only `sync-main.yml` sets `fetch-depth: 0`. Agent sandboxes are shallow too (this one is grafted). A check walking from a fixed cut-over commit to `HEAD` needs that range present: either the workflow gains `fetch-depth: 0` (an edit site), or the gate states its behaviour when the cut-over is not reachable (fail loudly, never pass silently). It also needs `git` on the build path, which `roadmap-tool` does not invoke today; fine under "no new dependency", but say it.
+
+4. **Commits the plan does not author will fail the gate.** `.github/dependabot.yml` targets `claude/graphitron-rewrite` for both ecosystems and sets no `commit-message` prefix, so Dependabot's "Bump x from a to b" subjects fail the gate once one lands. Configure `commit-message: prefix: "build"` (Dependabot then writes `build(deps): ...`) or exempt by author; either is an edit site.
+
+5. **The not-for-trunk check is a literal prefix match.** The publish skill skips on a subject starting `wip:`, `draft:` or `spike:`. With scopes, `wip(R876): ...` does not start with `wip:` and would ship. The check has to match `wip`, `draft` and `spike` as the type, with or without scope and `!`.
+
+6. **The house's most frequent commits have no stated type.** Roadmap transitions (`roadmap: R1130 Ready -> In Progress`), filings, review rounds and README regenerations are a large share of trunk. The scope rule says the item id, so these become `<type>(R1130): ...`, but which type? `docs` or `chore` both work; pick one so the gate and the reader agree, and so release notes never list a transition.
+
+7. **`CLAUDE.md` cannot carry a concrete example.** `check-transient-citations` fails the build on `\bR\d+\b` in `CLAUDE.md`, so the Git Workflow text must write `<type>(R<n>)` and never `feat(R876)`. Worth a line in the plan so the implementer does not meet it as a build failure.
+
+8. **"Harvest" is unglossed and its edit site does not exist.** The term appears only inside R876's body; no document in `CLAUDE.md`, `roadmap/workflow.adoc` or `.claude/skills/` describes a harvest practice for co-author sessions. Gloss it on first use, and either name the file that will hold the practice or drop it from the edit sites and fold the rule ("the harvester chooses the type") into the Git Workflow text.
+
+9. **The response sits in a section of its own.** `roadmap/workflow.adoc` asks for the author's note directly beneath each finding, leaving the finding's text alone, so the returning reviewer audits a delta in place. Move the round 1 responses under their findings.
+
+Sound: the retarget itself, `changelog.md` staying Done-only, the revive gap filed separately with no dependency, the cut-over that leaves history unrewritten, and listing every `!` in release notes whatever its type.
