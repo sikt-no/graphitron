@@ -1,7 +1,7 @@
 ---
 id: R1152
 title: "Reset session variables at release as a backstop to the consumer's unmount"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 1
 theme: runtime-connection
