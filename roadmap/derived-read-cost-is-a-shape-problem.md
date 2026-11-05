@@ -276,31 +276,21 @@ are among the costliest statements the build plans: the argument step targets, `
 with its methods, and the field reference step hops hold about 265 CPU-seconds of preparation over a
 `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 
-* **Every path a field needs is a need, and a need without a path is a defect** `open`.
-  Every output field, argument and input-field occurrence with a table source has its needs in
-  `graphitron_path_need`, written by `PathNeeds`, and one no written, inherited, single inferred or
-  empty path meets is a defect at its claim. This node writes `graphitron_path`, its subtypes, the
-  steps and the stops, matching a need to its claim by the rule the need's comment states, and
-  raises what needs the join path: an inferred-key step whose two tables share no foreign key is
-  `NO_ROUTE_TO_TARGET` and one sharing several `ROUTE_AMBIGUOUS`, a scalar path whose last element
-  names no table `PATH_LANDING_UNKNOWN`, and a `@nodeId` path landing on a table
-  `NODE_ID_LANDS_ON_TABLE`, which a bare `@nodeId` on a `@reference` field can only be judged at,
-  its node type being inferred from where the path lands.
-  * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
-    an implementer of a `@table` interface to carry the same `@table`; without one it has no
-    `graphitron_tabletype` row and its fields no source, and nothing says so.
-  * **A connection's fields bind into its producer's page** `blocked`, G's, on "A connection's producer states its page as its result".
-    The occurrences already hang under the returning field, the connection's fields and its edge's;
-    they bind into what that field's producer produces, a page of records with its ordering in the
-    class graphitron generates: `nodes` the page's records, `edges` each record with its cursor,
-    `edges.node` the record, `edges.cursor` a function of the record and the page's ordering
-    (`RESULT_EXPRESSION`) and `pageInfo` the page; only `totalCount` runs a query.
-    * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
-      The result a producer states for a field returning a connection is a page of
-      `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
-      classes and the members the connection's fields bind to being stated there already.
-    * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
-      producer's source and argument values, its statement counted, and runs only when queried.
+* **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
+  an implementer of a `@table` interface to carry the same `@table`; without one it has no
+  `graphitron_tabletype` row and its fields no source, and nothing says so.
+* **A connection's fields bind into its producer's page** `blocked`, G's, on "A connection's producer states its page as its result".
+  The occurrences already hang under the returning field, the connection's fields and its edge's;
+  they bind into what that field's producer produces, a page of records with its ordering in the
+  class graphitron generates: `nodes` the page's records, `edges` each record with its cursor,
+  `edges.node` the record, `edges.cursor` a function of the record and the page's ordering
+  (`RESULT_EXPRESSION`) and `pageInfo` the page; only `totalCount` runs a query.
+  * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
+    The result a producer states for a field returning a connection is a page of
+    `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
+    classes and the members the connection's fields bind to being stated there already.
+  * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
+    producer's source and argument values, its statement counted, and runs only when queried.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
 * **A path is keyed per pair of tables** `open`.
   Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
@@ -318,8 +308,11 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
   `graphitron_field_path_method_candidate` goes with the old family.
   * **One per-depth loop states producers, sources, needs and paths** `open`, F's.
-    An occurrence waiting on a join path gets its sources and needs from the walked landing.
-  * **A walked landing judges `PATH_LANDING_UNKNOWN` and `NODE_ID_LANDS_ON_TABLE`** `open`, F's.
+    An occurrence waiting on a join path gets its sources and needs from the walked landing: the
+    arguments of a field that writes a path, and the fields under it, start on its
+    `graphitron_join_path` target.
+  * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
+    A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
   * **The old walk's readers read the join path, and the old family goes** `open`, F's.
     MCP `joinPath` and `pathStops`, the fanout lint, `RoutineWriteQuery`,
     `graphitron_field_target_column_match`, the gate tests and the fact documents move to the join
@@ -630,9 +623,12 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
-* **A scalar's column is read at its path's end** `blocked`, G's, on "Every path a field needs is a need, and a need without a path is a defect".
+* **A scalar's column is read at its path's end** `open`, G's.
   `graphitron_outbox_leaf`, the entry defects and the editor read `graphitron_occurrence_column`, and
-  `graphitron_field_target_column` and its match go, once a written path's landing is filled.
+  `graphitron_field_target_column` and its match go. A written path's end is its
+  `graphitron_join_path` target, the need's landing staying null; an output field's is there now,
+  and an argument's or input field's under a field that writes a path arrives with
+  "One per-depth loop states producers, sources, needs and paths".
 * **A field's source is its parent's result** `open`, F's.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read
@@ -1047,9 +1043,10 @@ branch is G's (Alf, 2026-11-05).
 * **The corpus is written against the model** `open`, G's. Fact documents state a written
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
-* **A node id's path end is checked against its node** `blocked`, G's, on "Every path a field needs is a need, and a need without a path is a defect".
+* **A node id's path end is checked against its node** `open`, G's.
   Where an occurrence's path lands on a table other than its node's, the defect the landing views
-  state today is the binding's, at the claim's written position.
+  state today is the binding's, at the claim's written position: `NODE_ID_LANDS_ON_TABLE`, read off
+  the `graphitron_join_path` target.
 * **Encode and decode read the target type, and the old node-id relations go** `blocked`, G's, on "A node id's path end is checked against its node".
   The generator, filter and carrier roles and E's node-id readers read `graphitron_occurrence_node_id`,
   and `graphitron_node_id_instruction`, `graphitron_node_id_candidate`, the
