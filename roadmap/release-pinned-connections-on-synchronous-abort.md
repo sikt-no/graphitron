@@ -102,3 +102,7 @@ Interaction with R1154: on a synchronous abort, a consumer fetcher that returned
 ## Context
 
 Found by the Spec → Ready review of R1153, whose in-flight cancel case relied on this release and would have hung on a pool of one.
+
+## Implementer note
+
+Added after sign-off, informational only; it changes nothing above. The Tests section's real-pool bullet names only the cancel, but this item's gap covers a thrown exception too, and R1153's suite should prove both end to end. Whichever of R1153 and R1158 lands second adds two real-pool cases to R1153's suite, each at `beginFieldExecution` of the second root field on a pool of one: a cancel, and a thrown `RuntimeException` from a test-only chained instrumentation.

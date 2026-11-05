@@ -77,6 +77,10 @@ One execution-tier class, `SessionIdentityPoolIsolationExecutionTest`, in `graph
 Found in an adversarial review of the owned-connection session lifecycle. Related items: R1151 (mount-only `SessionState`), R1152 (reset at release), R1154 (post-release acquisition in the single-tenant carrier); each of those should add its case to this suite rather than to a separate test.
 
 
+## Implementer note
+
+Added after sign-off, informational only; it changes nothing above. R1158 was widened before its own sign-off: its gap is a query abandoned during the strategy's synchronous dispatch by a cancel *or* by any exception thrown there (mutations are not affected), not a cancel alone as Scope puts it. So the real-pool cases owed to this suite when R1158 lands are two, each at `beginFieldExecution` of the second root field on a pool of one: a cancel, and a thrown `RuntimeException` (for example from a test-only chained instrumentation). For both, the next borrow returns rather than blocking and reads `app.user_id` as empty. Whichever of R1153 and R1158 lands second adds them.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready, changes requested (session_01WkW2JHW91m3TVr2w8wkx8z, 2026-11-05)
