@@ -281,8 +281,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `NO_ROUTE_TO_TARGET` and one sharing several `ROUTE_AMBIGUOUS`, a scalar path whose last element
   names no table `PATH_LANDING_UNKNOWN`, and a `@nodeId` path landing on a table
   `NODE_ID_LANDS_ON_TABLE`, which a bare `@nodeId` on a `@reference` field can only be judged at,
-  its node type being inferred from where the path lands. The step's from and to tables still
-  reference `sql_table` with a cascade; this node moves them to `_ref` copies when it writes steps.
+  its node type being inferred from where the path lands.
   * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
     an implementer of a `@table` interface to carry the same `@table`; without one it has no
     `graphitron_tabletype` row and its fields no source, and nothing says so.
@@ -301,8 +300,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
 * **A path is keyed per pair of tables** `open`.
   Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
-  to `graphitron_path`, their readers with them, with a sis timing before and after, and
-  `graphitron_field_participant_path`, written and read by nothing, goes. A claim's path, walked and
+  to `graphitron_path`, their readers with them, with a sis timing before and after. A claim's path, walked and
   reaching its target, is a `WRITTEN` or `INHERITED` `graphitron_path` row with its `_claimed` row,
   and an `INFERRED` path's one step its `_inferred_key` row, or, from a routine's derived table, its
   primary-key match by column name. A path written on an interface's field
@@ -315,6 +313,20 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   is chosen by its two tables on `graphitron_join_path_step_method`, where `CONDITION_NO_OVERLOAD_FOR_PAIR`,
   `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
   `graphitron_field_path_method_candidate` goes with the old family.
+  * **Written and inherited claims are walked into steps** `open`, F's. The output fields' claims
+    are walked, own first, then the `@referenceFor` naming the member, then inherited by
+    precedence, writing the steps, their subtypes and the `WRITTEN` or `INHERITED` path with its
+    `_claimed` row and target, or a stop, and the `INFERRED` paths' single step, with the stop,
+    condition-overload and unbound-routine-parameter defects moved over and a sis timing before and
+    after. The walk is a flat per-position rule view over base tables, with graph, position and
+    instant bound, merged by a Java loop that counts moves.
+  * **One per-depth loop states producers, sources, needs and paths** `blocked`, F's, on "Written and inherited claims are walked into steps".
+    An occurrence waiting on a join path gets its sources and needs from the walked landing.
+  * **A walked landing judges `PATH_LANDING_UNKNOWN` and `NODE_ID_LANDS_ON_TABLE`** `blocked`, F's, on "Written and inherited claims are walked into steps".
+  * **The old walk's readers read the join path, and the old family goes** `blocked`, F's, on "Written and inherited claims are walked into steps".
+    MCP `joinPath` and `pathStops`, the fanout lint, `RoutineWriteQuery`,
+    `graphitron_field_target_column_match`, the gate tests and the fact documents move to the join
+    path; then `FieldPaths` and `graphitron_field_path*` go.
 * **Arguments and input fields have paths from their field's path** `blocked`, on "A path is keyed per pair of tables".
   An argument's path is anchored at the argument; an input field's written elements become a path
   per occurrence, one holder per output field, argument and chain of input fields down to it. Both
@@ -915,8 +927,7 @@ someone to profile.
     through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
   * **An upsert finds the row it updates through one key** `done`.
   * **An upsert into a table with an independent unique key is decided per table** `open`.
-    `graphitron_federation_definition` is unique by local name, `graphitron_field_participant_path`
-    by where the element was written, and `graphitron_ast_reference_element_entry` and
+    `graphitron_federation_definition` is unique by local name, and `graphitron_ast_reference_element_entry` and
     `graphitron_ast_error_handler_entry` by the application's position and ordinal, none derived
     from the primary key, so naming the primary key turns a clash on the unique key from an update
     into a capture failure. `UpsertKeyGateTest` lists them.
@@ -1529,8 +1540,8 @@ that depend on the parent fall three ways.
      `graphitron_node_id_instruction`, all written by `DerivationStratum`: the `NODE_ID` binding,
      `graphitron_occurrence_node_id`, at the path's end.
   ** The `graphitron_field_path` family and its starts and stop, the field, argument and input-field
-     reference step targets and hops, keyed and keyless, and `graphitron_field_participant_path`: the
-     path family, as the path model draft below lists.
+     reference step targets and hops, keyed and keyless: the path family, as the path model draft
+     below lists.
   ** `intent_input_occurrence_path` and its steps: the input occurrences.
   ** `graphitron_result_table`: a table-bound type's table is `graphitron_tabletype`, a record-backed
      type's its record class's table, and a nested type's the start of its fields' occurrences.
@@ -1884,8 +1895,12 @@ entry.
   an element names only a table or nothing is written; `_primary_key`, a `{key:}` naming its table's
   own primary key, joining a row to itself, the successor of `graphitron_field_path_primary_key`;
   `_method`, the one condition overload whose two table parameters take the step's from and to
-  table; `_routine` and its `_parameter` rows. The joined column pairs are
+  table; `_routine` and its `_parameter` rows; `_matched_key`, the landing's primary key a step from
+  a routine's derived table rode, its columns matched by name. The joined column pairs are
   `graphitron_join_path_step_column` under whichever applies. Inference is a step's, never a path's.
+  Every reference the step family makes to the catalog or the classpath is a nullable `_ref` copy
+  set null on removal and swept by `touched_at`; only the step's foreign key to its need and each
+  child's to its step cascade.
 * `graphitron_join_path_stop`: one need whose path stopped short, keyed by the need's key with a
   cascading foreign key to it, with the position
   of the first step not taken, the element's place and the moves it met there. Landing stays a view
@@ -1935,7 +1950,6 @@ input with no binding under a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `CO
 | `graphitron_field_source_table` | the occurrence's source |
 | `graphitron_field_target_column` | the `COLUMN` binding, `graphitron_occurrence_column` |
 | `graphitron_field_path` and its children | `graphitron_join_path_step` and its children |
-| `graphitron_field_participant_path` | `graphitron_ast_path_entry` |
 | `intent_input_occurrence_path` and its steps, and `graphitron_path_holder` | the occurrence |
 | the argument and input-field reference step targets, keyed and keyless | `graphitron_path` |
 | `graphitron_field_scope_table`, `graphitron_argument_scope_table`, `graphitron_input_field_resolving_table` | the end of the occurrence's path, forks included |
@@ -1993,6 +2007,16 @@ by the landing's primary key, its columns matched by name, inferred where every 
 `NO_ROUTE_TO_TARGET` where one is missing; a child that is its own `@service` handing back table
 records starts where its rows come from, the table its producer's result names, so its path is
 `EMPTY` (Alf, 2026-11-05).
+
+**Decided** (Alf, 2026-11-05). The walk is a flat per-position rule view over base tables, with its
+parameters bound, looped in Java. A reader takes the join path's target rather than writing it back
+into the need. A root field's leading `@routine` is the producer's call, so its first step follows
+its place. A step from a routine's derived table to a table, joined by that table's primary-key
+columns matched by name, is its own subtype, `graphitron_join_path_step_matched_key`, covering an
+inferred routine result, a written `{table:}` element from a function and the step after a path
+ending on a `@routine`; `_primary_key` stays the `{key:}` self-join. `NODE_ID_LANDS_ON_TABLE` is a
+bare `@nodeId` whose walked landing table has no single `@node` type, or a named node whose table
+differs from the landing. The old walk runs beside the new one until "The old walk's readers read the join path, and the old family goes" moves its readers.
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
@@ -2243,6 +2267,11 @@ need being keyed by its target type with its landing an attribute. The defect co
 `graphitron_ast_binding_entry`; `graphitron_ast_field_node_id_entry` and
 `graphitron_ast_input_value_node_id_entry` are `graphitron_ast_node_id_entry`, both written by
 `GraphitronBindingEntries` off every site.
+
+**Dropped, written and never read** (2026-11-05). `graphitron_field_participant_path` and its grain
+`field-participant-path`, written by `GraphitronAnchor` and read only by a fact document: a
+participant's own path is its `@referenceFor` claim, `graphitron_ast_path_entry`, walked into
+`graphitron_join_path_step` like any other claim.
 
 **Relations retired.** Eight per-site argMapping tables into `graphitron_arg_mapping_pair`:
 `graphitron_argument_condition_arg_mapping_pair`,

@@ -1,8 +1,7 @@
 # A field's path and a participant's path are two groupings of the same element grammar. Repeated
 # @reference applications compose, with @routine, one path for the field; each @referenceFor
 # application is one participant's complete path, and a participant not named keeps discovery. So
-# a @referenceFor element is never a step of the field's path, and each participant's path is
-# numbered on its own.
+# a @referenceFor element is never a step of the field's path.
 
 type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
@@ -62,13 +61,6 @@ extend schema @assertEmpty(relation: "graphitron_ast_field_path_entry", where: "
   (graph_name, source_name, field_line, field_column) IN (
     SELECT graph_name, source_name, source_line, source_column
       FROM graphql_ast_field_definition_entry WHERE type_name = 'Film' AND name = 'people')
-  """)
-
-extend schema @expectEquals(relation: "graphitron_field_participant_path", rows: """
-  type_name, field_name, participant_type_ref, position
-  Film,      people,     Actor,                0
-  Film,      people,     Actor,                1
-  Film,      people,     Staff,                0
   """)
 
 # The walk starts each field that wrote a path on the table its parent's result is a row of, and

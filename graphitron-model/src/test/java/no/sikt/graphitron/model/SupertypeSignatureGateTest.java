@@ -208,12 +208,14 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_field_path_start", "graphitron_field_path_start_binding",
                "graphitron_field_path_start_result", "graphitron_occurrence_binding",
                "graphitron_occurrence_source"),
-        // The per-need path relations declared beside the per-field ones they replace: a step's
-        // column pairs and a routine step's parameters say what they said, keyed by the need rather
-        // than by the field and its start. Successor and incumbent, not siblings; each pair goes to
-        // one member when the field-path relations do.
-        Set.of("graphitron_field_path_column", "graphitron_join_path_step_column"),
-        Set.of("graphitron_field_path_parameter", "graphitron_join_path_step_parameter"),
+        // How a join path's step joins, by which key it rode: a written foreign key and an inferred
+        // one, and a table's own primary key ridden as a self-join and one matched by name from a
+        // function's derived table. Siblings by decision, not a supertype owed: which relation holds
+        // the row is how a reader tells a written key from an inferred one, and a self-join from a
+        // name match. Each carries its key spelled and as the nullable copy the anchor rule asks
+        // for, so no one foreign key covers the payload and the gate sees them.
+        Set.of("graphitron_join_path_step_inferred_key", "graphitron_join_path_step_key"),
+        Set.of("graphitron_join_path_step_matched_key", "graphitron_join_path_step_primary_key"),
         // Two members where there were six. The five that left were the argument relations of the
         // five application sites, and they shared a payload because they were one fact keyed five
         // ways; they are one relation now, keyed at the coordinate, so the sharing they were
