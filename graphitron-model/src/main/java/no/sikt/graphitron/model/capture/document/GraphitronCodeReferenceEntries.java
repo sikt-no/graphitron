@@ -41,8 +41,12 @@ final class GraphitronCodeReferenceEntries {
     /** The vocabulary's name for a reference, which is what the walk looks for. */
     private static final String REFERENCE_TYPE = "ExternalCodeReference";
 
-    /** One reference as written, at the node that wrote it. */
-    private record Written(Node<?> node, String className, String method) {}
+    /**
+     * One reference as written, at the node that wrote it, with the names it was written under: the
+     * application's argument, its index in that argument's list and its index in a path below it.
+     */
+    private record Written(Node<?> node, String className, String method, String argument,
+                           Integer argumentIndex, Integer pathIndex) {}
 
     /**
      * Makes {@code source}'s rows under {@code graph} be the references {@code applications}
@@ -54,12 +58,13 @@ final class GraphitronCodeReferenceEntries {
         var written = new ArrayList<Written>();
         for (var nested : applications) {
             Directive application = nested.node();
-            VocabularyWalk.walk(application, (name, value, declared) -> {
+            VocabularyWalk.walk(application, (trail, value, declared) -> {
                 if (declared.getName().equals(REFERENCE_TYPE) && value instanceof ObjectValue object) {
                     var className = stringOf(inside(object, "className"));
                     if (className != null) {
                         written.add(new Written(object, className,
-                            stringOf(inside(object, "method"))));
+                            stringOf(inside(object, "method")), trail.argument(),
+                            trail.argumentIndex(), trail.pathIndex()));
                     }
                 }
             });
@@ -73,15 +78,22 @@ final class GraphitronCodeReferenceEntries {
             reference -> GraphQLAstEntries.sourceColumn(reference.node()),
             reference -> val(touchedAt, t.TOUCHED_AT),
             reference -> val(reference.className(), t.CLASS_NAME),
-            reference -> val(reference.method(), t.METHOD)));
+            reference -> val(reference.method(), t.METHOD),
+            reference -> val(reference.argument(), t.ARGUMENT_NAME),
+            reference -> val(reference.argumentIndex(), t.ARGUMENT_INDEX),
+            reference -> val(reference.pathIndex(), t.PATH_INDEX)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD)
+                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGUMENT_NAME, t.ARGUMENT_INDEX,
+                    t.PATH_INDEX)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-                .set(t.METHOD, excluded(t.METHOD)));
+                .set(t.METHOD, excluded(t.METHOD))
+                .set(t.ARGUMENT_NAME, excluded(t.ARGUMENT_NAME))
+                .set(t.ARGUMENT_INDEX, excluded(t.ARGUMENT_INDEX))
+                .set(t.PATH_INDEX, excluded(t.PATH_INDEX)));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, List.of(t));
     }
 

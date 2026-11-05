@@ -50,8 +50,8 @@ final class GraphitronArgMappingEntries {
                       LocalDateTime touchedAt) {
         var pairs = new ArrayList<Pair>();
         for (var nested : applications) {
-            VocabularyWalk.walk(nested.node(), (name, value, declared) -> {
-                if (!name.equals(MAPPING_NAME) || !(value instanceof StringValue mapping)) {
+            VocabularyWalk.walk(nested.node(), (trail, value, declared) -> {
+                if (!trail.name().equals(MAPPING_NAME) || !(value instanceof StringValue mapping)) {
                     return;
                 }
                 List<ArgMappingSigil.Entry> entries;

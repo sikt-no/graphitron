@@ -2476,6 +2476,9 @@ CREATE TABLE graphitron_ast_code_reference_entry (
   touched_at    TIMESTAMP NOT NULL,
   class_name    VARCHAR NOT NULL,
   method        VARCHAR,
+  argument_name  VARCHAR NOT NULL,
+  argument_index INT,
+  path_index     INT,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   -- The node the reference was written as, an object value, is a position, and this is the
@@ -2492,6 +2495,9 @@ COMMENT ON COLUMN graphitron_ast_code_reference_entry.source_column IS 'source c
 COMMENT ON COLUMN graphitron_ast_code_reference_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a reference whose node went is swept with that node';
 COMMENT ON COLUMN graphitron_ast_code_reference_entry.class_name IS 'the class the reference names, as written. NOT NULL because a reference naming no class asserts nothing this relation can hold, and writes no row';
 COMMENT ON COLUMN graphitron_ast_code_reference_entry.method IS 'the method the reference names, as written, or NULL where it names none. A default a site applies to an omitted method is a resolution and is not applied here';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.argument_name IS 'the application''s argument the reference is written under: service, condition, reference, enumReference, record, path, fields or routes. With the two indices, the names that tell the references of one application apart, read off the vocabulary walk rather than climbed back to from the position';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.argument_index IS 'the reference''s index in its argument''s list, NULL where the argument is no list: the path element under @reference(path:), the field under @order(fields:), the route under @multitableReference(routes:)';
+COMMENT ON COLUMN graphitron_ast_code_reference_entry.path_index IS 'the reference''s index in a path below its argument, NULL where it sits in none: the condition in fields[1].path[0] is 0. An argument that is itself the path has its index as argument_index';
 
 CREATE VIEW graphitron_argmapping_site_rule
   (graph_name, source_name, source_line, source_column, directive_name, ordinal, coordinate,

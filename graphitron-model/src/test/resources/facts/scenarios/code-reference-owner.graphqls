@@ -1,0 +1,33 @@
+"A code reference is told apart from the others its application writes by the names it was written under: the argument, and its index in that argument's list where the argument is one. A root reference has no index; a field under @defaultOrder(fields:) and an element under @reference(path:) have theirs."
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+}
+
+extend type Query {
+  filmsByIds(ids: [Int!]!): [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  filmsByLatestStock: [Film!]!
+    @defaultOrder(fields: [
+      {name: "film_id"},
+      {method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC}
+    ])
+  customersByConditionDistrict(
+    district: String @field(name: "district") @reference(path: [{condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+      method: "customerToAddressConcrete"
+    }}])
+  ): [Customer!]!
+}
+
+# The columns only: a document is read behind a shared prelude, so its lines are not its own.
+extend schema @expectEquals(relation: "graphitron_ast_code_reference_entry", rows: """
+  class_name,                                                                  method,                    argument_name, argument_index, path_index
+  no.sikt.graphitron.rewrite.test.services.FilmCarrierService,                 filmsByIds,                service,                     ,
+  no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys,                     latestStockStore,          fields,                     1,
+  no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures,   customerToAddressConcrete, path,                       0,
+  """)
