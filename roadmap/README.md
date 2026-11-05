@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R1152` | Reset session variables at release as a backstop to the consumer's unmount | Spec | 2026-11-05 | [plan](session-identity-reset-on-release.md) |
+| `R1152` | Reset session variables at release as a backstop to the consumer's unmount | Ready | 2026-11-05 | [plan](session-identity-reset-on-release.md) |
 | `R1153` | Execution tests that identity never crosses requests through a real pool | In Progress | 2026-11-05 | [plan](session-identity-pool-isolation-execution-tests.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-21 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R1151` | Require an unmount on SessionState so identity never rests on a pooled connection | In Progress | 2026-11-05 | [plan](session-state-mandatory-unmount.md) |
@@ -614,7 +614,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1153` [**Execution tests that identity never crosses requests through a real pool**](session-identity-pool-isolation-execution-tests.md) — In Progress, bug
 - `R1158` [**Release pinned connections when execution aborts synchronously**](release-pinned-connections-on-synchronous-abort.md) — In Review, bug
 - `R1151` [**Require an unmount on SessionState so identity never rests on a pooled connection**](session-state-mandatory-unmount.md) — In Progress, bug
-- `R1152` [**Reset session variables at release as a backstop to the consumer's unmount**](session-identity-reset-on-release.md) — Spec, architecture
+- `R1152` [**Reset session variables at release as a backstop to the consumer's unmount**](session-identity-reset-on-release.md) — Ready, architecture
 - `R1155` [**Fix the escape-hatch identity example, which mounts nothing in autocommit**](escape-hatch-identity-example-fix.md) — Backlog, bug
 - `R1154` [**Refuse acquisition after release in the single-tenant connection carrier**](single-tenant-carrier-closed-guard.md) — Spec, bug
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
