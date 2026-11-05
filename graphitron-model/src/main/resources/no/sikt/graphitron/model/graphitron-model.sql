@@ -14530,117 +14530,6 @@ COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spell
 COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; PARAMETER, the parameter of a call that consumes the value; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- The column a scalar occurrence reads where its path lands: the COLUMN subtype of the binding,
--- keyed as the binding is and pinned to its kind through the binding's unique key.
-CREATE TABLE graphitron_occurrence_column (
-  graph_name        VARCHAR   NOT NULL,
-  coordinate        VARCHAR   NOT NULL,
-  bound             VARCHAR   NOT NULL,
-  kind              VARCHAR   NOT NULL,
-  table_source_name VARCHAR   NOT NULL,
-  table_schema      VARCHAR   NOT NULL,
-  table_name        VARCHAR   NOT NULL,
-  column_name       VARCHAR   NOT NULL,
-  matched_by        VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, bound),
-  FOREIGN KEY (graph_name, coordinate, bound, kind)
-    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
-  -- A derivation goes with what it was derived from: a recrawled catalog takes the binding with
-  -- its column, and the next reading writes it again.
-  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
-    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
-  CHECK (kind = 'COLUMN'),
-  CHECK (bound = table_schema || '.' || table_name),
-  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME'))
-);
-COMMENT ON TABLE graphitron_occurrence_column IS 'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table. For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.';
-COMMENT ON COLUMN graphitron_occurrence_column.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_column.coordinate IS 'the scalar occurrence, at its nested coordinate';
-COMMENT ON COLUMN graphitron_occurrence_column.bound IS 'the landing table, schema-qualified, as the binding spells it; with the coordinate the key, since an occurrence under a union lands on one table per member';
-COMMENT ON COLUMN graphitron_occurrence_column.kind IS 'always COLUMN, carried so the foreign key into graphitron_occurrence_binding holds the kind as well as the place';
-COMMENT ON COLUMN graphitron_occurrence_column.table_source_name IS 'the catalog source of the landing table';
-COMMENT ON COLUMN graphitron_occurrence_column.table_schema IS 'the landing table''s schema';
-COMMENT ON COLUMN graphitron_occurrence_column.table_name IS 'the landing table';
-COMMENT ON COLUMN graphitron_occurrence_column.column_name IS 'the column, as the catalog spells it';
-COMMENT ON COLUMN graphitron_occurrence_column.matched_by IS 'which name the spelling met, folded by case: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no SQL name on the table does';
-COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
--- A scalar or enum occurrence that reads or binds a column, on each table its path lands on: the
--- @field(name:) where one is claimed and the element's own name otherwise, folded by case, the SQL
--- name before the generated one, and exactly one column answering. An occurrence claiming a node id
--- or an expression, or running a call or a pivot of its own, reads no column here, and neither does
--- an id: ID with no @field on a type implementing Node, which is the node's identity. A scalar
--- whose declaration writes a path has no landing until its steps say where, and no row until then.
--- The candidates are counted per row rather than by a window, which would stop H2 restricting the
--- view to one graph.
-CREATE VIEW graphitron_occurrence_column_rule
-  (graph_name, coordinate, bound, table_source_name, table_schema, table_name, column_name,
-   matched_by) AS
-WITH scalar (graph_name, coordinate, spelling) AS (
-  SELECT o.graph_name, o.coordinate, COALESCE(cl.named, o.name)
-    FROM graphitron_occurrence o
-    LEFT JOIN graphitron_field f
-      ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-    LEFT JOIN graphitron_argument a
-      ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
-    JOIN graphitron_type t
-      ON t.graph_name = o.graph_name AND t.type_name = COALESCE(f.named_type, a.named_type)
-     AND t.kind IN ('SCALAR', 'ENUM')
-    LEFT JOIN graphitron_binding_claim cl
-      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-     AND cl.kind = 'COLUMN'
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                      WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                        AND x.kind IN ('NODE_ID', 'EXPRESSION'))
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                      WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
-                        AND d.directive_name IN ('service', 'routine', 'pivot'))
-     AND NOT (cl.named IS NULL AND o.kind = 'FIELD' AND o.name = 'id' AND f.named_type = 'ID'
-              AND EXISTS (SELECT 1 FROM graphql_implements_interface ii
-                           WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
-                             AND ii.interface_name = 'Node'))
-),
-landing (graph_name, coordinate, spelling, table_source_name, table_schema, table_name) AS (
-  SELECT DISTINCT s.graph_name, s.coordinate, s.spelling, n.landing_source_name,
-         n.landing_schema, n.landing_table
-    FROM scalar s
-    JOIN graphitron_path_need n
-      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate
-   WHERE n.landing_table IS NOT NULL
-)
-SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
-       l.table_schema, l.table_name, c.column_name, 'SQL_NAME'
-  FROM landing l
-  JOIN sql_column c
-    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
-   AND c.table_name = l.table_name AND c.column_name_upper = UPPER(l.spelling)
- WHERE (SELECT COUNT(*) FROM sql_column n
-         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
-           AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling)) = 1
-UNION ALL
-SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
-       l.table_schema, l.table_name, c.column_name, 'JOOQ_NAME'
-  FROM landing l
-  JOIN sql_column c
-    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
-   AND c.table_name = l.table_name AND c.jooq_name_upper = UPPER(l.spelling)
- WHERE NOT EXISTS (SELECT 1 FROM sql_column n
-                    WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
-                      AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling))
-   AND (SELECT COUNT(*) FROM sql_column n
-         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
-           AND n.table_name = l.table_name AND n.jooq_name_upper = UPPER(l.spelling)) = 1;
-COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.coordinate IS 'the scalar occurrence';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.bound IS 'the landing table, schema-qualified';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_source_name IS 'the landing table''s catalog source';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_schema IS 'its schema';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_name IS 'the landing table';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.column_name IS 'the one column the spelling names there';
--- COMMENT ON COLUMN graphitron_occurrence_column_rule.matched_by IS 'which name it met';
-
 -- The key columns a node id at an occurrence packs or unpacks: the NODE_ID subtype of the binding,
 -- one row per key position, keyed as the binding is with the position added and pinned to its kind
 -- through the binding's unique key.
@@ -14666,7 +14555,7 @@ CREATE TABLE graphitron_occurrence_node_id (
     REFERENCES graphitron_node_keycolumn (graph_name, type_name, position) ON DELETE CASCADE,
   CHECK (kind = 'NODE_ID'),
   CHECK (basis IN ('EXPLICIT_TYPE_NAME', 'CONTAINING_NODE_TYPE', 'TARGET_TABLE_NODE_TYPE',
-                   'OWN_ID_FIELD')),
+                   'OWN_ID_FIELD', 'TARGET_ID_NAME')),
   CHECK (bound = table_schema || '.' || table_name),
   CHECK (position >= 0)
 );
@@ -14676,7 +14565,7 @@ COMMENT ON COLUMN graphitron_occurrence_node_id.coordinate IS 'the occurrence ca
 COMMENT ON COLUMN graphitron_occurrence_node_id.bound IS 'the node''s table, schema-qualified, as the binding spells it; one per member table where the written type is an interface or union whose members are nodes';
 COMMENT ON COLUMN graphitron_occurrence_node_id.position IS 'the column''s place in the key tuple, numbered from zero, graphitron_node_keycolumn''s order, which is the order ids are built and read';
 COMMENT ON COLUMN graphitron_occurrence_node_id.kind IS 'always NODE_ID, carried so the foreign key into graphitron_occurrence_binding holds the kind as well as the place';
-COMMENT ON COLUMN graphitron_occurrence_node_id.basis IS 'which rule decided the node type: EXPLICIT_TYPE_NAME, @nodeId(typeName:) naming a node or an interface or union over nodes; CONTAINING_NODE_TYPE, a bare @nodeId on a field with no @reference whose declaring type is a node; TARGET_TABLE_NODE_TYPE, a bare @nodeId on a @reference field, the one node over the table its path lands on; OWN_ID_FIELD, the id: ID of a node type implementing Node with neither @nodeId nor @field. The same on every position of one binding, carried so a defect can say which form the author wrote';
+COMMENT ON COLUMN graphitron_occurrence_node_id.basis IS 'which rule decided the node type: EXPLICIT_TYPE_NAME, @nodeId(typeName:) naming a node or an interface or union over nodes; CONTAINING_NODE_TYPE, a bare @nodeId on a field with no @reference whose declaring type is a node; TARGET_TABLE_NODE_TYPE, a bare @nodeId on a @reference field, an argument or an input field, the node each of its needs reaches; OWN_ID_FIELD, a node type''s id: ID with neither @nodeId nor @field; TARGET_ID_NAME, an argument''s or input field''s id: ID with neither, the node each of its needs reaches; neither where the node''s table has a column named id, which the manual makes an error. The same on every position of one binding, carried so a defect can say which form the author wrote';
 COMMENT ON COLUMN graphitron_occurrence_node_id.node_type_name IS 'the node type the id belongs to, whose typeId the id carries';
 COMMENT ON COLUMN graphitron_occurrence_node_id.table_source_name IS 'the catalog source of the node''s table';
 COMMENT ON COLUMN graphitron_occurrence_node_id.table_schema IS 'the node table''s schema';
@@ -14685,15 +14574,69 @@ COMMENT ON COLUMN graphitron_occurrence_node_id.column_name IS 'the key column a
 COMMENT ON COLUMN graphitron_occurrence_node_id.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
--- columns. A written typeName: decides at every site; the inferences decide at output fields only,
--- an argument's or input field's bare @nodeId and its id named for its target waiting for the
--- parameter that receives it. A @reference field's inference reads where its path lands, which a
--- written path does not know until its steps say. A node type over a table another member of the
--- same written container shares draws nothing: which of the two the id names is the defect's.
+-- columns. A written typeName: decides at every site. An argument's or input field's bare @nodeId,
+-- and its id: ID named for its target, take the node each of its needs reaches: the need's target
+-- where that is a node, else the one node over the table the need lands on. A @reference field's
+-- inference reads where its path lands, which a written path does not know until its steps say.
+-- A slot whose needs reach several nodes decides only for a bare @nodeId on an argument, one node
+-- per table; anywhere else which node the id names is the defect's.
 CREATE VIEW graphitron_occurrence_node_id_rule
   (graph_name, coordinate, bound, position, basis, node_type_name, table_source_name,
    table_schema, table_name, column_name) AS
-WITH decided (graph_name, coordinate, basis, node_type_name) AS (
+WITH lone_node (graph_name, table_source_name, table_schema, table_name, type_name) AS (
+  -- The node over a table, where exactly one is.
+  SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name, MIN(bt.type_name)
+    FROM graphitron_tabletype bt
+    JOIN graphitron_node n ON n.graph_name = bt.graph_name AND n.type_name = bt.type_name
+   GROUP BY bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name
+  HAVING COUNT(*) = 1
+),
+input_slot (graph_name, coordinate, kind, basis) AS (
+  -- An argument or input field carrying a bare @nodeId.
+  SELECT o.graph_name, o.coordinate, o.kind, 'TARGET_TABLE_NODE_TYPE'
+    FROM graphitron_binding_claim cl
+    JOIN graphitron_occurrence o
+      ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+   WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
+  UNION ALL
+  -- An argument or input field id: ID with neither @nodeId nor @field written.
+  SELECT o.graph_name, o.coordinate, o.kind, 'TARGET_ID_NAME'
+    FROM graphitron_occurrence o
+    LEFT JOIN graphitron_field f
+      ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    LEFT JOIN graphitron_argument a
+      ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+   WHERE o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
+     AND COALESCE(f.named_type, a.named_type) = 'ID'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                      WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                        AND x.kind IN ('NODE_ID', 'COLUMN'))
+),
+input_decided (graph_name, coordinate, basis, node_type_name) AS (
+  -- The node the slot's need reaches. A slot with several needs, under an interface or a union,
+  -- decides only where the manual lets it stand for any implementation: a bare @nodeId on an
+  -- argument, one node per table its needs land on. Counted against the needs rather than the
+  -- decided rows, which H2 would evaluate again for every row.
+  SELECT DISTINCT s.graph_name, s.coordinate, s.basis, COALESCE(tn.type_name, ln.type_name)
+    FROM input_slot s
+    JOIN graphitron_path_need pn
+      ON pn.graph_name = s.graph_name AND pn.coordinate = s.coordinate
+     AND pn.landing_table IS NOT NULL
+    LEFT JOIN graphitron_node tn
+      ON tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type
+    LEFT JOIN lone_node ln
+      ON ln.graph_name = pn.graph_name AND ln.table_source_name = pn.landing_source_name
+     AND ln.table_schema = pn.landing_schema AND ln.table_name = pn.landing_table
+   WHERE COALESCE(tn.type_name, ln.type_name) IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_path_need p2
+                      WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
+                        AND p2.target_type <> pn.target_type
+                        AND (s.kind <> 'FIELD_ARGUMENT' OR s.basis <> 'TARGET_TABLE_NODE_TYPE'
+                             OR (p2.landing_source_name = pn.landing_source_name
+                                 AND p2.landing_schema = pn.landing_schema
+                                 AND p2.landing_table = pn.landing_table)))
+),
+decided (graph_name, coordinate, basis, node_type_name) AS (
   -- @nodeId(typeName:) naming a node.
   SELECT o.graph_name, o.coordinate, 'EXPLICIT_TYPE_NAME', cl.named
     FROM graphitron_occurrence o
@@ -14766,8 +14709,8 @@ WITH decided (graph_name, coordinate, basis, node_type_name) AS (
            WHERE bt2.graph_name = bt.graph_name AND bt2.table_source_name = bt.table_source_name
              AND bt2.table_schema = bt.table_schema AND bt2.table_name = bt.table_name) = 1
   UNION ALL
-  -- A node type's own id: ID with neither @nodeId nor @field written, on a type implementing Node,
-  -- the column rule's complement: a node without the interface reads its id as a column.
+  -- A node type's own id: ID with neither @nodeId nor @field written, where its table has no column
+  -- of that name: the manual makes that collision an error, the SDL not having said which is meant.
   SELECT o.graph_name, o.coordinate, 'OWN_ID_FIELD', f.type_name
     FROM graphitron_occurrence o
     JOIN graphitron_field f
@@ -14778,9 +14721,24 @@ WITH decided (graph_name, coordinate, basis, node_type_name) AS (
      AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                       WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
                         AND x.kind IN ('NODE_ID', 'COLUMN'))
-     AND EXISTS (SELECT 1 FROM graphql_implements_interface ii
-                  WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
-                    AND ii.interface_name = 'Node')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype bt
+                       JOIN sql_column c
+                         ON c.source_name = bt.table_source_name AND c.table_schema = bt.table_schema
+                        AND c.table_name = bt.table_name
+                        AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID')
+                      WHERE bt.graph_name = f.graph_name AND bt.type_name = f.type_name)
+  UNION ALL
+  -- An argument's or input field's inferred id, an id named for its target only where its node's
+  -- table has no column of the name, as the own id.
+  SELECT i.graph_name, i.coordinate, i.basis, i.node_type_name
+    FROM input_decided i
+    JOIN graphitron_tabletype bt
+      ON bt.graph_name = i.graph_name AND bt.type_name = i.node_type_name
+   WHERE i.basis <> 'TARGET_ID_NAME'
+      OR NOT EXISTS (SELECT 1 FROM sql_column c
+                      WHERE c.source_name = bt.table_source_name
+                        AND c.table_schema = bt.table_schema AND c.table_name = bt.table_name
+                        AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID'))
 )
 SELECT d.graph_name, d.coordinate, k.table_schema || '.' || k.table_name, k.position, d.basis,
        d.node_type_name, k.table_source_name, k.table_schema, k.table_name, k.column_name
@@ -14798,6 +14756,139 @@ COMMENT ON VIEW graphitron_occurrence_node_id_rule IS 'One row the occurrence no
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_schema IS 'its schema';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_name IS 'the node''s table';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.column_name IS 'the key column';
+
+-- The column a scalar occurrence reads where its path lands: the COLUMN subtype of the binding,
+-- keyed as the binding is and pinned to its kind through the binding's unique key.
+CREATE TABLE graphitron_occurrence_column (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  column_name       VARCHAR   NOT NULL,
+  matched_by        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  -- A derivation goes with what it was derived from: a recrawled catalog takes the binding with
+  -- its column, and the next reading writes it again.
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (kind = 'COLUMN'),
+  CHECK (bound = table_schema || '.' || table_name),
+  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME'))
+);
+COMMENT ON TABLE graphitron_occurrence_column IS 'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table. For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.';
+COMMENT ON COLUMN graphitron_occurrence_column.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_column.coordinate IS 'the scalar occurrence, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_column.bound IS 'the landing table, schema-qualified, as the binding spells it; with the coordinate the key, since an occurrence under a union lands on one table per member';
+COMMENT ON COLUMN graphitron_occurrence_column.kind IS 'always COLUMN, carried so the foreign key into graphitron_occurrence_binding holds the kind as well as the place';
+COMMENT ON COLUMN graphitron_occurrence_column.table_source_name IS 'the catalog source of the landing table';
+COMMENT ON COLUMN graphitron_occurrence_column.table_schema IS 'the landing table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_column.table_name IS 'the landing table';
+COMMENT ON COLUMN graphitron_occurrence_column.column_name IS 'the column, as the catalog spells it';
+COMMENT ON COLUMN graphitron_occurrence_column.matched_by IS 'which name the spelling met, folded by case: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no SQL name on the table does';
+COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- A scalar or enum occurrence that reads or binds a column, on each table its path lands on: the
+-- @field(name:) where one is claimed and the element's own name otherwise, folded by case, the SQL
+-- name before the generated one, and exactly one column answering. An occurrence claiming a node id
+-- or an expression, or running a call or a pivot of its own, reads no column here, and neither does
+-- an id: ID with no @field on a node or a type implementing Node, nor at an argument or input field
+-- whose need reaches a node: such an id is the node's identity, and where its table also has a column
+-- of the name the manual makes the collision an error rather than either reading. Nor does an
+-- occurrence the node id rule already bound, which the stage writes first. A scalar
+-- whose declaration writes a path has no landing until its steps say where, and no row until then.
+-- The candidates are counted per row rather than by a window, which would stop H2 restricting the
+-- view to one graph.
+CREATE VIEW graphitron_occurrence_column_rule
+  (graph_name, coordinate, bound, table_source_name, table_schema, table_name, column_name,
+   matched_by) AS
+WITH scalar (graph_name, coordinate, spelling) AS (
+  SELECT o.graph_name, o.coordinate, COALESCE(cl.named, o.name)
+    FROM graphitron_occurrence o
+    LEFT JOIN graphitron_field f
+      ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    LEFT JOIN graphitron_argument a
+      ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+    JOIN graphitron_type t
+      ON t.graph_name = o.graph_name AND t.type_name = COALESCE(f.named_type, a.named_type)
+     AND t.kind IN ('SCALAR', 'ENUM')
+    LEFT JOIN graphitron_binding_claim cl
+      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+     AND cl.kind = 'COLUMN'
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                      WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                        AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                      WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                        AND d.directive_name IN ('service', 'routine', 'pivot'))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                      WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+     AND NOT (cl.named IS NULL AND o.kind = 'FIELD' AND o.name = 'id' AND f.named_type = 'ID'
+              AND (EXISTS (SELECT 1 FROM graphql_implements_interface ii
+                            WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
+                              AND ii.interface_name = 'Node')
+                   OR EXISTS (SELECT 1 FROM graphitron_node nd
+                               WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
+     AND NOT (cl.named IS NULL AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
+              AND COALESCE(f.named_type, a.named_type) = 'ID'
+              AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+                           WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+                             AND pn.landing_table IS NOT NULL
+                             AND (EXISTS (SELECT 1 FROM graphitron_node tn
+                                           WHERE tn.graph_name = pn.graph_name
+                                             AND tn.type_name = pn.target_type)
+                                  OR (SELECT COUNT(*) FROM graphitron_tabletype bt
+                                        JOIN graphitron_node n2
+                                          ON n2.graph_name = bt.graph_name AND n2.type_name = bt.type_name
+                                       WHERE bt.graph_name = pn.graph_name
+                                         AND bt.table_source_name = pn.landing_source_name
+                                         AND bt.table_schema = pn.landing_schema
+                                         AND bt.table_name = pn.landing_table) = 1)))
+),
+landing (graph_name, coordinate, spelling, table_source_name, table_schema, table_name) AS (
+  SELECT DISTINCT s.graph_name, s.coordinate, s.spelling, n.landing_source_name,
+         n.landing_schema, n.landing_table
+    FROM scalar s
+    JOIN graphitron_path_need n
+      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate
+   WHERE n.landing_table IS NOT NULL
+)
+SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
+       l.table_schema, l.table_name, c.column_name, 'SQL_NAME'
+  FROM landing l
+  JOIN sql_column c
+    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
+   AND c.table_name = l.table_name AND c.column_name_upper = UPPER(l.spelling)
+ WHERE (SELECT COUNT(*) FROM sql_column n
+         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
+           AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling)) = 1
+UNION ALL
+SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
+       l.table_schema, l.table_name, c.column_name, 'JOOQ_NAME'
+  FROM landing l
+  JOIN sql_column c
+    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
+   AND c.table_name = l.table_name AND c.jooq_name_upper = UPPER(l.spelling)
+ WHERE NOT EXISTS (SELECT 1 FROM sql_column n
+                    WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
+                      AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling))
+   AND (SELECT COUNT(*) FROM sql_column n
+         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
+           AND n.table_name = l.table_name AND n.jooq_name_upper = UPPER(l.spelling)) = 1;
+COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.coordinate IS 'the scalar occurrence';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.bound IS 'the landing table, schema-qualified';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_source_name IS 'the landing table''s catalog source';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_schema IS 'its schema';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_name IS 'the landing table';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.column_name IS 'the one column the spelling names there';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.matched_by IS 'which name it met';
 
 CREATE TABLE graphitron_occurrence_producer (
   graph_name VARCHAR   NOT NULL,
@@ -19928,7 +20019,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_node_id', 'occurrence-node-id-key', 'graphitron',
    'One key column a node id at an occurrence packs or unpacks: one row per occurrence, node table and key position.',
    'For example Film.id packs film_id at public.film under Film, and Query.filmsByNodeIdArg(ids:), written @nodeId(typeName: "Film"), unpacks into the same column.',
-   'The NODE_ID subtype of graphitron_occurrence_binding, on its key with the key position added and pinned to its kind by the unique key beside it. The key columns are the node type''s own, on its own table, whatever the occurrence reads: a written typeName takes them from the named node, and only the inference that reads a @reference field''s landing lets a table decide which node it is. Stored because the encode and the decode, the argMapping key projection and the defects all ask which columns an id at this occurrence carries, and a foreign key into graphitron_node_keycolumn holds the answer to the node''s key as it stands, the binding cascading with it as a derivation goes with what it was derived from.'),
+   'The NODE_ID subtype of graphitron_occurrence_binding, on its key with the key position added and pinned to its kind by the unique key beside it. The key columns are the node type''s own, on its own table, whatever the occurrence reads: a written typeName takes them from the named node, and only an inference that reads where a need lands lets a table decide which node it is. Stored because the encode and the decode, the argMapping key projection and the defects all ask which columns an id at this occurrence carries, and a foreign key into graphitron_node_keycolumn holds the answer to the node''s key as it stands, the binding cascading with it as a derivation goes with what it was derived from.'),
   ('graphitron_occurrence_node_id_rule', 'occurrence-node-id-key', 'graphitron',
    'One row the occurrence node id rule computes, in the shape graphitron_occurrence_node_id stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_node_id, which are the names every reader spells.',

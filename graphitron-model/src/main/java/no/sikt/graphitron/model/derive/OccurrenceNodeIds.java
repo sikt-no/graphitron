@@ -16,8 +16,8 @@ import static org.jooq.impl.DSL.val;
  * or unpacks, from the rule view beside it, under a {@code NODE_ID} row of
  * {@code graphitron_occurrence_binding}, marked and swept.
  *
- * <p>Runs after the path needs, whose landings a {@code @reference} field's inference reads, and
- * after the binding claims, whose written node types it reads. The sweep deletes the stale
+ * <p>Runs after the path needs, whose landings the inferences read, and after the binding claims,
+ * whose written node types it reads; before the columns, which skip the occurrences it binds. The sweep deletes the stale
  * {@code NODE_ID} bindings, the subtype rows under them going by the cascade, and then the stale
  * positions under a binding that still stands, which a node whose key lost a column leaves behind.
  */

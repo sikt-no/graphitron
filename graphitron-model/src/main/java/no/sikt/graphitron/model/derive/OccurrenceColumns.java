@@ -16,8 +16,8 @@ import static org.jooq.impl.DSL.val;
  * its path lands, from the rule view beside it, under a {@code COLUMN} row of
  * {@code graphitron_occurrence_binding}, marked and swept.
  *
- * <p>Runs after the path needs, whose landings it reads, and after the binding claims, whose
- * written names it reads. The sweep deletes the stale {@code COLUMN} bindings, and the subtype rows
+ * <p>Runs after the path needs, whose landings it reads, the binding claims, whose written names it
+ * reads, and the node ids, whose occurrences read no column. The sweep deletes the stale {@code COLUMN} bindings, and the subtype rows
  * under them go by the cascade.
  */
 public final class OccurrenceColumns {

@@ -133,10 +133,10 @@ public final class GraphitronAssemblyCapture {
         // Then the paths of the needs no claim covers, off the needs and the claims above: an empty
         // path where the need starts on its landing, an inferred one over the one foreign key.
         Paths.derive(dsl, graph, readAt);
-        // The column each scalar occurrence reads or binds, where the needs just written land.
-        OccurrenceColumns.derive(dsl, graph, readAt);
-        // And the key columns each node id at an occurrence carries, off the same needs and claims.
+        // The key columns each node id at an occurrence carries, where the needs just written land,
+        // then the column each other scalar occurrence reads or binds there.
         OccurrenceNodeIds.derive(dsl, graph, readAt);
+        OccurrenceColumns.derive(dsl, graph, readAt);
         // Then each field's path, off the producers and results just written: walked from every
         // table its parent's result is a row of, or from a root routine's own table, one written
         // element at a time.

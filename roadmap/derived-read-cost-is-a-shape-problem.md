@@ -1047,16 +1047,13 @@ branch is G's (Alf, 2026-11-05).
 * **The corpus is written against the model** `open`, G's. Fact documents state a written
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
-* **An argument's or input field's inferred node id is a `NODE_ID` binding** `blocked`, G's, on "What an occurrence takes is a binding".
-  A bare `@nodeId` or an `id` named for its target takes the node the parameter receiving it binds,
-  an argument its field's return type, and `graphitron_node_id_candidate` dissolves into the rule.
 * **A node id's path end is checked against its node** `blocked`, G's, on "Every path a field needs is a need, and a need without a path is a defect".
   Where an occurrence's path lands on a table other than its node's, the defect the landing views
   state today is the binding's, at the claim's written position.
-* **Encode and decode read the target type, and the old node-id relations go** `blocked`, G's, on "A node id's path end is checked against its node" and "An argument's or input field's inferred node id is a `NODE_ID` binding".
+* **Encode and decode read the target type, and the old node-id relations go** `blocked`, G's, on "A node id's path end is checked against its node".
   The generator, filter and carrier roles and E's node-id readers read `graphitron_occurrence_node_id`,
-  and `graphitron_node_id_instruction`, the `graphitron_node_id_decode_*` relations and the census
-  `NodeIdDecodeCoverageFacts` reads go.
+  and `graphitron_node_id_instruction`, `graphitron_node_id_candidate`, the
+  `graphitron_node_id_decode_*` relations and the census `NodeIdDecodeCoverageFacts` reads go.
 
 ### A polymorphic id resolves per member, to the overload that accepts it `open`
 
@@ -1108,14 +1105,19 @@ here with a document that shows it.
   branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
   application with no entry beside it never return a row, and they go. `@routine` and `@mutation`
   decline what they cannot read, so theirs stay.
-* **What the manual refuses of a `@nodeId` is a defect row** `blocked`, on "An argument's or input field's inferred node id is a `NODE_ID` binding". The generator refuses these and the store records nothing:
+* **What the manual refuses of a `@nodeId` is a defect row** `open`, G's. The generator refuses these and the store records nothing:
   a bare `@nodeId` on a field of a type that is not a node, a `typeName:` naming a type without
   `@node`, arguments of a node-returning field matched to columns its table lacks, a `typeName:`
-  with no route from the slot's table, and a bare `@nodeId` on an input field under a multi-table
-  field whose members disagree. A bare `@nodeId` argument names its field's return type, so
-  `films(filmId: ID @nodeId): [Film]` is a `Film` id even where a second node type shares `film`;
-  today the store resolves nothing there and the generator refuses it as ambiguous. A document
-  `node-id-instruction-unresolved` under `defects` states all of these.
+  with no route from the slot's table, a bare `@nodeId` on an input field under a multi-table
+  field whose members disagree, an id whose needs reach several nodes where the manual lets none
+  stand for all, and an id with no directive beside a column of its name, which binds neither. A
+  bare `@nodeId` argument names its field's return type, so `films(filmId: ID @nodeId): [Film]` is
+  a `Film` id even where a second node type shares `film`. A document
+  `node-id-instruction-unresolved` under `defects` states all of these, at the occurrence.
+* **A `@nodeId` beside `@field(name:)` names a target of the decode's shape** `blocked`, G's, on "A table class's column fields are stated" and "What an occurrence takes is a binding".
+  The name is the `NODE_ID` claim's target: under a table source a column, under an object source a
+  member, and its type, a column's generated `Field<T>` or the member's, matches the shape the encode
+  or decode needs, a mismatch the defect (Alf, 2026-11-05).
 * **A `@nodeId` argument walking its own path decodes the type it arrives at** `blocked`, on
   "Encode and decode read the target type, and the old node-id relations go". On the field below
   the store resolves `Actor` from the table the path arrives at, while the generator infers `Film`

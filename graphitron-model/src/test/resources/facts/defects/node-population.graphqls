@@ -80,3 +80,14 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   code,                        type_name
   NODE_WITHOUT_NODE_INTERFACE, NoInterface
   """)
+
+# NoInterface's id has no directive and plain_id has a column named id: the manual makes the
+# collision an error, so the id binds neither the node's identity nor the column.
+extend schema @assertAbsent(relation: "graphitron_occurrence_node_id", rows: """
+  coordinate
+  NoInterface.id
+  """)
+extend schema @assertAbsent(relation: "graphitron_occurrence_column", rows: """
+  coordinate
+  NoInterface.id
+  """)
