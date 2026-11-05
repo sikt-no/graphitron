@@ -27,13 +27,12 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * {@link LiftEmitter} over the lifts a captured schema states: each root lift renders a method
- * that compiles against the test catalog, taking the records the call handed back and answering
- * the lifted rows, a list for a list and one row for one; a composite key compiles as one; a lift
- * under an object is not a root's to render.
+ * {@link LiftEmitter} over the lifts a captured schema states: each lift renders a method that
+ * compiles against the test catalog, taking the records the call handed back and answering the
+ * lifted rows: a list for a list and one row for one at a root, a list for one record per parent
+ * and a list of lists for a list per parent under an object; a composite key compiles as one.
  *
  * <p>The projection unit and the selection scaffold the methods call are stubs here, standing in for
  * the generated ones, so what compiles is the lift itself: its derived source table with its
@@ -50,6 +49,8 @@ class LiftEmitterPipelineTest {
           title: String
           languageByService: Language
             @service(service: {className: "%1$sFilmService", method: "languageByService"})
+          castMembers: [FilmActor!]!
+            @service(service: {className: "%1$sFilmService", method: "castMembersByFilm"})
         }
         type Language @table(name: "language") { name: String }
         type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
@@ -82,7 +83,8 @@ class LiftEmitterPipelineTest {
         var selection = ClassName.get(PACKAGE, "SelectionOccurrences");
         var host = TypeSpec.classBuilder("Lifts").addModifiers(Modifier.PUBLIC);
         var units = new java.util.HashMap<String, TypeSpec>();
-        for (var coordinate : List.of("Query.filmsByIds", "Query.filmById", "Query.filmActorsByIds")) {
+        for (var coordinate : List.of("Query.filmsByIds", "Query.filmById", "Query.filmActorsByIds",
+                "Film.languageByService", "Film.castMembers")) {
             var row = rows.get(coordinate);
             assertThat(row).as(coordinate).isNotNull();
             var source = ClassName.get(PACKAGE, row.targetType() + "Source");
@@ -94,6 +96,7 @@ class LiftEmitterPipelineTest {
         units.put(PACKAGE + ".SelectionOccurrences", selectionStub());
         units.put(PACKAGE + ".Film", projectionStub("Film"));
         units.put(PACKAGE + ".FilmActor", projectionStub("FilmActor"));
+        units.put(PACKAGE + ".Language", projectionStub("Language"));
         try (var harness = EmittedCodeHarness.compile(units)) {
             var methods = Arrays.stream(harness.load(PACKAGE + ".Lifts").getDeclaredMethods())
                 .collect(Collectors.toMap(Method::getName, Function.identity()));
@@ -105,18 +108,14 @@ class LiftEmitterPipelineTest {
             assertThat(methods.get("liftQueryfilmById").getParameterTypes()[2])
                 .isEqualTo(org.jooq.Record.class);
             assertThat(harness.load(PACKAGE + ".FilmActorSource").getField("ACTOR_ID")).isNotNull();
+            assertThat(methods.get("liftFilmlanguageByService").getReturnType())
+                .as("one record per parent lifts as a list, a parent's position its record's")
+                .isEqualTo(List.class);
+            assertThat(methods.get("liftFilmcastMembers").getGenericReturnType().getTypeName())
+                .as("a list per parent lifts as a list of lists")
+                .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
             assertThat(methods.get("liftQueryfilmActorsByIds").getReturnType()).isEqualTo(List.class);
         }
-    }
-
-    @Test
-    void aLiftUnderAnObjectIsNotARootsToRender() {
-        var row = rows.get("Film.languageByService");
-        assertThat(row).isNotNull();
-        assertThatThrownBy(() -> LiftEmitter.lift(row, "lift", ClassName.get(PACKAGE, "LanguageSource"),
-                ClassName.get(PACKAGE, "Language"), ClassName.get(PACKAGE, "SelectionOccurrences")))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Film.languageByService");
     }
 
     /** {@code SelectionOccurrences.ownFields(selectionSet)}: what the projection is handed. */

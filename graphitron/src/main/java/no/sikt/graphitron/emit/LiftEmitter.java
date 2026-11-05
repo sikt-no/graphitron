@@ -19,8 +19,9 @@ import java.util.List;
  * for the records its call handed back, one for each, in the order it handed them back.
  *
  * <p>Two units. A lifted table's derived source table, {@link #sourceTable}, is a class of its own
- * in jOOQ's style: the {@code idx} field and one field per key column as constants, and
- * {@code of(records)}, the {@code VALUES (idx, key...)} table of the records' positions and keys.
+ * in jOOQ's style: the {@code idx} and {@code parent} fields and one field per key column as
+ * constants, and {@code of(records)} and {@code perParent(records)}, the
+ * {@code VALUES (idx, parent, key...)} table of the records' positions, their parents' and their keys.
  * A lift, {@link #lift}, selects off it: the lifted table left-joins onto it by key, and the rows
  * come back ordered by position, so the payload stands in the call's order whatever order the
  * database reads in, and a record that is null, or whose row is gone, lifts a null in its slot.
@@ -56,6 +57,8 @@ public final class LiftEmitter {
     /** The derived table's alias, and the label of its position column. */
     private static final String ALIAS = "source";
     private static final String IDX = "idx";
+    /** The label of the derived table's parent column: the position of the parent a record is for. */
+    private static final String PARENT = "parent";
     /** The label the lifted table's first key column is read back under, null where no row joined. */
     private static final String FOUND_LABEL = "__found";
     private static final String TARGET = "target";
@@ -82,28 +85,37 @@ public final class LiftEmitter {
                     "IDX", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$T.field($T.name($S, $S), $T.class)", DSL, DSL, ALIAS, IDX, Integer.class)
                 .build())
+            .addField(FieldSpec.builder(ParameterizedTypeName.get(FIELD, ClassName.get(Integer.class)),
+                    "PARENT", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.field($T.name($S, $S), $T.class)", DSL, DSL, ALIAS, PARENT, Integer.class)
+                .build())
             .addField(FieldSpec.builder(String.class, "FOUND", Modifier.PUBLIC, Modifier.STATIC,
                     Modifier.FINAL)
                 .initializer("$S", FOUND_LABEL)
                 .build())
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
-        var cells = CodeBlock.builder().add("$T.val(i)", DSL);
-        var labels = CodeBlock.builder().add("$S, $S", ALIAS, IDX);
+        var cells = CodeBlock.builder().add("$T.val(i), $T.val(i)", DSL, DSL);
+        var parentCells = CodeBlock.builder().add("$T.val(rows.size()), $T.val(p)", DSL, DSL);
+        var labels = CodeBlock.builder().add("$S, $S, $S", ALIAS, IDX, PARENT);
         for (int i = 0; i < key.size(); i++) {
             var column = key.get(i);
-            type.addField(FieldSpec.builder(ParameterizedTypeName.get(FIELD, cellTypes[i + 1]),
+            type.addField(FieldSpec.builder(ParameterizedTypeName.get(FIELD, cellTypes[i + 2]),
                     column.javaName(), Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$T.field($T.name($S, $S), $L.$L.getDataType())", DSL, DSL, ALIAS,
                     column.sqlName(), constants, column.javaName())
                 .build());
             cells.add(", $T.val(r == null ? null : r.get($L.$L), $L.$L.getDataType())", DSL,
                 constants, column.javaName(), constants, column.javaName());
+            parentCells.add(", $T.val(r == null ? null : r.get($L.$L), $L.$L.getDataType())", DSL,
+                constants, column.javaName(), constants, column.javaName());
             labels.add(", $S", column.sqlName());
         }
+        var suppress = AnnotationSpec.builder(SuppressWarnings.class)
+            .addMember("value", "{$S, $S}", "unchecked", "rawtypes").build();
         type.addMethod(MethodSpec.methodBuilder("of")
+            .addJavadoc("One row per record, its position its own and its parent's.\n")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
-                .addMember("value", "{$S, $S}", "unchecked", "rawtypes").build())
+            .addAnnotation(suppress)
             .returns(ParameterizedTypeName.get(TABLE, recordType))
             .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "records")
             .addStatement("$T[] rows = new $T[records.size()]", rowClass, rowClass)
@@ -113,12 +125,32 @@ public final class LiftEmitter {
             .endControlFlow()
             .addStatement("return $T.values(rows).as($L)", DSL, labels.build())
             .build());
+        var perParent = ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(
+            ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD))));
+        type.addMethod(MethodSpec.methodBuilder("perParent")
+            .addJavadoc("One row per record of every parent, in order: its position, and its parent's.\n")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addAnnotation(suppress)
+            .returns(ParameterizedTypeName.get(TABLE, recordType))
+            .addParameter(perParent, "records")
+            .addStatement("$T<$T> rows = new $T<>()", LIST, rowClass, ClassName.get("java.util", "ArrayList"))
+            .beginControlFlow("for (int p = 0; p < records.size(); p++)")
+            .addStatement("if (records.get(p) == null) continue")
+            .beginControlFlow("for ($T r : records.get(p))", RECORD)
+            .addStatement("rows.add($T.row($L))", DSL, parentCells.build())
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return $T.values(rows.toArray(new $T[0])).as($L)", DSL, rowClass, labels.build())
+            .build());
         return type.build();
     }
 
     /**
-     * The lift for {@code row}, a root producer's: the lifted rows as a list, one per record handed
-     * back, or the one lifted row.
+     * The lift for {@code row}. At a root, the lifted rows as a list, one per record handed back,
+     * or the one lifted row. Under an object, where a call answers for a batch of parents, one record
+     * per parent lifts as a list, a parent's position being its record's, and a list per parent lifts
+     * as a list of lists, each record keeping its slot in its parent's and a parent with no list
+     * keeping none.
      *
      * @param methodName           the method's generated name
      * @param source               the class {@link #sourceTable} rendered for the row's table
@@ -129,47 +161,75 @@ public final class LiftEmitter {
      */
     public static MethodSpec lift(LiftQuery.Row row, String methodName, ClassName source,
                                   ClassName projection, ClassName selectionOccurrences) {
-        if (!row.root()) {
-            throw new IllegalArgumentException(row.coordinate()
-                + " lifts under an object, whose rows scatter per parent; this renders a root's");
-        }
         requireKey(row.table(), row.key());
         var table = row.table();
-        var constants = constants(table);
         var project = CodeBlock.of("$T.$$project($T.ownFields(env.getSelectionSet()), $L, env)",
             projection, selectionOccurrences, TARGET);
-        var firstKey = row.key().getFirst().javaName();
         var on = new ArrayList<CodeBlock>();
         for (var column : row.key()) {
             on.add(CodeBlock.of("$L.$L.eq($T.$L)", TARGET, column.javaName(), source, column.javaName()));
         }
+        var found = CodeBlock.of(".select($L.$L.as($T.FOUND))", TARGET, row.key().getFirst().javaName(),
+            source);
+        var joined = CodeBlock.of(".leftJoin($L).on($L)", TARGET, chained(on));
         var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .addParameter(ENV, "env")
             .addParameter(DSL_CONTEXT, "dsl");
+        var listOfRecords = ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD));
+        var targetDecl = CodeBlock.of("$T $L = $L.as($S);\n", ClassName.bestGuess(table.tableClassName()),
+            TARGET, constants(table), TARGET);
+
+        if (row.list() && !row.root()) {
+            var arrayList = ClassName.get("java.util", "ArrayList");
+            var perParentType = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD));
+            return builder
+                .returns(perParentType)
+                .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(listOfRecords)), "lifted")
+                .addStatement("$T result = new $T<>(lifted.size())", perParentType, arrayList)
+                .addStatement("boolean any = false")
+                .beginControlFlow("for ($T records : lifted)", listOfRecords)
+                .addStatement("result.add(records == null ? null : new $T<>())", arrayList)
+                .addStatement("any |= records != null && !records.isEmpty()")
+                .endControlFlow()
+                .addStatement("if (!any) return result")
+                .addCode(targetDecl)
+                .addCode(CodeBlock.builder()
+                    .add("dsl.select($L)\n", project)
+                    .indent()
+                    .add("$L\n", found)
+                    .add(".select($T.PARENT)\n", source)
+                    .add(".from($T.perParent(lifted))\n", source)
+                    .add("$L\n", joined)
+                    .add(".orderBy($T.IDX)\n", source)
+                    .add(".fetch()\n")
+                    .add(".forEach(r -> result.get(r.get($T.PARENT)).add(r.get($T.FOUND) == null ? null : r));\n",
+                        source, source)
+                    .unindent()
+                    .build())
+                .addStatement("return result")
+                .build();
+        }
+
         var select = CodeBlock.builder()
             .add("return dsl.select($L)\n", project)
             .indent()
-            .add(".select($L.$L.as($T.FOUND))\n", TARGET, firstKey, source)
-            .add(".from($T.of($L))\n", source,
-                row.list() ? CodeBlock.of("lifted") : CodeBlock.of("$T.of(lifted)", LIST))
-            .add(".leftJoin($L).on($L)\n", TARGET, chained(on))
-            .add(".orderBy($T.IDX)\n", source);
-        if (row.list()) {
+            .add("$L\n", found);
+        if (row.list() || !row.root()) {
             builder.returns(ParameterizedTypeName.get(LIST, RECORD))
-                .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "lifted")
+                .addParameter(listOfRecords, "lifted")
                 .addStatement("if (lifted.isEmpty()) return $T.of()", LIST);
-            select.add(".fetch(r -> r.get($T.FOUND) == null ? null : r);\n", source);
+            select.add(".from($T.of(lifted))\n", source);
         } else {
             builder.returns(RECORD).addParameter(RECORD, "lifted")
                 .addStatement("if (lifted == null) return null");
-            select.add(".fetchOptional(r -> r.get($T.FOUND) == null ? null : r).orElse(null);\n", source);
+            select.add(".from($T.of($T.of(lifted)))\n", source, LIST);
         }
-        var tableClass = ClassName.bestGuess(table.tableClassName());
-        return builder
-            .addStatement("$T $L = $L.as($S)", tableClass, TARGET, constants, TARGET)
-            .addCode(select.unindent().build())
-            .build();
+        select.add("$L\n", joined).add(".orderBy($T.IDX)\n", source);
+        select.add(row.list() || !row.root()
+            ? CodeBlock.of(".fetch(r -> r.get($T.FOUND) == null ? null : r);\n", source)
+            : CodeBlock.of(".fetchOptional(r -> r.get($T.FOUND) == null ? null : r).orElse(null);\n", source));
+        return builder.addCode(targetDecl).addCode(select.unindent().build()).build();
     }
 
     private static void requireKey(LiftQuery.Table table, List<LiftQuery.KeyColumn> key) {
@@ -184,12 +244,13 @@ public final class LiftEmitter {
             table.javaFieldName());
     }
 
-    /** The derived table's cell types: the position, then each key column's bound type. */
+    /** The derived table's cell types: the position, the parent's, then each key column's bound type. */
     private static TypeName[] cellTypes(List<LiftQuery.KeyColumn> key) {
-        TypeName[] types = new TypeName[key.size() + 1];
+        TypeName[] types = new TypeName[key.size() + 2];
         types[0] = ClassName.get(Integer.class);
+        types[1] = ClassName.get(Integer.class);
         for (int i = 0; i < key.size(); i++) {
-            types[i + 1] = ClassName.bestGuess(key.get(i).bindingType());
+            types[i + 2] = ClassName.bestGuess(key.get(i).bindingType());
         }
         return types;
     }

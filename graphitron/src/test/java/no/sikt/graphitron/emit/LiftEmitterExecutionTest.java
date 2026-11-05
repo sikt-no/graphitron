@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.test.db.TestDatabase;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -37,7 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The emitted lift run against PostgreSQL: the lifted rows stand in the order the call handed its
  * records back, whatever order the database reads in, one per record, and a record that is null or
  * whose row is gone lifts a null in its own slot. A composite key lifts the same way, and one record
- * lifts its row or a null.
+ * lifts its row or a null. Under an object, one record per parent lifts one row per parent, and a
+ * list per parent scatters back to its parent in the call's order, a parent with no list keeping
+ * none.
  */
 @ExecutionTier
 class LiftEmitterExecutionTest {
@@ -46,7 +49,14 @@ class LiftEmitterExecutionTest {
     private static final String PACKAGE = "liftrun";
 
     private static final String SDL = """
-        type Film @table(name: "film") { title: String }
+        type Film @table(name: "film") {
+          title: String
+          languageByService: Language
+            @service(service: {className: "%1$sFilmService", method: "languageByService"})
+          castMembers: [FilmActor!]!
+            @service(service: {className: "%1$sFilmService", method: "castMembersByFilm"})
+        }
+        type Language @table(name: "language") { name: String }
         type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
         type Query {
           filmsByIds(ids: [Int!]!): [Film!]!
@@ -79,7 +89,7 @@ class LiftEmitterExecutionTest {
             units.putIfAbsent(source.canonicalName(), LiftEmitter.sourceTable(source, row.table(), row.key()));
             units.putIfAbsent(PACKAGE + "." + row.targetType(),
                 LiftEmitterPipelineTest.projectionStub(row.targetType()));
-            host.addMethod(LiftEmitter.lift(row, row.coordinate().replace("Query.", ""), source,
+            host.addMethod(LiftEmitter.lift(row, row.coordinate().replace("Query.", "").replace(".", ""), source,
                 ClassName.get(PACKAGE, row.targetType()), selection));
         }
         units.put(PACKAGE + ".Lifts", host.build());
@@ -145,6 +155,52 @@ class LiftEmitterExecutionTest {
             .containsExactly(seeded.get(1).getFilmId(), seeded.get(0).getFilmId());
         assertThat(lifted).extracting(r -> r.get(Tables.FILM_ACTOR.ACTOR_ID.getName()))
             .containsExactly(seeded.get(1).getActorId(), seeded.get(0).getActorId());
+    }
+
+    @Test
+    void oneRecordPerParentLiftsOneRowPerParent() throws Exception {
+        var records = new java.util.ArrayList<LanguageRecord>();
+        records.add(language(2));
+        records.add(null);
+        records.add(language(1));
+        var lifted = liftList("FilmlanguageByService", records);
+        assertThat(lifted).hasSize(3);
+        assertThat(lifted.get(0).get(Tables.LANGUAGE.LANGUAGE_ID.getName())).isEqualTo(2);
+        assertThat(lifted.get(1)).isNull();
+        assertThat(lifted.get(2).get(Tables.LANGUAGE.LANGUAGE_ID.getName())).isEqualTo(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aListPerParentScattersBackToItsParentsInTheCallsOrder() throws Exception {
+        var seeded = dsl().selectFrom(Tables.FILM_ACTOR)
+            .orderBy(Tables.FILM_ACTOR.ACTOR_ID, Tables.FILM_ACTOR.FILM_ID).limit(3).fetch();
+        assertThat(seeded).hasSize(3);
+        var missing = new FilmActorRecord();
+        missing.set(Tables.FILM_ACTOR.ACTOR_ID, 999999);
+        missing.set(Tables.FILM_ACTOR.FILM_ID, 999999);
+        var perParent = new java.util.ArrayList<List<FilmActorRecord>>();
+        perParent.add(List.of(seeded.get(1), seeded.get(0)));
+        perParent.add(null);
+        perParent.add(List.of());
+        perParent.add(java.util.Arrays.asList(seeded.get(2), null, missing));
+        var lifted = (List<List<Record>>) lifts.get("FilmcastMembers").invoke(null, ENV, dsl(), perParent);
+        assertThat(lifted).hasSize(4);
+        assertThat(lifted.get(0)).extracting(r -> r.get(Tables.FILM_ACTOR.ACTOR_ID.getName()))
+            .containsExactly(seeded.get(1).getActorId(), seeded.get(0).getActorId());
+        assertThat(lifted.get(1)).isNull();
+        assertThat(lifted.get(2)).isEmpty();
+        assertThat(lifted.get(3)).hasSize(3);
+        assertThat(lifted.get(3).get(0).get(Tables.FILM_ACTOR.FILM_ID.getName()))
+            .isEqualTo(seeded.get(2).getFilmId());
+        assertThat(lifted.get(3).get(1)).isNull();
+        assertThat(lifted.get(3).get(2)).isNull();
+    }
+
+    private static LanguageRecord language(int id) {
+        var r = new LanguageRecord();
+        r.set(Tables.LANGUAGE.LANGUAGE_ID, id);
+        return r;
     }
 
     @Test
