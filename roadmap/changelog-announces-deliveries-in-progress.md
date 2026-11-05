@@ -117,3 +117,19 @@ Not a gate verdict. Read against trunk `e39ed9e60`. The retarget is the better d
    *Response:* Accepted: each response now sits beneath its finding.
 
 Sound: the retarget itself, `changelog.md` staying Done-only, the revive gap filed separately with no dependency, the cut-over that leaves history unrewritten, and listing every `!` in release notes whatever its type.
+
+### Round 3: Backlog, pushback before Spec (session_01WkW2JFGZ8sg6MFqgv3yaP3, 2026-11-05)
+
+Not a gate verdict. Read against trunk `90eb4d31f`. The narrowed goal is right: a convention that lands now and tooling that reads it later, each judged on its own. Round 2's findings are answered, each response beneath its finding. One substantive finding remains; the rest are small and could be settled in the Backlog -> Spec revision.
+
+1. **Nothing in the plan holds the shape at push.** The Out of scope section defers a build gate because "the publish skill's check holds the shape at every push", but the plan only widens that check's `wip`/`draft`/`spike` match; no step checks that a subject is `<type>(<scope>)[!]: <description>`. And the check reads only `git log -1 --pretty=%s`, so a `wip(R876)` commit beneath a conforming tip, or any non-conforming commit that is not the tip, still ships. Either the publish skill checks every subject in `origin/claude/graphitron-rewrite..HEAD` for both the shape and the not-for-trunk types (the "Who" rule then has a place where it is enforced), or the Out of scope sentence drops the claim and says the convention is unenforced until the follow-up gate.
+
+2. **`classified-corpus` prescribes a subject.** Its step 8 tells the author to commit as `corpus: add the <id> example for <verdict>`, which the convention makes non-conforming. Add it to the edit sites (`test(corpus): ...` or `docs(corpus): ...`, whichever the plan means by an area scope).
+
+3. **The roadmap skill has no commit subjects to edit.** `.claude/skills/roadmap/SKILL.md` names no subject shape today, so "the roadmap skill's commit subjects" is an edit site with nothing at it. Either say what the skill gains (a line stating `chore(R<n>): <from> -> <to>` for a transition) or drop it. For the record, `srp`'s `grep -E '\bR<n>\b'` over subjects keeps working with `chore(R<n>)`, so it needs no edit.
+
+4. **Prefer the hyphenated footer.** Conventional Commits accepts `BREAKING-CHANGE:` as a synonym for `BREAKING CHANGE:`, and only the hyphenated form is a git trailer. With the space it shares a block with `Co-Authored-By:` and `Claude-Session:` that `git interpret-trailers` and `%(trailers)` may then no longer read as trailers. Name `BREAKING-CHANGE:` as the house form.
+
+5. **The slug no longer names the item.** The file is still `changelog-announces-deliveries-in-progress.md` while the item is now the commit subject convention. A slug is filename only, so this is optional, but a rename before Spec costs nothing and keeps a later grep honest.
+
+Sound: the narrowed goal, the type list with roadmap commits as `chore`, the not-for-trunk types matched as types, the Dependabot prefix, the `<type>(R<n>)` placeholder in `CLAUDE.md`, the cut-over without rewriting history, and the out-of-scope split.
