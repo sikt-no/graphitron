@@ -1,7 +1,7 @@
 ---
 id: R1150
 title: "A nesting field named like a column of its parent binds the column, not its nested fields"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: classification-model
@@ -145,3 +145,24 @@ nor `graphitron_occurrence_column` binds an object-typed field, and nothing here
   the store and the walk disagreeing on what `OutboxPayload` holds.
 * fs-plattform itself. How the schema change from `@table` period types to nesting types reaches the
   teams is Alf's call.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, signed off (session 01WkW2JF6J1RqPVCmCmtj636, 2026-11-05)
+
+The goal reads on its own and the cause holds against the tree: `propagateResultChildren` probes
+every bound parent class, a `@table` parent included, and `shouldBind` lets `LocalDateRange` and
+`JSONB` through. The fix narrows an existing walk to the rule the store already states, which is the
+architecture-fit answer. Three notes for the implementer, none of which changes the design:
+
+1. The reader assertion can be pinned now: under a ROW, `graphitron_reader.reads` takes `COLUMN` for
+   the nested column field and `NESTED` for `OutboxMessage.payload` itself, beside `EXPRESSION` for
+   the `@externalField` field.
+2. The store assertions already hold before the fix, since the store gives `OutboxPayload` no backing
+   today; they pin the walk and the store to agree afterwards. The evidence that the bug is fixed is
+   the scenario generating, so the "fails before the fix" run in Tests is the step not to skip.
+3. A behaviour change worth one line in the commit message: a column whose Java type is a composite
+   (UDT) record, exposed as an object type whose fields are the UDT's attributes, is bound through
+   the record getter today and becomes a nesting type afterwards, its fields then looked up as columns
+   of the parent. No fixture or reported schema uses that shape and the store already reads it the new
+   way, so it does not block; if someone reports it, it is its own item.
