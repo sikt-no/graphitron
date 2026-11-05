@@ -1,7 +1,7 @@
 ---
 id: R1151
 title: "Require an unmount on SessionState so identity never rests on a pooled connection"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: runtime-connection
