@@ -46,10 +46,24 @@ import java.util.List;
  *       <b>Mutation operations</b> are refused unless the engine's mutation strategy is
  *       graphql-java's serial one ({@code AsyncSerialExecutionStrategy} or a subclass), since each
  *       top-level field settles when the next one starts.</li>
- *   <li>On completion (success, error, cancellation) settle the last mutation field, then release
- *       every pinned connection ({@code releaseAll()}: unmount, then return-or-evict), in that
- *       order, in the one callback of the context this method returns. Release is idempotent.</li>
+ *   <li>On completion of the operation, settle the last mutation field, in the callback of the
+ *       context this method returns: whether it commits depends on the strategy's own outcome,
+ *       which only that context sees.</li>
  * </ol>
+ *
+ * <h2>Release on every completion path ({@code beginExecution})</h2>
+ * Every pinned connection is released ({@code releaseAll()}: unmount, then return-or-evict) in the
+ * callback of the context {@code beginExecution} returns, the one release site. graphql-java
+ * completes that context however the request ends, while it leaves the operation context
+ * uncompleted when a query is cancelled through {@code ExecutionInput.cancel()} or an exception
+ * escapes {@code AsyncExecutionStrategy}'s synchronous dispatch of a root field. Settle still runs
+ * first wherever the operation context completes: in graphql-java 25, {@code Execution} completes
+ * the operation context in a {@code whenComplete} on the strategy's future, and
+ * {@code GraphQL.executeAsync} completes the execution context in a {@code whenComplete} on a
+ * future derived from that one. Where the operation context never completes, settle does not run;
+ * queries open no transaction, the serial mutation strategy completes the operation context on
+ * these paths too, and release rolls back any transaction still open before it unmounts. Release
+ * is idempotent.
  *
  * <h2>One transaction per top-level mutation field</h2>
  * {@code beginFieldExecution} settles the previous top-level mutation field and begins the next on
@@ -59,8 +73,9 @@ import java.util.List;
  * connection. Settling here rather than in the previous field's own
  * {@code beginFieldExecution} completion matters: graphql-java completes that context before the
  * field's sub-selections are done. The last field settles in the operation callback, ahead of
- * release by construction; the strategy's own completion is a sibling callback on the same
- * future, which {@code CompletableFuture} may run after release. A field fails, and rolls back,
+ * release in {@code beginExecution}'s callback by graphql-java's future chain; the strategy's own
+ * completion is a sibling callback on the same future, which {@code CompletableFuture} may run
+ * after release. A field fails, and rolls back,
  * when an error lies under its path or {@code ErrorRouter} marked it (an exception redacted,
  * surfaced or claimed into an {@code @error} payload). Under {@code ROLLBACK_ONLY} (the
  * dev-execution mode) each field's scope is a savepoint in one operation transaction that release
@@ -187,8 +202,9 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .returns(INSTRUMENTATION_STATE)
             .addParameter(CREATE_STATE_PARAMS, "parameters")
             .addStatement("return new $T()", state)
-            .addJavadoc("Per-request state carrier holding the connection carrier for\n"
-                + "{@link #beginExecuteOperation} to release at completion.\n")
+            .addJavadoc("Per-request state carrier holding the connection carrier\n"
+                + "{@link #beginExecuteOperation} publishes, for {@link #beginExecution} to release at\n"
+                + "completion.\n")
             .build();
 
         var resultContext = ParameterizedTypeName.get(INSTRUMENTATION_CONTEXT, EXECUTION_RESULT);
@@ -298,21 +314,41 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("state.carrier = carrier")
             .addStatement("graphQLContext.put($T.class, carrier)", tenantConnections)
             .addCode("\n")
-            .addComment("On every completion path (success, error, cancellation): settle the last mutation")
-            .addComment("field, then release every pinned connection, in that order, in this one callback.")
-            .addComment("The strategy's own completion runs from a sibling callback on the same future, which")
-            .addComment("CompletableFuture may run after this one, so it cannot order the two. releaseAll() is")
-            .addComment("idempotent and one entry's unmount failure never orphans another's connection.")
+            .addComment("When the operation completes, settle the last mutation field: whether it commits")
+            .addComment("depends on how the strategy ended (throwable), which only this context sees. Release")
+            .addComment("is not here: graphql-java leaves this context uncompleted when a query is cancelled or")
+            .addComment("an exception escapes the strategy's synchronous dispatch, so it lives in")
+            .addComment("beginExecution, whose context completes on every path, after this one.")
+            .addStatement("return $T.whenCompleted((result, throwable) -> settle(state, throwable != null))",
+                SIMPLE_INSTRUMENTATION_CONTEXT)
+            .addJavadoc("Publishes the per-operation connection carrier for the owned-connection path and\n"
+                + "settles the last top-level mutation field when the operation completes; acquisition is\n"
+                + "lazy and per key, with single-tenant as the one-key case. Release is\n"
+                + "{@link #beginExecution}'s. See the class javadoc for the full sequence.\n")
+            .build();
+
+        var beginExecution = MethodSpec.methodBuilder("beginExecution")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(resultContext)
+            .addParameter(EXECUTION_PARAMS, "parameters")
+            .addParameter(INSTRUMENTATION_STATE, "rawState")
+            .addStatement("$T state = ($T) rawState", state, state)
+            .addComment("The one release site. graphql-java completes this context on every way a request")
+            .addComment("ends, a cancelled query and an exception escaping synchronous dispatch included, and")
+            .addComment("on every path that completes the operation context it does so after it, by future")
+            .addComment("composition in GraphQL.executeAsync, so settle comes first. The carrier is absent when")
+            .addComment("the operation never started. releaseAll() is idempotent, and one entry's unmount")
+            .addComment("failure never orphans another's connection.")
             .addCode("return $T.whenCompleted((result, throwable) -> {\n", SIMPLE_INSTRUMENTATION_CONTEXT)
-            .addCode("    try {\n")
-            .addCode("        settle(state, throwable != null);\n")
-            .addCode("    } finally {\n")
+            .addCode("    if (state != null && state.carrier != null) {\n")
             .addCode("        state.carrier.releaseAll();\n")
             .addCode("    }\n")
             .addCode("});\n")
-            .addJavadoc("Publishes the per-operation connection carrier for the owned-connection path and\n"
-                + "releases every pinned connection at completion; acquisition is lazy and per key, with\n"
-                + "single-tenant as the one-key case. See the class javadoc for the full sequence.\n")
+            .addJavadoc("Releases every pinned connection ({@code releaseAll()}: unmount, then\n"
+                + "return-or-evict) when the request completes, however it completes. Runs after the\n"
+                + "operation context settled the last mutation field: graphql-java attaches this context to a\n"
+                + "future derived from the operation's.\n")
             .build();
 
         var failedField = state.nestedClass("FailedField");
@@ -515,6 +551,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addMethod(primaryConstructor)
             .addMethod(policyConstructor)
             .addMethod(createState)
+            .addMethod(beginExecution)
             .addMethod(beginExecuteOperation)
             .addMethod(beginFieldExecution)
             .addMethod(beginFieldFetching)

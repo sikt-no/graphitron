@@ -62,7 +62,8 @@ runs your mount callback on it to mount identity, executes (each top-level
 mutation field, payload included, in its own transaction that commits or rolls
 back independently, see <<owned-path-transactions>>; queries in autocommit),
 then runs your unmount callback and releases the
-connection. A connection whose unmount failed is evicted, never returned to the
+connection on every completion path, including a query cancelled through
+`ExecutionInput.cancel()` or abandoned by an exception during dispatch. A connection whose unmount failed is evicted, never returned to the
 pool.
 
 === Session identity through `<sessionState>`

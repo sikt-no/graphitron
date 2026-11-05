@@ -694,6 +694,56 @@ class TenantScatterSubstrateTest {
         releaseAll(tc);
     }
 
+    // --- release on a synchronous abort, driven through the engine, connections on two keys ----
+
+    /** Runs a query whose fields {@code a} and {@code b} pin tenants A and B, aborting at {@code c}. */
+    private java.util.concurrent.CompletableFuture<graphql.ExecutionResult> queryAbortingAtThirdField(
+            SynchronousAbortDriver.Abort abort) throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
+        Method dslFor = tenantConnectionsClass.getMethod("dslFor", String.class);
+        Map<String, String> keyOf = Map.of("a", "A", "b", "B");
+        var fields = List.of("a", "b", "c");
+        var engine = SynchronousAbortDriver.engine(runtime, fields, tenantConnectionsClass,
+            field -> carrier -> {
+                if (keyOf.containsKey(field)) {
+                    dslFor.invoke(carrier, keyOf.get(field));
+                }
+            },
+            new SynchronousAbortDriver.AbortAt("c", abort));
+        Map<Object, Object> context = new java.util.HashMap<>();
+        context.put(no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY,
+            RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
+        context.put(tenantConnectionsClass.getField(ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD).get(null),
+            requestTenantsOf(runtime));
+        return SynchronousAbortDriver.execute(engine, "query", fields, context);
+    }
+
+    private void assertBothTenantsUnmountedAndReturned() {
+        assertThat(events).contains("disconnect:A", "close:A", "disconnect:B", "close:B");
+        assertThat(events.indexOf("disconnect:A")).isLessThan(events.indexOf("close:A"));
+        assertThat(events.indexOf("disconnect:B")).isLessThan(events.indexOf("close:B"));
+        assertThat(events).noneMatch(e -> e.startsWith("abort:"));
+    }
+
+    @Test
+    void engine_query_cancelledBeforeALaterRootFieldDispatches_releasesEveryTenantsConnection() throws Throwable {
+        graphql.ExecutionResult result = queryAbortingAtThirdField(SynchronousAbortDriver.Abort.CANCEL).get();
+
+        assertThat(result.getErrors()).singleElement()
+            .isInstanceOf(graphql.execution.AbortExecutionException.class);
+        assertBothTenantsUnmountedAndReturned();
+    }
+
+    @Test
+    void engine_query_exceptionDuringDispatchOfALaterRootField_releasesEveryTenantsConnection() throws Throwable {
+        var future = queryAbortingAtThirdField(SynchronousAbortDriver.Abort.THROW);
+
+        assertThatThrownBy(future::get)
+            .isInstanceOf(java.util.concurrent.ExecutionException.class)
+            .hasCauseInstanceOf(SynchronousAbortDriver.InjectedFailure.class);
+        assertBothTenantsUnmountedAndReturned();
+    }
+
     private Map<String, DataSource> sources(String... labels) {
         var sources = new LinkedHashMap<String, DataSource>();
         for (String label : labels) {
@@ -708,14 +758,22 @@ class TenantScatterSubstrateTest {
             .newInstance(defaultDs, new LinkedHashMap<>(tenantSources), SQLDialect.POSTGRES, cap, timeout);
     }
 
-    private Object newTenantConnections(Object runtime) throws Throwable {
-        // The request tenant set admits every hosted tenant: these proofs are about concurrency,
-        // and authorization has its own harness test.
+    /**
+     * A request tenant set admitting every hosted tenant: these proofs are about concurrency and
+     * release, and authorization has its own harness test.
+     */
+    private static Object requestTenantsOf(Object runtime) throws Throwable {
         Object hosted = runtimeClass.getMethod("tenantKeys").invoke(runtime);
-        Class<?> requestTenantsClass = harness.load(
-            SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
-        Object requestTenants = requestTenantsClass.getMethod("of", java.util.Collection.class)
-            .invoke(null, hosted);
+        return requestTenantsClass().getMethod("of", java.util.Collection.class).invoke(null, hosted);
+    }
+
+    private static Class<?> requestTenantsClass() {
+        return harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
+    }
+
+    private Object newTenantConnections(Object runtime) throws Throwable {
+        Class<?> requestTenantsClass = requestTenantsClass();
+        Object requestTenants = requestTenantsOf(runtime);
         Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
         return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
             .newInstance(runtime, commitPolicyCommit, requestTenants,

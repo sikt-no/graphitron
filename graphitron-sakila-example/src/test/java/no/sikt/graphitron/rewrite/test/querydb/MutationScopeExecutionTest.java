@@ -536,8 +536,9 @@ class MutationScopeExecutionTest {
     void theLastFieldsCommit_comesBeforeItsConnectionIsReleased_whateverThreadCompletesTheOperation() {
         // The payload's batched sub-field completes the root future off the dispatch thread, the
         // case where a release racing the last field's settle would roll the write back. The order
-        // is by construction (the operation callback settles, then releases), so it is pinned
-        // directly: the recording wrapper sees the commit before the close, every time.
+        // rests on graphql-java's future chain (the operation context settles, the execution
+        // context completed after it releases), so it is pinned directly: the recording wrapper
+        // sees the commit before the close, every time.
         for (int i = 0; i < 5; i++) {
             String title = "MUTATION-SCOPE-" + UUID.randomUUID();
             filmTitles.add(title);

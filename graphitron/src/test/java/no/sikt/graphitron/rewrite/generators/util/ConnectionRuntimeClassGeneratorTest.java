@@ -6,6 +6,7 @@ import com.palantir.javapoet.ParameterSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
+import graphql.ExecutionResult;
 import no.sikt.graphitron.emit.SessionIdentityRows;
 import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
@@ -24,10 +25,13 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -503,6 +507,101 @@ class ConnectionRuntimeClassGeneratorTest {
         return method.parameters().stream().map(p -> p.type().toString()).toList();
     }
 
+    // --- release on every way a request ends, driven through the engine ------------------------
+
+    private static final List<String> ROOT_FIELDS = List.of("a", "b");
+
+    /** One connection's whole life: pinned, mounted, unmounted, returned to the pool. */
+    private static final List<String> PIN_AND_RELEASE = List.of(
+        "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+
+    private CompletableFuture<ExecutionResult> executeOverEngine(String operation, SynchronousAbortDriver.Abort abort)
+            throws Throwable {
+        Class<?> carrierClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        Method dslDefault = carrierClass.getMethod("dslDefault");
+        var engine = SynchronousAbortDriver.engine(runtimeOverFakeSource(), ROOT_FIELDS, carrierClass,
+            field -> dslDefault::invoke, new SynchronousAbortDriver.AbortAt("b", abort));
+        Map<Object, Object> context = new HashMap<>();
+        context.put(SessionIdentityRows.CONTEXT_KEY, RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
+        return SynchronousAbortDriver.execute(engine, operation, ROOT_FIELDS, context);
+    }
+
+    /** The pin, mount, unmount and return alone, without the mode switches a transaction adds. */
+    private static final List<String> PINNED_MOUNTED_RELEASED = List.of(
+        "getConnection", "connect->H1", "disconnect:H1", "close");
+
+    private List<String> lifecycleEvents() {
+        return events.stream()
+            .filter(e -> !e.startsWith("setAutoCommit:") && !e.equals("commit") && !e.equals("rollback"))
+            .toList();
+    }
+
+    /** Field {@code a} committed when {@code b} began, before its connection was unmounted. */
+    private void assertFirstFieldCommittedBeforeRelease() {
+        assertThat(events).containsOnlyOnce("commit");
+        assertThat(events.indexOf("commit")).isLessThan(events.indexOf("disconnect:H1"));
+    }
+
+    @Test
+    void engine_query_releasesThePinnedConnectionWhenItCompletes() throws Throwable {
+        ExecutionResult result = executeOverEngine("query", SynchronousAbortDriver.Abort.NONE).get();
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(events).containsExactlyElementsOf(PIN_AND_RELEASE);
+    }
+
+    @Test
+    void engine_mutation_commitsTheLastFieldBeforeItsConnectionIsUnmountedAndClosed() throws Throwable {
+        // Settle runs in the operation context and release in the execution context, so the order
+        // rests on graphql-java completing the execution context after the operation context. Were
+        // that to change, release would roll back a field that succeeded; this pins it.
+        ExecutionResult result = executeOverEngine("mutation", SynchronousAbortDriver.Abort.NONE).get();
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(events).containsSubsequence("commit", "commit", "disconnect:H1", "close");
+        assertThat(events.lastIndexOf("commit")).isLessThan(events.indexOf("disconnect:H1"));
+        assertThat(lifecycleEvents()).containsExactlyElementsOf(PINNED_MOUNTED_RELEASED);
+    }
+
+    @Test
+    void engine_query_cancelledBeforeALaterRootFieldDispatches_stillReleasesTheEarlierFieldsConnection()
+            throws Throwable {
+        ExecutionResult result = executeOverEngine("query", SynchronousAbortDriver.Abort.CANCEL).get();
+
+        assertThat(result.getErrors()).singleElement()
+            .isInstanceOf(graphql.execution.AbortExecutionException.class);
+        assertThat(events).containsExactlyElementsOf(PIN_AND_RELEASE);
+    }
+
+    @Test
+    void engine_query_exceptionDuringDispatchOfALaterRootField_stillReleasesTheEarlierFieldsConnection()
+            throws Throwable {
+        var future = executeOverEngine("query", SynchronousAbortDriver.Abort.THROW);
+
+        assertThatThrownBy(future::get)
+            .isInstanceOf(ExecutionException.class)
+            .hasCauseInstanceOf(SynchronousAbortDriver.InjectedFailure.class);
+        assertThat(events).containsExactlyElementsOf(PIN_AND_RELEASE);
+    }
+
+    @Test
+    void engine_mutation_cancelledBeforeALaterRootFieldDispatches_releasesTheEarlierFieldsConnection()
+            throws Throwable {
+        executeOverEngine("mutation", SynchronousAbortDriver.Abort.CANCEL).handle((r, t) -> null).get();
+
+        assertThat(lifecycleEvents()).containsExactlyElementsOf(PINNED_MOUNTED_RELEASED);
+        assertFirstFieldCommittedBeforeRelease();
+    }
+
+    @Test
+    void engine_mutation_exceptionDuringDispatchOfALaterRootField_releasesTheEarlierFieldsConnection()
+            throws Throwable {
+        executeOverEngine("mutation", SynchronousAbortDriver.Abort.THROW).handle((r, t) -> null).get();
+
+        assertThat(lifecycleEvents()).containsExactlyElementsOf(PINNED_MOUNTED_RELEASED);
+        assertFirstFieldCommittedBeforeRelease();
+    }
+
     // --- driving helpers -----------------------------------------------------------------------
 
     /** Runs acquire, then {@code body}, then release in a finally, capturing the event log. */
@@ -565,6 +664,10 @@ class ConnectionRuntimeClassGeneratorTest {
                 case "getAutoCommit" -> autoCommit[0];
                 case "commit" -> { log.add("commit"); yield null; }
                 case "rollback" -> { log.add("rollback"); yield null; }
+                // The probe a mutation field's settle runs before it commits.
+                case "createStatement" -> Proxy.newProxyInstance(harness.classLoader(),
+                    new Class<?>[]{java.sql.Statement.class},
+                    (statement, m, a) -> objectMethodOrDefault(statement, m, a, "fakeStatement"));
                 default -> objectMethodOrDefault(proxy, method, args, "fakeConnection");
             });
     }
