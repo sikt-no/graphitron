@@ -23,6 +23,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
@@ -57,7 +59,9 @@ import static org.jooq.impl.DSL.val;
  * <p>A source is stated on the occurrence, never as a pointer to another. It is written a depth at a
  * time, as {@link Occurrences} writes the occurrences: depth 0 from the declaring type's table or a
  * root {@code @routine}'s function, and each deeper depth from what this reading stated for the
- * parent at the depth above and what the parent field's producer hands back. Each relation is one
+ * parent at the depth above and what the parent field's producer hands back. A child whose own
+ * service hands back a table's records reads, at any depth, the table its producer's result names,
+ * where its rows come from, and nothing its parent gives. Each relation is one
  * {@code INSERT .. SELECT} per depth over the rows the rules give for that depth, the instant and
  * the depth bound as parameters. After the last depth every relation is swept by its mark.
  *
@@ -180,13 +184,17 @@ public final class OccurrenceSources {
      */
     private static Select<Record> candidates(String graph, LocalDateTime touchedAt, int depth) {
         var o = GRAPHITRON_OCCURRENCE.as("o");
-        Condition at = o.GRAPH_NAME.eq(graph).and(o.TOUCHED_AT.eq(touchedAt))
+        Condition atDepth = o.GRAPH_NAME.eq(graph).and(o.TOUCHED_AT.eq(touchedAt))
             .and(o.DEPTH.eq(val(depth)));
+        // A child whose own service hands back a table's records reads that table and no other.
+        Condition at = atDepth.andNot(ownRecordService(o, touchedAt));
         if (depth == 0) {
-            return declaringTable(o, at).union(rootRoutine(o, at));
+            return declaringTable(o, at).union(rootRoutine(o, at))
+                .union(ownServiceRecord(o, atDepth, touchedAt));
         }
         var p = GRAPHITRON_OCCURRENCE.as("p");
-        return keyRow(o, p, at, touchedAt)
+        return ownServiceRecord(o, atDepth, touchedAt)
+            .union(keyRow(o, p, at, touchedAt))
             .union(record(o, p, at, touchedAt))
             .union(object(o, p, at, touchedAt))
             .union(writePayload(o, p, at, touchedAt))
@@ -213,6 +221,39 @@ public final class OccurrenceSources {
             schema == null ? none("table_schema") : schema.as("table_schema"),
             table == null ? none("table_name") : table.as("table_name"),
             className == null ? none("class_name") : className.as("class_name")));
+    }
+
+    /**
+     * Whether the occurrence {@code o} is a child whose own producer is a service handing back a
+     * table's records, as the producer's result this reading stated names the table.
+     */
+    private static Condition ownRecordService(GraphitronOccurrence o, LocalDateTime touchedAt) {
+        var op = GRAPHITRON_OCCURRENCE_PRODUCER.as("orp");
+        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT.as("orr");
+        return exists(selectOne().from(op)
+            .join(r).on(r.GRAPH_NAME.eq(op.GRAPH_NAME), r.COORDINATE.eq(op.COORDINATE),
+                r.TOUCHED_AT.eq(touchedAt))
+            .where(op.GRAPH_NAME.eq(o.GRAPH_NAME), op.COORDINATE.eq(o.COORDINATE),
+                op.TOUCHED_AT.eq(touchedAt), op.KIND.eq("SERVICE"), op.START.eq("CHILD"),
+                r.TABLE_NAME.isNotNull()));
+    }
+
+    /**
+     * A child whose own service hands back a table's records reads the table its producer's result
+     * names, where its rows come from, whatever its parent reads.
+     */
+    private static Select<Record> ownServiceRecord(GraphitronOccurrence o, Condition at,
+                                                   LocalDateTime touchedAt) {
+        var op = GRAPHITRON_OCCURRENCE_PRODUCER.as("sp");
+        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT.as("sr");
+        return row(o, TABLE, r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA, r.TABLE_NAME, null)
+            .from(o)
+            .join(op).on(op.GRAPH_NAME.eq(o.GRAPH_NAME), op.COORDINATE.eq(o.COORDINATE),
+                op.TOUCHED_AT.eq(touchedAt))
+            .join(r).on(r.GRAPH_NAME.eq(op.GRAPH_NAME), r.COORDINATE.eq(op.COORDINATE),
+                r.TOUCHED_AT.eq(touchedAt))
+            .where(at, o.KIND.eq("FIELD"), op.KIND.eq("SERVICE"), op.START.eq("CHILD"),
+                r.TABLE_NAME.isNotNull());
     }
 
     /** Depth 0: a field of a table-bound type, object or interface, reads that type's table. */

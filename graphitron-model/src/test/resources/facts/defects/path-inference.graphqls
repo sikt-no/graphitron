@@ -4,8 +4,9 @@
 # inferred; where several do it is ROUTE_AMBIGUOUS. Each sits at the field's declaration, naming the
 # two tables, and the keys to choose between.
 #
-# A field whose own @service produces its rows takes no join to them, so it is neither inferred nor a
-# defect.
+# A routine's derived table has no foreign key: a field starting on it reaches its target by the
+# target's primary key, every column of it matched by name among the routine's result columns, and
+# one lacking a primary-key column is NO_ROUTE_TO_TARGET naming the first missing.
 #
 # A claim covers a need at the field itself, a @referenceFor naming the need's type or any other
 # claim there, or at the same-named field of an interface the field's type implements, member by
@@ -21,12 +22,23 @@ type Film @table(name: "film") {
   sameTableById(filmId: Int @field(name: "film_id")): [Film!]!
   # film_language_id_fkey and film_original_language_id_fkey both join film and language.
   language: Language
-  # Its own @service produces its rows, so the two keys raise nothing and nothing is inferred.
-  languageByService: Language
-    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "languageByService"})
 }
 
 type City @table(name: "city") { cityId: Int @field(name: "city_id") }
+type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
+
+# What rent_film returns, a derived table whose one column is rental_id.
+type RentFilmPayload {
+  # rental's primary key, rental_id, is among the result's columns: inferred.
+  rental: Rental
+  # customer's primary key, customer_id, is not: no route.
+  customer: Customer
+}
+
+type Mutation {
+  rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+}
 type Language @table(name: "language") { name: String }
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
 
@@ -77,6 +89,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code IN ('NO_ROUTE_TO_TARGET', 'ROUTE_AMBIGUOUS', 'INHERITED_PATH_AMBIGUOUS')", rows: """
   code,                     coordinate,          detail
   NO_ROUTE_TO_TARGET,       Film.cities,         public.film to public.city
+  NO_ROUTE_TO_TARGET,       RentFilmPayload.customer, "public.rent_film to public.customer, whose result has no column customer_id of the primary key"
   NO_ROUTE_TO_TARGET,       Film.sameTableById,  "public.film to public.film, which takes a written path: the primary-key self-join {key: ""film_pkey""} or a self-referencing key"
   ROUTE_AMBIGUOUS,          Film.language,       public.film to public.language by film_language_id_fkey or film_original_language_id_fkey
   INHERITED_PATH_AMBIGUOUS, Staff.address,       Addressed and Located
@@ -88,6 +101,7 @@ extend schema @expectEquals(relation: "graphitron_path",
     where: "origin <> 'EMPTY' OR coordinate = 'Film.sameTableById(filmId:)'", rows: """
   coordinate,                    target_type, kind, origin
   Film.sameTableById(filmId:),   Film,        JOIN, EMPTY
+  Mutation.rentFilm.rental,      Rental,      JOIN, INFERRED
   Store.peopleInferred,          Customer,    JOIN, INFERRED
   """)
 
@@ -96,7 +110,7 @@ extend schema @assertAbsent(relation: "graphitron_path", rows: """
   Film.cities
   Film.sameTableById
   Film.language
-  Film.languageByService
+  Mutation.rentFilm.customer
   Customer.address
   Customer.home
   Staff.address

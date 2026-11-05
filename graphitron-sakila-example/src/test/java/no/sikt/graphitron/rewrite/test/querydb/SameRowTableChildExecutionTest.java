@@ -24,8 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code Film.sameRowNested: FilmSameRowNest}, a plain nested object holding the same child;
  * {@code PivotNestingHost.labelsRow: HostLabelsRow} (both on {@code pivot_nesting_host}) for the
  * null rule, where host 1 carries {@code nn} and {@code nb}, host 2 neither and host 3 only
- * {@code nb}; and {@code Film.sameTableById}, the narrowed form, single-valued over the same
- * primary-key {@code @reference}, so its argument narrows each film's own row.
+ * {@code nb}.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -175,18 +174,5 @@ class SameRowTableChildExecutionTest {
         assertThat(hosts.get(2)).containsEntry("labelsWithFilms", null);
         assertThat(child(hosts.get(3), "labelsWithFilms")).containsEntry("nb", "nb-only");
         assertThat(hosts("labelsWithFilms { nn }").get(2)).containsEntry("labelsWithFilms", null);
-    }
-
-    @Test
-    void narrowedForm_narrowsEachFilmsOwnRow() {
-        var films = films("sameTableById(filmId: 2) { filmId title }");
-        assertThat(films).hasSizeGreaterThan(1);
-        films.forEach((id, film) -> {
-            if (id == 2) {
-                assertThat(child(film, "sameTableById")).containsEntry("filmId", 2);
-            } else {
-                assertThat(film).containsEntry("sameTableById", null);
-            }
-        });
     }
 }

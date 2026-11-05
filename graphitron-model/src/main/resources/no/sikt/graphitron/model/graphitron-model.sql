@@ -12824,9 +12824,12 @@ UNION ALL
 -- cannot infer a join for, at the field's declaration. The tables share no foreign key, or they are
 -- one table, a self-referencing key never being inferred, which is NO_ROUTE_TO_TARGET; or more than
 -- one joins them, in either direction, which is ROUTE_AMBIGUOUS, naming the keys to choose between:
--- both where there are two, else how many, the first and last by name. A need starting where it
--- lands is no defect where its parent's producer, a service or a write, lifted it onto that table,
--- which is an empty path. The paths of the needs one key joins are written by the path stage. One
+-- both where there are two, else how many, the first and last by name. A routine's derived table
+-- reaches its landing by the landing's primary key, its columns matched by name, so one missing a
+-- primary-key column is NO_ROUTE_TO_TARGET naming the first missing, and none is ambiguous. A need
+-- starting where it lands is no defect where a producer lifted it onto that table, its own @service
+-- or its parent's service or write, which is an empty path. The paths of the needs one route joins
+-- are written by the path stage. One
 -- row per field and code, naming a pair of tables, the first by name where the field is reached
 -- from several.
 SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
@@ -12838,6 +12841,9 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                    THEN ', which takes a written path: the primary-key self-join {key: "'
                         || COALESCE(pk.constraint_name, u.landing_table || '_pkey')
                         || '"} or a self-referencing key'
+                   WHEN u.routes = 0 AND u.missing_column IS NOT NULL
+                   THEN ', whose result has no column ' || u.missing_column || ' of the primary key'
+                   WHEN u.routes = 0 AND u.start_function = 1 THEN ', which has no primary key'
                    WHEN u.routes = 0 THEN ''
                    -- the first key by name and the last, whichever end declares them
                    WHEN u.routes = 2
@@ -12855,7 +12861,7 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                                           THEN COALESCE(u.start_last, u.landing_last)
                                           ELSE u.landing_last END END)
   FROM (SELECT x.graph_name, x.element_coordinate, x.start_schema, x.start_table,
-               x.landing_source_name, x.landing_schema, x.landing_table, x.routes,
+               x.landing_source_name, x.landing_schema, x.landing_table, x.routes, x.missing_column, x.start_function,
                -- the first and last key by name declared on the start, and on the landing
                CASE WHEN x.routes > 1 THEN
                  (SELECT MIN(rc.constraint_name) FROM sql_referential_constraint rc
@@ -12888,10 +12894,62 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
           FROM (SELECT n.graph_name, o.element_coordinate, o.parent_coordinate, n.start_source_name,
                        n.start_schema, n.start_table, n.landing_source_name, n.landing_schema,
                        n.landing_table,
-                       -- how many foreign keys join the two tables, none where they are one
+                       -- the first primary-key column of the landing, by name, that a routine's
+                       -- derived table it starts on has no column of that name for
+                       (SELECT MIN(cc.column_name) FROM sql_primary_key pk
+                          JOIN sql_constraint_column cc
+                            ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
+                           AND cc.table_name = pk.table_name AND cc.constraint_name = pk.constraint_name
+                         WHERE pk.source_name = n.landing_source_name
+                           AND pk.table_schema = n.landing_schema AND pk.table_name = n.landing_table
+                           AND EXISTS (SELECT 1 FROM sql_table fn
+                                        WHERE fn.source_name = n.start_source_name
+                                          AND fn.table_schema = n.start_schema
+                                          AND fn.table_name = n.start_table
+                                          AND fn.table_type = 'FUNCTION')
+                           AND NOT EXISTS (SELECT 1 FROM sql_column fc
+                                            WHERE fc.source_name = n.start_source_name
+                                              AND fc.table_schema = n.start_schema
+                                              AND fc.table_name = n.start_table
+                                              AND fc.column_name = cc.column_name))
+                         AS missing_column,
+                       CASE WHEN EXISTS (SELECT 1 FROM sql_table fn
+                                          WHERE fn.source_name = n.start_source_name
+                                            AND fn.table_schema = n.start_schema
+                                            AND fn.table_name = n.start_table
+                                            AND fn.table_type = 'FUNCTION') THEN 1 ELSE 0 END
+                         AS start_function,
+                       -- how many routes join the two tables: none where they are one; from a
+                       -- routine's derived table one where every primary-key column of the landing
+                       -- is among its columns by name, else none; otherwise the foreign keys
                        CASE WHEN n.start_source_name = n.landing_source_name
                                  AND n.start_schema = n.landing_schema
                                  AND n.start_table = n.landing_table THEN 0
+                            WHEN EXISTS (SELECT 1 FROM sql_table fn
+                                          WHERE fn.source_name = n.start_source_name
+                                            AND fn.table_schema = n.start_schema
+                                            AND fn.table_name = n.start_table
+                                            AND fn.table_type = 'FUNCTION')
+                            THEN CASE WHEN EXISTS (SELECT 1 FROM sql_primary_key pk
+                                                    WHERE pk.source_name = n.landing_source_name
+                                                      AND pk.table_schema = n.landing_schema
+                                                      AND pk.table_name = n.landing_table)
+                                       AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                                                         JOIN sql_constraint_column cc
+                                                           ON cc.source_name = pk.source_name
+                                                          AND cc.table_schema = pk.table_schema
+                                                          AND cc.table_name = pk.table_name
+                                                          AND cc.constraint_name = pk.constraint_name
+                                                        WHERE pk.source_name = n.landing_source_name
+                                                          AND pk.table_schema = n.landing_schema
+                                                          AND pk.table_name = n.landing_table
+                                                          AND NOT EXISTS (
+                                                            SELECT 1 FROM sql_column fc
+                                                             WHERE fc.source_name = n.start_source_name
+                                                               AND fc.table_schema = n.start_schema
+                                                               AND fc.table_name = n.start_table
+                                                               AND fc.column_name = cc.column_name))
+                                      THEN 1 ELSE 0 END
                             ELSE COALESCE((SELECT r.constraints FROM sql_table_reference r
                                             WHERE r.source_name = n.start_source_name
                                               AND r.table_schema = n.start_schema
@@ -12913,22 +12971,6 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                   JOIN graphitron_tabletype tt
                     ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
                  WHERE n.landing_table IS NOT NULL
-                   -- a routine's derived table reaches a table by the names its result shares
-                   -- with it, not by a foreign key: the steps' to resolve
-                   AND NOT EXISTS (SELECT 1 FROM sql_table fn
-                                    WHERE fn.source_name = n.start_source_name
-                                      AND fn.table_schema = n.start_schema
-                                      AND fn.table_name = n.start_table
-                                      AND fn.table_type = 'FUNCTION')
-                   -- a field whose own @service produces its rows takes no join to them
-                   AND NOT EXISTS (SELECT 1 FROM graphitron_field sf
-                                     JOIN graphitron_producer sp
-                                       ON sp.graph_name = sf.graph_name
-                                      AND sp.type_name = sf.type_name
-                                      AND sp.field_name = sf.field_name
-                                    WHERE sf.graph_name = o.graph_name
-                                      AND sf.coordinate = o.element_coordinate
-                                      AND sp.kind = 'SERVICE')
                    AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim jc
                                     WHERE jc.graph_name = o.graph_name
                                       AND jc.element_coordinate = o.element_coordinate
@@ -12951,7 +12993,13 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
          WHERE x.routes <> 1
            AND NOT (x.routes = 0 AND x.start_source_name = x.landing_source_name
                     AND x.start_schema = x.landing_schema AND x.start_table = x.landing_table
-                    AND EXISTS (SELECT 1 FROM graphitron_occurrence po
+                    AND (EXISTS (SELECT 1 FROM graphitron_field sf
+                                   JOIN graphitron_producer sp
+                                     ON sp.graph_name = sf.graph_name AND sp.type_name = sf.type_name
+                                    AND sp.field_name = sf.field_name
+                                  WHERE sf.graph_name = x.graph_name
+                                    AND sf.coordinate = x.element_coordinate AND sp.kind = 'SERVICE')
+                         OR EXISTS (SELECT 1 FROM graphitron_occurrence po
                                   JOIN graphitron_field pf
                                     ON pf.graph_name = po.graph_name
                                    AND pf.coordinate = po.element_coordinate
@@ -12960,7 +13008,7 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                                    AND pr.field_name = pf.field_name
                                  WHERE po.graph_name = x.graph_name
                                    AND po.coordinate = x.parent_coordinate AND po.kind = 'FIELD'
-                                   AND pr.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE')))) u
+                                   AND pr.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE'))))) u
   JOIN graphql_ast_element_entry el
     ON el.graph_name = u.graph_name AND el.coordinate = u.element_coordinate
   LEFT JOIN sql_primary_key pk

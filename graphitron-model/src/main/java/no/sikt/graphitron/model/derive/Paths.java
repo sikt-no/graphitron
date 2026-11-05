@@ -18,6 +18,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE_REFERENCE;
 import static org.jooq.impl.DSL.coalesce;
@@ -43,15 +46,14 @@ import static org.jooq.impl.DSL.when;
  * exists once the claim's steps reach the target, and is written with them.
  *
  * <p>An uncovered need is met in two ways. Where its start is its landing it is {@code EMPTY}, its
- * target its start: an argument or input field, a target bound to no table, and a field whose
- * parent's producer, a service or a write, lifted it onto its target's table. Where an output field
- * starts and lands on two different tables joined by exactly one foreign key, in either direction,
- * it is {@code INFERRED}, its target its landing; the one step it takes and the key it rides are
- * the steps' to write. Any other uncovered field between two tables, the same table included, is a
- * defect, which {@code graphitron_entry_defect_rule} raises. A field starting on the derived table a
- * routine returns reaches its target by the names the two share, not by a foreign key, so it is
- * neither inferred nor a defect here: its step is the steps' to resolve. Nor is a field whose own
- * {@code @service} produces its rows, which takes no join to them.
+ * target its start: an argument or input field, a target bound to no table, and a field a producer
+ * lifted onto its target's table, its own {@code @service} handing back the table's records or its
+ * parent's service or write. Where an output field starts and lands on two different tables joined
+ * by exactly one route it is {@code INFERRED}, its target its landing: one foreign key in either
+ * direction, or, from the derived table a routine returns, the landing's primary key, every column
+ * of it matched by name among the routine's result columns. The one step it takes is the steps' to
+ * write. Any other uncovered field between two tables, the same table included, is a defect, which
+ * {@code graphitron_entry_defect_rule} raises.
  *
  * <p>The foreign keys are counted off {@code sql_table_reference}, which holds the count per ordered
  * pair of tables, both orders summed; a self-referencing key never counts, a field starting where
@@ -145,9 +147,8 @@ public final class Paths {
                     GRAPHITRON_TABLETYPE.TYPE_NAME.eq(n.TARGET_TYPE))))
             .or(lifted(o)));
         Condition inferred = o.KIND.eq("FIELD").andNot(sameTable)
-            .andNot(startsOnFunction(n))
-            .andNot(producesItsOwnRows(o))
-            .and(foreignKeys(n).eq(1));
+            .and(startsOnFunction(n).and(primaryKeyMatched(n))
+                .or(startsOnFunction(n).not().and(foreignKeys(n).eq(1))));
         return select(n.GRAPH_NAME.as("graph_name"), n.COORDINATE.as("coordinate"),
                 n.TARGET_TYPE.as("target_type"),
                 when(sameTable, inline(EMPTY)).otherwise(inline(INFERRED)).as("origin"),
@@ -186,25 +187,33 @@ public final class Paths {
     }
 
     /**
-     * Whether the field occurrence {@code o} hangs under a field whose producer, a service or a
-     * write, hands it rows it is lifted from, a key row, a record or the keys a write returned:
-     * its source is then the table it lifts onto, not one it joins from.
+     * Whether a producer lifted the field occurrence {@code o} onto the table it starts on: its own
+     * {@code @service}, handing back that table's records, or the service or write of the field it
+     * hangs under, handing it a key row, a record or the keys a write returned. Its source is then
+     * the table it lifts onto, not one it joins from.
      */
     private static Condition lifted(GraphitronOccurrence o) {
+        var f = GRAPHITRON_FIELD.as("lf");
+        var fr = GRAPHITRON_PRODUCER.as("lfr");
         var p = GRAPHITRON_OCCURRENCE.as("lp");
         var pf = GRAPHITRON_FIELD.as("lpf");
         var pr = GRAPHITRON_PRODUCER.as("lpr");
-        return o.KIND.eq("FIELD").and(exists(selectOne().from(p)
-            .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
-            .join(pr).on(pr.GRAPH_NAME.eq(pf.GRAPH_NAME), pr.TYPE_NAME.eq(pf.TYPE_NAME),
-                pr.FIELD_NAME.eq(pf.FIELD_NAME))
-            .where(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE),
-                p.KIND.eq("FIELD"), pr.KIND.in("SERVICE", "INSERT", "UPDATE", "DELETE"))));
+        return o.KIND.eq("FIELD").and(exists(selectOne().from(f)
+                .join(fr).on(fr.GRAPH_NAME.eq(f.GRAPH_NAME), fr.TYPE_NAME.eq(f.TYPE_NAME),
+                    fr.FIELD_NAME.eq(f.FIELD_NAME))
+                .where(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE),
+                    fr.KIND.eq("SERVICE")))
+            .or(exists(selectOne().from(p)
+                .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
+                .join(pr).on(pr.GRAPH_NAME.eq(pf.GRAPH_NAME), pr.TYPE_NAME.eq(pf.TYPE_NAME),
+                    pr.FIELD_NAME.eq(pf.FIELD_NAME))
+                .where(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE),
+                    p.KIND.eq("FIELD"), pr.KIND.in("SERVICE", "INSERT", "UPDATE", "DELETE")))));
     }
 
     /**
-     * Whether the need starts on the derived table a routine returns, which reaches a table by the
-     * names its result shares with it rather than by a foreign key: the steps' to resolve.
+     * Whether the need starts on the derived table a routine returns, which has no foreign key and
+     * reaches its landing by the landing's primary key instead.
      */
     private static Condition startsOnFunction(GraphitronPathNeed n) {
         var st = SQL_TABLE.as("fn");
@@ -213,15 +222,26 @@ public final class Paths {
                 st.TABLE_NAME.eq(n.START_TABLE), st.TABLE_TYPE.eq("FUNCTION")));
     }
 
-    /** Whether the field {@code o} is an occurrence of has a {@code @service} producing its rows. */
-    private static Condition producesItsOwnRows(GraphitronOccurrence o) {
-        var f = GRAPHITRON_FIELD.as("sf");
-        var pr = GRAPHITRON_PRODUCER.as("spr");
-        return exists(selectOne().from(f)
-            .join(pr).on(pr.GRAPH_NAME.eq(f.GRAPH_NAME), pr.TYPE_NAME.eq(f.TYPE_NAME),
-                pr.FIELD_NAME.eq(f.FIELD_NAME))
-            .where(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE),
-                pr.KIND.eq("SERVICE")));
+    /**
+     * Whether the need's landing has a primary key whose every column the table it starts on has a
+     * column of the same name for.
+     */
+    private static Condition primaryKeyMatched(GraphitronPathNeed n) {
+        var pk = SQL_PRIMARY_KEY.as("pk");
+        var mk = SQL_PRIMARY_KEY.as("mk");
+        var cc = SQL_CONSTRAINT_COLUMN.as("cc");
+        var fc = SQL_COLUMN.as("fc");
+        return exists(selectOne().from(pk)
+                .where(pk.SOURCE_NAME.eq(n.LANDING_SOURCE_NAME), pk.TABLE_SCHEMA.eq(n.LANDING_SCHEMA),
+                    pk.TABLE_NAME.eq(n.LANDING_TABLE)))
+            .andNotExists(selectOne().from(mk)
+                .join(cc).on(cc.SOURCE_NAME.eq(mk.SOURCE_NAME), cc.TABLE_SCHEMA.eq(mk.TABLE_SCHEMA),
+                    cc.TABLE_NAME.eq(mk.TABLE_NAME), cc.CONSTRAINT_NAME.eq(mk.CONSTRAINT_NAME))
+                .where(mk.SOURCE_NAME.eq(n.LANDING_SOURCE_NAME), mk.TABLE_SCHEMA.eq(n.LANDING_SCHEMA),
+                    mk.TABLE_NAME.eq(n.LANDING_TABLE))
+                .andNotExists(selectOne().from(fc)
+                    .where(fc.SOURCE_NAME.eq(n.START_SOURCE_NAME), fc.TABLE_SCHEMA.eq(n.START_SCHEMA),
+                        fc.TABLE_NAME.eq(n.START_TABLE), fc.COLUMN_NAME.eq(cc.COLUMN_NAME))));
     }
 
     /** How many foreign keys join the need's start and landing, in either direction. */

@@ -2730,13 +2730,9 @@ type Film implements Node & Searchable @table(name: "film") @node {
     blurb: FilmBlurb
     # Same-table child over the primary key: FilmSameRow is bound to film like this type, and the
     # @reference names film's own primary key, so it joins this film's row to itself and reads it.
-    # sameTableById is the narrowed form: a field on its parent's own table takes a written path
-    # whether an argument narrows it or not, so it joins over the primary key too, single-valued as
-    # that join requires, and its argument narrows the parent's own row.
     sameRow: FilmSameRow @reference(path: [{key: "film_pkey"}])
     sameRowSplit: FilmSameRow @splitQuery @reference(path: [{key: "film_pkey"}])
     sameRowNested: FilmSameRowNest
-    sameTableById(filmId: Int @field(name: "FILM_ID")): FilmSameRow @reference(path: [{key: "film_pkey"}])
     # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /
     # film_price attribute tables. titleTranslations / taglineTranslations reuse one projection
     # type with different value columns through the PivotLang vocabulary enum; prices uses the

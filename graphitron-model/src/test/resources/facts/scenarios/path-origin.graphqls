@@ -1,10 +1,11 @@
 # The paths of the needs no claim covers, each a JOIN path with the table it reaches. A need starting
 # where it lands is EMPTY, its target its start: an argument or input field with nothing written, a
-# target bound to no table, a scalar or a nested object, and a field its parent's producer lifted
-# onto its target's table, a write payload's data field or a field read off a handed-back record. An
-# output field between two tables one foreign key joins is INFERRED, its target its landing. A need a
-# claim covers has no path here: its path is the claim's, written once its steps reach the target.
-# The schema is scenarios/path-need's, with FilmActor.film added for a plain inferred field.
+# target bound to no table, a scalar or a nested object, and a field a producer lifted onto its
+# target's table: a write payload's data field, a field read off a handed-back record, and a child
+# whose own service hands back its target's records. An output field between two tables one foreign
+# key joins is INFERRED, its target its landing. A need a claim covers has no path here: its path is
+# the claim's, written once its steps reach the target. The schema is scenarios/path-need's, with
+# FilmActor.film added for a plain inferred field and Film.languageByService for a child service.
 
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
   title: String
@@ -13,6 +14,10 @@ interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
 type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
   title: String
   details: FilmDetails
+  # Its own service hands back LanguageRecords, so it reads language, where its rows come from: an
+  # empty path, the two keys between film and language being no matter.
+  languageByService: Language
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "languageByService"})
   # A scalar that writes a path: its arguments wait for the join path.
   languageName(upper: Boolean): String
     @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
@@ -149,6 +154,7 @@ extend schema @assertContains(relation: "graphitron_path", rows: """
   Mutation.addFilm.film,           Film,        JOIN, EMPTY
   Query.serviceFilmById.film,      Film,        JOIN, EMPTY
   Query.filmDetailsBatch.filmId,   Int,         JOIN, EMPTY
+  Film.languageByService,          Language,    JOIN, EMPTY
   """)
 
 # What each reaches: an inferred path its landing, an empty one its start.
@@ -162,6 +168,14 @@ extend schema @assertContains(relation: "graphitron_join_path", rows: """
   Query.films(filter.title:),      Film,        film,         film
   Mutation.addFilm.film,           Film,        film,         film
   Query.serviceFilmById.film,      Film,        film,         film
+  Film.languageByService,          Language,    language,     language
+  """)
+
+# The child service reads the table its result names, and not its parent's.
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
+    where: "coordinate = 'Film.languageByService'", rows: """
+  coordinate,              table_name
+  Film.languageByService,  language
   """)
 
 # A need its own claim covers has no path yet, a written path, a @referenceFor and the field of a

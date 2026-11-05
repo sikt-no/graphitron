@@ -303,7 +303,8 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   to `graphitron_path`, their readers with them, with a sis timing before and after, and
   `graphitron_field_participant_path`, written and read by nothing, goes. A claim's path, walked and
   reaching its target, is a `WRITTEN` or `INHERITED` `graphitron_path` row with its `_claimed` row,
-  and an `INFERRED` path's one step its `_inferred_key` row. A path written on an interface's field
+  and an `INFERRED` path's one step its `_inferred_key` row, or, from a routine's derived table, its
+  primary-key match by column name. A path written on an interface's field
   is a row per implementation, resolved from the implementation's own table; the implementation's
   own claim beats the inherited one, an interface extending another overrides the claim it
   redeclares, `@referenceFor` is inherited member by member, and two interfaces neither extending
@@ -1862,13 +1863,15 @@ entry.
   path is the defect. `Paths` writes the paths of the needs no claim covers, a claim at the need's
   own element or one inherited from an interface's same-named field: `EMPTY` where the need starts
   on its landing, an argument or input field, a target bound to no table, a write payload's data
-  field or a field read off a handed-back record, its target its start; `INFERRED` for an output
-  field between two different tables exactly one foreign key joins, counted in both directions, its
-  target its landing. An argument or input field is never inferred, nor is a self-referencing key. A
+  field, a field read off a handed-back record, or a child whose own `@service` hands back its
+  target's records, which reads the table its producer's result names; `INFERRED` for an output
+  field between two different tables exactly one route joins, its target its landing: one foreign
+  key counted in both directions, or from a routine's derived table, which has no foreign key, the
+  landing's primary key with every column matched by name among the routine's result columns. An argument or input field is never inferred, nor is a self-referencing key. A
   covered need's path is the claim's, written once its steps reach the target, so it has no row
-  until then; a written path's target comes from its steps. A field starting on a routine's derived
-  table, which reaches its table by name, and one whose own `@service` produces its rows have
-  neither a row nor a defect yet; what their paths are is open.
+  until then; a written path's target comes from its steps. From a routine's derived table a
+  missing primary-key column is `NO_ROUTE_TO_TARGET` naming the first missing, and nothing is
+  ambiguous.
   ** `graphitron_join_path`: the path is joins, with its target table, never null, its start where
      it is empty, referenced through `_ref` copies. `graphitron_join_path_claimed`, keyed by the
      path, names the claim a `WRITTEN` or `INHERITED` one follows, (element coordinate, target
@@ -1994,7 +1997,11 @@ are two facts, and no relation stands between a need and its claim; an argument 
 `NO_ROUTE_TO_TARGET`, narrowed by an argument or not; an implementation's own claim beats an
 inherited one, an extending interface's redeclared claim overrides the one it extends,
 `@referenceFor` is inherited member by member, and two unrelated interfaces both claiming the field
-are `INHERITED_PATH_AMBIGUOUS` (Alf, 2026-11-05).
+are `INHERITED_PATH_AMBIGUOUS`; a routine's derived table has no foreign key and reaches its landing
+by the landing's primary key, its columns matched by name, inferred where every one is there and
+`NO_ROUTE_TO_TARGET` where one is missing; a child that is its own `@service` handing back table
+records starts where its rows come from, the table its producer's result names, so its path is
+`EMPTY` (Alf, 2026-11-05).
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
@@ -2148,9 +2155,8 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 * **Breaking: a same-table `@table` field narrowed by an argument needs its path** ("inference is
   written into the store, and a need nothing covers is a defect"). A field returning a `@table` type
   on its parent's own table, narrowed by an argument and with no `@reference`, was read uncorrelated,
-  the same rows under every parent; it is now `NO_ROUTE_TO_TARGET` until it writes its path, the
-  primary-key self-join `@reference(path: [{key: "<table>_pkey"}])`, which makes the field
-  single-valued, or a self-referencing key.
+  the same rows under every parent; it is now `NO_ROUTE_TO_TARGET` until it writes its path. The
+  example schema's `Film.sameTableById`, which exercised the uncorrelated read, is removed.
 
 * **Breaking: `@table` cannot name a table-valued function** ("a type is not bound to a function"). A schema binding a type to
   a function's result with `@table` stops building, with a message saying to remove the directive.
