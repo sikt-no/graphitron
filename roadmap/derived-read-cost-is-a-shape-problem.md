@@ -314,9 +314,25 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
   * **The old walk's readers read the join path, and the old family goes** `open`, F's.
-    MCP `joinPath` and `pathStops`, the fanout lint, `RoutineWriteQuery`,
-    `graphitron_field_target_column_match`, the gate tests and the fact documents move to the join
-    path; then `FieldPaths` and `graphitron_field_path*` go.
+    MCP `joinPath` and `pathStops` read `graphitron_join_path_step` and its stops, the fanout lint a
+    fanout view over the steps, and `RoutineWriteQuery` the routine's steps and target. The landing
+    reads of `graphitron_field_target_column_match` and the output-field arm of
+    `graphitron_node_id_instruction_rule` read `graphitron_join_path`'s target, and the checks whether
+    a field writes a path read `graphitron_join_path_claim`. The `intent_` views over the walk
+    dissolve rather than move (Alf, 2026-11-06): `intent_mutation_routine_seat` into
+    `RoutineWriteQuery`'s own query, `intent_field_column_table` into the LSP's `FieldColumnTable` and
+    `DiagnosticFacts` reading the join path, its stops and its claims, and `intent_column_match_claim`
+    with `intent_resolved_field_claim` into `BindingUsages` and MCP reading
+    `graphitron_occurrence_column`, which holds a written path's scalars once
+    "A scalar's column is read at its path's end" lands. Each reader is compared against the old relation before it goes;
+    then `FieldPaths` and every `graphitron_field_path*` relation go, with the gate tests and fact
+    documents.
+  * **The reference-step family goes** `blocked`, on "One per-depth loop states producers, sources, needs and paths".
+    The argument arm of `graphitron_node_id_instruction_rule` and `graphitron_node_id_decode_hop_rule`
+    read the join path's steps at the argument and input-field occurrences, G's to move or agree;
+    then `FieldReferenceStepHops`, the argument and input-field step targets,
+    `intent_argument_reference_step_hop`, `graphitron_condition_method_route` and the
+    `*_reference_step_entry` captures go.
 * **Arguments and input fields have paths from their field's path** `blocked`, on "A path is keyed per pair of tables".
   An argument's path is anchored at the argument; an input field's written elements become a path
   per occurrence, one holder per output field, argument and chain of input fields down to it. Both
