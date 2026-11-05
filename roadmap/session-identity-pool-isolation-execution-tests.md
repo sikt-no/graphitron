@@ -1,7 +1,7 @@
 ---
 id: R1153
 title: "Execution tests that identity never crosses requests through a real pool"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 1
 theme: runtime-connection
@@ -16,14 +16,51 @@ last-updated: 2026-11-05
 
 The claim "identity never crosses requests" is pinned by an execution test that would fail if it stopped holding, end to end, through a real connection pool. Today it is covered piecewise: the generator tier checks mount/unmount/evict ordering against fake connections, and `SessionHookExecutionTest` checks the example's identity routines on a single raw connection (mount scopes reads, unmount clears to empty, a throwing mount evicts). Nothing sends two users through the engine and a pool and checks what the second one sees. When this lands, a consumer asking "do you test that `app.claims` cannot leak between requests?" gets a yes that points at a test.
 
-## Plan sketch
+## Scope: what this item pins, and what it leaves to its siblings
 
-Execution tier, in `graphitron-sakila-example`, against the existing RLS probe table keyed on `app.user_id`:
+This item pins the guarantees that hold today, so a regression in any of them fails the build. Three siblings each change the lifecycle and each owes this suite a case when it lands, not before: R1151 (a mount-only `SessionState` followed by a borrower that does not mount, which leaks today), R1152 (a consumer unmount that clears nothing, which leaks today), and R1154 (an acquisition after release in the single-tenant carrier, which orphans a mounted connection today). Writing those cases here would mean landing red tests or tests that assert the defect; both are worse than a named gap. The suite's class javadoc names the three gaps in prose (no item ids, per the javadoc convention) so a reader of the test knows what it does not yet prove.
 
-- A real pool (HikariCP, `maximumPoolSize=1`, so both requests are guaranteed the same physical connection) behind `Graphitron.runtime(...)`.
-- Request A as alice reads her rows; request B as bob, and request B with an anonymous mount, see none of alice's rows.
-- After each request, borrow the physical connection directly and assert `current_setting('app.user_id', true)` reads the empty string.
-- The same three assertions after each failure path: a fetcher that throws, a mutation field that rolls back, a settle failure, a rejected mount, and a cancelled execution.
+## Fixture
+
+Terms: the *owned-connection path* is the engine built by `GraphitronRuntime.newGraphQL(schema)`, where Graphitron takes a connection from the consumer's `DataSource`, runs the request's mount callback on it, and runs the unmount callback before returning it. The *physical connection* is the database session underneath the pool's wrapper; session variables such as `app.user_id` live on it and survive a return to the pool.
+
+- **A real pool of one.** An Agroal `AgroalDataSource` (already on the example's classpath through `quarkus-agroal`; no new dependency) with `maxSize = 1`, built in the test's `@BeforeAll` and closed in `@AfterAll`. Size one is what makes "the next request got the previous request's physical connection" a certainty rather than a likelihood. The pool connects as a dedicated non-superuser role, because superusers bypass row-level security; the role name is this class's own (classes run concurrently in this module and roles are cluster-global, so it must not share `SessionHookExecutionTest`'s `rls_probe_user`).
+- **The RLS table already in the catalog.** `secure_note` carries a read policy keyed on `nullif(current_setting('app.user_id', true), '')`, the fail-closed shape. The test seeds its own rows through the superuser context under owners only it uses (for example `pool-alice`, `pool-bob`) and deletes them in `@AfterAll`, per the execution tier's shared-database rule.
+- **One new query field.** No query reads `secure_note` today (only the `createSecureNote` payload does). Add `Query.secureNotes: [SecureNote!]!` to `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`, a plain table field with no condition, so what a caller sees is decided by the policy alone. That is the point: a `$session`-bound condition would filter in SQL that Graphitron generated, and would pass even if the connection carried the wrong identity.
+- **Identity through the example's own callbacks.** `SakilaSessions.of(claims)`, whose mount calls `session_connect` (session-scoped `set_config`, `coalesce(sub, '')`) and whose unmount calls `session_disconnect` (clears to `''`). An anonymous request is claims with no `sub`.
+- **One helper, `identityOnNextBorrow()`.** Takes a connection from the pool outside the engine, reads `current_setting('app.user_id', true)`, returns it. The assertion everywhere is that it reads `NULL` or `''`. Paired with Agroal's `getMetrics().destroyCount()` before and after (the pool is built with `metricsEnabled(true)`; without it the counters read zero), so each case also states whether the connection it ran on was returned or evicted; an evicted connection trivially reads `NULL` on the replacement, and the case should say which of the two it is proving.
+
+## Tests
+
+One execution-tier class, `SessionIdentityPoolIsolationExecutionTest`, in `graphitron-sakila-example/src/test/java/.../test/querydb/`.
+
+*The happy path.*
+
+1. Alice queries `secureNotes`: sees exactly her rows. Then `identityOnNextBorrow()` reads empty and the connection was returned, not evicted.
+2. Alice, then Bob, on the same physical connection: Bob sees only his rows.
+3. Alice, then an anonymous request: sees no rows.
+4. Alice, then a plain borrower that does not go through the engine at all: reads no rows from `secure_note`. This is the case the consumer's question is really about: anything else sharing the pool.
+
+*Failure paths*, each run as Alice and followed by the next-borrow check and an anonymous `secureNotes` read that must see nothing. The fields come from the existing `MutationScopeService` fixtures, which write to `mutation_scope_marker` (the role needs `insert, select` on it and usage on its sequence):
+
+5. A mutation field whose service throws after writing (`scopeWriteTwiceThenThrow`): the field rolls back, the connection is returned with identity cleared.
+6. A mutation field whose commit fails at settle (`scopeWriteADeferredOrphan`, a deferred constraint).
+7. A mutation field whose nested consumer transaction fails and is caught (`scopeNestedFailsCaught`).
+8. A query field that throws without touching the database (`scopeQueryFailsWithoutDatabase`) next to one that reads `secureNotes`: the request mounts once and releases cleanly.
+9. A rejected mount (claims `sub = "reject-me"`): `execute` throws `SessionMountException`, the connection is evicted (destroy count rises by one), and the next request as Bob sees only Bob's rows.
+10. A cancelled request: `ExecutionInput.cancel()` (graphql-java 25) after the input is built and before `execute`, and again while a field is in flight. In both, the next borrow reads empty. The straggler case, where a fetcher acquires after release, is R1154's and is out of scope here.
+
+*Multi-tenant carrier.* The multi-tenant `TenantConnections` is separate emitted code with its own release loop, so one case runs there too: a request that touches two tenant sources, each a pool of one, then `identityOnNextBorrow()` on each pool reads empty. The tenant databases need the session objects `TenantSessionFixture.installSessionObjects` already installs; no RLS table is needed for this case, the variable check is the assertion.
+
+## Documentation
+
+`docs/architecture/reference/runtime-extension-points.adoc`, the hook state contract section, gains one sentence naming the suite as the execution evidence for "a connection is returned with identity cleared on every completion path", so the claim and its proof point at each other.
+
+## Open questions
+
+- How does case 10 cancel while a field is in flight? A fetcher cannot reach its `ExecutionInput`, so the test needs a seam: either a small `@service` fixture that blocks on a latch the test releases after calling `cancel()` from the test thread, or a test-registered instrumentation (passed through `newGraphQL(schema, instrumentations...)`) that cancels at `beginFieldFetching` of the second field. Recommendation: the instrumentation, since it adds nothing to the shared schema and cancels at a deterministic point.
+
+- Agroal or HikariCP? Agroal costs nothing and matches what the example application deploys with. HikariCP is what most consumers outside Quarkus run; it shares the one property that matters here, that a return to the pool does not reset session variables. Recommendation: Agroal, since the property under test is "the pool does not clean up for us", which both share, and adding a dependency to prove the same thing twice is not worth it.
 
 ## Context
 
