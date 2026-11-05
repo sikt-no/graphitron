@@ -1,13 +1,13 @@
 ---
 id: R920
 title: "a failed batch logs once, without its SQL, and a consumer can cap batch size"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: error-channel
 depends-on: []
 created: 2026-09-04
-last-updated: 2026-10-15
+last-updated: 2026-11-05
 ---
 
 # a failed batch logs once, without its SQL, and a consumer can cap batch size
@@ -47,9 +47,9 @@ a 400-element parent list timed out (Oracle `ORA-01013`, the vendor code for a c
 which is what a JDBC query timeout raises), and the log filled with hundreds of records for the one
 timeout. The fix belongs on trunk; the 9.x line is not in scope.
 
-Alongside the collapse, a consumer needs a way to substitute the logging. Today they have exactly one
-lever, the slf4j level on the generated `ErrorRouter` logger, and turning it off discards the mapping
-from the client's reference id to the real cause, which is the whole point of redaction.
+A consumer who replaces the logging altogether already can: a `FetcherErrorLog` set on the runtime
+receives every unmatched exception in place of Graphitron's line. After this item it receives each
+failed batch once too, so a consumer's own log inherits the collapse without doing anything.
 
 ## Evidence from a production trace
 
@@ -86,8 +86,13 @@ The redaction path is per-field by construction, and nothing along it knows a ba
   exceptionally with that same `Throwable` instance.
 * The fetcher built by `DataLoaderFetcherEmitter.build` attaches the disposition per fetcher
   invocation: `loader.load(key, env).thenApply(...).exceptionally(t -> ErrorRouter.surfaceClientErrorOrRedact(t, env))`,
-  from `TypeFetcherGenerator.asyncWrapTail` (and its twin on `MultiTablePolymorphicEmitter`). Each
-  awaiting field runs its own `.exceptionally`.
+  from `TypeFetcherGenerator.asyncWrapTail` (and its twins on `MultiTablePolymorphicEmitter` and
+  `FrameEmitter.child`). Each awaiting field runs its own `.exceptionally`.
+* The `t` each field's `.exceptionally` receives is **not** the shared instance. The per-key future
+  completes with the batch's exception, but the dependent `thenApply` stage completes with a fresh
+  `CompletionException` wrapping it, one per field. The shared instance is the wrapper's cause. Any
+  memo keyed on `t` itself would miss every time; this is why the claim record R1087 added keys on
+  the claimed chain link, not on `thrown`.
 * `surfaceClientErrorOrRedact` falls through to `redact`, emitted by
   `ErrorRouterClassGenerator.redactBody`, which mints a fresh `UUID.randomUUID()` and logs
   `"Unmatched exception in fetcher; correlation id = {}"` with the throwable as the trailing
@@ -99,93 +104,247 @@ The redaction path is per-field by construction, and nothing along it knows a ba
   rendered statement, so the SQL reaches the record anyway. `redact` treats every throwable alike;
   the SQL state and vendor code mappings exist only on the `@error` channels.
 
-The batch has no bound for a separate reason. None of the emitters that build a DataLoader
-(`DataLoaderFetcherEmitter`, `MultiTablePolymorphicEmitter`, `QueryNodeFetcherClassGenerator`) pass
-`DataLoaderOptions`, so java-dataloader's default of an unlimited batch applies. The rows method the
-batch lambda calls renders every key into one `VALUES` derived table (`BatchedRowsFragments`), whose
-row count is bounded by nothing. And the generated `GraphitronContext` offers no method a consumer
-could use to supply a limit. On trunk a plain many-to-one split child is keyed on the parent's FK
-columns and the loader's cache merges parents sharing a value, so the six-column-tuple batch in the
-evidence above would be smaller here. A one-to-many child, or a first hop with a filter, still keys
-one entry per parent, and so does any list of distinct FK values, so the bound is still needed.
+The claim path already collapses. R1087 made `ErrorRouter.recordClaim` mint a claimed source's
+reference once per request and call `FetcherErrorLog.matched` once, so a batch failure an `@error`
+handler catches is logged once today. Only the unmatched path (`redact`) and the settle path
+(`settleFailure`) still mint and log per call. `FetcherErrorResponse.reference`'s javadoc already
+promises "once per exception and request"; the unmatched path is where that promise is not kept.
 
-The consumer has no seam either. The generated fetcher catches the throwable and returns a
-`DataFetcherResult` carrying the error, so graphql-java's `DataFetcherExceptionHandler` is never
-invoked and neither is a custom `ExecutionStrategy` chained through
-`GraphitronApplication.engineBuilder`. The log is already written before anything a consumer controls
-can see it. This is a regression against the 9.x line, where the same logging sat in a public
-`TopLevelErrorHandler` a consumer could subclass and inject.
+The batch has no bound for a separate reason. None of the five sites that build a DataLoader
+(`DataLoaderFetcherEmitter.build`, the two in `MultiTablePolymorphicEmitter`,
+`QueryNodeFetcherClassGenerator`, `FrameEmitter.child`) pass `DataLoaderOptions`, so
+java-dataloader's default of an unlimited batch applies. The rows method the batch lambda calls
+renders every key into one `VALUES` derived table (`BatchedRowsFragments`), whose row count is
+bounded by nothing. There is also no consumer surface to put a limit on: the generated
+`GraphitronContext` is a `sealed` interface with one permitted implementation, so a consumer cannot
+override a method on it, and the configuration a consumer does own lives on `GraphitronRuntime`
+(`withFetcherErrorLog`, `withFetcherErrorResponse`). On trunk a plain many-to-one split child is keyed
+on the parent's FK columns and the loader's cache merges parents sharing a value, so the
+six-column-tuple batch in the evidence above would be smaller here. A one-to-many child, or a first
+hop with a filter, still keys one entry per parent, and so does any list of distinct FK values, so
+the bound is still needed.
 
-`ConnectionRuntimeClassGenerator.logFanOutFailure` is the same shape at lower severity: it mints a
-fresh id per tenant, so its volume is bounded by tenant count rather than by batch size. It should
-move with whatever mechanism this item picks, so the two redaction sites keep one spelling.
+`TenantConnections.logFanOutFailure` (emitted by `ConnectionRuntimeClassGenerator`) is the same
+shape at lower severity: it mints a fresh reference per failed tenant, so its volume is bounded by
+tenant count rather than by batch size, and each tenant's failure is its own exception. It needs the
+SQL summary (it logs the cause the same way) but not the memo.
 
-## Implementation sketch (fill in at Spec)
+## Decisions
 
-The recommended shape is a per-request memo keyed on **throwable identity**, consulted at the single
-chokepoint `ErrorRouter.redact`: the first field to redact a given `Throwable` mints the reference id
-and logs; every later field holding the same instance reuses that id and logs nothing. Identity is
-the right key because java-dataloader hands the *same* instance to every key in the batch, while two
-genuinely independent failures are two instances and must still produce two records. Per-request
-state has a home already, the `GraphQLContext` the consumer seeds in
-`GraphitronApplication.newExecutionInput`.
+The forks the Backlog body left open, settled here so the implementation has one shape.
 
-Doing it at `redact` rather than in each batch lambda is what makes it one change instead of one per
-emitter, and it also covers fan-out shapes that are not `@splitQuery`: `loadMany` dispatch, the
-polymorphic batched path, and the connection runtime.
+* **Every client error for one failure quotes one reference.** The 2,006 field errors of the trace
+  above would all carry the reference the one log record carries. That is what lets a support
+  ticket quoting any of them find the record, and it is what `FetcherErrorResponse.reference`
+  already documents ("once per exception and request") and what the claim path already does. Each
+  field keeps its own error entry with its own path; only the reference is shared.
+* **Later occurrences log nothing.** Not a shorter line, not a lower level: the client errors carry
+  every affected path, and the log's job is the cause, once. A DEBUG line per later field would put
+  the amplification back for anyone who turns DEBUG on to diagnose exactly this.
+* **The SQL summary replaces the stack trace only for a database failure.** When the cause chain
+  holds a `java.sql.SQLException`, the ERROR record is the one-line summary and the full throwable
+  goes to DEBUG. Any other exception keeps today's ERROR line with its stack trace: a bug in a
+  consumer's service or condition needs the trace to be found, and its message is not a rendered
+  statement. jOOQ's own non-driver exceptions (`TooManyRowsException` and the like) carry no SQL,
+  so they keep the trace too.
+* **The batch cap ships in this item, as its own commit.** It answers the same incident and
+  composes with the memo (a cap turns one failure into at most one record per failed chunk), but it
+  touches the loader emitters and the runtime rather than `ErrorRouter`, so the two commits are
+  independent and either can land first.
+* **The cap is runtime configuration only, with no build-time default.** Consumer configuration
+  lives on `GraphitronRuntime`; a Mojo parameter would be a second place to set the same number,
+  and nothing about a batch size is known at build time that the runtime does not know better.
 
-For the substitution seam, R1048 supplies it: a generated `FetcherErrorLog` the consumer sets on
-`GraphitronRuntime`, published into the `GraphQLContext` and preferred by `redact` over its own
-logger. This item builds on that seam rather than adding a second one: the memo sits in front of the
-call, so a consumer's log also sees one call per failed batch, and the summary line below replaces
-only the default branch taken when no log is configured.
+## Implementation
 
-For the SQL, `redact` logs a one-line summary at ERROR in place of the raw throwable when the cause
-chain holds a `java.sql.SQLException`: exception class, SQL state, vendor code, and the driver's
-message with whitespace collapsed and truncated to a fixed length. Without a driver exception it logs
-the jOOQ message truncated. The full throwable follows at DEBUG under the same reference id. The
-summary is what the default branch logs; a consumer who must keep row data out of the log entirely
-configures a `FetcherErrorLog`, which receives the throwable instead.
+Two independent commits. Each passes the verification build on its own.
 
-For the cap, the generated `GraphitronContext` gains a default method returning the maximum keys per
-batch for a field, reading the `DataFetchingEnvironment` so a consumer can vary it by field, with a
-value below 1 meaning unbounded, the default. Every emitter that creates a DataLoader passes
-`DataLoaderOptions` built from it, and java-dataloader then splits an oversized batch into several
-calls of the batch lambda. The rows method and the `VALUES` rendering do not change. The loader name
-already identifies the field, so one loader per field keeps one option set.
+### Log each failure once, without its SQL
 
-The 9.x line carries a working version of all three parts, on branch `graphitron-9-head` in commit
-`e7b80004e` ("Log top-level errors once per exception and cap DataLoader batches"). It keys a
-`WeakHashMap` on throwable identity inside its `TopLevelErrorHandler`, adds
-`describeDataAccessException` for the summary, and adds `GraphitronContext.getDataLoaderMaxBatchSize`.
-Its shape is a reference for the Spec, not a template: trunk has no handler to subclass, which is why
-the memo goes in per-request state and the override goes through the sink.
+All in `ErrorRouterClassGenerator`, plus one call site in `ConnectionRuntimeClassGenerator`.
 
-R1087 (shipped) added the per-request record keyed on throwable identity (the generated `ErrorRouter`'s claim record, which carries a claimed source's chain roots and reference); the memo here is meant to become a second writer to that record, not a second holder.
+* **Key on the failure, not the wrapper.** A new private helper `failureOf(thrown)` returns
+  `thrown` with every leading `CompletionException` and `ExecutionException` that has a non-null
+  cause stripped. That is the instance java-dataloader shared across the batch.
+* **Extend the claim record rather than adding a holder.** `Claims` (built by `buildClaimsHolder`)
+  gains a second identity map, failure to unmatched reference, with synchronized
+  `unmatchedReferenceOf(failure)` and `assignUnmatchedReference(failure, reference)` (a
+  `putIfAbsent` answering whether this call set it), mirroring `referenceOf` / `assignReference`.
+  It is a map of its own rather than a share of `references`, because `recordClaim` reads "has a
+  reference" as "`matched` was already called": an unmatched mint in that map would silently
+  suppress a later `matched`. The keys seldom coincide anyway (a claim keys on the claimed chain
+  link, often the `SQLException`; the unmatched path keys on what `failureOf` returns). The class
+  javadoc's "one per-request holder keyed on throwable identity in the error channel" stays true.
+* **One reporting helper for both unmatched dispositions.** A new private
+  `reportUnmatched(thrown, env, what)` does, in order: compute `failure = failureOf(thrown)`; get or
+  create the request's `Claims` (none when `env` or its context is null, and then everything below
+  behaves exactly as today); if `unmatchedReferenceOf(failure)` is set, return it and log nothing;
+  else mint with `newReference(thrown, env)` and `assignUnmatchedReference(failure, minted)`. The
+  call that sets the reference is the one that logs, handing `thrown` to
+  `toConfiguredLog(... log.unmatched(thrown, reference, env))` or writing the default line; a call
+  that loses a race takes the winner's reference and logs nothing. So the field that logs is the
+  field whose reference stands, and "the first field's `env`" is literally the logged one. A lost
+  race costs one discarded `FetcherErrorResponse.reference` call, never a second record. Minting
+  stays outside the lock, so no consumer code runs under it. `redact` and `settleFailure` call the
+  helper in place of their `newReference` + log pair, with their existing line prefixes as `what`.
+  The client message (`unmatchedMessage`) is still computed per field, with the shared reference.
+* **Which throwable the consumer sees.** `FetcherErrorResponse.reference` and
+  `FetcherErrorLog.unmatched` keep receiving `thrown` as the winning field caught it, wrapper
+  included, exactly as today; `failureOf` is the memo's key, not a new argument. Their javadoc says
+  so, and says the call is once per failure per request.
+* **The default line.** A new public static `ErrorRouter.describe(Throwable)` returns
+  `Optional<String>`, the one-line summary when the chain holds a `java.sql.SQLException` and empty
+  otherwise, matching the shape of `TenantConnections.mountCause`. It is public because it is
+  useful to a `FetcherErrorLog` author too, and the error-channel how-to says so. The summary is the class of
+  `failureOf(thrown)`, the class of the first `SQLException` on the chain, its SQL state and vendor
+  code, and its message with runs of whitespace collapsed to one space and cut at a fixed bound (240
+  characters, ending in `...` when cut). The walk stops at a cycle or after a fixed depth. With a
+  summary, the default branch logs `<what>; correlation id = {}; {}` at ERROR with no throwable
+  argument, then `<what>; correlation id = {}` at DEBUG with the throwable. Without one it logs
+  today's ERROR line, throwable included. A configured `FetcherErrorLog` still receives the raw
+  throwable and never sees the summary.
+* **The tenant fan-out.** `logFanOutFailure`'s default line for a failed tenant uses
+  `ErrorRouter.describe` the same way (summary at ERROR, throwable at DEBUG, or today's line). It
+  keeps a reference per tenant and takes no memo: each tenant's failure is its own exception.
+* **Javadoc that changes meaning.** In `ConnectionRuntimeClassGenerator.fetcherErrorLog`:
+  `FetcherErrorLog.unmatched` changes from "once per fetcher exception" to once per failure per
+  request however many fields it failed, with the logging field's `env`, mirroring `matched`; and
+  the interface's class javadoc, which says the default line includes "message and cause chain",
+  says that a database failure's default line is the summary at ERROR with the full exception at
+  DEBUG. `redact`'s and `settleFailure`'s javadoc say the reference is shared.
 
-Open at Spec: whether the client-facing errors should all quote the one shared reference (better for
-a support ticket, and the reading this goal assumes) or keep per-field ids while collapsing only the
-log. Also whether `redact` should log at a lower level, or without the stack trace, for the
-subsequent occurrences rather than staying silent. Whether the batch cap belongs in this item or
-splits into its own at Spec: it answers the same incident and composes with the memo (a cap turns one
-failure into at most one record per chunk), but it touches the loader emitters rather than
-`ErrorRouter`, so it can ship independently. Whether a cap should also be settable at build time, as
-a default the context method overrides.
+### Let a consumer cap batch size
+
+* **A new consumer hook.** `ConnectionRuntimeClassGenerator` emits `BatchSizeLimit` beside
+  `FetcherErrorLog` in the `CONNECTION_RUNTIME` unit set: a pure `@FunctionalInterface` with
+  `int maxBatchSize(DataFetchingEnvironment env)` and nothing else, where a value below 1 means
+  unbounded. It is asked once per loader per request, with the environment of the first field that
+  needed the loader, so a consumer can vary the limit by field (`env.getExecutionStepInfo()`,
+  `env.getFieldDefinition()`). Its `ClassName` comes from a `GeneratedUnits`-backed resolver beside
+  `ErrorRouterClassGenerator.fetcherErrorLogClass`, never from `outputPackage + ".schema"` at a site.
+* **Runtime configuration, the way the other hooks are configured.** `GraphitronRuntime` gains a
+  `batchSizeLimit` field, `withBatchSizeLimit(BatchSizeLimit)` and `batchSizeLimit()` returning an
+  `Optional`, and its copy constructor gains the parameter (so `withFetcherErrorLog` and
+  `withFetcherErrorResponse` carry it over); its class javadoc, which lists the callbacks it holds,
+  names the third. `GraphitronConnectionInstrumentationGenerator` publishes it into the request's
+  `GraphQLContext` under its class, next to the two it publishes today. The escape-hatch engine
+  reads the same context entry, put there by the caller.
+* **One lookup, on the router.** A new public static `ErrorRouter.loaderOptions(env)` returns
+  `DataLoaderOptions`: no entry gives `DataLoaderOptions.newOptions().build()`, a positive answer
+  adds `setMaxBatchSize(n)`, and a throw goes through the router's existing private `configured`,
+  `contained` and `pathOf` (one ERROR line naming the hook's class, the class of what it threw and
+  the field's path; unbounded options stand; only a `VirtualMachineError` propagates). This keeps the
+  existing split, where hook interfaces carry only the consumer's contract and Graphitron's calls
+  into hooks are statics on `ErrorRouter` (`toConfiguredLog`, `newReference`), and it keeps every
+  helper private. The cost is the name: this is the first hook that is not about errors. A second
+  non-error hook is the point at which `configured`, `contained` and `answer` move into a unit of
+  their own; not now.
+* **One way to build a loader.** A new shared emit fragment renders the whole construction,
+  `DataLoaderFactory.<newDataLoader|newMappedDataLoader>(<lambda>, ErrorRouter.loaderOptions(env))`,
+  from the container kind, the lambda and the environment variable. The five sites named under "Why
+  it happens" call it inside their `computeIfAbsent` lambda (so the lookup runs once per loader), and
+  their own `DATA_LOADER_FACTORY` / `LOADER_FACTORY` constants are deleted, with the unused one on
+  `TypeFetcherGenerator`. A loader built without the cap then has to name `DataLoaderFactory` anew,
+  and `GeneratedSourcesLintTest` gains a rule rejecting a one-argument `newDataLoader(` /
+  `newMappedDataLoader(` call in generated sources, so a sixth site cannot silently skip it.
+* **Compile-graph wiring.** `EmitPlan.connectionRuntime` lists the `CONNECTION_RUNTIME` refs by
+  hand and gains `BatchSizeLimit`'s. `PlanCompileGraph.addFixedKindEdges` gains the runtime to
+  `BatchSizeLimit` and instrumentation to `BatchSizeLimit` edges in the `CONNECTION_RUNTIME` and
+  `CONNECTION_INSTRUMENTATION` arms, beside the log and response edges. Fetcher units reach the cap
+  only through `ErrorRouter`, which they already have a frozen-scaffold edge into, and the router is
+  exempt as an oracle source, so no fetcher-side edge is added. `FrameEmitter.Runtime` needs no new
+  component for the same reason. `IncrementalCompileHarnessTest`'s oracle leg pins all of this.
+* **Chunking.** java-dataloader 6.0.0 (the version graphql-java 25.0 brings in) then calls the batch
+  lambda once per chunk of at most `n` keys. The rows methods, `BatchedRowsFragments` and the
+  key-context handling do not change: each chunk's lambda call sees its own keys and key contexts,
+  and `FrameEmitter`'s `getKeyContextsList().get(0)` reads that chunk's first.
+
+## User documentation (first-client check)
+
+For `docs/manual/how-to/error-channel.adoc`, replacing the redact code block's surrounding prose and
+the first paragraphs of "Choosing how unmatched exceptions are logged":
+
+> Every other unmatched exception runs the redact path. It is logged once per request, however
+> many fields it failed: a batched child query that fails under 400 parents produces 400 field
+> errors, one log record, and one reference that all 400 errors quote. Two batches that fail
+> separately are two records with two references. (A `@service` of yours that rethrows one cached
+> exception wrapped in a `CompletionException` for two batches reads as one failure.)
+>
+> When the exception comes from the database driver, the ERROR record is one line: the exception
+> class, the driver exception's class, its SQL state and vendor code, and the driver's message,
+> shortened. The SQL statement is not in it; for a batched query that statement grows with the
+> batch. The full exception, statement included, is logged at DEBUG under the same reference.
+> Any other exception is logged at ERROR with its stack trace, as before.
+>
+> A `FetcherErrorLog` you configure receives the full exception instead, once per request in the
+> same way, with the environment of the field that logged it. To write the same one-line summary
+> yourself, call `ErrorRouter.describe(thrown)`, which is empty for an exception that did not come
+> from the driver.
+
+For `docs/manual/explanation/batching-model.adoc`, a new section "Bounding a batch":
+
+> A batch is as large as the request makes it: a split child under 2,000 parents is one statement
+> with 2,000 keys. To bound it, give the runtime a `BatchSizeLimit`:
+>
+> ```java
+> var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
+>     .withBatchSizeLimit(env -> 500);
+> ```
+>
+> A batch over the limit runs as several statements of at most that many keys, one after another,
+> and each parent still gets its own rows. A statement that fails takes down only the fields whose
+> keys were in it. The limit is asked once per batch with the first field's environment, so it can
+> depend on the field; return 0 for no limit, which is also what you get without a
+> `BatchSizeLimit`. On the escape-hatch engine, put it into each request's context under
+> `BatchSizeLimit.class`.
+
+Both read simply, so the design stands.
 
 ## Tests
 
-* An execution-tier test that a failing split-query batch over N parents yields exactly one log
-  record and N GraphQL errors citing one reference. **There is no log-capture helper in the tree
-  today**, so asserting "exactly one record" needs one built; that is part of this item's cost, and
-  it is the assertion that actually pins the goal.
-* `GraphQLOverHttpConformanceTest.redactionShapeMatchesFetcherPath` pins that the resource-side and
-  fetcher-side redactions emit one wire shape. Whatever this item changes must keep that identity.
-* A unit test that the ERROR summary of a `DataAccessException` whose message and causes contain SQL
-  names the SQL state and vendor code and contains no part of the statement, and that an overlong
-  driver message is truncated.
-* An execution-tier test that with a cap of `k`, a split child under `n > k` parents runs
-  `ceil(n / k)` child queries and still returns every parent's slice; and with no cap, one query.
-  Counting statements needs a jOOQ `ExecuteListener` in the test, not the log.
+All new tests live in `graphitron-sakila-example`; all but one are execution tier. Log capture is a small test
+helper built on logback's `ListAppender` (logback-classic is already on that module's test
+classpath), attached to the generated `ErrorRouter` logger for the test's duration and able to
+lower its level to DEBUG; it is the assertion that actually pins the goal.
+
+* **One record, one reference, many errors.** `{ films { durabilityError } }` over the seeded films:
+  `Film.durabilityError` is an existing batched child `@service` (`DurabilityErrorService.synthesize`)
+  that throws once per batch. Assert N field errors, every message quoting the same reference,
+  exactly one ERROR event on the `ErrorRouter` logger, carrying that reference and the throwable
+  (the non-database path keeps its stack trace).
+* **Two failures, two records.** The same field under two aliases runs two loaders, so two
+  batches: assert two ERROR events and two distinct references, each quoted by its own alias's
+  errors.
+* **A configured log is called once.** With a `FetcherErrorLog` lambda counting calls, the first
+  query above calls `unmatched` once, with a reference equal to the one the errors quote, and the
+  `ErrorRouter` logger records nothing.
+* **The database summary.** A new fixture batched child `@service` on `Film` whose method runs one
+  statement binding every key and failing at execution (`1 / 0`, PostgreSQL SQL state `22012`).
+  Assert one ERROR event, no throwable on it, its message naming `22012` and `division by zero` and
+  containing neither the statement text nor a bind value; and, with the logger at DEBUG, one DEBUG
+  event under the same reference carrying the throwable.
+* **Truncation and the walk.** A `@UnitTier` test of the generated `ErrorRouter.describe`, in
+  memory with no database (the precedent for a unit-tier test against a generated class in this
+  module is `ScatterSingleByIdxTest`): a jOOQ `DataAccessException` whose message is a long SQL
+  statement, wrapping a `SQLException` with an overlong multi-line message, gives a summary that
+  names state and vendor code, contains no part of the statement, collapses the whitespace and
+  stops at the bound; a chain without a `SQLException` gives an empty `Optional`; a cyclic cause
+  chain terminates.
+* **The cap.** A test using a jOOQ `ExecuteListener` counting statements, as
+  `BatchCountsExecutionTest` does, over an existing list-valued `@splitQuery` child under `n`
+  parents: with `withBatchSizeLimit(env -> k)` and `n > k`, `ceil(n / k)` child statements, and the
+  response equal to the unbounded one; without a limit, one child statement. A limit that throws
+  leaves the response equal to the unbounded one and logs one ERROR line naming `BatchSizeLimit`.
+  The escape-hatch engine honours a limit put into the request context. One case with the database
+  fixture under a cap pins that a failure is one record per failed chunk.
+* **Unchanged.** `GraphQLOverHttpConformanceTest.redactionShapeMatchesFetcherPath` and
+  `computedRedactionMatchesFetcherPath`, `FetcherErrorResponseExecutionTest`, and
+  `TenantFanOutExecutionTest`'s tenant-failure cases pass unchanged. The generator unit tests pin
+  structure only (`ErrorRouterClassGeneratorTest`, `ConnectionRuntimeClassGeneratorTest`: the new
+  methods and the new unit exist), with no assertions on generated method bodies.
+* **Wiring and the one construction path.** `IncrementalCompileHarnessTest`'s oracle leg passes
+  with the new unit and edges, and the new `GeneratedSourcesLintTest` rule finds no one-argument
+  loader construction in the sakila example's generated sources.
 
 ## Other solutions we've considered
 
@@ -194,8 +353,17 @@ a default the context method overrides.
   because it moves the logging into every emitter that builds a batch lambda and leaves `redact`
   unable to log the non-batched failures it still handles, so the tree ends up with two logging
   sites to keep in agreement instead of one.
-* **Leave it to consumers via logger configuration.** This is today's state. It is all-or-nothing and
-  discards the reference-to-cause mapping, so it does not reach the goal.
+* **Leave the collapse to the consumer's `FetcherErrorLog`.** A consumer can already dedupe inside
+  their own log. Rejected because the default line, which every consumer gets until they write one,
+  keeps the flood; because each consumer would rediscover that the shared instance hides behind a
+  per-field `CompletionException`; and because the client errors would still quote one reference
+  each, which only Graphitron can change.
+* **Port the 9.x shape.** The 9.x line carries all three parts (branch `graphitron-9-head`, commit
+  `e7b80004e`): a `WeakHashMap` on throwable identity inside a `TopLevelErrorHandler`,
+  `describeDataAccessException`, and `GraphitronContext.getDataLoaderMaxBatchSize`. Trunk has no
+  handler to subclass, and its `GraphitronContext` is sealed, so a consumer cannot override a method
+  on it. The memo goes into the per-request claim record and the cap goes onto `GraphitronRuntime`,
+  where the consumer's other hooks already are. The summary's content carries over.
 * **Rely on the reference id becoming the OTel trace id (R423).** That would make the records
   *groupable*, since every field in a request would quote one id, which is a real improvement. It
   does not reduce the count: 400 stack traces remain 400 stack traces. The two items compose, and
