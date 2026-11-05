@@ -465,6 +465,11 @@ static method needs no holder.
   payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
   takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
   at a time", where the per-field `rowsX`, `loadX` and decode copies go.
+* **A split carries the target's key where the source states it** `open`, E's, off the critical path.
+  At a split, the frame's key is read off the path's first step rather than always the parent table's
+  primary key: where the source states the target's key, as foreign-key columns on its row or an
+  accessor on its object, the loader carries that and the continuation is a lookup on a derived target
+  table, the `@lookupKey` shape; a `SOURCE`-filled parameter receives whichever key the split carries.
 * **The service fields are emitted from the store** `blocked`, E's, on "A producer's fetcher parts are emitted from the store". The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
   the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
   changes on purpose, its behaviour does not.
