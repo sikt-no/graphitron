@@ -97,6 +97,27 @@ in place of the bare payload.
      as an `ErrorType`, which keys off the `@error` directive alone.
   The union is not a workaround for a consumer: it changes the client contract, and existing
   `errors { path message }` selections fail validation against the union.
+* The fact store states the same rule a second time, and emission reads the store's copy. The
+  view `graphitron_errors_field_rule` fills `graphitron_errors_field` (one row per errors field,
+  anchored by `Fetchers`) only for a nullable list whose element is a container in
+  `graphql_poly_member` whose every member carries `@error`; its `container_name` is documented as
+  "the union or interface the list holds". `graphitron_producer_outcome` holds a foreign key into
+  it. `no.sikt.graphitron.emit.ErrorChannelRelation` reads both: the outcome type each producer
+  catches into, and each outcome type's members in match order, by joining `graphql_poly_member` on
+  `container_name`. `ErrorMappingsClassGenerator` emits one dispatch constant per outcome type from
+  that read, and `TypeFetcherEmissionContext.mappingsConstant` throws "the walk and the store have
+  drifted" when the walk gave a field a channel the store states no outcome for. The errors-field
+  entry defects (`ERRORS_FIELD_MIXED_MEMBERS`, `ERRORS_FIELD_NOT_A_LIST`, `ERRORS_FIELD_NON_NULL`)
+  are derived in the store as well, from fields whose element is a container with an `@error`
+  member. `ErrorChannelRelation` is the only reader of `container_name`; every other reader
+  (`graphitron_producer_outcome_rule`, the DML and routine carrier derivations, the
+  `ERRORS_IN_A_ROW` and `MULTIPLE_ERRORS_FIELDS` defects, `OccurrenceSources`, the LSP's
+  `CarrierDataField`) only asks whether a field has a row. `OutcomeAgreementTest` holds the walk
+  and the store to the same producers and errors fields, and the fact document
+  `graphitron-model/src/test/resources/facts/defects/producer-outcome.graphqls` pins today's rule
+  outright: its `DirectPayload { text: String, errors: [FilmInvalid] }` is "the value's own field".
+  So a classifier-only fix would pass classification and then fail generation at
+  `mappingsConstant`.
 * The sibling item that reifies the `PayloadAccessor` errors fetcher (`reify-error-payload-accessor-fetcher`)
   and the `PropertyDataFetcher` wording in `pin-defaultread-outcome-rejection` describe that arm
   and are stale for the same reason; neither overlaps this item, and both want a Discarded or
@@ -152,7 +173,11 @@ The accessor is not read, and the build does not warn about it.
      `PolymorphicReturnType`, and its callers call it whenever the helper finds `@error` members,
      not only on a polymorphic return: the five sites above change their gate, keeping their place
      in the classification order. The non-outcome fallback (a `RecordReadField` over the given
-     return type) is unchanged in shape and now also covers the single type.
+     return type, read with `ValueLocator.DefaultRead`) is unchanged in shape and now also covers
+     the single type. That is deliberately the union's treatment, not the accessor-resolved read a
+     single `@error` element gets today through `recordReadFieldOrUnclassified`: one rule for every
+     errors-shaped field, whatever its element, so the two shapes stay equivalent as the manual
+     says.
   ** The single type gets the union's precise rejections, not a fallback to a data field: a
      non-list `errors: X` gets "must be a list", and a non-null list `[X!]!` gets
      `ErrorChannelWalkerError.NonNullableErrorsField`. The mixed-members rejection cannot arise for
@@ -163,10 +188,34 @@ The accessor is not read, and the build does not warn about it.
 
   Widening `detectErrorsFieldShape` widens every consumer: `BuildContext.scanStructuralPayload`
   (DML, `@service` and `@routine` emitted carriers), the DML DELETE errors-field pass in
-  `GraphitronSchemaBuilder`, and `MutationInputResolver`. That is intended (see Goal). The rest of the
-  channel (handler rules, `ErrorMappings`, the catch arm, the `Outcome` wrapper, the errors fetcher)
-  already works from a `List<ErrorType>` and needs no change beyond what a one-member list
-  exercises. No type resolver is registered for a single-type field, and none is needed:
+  `GraphitronSchemaBuilder`, and `MutationInputResolver`. That is intended (see Goal).
+
+* The store: the same widening, in the relation the walk's rule is a copy of. The grain stays
+  "one row per errors field", the owner stays `Fetchers`' anchor of the rule view, and mark and
+  sweep are unchanged, so this is a wider rule, not a new relation.
+  ** `graphitron_errors_field_rule` admits a second arm beside the container arm: a nullable list
+     whose element is an object type carrying `@error`. `container_name` holds the element type in
+     both arms. Its column comment, the table comment, the view's column comment and the
+     `meta_relation` row's grain sentence say so: "the type the list holds: a union or interface
+     whose members are the `@error` types an error is matched to, or the one `@error` type itself".
+  ** `ErrorChannelRelation.read` resolves members with a left join: a container's members in match
+     order as today, or the element itself when `graphql_poly_member` has no row for it. Its javadoc
+     states the single-type arm.
+  ** The errors-field entry-defect arm also takes a field whose element is an object type carrying
+     `@error`, so `errors: X` is `ERRORS_FIELD_NOT_A_LIST` and `[X!]!` is `ERRORS_FIELD_NON_NULL`,
+     the store's halves of the walk's precise rejections. `ERRORS_FIELD_MIXED_MEMBERS` cannot arise
+     for one type.
+  ** The existence-only readers listed under "What the code does today" widen with the table and
+     need no edit; that is the cross-family scope the Goal asks for, the LSP included.
+  ** The walk keeps its own copy of the rule (the `BuildContext` helper above) rather than reading
+     the store; the tree's guard against the two drifting is `OutcomeAgreementTest`, which gains a
+     single-type producer (Tests). Moving the walk onto the store's answer is a larger change than
+     this bug fix and is not proposed here.
+
+  The rest of the channel (handler rules, the per-type `ErrorMappings.ByType`, the catch arm, the
+  `Outcome` wrapper, the errors fetcher) works from a `List<ErrorType>` on the walk side and from
+  `ErrorChannelRelation`'s member lists on the emission side, so with both widened it needs no
+  change beyond what a one-member list exercises. No type resolver is registered for a single-type field, and none is needed:
   `GraphitronSchemaClassGenerator.isErrorOnlyPolymorphic` keys off `UnionType` and `InterfaceType`.
   `ErrorMappings.ByType` and the per-type `<ErrorType>Fetchers` are emitted per `ErrorType`
   whatever carries it.
@@ -219,6 +268,27 @@ Existing case to re-check, not rewrite: `GraphitronSchemaBuilderTest`'s
 rejection must still come from `data: String`; confirm the assertion still holds for the reason its
 description gives.
 
+The store, against the walk. Pipeline tier, `OutcomeAgreementTest`: the fixture SDL gains a root
+`@service` field returning a payload whose `errors` lists `SimpleErr` directly (beside the existing
+`union CarrierError = SimpleErr`, which stays as the one-member-union case), and that producer joins
+the `walkProducers` expectation, so the walk's channel and the store's `graphitron_producer_outcome`
+row are compared for the single type too. Fact document,
+`graphitron-model/src/test/resources/facts/defects/producer-outcome.graphqls`: the file description
+states the widened rule; `DirectPayload`'s comment says a list of one `@error` type is an errors
+field; `DirectPayload.errors` (container `FilmInvalid`) joins the `graphitron_errors_field` rows and
+`Mutation.direct` joins the `graphitron_producer_outcome` rows; and two new types,
+`SingleErrorTypePayload { text: String, error: FilmInvalid }` and
+`StrictSingleErrorTypePayload { text: String, errors: [FilmInvalid]! }`, join the entry-defect
+expectation as `ERRORS_FIELD_NOT_A_LIST` and `ERRORS_FIELD_NON_NULL`.
+
+Second existing fixture to re-check: `graphitron-model/src/test/resources/corpus/error-type.graphqls`
+declares `SakPayload { errors: [ExtraFieldError] }` under the `@service` field `Query.sak`, so it
+becomes a carrier. `ExtraFieldError` has a `severity` field its `GENERIC` handler's
+`java.lang.IllegalArgumentException` has no accessor for, which `HandlerAccessorCheck` reports once
+a channel forms. If it does, change the fixture so it still says what its description says (the
+`@error` type reaching the schema through a payload's errors slot), for example a handler class
+that has the accessor; do not loosen the check.
+
 Execution tier (`graphitron-sakila-example`, `GraphQLQueryTest`): a new Mutation field
 `submitSingleErrorFilmReview(filmId: Int!, rating: Int!): SingleErrorFilmReviewPayload` over a new
 `FilmReviewService.submitSingleError` method, with
@@ -257,6 +327,14 @@ fixtures and the manual change.
   unreachable handlers it would explain are the single-type carrier's, fixed at their cause.
 * *Read the accessor when the channel has nothing.* Rejected above: two sources for one field and a
   schema whose behaviour depends on the service's success path.
+* *A member relation in the store* (`graphitron_errors_field` plus a derived row per member, in
+  match order), so `ErrorChannelRelation` reads members instead of joining `graphql_poly_member`
+  and ordering them itself. It would state the match order once in the store, but it is a new
+  relation (owner, grain, mark and sweep, registration) for a bug fix whose only member reader is
+  that one query; the left join keeps the change inside the existing relation and its reader.
+* *Renaming `container_name`.* After the fix it can hold a type that contains nothing. The column
+  comment says what it holds; a rename would touch the reference docs, the fact documents and the
+  reader for no change in meaning, and can be its own refactor if wanted.
 
 ## Open questions for the user
 
@@ -413,3 +491,14 @@ non-outcome fallback the plan extends to the single type (`RecordReadField` with
 `ValueLocator.DefaultRead(name)`) is weaker than what that field gets today through
 `recordReadFieldOrUnclassified` (an accessor resolved against the backing class, `@field(name:)`
 honoured); the union already has this, so it is consistent, but the plan should say it is meant.
+
+Author response (session_01FY5UvvDHUCucMtrxBma63e, 2026-11-06). This session reviewed round 2
+and then, at the user's request, revised the plan, so it may not sign off the revision. Finding 1:
+"What the code does today" names the store's copy of the rule, its one member reader and the
+existence-only readers; Implementation widens `graphitron_errors_field_rule` with a single-type arm
+(same grain, owner, mark and sweep; `container_name` holds the element type), gives
+`ErrorChannelRelation.read` a left join that resolves a non-container to itself, and widens the
+errors-field entry-defect arm; the walk keeps its copy, held to the store by an extended
+`OutcomeAgreementTest`. Tests update `producer-outcome.graphqls` and add two single-type defect
+cases. A member relation and a column rename are recorded as considered. Finding 2: the corpus
+fixture is on the re-check list, and the non-outcome fallback is stated as deliberate.
