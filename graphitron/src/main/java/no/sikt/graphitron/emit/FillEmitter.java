@@ -2,11 +2,13 @@ package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -68,8 +70,10 @@ public final class FillEmitter {
     /** What the emitter makes of a call: its fills, or the first parameter it cannot fill. */
     public sealed interface Result {
         /** The locals to declare in the body, then the arguments to call the method with. */
-        record Emitted(List<CodeBlock> statements, List<CodeBlock> arguments) implements Result {
+        record Emitted(List<CodeBlock> statements, List<CodeBlock> arguments, List<MethodSpec> helpers)
+                implements Result {
             public Emitted {
+                helpers = List.copyOf(helpers);
                 statements = List.copyOf(statements);
                 arguments = List.copyOf(arguments);
             }
@@ -84,11 +88,21 @@ public final class FillEmitter {
      * under an object, empty at a root.
      */
     public static Result emit(FillQuery.Row row, Optional<TypeName> keysType, Runtime runtime) {
+        return emit(row, keysType, runtime, Map.of());
+    }
+
+    /**
+     * The fills of {@code row}'s call, an input object made into its parameter's class as
+     * {@code builds} says, by position: the helpers that make it ride along with the fills.
+     */
+    public static Result emit(FillQuery.Row row, Optional<TypeName> keysType, Runtime runtime,
+                              Map<Integer, BuildQuery.Result> builds) {
         if (!row.complete()) {
             throw new IllegalStateException("the call at " + row.coordinate()
                 + " has a parameter nothing fills, which the store reports where it is written");
         }
         var statements = new ArrayList<CodeBlock>();
+        var helpers = new ArrayList<MethodSpec>();
         var arguments = new ArrayList<CodeBlock>();
         for (var fill : row.fills()) {
             var type = SessionIdentityRows.typeOf(fill.parameterType());
@@ -120,6 +134,21 @@ public final class FillEmitter {
                 }
                 case "ARGUMENT" -> {
                     var landing = fill.landing().orElseThrow();
+                    if (!landing.nodeId() && "INPUT_OBJECT".equals(landing.typeKind())) {
+                        var build = builds.get(fill.position());
+                        if (!(build instanceof BuildQuery.Result.Built built)) {
+                            return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
+                                build instanceof BuildQuery.Result.Refused refused ? refused.reason()
+                                    : "nothing says how input object " + String.join(".", landing.path())
+                                        + " is made into " + type);
+                        }
+                        var helper = "build" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
+                        helpers.addAll(BuildEmitter.helpers(built.build(), helper));
+                        statements.add(argument(ClassName.get(Object.class), local + "Wire", landing.path()));
+                        statements.add(made(type, local, helper));
+                        arguments.add(CodeBlock.of("$L", local));
+                        continue;
+                    }
                     if (landing.nodeId() || !SCALAR_OR_ENUM.contains(landing.typeKind())) {
                         return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
                             landing.nodeId() ? "it takes a node id, which is decoded into its key"
@@ -138,7 +167,7 @@ public final class FillEmitter {
                     + row.coordinate() + " position " + fill.position());
             }
         }
-        return new Result.Emitted(statements, arguments);
+        return new Result.Emitted(statements, arguments, helpers);
     }
 
     /**
@@ -175,6 +204,19 @@ public final class FillEmitter {
         }
         return List.of(argument(STRING, wire, path),
             CodeBlock.of("$T $L = $L == null ? null : $T.valueOf($L)", type, local, wire, type, wire));
+    }
+
+    /** An input object, or a list of them, made into the parameter's class by {@code helper}. */
+    private static CodeBlock made(TypeName type, String local, String helper) {
+        var wire = local + "Wire";
+        var anyMap = ParameterizedTypeName.get(MAP, com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class),
+            com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        if (type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())) {
+            return CodeBlock.of("$T $L = $L instanceof $T<?> elements ? elements.stream()"
+                    + ".map(e -> e instanceof $T m ? $L(m) : null).toList() : null",
+                type, local, wire, LIST, anyMap, helper);
+        }
+        return CodeBlock.of("$T $L = $L instanceof $T m ? $L(m) : null", type, local, wire, anyMap, helper);
     }
 
     /** A type's element: the type a {@code List} holds, or the type itself. */

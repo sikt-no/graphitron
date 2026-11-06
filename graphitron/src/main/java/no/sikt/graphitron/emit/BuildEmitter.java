@@ -1,0 +1,167 @@
+package no.sikt.graphitron.emit;
+
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.WildcardTypeName;
+
+import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Emits how an input object is made into a class, from one of {@link BuildQuery}'s constructions:
+ * one helper per class, taking the input object's map as graphql-java hands it over and answering
+ * the class's value.
+ *
+ * <pre>{@code
+ * @SuppressWarnings("unchecked")
+ * private static FilmBundleDraft buildDrafts(Map<?, ?> in) {
+ *     return new FilmBundleDraft(
+ *         (String) in.get("name"),
+ *         in.get("limits") instanceof Map<?, ?> group1 ? (Integer) group1.get("capacity") : null,
+ *         in.get("films") instanceof List<?> list1
+ *             ? list1.stream().map(e -> e instanceof Map<?, ?> m ? buildDrafts_films(m) : null).toList() : null);
+ * }
+ * }</pre>
+ *
+ * <p>A record is made by its canonical constructor, every component in header order and a member no
+ * field fills taking its default. Anything else is made empty and filled by its setters, a setter
+ * called only for a field the client sent, so a member it did not send keeps the value the class
+ * gives it. A field's value is read off its map, through a grouping's map where it is grouped, and is
+ * {@code null} wherever a map on the way is absent: a scalar or an enum's string as the member takes
+ * it, an enum through {@code valueOf} into a Java enum, and a nested input object, or a list of
+ * them, through the helper that makes the member's class.
+ */
+public final class BuildEmitter {
+
+    private BuildEmitter() {}
+
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName STRING = ClassName.get("java.lang", "String");
+    private static final TypeName ANY_MAP = ParameterizedTypeName.get(MAP,
+        WildcardTypeName.subtypeOf(Object.class), WildcardTypeName.subtypeOf(Object.class));
+
+    /**
+     * The helpers that make {@code build}'s class, the first named {@code name} and taking the input
+     * object's map, the rest making the classes of its nested input objects.
+     */
+    public static List<MethodSpec> helpers(BuildQuery.Build build, String name) {
+        var out = new ArrayList<MethodSpec>();
+        helper(build, name, out);
+        return out;
+    }
+
+    private static void helper(BuildQuery.Build build, String name, List<MethodSpec> out) {
+        var type = SessionIdentityRows.classOf(build.className());
+        var method = MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addAnnotation(com.palantir.javapoet.AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked").build())
+            .returns(type)
+            .addParameter(ANY_MAP, "in");
+        out.add(null);
+        int index = out.size() - 1;
+        var counter = new int[] {0};
+        if ("POSITIONAL".equals(build.shape())) {
+            var arguments = new ArrayList<CodeBlock>();
+            for (var slot : build.slots()) {
+                var member = build.members().stream()
+                    .filter(m -> m.slot().position() == slot.position()).findFirst();
+                arguments.add(member.isPresent()
+                    ? value(member.get(), name, counter, out)
+                    : defaultOf(SessionIdentityRows.typeOf(slot.slotType())));
+            }
+            method.addStatement("return new $T($L)", type, CodeBlock.join(arguments, ", "));
+        } else {
+            method.addStatement("$T out = new $T()", type, type);
+            for (var member : build.members()) {
+                var sent = sent(member.path(), counter);
+                method.beginControlFlow("if ($L)", sent)
+                    .addStatement("out.$L($L)", member.slot().methodName(), value(member, name, counter, out))
+                    .endControlFlow();
+            }
+            method.addStatement("return out");
+        }
+        out.set(index, method.build());
+    }
+
+    /** Whether the client sent the field: every map on the way is there, and the last holds its name. */
+    private static CodeBlock sent(List<String> path, int[] counter) {
+        var maps = maps(path, counter);
+        var contains = CodeBlock.of("$L.containsKey($S)", maps.last(), path.getLast());
+        return maps.guard().isEmpty() ? contains : CodeBlock.of("$L && $L", maps.guard(), contains);
+    }
+
+    /** A member's value, read off its map and made into what the member takes. */
+    private static CodeBlock value(BuildQuery.Member member, String name, int[] counter, List<MethodSpec> out) {
+        var slotType = SessionIdentityRows.typeOf(member.slot().slotType());
+        var maps = maps(member.path(), counter);
+        var read = CodeBlock.of("$L.get($S)", maps.last(), member.path().getLast());
+        CodeBlock made;
+        if (member.nested().isPresent()) {
+            var helperName = name + "_" + member.slot().slotName();
+            helper(member.nested().get(), helperName, out);
+            made = member.list()
+                ? listOf(read, CodeBlock.of("e instanceof $T m ? $L(m) : null", ANY_MAP, helperName), counter)
+                : CodeBlock.of("$L instanceof $T map$L ? $L(map$L) : null", read, ANY_MAP, ++counter[0], helperName, counter[0]);
+        } else if ("ENUM".equals(member.typeKind()) && !STRING.equals(elementOf(slotType))) {
+            var element = elementOf(slotType);
+            made = member.list()
+                ? listOf(read, CodeBlock.of("e instanceof $T s ? $T.valueOf(s) : null", STRING, element), counter)
+                : CodeBlock.of("$L instanceof $T text$L ? $T.valueOf(text$L) : null", read, STRING, ++counter[0], element, counter[0]);
+        } else if (slotType.isPrimitive()) {
+            made = CodeBlock.of("$L instanceof $T number$L ? number$L : $L", read, slotType.box(), ++counter[0],
+                counter[0], defaultOf(slotType));
+        } else {
+            made = CodeBlock.of("($T) $L", slotType, read);
+        }
+        return maps.guard().isEmpty() ? made : CodeBlock.of("($L ? $L : null)", maps.guard(), made);
+    }
+
+    /** A list read off a map, each element mapped, {@code null} where the map holds no list. */
+    private static CodeBlock listOf(CodeBlock read, CodeBlock element, int[] counter) {
+        int n = ++counter[0];
+        return CodeBlock.of("$L instanceof $T<?> list$L ? list$L.stream().map(e -> $L).toList() : null",
+            read, LIST, n, n, element);
+    }
+
+    /**
+     * The maps a grouped field is read through: a condition binding each grouping's map, empty where
+     * the field is not grouped, and the name of the map the field itself is in.
+     */
+    private record Maps(CodeBlock guard, String last) {}
+
+    private static Maps maps(List<String> path, int[] counter) {
+        var conditions = new ArrayList<CodeBlock>();
+        String at = "in";
+        for (int i = 0; i < path.size() - 1; i++) {
+            var group = "group" + (++counter[0]);
+            conditions.add(CodeBlock.of("$L.get($S) instanceof $T $L", at, path.get(i), ANY_MAP, group));
+            at = group;
+        }
+        return new Maps(CodeBlock.join(conditions, " && "), at);
+    }
+
+    /** A type's element: the type a {@code List} holds, or the type itself. */
+    private static TypeName elementOf(TypeName type) {
+        return type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())
+            ? list.typeArguments().getFirst() : type;
+    }
+
+    /** What a member no field fills is made with: zero or false for a primitive, else null. */
+    private static CodeBlock defaultOf(TypeName type) {
+        if (TypeName.BOOLEAN.equals(type)) return CodeBlock.of("false");
+        if (TypeName.CHAR.equals(type)) return CodeBlock.of("'\\0'");
+        if (TypeName.INT.equals(type)) return CodeBlock.of("0");
+        if (TypeName.LONG.equals(type)) return CodeBlock.of("0L");
+        if (TypeName.FLOAT.equals(type)) return CodeBlock.of("0F");
+        if (TypeName.DOUBLE.equals(type)) return CodeBlock.of("0D");
+        if (type.isPrimitive()) return CodeBlock.of("($T) 0", type);
+        return CodeBlock.of("null");
+    }
+
+}
