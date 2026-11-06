@@ -56,6 +56,61 @@ public final class BuildEmitter {
     }
 
     /**
+     * The helper that makes {@code build}'s jOOQ record from an input object's map: each column set
+     * from the first of its fields the client sent, a value through the column's own conversion by
+     * {@code fromArray} and an explicit null as null, a column no
+     * field was sent for left untouched, so the record's dirty flags are what the client wrote; then
+     * the node ids decoded into the same record, after every plain write so their agreement check
+     * sees it.
+     */
+    public static MethodSpec recordHelper(BuildQuery.RecordBuild build, String name, Runtime runtime) {
+        var type = SessionIdentityRows.classOf(build.recordClass());
+        var table = SessionIdentityRows.classOf(build.tablesClass());
+        var method = MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(type)
+            .addParameter(ANY_MAP, "in")
+            .addStatement("$T out = new $T()", type, type);
+        for (var column : build.columns()) {
+            var field = CodeBlock.of("$T.$L.$L", table, build.tableField(), column.columnJavaName());
+            boolean first = true;
+            for (var path : column.paths()) {
+                var condition = CodeBlock.of("in.containsKey($S)", path.getLast());
+                if (first) {
+                    method.beginControlFlow("if ($L)", condition);
+                    first = false;
+                } else {
+                    method.nextControlFlow("else if ($L)", condition);
+                }
+                // A present value through fromArray, which converts it through the column's own data
+                // type and converter; an explicit null set directly, fromArray skipping nulls.
+                method.beginControlFlow("if (in.get($S) == null)", path.getLast())
+                    .addStatement("out.set($L, null)", field)
+                    .nextControlFlow("else")
+                    .addStatement("out.fromArray(new $T[] {in.get($S)}, $L)", Object.class, path.getLast(), field)
+                    .endControlFlow();
+            }
+            method.endControlFlow();
+        }
+        var counter = new int[] {0};
+        for (var member : build.decodes()) {
+            var d = member.decode().orElseThrow();
+            var id = "id" + (++counter[0]);
+            var label = String.join(".", member.path());
+            var columns = CodeBlock.join(d.columnJavaNames().stream()
+                .map(c -> CodeBlock.of("$T.$L.$L", SessionIdentityRows.classOf(d.tablesClass()), d.tableField(), c))
+                .toList(), ", ");
+            method.beginControlFlow("if (in.get($S) instanceof $T $L)", member.path().getLast(), STRING, id)
+                .beginControlFlow("if ($T.decodeInto(out, $S, $L, $S, null, $L) == null)",
+                    runtime.nodeIdEncoder(), d.typeId(), id, label, columns)
+                .addStatement(runtime.invalidId().apply(label))
+                .endControlFlow()
+                .endControlFlow();
+        }
+        return method.addStatement("return out").build();
+    }
+
+    /**
      * The generated runtime a node id is decoded through: the encoder whose {@code decodeInto} loads
      * a record, and the statement that refuses an id it answers null for, given the input field's
      * name.

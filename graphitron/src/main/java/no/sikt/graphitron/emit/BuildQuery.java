@@ -14,6 +14,7 @@ import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
@@ -94,6 +95,28 @@ public final class BuildQuery {
         }
     }
 
+    /**
+     * One column of a record built on the column axis, and the input fields that may write it, as
+     * their paths from the input map in precedence order: the first one the client sent writes it.
+     */
+    public record ColumnWrite(String columnJavaName, List<List<String>> paths) {
+        public ColumnWrite {
+            paths = paths.stream().map(List::copyOf).toList();
+        }
+    }
+
+    /**
+     * How an input object is made into a table's jOOQ record: the record and its table as the generated
+     * code names them, each column and the fields writing it, and the node id fields decoded into it.
+     */
+    public record RecordBuild(String recordClass, String tablesClass, String tableField,
+                              List<ColumnWrite> columns, List<Member> decodes) {
+        public RecordBuild {
+            columns = List.copyOf(columns);
+            decodes = List.copyOf(decodes);
+        }
+    }
+
     /** A root's answer: the construction, or why the input cannot be made into the class. */
     public sealed interface Result {
         record Built(Build build) implements Result {}
@@ -105,13 +128,16 @@ public final class BuildQuery {
          * {@code RecordN} ({@code RECORD_N}) or {@code RowN} ({@code ROW_N}).
          */
         record Decoded(Decode decode, String shape) implements Result {}
+
+        /** An input object made into a table's jOOQ record on the column axis. */
+        record Columns(RecordBuild build) implements Result {}
     }
 
     /** One call's argument fill to build: the call, the position and the occurrence it takes. */
     public record Root(String callCoordinate, int position, String landingCoordinate) {}
 
     private record InputField(String coordinate, String name, String boundName, String typeKind,
-                              boolean list, boolean nodeId) {}
+                              boolean list, boolean nodeId, int ordinal, boolean deprecated) {}
 
     private record Construction(String className, String shape, String descriptor, List<Slot> slots) {}
 
@@ -201,15 +227,19 @@ public final class BuildQuery {
         var t = GRAPHITRON_TYPE;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
         var out = new HashMap<String, List<InputField>>();
+        var d = GRAPHITRON_DEPRECATED;
         store.dsl().select(o.PARENT_COORDINATE, o.COORDINATE, o.NAME, f.BOUND_NAME, t.KIND, f.IS_LIST,
-                field(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE)))))
+                field(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE)))),
+                f.ORDINAL,
+                field(exists(selectOne().from(d).where(d.GRAPH_NAME.eq(f.GRAPH_NAME), d.COORDINATE.eq(f.COORDINATE)))))
             .from(o)
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .join(t).on(t.GRAPH_NAME.eq(f.GRAPH_NAME), t.TYPE_NAME.eq(f.NAMED_TYPE))
             .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.eq("INPUT_FIELD"))
             .orderBy(o.COORDINATE)
             .forEach(r -> out.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(
-                new InputField(r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7())));
+                new InputField(r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7(),
+                    r.value8(), r.value9())));
         return out;
     }
 
@@ -235,7 +265,7 @@ public final class BuildQuery {
                                 Map<String, Construction> constructions, Catalog catalog,
                                 List<String> prefix) {
         if (catalog.tables().containsKey(className)) {
-            return new Result.Refused(className + " is a jOOQ record, which binds on columns");
+            return columns(occurrence, className, children, catalog);
         }
         var construction = constructions.get(className);
         if (construction == null) {
@@ -259,6 +289,61 @@ public final class BuildQuery {
         }
         return new Result.Built(new Build(className, construction.shape(), construction.descriptor(),
             construction.slots(), members));
+    }
+
+    /**
+     * An input object made into a table's jOOQ record: each plain field writes the column its bound
+     * name names, a node id field decodes into the record's own key or its foreign key to the node's
+     * table, and where several fields name one column a live one is preferred over a deprecated one,
+     * the latest declared among deprecated ones, two live ones being refused for nothing saying which
+     * the author meant.
+     */
+    private static Result columns(String occurrence, String recordClass, Map<String, List<InputField>> children,
+                                  Catalog catalog) {
+        var table = catalog.tables().get(recordClass);
+        var tableKey = Catalog.key(table.source(), table.schema(), table.name());
+        var byColumn = new java.util.LinkedHashMap<String, List<InputField>>();
+        var decodes = new ArrayList<Member>();
+        for (var field : children.getOrDefault(occurrence, List.of())) {
+            if (field.nodeId()) {
+                if (field.list()) {
+                    return new Result.Refused("input field " + field.name() + " is a list of node ids, which is not built here yet");
+                }
+                var decoded = catalog.decode(field.coordinate(), recordClass);
+                if (decoded instanceof String reason) {
+                    return new Result.Refused("input field " + field.name() + ": " + reason);
+                }
+                var slot = new Slot(null, null, 0, field.boundName(), recordClass, recordClass, null);
+                decodes.add(new Member(slot, List.of(field.name()), field.typeKind(), false, Optional.empty(),
+                    Optional.of((Decode) decoded)));
+                continue;
+            }
+            if ("INPUT_OBJECT".equals(field.typeKind())) {
+                return new Result.Refused("input field " + field.name() + " is an input object inside a jOOQ record, "
+                    + "which is not built here yet");
+            }
+            var column = catalog.columns().get(tableKey + "." + field.boundName());
+            if (column == null) {
+                return new Result.Refused("input field " + field.name() + " names column " + field.boundName()
+                    + ", which " + table.name() + " does not have");
+            }
+            byColumn.computeIfAbsent(column.javaName(), k -> new ArrayList<>()).add(field);
+        }
+        var writes = new ArrayList<ColumnWrite>();
+        for (var entry : byColumn.entrySet()) {
+            var fields = entry.getValue();
+            var live = fields.stream().filter(f -> !f.deprecated()).toList();
+            if (live.size() > 1) {
+                return new Result.Refused("input fields " + live.stream().map(InputField::name).toList()
+                    + " both write column " + entry.getKey() + " and neither is deprecated");
+            }
+            var ordered = new ArrayList<InputField>(live);
+            fields.stream().filter(InputField::deprecated)
+                .sorted(java.util.Comparator.comparingInt(InputField::ordinal).reversed())
+                .forEach(ordered::add);
+            writes.add(new ColumnWrite(entry.getKey(), ordered.stream().map(f -> List.of(f.name())).toList()));
+        }
+        return new Result.Columns(new RecordBuild(recordClass, table.tablesClass(), table.tableField(), writes, decodes));
     }
 
     /**
@@ -307,7 +392,11 @@ public final class BuildQuery {
                 if (result instanceof Result.Refused refused) {
                     return refused.reason();
                 }
-                nested = Optional.of(((Result.Built) result).build());
+                if (!(result instanceof Result.Built built)) {
+                    return "input field " + String.join(".", path) + " fills a jOOQ record member, "
+                        + "which is not built here yet";
+                }
+                nested = Optional.of(built.build());
             }
             members.add(new Member(slot.get(), path, field.typeKind(), field.list(), nested, decode));
         }
@@ -388,7 +477,7 @@ public final class BuildQuery {
             return new Catalog(bindings, tables, foreignKeys, columns);
         }
 
-        private static String key(String source, String schema, String table) {
+        static String key(String source, String schema, String table) {
             return source + "/" + schema + "." + table;
         }
 

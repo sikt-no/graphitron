@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link BuildQuery}'s answers over a captured schema: an input object made into the record class a
  * service takes, one member per field; a list of input objects into a list of that record; a nested
  * input object built into its member's class; a grouping whose fields bind against the enclosing
- * class; and a jOOQ record, which binds on columns, refused here.
+ * class; and a jOOQ record built on the column axis, one column per field.
  */
 @PipelineTier
 class BuildQueryTest {
@@ -92,9 +92,12 @@ class BuildQueryTest {
     }
 
     @Test
-    void aJooqRecordIsRefusedForTheColumnAxis() {
+    void aJooqRecordIsBuiltOnTheColumnAxis() {
         assertThat(results.get("Query.countFilmRecordDrafts"))
-            .isInstanceOfSatisfying(BuildQuery.Result.Refused.class, refused ->
-                assertThat(refused.reason()).contains("jOOQ record"));
+            .isInstanceOfSatisfying(BuildQuery.Result.Columns.class, columns -> {
+                assertThat(columns.build().recordClass()).endsWith(".FilmRecord");
+                assertThat(columns.build().columns()).extracting(BuildQuery.ColumnWrite::columnJavaName)
+                    .containsExactly("TITLE");
+            });
     }
 }
