@@ -49,7 +49,6 @@ extend type Query {
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "type_name = 'FilmWithoutInterface'", rows: """
   code,                        field_name, source_line
   NODE_WITHOUT_NODE_INTERFACE, ,           81
-  COLUMN_UNRESOLVED,           id,         82
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
