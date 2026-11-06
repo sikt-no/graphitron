@@ -40,7 +40,7 @@ class RecordBuildEmitterTest {
     private static final String PACKAGE = "recordbuild";
     private static final String TABLES = "no.sikt.graphitron.rewrite.test.jooq.public_.Tables";
     private static final ClassName ENCODER = ClassName.get(PACKAGE + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
-    private static final BuildEmitter.Runtime RUNTIME = new BuildEmitter.Runtime(ENCODER,
+    private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(ENCODER,
         label -> CodeBlock.of("throw new $T($S)", IllegalArgumentException.class, "invalid id for " + label));
 
     private static EmittedCodeHarness harness;
@@ -52,7 +52,7 @@ class RecordBuildEmitterTest {
         var filmId = new BuildQuery.Member(
             new BuildQuery.Slot(null, null, 0, "film_id", FilmRecord.class.getName(), FilmRecord.class.getName(), null),
             List.of("filmId"), "SCALAR", false, Optional.empty(),
-            Optional.of(new BuildQuery.Decode("Film", TABLES, "FILM", FilmRecord.class.getName(), List.of("FILM_ID"))));
+            Optional.of(new NodeIdDecodeQuery.Decode("Film", TABLES, "FILM", FilmRecord.class.getName(), List.of("FILM_ID"))));
         var film = new BuildQuery.RecordBuild(FilmRecord.class.getName(), TABLES, "FILM", List.of(
             new BuildQuery.ColumnWrite("TITLE", List.of(List.of("title"))),
             new BuildQuery.ColumnWrite("RELEASE_YEAR", List.of(List.of("releaseYear"), List.of("year")))),

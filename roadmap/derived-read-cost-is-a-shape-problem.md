@@ -1050,9 +1050,11 @@ branch is G's (Alf, 2026-11-05).
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
 * **Encode and decode read the target type, and the old node-id relations go** `open`, G's.
-  The generator's filter and carrier roles and E's node-id readers read `graphitron_occurrence_node_id`,
-  as the decode census `NodeIdDecodeCoverageFacts` does, and `graphitron_node_id_instruction` and the
-  `graphitron_node_id_decode_*` relations go.
+  The walk dissolves into store emitters, each with its own query (Alf, 2026-11-06). The decode is
+  `NodeIdDecodeQuery` and `NodeIdDecodeEmitter`, which the fill and build emitters call, and the
+  decode census `NodeIdDecodeCoverageFacts` reads `graphitron_occurrence_node_id`; the encode for
+  output fields is an emitter of its own, written when the store emits output selections. Then
+  `graphitron_node_id_instruction` and the `graphitron_node_id_decode_*` relations go.
 
 ### A polymorphic id resolves per member, to the overload that accepts it `open`
 

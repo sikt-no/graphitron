@@ -49,7 +49,7 @@ public final class BuildEmitter {
      * The helpers that make {@code build}'s class, the first named {@code name} and taking the input
      * object's map, the rest making the classes of its nested input objects.
      */
-    public static List<MethodSpec> helpers(BuildQuery.Build build, String name, Runtime runtime) {
+    public static List<MethodSpec> helpers(BuildQuery.Build build, String name, NodeIdDecodeEmitter.Runtime runtime) {
         var out = new ArrayList<MethodSpec>();
         helper(build, name, runtime, out);
         return out;
@@ -63,7 +63,8 @@ public final class BuildEmitter {
      * the node ids decoded into the same record, after every plain write so their agreement check
      * sees it.
      */
-    public static MethodSpec recordHelper(BuildQuery.RecordBuild build, String name, Runtime runtime) {
+    public static MethodSpec recordHelper(BuildQuery.RecordBuild build, String name,
+                                          NodeIdDecodeEmitter.Runtime runtime) {
         var type = SessionIdentityRows.classOf(build.recordClass());
         var table = SessionIdentityRows.classOf(build.tablesClass());
         var method = MethodSpec.methodBuilder(name)
@@ -94,30 +95,17 @@ public final class BuildEmitter {
         }
         var counter = new int[] {0};
         for (var member : build.decodes()) {
-            var d = member.decode().orElseThrow();
             var id = "id" + (++counter[0]);
-            var label = String.join(".", member.path());
-            var columns = CodeBlock.join(d.columnJavaNames().stream()
-                .map(c -> CodeBlock.of("$T.$L.$L", SessionIdentityRows.classOf(d.tablesClass()), d.tableField(), c))
-                .toList(), ", ");
-            method.beginControlFlow("if (in.get($S) instanceof $T $L)", member.path().getLast(), STRING, id)
-                .beginControlFlow("if ($T.decodeInto(out, $S, $L, $S, null, $L) == null)",
-                    runtime.nodeIdEncoder(), d.typeId(), id, label, columns)
-                .addStatement(runtime.invalidId().apply(label))
-                .endControlFlow()
-                .endControlFlow();
+            method.beginControlFlow("if (in.get($S) instanceof $T $L)", member.path().getLast(), STRING, id);
+            NodeIdDecodeEmitter.into(method, CodeBlock.of("out"), member.decode().orElseThrow(), id,
+                String.join(".", member.path()), runtime);
+            method.endControlFlow();
         }
         return method.addStatement("return out").build();
     }
 
-    /**
-     * The generated runtime a node id is decoded through: the encoder whose {@code decodeInto} loads
-     * a record, and the statement that refuses an id it answers null for, given the input field's
-     * name.
-     */
-    public record Runtime(ClassName nodeIdEncoder, java.util.function.Function<String, CodeBlock> invalidId) {}
-
-    private static void helper(BuildQuery.Build build, String name, Runtime runtime, List<MethodSpec> out) {
+    private static void helper(BuildQuery.Build build, String name, NodeIdDecodeEmitter.Runtime runtime,
+                               List<MethodSpec> out) {
         var type = SessionIdentityRows.classOf(build.className());
         var method = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -177,29 +165,22 @@ public final class BuildEmitter {
      */
     private static java.util.Map<String, String> decodes(MethodSpec.Builder method,
                                                          java.util.Map<String, List<BuildQuery.Member>> decoded,
-                                                         Runtime runtime, int[] counter) {
+                                                         NodeIdDecodeEmitter.Runtime runtime, int[] counter) {
         var locals = new java.util.HashMap<String, String>();
         for (var entry : decoded.entrySet()) {
             var local = "decoded" + (++counter[0]);
             var recordType = SessionIdentityRows.classOf(entry.getValue().getFirst().decode().orElseThrow().recordClass());
             method.addStatement("$T $L = null", recordType, local);
             for (var member : entry.getValue()) {
-                var d = member.decode().orElseThrow();
                 var maps = maps(member.path(), counter);
                 var read = CodeBlock.of("$L.get($S)", maps.last(), member.path().getLast());
                 var id = "id" + (++counter[0]);
-                var label = String.join(".", member.path());
-                var columns = CodeBlock.join(d.columnJavaNames().stream()
-                    .map(c -> CodeBlock.of("$T.$L.$L", SessionIdentityRows.classOf(d.tablesClass()), d.tableField(), c))
-                    .toList(), ", ");
                 method.beginControlFlow(maps.guard().isEmpty() ? "if ($L instanceof $T $L)" : "if ($L && $L instanceof $T $L)",
                         maps.guard().isEmpty() ? new Object[] {read, STRING, id} : new Object[] {maps.guard(), read, STRING, id})
-                    .addStatement("if ($L == null) $L = new $T()", local, local, recordType)
-                    .beginControlFlow("if ($T.decodeInto($L, $S, $L, $S, null, $L) == null)",
-                        runtime.nodeIdEncoder(), local, d.typeId(), id, label, columns)
-                    .addStatement(runtime.invalidId().apply(label))
-                    .endControlFlow()
-                    .endControlFlow();
+                    .addStatement("if ($L == null) $L = new $T()", local, local, recordType);
+                NodeIdDecodeEmitter.into(method, CodeBlock.of("$L", local), member.decode().orElseThrow(), id,
+                    String.join(".", member.path()), runtime);
+                method.endControlFlow();
             }
             locals.put(entry.getKey(), local);
         }
@@ -214,7 +195,8 @@ public final class BuildEmitter {
     }
 
     /** A member's value, read off its map and made into what the member takes. */
-    private static CodeBlock value(BuildQuery.Member member, String name, Runtime runtime, int[] counter,
+    private static CodeBlock value(BuildQuery.Member member, String name, NodeIdDecodeEmitter.Runtime runtime,
+                                   int[] counter,
                                    List<MethodSpec> out) {
         var slotType = SessionIdentityRows.typeOf(member.slot().slotType());
         var maps = maps(member.path(), counter);

@@ -54,19 +54,19 @@ class NodeIdFillEmitterTest {
         key -> CodeBlock.of("$T.contextArgument(env, $S)", FillRuntime.class, key),
         coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", FillRuntime.class, coordinate),
         (member, coordinate) -> CodeBlock.of("$T.sessionMember_$L(dsl, $S)", FillRuntime.class, member, coordinate),
-        new BuildEmitter.Runtime(ENCODER,
+        new NodeIdDecodeEmitter.Runtime(ENCODER,
             label -> CodeBlock.of("throw new $T($S)", IllegalArgumentException.class, "invalid id for " + label)));
 
-    private static final BuildQuery.Decode FILM = new BuildQuery.Decode("Film", TABLES, "FILM", FILM_RECORD,
+    private static final NodeIdDecodeQuery.Decode FILM = new NodeIdDecodeQuery.Decode("Film", TABLES, "FILM", FILM_RECORD,
         List.of("FILM_ID"));
-    private static final BuildQuery.Decode INVENTORY_FILM = new BuildQuery.Decode("Film", TABLES, "INVENTORY",
+    private static final NodeIdDecodeQuery.Decode INVENTORY_FILM = new NodeIdDecodeQuery.Decode("Film", TABLES, "INVENTORY",
         InventoryRecord.class.getName(), List.of("FILM_ID"));
 
     private static EmittedCodeHarness harness;
     private static Map<String, Method> probes;
     private static Method encode;
 
-    private record Case(String name, String type, BuildQuery.Decode decode, String shape) {}
+    private record Case(String name, String type, NodeIdDecodeQuery.Decode decode, String shape) {}
 
     private static final List<Case> CASES = List.of(
         new Case("film", FILM_RECORD, FILM, "RECORD"),

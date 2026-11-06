@@ -38,7 +38,7 @@ class NodeIdBuildEmitterTest {
     private static final String TABLES = "no.sikt.graphitron.rewrite.test.jooq.public_.Tables";
     private static final String RECORDS = "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.";
     private static final ClassName ENCODER = ClassName.get(PACKAGE + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
-    private static final BuildEmitter.Runtime RUNTIME = new BuildEmitter.Runtime(ENCODER,
+    private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(ENCODER,
         label -> CodeBlock.of("throw new $T($S)", IllegalArgumentException.class, "invalid id for " + label));
 
     private static EmittedCodeHarness harness;
@@ -49,7 +49,7 @@ class NodeIdBuildEmitterTest {
                                               String tableField, String column, String field) {
         var slot = new BuildQuery.Slot("<init>", "()V", position, slotName, recordClass, recordClass, null);
         return new BuildQuery.Member(slot, List.of(field), "SCALAR", false, Optional.empty(),
-            Optional.of(new BuildQuery.Decode(typeId, TABLES, tableField, recordClass, List.of(column))));
+            Optional.of(new NodeIdDecodeQuery.Decode(typeId, TABLES, tableField, recordClass, List.of(column))));
     }
 
     @BeforeAll
