@@ -24,7 +24,7 @@ import java.util.Optional;
  * the graphql-java one.
  */
 public enum WatchedDependency {
-    GRAPHQL_JAVA("com.graphql-java", "graphql-java", LintRule.GRAPHQL_JAVA_VERSION_LAG),
+    GRAPHQL_JAVA("com.graphql-java", "graphql-java", LintRule.GRAPHQL_JAVA_VERSION_LAG, null),
 
     /**
      * jOOQ, at any edition. The commercial and trial distributions keep the artifact id and vary the
@@ -33,19 +33,33 @@ public enum WatchedDependency {
      * supported set. Matching a prefix rather than an enumerated list is what keeps a consumer from
      * dropping out of the advisory's sight the moment they move their JDK baseline, which would fail
      * the same silent way this nudge exists to fix.
+     *
+     * <p>The generated code calls {@code Record.touched(Field)}, which jOOQ added in 3.20, so 3.20 is
+     * the minimum.
      */
-    JOOQ("org.jooq", "jooq", LintRule.JOOQ_VERSION_LAG, "org.jooq.pro", "org.jooq.trial");
+    JOOQ("org.jooq", "jooq", LintRule.JOOQ_VERSION_LAG, "3.20", "org.jooq.pro", "org.jooq.trial");
 
     private final String groupId;
     private final String artifactId;
     private final LintRule rule;
+    private final String minimum;
     private final List<String> editionGroupIdPrefixes;
 
-    WatchedDependency(String groupId, String artifactId, LintRule rule, String... editionGroupIdPrefixes) {
+    WatchedDependency(String groupId, String artifactId, LintRule rule, String minimum,
+                      String... editionGroupIdPrefixes) {
         this.groupId = groupId;
         this.artifactId = artifactId;
         this.rule = rule;
+        this.minimum = minimum;
         this.editionGroupIdPrefixes = List.of(editionGroupIdPrefixes);
+    }
+
+    /**
+     * The oldest release line the generated code compiles against, as {@code major.minor}, or empty
+     * where graphitron states none. Below it, generation is refused rather than nudged.
+     */
+    public Optional<String> minimum() {
+        return Optional.ofNullable(minimum);
     }
 
     /** The rule a lag advisory for this dependency is tagged with, and therefore suppressible by. */

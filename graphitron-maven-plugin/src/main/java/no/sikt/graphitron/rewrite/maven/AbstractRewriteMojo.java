@@ -409,6 +409,24 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         }
     }
 
+    /**
+     * Refuses to generate when the consumer's build resolves a jOOQ below the oldest line the
+     * generated code compiles against. The decision and the message are
+     * {@link no.sikt.graphitron.rewrite.dependency.DependencyVersionFloor#refusal}'s; this supplies
+     * the versions decoded off the consumer's dependency graph and throws.
+     *
+     * <p>Called by {@code generate}, {@code dev} and {@code validate} before the store opens, so
+     * nothing is written for a build that could not compile it, and a build that validates is one
+     * that could generate. A precondition rather than an advisory, so not a lint rule: nothing
+     * suppresses it.
+     */
+    protected final void checkDependencyFloor() throws MojoExecutionException {
+        var refusal = no.sikt.graphitron.rewrite.dependency.DependencyVersionFloor.refusal(resolveDependencyVersions());
+        if (refusal.isPresent()) {
+            throw new MojoExecutionException(refusal.get());
+        }
+    }
+
     /** What {@link #checkPluginRealm} decides on: the realm's rows and its loader's jOOQ evidence. */
     record RealmEvidence(PluginRealm realm, List<Path> jooqRoots, String runtimeVersion) {}
 

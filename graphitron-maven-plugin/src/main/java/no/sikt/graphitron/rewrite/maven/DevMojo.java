@@ -425,6 +425,9 @@ public class DevMojo extends AbstractRewriteMojo {
         // on it. Any failure inside the open would reach the author reworded by openAt's fallback
         // as another process holding the store.
         checkPluginRealm();
+        // Then the consumer's jOOQ, before any generated source is written for a build that could not
+        // compile it.
+        checkDependencyFloor();
         // Before anything opens a store, because this is the earliest point the goal can reach and
         // H2 reads the property once, when its first class initialises. It confines every H2 server
         // this JVM starts (the fact-store console below is the only one) to loopback.

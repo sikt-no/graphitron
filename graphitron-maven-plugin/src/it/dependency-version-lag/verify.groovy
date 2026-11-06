@@ -5,11 +5,11 @@
 // production while every unit test stayed green.
 def buildLog = new File(basedir, "build.log").text
 
-assert buildLog.contains("jooq-version-lag") :
-    "A consumer a minor line behind on jOOQ must be nudged, and the message must carry the rule id"
-assert buildLog.contains("3.19.24") :
+assert buildLog.contains("graphql-java-version-lag") :
+    "A consumer a minor line behind on graphql-java must be nudged, and the message must carry the rule id"
+assert buildLog.contains("24.2") :
     "The nudge must name the version the consumer actually resolved"
-assert buildLog.contains("org.jooq:jooq") :
+assert buildLog.contains("com.graphql-java:graphql-java") :
     "The nudge must name the coordinate to bump"
 
 // The advisory is not a gate: it rides the warning channel and the build still succeeds.
@@ -17,6 +17,6 @@ def wiring = new File(basedir, "target/generated-sources/graphitron/no/sikt/it/g
 assert wiring.exists() :
     "Generation must proceed normally; the version nudge is advisory and fails nothing"
 
-// This project carries no graphql-java, and an absent coordinate is not a lagging one.
-assert !buildLog.contains("graphql-java-version-lag") :
-    "A consumer that does not carry graphql-java must not be nudged about it"
+// jOOQ arrives at graphitron's own line through graphitron-sakila-db, and a current line is silent.
+assert !buildLog.contains("jooq-version-lag") :
+    "A consumer on graphitron's own jOOQ line must not be nudged about it"

@@ -17,12 +17,11 @@ import no.sikt.graphitron.model.config.WatchedDependency;
  * and folds the result into the build-warning channel, where lint suppression (by rule id) applies
  * uniformly.
  *
- * <p>This is a usability nudge, not a compatibility gate. The compiler is the correctness bar: if
- * the generated code compiles against the consumer's versions, the consumer is fine. What the
+ * <p>This is a usability nudge, not a compatibility gate; the gate is {@link DependencyVersionFloor},
+ * which refuses a line below the oldest the generated code compiles against. Above that, what the
  * advisory addresses is silent drift, a subgraph sitting on an old line because nothing in the build
- * ever mentioned it. Nothing here can fail a build, and there is no separately maintained minimum
- * supported version; the reference is simply whatever graphitron itself was built against, so it
- * moves for free when graphitron upgrades.
+ * ever mentioned it. Nothing here can fail a build; the reference is simply whatever graphitron
+ * itself was built against, so it moves for free when graphitron upgrades.
  *
  * <p>Every advisory is a {@link BuildWarning.LintFinding} (rule-tagged, hence suppressible by id via
  * {@code <lint><disabledRules>}) with a {@code null} location: a resolved dependency version is a

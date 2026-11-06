@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
+import org.apache.maven.artifact.DefaultArtifact;
+import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
@@ -10,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -113,6 +116,36 @@ class GenerateMojoTest {
 
         assertThat(ctx.outputPackage()).isNotNull();
         assertThat(ctx.jooqPackage()).isNotNull();
+    }
+
+    @Test
+    void generate_jooqBelowTheMinimum_isRefusedBeforeAnythingIsWritten(@TempDir Path basedir) throws Exception {
+        var mojo = mojo(basedir);
+        mojo.project.setArtifacts(Set.of(new DefaultArtifact("org.jooq.pro", "jooq", "3.19.18", "compile", "jar",
+            null, new DefaultArtifactHandler("jar"))));
+
+        assertThatThrownBy(mojo::execute)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("org.jooq.pro:jooq 3.20 or later")
+            .hasMessageContaining("resolves 3.19.18");
+        assertThat(basedir.resolve("target")).doesNotExist();
+    }
+
+    @Test
+    void validate_jooqBelowTheMinimum_isRefusedBeforeTheStoreOpens(@TempDir Path basedir) {
+        var mojo = new ValidateMojo();
+        var project = new MavenProject();
+        project.setFile(basedir.resolve("pom.xml").toFile());
+        project.setArtifacts(Set.of(new DefaultArtifact("org.jooq", "jooq", "3.19.18", "compile", "jar",
+            null, new DefaultArtifactHandler("jar"))));
+        mojo.project = project;
+        mojo.outputDirectory = basedir.resolve("target/generated").toString();
+
+        assertThatThrownBy(mojo::execute)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("org.jooq:jooq 3.20 or later")
+            .hasMessageContaining("resolves 3.19.18");
+        assertThat(basedir.resolve("target")).doesNotExist();
     }
 
     /** Constructs a {@link GenerateMojo} with minimal valid state. */

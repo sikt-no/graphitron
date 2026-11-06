@@ -16,6 +16,12 @@ GraphQL-Java is the reference implementation of GraphQL for Java. It parses sche
 
 *GraphQL-Java is under the hood.* You won't typically write GraphQL-Java code directly: Graphitron handles that. But understanding how it executes queries helps when reading generated code or debugging.
 
+== Minimum versions
+
+The generated code needs *jOOQ 3.20 or later*; it calls `Record.touched(Field)`, which jOOQ added in 3.20. `graphitron:generate`, `graphitron:dev` and `graphitron:validate` check the jOOQ your build resolves for the generated code, at any edition, and refuse below 3.20 before writing anything, naming the coordinate and version they found. To move up, raise the jOOQ version in your pom (usually a `jooq.version` property) and regenerate your jOOQ catalog with the same version's codegen, so the catalog and the runtime agree.
+
+This check is not a lint rule and cannot be silenced. GraphQL-Java has no stated minimum.
+
 == Staying current
 
 Graphitron tracks the current jOOQ and GraphQL-Java lines, and we recommend you do too. Staying current keeps you on upstream fixes and improvements, and it keeps each upgrade small: the longer a subgraph sits on an old line, the larger the eventual jump.
@@ -24,4 +30,4 @@ To make that the default rather than something you have to remember, the build s
 
 Every jOOQ edition counts, not just the open source one: the commercial and trial distributions ship the same release line under their own group ids (`org.jooq.pro`, `org.jooq.pro-java-<n>`, `org.jooq.trial`), and the warning names the coordinate your build actually resolved, so a commercial subgraph is never told to bump its way onto the open source edition. If you somehow resolve two editions at once, the warning speaks about the lower line, since that is the one holding you back.
 
-It is a nudge, not a compatibility gate. Nothing here fails a build, and there is no minimum supported version: the compiler is the bar, so if the generated code compiles against your versions, you are fine. If you are held on an older line deliberately, silence the warning by rule id like any other, `jooq-version-lag` or `graphql-java-version-lag` under `<lint><disabledRules>`. The two are separate rules so you can accept one and keep the other.
+It is a nudge, not a compatibility gate. Nothing here fails a build: above the minimum below, the compiler is the bar, so if the generated code compiles against your versions, you are fine. If you are held on an older line deliberately, silence the warning by rule id like any other, `jooq-version-lag` or `graphql-java-version-lag` under `<lint><disabledRules>`. The two are separate rules so you can accept one and keep the other.

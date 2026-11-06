@@ -2171,6 +2171,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   the same rows under every parent; it is now `NO_ROUTE_TO_TARGET` until it writes its path. The
   example schema's `Film.sameTableById`, which exercised the uncorrelated read, is removed.
 
+* **Breaking: jOOQ 3.20 is the minimum** ("generation refuses a jOOQ below 3.20"). The generated
+  `NodeIdEncoder` calls `Record.touched(Field)`, which jOOQ added in 3.20, so a build on 3.19 failed
+  in javac, in a file the consumer did not write. `graphitron:generate`, `graphitron:dev` and
+  `graphitron:validate` now refuse a jOOQ below 3.20 before writing anything, naming the coordinate and version found, the
+  minimum, and what to change: the jOOQ version in the pom and a catalog regenerated with it.
+  FS-plattform's kreg, sis, kompetanse, batch and kjerneapi-codegen are on 3.19.18 and must upgrade.
+
 * **Breaking: `@table` cannot name a table-valued function** ("a type is not bound to a function"). A schema binding a type to
   a function's result with `@table` stops building, with a message saying to remove the directive.
   The field's `@routine` gives the type its rows, the routine's result, which binds no table.

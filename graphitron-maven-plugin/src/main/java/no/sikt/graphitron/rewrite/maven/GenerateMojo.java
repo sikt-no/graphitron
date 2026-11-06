@@ -26,6 +26,7 @@ public class GenerateMojo extends AbstractRewriteMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        checkDependencyFloor();
         var ctx = runGenerator(GraphQLRewriteGenerator::generate);
         project.addCompileSourceRoot(ctx.outputDirectory().toString());
         var resource = new Resource();

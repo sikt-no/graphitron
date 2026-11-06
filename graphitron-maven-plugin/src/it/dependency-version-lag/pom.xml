@@ -10,17 +10,18 @@
   <packaging>jar</packaging>
 
   <dependencies>
-    <!-- A jOOQ a minor line behind the one graphitron is built against, declared directly so
-         nearest-wins mediation beats the current version graphitron-sakila-db brings in
-         transitively. This is the positive end of the dependency-currency nudge, and the only
-         tier that runs its reference side for real: the reference version reaches the mojo
-         through ${plugin} / PluginDescriptor.getArtifacts(), which no unit tier can stand up.
-         Generation is unaffected by the downgrade, because the codegen classloader is parented
-         on the plugin realm and org.jooq types resolve there parent-first. -->
+    <!-- A graphql-java a minor line behind the one graphitron is built against, declared directly.
+         This is the positive end of the dependency-currency nudge, and the only tier that runs its
+         reference side for real: the reference version reaches the mojo through ${plugin} /
+         PluginDescriptor.getArtifacts(), which no unit tier can stand up. graphql-java rather than
+         jOOQ, because a jOOQ line behind graphitron's is below the jOOQ minimum today and refused
+         (jooq-below-minimum); the two lag rules share one decision. Generation is unaffected by
+         the downgrade, because the codegen classloader is parented on the plugin realm and
+         graphql types resolve there parent-first. -->
     <dependency>
-      <groupId>org.jooq</groupId>
-      <artifactId>jooq</artifactId>
-      <version>3.19.24</version>
+      <groupId>com.graphql-java</groupId>
+      <artifactId>graphql-java</artifactId>
+      <version>24.2</version>
     </dependency>
     <dependency>
       <groupId>no.sikt</groupId>

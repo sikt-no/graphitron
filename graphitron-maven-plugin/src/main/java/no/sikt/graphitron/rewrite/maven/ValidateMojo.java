@@ -28,6 +28,7 @@ public class ValidateMojo extends AbstractRewriteMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        checkDependencyFloor();
         runGenerator(GraphQLRewriteGenerator::validate);
         getLog().info("Schema validation completed successfully");
     }
