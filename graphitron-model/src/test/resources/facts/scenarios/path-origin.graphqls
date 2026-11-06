@@ -18,19 +18,21 @@ type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
   # empty path, the two keys between film and language being no matter.
   languageByService: Language
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "languageByService"})
-  # A scalar that writes a path: its arguments wait for the join path.
+  # A scalar that writes a path: its arguments start where its join path lands, language, their
+  # paths empty.
   languageName(upper: Boolean): String
     @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
-  # A plain type reached by a written path: its fields start where the path lands, film_translation,
-  # so they wait for the join path.
+  # A plain type reached by a written path: its fields start where its join path lands,
+  # film_translation, their paths empty.
   titleTexts: TranslatedTexts
     @reference(path: [{table: "film_translation"}])
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
   # A connection under a table-bound parent, its path inferred from film_actor's one key to film, split
   # into its own query as the generator requires of a connection on a table field.
   actorRows: [FilmActor!]! @asConnection @splitQuery
-  # A path ending on a @routine that returns a plain object: the field lands on no table yet, and
-  # its argument and its fields wait for the path, with no source and no needs.
+  # A path ending on a @routine that returns a plain object: the field's need lands on no table, and
+  # its argument and its fields start where its join path lands, the function's derived table, their
+  # paths empty.
   castFilms(minLength: Int!): [ActorFilm!]
     @reference(path: [{table: "film_actor"}])
     @routine(name: "films_for_actor",
@@ -202,4 +204,26 @@ extend schema @assertContains(relation: "graphitron_join_path", rows: """
   Film.titleTexts,    TranslatedTexts, film_translation
   Film.castFilms,     ActorFilm,       films_for_actor
   Query.rows,         Row,             films_for_actor
+  """)
+
+# What hangs under each starts there, its own path empty: the scalar's argument, the plain type's
+# fields, and the routine path's argument and field.
+extend schema @expectEquals(relation: "graphitron_join_path",
+    where: "coordinate IN ('Film.languageName(upper:)', 'Film.titleTexts.en', 'Film.titleTexts.nn', 'Film.castFilms(minLength:)', 'Film.castFilms.filmId')", rows: """
+  coordinate,                 target_type, target_table
+  Film.languageName(upper:),  String,      language
+  Film.titleTexts.en,         String,      film_translation
+  Film.titleTexts.nn,         String,      film_translation
+  Film.castFilms(minLength:), ActorFilm,   films_for_actor
+  Film.castFilms.filmId,      Int,         films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path",
+    where: "coordinate IN ('Film.languageName(upper:)', 'Film.titleTexts.en', 'Film.titleTexts.nn', 'Film.castFilms(minLength:)', 'Film.castFilms.filmId')", rows: """
+  coordinate,                 target_type, kind, origin
+  Film.languageName(upper:),  String,      JOIN, EMPTY
+  Film.titleTexts.en,         String,      JOIN, EMPTY
+  Film.titleTexts.nn,         String,      JOIN, EMPTY
+  Film.castFilms(minLength:), ActorFilm,   JOIN, EMPTY
+  Film.castFilms.filmId,      Int,         JOIN, EMPTY
   """)

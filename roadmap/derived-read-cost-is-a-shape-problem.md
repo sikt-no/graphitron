@@ -307,10 +307,6 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   is chosen by its two tables on `graphitron_join_path_step_method`, where `CONDITION_NO_OVERLOAD_FOR_PAIR`,
   `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
   `graphitron_field_path_method_candidate` goes with the old family.
-  * **One per-depth loop states producers, sources, needs and paths** `open`, F's.
-    An occurrence waiting on a join path gets its sources and needs from the walked landing: the
-    arguments of a field that writes a path, and the fields under it, start on its
-    `graphitron_join_path` target.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
   * **The old walk's readers read the join path, and the old family goes** `open`, F's.
@@ -327,7 +323,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     "A scalar's column is read at its path's end" lands. Each reader is compared against the old relation before it goes;
     then `FieldPaths` and every `graphitron_field_path*` relation go, with the gate tests and fact
     documents.
-  * **The reference-step family goes** `blocked`, on "One per-depth loop states producers, sources, needs and paths".
+  * **The reference-step family goes** `open`, F's.
     The argument arm of `graphitron_node_id_instruction_rule` and `graphitron_node_id_decode_hop_rule`
     read the join path's steps at the argument and input-field occurrences, G's to move or agree;
     then `FieldReferenceStepHops`, the argument and input-field step targets,
@@ -649,9 +645,8 @@ classified records have no reader left and can go with the walk.
 * **A scalar's column is read at its path's end** `open`, G's.
   `graphitron_outbox_leaf`, the entry defects and the editor read `graphitron_occurrence_column`, and
   `graphitron_field_target_column` and its match go. A written path's end is its
-  `graphitron_join_path` target, the need's landing staying null; an output field's is there now,
-  and an argument's or input field's under a field that writes a path arrives with
-  "One per-depth loop states producers, sources, needs and paths".
+  `graphitron_join_path` target, the need's landing staying null, at an output field and at an
+  argument or input field under a field that writes a path alike.
 * **A field's source is its parent's result** `open`, F's.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read
@@ -2306,6 +2301,14 @@ need being keyed by its target type with its landing an attribute. The defect co
 `field-participant-path`, written by `GraphitronAnchor` and read only by a fact document: a
 participant's own path is its `@referenceFor` claim, `graphitron_ast_path_entry`, walked into
 `graphitron_join_path_step` like any other claim.
+
+**Dropped, read by nothing but their writer** (2026-11-06). The field-site reference walk,
+`graphitron_field_reference_step_target` with `graphitron_field_reference_step_target_keyed`,
+`graphitron_field_reference_step_target_keyless`, their grains `reference-step-target`,
+`reference-step-keyed-target` and `reference-step-keyless-target`, and its stage
+`FieldReferenceStepTargets`: a field's walk is `graphitron_join_path_step`. The old walk's start
+subtypes `graphitron_field_path_start_result`, `graphitron_field_path_start_binding` and
+`graphitron_field_path_start_lifted`, their kind staying on `graphitron_field_path_start`.
 
 **Relations retired.** Eight per-site argMapping tables into `graphitron_arg_mapping_pair`:
 `graphitron_argument_condition_arg_mapping_pair`,

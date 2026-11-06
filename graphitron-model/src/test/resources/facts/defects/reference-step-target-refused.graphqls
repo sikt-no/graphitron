@@ -1,15 +1,21 @@
-# Where a field's @reference chain stops or splits. film declares two keys to language, so a table
-# element naming language is one destination by two routes, and an arrival so reached is walked on
-# once. A first element naming no key ends the chain though both elements are stored, a type with
-# no @table gives its path nowhere to start, and a condition whose arrival is the wildcard routes
-# no hop even where the field's own type binds a table.
+# Where a field's @reference walk stops. film declares two keys to language, so a table element
+# naming language is one destination by two routes, and the walk stops on the two moves. A first
+# element naming no key stops it though both elements are stored, a type with no @table gives its
+# path nowhere to start, and a condition whose arrival is the wildcard moves nowhere even where the
+# field's own type binds a table.
 
 type Film @table(name: "film") {
   title: String
   spokenIn: Language @reference(path: [{table: "language"}])
   sameLanguage: [Film!]! @reference(path: [{table: "language"}, {table: "film"}])
   unresolved: [Actor!]! @reference(path: [{key: "no_such_fkey"}, {key: "film_actor_actor_id_fkey"}])
+  # A key with no route from film stops the walk, and what hangs under it has nowhere to start: the
+  # argument of a field whose target binds a table, and the field of a plain type.
+  strayActor(named: String): Actor @reference(path: [{key: "film_actor_actor_id_fkey"}])
+  strayDetails: FilmDetails @reference(path: [{key: "film_actor_actor_id_fkey"}])
 }
+
+type FilmDetails { length: Int }
 
 type Language @table(name: "language") { name: String }
 type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
@@ -29,14 +35,28 @@ type Address @table(name: "address") { addressId: Int @field(name: "address_id")
 
 extend type Query { films: [Film!]! unbound: Unbound customers: [Customer!]! }
 
-extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
-  type_name, field_name,   position, via,   from_table, to_table, constraint_name,                fk_on_from, targets, candidates
-  Film,      spokenIn,     0,        TABLE, film,       language, film_language_id_fkey,          TRUE,       1,       2
-  Film,      spokenIn,     0,        TABLE, film,       language, film_original_language_id_fkey, TRUE,       1,       2
-  Film,      sameLanguage, 0,        TABLE, film,       language, film_language_id_fkey,          TRUE,       1,       2
-  Film,      sameLanguage, 0,        TABLE, film,       language, film_original_language_id_fkey, TRUE,       1,       2
-  Film,      sameLanguage, 1,        TABLE, language,   film,     film_language_id_fkey,          FALSE,      1,       2
-  Film,      sameLanguage, 1,        TABLE, language,   film,     film_original_language_id_fkey, FALSE,      1,       2
+extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
+  coordinate,              target_type, position, moves
+  Film.spokenIn,           Language,    0,        2
+  Film.sameLanguage,       Film,        0,        2
+  Film.unresolved,         Actor,       0,        0
+  Film.strayActor,         Actor,       0,        0
+  Film.strayDetails,       FilmDetails, 0,        0
+  Customer.anyByCondition, Address,     0,        0
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_join_path_step")
+
+extend schema @assertContains(relation: "graphitron_occurrence", rows: """
+  coordinate
+  Film.strayActor(named:)
+  Film.strayDetails.length
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
+  coordinate
+  Film.strayActor(named:)
+  Film.strayDetails.length
   """)
 
 # Both elements of the unresolved path were authored; only their resolution declines.

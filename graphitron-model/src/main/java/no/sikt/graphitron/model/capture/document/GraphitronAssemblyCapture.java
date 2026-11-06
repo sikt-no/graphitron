@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
+import no.sikt.graphitron.model.derive.OccurrenceProducers;
 import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
@@ -12,7 +13,6 @@ import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetColumns;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
-import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
@@ -37,7 +37,9 @@ import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -116,7 +118,6 @@ public final class GraphitronAssemblyCapture {
         // record class, and what the producers' resolved methods ground, closed over the members
         // each backed class offers. The classpath was read before this gatherer ran.
         TypeBackings.derive(dsl, graph, readAt);
-        FieldReferenceStepTargets.derive(dsl, graph);
         // The types whose tables each field's statements land on, off the targets and bindings above.
         FieldTargetTables.derive(dsl, graph, readAt);
         // And the tables their reads depart from, off the same bindings and the targets.
@@ -126,18 +127,9 @@ public final class GraphitronAssemblyCapture {
         // How each field under a held object takes its keys off it, off the producers and results
         // just written and the path elements above; the walk departs from these.
         FieldKeyRows.derive(dsl, graph, readAt);
-        // What each occurrence's values come from, a depth at a time, off the occurrences, the
-        // producers and the key rows just written: its tables or its class.
-        OccurrenceSources.derive(dsl, graph, readAt);
-        // Then the types each occurrence with a table source must reach, a depth at a time, off the
-        // sources just written and the needs of the depth above.
-        PathNeeds.derive(dsl, graph, readAt);
-        // Then the paths of the needs no claim covers, off the needs and the claims above: an empty
-        // path where the need starts on its landing, an inferred one over the one foreign key.
-        Paths.derive(dsl, graph, readAt);
-        // Then the needs a claim covers, walked a position at a time into their steps, each to its
-        // written or inherited path or to a stop, and the one step of each inferred path above.
-        Steps.derive(dsl, graph, readAt);
+        // Each occurrence's producer, source, needs and paths, a depth at a time, off the
+        // occurrences, the key rows and the claims above.
+        occurrenceDepths(dsl, graph, readAt);
         // The key columns each node id at an occurrence carries, where the needs just written land,
         // then the column each other scalar occurrence reads or binds there.
         OccurrenceNodeIds.derive(dsl, graph, readAt);
@@ -159,6 +151,37 @@ public final class GraphitronAssemblyCapture {
         ConditionShapeDefectMethods.derive(dsl, graph, readAt);
         ArgMappingPairDefects.derive(dsl, graph);
         EntryDefects.sweep(dsl, graph, readAt, EntryDefects.GRAPHITRON.gatherer());
+    }
+
+    /**
+     * What each occurrence executes, where its values come from, the types it must reach and the
+     * path to each, one depth at a time, then the sweep of every relation. Within a depth: the
+     * producers, which the sources read; the sources, its tables or its class; the needs off those
+     * sources; the paths no claim covers, an empty one where the need starts on its landing and an
+     * inferred one over the one foreign key; and the claimed needs walked into their steps, each to
+     * its written or inherited path or to a stop. A child field or an argument under a field that
+     * writes a path starts where that path's join path lands, so a depth reads the join paths of the
+     * depth above.
+     */
+    private static void occurrenceDepths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var o = GRAPHITRON_OCCURRENCE;
+        Integer deepest = dsl.select(max(o.DEPTH)).from(o)
+            .where(o.GRAPH_NAME.eq(graph)).and(o.TOUCHED_AT.eq(touchedAt))
+            .fetchOne(0, Integer.class);
+        if (deepest != null) {
+            for (int depth = 0; depth <= deepest; depth++) {
+                OccurrenceProducers.writeDepth(dsl, graph, depth, touchedAt);
+                OccurrenceSources.writeDepth(dsl, graph, depth, touchedAt);
+                PathNeeds.writeDepth(dsl, graph, depth, touchedAt);
+                Paths.writeDepth(dsl, graph, depth, touchedAt);
+                Steps.writeDepth(dsl, graph, depth, touchedAt);
+            }
+        }
+        OccurrenceProducers.sweep(dsl, graph, touchedAt);
+        OccurrenceSources.sweep(dsl, graph, touchedAt);
+        PathNeeds.sweep(dsl, graph, touchedAt);
+        Paths.sweep(dsl, graph, touchedAt);
+        Steps.sweep(dsl, graph, touchedAt);
     }
 
     /**

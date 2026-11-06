@@ -79,10 +79,10 @@ import static org.jooq.impl.DSL.when;
  * several; and the one step of every {@code INFERRED} path {@link Paths} wrote. Marked and swept.
  *
  * <p>Which claim a need follows is {@code graphitron_join_path_claimed_rule}'s, and what one element
- * allows from a table is {@code graphitron_join_path_step_rule}'s. A position at a time, one
- * statement with the graph, the position and the instant bound joins the two, from each need's start
- * at position 0 and from the step it took at the position before after that; the moves each need
- * finds are counted here. Exactly one is the step, none or several the stop, a stopped need keeping
+ * allows from a table is {@code graphitron_join_path_step_rule}'s. A depth at a time, and within it
+ * a position at a time, one statement with the graph, the depth, the position and the instant bound
+ * joins the two, from each need's start at position 0 and from the step it took at the position
+ * before after that; the moves each need finds are counted here. Exactly one is the step, none or several the stop, a stopped need keeping
  * the steps it took. A move that no element writes, the step after a path ending on a routine, is
  * taken where it is the only one and otherwise leaves the path where it stands.
  *
@@ -95,11 +95,12 @@ import static org.jooq.impl.DSL.when;
  * as its second parameter, {@code NO_ROUTE_TO_TARGET} where a walk takes every step and
  * ends off its target, {@code ROUTINE_PARAMETER_UNBOUND}, and the two overload defects with the
  * declarations under each in {@code graphitron_entry_defect_method}. Each row is marked with the
- * reading's instant; {@link EntryDefects#sweep} takes the rows of the gatherer's codes a reading did
- * not mark.
+ * reading's instant as its depth is written, an overload defect's detail naming the pairs of every
+ * depth; {@link EntryDefects#sweep} takes the rows of the gatherer's codes a reading did not mark.
  *
- * <p>Reads the needs {@link PathNeeds} writes, the claims {@link PathClaims} writes and the paths
- * {@link Paths} writes, so it runs after all three.
+ * <p>The last step of the assembly's per-depth loop: reads the claims {@link PathClaims} writes
+ * before the loop, and the needs {@link PathNeeds} and the paths {@link Paths} write for the same
+ * depth; the next depth's sources and needs read the join paths it writes. {@link #sweep} runs after the last depth.
  */
 public final class Steps {
 
@@ -174,9 +175,12 @@ public final class Steps {
         }
     }
 
-    /** Walks the graph's claimed needs, steps its inferred paths, and sweeps what it did not mark. */
-    public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var walks = claimed(dsl, graph, touchedAt);
+    /**
+     * Walks the claimed needs of the occurrences at {@code depth} and steps their inferred paths,
+     * writing what the walks come to and their defects.
+     */
+    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        var walks = claimed(dsl, graph, depth, touchedAt);
         var defects = new LinkedHashMap<DefectKey, String>();
         var written = new ArrayList<WrittenStep>();
         var routines = new ArrayList<RoutineStep>();
@@ -185,24 +189,34 @@ public final class Steps {
                 throw new IllegalStateException("graphitron_join_path_step did not end for " + graph
                     + " in " + POSITION_LIMIT + " positions");
             }
-            var rows = position(dsl, graph, touchedAt, position);
+            var rows = position(dsl, graph, depth, touchedAt, position);
             if (rows.isEmpty()) {
                 break;
             }
             take(dsl, graph, touchedAt, position, rows, walks, defects, written, routines);
         }
-        inferred(dsl, graph, touchedAt);
-        columns(dsl, graph, touchedAt);
+        inferred(dsl, graph, depth, touchedAt);
+        columns(dsl, graph, depth, touchedAt);
         var methodDefects = methods(dsl, graph, touchedAt, written, defects);
         parameters(dsl, graph, touchedAt, routines, defects);
         paths(dsl, graph, touchedAt, walks.values(), defects);
         wildcardArrivals(dsl, graph, defects);
         writeDefects(dsl, graph, touchedAt, defects, methodDefects);
-        sweep(dsl, graph, touchedAt);
     }
 
-    /** Every claimed need of this reading, with where it starts and lands and the claim it follows. */
-    private static Map<NeedKey, Walk> claimed(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    /** Whether the occurrence at {@code coordinate} sits at {@code depth}. */
+    private static Condition atDepth(Field<String> graph, Field<String> coordinate, int depth) {
+        var o = GRAPHITRON_OCCURRENCE.as("d");
+        return org.jooq.impl.DSL.exists(selectOne().from(o)
+            .where(o.GRAPH_NAME.eq(graph), o.COORDINATE.eq(coordinate), o.DEPTH.eq(depth)));
+    }
+
+    /**
+     * Every claimed need of an occurrence at {@code depth}, with where it starts and lands and the
+     * claim it follows.
+     */
+    private static Map<NeedKey, Walk> claimed(DSLContext dsl, String graph, int depth,
+                                              LocalDateTime touchedAt) {
         var n = GRAPHITRON_PATH_NEED.as("n");
         var cr = GRAPHITRON_JOIN_PATH_CLAIMED_RULE.as("cr");
         var out = new LinkedHashMap<NeedKey, Walk>();
@@ -213,6 +227,7 @@ public final class Steps {
             .join(cr).on(cr.GRAPH_NAME.eq(n.GRAPH_NAME), cr.COORDINATE.eq(n.COORDINATE),
                 cr.TARGET_TYPE.eq(n.TARGET_TYPE))
             .where(n.GRAPH_NAME.eq(graph), n.TOUCHED_AT.eq(touchedAt))
+            .and(atDepth(n.GRAPH_NAME, n.COORDINATE, depth))
             .forEach(r -> {
                 var key = new NeedKey(r.value1(), r.value2());
                 var landing = r.value8() == null ? null : new Tbl(r.value6(), r.value7(), r.value8());
@@ -223,11 +238,12 @@ public final class Steps {
     }
 
     /**
-     * What the step rule allows at {@code position} from where each claimed need stands: its start
-     * at position 0, and the step it took at the position before after that.
+     * What the step rule allows at {@code position} from where each claimed need of an occurrence at
+     * {@code depth} stands: its start at position 0, and the step it took at the position before
+     * after that.
      */
-    private static Result<Record> position(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                           int position) {
+    private static Result<Record> position(DSLContext dsl, String graph, int depth,
+                                           LocalDateTime touchedAt, int position) {
         var cr = GRAPHITRON_JOIN_PATH_CLAIMED_RULE.as("cr");
         var r = GRAPHITRON_JOIN_PATH_STEP_RULE.as("r");
         var fields = new ArrayList<Field<?>>();
@@ -244,6 +260,7 @@ public final class Steps {
                     r.CLAIM_TARGET_TYPE.eq(cr.CLAIM_TARGET_TYPE), r.POSITION.eq(position),
                     departs(r, n.START_SOURCE_NAME, n.START_SCHEMA, n.START_TABLE))
                 .where(n.GRAPH_NAME.eq(graph), n.TOUCHED_AT.eq(touchedAt))
+                .and(atDepth(n.GRAPH_NAME, n.COORDINATE, depth))
                 .fetch();
         }
         var s = GRAPHITRON_JOIN_PATH_STEP.as("s");
@@ -258,6 +275,7 @@ public final class Steps {
                 r.CLAIM_TARGET_TYPE.eq(cr.CLAIM_TARGET_TYPE), r.POSITION.eq(position),
                 departs(r, s.TO_SOURCE_NAME, s.TO_SCHEMA, s.TO_TABLE))
             .where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.eq(touchedAt), s.POSITION.eq(position - 1))
+            .and(atDepth(s.GRAPH_NAME, s.COORDINATE, depth))
             .fetch();
     }
 
@@ -412,16 +430,16 @@ public final class Steps {
     }
 
     /**
-     * The one step of each {@code INFERRED} path this reading's {@link Paths} wrote: from the need's
-     * start to its landing over the one foreign key between them, or, from a routine's derived table,
-     * by the landing's primary key matched by name.
+     * The one step of each {@code INFERRED} path this reading's {@link Paths} wrote for an occurrence
+     * at {@code depth}: from the need's start to its landing over the one foreign key between them,
+     * or, from a routine's derived table, by the landing's primary key matched by name.
      */
-    private static void inferred(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    private static void inferred(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         var p = GRAPHITRON_PATH.as("p");
         var j = GRAPHITRON_JOIN_PATH.as("j");
         var n = GRAPHITRON_PATH_NEED.as("n");
         Condition inferredHere = p.GRAPH_NAME.eq(graph).and(p.TOUCHED_AT.eq(touchedAt))
-            .and(p.ORIGIN.eq("INFERRED"));
+            .and(p.ORIGIN.eq("INFERRED")).and(atDepth(p.GRAPH_NAME, p.COORDINATE, depth));
         var s = GRAPHITRON_JOIN_PATH_STEP;
         dsl.insertInto(s)
             .columns(s.GRAPH_NAME, s.COORDINATE, s.TARGET_TYPE, s.POSITION, s.FROM_SOURCE_NAME,
@@ -532,14 +550,15 @@ public final class Steps {
     }
 
     /**
-     * The column pairs each step this reading took joins on: a foreign key's own columns paired with
-     * those it references, oriented the way the step rode it, a key from a table to itself departing
-     * the declaring row where the field reads one row; a primary key's columns each paired with
-     * itself; and a derived table's columns matched by name to the landing's primary key.
+     * The column pairs each step this reading took for an occurrence at {@code depth} joins on: a
+     * foreign key's own columns paired with those it references, oriented the way the step rode it,
+     * a key from a table to itself departing the declaring row where the field reads one row; a
+     * primary key's columns each paired with itself; and a derived table's columns matched by name
+     * to the landing's primary key.
      */
-    private static void columns(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        keyColumns(dsl, graph, touchedAt, GRAPHITRON_JOIN_PATH_STEP_KEY);
-        keyColumns(dsl, graph, touchedAt, GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY);
+    private static void columns(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        keyColumns(dsl, graph, depth, touchedAt, GRAPHITRON_JOIN_PATH_STEP_KEY);
+        keyColumns(dsl, graph, depth, touchedAt, GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY);
 
         var s = GRAPHITRON_JOIN_PATH_STEP.as("s");
         var pk = GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY.as("pk");
@@ -556,7 +575,8 @@ public final class Steps {
                     spk.TABLE_NAME.eq(pk.TABLE_NAME))
                 .join(kc).on(kc.SOURCE_NAME.eq(spk.SOURCE_NAME), kc.TABLE_SCHEMA.eq(spk.TABLE_SCHEMA),
                     kc.TABLE_NAME.eq(spk.TABLE_NAME), kc.CONSTRAINT_NAME.eq(spk.CONSTRAINT_NAME))
-                .where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.eq(touchedAt)),
+                .where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.eq(touchedAt))
+                .and(atDepth(s.GRAPH_NAME, s.COORDINATE, depth)),
             touchedAt);
 
         var mk = GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY.as("mk");
@@ -571,13 +591,17 @@ public final class Steps {
                 .join(nm).on(nm.SOURCE_NAME.eq(s.FROM_SOURCE_NAME), nm.TABLE_SCHEMA.eq(s.FROM_SCHEMA),
                     nm.TABLE_NAME.eq(s.FROM_TABLE), nm.TO_SOURCE_NAME.eq(mk.TABLE_SOURCE_NAME),
                     nm.TO_SCHEMA.eq(mk.TABLE_SCHEMA), nm.TO_TABLE.eq(mk.TABLE_NAME))
-                .where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.eq(touchedAt)),
+                .where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.eq(touchedAt))
+                .and(atDepth(s.GRAPH_NAME, s.COORDINATE, depth)),
             touchedAt);
     }
 
-    /** The column pairs of the steps riding a foreign key, written or inferred, held in {@code keyTable}. */
+    /**
+     * The column pairs of the steps riding a foreign key, written or inferred, held in
+     * {@code keyTable}, for the occurrences at {@code depth}.
+     */
     @SuppressWarnings("unchecked")
-    private static void keyColumns(DSLContext dsl, String graph, LocalDateTime touchedAt,
+    private static void keyColumns(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt,
                                    Table<?> keyTable) {
         var s = GRAPHITRON_JOIN_PATH_STEP.as("s");
         var k = keyTable.as("k");
@@ -621,7 +645,8 @@ public final class Steps {
                     pc.TABLE_SCHEMA.eq(rcc.REFERENCED_SCHEMA), pc.TABLE_NAME.eq(rcc.REFERENCED_TABLE),
                     pc.CONSTRAINT_NAME.eq(rcc.REFERENCED_CONSTRAINT_NAME),
                     pc.POSITION.eq(rcc.REFERENCED_POSITION))
-                .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.COORDINATE))
+                .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.COORDINATE),
+                    o.DEPTH.eq(depth))
                 .leftJoin(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
                 .leftJoin(nv).on(nv.GRAPH_NAME.eq(f.GRAPH_NAME), nv.TYPE_NAME.eq(f.TYPE_NAME),
                     nv.FIELD_NAME.eq(f.FIELD_NAME))
@@ -766,10 +791,10 @@ public final class Steps {
                 }
             }
         }
-        noOverload.forEach((pos, pairs) ->
-            defects.put(new DefectKey(pos, NO_OVERLOAD_FOR_PAIR), String.join("; ", pairs)));
-        tied.forEach((pos, details) ->
-            defects.put(new DefectKey(pos, OVERLOAD_TIE), String.join("; ", details)));
+        noOverload.forEach((pos, pairs) -> defects.put(new DefectKey(pos, NO_OVERLOAD_FOR_PAIR),
+            String.join("; ", withMarked(dsl, graph, touchedAt, pos, NO_OVERLOAD_FOR_PAIR, pairs))));
+        tied.forEach((pos, details) -> defects.put(new DefectKey(pos, OVERLOAD_TIE),
+            String.join("; ", withMarked(dsl, graph, touchedAt, pos, OVERLOAD_TIE, details))));
         var m = GRAPHITRON_JOIN_PATH_STEP_METHOD;
         upsert(dsl, m, List.of(m.GRAPH_NAME, m.COORDINATE, m.TARGET_TYPE, m.POSITION,
                 m.METHOD_SOURCE_NAME, m.METHOD_CLASS_NAME, m.METHOD_NAME, m.METHOD_DESCRIPTOR),
@@ -777,6 +802,23 @@ public final class Steps {
                 m.METHOD_DESCRIPTOR_REF),
             rows);
         return methods;
+    }
+
+    /**
+     * {@code parts} with those of the detail this reading already marked for {@code code} at the
+     * element, which an occurrence at another depth stepping it between other tables gave.
+     */
+    private static TreeSet<String> withMarked(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                              Pos pos, String code, TreeSet<String> parts) {
+        var d = GRAPHITRON_ENTRY_DEFECT;
+        String marked = dsl.select(d.DETAIL).from(d)
+            .where(d.GRAPH_NAME.eq(graph), d.SOURCE_NAME.eq(pos.source()), d.SOURCE_LINE.eq(pos.line()),
+                d.SOURCE_COLUMN.eq(pos.column()), d.CODE.eq(code), d.TOUCHED_AT.eq(touchedAt))
+            .fetchOne(d.DETAIL);
+        if (marked != null) {
+            parts.addAll(List.of(marked.split("; ")));
+        }
+        return parts;
     }
 
     /** The two-parameter declarations of a condition element's methods taking a pair's two tables. */
@@ -1015,11 +1057,11 @@ public final class Steps {
     }
 
     /**
-     * What this reading did not mark: the step family children first, then the written and
+     * What no depth of this reading marked: the step family children first, then the written and
      * inherited paths, whose join paths and claimed rows go with them; the inferred and empty paths
      * are {@link Paths}'s to sweep.
      */
-    private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_JOIN_PATH_STEP_PARAMETER, GRAPHITRON_JOIN_PATH_STEP_COLUMN,
                 GRAPHITRON_JOIN_PATH_STEP_KEY, GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY, GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY,

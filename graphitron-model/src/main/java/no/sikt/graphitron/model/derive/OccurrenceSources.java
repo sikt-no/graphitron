@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
@@ -43,7 +44,6 @@ import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
@@ -59,17 +59,20 @@ import static org.jooq.impl.DSL.val;
  * <p>A source is stated on the occurrence, never as a pointer to another. It is written a depth at a
  * time, as {@link Occurrences} writes the occurrences: depth 0 from the declaring type's table or a
  * root {@code @routine}'s function, and each deeper depth from what this reading stated for the
- * parent at the depth above and what the parent field's producer hands back. A child whose own
- * service hands back a table's records reads, at any depth, the table its producer's result names,
- * where its rows come from, and nothing its parent gives. Each relation is one
- * {@code INSERT .. SELECT} per depth over the rows the rules give for that depth, the instant and
- * the depth bound as parameters. After the last depth every relation is swept by its mark.
+ * parent at the depth above and what the parent field's producer hands back. Under a parent field
+ * that writes a path, a child field or an argument reads the tables the parent's join path reaches,
+ * and a path that stops gives them none. A child whose own service hands back a table's records
+ * reads, at any depth, the table its producer's result names, where its rows come from, and nothing
+ * its parent gives. Each relation is one {@code INSERT .. SELECT} per depth over the rows the rules
+ * give for that depth, the instant and the depth bound as parameters; {@link #sweep} runs after the
+ * last depth.
  *
  * <p>A kind is part of its subtypes' keys, so a source whose kind changed since the last reading is
  * deleted before it is written again, taking its subtypes.
  *
- * <p>Reads the key rows {@link FieldKeyRows} writes and the producers before it, so it runs after
- * them; nothing it reads is written later.
+ * <p>A step of the assembly's per-depth loop: reads the key rows {@link FieldKeyRows} writes before
+ * the loop, the producers {@link OccurrenceProducers} writes for the same depth, and the join paths
+ * {@link Steps} wrote for the depth above.
  */
 public final class OccurrenceSources {
 
@@ -78,20 +81,13 @@ public final class OccurrenceSources {
     private static final String TABLE = "TABLE";
     private static final String OBJECT = "OBJECT";
 
-    /** States the graph's sources depth by depth and sweeps what the reading no longer finds. */
-    public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var o = GRAPHITRON_OCCURRENCE;
-        Integer deepest = dsl.select(max(o.DEPTH)).from(o)
-            .where(o.GRAPH_NAME.eq(graph)).and(o.TOUCHED_AT.eq(touchedAt))
-            .fetchOne(0, Integer.class);
-        if (deepest != null) {
-            for (int depth = 0; depth <= deepest; depth++) {
-                // The producers of this depth's occurrences, before the sources that read them.
-                OccurrenceProducers.writeDepth(dsl, graph, depth, touchedAt);
-                write(dsl, graph, candidates(graph, touchedAt, depth).asTable("c"), touchedAt);
-            }
-        }
-        OccurrenceProducers.sweep(dsl, graph, touchedAt);
+    /** States the sources of the occurrences at {@code depth}. */
+    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        write(dsl, graph, candidates(graph, touchedAt, depth).asTable("c"), touchedAt);
+    }
+
+    /** Deletes the rows no depth of this reading marked, subtypes before the source they hang on. */
+    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         dsl.deleteFrom(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT)
             .where(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.GRAPH_NAME.eq(graph))
             .and(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.TOUCHED_AT.ne(touchedAt))
@@ -200,10 +196,12 @@ public final class OccurrenceSources {
             .union(writePayload(o, p, at, touchedAt))
             .union(writePayloadMember(o, p, at, touchedAt))
             .union(nestedCopy(o, p, at, touchedAt))
+            .union(nestedPath(o, p, at, touchedAt))
             .union(argumentTarget(o, p, at))
             .union(argumentMember(o, p, at))
             .union(argumentWrite(o, p, at))
             .union(argumentCopy(o, p, at, touchedAt))
+            .union(argumentPath(o, p, at, touchedAt))
             .union(inputFieldCopy(o, p, at, touchedAt));
     }
 
@@ -475,9 +473,9 @@ public final class OccurrenceSources {
 
     /**
      * A nested field of a plain type under a parent with a table source, and no service of its own
-     * handing it an object, reads its parent's tables; an errors field reads none, and neither does
-     * a field whose parent field writes a path, a root {@code @routine} call aside, nor a field of a
-     * connection, which binds into the page its returning producer produces.
+     * handing it an object, reads its parent's tables; an errors field reads none, a field whose
+     * parent field writes a path reads where that path lands instead, and a field of a connection
+     * reads none, binding into the page its returning producer produces.
      */
     private static Select<Record> nestedCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                              Condition at, LocalDateTime touchedAt) {
@@ -486,10 +484,6 @@ public final class OccurrenceSources {
         var pt = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("pt");
         var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
-        var pe = GRAPHITRON_AST_FIELD_PATH_ENTRY.as("pe");
-        var fd = GRAPHQL_AST_FIELD_DEFINITION_ENTRY.as("fd");
-        var ro = GRAPHQL_ROOT_OPERATION.as("ro");
-        var re = GRAPHITRON_AST_ROUTINE_ENTRY.as("re");
         var pw = GRAPHITRON_FIELD_TARGET.as("pw");
         return row(o, TABLE, pt.TABLE_SOURCE_NAME, pt.TABLE_SCHEMA, pt.TABLE_NAME, null)
             .from(o)
@@ -502,21 +496,7 @@ public final class OccurrenceSources {
             .and(notExists(selectOne().from(ps)
                 .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
                     ps.FIELD_NAME.eq(pf.FIELD_NAME))))
-            // The fields start where the parent's written path lands, which is the join path's to
-            // resolve; until then they wait. A root field's leading @routine is its producer's call,
-            // no step of a path, and its table is the parent's source already.
-            .and(notExists(selectOne().from(pe)
-                .join(fd).on(fd.GRAPH_NAME.eq(pe.GRAPH_NAME), fd.SOURCE_NAME.eq(pe.SOURCE_NAME),
-                    fd.SOURCE_LINE.eq(pe.FIELD_LINE), fd.SOURCE_COLUMN.eq(pe.FIELD_COLUMN))
-                .where(fd.GRAPH_NAME.eq(pf.GRAPH_NAME), fd.TYPE_NAME.eq(pf.TYPE_NAME),
-                    fd.NAME.eq(pf.FIELD_NAME))
-                .andNot(pe.POSITION.eq(0)
-                    .and(exists(selectOne().from(ro)
-                        .where(ro.GRAPH_NAME.eq(pf.GRAPH_NAME), ro.TYPE_NAME.eq(pf.TYPE_NAME))))
-                    .and(exists(selectOne().from(re)
-                        .where(re.GRAPH_NAME.eq(pe.GRAPH_NAME), re.SOURCE_NAME.eq(pe.SOURCE_NAME),
-                            re.SOURCE_LINE.eq(pe.ELEMENT_LINE),
-                            re.SOURCE_COLUMN.eq(pe.ELEMENT_COLUMN)))))))
+            .andNot(writesPath(pf))
             .and(notExists(selectOne().from(ef)
                 .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
                     ef.FIELD_NAME.eq(cf.FIELD_NAME))))
@@ -528,8 +508,42 @@ public final class OccurrenceSources {
     }
 
     /**
-     * An argument of a field whose target type is bound to a table reads that table, unless the
-     * field writes a path.
+     * A nested field of a plain type under a parent field that writes a path, and no service of its
+     * own handing it an object, reads each table the parent's join path reaches, a row per table; a
+     * path that stops reaches none. An errors field reads none, and neither does a field of a
+     * connection.
+     */
+    private static Select<Record> nestedPath(GraphitronOccurrence o, GraphitronOccurrence p,
+                                             Condition at, LocalDateTime touchedAt) {
+        var pf = GRAPHITRON_FIELD.as("pf");
+        var cf = GRAPHITRON_FIELD.as("cf");
+        var j = GRAPHITRON_JOIN_PATH.as("j");
+        var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
+        var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
+        var pw = GRAPHITRON_FIELD_TARGET.as("pw");
+        return row(o, TABLE, j.TARGET_SOURCE_NAME, j.TARGET_SCHEMA, j.TARGET_TABLE, null)
+            .from(o)
+            .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
+            .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
+            .join(j).on(j.GRAPH_NAME.eq(p.GRAPH_NAME), j.COORDINATE.eq(p.COORDINATE),
+                j.TOUCHED_AT.eq(touchedAt))
+            .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"))
+            .and(writesPath(pf))
+            .and(notExists(selectOne().from(ps)
+                .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
+                    ps.FIELD_NAME.eq(pf.FIELD_NAME))))
+            .and(notExists(selectOne().from(ef)
+                .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
+                    ef.FIELD_NAME.eq(cf.FIELD_NAME))))
+            .and(notExists(selectOne().from(pw)
+                .where(pw.GRAPH_NAME.eq(pf.GRAPH_NAME), pw.TYPE_NAME.eq(pf.TYPE_NAME),
+                    pw.FIELD_NAME.eq(pf.FIELD_NAME), pw.WRAPPER_TYPE_NAME.isNotNull())));
+    }
+
+    /**
+     * An argument of a field whose target type is bound to a table reads that table, where the field
+     * writes no path.
      */
     private static Select<Record> argumentTarget(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at) {
@@ -549,7 +563,7 @@ public final class OccurrenceSources {
 
     /**
      * An argument of a field whose target, a union or an interface, binds no table of its own reads
-     * each table its members are bound to, a row per table, unless the field writes a path.
+     * each table its members are bound to, a row per table, where the field writes no path.
      */
     private static Select<Record> argumentMember(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at) {
@@ -574,7 +588,7 @@ public final class OccurrenceSources {
 
     /**
      * An argument of a write whose target binds no table, a scalar, an enum or the payload object
-     * graphitron builds, reads the table the write mutates, unless the write writes a path.
+     * graphitron builds, reads the table the write mutates, where the write writes no path.
      */
     private static Select<Record> argumentWrite(GraphitronOccurrence o, GraphitronOccurrence p,
                                                 Condition at) {
@@ -608,7 +622,7 @@ public final class OccurrenceSources {
     /**
      * An argument of a field whose target is bound to no table, a nested object, a scalar or an
      * enum, reads its field's own tables, the field's path being empty; a write's arguments read the
-     * write's table instead, and the arguments of a field that writes a path read none.
+     * write's table instead, and the arguments of a field that writes a path the tables it lands on.
      */
     private static Select<Record> argumentCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                                Condition at, LocalDateTime touchedAt) {
@@ -644,10 +658,28 @@ public final class OccurrenceSources {
     }
 
     /**
-     * Whether the field {@code pf} writes a path. Where it lands is the join path's to resolve, so
-     * its arguments wait for it, whatever its target: a @routine's result is its signature's, and
-     * what an argument there takes is not yet settled. A root field's leading @routine is its
-     * producer's call, no step of a path, and its table the arguments' source already.
+     * An argument of a field that writes a path reads each table the field's join path reaches, a
+     * row per table, whatever the field's target, a {@code @routine}'s result included; a path that
+     * stops reaches none.
+     */
+    private static Select<Record> argumentPath(GraphitronOccurrence o, GraphitronOccurrence p,
+                                               Condition at, LocalDateTime touchedAt) {
+        var pf = GRAPHITRON_FIELD.as("pf");
+        var j = GRAPHITRON_JOIN_PATH.as("j");
+        return row(o, TABLE, j.TARGET_SOURCE_NAME, j.TARGET_SCHEMA, j.TARGET_TABLE, null)
+            .from(o)
+            .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
+            .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
+            .join(j).on(j.GRAPH_NAME.eq(p.GRAPH_NAME), j.COORDINATE.eq(p.COORDINATE),
+                j.TOUCHED_AT.eq(touchedAt))
+            .where(at, o.KIND.eq("FIELD_ARGUMENT"))
+            .and(writesPath(pf));
+    }
+
+    /**
+     * Whether the field {@code pf} writes a path, which its join path resolves. A root field's
+     * leading @routine is its producer's call, no step of a path, and its table the field's source
+     * already.
      */
     private static Condition writesPath(GraphitronField pf) {
         var pe = GRAPHITRON_AST_FIELD_PATH_ENTRY.as("wpe");

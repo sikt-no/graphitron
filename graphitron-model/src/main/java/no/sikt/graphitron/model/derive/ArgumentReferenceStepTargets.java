@@ -17,14 +17,13 @@ import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_HOP
  * element of an argument's {@code @reference} path lands, walked from the table the argument's own
  * content binds against.
  *
- * <p>Two relations and not one, for the reason the field-site pair is two: the rows carry two key
- * shapes. On a {@code KEY} or {@code TABLE} element the constraint and its orientation are
+ * <p>Two relations and not one: the rows carry two key shapes. On a {@code KEY} or {@code TABLE} element the constraint and its orientation are
  * identity; on a {@code NAME_MATCH} or {@code CONDITION} element there is no key to enumerate, so
  * the coordinate with both table triples is already total. One relation over all four arms would
  * declare no key at all, and a keyless stage doubles its rows on a second capture of one graph
  * without failing.
  *
- * <p>The key is not the field walk's. It carries {@code argument_name}, because an argument's path
+ * <p>The key carries {@code argument_name}, because an argument's path
  * departs from what the argument's own content binds against rather than from the enclosing type's
  * binding, so two arguments of one field walk two chains from one authored path.
  *

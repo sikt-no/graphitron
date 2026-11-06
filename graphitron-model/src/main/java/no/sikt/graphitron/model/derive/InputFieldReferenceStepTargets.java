@@ -17,13 +17,13 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_RESOLVING_T
  * of an input field's {@code @reference} path lands, walked from the table that input field is
  * classified against.
  *
- * <p>Two relations and not one, on the field-site pair's terms: the rows carry two key shapes, and
- * one relation over all four arms would declare no key at all.
+ * <p>Two relations and not one: the rows carry two key shapes, and one relation over all four arms
+ * would declare no key at all.
  *
- * <p>The key is neither sibling's. The whole departure triple is in it, because an input field's
- * departure is its consuming site's and not its own: one input field reached under two arguments
- * whose fields select from different tables walks two chains from one authored path, and a key
- * transcribed from the field walk would keep one of them.
+ * <p>The whole departure triple is in the key, because an input field's departure is its consuming
+ * site's and not its own: one input field reached under two arguments whose fields select from
+ * different tables walks two chains from one authored path, and a key without it would keep one of
+ * them.
  *
  * <p>The walk itself is {@link ReferenceStepWalk}'s, which is where the recursion, the ranking, the
  * two arities and the hazard that the arities sit a level below the arm filter are all stated. The

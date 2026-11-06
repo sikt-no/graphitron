@@ -100,9 +100,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       column claim cannot speak for;
  *       the {@code reference-step-target} fact documents bind the spelling resolution the
  *       bindings themselves stand on ({@code graphitron_spelled_table}) and the {@code @reference}
- *       chain over it ({@code graphitron_field_reference_step_hop} and
- *       {@code graphitron_field_reference_step_target}, the hop view pinned through the chain that
- *       reaches or refuses it rather than twice), over SDL captured against the sakila catalog,
+ *       walk over it ({@code graphitron_join_path_step} and {@code graphitron_join_path_stop}, the
+ *       steps a path takes or the stop that refuses it), over SDL captured against the sakila catalog,
  *       whose multischema schemas supply the shapes the cases turn on (two foreign keys between
  *       one pair of tables, a key pointing back at its own table, a constraint name two schemas
  *       both declare, a table name two schemas both declare);

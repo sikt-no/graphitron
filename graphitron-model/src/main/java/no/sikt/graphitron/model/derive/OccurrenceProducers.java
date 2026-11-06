@@ -29,10 +29,11 @@ import static org.jooq.impl.DSL.val;
  * occurrences execute something and produce a result, one depth at a time, from the rule view
  * beside each, marking what this reading states.
  *
- * <p>A step of {@link OccurrenceSources}' depth loop, called before a depth's sources, which read the
- * producers of their depth. The rules read today's field-keyed producer relations through each
- * occurrence's declared field, so nothing they read is written in the loop; reading the parent's
- * source is what the per-depth placement is for. {@link #sweep} runs once after the loop.
+ * <p>The first step of the assembly's per-depth loop, before {@link OccurrenceSources} states the
+ * depth's sources, which read the producers of their depth. The rules read today's field-keyed
+ * producer relations through each occurrence's declared field, so nothing they read is written in
+ * the loop; reading the parent's source is what the per-depth placement is for. {@link #sweep} runs
+ * once after the loop.
  */
 public final class OccurrenceProducers {
 

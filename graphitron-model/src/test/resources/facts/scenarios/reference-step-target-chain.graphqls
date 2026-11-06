@@ -1,8 +1,8 @@
-# A field's @reference path walked element by element from its type's table. Each key hop takes its
-# direction from which table declares the key, a table element discovers its key, and a key name
-# answers as the SQL constraint name or, where none does, as the generated Keys constant, either
-# without regard to case. A self-referential key is one hop, both orientations landing on one
-# table. A bare condition is a hop its method's parameters route: no constraint, no direction.
+# A field's @reference path walked element by element from its type's table into its join path's
+# steps. A table element discovers its key, and a key name answers as the SQL constraint name or,
+# where none does, as the generated Keys constant, either without regard to case. A
+# self-referential key is one step landing on its own table. A bare condition is a step its
+# method's parameters route, riding no key.
 
 type Film @table(name: "film") {
   title: String
@@ -27,16 +27,33 @@ type Category @table(name: "category") {
 
 extend type Query { films: [Film!]! categories: [Category!]! }
 
-extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
-  type_name, field_name,     position, via,       key_matched_by, from_table, to_table,         constraint_name,                  fk_on_from, targets, candidates
-  Film,      actors,         0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,          FALSE,      1,       1
-  Film,      actors,         1,        KEY,       SQL_NAME,       film_actor, actor,            film_actor_actor_id_fkey,         TRUE,       1,       1
-  Film,      titleTexts,     0,        TABLE,     ,               film,       film_translation, film_translation_film_id_fkey,    FALSE,      1,       1
-  Film,      bySqlName,      0,        KEY,       SQL_NAME,       film,       language,         film_language_id_fkey,            TRUE,       1,       1
-  Film,      byKeysConstant, 0,        KEY,       JOOQ_NAME,      film,       language,         film_language_id_fkey,            TRUE,       1,       1
-  Film,      byUpperCase,    0,        KEY,       SQL_NAME,       film,       language,         film_language_id_fkey,            TRUE,       1,       1
-  Film,      filmActors,     0,        CONDITION, ,               film,       film_actor,       ,                                 ,           1,       1
-  Category,  parent,         0,        KEY,       SQL_NAME,       category,   category,         category_parent_category_id_fkey, TRUE,       1,       1
+extend schema @expectEquals(relation: "graphitron_join_path_step", rows: """
+  coordinate,          position, from_table, to_table
+  Film.actors,         0,        film,       film_actor
+  Film.actors,         1,        film_actor, actor
+  Film.titleTexts,     0,        film,       film_translation
+  Film.bySqlName,      0,        film,       language
+  Film.byKeysConstant, 0,        film,       language
+  Film.byUpperCase,    0,        film,       language
+  Film.filmActors,     0,        film,       film_actor
+  Category.parent,     0,        category,   category
+  """)
+
+# The key each step rides: the key a name answers to, or a table element's one key, inferred. A
+# bare condition rides none.
+extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key", rows: """
+  coordinate,      position, constraint_name
+  Film.titleTexts, 0,        film_translation_film_id_fkey
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_key", rows: """
+  coordinate,          position, constraint_name
+  Film.actors,         0,        film_actor_film_id_fkey
+  Film.actors,         1,        film_actor_actor_id_fkey
+  Film.bySqlName,      0,        film_language_id_fkey
+  Film.byKeysConstant, 0,        film_language_id_fkey
+  Film.byUpperCase,    0,        film_language_id_fkey
+  Category.parent,     0,        category_parent_category_id_fkey
   """)
 
 # The table element's spelling resolves although no @table wrote it, only the path element.

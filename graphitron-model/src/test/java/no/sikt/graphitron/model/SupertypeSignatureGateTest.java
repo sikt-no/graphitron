@@ -178,35 +178,29 @@ class SupertypeSignatureGateTest {
         // the departure shares the column and not the payload.
         Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table",
             "graphitron_field_source_table", "graphitron_field_target_table"),
-        // Where a @reference path element lands, under the three keys the three sites ask it by:
-        // a field's own coordinate, an argument's, and an input field's with the resolving table
-        // it was handed. One set per arm of the split, because the split is on key shape and the
-        // arms keep their own: the keyed three carry the constraint and its orientation, the
-        // keyless three do not. The payload grouping each set is the walk itself, which is the
-        // point rather than a coincidence: one builder states it and three coordinates call it, so
-        // the schema showing three relations with one payload is that claim arriving where a gate
-        // can see it. No supertype is owed, for the reason the pairs above give twice over: a
-        // relation over all three would carry an argument name null on two thirds of its rows and a
-        // resolving triple null on the other two thirds, and no reader could key into it.
+        // Where a @reference path element lands, under the two keys the two sites ask it by: an
+        // argument's coordinate, and an input field's with the resolving table it was handed. One
+        // set per arm of the split, because the split is on key shape and the arms keep their own:
+        // the keyed two carry the constraint and its orientation, the keyless two do not. The
+        // payload grouping each set is the walk itself, which is the point rather than a
+        // coincidence: one builder states it and two coordinates call it, so the schema showing two
+        // relations with one payload is that claim arriving where a gate can see it. No supertype
+        // is owed, for the reason the pairs above give: a relation over both would carry an
+        // argument name null on half its rows and a resolving triple null on the other half, and no
+        // reader could key into it.
         Set.of("graphitron_argument_reference_step_target_keyed",
-               "graphitron_field_reference_step_target_keyed",
                "graphitron_input_field_reference_step_target_keyed"),
         Set.of("graphitron_argument_reference_step_target_keyless",
-               "graphitron_field_reference_step_target_keyless",
                "graphitron_input_field_reference_step_target_keyless"),
-        // A path's start and the starts a parent's result and a parent's binding give. Each subtype
-        // adds no payload, only the reference that says why the walk starts there, into
-        // graphitron_result_table or graphitron_tabletype, so its columns are its
-        // supertype's; that is the supertype and subtype shape, not relations holding one fact. The
-        // routine start is not here only because it is keyed by its producer alone.
-        // graphitron_occurrence_source joins them on a payload of its kind alone, keyed by the
-        // occurrence: the successor of the start, which starts every occurrence with a source rather
-        // than only the fields that wrote a path. Successor and incumbent, not siblings; the set goes
-        // to one member when the start does. graphitron_occurrence_binding shares the payload of a
-        // kind alone for the same reason a supertype does: what each kind takes is its subtype's, so
-        // a binding and a source are two supertypes of the occurrence, not one fact under two keys.
-        Set.of("graphitron_field_path_start", "graphitron_field_path_start_binding",
-               "graphitron_field_path_start_result", "graphitron_occurrence_binding",
+        // A path's start, whose payload is its kind alone; the routine start is not here because it
+        // is keyed by its producer alone. graphitron_occurrence_source joins it on a payload of its
+        // kind alone, keyed by the occurrence: the successor of the start, which starts every
+        // occurrence with a source rather than only the fields that wrote a path. Successor and
+        // incumbent, not siblings; the set goes to one member when the start does.
+        // graphitron_occurrence_binding shares the payload of a kind alone for the same reason a
+        // supertype does: what each kind takes is its subtype's, so a binding and a source are two
+        // supertypes of the occurrence, not one fact under two keys.
+        Set.of("graphitron_field_path_start", "graphitron_occurrence_binding",
                "graphitron_occurrence_source"),
         // How a join path's step joins, by which key it rode: a written foreign key and an inferred
         // one, and a table's own primary key ridden as a self-join and one matched by name from a

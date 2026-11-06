@@ -68,12 +68,20 @@ extend schema @expectEquals(relation: "graphitron_argument_reference_step_target
   customers,  perDeparture,       0,        CONDITION, ,               customer,   address,          ,                               ,           1,       1
   """)
 
-# The field site, where Film.actors writes inActor's path and agrees with it hop for hop, and
-# Query.rootPath reaches nothing.
-extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
-  type_name, field_name, position, via, key_matched_by, from_table, to_table,   constraint_name,          fk_on_from, targets, candidates
-  Film,      actors,     0,        KEY, SQL_NAME,       film,       film_actor, film_actor_film_id_fkey,  FALSE,      1,       1
-  Film,      actors,     1,        KEY, SQL_NAME,       film_actor, actor,      film_actor_actor_id_fkey, TRUE,       1,       1
+# The field site, where Film.actors writes inActor's path and its join path agrees with it step for
+# step.
+extend schema @expectEquals(relation: "graphitron_join_path_step",
+    where: "coordinate = 'Film.actors'", rows: """
+  coordinate,  position, from_table, to_table
+  Film.actors, 0,        film,       film_actor
+  Film.actors, 1,        film_actor, actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_key",
+    where: "coordinate = 'Film.actors'", rows: """
+  coordinate,  position, constraint_name
+  Film.actors, 0,        film_actor_film_id_fkey
+  Film.actors, 1,        film_actor_actor_id_fkey
   """)
 
 # Both elements of the unresolved path were authored; only their resolution declines.

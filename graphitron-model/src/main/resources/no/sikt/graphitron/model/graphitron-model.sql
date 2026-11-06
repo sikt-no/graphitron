@@ -7266,10 +7266,10 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- binds to, which the column-match classifier asks on its way to a claim and an editor asks with
 -- no claim in view. Those resolutions layer among themselves on the same rule. graphitron_spelled_table
 -- answers the rule every table name is subject to whatever site wrote it, so the binding view is a
--- keying over it rather than a second copy of it; graphitron_field_reference_step_hop and
--- graphitron_field_reference_step_target then split a @reference path into its local element
--- resolutions and the chain that walks them, because only the chain needs recursion and mixing the
--- two would put a copy of every element arm inside the recursive term. A @routine binds no table:
+-- keying over it rather than a second copy of it; graphitron_field_reference_step_hop then states a
+-- @reference path element's local resolutions apart from the chains that walk them, because only a
+-- chain needs recursion and mixing the two would put a copy of every element arm inside the
+-- recursive term. A @routine binds no table:
 -- graphitron_tabletype is the @table population alone, and the type a field whose path
 -- ends on a @routine returns has the function's result as its rows, which graphitron_routine_result
 -- states for every reader that asks where such a type is read.
@@ -9310,125 +9310,6 @@ COMMENT ON VIEW intent_resolved_node_key_shape IS 'Deprecated with the whole int
 -- COMMENT ON COLUMN intent_resolved_node_key_shape.sole_column_name IS 'at arity one, that column''s name as the winning tier spells it, carried so a message about a single-valued slot need not re-join the key list; NULL at any higher arity, where there is no single column to name';
 -- COMMENT ON COLUMN intent_resolved_node_key_shape.sole_column_java_type IS 'at arity one, the Java type jOOQ binds that column as, from sql_column.binding_type: the value a single-valued slot would receive, and the left operand of the agreement such a slot requires. NULL at any higher arity by the shape of the key, and NULL at arity one where the catalog cannot answer, which is an ambiguous or absent table binding or a pinned column name the bound table does not have. A reader cannot tell those two apart from this column alone and does not need to: it reads the arity beside it first, and above one the agreement is not the question';
 
-CREATE TABLE graphitron_field_reference_step_target_keyed (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  field_name       VARCHAR NOT NULL,
-  ordinal          INTEGER NOT NULL,
-  position         INTEGER NOT NULL,
-  via              VARCHAR NOT NULL,
-  key_matched_by   VARCHAR,
-  from_source_name VARCHAR NOT NULL,
-  from_schema      VARCHAR NOT NULL,
-  from_table       VARCHAR NOT NULL,
-  to_source_name   VARCHAR NOT NULL,
-  to_schema        VARCHAR NOT NULL,
-  to_table         VARCHAR NOT NULL,
-  constraint_name  VARCHAR NOT NULL,
-  fk_on_from       BOOLEAN NOT NULL,
-  targets          INTEGER NOT NULL,
-  candidates       INTEGER NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal, position,
-               from_source_name, from_schema, from_table,
-               to_source_name, to_schema, to_table, constraint_name, fk_on_from),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (via IN ('KEY', 'TABLE')),
-  CHECK (key_matched_by IS NULL OR key_matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
-  -- A KEY element resolved a namespace, the rule computing it from the constraint it matched,
-  -- and a TABLE element wrote no name to match one against.
-  CHECK ((key_matched_by IS NOT NULL) = (via = 'KEY'))
-);
-COMMENT ON TABLE graphitron_field_reference_step_target_keyed IS 'One foreign-key route one field-site @reference path element reaches, in one orientation: the element the chain walked to, with the key it joins through. For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws one row per position, each departing where the one before it arrived.';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_reference_step_target.graph_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_reference_step_target.type_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_reference_step_target.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.ordinal IS 'the ordinal of a row of this arm, presented on graphitron_field_reference_step_target.ordinal, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.position IS 'the position of a row of this arm, presented on graphitron_field_reference_step_target.position, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.via IS 'the via of a row of this arm, presented on graphitron_field_reference_step_target.via, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.key_matched_by IS 'the key_matched_by of a row of this arm, presented on graphitron_field_reference_step_target.key_matched_by, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_field_reference_step_target.from_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.from_schema IS 'the from_schema of a row of this arm, presented on graphitron_field_reference_step_target.from_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.from_table IS 'the from_table of a row of this arm, presented on graphitron_field_reference_step_target.from_table, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_field_reference_step_target.to_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.to_schema IS 'the to_schema of a row of this arm, presented on graphitron_field_reference_step_target.to_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.to_table IS 'the to_table of a row of this arm, presented on graphitron_field_reference_step_target.to_table, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.constraint_name IS 'the constraint_name of a row of this arm, presented on graphitron_field_reference_step_target.constraint_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.fk_on_from IS 'the fk_on_from of a row of this arm, presented on graphitron_field_reference_step_target.fk_on_from, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.targets IS 'the targets of a row of this arm, presented on graphitron_field_reference_step_target.targets, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyed.candidates IS 'the candidates of a row of this arm, presented on graphitron_field_reference_step_target.candidates, whose comment carries what the value means';
-
-CREATE TABLE graphitron_field_reference_step_target_keyless (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  field_name       VARCHAR NOT NULL,
-  ordinal          INTEGER NOT NULL,
-  position         INTEGER NOT NULL,
-  via              VARCHAR NOT NULL,
-  from_source_name VARCHAR NOT NULL,
-  from_schema      VARCHAR NOT NULL,
-  from_table       VARCHAR NOT NULL,
-  to_source_name   VARCHAR NOT NULL,
-  to_schema        VARCHAR NOT NULL,
-  to_table         VARCHAR NOT NULL,
-  targets          INTEGER NOT NULL,
-  candidates       INTEGER NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal, position,
-               from_source_name, from_schema, from_table,
-               to_source_name, to_schema, to_table),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (via IN ('NAME_MATCH', 'CONDITION'))
-);
-COMMENT ON TABLE graphitron_field_reference_step_target_keyless IS 'One table pair one field-site @reference path element reaches without a foreign key: the element the chain walked to, by column-name match from a function result or by the route a condition method declares. For example a chain-ending element carrying only a @condition draws one row arriving at the table that method''s second parameter names.';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.graph_name IS 'the graph_name of a row of this arm, presented on graphitron_field_reference_step_target.graph_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.type_name IS 'the type_name of a row of this arm, presented on graphitron_field_reference_step_target.type_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.field_name IS 'the field_name of a row of this arm, presented on graphitron_field_reference_step_target.field_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.ordinal IS 'the ordinal of a row of this arm, presented on graphitron_field_reference_step_target.ordinal, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.position IS 'the position of a row of this arm, presented on graphitron_field_reference_step_target.position, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.via IS 'the via of a row of this arm, presented on graphitron_field_reference_step_target.via, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.from_source_name IS 'the from_source_name of a row of this arm, presented on graphitron_field_reference_step_target.from_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.from_schema IS 'the from_schema of a row of this arm, presented on graphitron_field_reference_step_target.from_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.from_table IS 'the from_table of a row of this arm, presented on graphitron_field_reference_step_target.from_table, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.to_source_name IS 'the to_source_name of a row of this arm, presented on graphitron_field_reference_step_target.to_source_name, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.to_schema IS 'the to_schema of a row of this arm, presented on graphitron_field_reference_step_target.to_schema, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.to_table IS 'the to_table of a row of this arm, presented on graphitron_field_reference_step_target.to_table, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.targets IS 'the targets of a row of this arm, presented on graphitron_field_reference_step_target.targets, whose comment carries what the value means';
-COMMENT ON COLUMN graphitron_field_reference_step_target_keyless.candidates IS 'the candidates of a row of this arm, presented on graphitron_field_reference_step_target.candidates, whose comment carries what the value means';
-
-CREATE VIEW graphitron_field_reference_step_target
-  (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
-   from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-   targets, candidates) AS
-SELECT graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
-       from_source_name, from_schema, from_table,
-       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-       targets, candidates
-  FROM graphitron_field_reference_step_target_keyed
-UNION ALL
-SELECT graph_name, type_name, field_name, ordinal, position, via, CAST(NULL AS VARCHAR),
-       from_source_name, from_schema, from_table,
-       to_source_name, to_schema, to_table, CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN),
-       targets, candidates
-  FROM graphitron_field_reference_step_target_keyless;
-COMMENT ON VIEW graphitron_field_reference_step_target IS 'Where each element of a field''s @reference path actually lands: the hops walked from the enclosing type''s table binding, one element at a time, so a row exists only for an element the chain can be shown to reach. For example a path of two key elements draws one row at each position, the second departing where the first arrived, and an element that resolves to nothing ends the chain and draws none.';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.type_name IS 'the type owning the field the @reference is applied to; also the type whose binding started the chain';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.field_name IS 'the field the @reference is applied to';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY, TABLE, NAME_MATCH or CONDITION';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE, NAME_MATCH or CONDITION element. As on the hop view';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the type''s bound table at position 0, the previous element''s arrival after that';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.from_schema IS 'the departing table''s SQL schema';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.from_table IS 'the departing table''s SQL name';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table a @field(name:) on the same field resolves its column against';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered; NULL on a NAME_MATCH or CONDITION element, as on the hop view';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH or CONDITION element, as on the hop view';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates because the two arities answer different questions and genuinely differ: a table element with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
--- COMMENT ON COLUMN graphitron_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop, and a larger number is what its own "which foreign key did you mean" rejection counts';
-
 -- Which result a type holds and what it is a result of. A producer produces a result and a reader
 -- reads from one, handing its target what it read, so a result flows down from its producer through
 -- readers to every type it reaches. Its shape says how a field of the type is fetched: a ROW is a row
@@ -9715,62 +9596,6 @@ COMMENT ON COLUMN graphitron_field_path_start.start_table IS 'the table the walk
 COMMENT ON COLUMN graphitron_field_path_start.kind IS 'what the start is: RESULT, a table the parent type''s result is a row of; BINDING, the table bound to a parent type no field returns, so its fields'' paths are walked for the editor as they would be were it returned; ROUTINE, the table of the routine a root field''s query starts with; or LIFTED, the table of the key row a field under an object lifts its parent onto. Each has its subtype, which says why the walk starts there';
 COMMENT ON COLUMN graphitron_field_path_start.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads, so a start a reading no longer finds goes with its path';
 
-CREATE TABLE graphitron_field_path_start_result (
-  graph_name        VARCHAR   NOT NULL,
-  type_name         VARCHAR   NOT NULL,
-  field_name        VARCHAR   NOT NULL,
-  start_source_name VARCHAR   NOT NULL,
-  start_schema      VARCHAR   NOT NULL,
-  start_table       VARCHAR   NOT NULL,
-  kind              VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table),
-  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind)
-    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
-                                            start_schema, start_table, kind) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, start_source_name, start_schema, start_table)
-    REFERENCES graphitron_result_table (graph_name, type_name, table_source_name, table_schema,
-                                        table_name) ON DELETE CASCADE,
-  CHECK (kind = 'RESULT')
-);
-COMMENT ON TABLE graphitron_field_path_start_result IS 'A field''s path walked from its parent''s result: one row per field and table the parent type''s result is a row of. For example Film.language starts on film, and a field of a type nested under customer and store starts on each.';
-COMMENT ON COLUMN graphitron_field_path_start_result.graph_name IS 'the owning graph''s partition, carried from the start';
-COMMENT ON COLUMN graphitron_field_path_start_result.type_name IS 'the type owning the field, whose result the walk starts from';
-COMMENT ON COLUMN graphitron_field_path_start_result.field_name IS 'the field whose path starts here';
-COMMENT ON COLUMN graphitron_field_path_start_result.start_source_name IS 'the catalog partition of the table the walk starts on';
-COMMENT ON COLUMN graphitron_field_path_start_result.start_schema IS 'the SQL schema of the table the walk starts on';
-COMMENT ON COLUMN graphitron_field_path_start_result.start_table IS 'the table the walk starts on; with the type and the two columns before it, a reference into graphitron_result_table, so the start goes when the parent''s result stops being a row of it';
-COMMENT ON COLUMN graphitron_field_path_start_result.kind IS 'RESULT, the start''s kind, carried so the reference into the start names it';
-COMMENT ON COLUMN graphitron_field_path_start_result.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
-
-CREATE TABLE graphitron_field_path_start_binding (
-  graph_name        VARCHAR   NOT NULL,
-  type_name         VARCHAR   NOT NULL,
-  field_name        VARCHAR   NOT NULL,
-  start_source_name VARCHAR   NOT NULL,
-  start_schema      VARCHAR   NOT NULL,
-  start_table       VARCHAR   NOT NULL,
-  kind              VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table),
-  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind)
-    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
-                                            start_schema, start_table, kind) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, start_source_name, start_schema, start_table)
-    REFERENCES graphitron_tabletype (graph_name, type_name, table_source_name,
-                                                 table_schema, table_name) ON DELETE CASCADE,
-  CHECK (kind = 'BINDING')
-);
-COMMENT ON TABLE graphitron_field_path_start_binding IS 'A field''s path walked from its parent''s binding: one row per field of a table-bound type no field returns, on the table bound to it. For example Film.language starts on film where no field in the schema returns Film, so the editor shows the path it would take all the same.';
-COMMENT ON COLUMN graphitron_field_path_start_binding.graph_name IS 'the owning graph''s partition, carried from the field';
-COMMENT ON COLUMN graphitron_field_path_start_binding.type_name IS 'the table-bound type owning the field, which no field returns';
-COMMENT ON COLUMN graphitron_field_path_start_binding.field_name IS 'the field whose path starts here';
-COMMENT ON COLUMN graphitron_field_path_start_binding.start_source_name IS 'the catalog partition of the table bound to the type';
-COMMENT ON COLUMN graphitron_field_path_start_binding.start_schema IS 'the SQL schema of the table bound to the type';
-COMMENT ON COLUMN graphitron_field_path_start_binding.start_table IS 'the table bound to the type: with the type and the two columns before it, a reference into graphitron_tabletype';
-COMMENT ON COLUMN graphitron_field_path_start_binding.kind IS 'always BINDING, the supertype''s kind for this subtype';
-COMMENT ON COLUMN graphitron_field_path_start_binding.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
-
 CREATE TABLE graphitron_field_path_start_routine (
   graph_name        VARCHAR   NOT NULL,
   type_name         VARCHAR   NOT NULL,
@@ -9797,39 +9622,6 @@ COMMENT ON COLUMN graphitron_field_path_start_routine.start_schema IS 'the SQL s
 COMMENT ON COLUMN graphitron_field_path_start_routine.start_table IS 'the function''s table, which shares the routine''s key';
 COMMENT ON COLUMN graphitron_field_path_start_routine.kind IS 'ROUTINE, the start''s kind, carried so the reference into the start names it';
 COMMENT ON COLUMN graphitron_field_path_start_routine.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
-
-CREATE TABLE graphitron_field_path_start_lifted (
-  graph_name        VARCHAR   NOT NULL,
-  type_name         VARCHAR   NOT NULL,
-  field_name        VARCHAR   NOT NULL,
-  start_source_name VARCHAR   NOT NULL,
-  start_schema      VARCHAR   NOT NULL,
-  start_table       VARCHAR   NOT NULL,
-  kind              VARCHAR   NOT NULL,
-  key_kind          VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind)
-    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
-                                            start_schema, start_table, kind) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, field_name, key_kind, start_source_name, start_schema,
-               start_table)
-    REFERENCES graphitron_field_key_row (graph_name, type_name, field_name, kind,
-                                         table_source_name, table_schema, table_name)
-      ON DELETE CASCADE,
-  CHECK (kind = 'LIFTED'),
-  CHECK (key_kind = 'COLUMNS')
-);
-COMMENT ON TABLE graphitron_field_path_start_lifted IS 'A field''s path started on the key row it lifts the object its parent holds onto: one row per field under an object that wrote a path and takes a key on the source side, on the key''s table. For example FilmDetailsCarrier.language, under a FilmRecord, starts on film.';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.graph_name IS 'the owning graph''s partition, carried from the key row';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.type_name IS 'the type owning the field';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.field_name IS 'the field whose path starts on its key row; with the two columns before it, a reference into graphitron_field_key_row';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.start_source_name IS 'the catalog partition of the key''s table';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.start_schema IS 'the SQL schema of the key''s table';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.start_table IS 'the key''s table, where the path the field wrote leaves from';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.kind IS 'LIFTED, the start''s kind, carried so the reference into the start names it';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.key_kind IS 'how the field takes its key, as graphitron_field_key_row.kind states it, carried so the reference into the key names it: always COLUMNS, the columns of the table record the parent holds. Never ACCESSOR, whose records are the target''s own and no place a path leaves from';
-COMMENT ON COLUMN graphitron_field_path_start_lifted.touched_at IS 'when the reading that last started this path ran: the mark the sweep reads';
 
 CREATE TABLE graphitron_field_path (
   graph_name             VARCHAR NOT NULL,
@@ -12070,7 +11862,7 @@ SELECT k.graph_name, k.type_name, k.field_name,
                 WHERE rc.graph_name = k.graph_name AND rc.type_name = k.type_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_result_table rt
                     WHERE rt.graph_name = k.graph_name AND rt.type_name = k.type_name);
-COMMENT ON VIEW graphitron_field_path_start_rule IS 'Where each field''s path is walked from, with why: one row per field and start table. For example a capture merges these into graphitron_field_path_start and its two subtypes before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON VIEW graphitron_field_path_start_rule IS 'Where each field''s path is walked from, with why: one row per field and start table. For example a capture merges these into graphitron_field_path_start and its routine subtype before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.type_name IS 'the type owning the field';
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.field_name IS 'the field whose path starts here';
@@ -20386,15 +20178,6 @@ INSERT INTO meta_grain VALUES
   ('reference-step-keyless-hop',
    'one candidate table pair one field-site @reference path element joins without a foreign key, in one graph',
    'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'catalog'),
-  ('reference-step-keyed-target',
-   'one foreign-key route one field-site @reference path element reaches, in one orientation, in one graph',
-   'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from', 'catalog'),
-  ('reference-step-keyless-target',
-   'one table pair one field-site @reference path element reaches without a foreign key, in one graph',
-   'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table', 'catalog'),
-  ('reference-step-target',
-   'one candidate route one field-site @reference path element reaches, foreign-key or not, in one graph',
-   'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from', 'catalog'),
   ('argument-reference-step-keyed-target',
    'one keyed route one argument-site @reference path element reaches, in one graph',
    'graph_name, type_name, field_name, argument_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from',
@@ -20811,26 +20594,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_path_start', 'field-path-start', 'graphitron',
    'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table, a table-bound parent''s own table where no field returns it, a root''s routine, or the key row a field under an object lifts its parent onto.',
    'For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.',
-   'The two ways a walk starts take the same steps from there, so the start is the supertype and the path one relation under it rather than two mirrored ones; each subtype says why the walk starts where it does and goes when that stops being so.'),
-  ('graphitron_field_path_start_binding', 'field-path-start', 'graphitron',
-   'A field''s path walked from its parent''s binding: one row per field of a table-bound type no field returns, on the table bound to it.',
-   'For example Film.language starts on film where no field in the schema returns Film, so the editor shows the path it would take all the same.',
-   'The start a type''s @table gives where no result does, referencing graphitron_tabletype so the walk goes when the binding does. Without it a type no field returns had no walk, so the editor, which reads where a path lands, offered nothing on its fields. A type that some field returns has a RESULT start instead.'),
-  ('graphitron_field_path_start_result', 'field-path-start', 'graphitron',
-   'A field''s path walked from its parent''s result: one row per field and table the parent type''s result is a row of.',
-   'For example Film.language starts on film, and a field of a type nested under customer and store starts on each.',
-   'The start a parent''s result gives, referencing graphitron_result_table so the walk goes when the parent''s result stops being a row of the table. A field whose query starts on a routine has none.'),
+   'The two ways a walk starts take the same steps from there, so the start is the supertype and the path one relation under it rather than two mirrored ones; the kind says why the walk starts where it does, and a routine''s start has a subtype referencing its producer.'),
   ('graphitron_field_path_start_routine', 'graph-field', 'graphitron',
    'A field''s path walked from the routine its query starts with: one row per routine producer, on the function''s table, the FUNCTION row of sql_table sharing the routine''s key.',
    'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) starts on films_for_actor, and its walk begins at the place after the routine.',
    'The start a routine producer gives, referencing graphitron_producer_routine. Only the first @routine at a root is the producer; a later one is a place in the path, a step the walk does not take yet.'),
-  ('graphitron_field_path_start_lifted', 'graph-field', 'graphitron',
-   'A field''s path started on the key row it lifts the object its parent holds onto: one row per field under an object that wrote a path and takes a key on the source side, on the key''s table.',
-   'For example FilmDetailsCarrier.language, under a FilmRecord, starts on film.',
-   'The start an object parent gives, which has no table of its own to start from: the key row the field lifts its parent''s object onto is where its rows are fetched from, so it is where the path it wrote leaves. Referencing graphitron_field_key_row, so the start goes when the key does. Only a key on the source side starts one, the columns of the table whose record the parent holds: a key a payload re-fetches its target by is the target''s own, no place a path leaves from, so such a field gets no start.'),
   ('graphitron_field_path_start_rule', 'field-path-start', 'graphitron',
    'Where each field''s path is walked from, with why: one row per field and start table.',
-   'For example a capture merges these into graphitron_field_path_start and its two subtypes before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'For example a capture merges these into graphitron_field_path_start and its routine subtype before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'Kept in the catalog rather than in the stage that writes it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_field_path', 'field-path', 'graphitron',
    'A step a field''s path takes from where its rows start: one row per field, start table and place the walk stepped through, a written element or the step a path ending on a @routine takes to the @table its field returns.',
@@ -22199,18 +21970,6 @@ INSERT INTO meta_relation VALUES
    'One row the type-backing rule computes, in the shape graphitron_type_backing stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_scope_table_rule''s terms. Recursive over a cyclic graph, which H2 cannot detect a cycle in: the path of type and class pairs a step has visited rides along as an array, and a step never lands on a pair already on it. On a consumer schema of 2345 types the closure walks 136 paths, at most four deep, to 130 backings. Stored by its step because H2 evaluates a recursive view again for every row joined to it.'),
-  ('graphitron_field_reference_step_target_keyed', 'reference-step-keyed-target', 'graphitron',
-   'One foreign-key route one field-site @reference path element reaches, in one orientation: the element the chain walked to, with the key it joins through.',
-   'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws one row per position, each departing where the one before it arrived.',
-   'The foreign-key half of a split the walk''s two key shapes force, inherited through a recursion that carries the hop''s columns forward unchanged. Where a foreign key identifies the route, its name and its orientation are identity exactly as they are one rung down; where none does, those columns are absent rather than null, which is the keyless sibling. One relation over all four arms would carry three columns that are identity on two of them and inapplicable on the other two, so it could hold no primary key and refuse no duplicate row, which is what a stage-written relation has to do: the walk is evaluated once per capture and the rows are on disk afterwards, so nothing downstream would notice a doubling. The split lands with the storing rather than before it, a walk split into two views having carried the recursion twice under the union view and bought nothing a view can hold. Both counts beside the key are over the element''s whole partition, both arms included, which is why the two statements that fill these tables rank first and filter afterwards.'),
-  ('graphitron_field_reference_step_target_keyless', 'reference-step-keyless-target', 'graphitron',
-   'One table pair one field-site @reference path element reaches without a foreign key: the element the chain walked to, by column-name match from a function result or by the route a condition method declares.',
-   'For example a chain-ending element carrying only a @condition draws one row arriving at the table that method''s second parameter names.',
-   'The keyless half of that split. Where no foreign key identifies the route there is none to enumerate, so the element coordinate with the departing and arriving table triples is already total and the constraint columns are absent rather than null. Two arms and one relation, because a function-result departure matched by column name and a route read off a condition method''s signature are the same shape of fact, a table pair with no constraint behind it, and they share one key shape, which is the axis the split is on. The union view under the canonical name presents this half with key_matched_by, constraint_name and fk_on_from cast to NULL, so no reader is edited and the padding lives at the one surface that has to present seventeen columns.'),
-  ('graphitron_field_reference_step_target', 'reference-step-target', 'graphitron',
-   'Where each element of a field''s @reference path actually lands: the hops walked from the enclosing type''s table binding, one element at a time, so a row exists only for an element the chain can be shown to reach.',
-   'For example a path of two key elements draws one row at each position, the second departing where the first arrived, and an element that resolves to nothing ends the chain and draws none.',
-   'One name over two relations, for the reason the hop below it is two: the rows have two key shapes and a relation carrying both could hold no key. Every reader spells this name and reads what it read when the name was a view over the hop, the three columns the keyless half does not have being cast to NULL between the ones the readers expect. What changed under it is who evaluates the recursion. It was a plain view, so every naming of it re-walked the chain, and two of its readers name it on the inner side of a join driven per row: the fan-out rule pairs it with itself and expands it eight times in one evaluation, which on a consumer store did not return inside half an hour. The rows are written once per capture now and every reader seeks into them on the eight leading columns of both keys. Neither arm carries an index beside its key: the coordinate every reader holds is the key''s own leading five columns, so an index on it would be a prefix, which is what the hop arms one rung down measured as buying nothing.'),
   ('graphitron_field_reference_step_hop', 'reference-step-hop', 'graphitron',
    'One @reference path element''s local resolution: every table-to-table hop the element could express, before anything decides which table the chain has actually arrived at.',
    'For example an element naming the foreign key film_actor declares on film draws both orientations of that key, and an element naming a table draws every foreign key connecting some table to it.',

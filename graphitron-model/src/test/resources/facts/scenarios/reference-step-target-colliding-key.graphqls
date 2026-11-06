@@ -12,10 +12,16 @@ type Event @table(name: "multischema_a.event") { eventId: Int @field(name: "even
 
 extend type Query { notes: [Note!]! }
 
-extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
-  type_name, field_name,       position, via, key_matched_by, from_schema,   to_schema,     to_table, constraint_name, targets, candidates
-  Note,      anyEvent,         0,        KEY, SQL_NAME,       multischema_a, multischema_a, event,    note_event_fk,   1,       1
-  Note,      thisSchemasEvent, 0,        KEY, SQL_NAME,       multischema_a, multischema_a, event,    note_event_fk,   1,       1
+extend schema @expectEquals(relation: "graphitron_join_path_step", rows: """
+  coordinate,            position, from_schema,   from_table, to_schema,     to_table
+  Note.anyEvent,         0,        multischema_a, note,       multischema_a, event
+  Note.thisSchemasEvent, 0,        multischema_a, note,       multischema_a, event
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_key", rows: """
+  coordinate,            position, constraint_schema, constraint_name
+  Note.anyEvent,         0,        multischema_a,     note_event_fk
+  Note.thisSchemasEvent, 0,        multischema_a,     note_event_fk
   """)
 
 extend schema @assertEmpty(relation: "graphitron_spelled_table", where: "spelling = 'event'")

@@ -24,17 +24,17 @@ import static org.jooq.impl.DSL.table;
 import static org.jooq.impl.SQLDataType.INTEGER;
 
 /**
- * The walk all three {@code @reference} target relations are: the recursion that follows an
- * element's arrival into the next element's departure, the ranking over it, the two arities beside
- * every row and the closing arm filter.
+ * The walk both {@code @reference} target relations are, the argument's and the input field's: the
+ * recursion that follows an element's arrival into the next element's departure, the ranking over
+ * it, the two arities beside every row and the closing arm filter.
  *
- * <p>One builder rather than three spellings, and the reason is that the schema's own reason for
+ * <p>One builder rather than two spellings, and the reason is that the schema's own reason for
  * tolerating the duplication does not apply here. Two hop views carry the same body arm for arm
- * because SQL cannot parameterize a coordinate; Java can, so a third caller of one rule is a
+ * because SQL cannot parameterize a coordinate; Java can, so a second caller of one rule is a
  * parameter rather than a copy, and the hazards below are stated once where an implementer meets
  * them instead of once per relation with no enforcer between them.
  *
- * <p>What differs between the three callers is the coordinate: which columns identify an element,
+ * <p>What differs between the two callers is the coordinate: which columns identify an element,
  * which of them the hop carries and which the seed hands down, and what the arities are taken over.
  * What does not differ is everything in this class.
  */

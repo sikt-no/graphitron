@@ -13,7 +13,6 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
-import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;

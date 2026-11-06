@@ -17,6 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
@@ -31,7 +32,6 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.exists;
-import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
@@ -46,35 +46,34 @@ import static org.jooq.impl.DSL.when;
  * instant and the depth bound. A field reaches its target where the target has a table of its own
  * and is no interface; each member with a table of a single-table interface, a multi-table
  * interface or a union; and otherwise its target type itself, landing on its start, or on no table
- * yet where its declaration writes a path. An argument copies its field's needs, starting where the
- * field lands for each type; under a field with no needs, a root field with no path, it expands the
- * field's target as a field's needs do, starting on the type's table, an interface's own table for
- * its members where it has one, or on its own one source table where the type has none. A
+ * where its declaration writes a path, a reader asking the join path where such a field lands. An
+ * argument copies its field's needs, starting where the field lands for each type, where its join
+ * path reaches for a field that writes a path; under a field with no needs, a root field with no
+ * path, it expands the field's target as a field's needs do, starting on the type's table, an
+ * interface's own table for its members where it has one, or on its own one source table where the
+ * type has none. A
  * connection's pagination arguments' needs stand until the connection's binding states what they
  * take. An input field copies its parent's needs unchanged.
  *
  * <p>A need's start is a reference to one of the occurrence's {@code graphitron_occurrence_source_table}
  * rows; a start the rules give that is none of them keeps a null reference, which says so.
  *
- * <p>Reads the sources {@link OccurrenceSources} writes, so it runs after it, and the needs it wrote
- * at the depth above.
+ * <p>A step of the assembly's per-depth loop: reads the sources {@link OccurrenceSources} writes for
+ * the same depth, and the needs it wrote and the join paths {@link Paths} and {@link Steps} wrote
+ * for the depth above. {@link #sweep} runs after the last depth.
  */
 public final class PathNeeds {
 
     private PathNeeds() {}
 
-    /** States the graph's needs depth by depth and sweeps what the reading no longer finds. */
-    public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var o = GRAPHITRON_OCCURRENCE;
-        Integer deepest = dsl.select(max(o.DEPTH)).from(o)
-            .where(o.GRAPH_NAME.eq(graph)).and(o.TOUCHED_AT.eq(touchedAt))
-            .fetchOne(0, Integer.class);
-        if (deepest != null) {
-            for (int depth = 0; depth <= deepest; depth++) {
-                requireOneSourceTablePerField(dsl, graph, touchedAt, depth);
-                write(dsl, candidates(graph, touchedAt, depth), touchedAt);
-            }
-        }
+    /** States the needs of the occurrences at {@code depth}. */
+    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        requireOneSourceTablePerField(dsl, graph, touchedAt, depth);
+        write(dsl, candidates(graph, touchedAt, depth), touchedAt);
+    }
+
+    /** Deletes the needs no depth of this reading marked. */
+    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var n = GRAPHITRON_PATH_NEED;
         dsl.deleteFrom(n)
             .where(n.GRAPH_NAME.eq(graph))
@@ -275,7 +274,7 @@ public final class PathNeeds {
     /**
      * A field whose target is bound to no table and has no member that is, a scalar, an enum, a
      * plain object or a carrier, reaches its own type: landing on its start, the path being empty,
-     * or on no table yet where its declaration writes a path, until its steps say where it lands.
+     * or on no table where its declaration writes a path, its join path saying where it lands.
      */
     private static Select<Record> fieldUnbound(GraphitronOccurrence o, Condition at,
                                                LocalDateTime touchedAt) {
@@ -306,22 +305,30 @@ public final class PathNeeds {
 
     /**
      * An argument of a field with needs reaches each type its field reaches, starting where the
-     * field lands for it; its own path empty, it lands there too, or on no table yet where the
-     * argument writes a path. A field landing on no table yet starts nothing.
+     * field lands for it: the field's landing, or, where the field writes a path and its need lands
+     * on no table, the table its join path reaches; a path that stops starts nothing. Its own path
+     * empty, the argument lands there too, or on no table yet where the argument writes a path.
      */
     private static Select<Record> argumentCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                                Condition at, LocalDateTime touchedAt) {
         var pn = GRAPHITRON_PATH_NEED.as("pn");
+        var j = GRAPHITRON_JOIN_PATH.as("j");
         Condition written = writesPath(o);
-        return row(o, pn.TARGET_TYPE, pn.LANDING_SOURCE_NAME, pn.LANDING_SCHEMA, pn.LANDING_TABLE,
-                when(written, castNull(SQLDataType.VARCHAR)).otherwise(pn.LANDING_SOURCE_NAME),
-                when(written, castNull(SQLDataType.VARCHAR)).otherwise(pn.LANDING_SCHEMA),
-                when(written, castNull(SQLDataType.VARCHAR)).otherwise(pn.LANDING_TABLE))
+        Condition walked = pn.LANDING_TABLE.isNull();
+        Field<String> startSource = when(walked, j.TARGET_SOURCE_NAME).otherwise(pn.LANDING_SOURCE_NAME);
+        Field<String> startSchema = when(walked, j.TARGET_SCHEMA).otherwise(pn.LANDING_SCHEMA);
+        Field<String> startTable = when(walked, j.TARGET_TABLE).otherwise(pn.LANDING_TABLE);
+        return row(o, pn.TARGET_TYPE, startSource, startSchema, startTable,
+                when(written, castNull(SQLDataType.VARCHAR)).otherwise(startSource),
+                when(written, castNull(SQLDataType.VARCHAR)).otherwise(startSchema),
+                when(written, castNull(SQLDataType.VARCHAR)).otherwise(startTable))
             .from(o)
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
             .join(pn).on(pn.GRAPH_NAME.eq(p.GRAPH_NAME), pn.COORDINATE.eq(p.COORDINATE),
                 pn.TOUCHED_AT.eq(touchedAt))
-            .where(at, o.KIND.eq("FIELD_ARGUMENT"), pn.LANDING_TABLE.isNotNull())
+            .leftJoin(j).on(j.GRAPH_NAME.eq(pn.GRAPH_NAME), j.COORDINATE.eq(pn.COORDINATE),
+                j.TARGET_TYPE.eq(pn.TARGET_TYPE), j.TOUCHED_AT.eq(touchedAt))
+            .where(at, o.KIND.eq("FIELD_ARGUMENT"), startTable.isNotNull())
             .and(sourcedAt(o, touchedAt));
     }
 

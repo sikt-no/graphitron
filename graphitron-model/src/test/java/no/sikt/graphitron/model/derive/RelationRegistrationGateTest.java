@@ -330,8 +330,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_entry_defect_site", Arm.DERIVED);
         registrations.put("graphitron_code_reference", Arm.DERIVED);
         registrations.put("graphitron_field_path_start", Arm.DERIVED);
-        registrations.put("graphitron_field_path_start_result", Arm.DERIVED);
-        registrations.put("graphitron_field_path_start_binding", Arm.DERIVED);
         registrations.put("graphitron_field_path_start_routine", Arm.DERIVED);
         registrations.put("graphitron_field_path_start_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path", Arm.DERIVED);
@@ -346,7 +344,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_parameter_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path_parameter_binding", Arm.DERIVED);
         registrations.put("graphitron_field_key_row", Arm.DERIVED);
-        registrations.put("graphitron_field_path_start_lifted", Arm.DERIVED);
         registrations.put("graphitron_field_key_row_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_path_fanout", Arm.DERIVED);
@@ -417,9 +414,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_condition_method_route", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
-        registrations.put("graphitron_field_reference_step_target", Arm.DERIVED);
-        registrations.put("graphitron_field_reference_step_target_keyed", Arm.DERIVED);
-        registrations.put("graphitron_field_reference_step_target_keyless", Arm.DERIVED);
         registrations.put("graphitron_argument_reference_step_target_keyed", Arm.DERIVED);
         registrations.put("graphitron_argument_reference_step_target_keyless", Arm.DERIVED);
         registrations.put("graphitron_input_field_reference_step_target_keyed", Arm.DERIVED);

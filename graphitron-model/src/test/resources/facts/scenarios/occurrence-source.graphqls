@@ -4,13 +4,13 @@
 # source. A nested field reads what its parent's producer hands back: a table record is rows of its
 # table, the field's key row's where it has one, else the record class's; a class that is no table's
 # record is an object source, a key row of kind COLUMNS still giving the field its table. A field
-# nested in a plain type reads its parent's tables unless its parent field writes a path, and under an
-# object source a field has none yet. A write's payload is what the write produces: a payload field
+# nested in a plain type reads its parent's tables, or, where its parent field writes a path, the
+# tables that path's join path lands on, and under an object source a field has none yet. A write's payload is what the write produces: a payload field
 # with a table-bound target is lifted from the keys the write returned and reads its target's table,
 # and any other payload field, an id list among them, has none until that result is stated. An
 # argument reads its field's target tables, each member's for a union, the write's table for a write
-# whose target binds none, and its field's own tables where the target binds none; an input field
-# reads its parent's.
+# whose target binds none, and its field's own tables where the target binds none, or, where its
+# field writes a path, the tables that path's join path lands on; an input field reads its parent's.
 # A connection's fields hang under the field returning it and read the page its producer produces,
 # which no table source states, so they have none yet; its arguments read the element's table.
 
@@ -21,11 +21,11 @@ interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
 type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
   title: String
   details: FilmDetails
-  # A scalar that writes a path: its arguments wait for the join path.
+  # A scalar that writes a path: its arguments read where its join path lands, language.
   languageName(upper: Boolean): String
     @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
-  # A plain type reached by a written path: its fields start where the path lands, film_translation,
-  # so they wait for the join path.
+  # A plain type reached by a written path: its fields read where its join path lands,
+  # film_translation.
   titleTexts: TranslatedTexts
     @reference(path: [{table: "film_translation"}])
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
@@ -130,7 +130,10 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source",
   Film.details,                              TABLE
   Film.details.length,                       TABLE
   Film.titleTexts,                           TABLE
+  Film.titleTexts.en,                        TABLE
+  Film.titleTexts.nn,                        TABLE
   Film.languageName,                         TABLE
+  Film.languageName(upper:),                 TABLE
   Film.title,                                TABLE
   Language.id,                               TABLE
   Language.name,                             TABLE
@@ -170,7 +173,10 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
   Film.details,                              public,       film
   Film.details.length,                       public,       film
   Film.titleTexts,                           public,       film
+  Film.titleTexts.en,                        public,       film_translation
+  Film.titleTexts.nn,                        public,       film_translation
   Film.languageName,                         public,       film
+  Film.languageName(upper:),                 public,       language
   Film.title,                                public,       film
   Language.id,                               public,       language
   Language.name,                             public,       language
@@ -207,15 +213,12 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_object",
   """)
 
 # Occurrences that stand with no source: a root field with no @routine, its arguments where the target
-# binds no table, the arguments of a scalar that writes a path, a field of a plain type its parent field
-# reaches by a written path, an errors field, a write payload's field whose target binds no table, and a
-# field read off an object source, and a connection's fields.
+# binds no table, an errors field, a write payload's field whose target binds no table, and a field
+# read off an object source, and a connection's fields.
 extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   coordinate
   Query.films
   Query.filmBlurbHolder(filmId:)
-  Film.languageName(upper:)
-  Film.titleTexts.nn
   Mutation.addFilm.errors
   Mutation.deleteLanguages.deletedIds
   Query.filmBlurbHolder.blurb.description
@@ -230,8 +233,6 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
   coordinate
   Query.films
   Query.filmBlurbHolder(filmId:)
-  Film.languageName(upper:)
-  Film.titleTexts.nn
   Mutation.addFilm.errors
   Mutation.deleteLanguages.deletedIds
   Query.filmBlurbHolder.blurb.description

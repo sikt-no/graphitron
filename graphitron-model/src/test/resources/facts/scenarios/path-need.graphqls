@@ -2,13 +2,14 @@
 # with the source table it starts on and the table it lands on. A field reaches its target where the
 # target has a table of its own, landing there; each member with a table where it is a union or an
 # interface, a single-table interface's implementations included and never the interface; and
-# otherwise its own type, landing on its start, or on no table yet where its declaration writes a
-# path. An argument reaches what its field reaches, starting where the field lands; under a root
-# field with no path it expands its field's target the same way, starting on each type's table, or on
-# its own source table, the write's, where the type has none. An input field copies its parent's.
-# Every start is one of the occurrence's source table rows, start_table_ref saying so. The schema is
+# otherwise its own type, landing on its start, or on no table where its declaration writes a path,
+# its join path saying where it lands. An argument reaches what its field reaches, starting where
+# the field lands, where its join path lands for a field that writes a path; under a root field with
+# no path it expands its field's target the same way, starting on each type's table, or on its own
+# source table, the write's, where the type has none. An input field copies its parent's. Every
+# start is one of the occurrence's source table rows, start_table_ref saying so. The schema is
 # scenarios/occurrence-source's, with two fields added on FilmActor for the polymorphic targets and
-# Film.castFilms, whose argument waits for its path.
+# Film.castFilms, a path ending on a @routine.
 
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
   title: String
@@ -17,19 +18,19 @@ interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
 type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
   title: String
   details: FilmDetails
-  # A scalar that writes a path: its arguments wait for the join path.
+  # A scalar that writes a path: its arguments start where its join path lands, language.
   languageName(upper: Boolean): String
     @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
-  # A plain type reached by a written path: its fields start where the path lands, film_translation,
-  # so they wait for the join path.
+  # A plain type reached by a written path: its fields start where its join path lands,
+  # film_translation.
   titleTexts: TranslatedTexts
     @reference(path: [{table: "film_translation"}])
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
   # A connection under a table-bound parent, its path inferred from film_actor's one key to film, split
   # into its own query as the generator requires of a connection on a table field.
   actorRows: [FilmActor!]! @asConnection @splitQuery
-  # A path ending on a @routine that returns a plain object: the field lands on no table yet, and
-  # its argument and its fields wait for the path, with no source and no needs.
+  # A path ending on a @routine that returns a plain object: the field's need lands on no table, and
+  # its argument and its fields start where its join path lands, the function's derived table.
   castFilms(minLength: Int!): [ActorFilm!]
     @reference(path: [{table: "film_actor"}])
     @routine(name: "films_for_actor",
@@ -144,11 +145,16 @@ extend schema @expectEquals(relation: "graphitron_path_need",
   FilmActor.credits,                        Language,                film_actor,      film_actor,      language
   FilmActor.media,                          Film,                    film_actor,      film_actor,      film
   Film.castFilms,                           ActorFilm,               film,            film,
+  Film.castFilms(minLength:),               ActorFilm,               films_for_actor, films_for_actor, films_for_actor
+  Film.castFilms.filmId,                    Int,                     films_for_actor, films_for_actor, films_for_actor
   Film.details,                             FilmDetails,             film,            film,            film
   Film.details.length,                      Int,                     film,            film,            film
   Film.languageName,                        String,                  film,            film,
+  Film.languageName(upper:),                String,                  language,        language,        language
   Film.title,                               String,                  film,            film,            film
   Film.titleTexts,                          TranslatedTexts,         film,            film,
+  Film.titleTexts.en,                       String,                  film_translation, film_translation, film_translation
+  Film.titleTexts.nn,                       String,                  film_translation, film_translation, film_translation
   Language.id,                              ID,                      language,        language,        language
   Language.name,                            String,                  language,        language,        language
   MediaItem.title,                          String,                  film,            film,            film
@@ -176,8 +182,7 @@ extend schema @expectEquals(relation: "graphitron_path_need",
   Query.topMedia(title:),                   Film,                    film,            film,            film
   """)
 
-# Occurrences with no table source have no needs: a root field with no @routine, a write, the
-# arguments of a scalar that writes a path, a field of a plain type a written path reaches, an errors
+# Occurrences with no table source have no needs: a root field with no @routine, a write, an errors
 # field, a payload field whose target binds no table, a field and its children read off an object,
 # and a connection's fields.
 extend schema @assertContains(relation: "graphitron_occurrence", rows: """
@@ -188,8 +193,6 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   Mutation.deleteLanguages
   Mutation.deleteLanguage
   Query.filmBlurbHolder(filmId:)
-  Film.languageName(upper:)
-  Film.titleTexts.nn
   Mutation.addFilm.errors
   Mutation.deleteLanguages.deletedIds
   Query.filmBlurbHolder.blurb
@@ -198,8 +201,6 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   Film.actorRows.edges
   Film.actorRows.nodes
   Film.actorRows.totalCount
-  Film.castFilms(minLength:)
-  Film.castFilms.filmId
   """)
 
 extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
@@ -210,8 +211,6 @@ extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
   Mutation.deleteLanguages
   Mutation.deleteLanguage
   Query.filmBlurbHolder(filmId:)
-  Film.languageName(upper:)
-  Film.titleTexts.nn
   Mutation.addFilm.errors
   Mutation.deleteLanguages.deletedIds
   Query.filmBlurbHolder.blurb
@@ -220,13 +219,13 @@ extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
   Film.actorRows.edges
   Film.actorRows.nodes
   Film.actorRows.totalCount
-  Film.castFilms(minLength:)
-  Film.castFilms.filmId
   """)
 
-# The argument of a field whose path ends on a @routine has no source either.
-extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
-  coordinate
-  Film.castFilms(minLength:)
-  Film.castFilms.filmId
+# The argument and the fields under a path ending on a @routine read the function's derived table,
+# where the field's join path lands.
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
+    where: "coordinate IN ('Film.castFilms(minLength:)', 'Film.castFilms.filmId')", rows: """
+  coordinate,                 table_name
+  Film.castFilms(minLength:), films_for_actor
+  Film.castFilms.filmId,      films_for_actor
   """)

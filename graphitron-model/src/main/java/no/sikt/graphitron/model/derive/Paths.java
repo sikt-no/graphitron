@@ -59,8 +59,9 @@ import static org.jooq.impl.DSL.when;
  * pair of tables, both orders summed; a self-referencing key never counts, a field starting where
  * it lands never being inferred.
  *
- * <p>Reads the needs {@link PathNeeds} writes and the claims {@link PathClaims} writes, so it runs
- * after both.
+ * <p>A step of the assembly's per-depth loop: reads the claims {@link PathClaims} writes before the
+ * loop and the needs {@link PathNeeds} writes for the same depth, a depth at a time; {@link #sweep}
+ * runs after the last depth.
  */
 public final class Paths {
 
@@ -70,10 +71,13 @@ public final class Paths {
     private static final String EMPTY = "EMPTY";
     private static final String INFERRED = "INFERRED";
 
-    /** States the graph's uncovered paths and sweeps the ones of its origins the reading no longer finds. */
-    public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var c = candidates(graph, touchedAt).asTable("c");
-        write(dsl, graph, c, touchedAt);
+    /** States the uncovered paths of the needs of the occurrences at {@code depth}. */
+    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        write(dsl, graph, candidates(graph, depth, touchedAt).asTable("c"), touchedAt);
+    }
+
+    /** Deletes the paths of this stage's origins no depth of this reading marked. */
+    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         // Only the origins written here: a written or inherited path is the steps' to sweep, and its
         // join path goes with it.
         dsl.deleteFrom(GRAPHITRON_PATH)
@@ -131,10 +135,10 @@ public final class Paths {
     }
 
     /**
-     * Every uncovered need met without a claim, with its origin and the table its path reaches: the
-     * start for an empty path, the landing for an inferred one.
+     * Every uncovered need of an occurrence at {@code depth} met without a claim, with its origin and
+     * the table its path reaches: the start for an empty path, the landing for an inferred one.
      */
-    private static Select<?> candidates(String graph, LocalDateTime touchedAt) {
+    private static Select<?> candidates(String graph, int depth, LocalDateTime touchedAt) {
         var n = GRAPHITRON_PATH_NEED.as("n");
         var o = GRAPHITRON_OCCURRENCE.as("o");
         Condition sameTable = n.START_SOURCE_NAME.eq(n.LANDING_SOURCE_NAME)
@@ -155,7 +159,7 @@ public final class Paths {
                 n.LANDING_TABLE.as("target_table"))
             .from(n)
             .join(o).on(o.GRAPH_NAME.eq(n.GRAPH_NAME), o.COORDINATE.eq(n.COORDINATE),
-                o.TOUCHED_AT.eq(touchedAt))
+                o.TOUCHED_AT.eq(touchedAt), o.DEPTH.eq(val(depth)))
             .where(n.GRAPH_NAME.eq(graph), n.TOUCHED_AT.eq(touchedAt), n.LANDING_TABLE.isNotNull())
             .andNot(covered(o, n))
             .and(empty.or(inferred));
