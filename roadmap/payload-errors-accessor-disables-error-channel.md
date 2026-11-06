@@ -7,7 +7,7 @@ priority: 2
 theme: error-channel
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-11-03
+last-updated: 2026-11-06
 ---
 
 # A single @error type as the errors field's element is not recognised as an error channel
@@ -22,10 +22,12 @@ element may be a single `@error` type as well as a union or interface of them, a
 `error-channel.adoc` ("Carrier shapes: union vs single type") already promises. Today a single
 `@error` type is not recognised as a carrier at all: the build is clean, no channel forms, and every
 handled exception is redacted. That is the defect; the accessor the item was filed under is a
-symptom of it, not its cause.
+symptom of it, not its cause. The fix holds for every producer family that carries an errors
+channel (a `@service` field, a payload-returning DML `@mutation`, a payload-returning `@routine`
+write), since the manual's promise is not `@service`-specific.
 
 ```graphql
-type KregUgyldigInput implements Error
+type KregUgyldigInput
     @error(handlers: [{handler: GENERIC, className: "no.kreg.MeldingerException"}]) {
   path: [String!]!
   message: String!
@@ -90,7 +92,9 @@ in place of the bare payload.
      the channel forms, the fetcher returns `Outcome<...>` claimed through `ErrorMappings`, `errors`
      reads `Outcome.ErrorList`, and the handled exception arrives as data (v9's case 18 shape). So
      the channel already wins over the accessor;
-  ** the single type without `implements Error`: no channel, as written.
+  ** the single type without `implements Error`: no channel, as written. `implements Error` is
+     kreg's own interface and plays no part: `ErrorIndex` holds whatever `classifyType` classifies
+     as an `ErrorType`, which keys off the `@error` directive alone.
   The union is not a workaround for a consumer: it changes the client contract, and existing
   `errors { path message }` selections fail validation against the union.
 * The sibling item that reifies the `PayloadAccessor` errors fetcher (`reify-error-payload-accessor-fetcher`)
@@ -118,17 +122,54 @@ The accessor is not read, and the build does not warn about it.
 * The population that does lose data (a service hand-filling errors on success) is a service
   contract the manual can state in one sentence, with the supported spelling: throw, and let a
   handler claim it.
+* One claimed exception yields one error, and this item does not change that. Graphitron 9 could
+  fan one exception out into several errors, each path suffixed with a message code (kreg's case
+  27: one `MeldingerException` carrying four validation messages rendered as four errors). Graphitron
+  10 has no equivalent today, and the only v9-shaped workaround, a service returning one error per
+  message on the success path, is the route the first bullet closes. The manual says so in a
+  "Coming from Graphitron 9" note (below). Letting one exception produce several errors would change
+  the handler and `ErrorRouter` contract and is out of scope here; settled with the user 2026-11-06,
+  with no follow-up item filed yet.
 
 ## Implementation
 
-* The carrier. `BuildContext.detectErrorsFieldShape` admits a list whose element is a single
-  `@error` object type, returning that one `ErrorType`, beside the union and interface cases and
-  under the same nullable-list rule; `FieldBuilder.liftToErrorsField` takes the same rule, so the
-  two classifier paths agree, as the method's javadoc requires. The rest of the channel (handler
-  rules, `ErrorMappings`, the catch arm, the `Outcome` wrapper, the errors fetcher) already works
-  from a `List<ErrorType>` and needs no change beyond what a one-member list exercises. The error
-  objects a single-type field returns need no type resolver; check that the emitted schema wiring
-  does not register one for a non-polymorphic errors field.
+* The carrier: one member-resolution rule, read by both classifier paths. Today the two paths
+  each repeat the same union/interface switch, and the field-level path is reached only for a
+  polymorphic return. A single `@error` object type resolves through
+  `BuildContext.resolveReturnType` to `ReturnTypeRef.ScalarReturnType` (`TypeBuilder.lookAheadVerdict`
+  returns an `ErrorType`, which none of that method's four arms takes), and every caller of
+  `FieldBuilder.liftToErrorsField` gates on `instanceof ReturnTypeRef.PolymorphicReturnType` first:
+  the DML, `@service` and `@routine` carrier blocks in `classifyChildFieldOnResultType`, that
+  method's record-parent switch (whose `ScalarReturnType` arm goes to
+  `recordReadFieldOrUnclassified`, the "no accessor ... matched SDL field" kreg hit), and
+  `ServiceDirectiveResolver.resolve` before `classify`. So the predicate alone would leave the lift
+  unreached. The change:
+  ** A `BuildContext` helper resolves an errors-shaped element's candidate members from the
+     element's SDL type: a union's members, an interface's implementations, or the type itself when
+     it is an object type the `ErrorIndex` holds. `detectErrorsFieldShape` and `liftToErrorsField`
+     both read it, replacing their two copies of the switch.
+  ** `liftToErrorsField` takes the field's resolved `ReturnTypeRef` of any variant rather than a
+     `PolymorphicReturnType`, and its callers call it whenever the helper finds `@error` members,
+     not only on a polymorphic return: the five sites above change their gate, keeping their place
+     in the classification order. The non-outcome fallback (a `RecordReadField` over the given
+     return type) is unchanged in shape and now also covers the single type.
+  ** The single type gets the union's precise rejections, not a fallback to a data field: a
+     non-list `errors: X` gets "must be a list", and a non-null list `[X!]!` gets
+     `ErrorChannelWalkerError.NonNullableErrorsField`. The mixed-members rejection cannot arise for
+     one member.
+  ** No new `ReturnTypeRef` variant. One would make every exhaustive switch over `ReturnTypeRef`
+     take an arm that only the errors lift reads; the helper keeps the change inside the two methods
+     whose javadoc already ties them together.
+
+  Widening `detectErrorsFieldShape` widens every consumer: `BuildContext.scanStructuralPayload`
+  (DML, `@service` and `@routine` emitted carriers), the DML DELETE errors-field pass in
+  `GraphitronSchemaBuilder`, and `MutationInputResolver`. That is intended (see Goal). The rest of the
+  channel (handler rules, `ErrorMappings`, the catch arm, the `Outcome` wrapper, the errors fetcher)
+  already works from a `List<ErrorType>` and needs no change beyond what a one-member list
+  exercises. No type resolver is registered for a single-type field, and none is needed:
+  `GraphitronSchemaClassGenerator.isErrorOnlyPolymorphic` keys off `UnionType` and `InterfaceType`.
+  `ErrorMappings.ByType` and the per-type `<ErrorType>Fetchers` are emitted per `ErrorType`
+  whatever carries it.
 
 * `docs/manual/how-to/error-channel.adoc`: after the paragraph ending "The payload class needs no
   errors slot", add the rule. Wording:
@@ -139,23 +180,55 @@ The accessor is not read, and the build does not warn about it.
   as data, throw it and let a handler claim it."
   Add the same sentence, trimmed to one line, to the "Pitfalls" list ("Unmatched flows redact"
   neighbours) as *An errors accessor on the payload class is ignored.*
+  Then, as the next paragraph, a note in the shape the page already uses for migration notes:
+  "Coming from Graphitron 9: one exception the handlers claim becomes one entry in `errors:`, with
+  the response path described under `path:` below. Graphitron 9 could split one exception into
+  several errors, each with its own path suffix; Graphitron 10 has no equivalent. A service that
+  needs several errors reported for one request has no supported way to do it yet."
 * `docs/manual/how-to/result-types.adoc`: after the sentence "The class only has to expose the data
   fields the payload declares.", add: "An errors accessor it happens to carry is not read; see
   xref:error-channel.adoc[the errors channel]."
-* Javadoc hygiene while there: the `SetterShapeFilmReviewPayload` class comment and the
-  `submitSetterShapeFilmReview` test comments in `GraphQLQueryTest` still describe a
-  "catch-arm payload-factory" in setter form that Graphitron no longer emits; reword them to the
-  outcome wrapper so the fixture that carries the pin does not teach the retired mechanism.
+* Javadoc hygiene while there: the `SetterShapeFilmReviewPayload` and
+  `FieldRenamedSetterShapeFilmReviewPayload` class comments, the comments over
+  `submitSetterShapeFilmReview` and `submitFieldRenamedSetterShapeFilmReview` in the sakila
+  `schema.graphqls`, and the `submitSetterShapeFilmReview` test comments in `GraphQLQueryTest`
+  (including the one over the defaulted `title` slot) still describe a "catch-arm payload-factory"
+  that Graphitron no longer emits; reword them to the outcome wrapper so the fixtures that carry the
+  pins do not teach the retired mechanism. A grep for `payload-factory` across
+  `graphitron-sakila-service` and `graphitron-sakila-example` finds them all.
 
 ## Tests
 
-The carrier, first. Pipeline tier (`ErrorChannelClassificationTest`): a named case
-`singleErrorTypeElement_isAnErrorsCarrier`, a `@service` payload whose `errors` field lists one
-`@error` type, asserting `errorChannel()` is present and the field classifies as
-`ChildField.ErrorsField`; and its negative, the same type without `implements Error`, still a plain
-field. Execution tier (`graphitron-sakila-example`): a payload whose `errors:` is a single `@error`
-type over a `@service` that throws a handled exception, asserting the error arrives as typed data
-under `errors` and the response has no top-level error. Behaviour, not generated text.
+The carrier, first. Pipeline tier (`ErrorChannelClassificationTest`), named cases:
+
+* `singleErrorTypeElement_isAnErrorsCarrier`: a `@service` payload whose `errors` field lists one
+  `@error` type (no `implements` clause), asserting `errorChannel()` is present and the field
+  classifies as `ChildField.ErrorsField`.
+* `singleNonErrorObjectElement_staysADataField`: the negative, the same payload with the element a
+  plain object type carrying no `@error`; no channel, and the field is not an `ErrorsField`.
+* `singleErrorTypeElement_nonNullList_isRejected` and `singleErrorTypeElement_nonList_isRejected`:
+  `[X!]!` classifies to an `UnclassifiedField` carrying `NonNullableErrorsField`, and `errors: X`
+  to one whose reason says it must be a list, matching the union's existing cases.
+* `singleErrorTypeElement_onDmlPayload_isAnErrorsCarrier`: a payload-returning DML `@mutation`
+  whose payload's `errors` lists one `@error` type classifies the field as an `ErrorsField`, pinning
+  the widening of `scanStructuralPayload` beyond `@service`.
+
+Existing case to re-check, not rewrite: `GraphitronSchemaBuilderTest`'s
+`DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED` already declares `errors: [ValidationErr]` over a single
+`@error` type. After the fix that field is a carrier rather than a data-field candidate, so the
+rejection must still come from `data: String`; confirm the assertion still holds for the reason its
+description gives.
+
+Execution tier (`graphitron-sakila-example`, `GraphQLQueryTest`): a new Mutation field
+`submitSingleErrorFilmReview(filmId: Int!, rating: Int!): SingleErrorFilmReviewPayload` over a new
+`FilmReviewService.submitSingleError` method, with
+`type SingleErrorFilmReviewPayload { reviewId: Int errors: [FilmReviewBadRating] }` reusing the
+existing `FilmReviewBadRating` `@error` type and a new backing class `SingleErrorFilmReviewPayload`
+in `graphitron-sakila-service` (data component `reviewId` only; the method delegates to the existing
+`submit` validation so an invalid rating throws `FilmReviewBadRatingException`). The case
+`submitSingleErrorFilmReview_invalidRating_isTypedDataUnderErrors` asserts the error arrives under
+`errors` with its `message`, `reviewId` is null, and the response has no top-level error.
+Behaviour, not generated text.
 
 Pipeline tier (`ErrorChannelClassificationTest`, unit tier by its annotation, SDL to classified
 model): a named case `payloadBackingClassWithErrorsAccessor_stillPopulatesErrorChannel` that
@@ -175,8 +248,8 @@ there. `..._backingClassHasErrorsAccessor_claimedThrowIsTypedData` is the existi
 find is a method to write in the service module"), and asserts `errors` is `null` on the wire, which
 pins the sentence added to the manual.
 
-Build: this is a documentation plus test item; the verification build is the full
-`mvn install -Plocal-db` because a test and fixture file outside `roadmap/` change.
+Build: the verification build is the full `mvn install -Plocal-db`, since generator code, tests,
+fixtures and the manual change.
 
 ## Other solutions we've considered
 
@@ -189,7 +262,11 @@ Build: this is a documentation plus test item; the verification build is the ful
 
 * Settled 2026-11-03: the trunk re-run happened, the cases still redact, and the cause is the
   single-type carrier above, not `lookAheadVerdict`. kreg's schema is the repro.
-* Is dropping a service-populated errors list acceptable, or should a populated success-path list
+* Settled 2026-11-06, option (b): a service-populated errors list stays dropped, and the manual's
+  "Coming from Graphitron 9" note says fan-out with a path suffix has no v10 equivalent (see the
+  Decision and Implementation sections). Option (a) is not filed as an item for now. The question as
+  it stood:
+  Is dropping a service-populated errors list acceptable, or should a populated success-path list
   surface? The recommendation is to keep it dropped and say so. The kreg port objects: its baseline
   case 27 is one thrown `MeldingerException` carrying four validation messages, which Graphitron 9
   rendered as four errors, each path suffixed with the message code
@@ -199,8 +276,7 @@ Build: this is a documentation plus test item; the verification build is the ful
   out: (a) let one claimed exception produce several errors, for example an exception exposing a
   list of errors or a handler hook that fans out with a per-error path (the reporter's preference,
   kreg being the concrete consumer); (b) keep the decision and state in the error-channel manual's
-  Graphitron 9 migration notes that fan-out plus path suffix has no v10 equivalent. This is a design
-  fork for the author and user to settle before Ready; (a) may deserve its own item.
+  Graphitron 9 migration notes that fan-out plus path suffix has no v10 equivalent.
 
 Provenance: reported by the kreg Graphitron 10 port session (fs-plattform's kreg module on 10.0.0-RC46, branch `worktree-kreg-g10` at `7858137af4`, not pushed), 2026-10-30; the reporter found it present on graphitron `origin/main` the same day.
 
@@ -270,3 +346,13 @@ keys off `UnionType` / `InterfaceType`, so a single-type field registers none. T
 bullet misses `FieldRenamedSetterShapeFilmReviewPayload`, whose class comment carries the same
 "catch-arm payload-factory" wording, and the `GraphQLQueryTest` comment near the `title` defaulted-slot
 assertion.
+
+Author response (session_01FY5UvvUTnAY9rzFZp6gVWc, 2026-11-06). This session reviewed round 1
+and then, at the user's request, revised the plan, so it may not sign off the revision. Finding 1:
+settled with the user as option (b), no item filed for (a); Decision and Implementation carry it.
+Finding 2: Implementation names the seam (a shared member-resolution helper on `BuildContext`, the
+five call sites' gate, the single type's precise rejections, no new `ReturnTypeRef` variant).
+Finding 3: the Goal states the cross-family scope; Tests add a DML case and the re-check of
+`DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED`. Finding 4: the negative is a plain object element, and
+the Goal's example drops `implements Error`. Finding 5: the execution fixture is named, the
+type-resolver check is a statement, and the hygiene list covers every `payload-factory` comment.
