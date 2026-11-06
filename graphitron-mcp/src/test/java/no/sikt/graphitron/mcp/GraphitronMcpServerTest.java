@@ -1121,7 +1121,8 @@ class GraphitronMcpServerTest {
             .containsEntry("table", "public.film")
             .containsEntry("column", "title")
             .containsEntry("matchedName", "title")
-            .containsEntry("matchedBy", "JOOQ_NAME");
+            // The column's own SQL name answers first; the generated name only where none does.
+            .containsEntry("matchedBy", "SQL_NAME");
     }
 
     @Test

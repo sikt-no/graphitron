@@ -38,7 +38,6 @@ intent_authored_field_claim
 intent_authored_type_claim
 intent_bound_table
 intent_column_match_claim
-intent_field_column_table
 intent_field_navigated_type
 intent_field_producer_method
 intent_field_producer_reference

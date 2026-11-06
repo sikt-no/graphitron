@@ -37,7 +37,7 @@ class WriteTimesTest {
             var rows = store.dsl().selectFrom(w).where(w.GRAPH_NAME.eq(CapturedStore.GRAPH)).fetch();
 
             assertThat(rows)
-                .filteredOn(r -> r.getTableName().equals("GRAPHITRON_FIELD_SOURCE_TABLE"))
+                .filteredOn(r -> r.getTableName().equals("GRAPHITRON_OCCURRENCE_COLUMN"))
                 .singleElement()
                 .satisfies(r -> {
                     assertThat(r.getGathererName()).isEqualTo("graphitron");

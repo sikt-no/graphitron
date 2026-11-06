@@ -144,11 +144,10 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       catalog's own functions without scoping by graph, the relation carrying no graph partition,
  *       and half of both halves pins what the relations refuse to hold, a rule pairing every
  *       function against every keyed table being mostly boundary;
- *       the fact document {@code field-column-table.graphqls} binds
- *       {@code intent_field_column_table}, the override a column name's site resolves through, and
+ *       the fact document {@code field-column-table.graphqls} binds the path claims, stops, join
+ *       paths and needs a column name's site resolves through, and
  *       {@code graphitron_occurrence_column}, the column a scalar reads at each occurrence, over
- *       real SDL and the real catalog, the coordinates that produce no override row being as much its
- *       claim as the ones that do;
+ *       real SDL and the real catalog;
  *       the member names a backing class offers are no longer a derivation at all, the reading
  *       writing them down as {@code code_read_slot}, so the rule is pinned once rather than twice
  *       and where the reading lives: {@code no.sikt.graphitron.model.capture.code.CodeCaptureTest}

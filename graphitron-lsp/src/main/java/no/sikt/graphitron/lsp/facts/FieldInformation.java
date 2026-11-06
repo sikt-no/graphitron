@@ -6,6 +6,7 @@ import org.jooq.Record;
 import org.jooq.Record1;
 import org.jooq.Records;
 
+import java.util.Comparator;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
@@ -14,21 +15,25 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
@@ -60,8 +65,8 @@ public final class FieldInformation {
     /** A table one of the field's statements lands on, through the type that binds it. */
     public record TargetTable(String typeName, String schema, String table) {}
 
-    /** A table the field's read departs from, and which rule named it. */
-    public record Source(String table, String basis) {}
+    /** A table the field's read departs from. */
+    public record Source(String table) {}
 
     /** The target's node identity: its type id and key columns in key order. */
     public record Node(String typeId, List<String> keyColumns) {}
@@ -152,20 +157,52 @@ public final class FieldInformation {
             .convertFrom(rows -> rows.map(Records.mapping(Column::new)))
             .as("info_columns");
 
-        var tt = GRAPHITRON_FIELD_TARGET_TABLE;
-        var b = GRAPHITRON_TABLETYPE;
-        targetTables = multiset(select(tt.ARRIVING_TYPE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME).from(tt)
-            .join(b).on(b.GRAPH_NAME.eq(tt.GRAPH_NAME), b.TYPE_NAME.eq(tt.ARRIVING_TYPE_NAME))
-            .where(tt.GRAPH_NAME.eq(graph), tt.TYPE_NAME.eq(typeName), tt.FIELD_NAME.eq(fieldName))
-            .orderBy(tt.ARRIVING_TYPE_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(TargetTable::new)))
+        // Where each occurrence lands for each object type it reaches: its join path's table where
+        // one was walked, else the need's own landing; and for a root, which has no source to start
+        // a path on, where its producer lifts its records.
+        var pn = GRAPHITRON_PATH_NEED;
+        var jp = GRAPHITRON_JOIN_PATH;
+        var jt = GRAPHITRON_TYPE.as("info_landed_type");
+        var rp = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var pr2 = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+        var rt = GRAPHITRON_RESULT_TABLE;
+        Field<String> landedTable = coalesce(jp.TARGET_TABLE, pn.LANDING_TABLE);
+        targetTables = multiset(selectDistinct(pn.TARGET_TYPE, coalesce(jp.TARGET_SCHEMA, pn.LANDING_SCHEMA),
+                landedTable).from(o)
+            .join(pn).on(pn.GRAPH_NAME.eq(o.GRAPH_NAME), pn.COORDINATE.eq(o.COORDINATE))
+            .leftJoin(jp).on(jp.GRAPH_NAME.eq(pn.GRAPH_NAME), jp.COORDINATE.eq(pn.COORDINATE),
+                jp.TARGET_TYPE.eq(pn.TARGET_TYPE))
+            .join(jt).on(jt.GRAPH_NAME.eq(pn.GRAPH_NAME), jt.TYPE_NAME.eq(pn.TARGET_TYPE),
+                jt.KIND.notIn("SCALAR", "ENUM"))
+            .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD"),
+                landedTable.isNotNull())
+            .union(selectDistinct(t.TARGET_TYPE_NAME, pr2.TABLE_SCHEMA, pr2.TABLE_NAME).from(o)
+                .join(rp).on(rp.GRAPH_NAME.eq(o.GRAPH_NAME), rp.COORDINATE.eq(o.COORDINATE), rp.START.eq("ROOT"))
+                .join(pr2).on(pr2.GRAPH_NAME.eq(rp.GRAPH_NAME), pr2.COORDINATE.eq(rp.COORDINATE))
+                .join(t).on(t.GRAPH_NAME.eq(o.GRAPH_NAME), t.TYPE_NAME.eq(typeName),
+                    t.FIELD_NAME.eq(fieldName))
+                .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD"),
+                    pr2.TABLE_NAME.isNotNull()))
+            // A root producing a connection or records of no one table: its target's rows' tables.
+            .union(selectDistinct(t.TARGET_TYPE_NAME, rt.TABLE_SCHEMA, rt.TABLE_NAME).from(o)
+                .join(rp).on(rp.GRAPH_NAME.eq(o.GRAPH_NAME), rp.COORDINATE.eq(o.COORDINATE), rp.START.eq("ROOT"))
+                .join(t).on(t.GRAPH_NAME.eq(o.GRAPH_NAME), t.TYPE_NAME.eq(typeName),
+                    t.FIELD_NAME.eq(fieldName))
+                .join(rt).on(rt.GRAPH_NAME.eq(t.GRAPH_NAME), rt.TYPE_NAME.eq(t.TARGET_TYPE_NAME))
+                .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD"))))
+            .convertFrom(rows -> rows.map(Records.mapping(TargetTable::new)).stream()
+                .sorted(Comparator.comparing(TargetTable::typeName)
+                    .thenComparing(TargetTable::schema).thenComparing(TargetTable::table))
+                .toList())
             .as("info_target_tables");
 
-        var s = GRAPHITRON_FIELD_SOURCE_TABLE;
-        sources = multiset(select(s.FROM_TABLE, s.BASIS).from(s)
-            .where(s.GRAPH_NAME.eq(graph), s.TYPE_NAME.eq(typeName), s.FIELD_NAME.eq(fieldName))
-            .orderBy(s.FROM_SCHEMA, s.FROM_TABLE))
-            .convertFrom(rows -> rows.map(Records.mapping(Source::new)))
+        // The tables the field's occurrences read from, one line per table however many reach it.
+        var s = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        sources = multiset(selectDistinct(s.TABLE_SCHEMA, s.TABLE_NAME).from(o)
+            .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE))
+            .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD"))
+            .orderBy(s.TABLE_SCHEMA, s.TABLE_NAME))
+            .convertFrom(rows -> rows.map(row -> new Source(row.value2())))
             .as("info_sources");
 
         var n = GRAPHITRON_NODE;

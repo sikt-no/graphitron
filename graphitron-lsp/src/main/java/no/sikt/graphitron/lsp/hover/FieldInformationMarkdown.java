@@ -28,7 +28,7 @@ final class FieldInformationMarkdown {
         if (info.fetch() != null) lines.add(line("Fetch", fetch(info.fetch())));
         value(info, lines);
         for (var source : info.sources()) {
-            lines.add(line("Source", "`" + source.table() + "`, " + basis(source.basis(), coordinate)));
+            lines.add(line("Source", "`" + source.table() + "`"));
         }
         for (var node : info.nodes()) {
             lines.add(line("Node", "`" + info.target().typeName() + "` · id `" + node.typeId() + "`"
@@ -105,16 +105,6 @@ final class FieldInformationMarkdown {
             case "NESTED" -> "reads a row nested in its parent's";
             case "ACCESSOR" -> "reads an accessor on its parent's object";
             default -> "reads `" + fetch.reads() + "`";
-        };
-    }
-
-    private static String basis(String basis, String coordinate) {
-        String type = coordinate.substring(0, coordinate.indexOf('.'));
-        return switch (basis) {
-            case "SOURCE_TYPE" -> "the parent type's table";
-            case "INHERITED" -> "inherited through `" + type + "`, which has no table of its own";
-            case "RECORD_CLASS" -> "the table whose record class backs `" + type + "`";
-            default -> basis;
         };
     }
 

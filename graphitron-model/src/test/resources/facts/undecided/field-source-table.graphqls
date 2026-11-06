@@ -1,7 +1,7 @@
-# The tables a field's read departs from: its parent type's table, or where the parent type has
-# none, wherever each field returning it departs, through any number of such types. A type reached
-# from parents on two tables departs from both, and a path written on one of its fields is read
-# from where the read stands rather than refused.
+# The tables each occurrence of a field reads from: its parent type's table, or where the parent
+# type has none, the table its parent occurrence reads, through any number of such types. A type
+# reached from parents on two tables is read from each, one occurrence per parent, and a path
+# written on one of its fields is read from where the read stands rather than refused.
 
 type Film @table(name: "film") {
   title: String
@@ -9,8 +9,8 @@ type Film @table(name: "film") {
   throughAPath: ReachedByAPath @reference(path: [{key: "film_language_id_fkey"}])
 }
 
-# Reached only through a field that wrote a path, which arrives somewhere else, so it inherits
-# nothing from film.
+# Reached only through a field that wrote a path, so it reads the rows that path lands on rather
+# than film's.
 type ReachedByAPath { name: String }
 
 type Customer @table(name: "customer") {
@@ -37,26 +37,28 @@ extend type Query {
   film: Film
 }
 
-extend schema @assertContains(relation: "graphitron_field_source_table", rows: """
-  type_name,   field_name, from_table, basis
-  Film,        title,      film,       SOURCE_TYPE
-  Film,        details,    film,       SOURCE_TYPE
-  FilmDetails, summary,    film,       INHERITED
-  FilmDetails, summary,    customer,   INHERITED
-  FilmDetails, language,   film,       INHERITED
-  FilmDetails, more,       film,       INHERITED
-  MoreDetails, note,       film,       INHERITED
-  MoreDetails, note,       customer,   INHERITED
-  MoreDetails, again,      film,       INHERITED
-  Language,    name,       language,   SOURCE_TYPE
+extend schema @assertContains(relation: "graphitron_occurrence_source_table", rows: """
+  coordinate,                 table_name
+  Film.title,                 film
+  Film.details,               film
+  Film.details.summary,       film
+  Customer.details.summary,   customer
+  Film.details.language,      film
+  Film.details.more,          film
+  Film.details.more.note,     film
+  Customer.details.more.note, customer
+  Film.details.more.again,    film
+  Language.name,              language
+  """)
+
+# A type reached only through a field that wrote a path reads the rows that path lands on.
+extend schema @assertContains(relation: "graphitron_occurrence_source_table", rows: """
+  coordinate,             table_name
+  Film.throughAPath.name, language
   """)
 
 # A root field departs from nothing.
-extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
-  type_name,      field_name
-  Query,          film
-  ReachedByAPath, name
-  """)
+extend schema @assertEmpty(relation: "graphitron_occurrence_source_table", where: "coordinate = 'Query.film'")
 
 # Reached under Customer.details, the written key departs film and not customer, so that occurrence's
 # path has no move from where it stands; under Film.details it walks.

@@ -514,7 +514,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_errors_field_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_outcome", Arm.DERIVED);
         registrations.put("graphitron_producer_outcome_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_target_table", Arm.DERIVED);
         registrations.put("graphitron_occurrence", Arm.DERIVED);
         registrations.put("graphitron_occurrence_start_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_step_rule", Arm.DERIVED);
@@ -533,9 +532,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_path_element_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_routine_result", Arm.DERIVED);
         registrations.put("graphitron_routine_result_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_target_table_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_source_table", Arm.DERIVED);
-        registrations.put("graphitron_field_source_table_rule", Arm.DERIVED);
         registrations.put("graphitron_facet_binding", Arm.DERIVED);
         registrations.put("graphitron_connection_facet", Arm.DERIVED);
         registrations.put("graphitron_connection_carrier", Arm.DERIVED);
@@ -546,7 +542,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_minted_candidate", Arm.DERIVED);
         registrations.put("graphitron_argument_minted_candidate", Arm.DERIVED);
         registrations.put("graphitron_argument_reachable_input", Arm.DERIVED);
-        registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("code_delivery_container", Arm.UNSHADOWED);

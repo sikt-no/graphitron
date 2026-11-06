@@ -1,9 +1,9 @@
 # Which table a column name written at a field's site resolves against. An object field resolves
-# against its target's table, a field with a path whose target binds none against where its walk
-# arrives, and a scalar's own column is read on that table, or on its parent's where no path is
-# written. intent_field_column_table is the override: absence there means the parent's scope stands.
-# A path the walk arrives nowhere by is a silence and never the parent standing in; so is a
-# coordinate whose claims disagree.
+# against where it lands, its target's own table where nothing walks it there; a field with a written
+# path against where that path's walk arrives; and a scalar's own column is read on that table, or on
+# its parent's where no path is written. A written path that stops, or arrives nowhere, is a silence
+# and never the parent standing in; so is a field whose producer claims disagree. The editor reads
+# the claims, stops, join paths and needs below.
 
 type Film @table(name: "film") {
   title: String
@@ -12,7 +12,7 @@ type Film @table(name: "film") {
   actorName: String @reference(path: [{table: "film_actor"}, {table: "actor"}])
   # The applications compose, and the first already stops.
   twice: String @reference(path: [{table: "language"}]) @reference(path: [{table: "film_actor"}])
-  # An object field resolves against its target's table, wherever its path goes.
+  # A written path ending short of the target's table walks to no landing.
   credits: Actor @reference(path: [{table: "film_actor"}])
   nowhere: String @reference(path: [{table: "no_such_table"}])
   twoTerminals: String @reference(path: [{table: "event"}])
@@ -56,7 +56,7 @@ type Note { text: String }
 # @table and @error contest the type: a type-grain conflict, which is no site here.
 type Errored @table(name: "film") @error(handlers: [{handler: DATABASE}]) { title: String }
 
-# The walk does not reach an input field yet, so a path written on one lands nowhere.
+# A path written on an input field is a claim; nothing walks it to a landing yet.
 input FilmFilter { languageName: String @reference(path: [{key: "film_language_id_fkey"}]) }
 
 extend type Query {
@@ -65,24 +65,46 @@ extend type Query {
   erroreds: [Errored]
 }
 
-extend schema @expectEquals(relation: "intent_field_column_table", rows: """
-  type_name,                        field_name,         disposition, basis,            table_name
-  Film,                             actorName,          RESOLVE,     PATH_TERMINAL,    actor
-  Film,                             contested,          SILENT,      CONFLICTED,
-  Film,                             contestedNowhere,   SILENT,      CONFLICTED,
-  Film,                             contestedTitle,     SILENT,      CONFLICTED,
-  Film,                             credits,            RESOLVE,     PATH_TERMINAL,    actor
-  Film,                             languageConnection, RESOLVE,     NAMED_TYPE_TABLE, language
-  Film,                             languageName,       SILENT,      UNRESOLVED_PATH,
-  Film,                             languages,          RESOLVE,     NAMED_TYPE_TABLE, language
-  Film,                             nowhere,            SILENT,      UNRESOLVED_PATH,
-  Film,                             pagedLanguages,     RESOLVE,     NAMED_TYPE_TABLE, language
-  Film,                             twice,              SILENT,      UNRESOLVED_PATH,
-  Film,                             twoTerminals,       SILENT,      UNRESOLVED_PATH,
-  FilmFilter,                       languageName,       SILENT,      UNRESOLVED_PATH,
-  FilmPagedLanguagesConnection,     nodes,              RESOLVE,     NAMED_TYPE_TABLE, language
-  FilmPagedLanguagesConnectionEdge, node,               RESOLVE,     NAMED_TYPE_TABLE, language
-  LanguageEdge,                     node,               RESOLVE,     NAMED_TYPE_TABLE, language
+# Where a path is written: the fields whose column names follow it rather than their parent's.
+extend schema @expectEquals(relation: "graphitron_join_path_claim", rows: """
+  element_coordinate,      target_type, claim_kind
+  Film.actorName,          String,      FIELD
+  Film.contested,          String,      FIELD
+  Film.contestedNowhere,   String,      FIELD
+  Film.credits,            Actor,       FIELD
+  Film.languageName,       String,      FIELD
+  Film.nowhere,            String,      FIELD
+  Film.twice,              String,      FIELD
+  Film.twoTerminals,       String,      FIELD
+  FilmFilter.languageName, String,      INPUT_FIELD
+  """)
+
+# A written path that stops is silent: two routes, or none.
+extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
+  coordinate,            target_type, position, moves
+  Film.contested,        String,      0,        2
+  Film.contestedNowhere, String,      0,        0
+  Film.languageName,     String,      0,        2
+  Film.nowhere,          String,      0,        0
+  Film.twice,            String,      0,        2
+  Film.twoTerminals,     String,      0,        0
+  """)
+
+# A scalar's written path arrives where its walk does.
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,     target_type, target_table
+  Film.actorName, String,      actor
+  """)
+
+# An object field with nothing written lands on its target's own table, where its column names
+# resolve. Film.credits writes a path ending on film_actor, so no join path reaches Actor and its
+# site is silent, though its need still names actor.
+extend schema @assertContains(relation: "graphitron_path_need", rows: """
+  coordinate,              target_type, start_table, landing_table
+  Film.credits,            Actor,       film,        actor
+  Film.languageConnection, Language,    film,        language
+  Film.languages,          Language,    film,        language
+  Film.pagedLanguages,     Language,    film,        language
   """)
 
 # A scalar's own column, at each occurrence: none for a field whose walk arrives nowhere or whose

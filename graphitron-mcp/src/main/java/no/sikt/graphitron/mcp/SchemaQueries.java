@@ -38,16 +38,23 @@ import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_STOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIMED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
@@ -59,8 +66,10 @@ import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectCount;
+import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -76,11 +85,10 @@ import static org.jooq.impl.DSL.selectOne;
  *
  * <p>Two statements, one per grain, and the grain boundary is the store's. A type and a
  * {@code Type.field} coordinate are two keys, every relation here is keyed by one or the other, and the
- * field-grain derivations are the expensive ones: {@code intent_column_match_claim} carries a DDL
- * comment warning that H2 re-evaluates a joined derived relation once per outer row and measured
- * seventy times the shape when read from underneath {@code graphql_field}. Correlating it per field
- * inside the type-grain projection is exactly the shape that comment warns about, so the fields of a
- * page are their own projection, driven from {@code graphql_field} narrowed to the page's types. The
+ * field-grain derivations are the expensive ones: H2 re-evaluates a joined derived relation once per
+ * outer row, so correlating one per field inside the type-grain projection pays it once per field,
+ * and the fields of a page are their own projection, driven from {@code graphql_field} narrowed to the
+ * page's types. The
  * page's entries and their fields are then paired on {@code type_name}, which is the type's own key
  * rather than a grouping invented here.
  *
@@ -104,11 +112,8 @@ final class SchemaQueries {
     static final int DEFAULT_LIMIT = 100;
 
     /**
-     * The classifier a column match claims, which is also how the column binding is reached: the
-     * structural reading survives in {@code intent_column_match_claim} even where an authored directive
-     * overrides it, and {@code intent_resolved_field_claim} is the relation that says whether it won.
-     * Joining the witness through the resolution is what reads the store's masking rather than
-     * restating it.
+     * The classifier a column reading claims where no authored directive claims the field: the column
+     * the field reads at its occurrences, as {@code graphitron_occurrence_column} states it.
      */
     private static final String TABLE_COLUMN = "TABLE_COLUMN";
 
@@ -275,19 +280,21 @@ final class SchemaQueries {
      *
      * <p>Both endpoints are schema-qualified. A field's {@code @routine} and {@code @reference}
      * elements compose one path, so {@code position} is the element's place in the field's path rather
-     * than within its own application; a field walked from more than one start reports each walk,
-     * the first step of each departing its start.
+     * than within its own application; a field reached from more than one table reports the steps
+     * from each, the first step of each departing where its occurrence starts.
      *
-     * @param position the element's 0-based place in the field's path
-     * @param via {@code INFERRED} on the step no element wrote, from a routine's result to the
-     *     {@code @table} the field returns; {@code ROUTINE} where the element calls a routine,
+     * @param position the element's 0-based place in the field's path; a step no element wrote is
+     *     placed by its position in the path
+     * @param via {@code INFERRED} on a step no element wrote, a key found between two tables or the
+     *     step from a routine's result to the {@code @table} the field returns; {@code ROUTINE} where
+     *     the element calls a routine,
      *     {@code KEY} where it named a constraint, {@code PRIMARY_KEY} where it named the table's own
      *     primary key and so joins each row to itself, {@code CONDITION} where it names a method the
      *     join is, {@code TABLE} otherwise
      * @param keyMatchedBy which namespace answered a {@code KEY} or {@code PRIMARY_KEY} element,
      *     {@code null} on any other
-     * @param constraintName the constraint a {@code KEY} or {@code PRIMARY_KEY} step crosses,
-     *     {@code null} on any other
+     * @param constraintName the constraint a {@code KEY}, {@code PRIMARY_KEY} or inferred step
+     *     crosses, {@code null} on any other
      * @param fkOnFrom whether that constraint is declared on the table the step departs
      */
     record Hop(
@@ -717,100 +724,62 @@ final class SchemaQueries {
     }
 
     /**
-     * What claims each of the page's coordinates, resolved, plus the column the structural classifier
-     * matched where that reading won.
+     * What claims each of the page's coordinates, resolved, plus the column the field reads where no
+     * authored directive claims it.
      *
-     * <p>A statement of its own, driven from the resolution rather than correlated per field row, and the
-     * reason is measured rather than stylistic. {@code intent_column_match_claim} collapses its matches
-     * with a {@code ROW_NUMBER() OVER (PARTITION BY ...)} over a derived relation, and a window cannot be
-     * pruned by a predicate applied outside it, so a correlated read pays the whole view's evaluation on
-     * every call instead of a filtered one. {@code intent_resolved_field_claim} unions that view in and
-     * inherits the property. On a schema of sixty types and eight hundred coordinates, correlating these
-     * two cost twenty-four seconds where every other field-grain slot together cost a third of one; read
-     * this way they cost about as much as the rest. The relation's own DDL comment states the rule this
-     * follows: any relation joining a derivation this deep wants the derivation first in the
-     * {@code FROM} clause.
-     *
-     * <p>The authoring application and the column witness join in as left joins on the coordinate, so the
-     * statement stays one row per resolved claim: the authored relation holds at most one application per
-     * classifier at a coordinate, and the column match at most one row per coordinate, which is what
-     * makes both joins arity-preserving rather than a fold. The witness is gated on the resolved
-     * classifier being the column match's own, so a coordinate an authored directive claims does not
-     * report a column binding the directive overrides. That gate is a read of the store's masking; the
-     * structural reading survives in the classifier view by design, precisely so a diagnostic can say
-     * what it would have classified as.
+     * <p>Two statements at the coordinate grain. The authored claims are each one application's; the
+     * column reading is the one {@code graphitron_occurrence_column} states at the field's occurrences,
+     * a {@code TABLE_COLUMN} claim of tier {@code INFERRED} wherever no authored claim stands at the
+     * coordinate, which is the masking the resolution has always applied: a coordinate an authored
+     * directive claims does not report a column binding the directive overrides. A field reading a
+     * column on several tables, one per place it is reached, reports the first in table order.
      */
     private static Map<Coordinate, ClaimSet> claims(StoreHandle store, List<String> typeNames) {
-        var rows = store.dsl()
-            .select(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME, INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME,
-                INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER, INTENT_RESOLVED_FIELD_CLAIM.TIER,
-                INTENT_AUTHORED_FIELD_CLAIM.TRIGGER, INTENT_AUTHORED_FIELD_CLAIM.DECODED,
-                INTENT_AUTHORED_FIELD_CLAIM.SOURCE_NAME, INTENT_AUTHORED_FIELD_CLAIM.SOURCE_LINE,
-                INTENT_AUTHORED_FIELD_CLAIM.SOURCE_COLUMN,
-                INTENT_COLUMN_MATCH_CLAIM.TABLE_SCHEMA, INTENT_COLUMN_MATCH_CLAIM.TABLE_NAME,
-                INTENT_COLUMN_MATCH_CLAIM.COLUMN_NAME, INTENT_COLUMN_MATCH_CLAIM.MATCHED_NAME,
-                INTENT_COLUMN_MATCH_CLAIM.MATCHED_BY)
-            .from(INTENT_RESOLVED_FIELD_CLAIM)
-            .leftJoin(INTENT_AUTHORED_FIELD_CLAIM)
-            .on(INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME.eq(INTENT_RESOLVED_FIELD_CLAIM.GRAPH_NAME)
-                .and(INTENT_AUTHORED_FIELD_CLAIM.TYPE_NAME
-                    .eq(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME))
-                .and(INTENT_AUTHORED_FIELD_CLAIM.FIELD_NAME
-                    .eq(INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME))
-                .and(INTENT_AUTHORED_FIELD_CLAIM.CLASSIFIER
-                    .eq(INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER)))
-            .leftJoin(INTENT_COLUMN_MATCH_CLAIM)
-            .on(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq(INTENT_RESOLVED_FIELD_CLAIM.GRAPH_NAME)
-                .and(INTENT_COLUMN_MATCH_CLAIM.TYPE_NAME
-                    .eq(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME))
-                .and(INTENT_COLUMN_MATCH_CLAIM.FIELD_NAME
-                    .eq(INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME))
-                .and(INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER.eq(TABLE_COLUMN)))
-            .where(INTENT_RESOLVED_FIELD_CLAIM.GRAPH_NAME.eq(store.graphName())
-                .and(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME.in(typeNames)))
-            .orderBy(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME.asc(),
-                INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME.asc(),
-                INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER.asc())
-            .fetch(Records.mapping(ClaimRow::new));
+        var a = INTENT_AUTHORED_FIELD_CLAIM;
+        var authored = store.dsl()
+            .select(a.TYPE_NAME, a.FIELD_NAME, a.CLASSIFIER, a.TRIGGER, a.DECODED,
+                a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN)
+            .from(a)
+            .where(a.GRAPH_NAME.eq(store.graphName()).and(a.TYPE_NAME.in(typeNames)))
+            .orderBy(a.TYPE_NAME.asc(), a.FIELD_NAME.asc(), a.CLASSIFIER.asc())
+            .fetch();
+
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var c = GRAPHITRON_OCCURRENCE_COLUMN;
+        var b = GRAPHITRON_BINDING_CLAIM;
+        var read = store.dsl()
+            .selectDistinct(f.TYPE_NAME, f.FIELD_NAME, c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME,
+                coalesce(b.NAMED, f.FIELD_NAME), c.MATCHED_BY)
+            .from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+            .join(c).on(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.COORDINATE.eq(o.COORDINATE))
+            .leftJoin(b).on(b.GRAPH_NAME.eq(f.GRAPH_NAME), b.COORDINATE.eq(f.COORDINATE), b.KIND.eq("COLUMN"))
+            .where(f.GRAPH_NAME.eq(store.graphName()).and(f.TYPE_NAME.in(typeNames)))
+            .and(notExists(selectOne().from(a).where(a.GRAPH_NAME.eq(f.GRAPH_NAME),
+                a.TYPE_NAME.eq(f.TYPE_NAME), a.FIELD_NAME.eq(f.FIELD_NAME))))
+            .orderBy(f.TYPE_NAME.asc(), f.FIELD_NAME.asc(), c.TABLE_SCHEMA.asc(), c.TABLE_NAME.asc())
+            .fetch();
 
         var claims = new LinkedHashMap<Coordinate, List<FieldClaim>>();
         var columns = new LinkedHashMap<Coordinate, ColumnBinding>();
-        for (var row : rows) {
-            var coordinate = new Coordinate(row.typeName(), row.fieldName());
-            claims.computeIfAbsent(coordinate, ignored -> new ArrayList<>()).add(row.claim());
-            row.column().ifPresent(column -> columns.put(coordinate, column));
+        for (var row : authored) {
+            claims.computeIfAbsent(new Coordinate(row.value1(), row.value2()), ignored -> new ArrayList<>())
+                .add(new FieldClaim(row.value3(), "AUTHORED", row.value4(), row.value5(),
+                    McpWire.position(row.value6(), row.value7(), row.value8())));
+        }
+        for (var row : read) {
+            var coordinate = new Coordinate(row.value1(), row.value2());
+            if (columns.containsKey(coordinate)) continue;
+            columns.put(coordinate, new ColumnBinding(row.value3() + "." + row.value4(), row.value5(),
+                row.value6(), row.value7()));
+            claims.computeIfAbsent(coordinate, ignored -> new ArrayList<>())
+                .add(new FieldClaim(TABLE_COLUMN, "INFERRED", null, null, McpWire.position(null, null, null)));
         }
         var sets = new LinkedHashMap<Coordinate, ClaimSet>();
         claims.forEach((coordinate, list) -> sets.put(coordinate,
             new ClaimSet(List.copyOf(list), Optional.ofNullable(columns.get(coordinate)))));
         return sets;
-    }
-
-    /** One resolved claim with its authoring application and, on the column match, its witness. */
-    private record ClaimRow(
-        String typeName, String fieldName, String classifier, String tier, String trigger,
-        Boolean decoded, String sourceName, Integer sourceLine, Integer sourceColumn,
-        String tableSchema, String tableName, String columnName, String matchedName, String matchedBy
-    ) {
-
-        FieldClaim claim() {
-            return new FieldClaim(classifier, tier, trigger, decoded,
-                McpWire.position(sourceName, sourceLine, sourceColumn));
-        }
-
-        /**
-         * The column this claim matched, absent on every claim but the column match's own.
-         *
-         * <p>Read off the column name rather than off the composed table id: the view declares the name
-         * {@code NOT NULL}, so it is null exactly when no witness row joined, where a composed
-         * qualification would be asking a dialect what it does with a null operand.
-         */
-        Optional<ColumnBinding> column() {
-            return columnName == null
-                ? Optional.empty()
-                : Optional.of(new ColumnBinding(tableSchema + "." + tableName, columnName,
-                    matchedName, matchedBy));
-        }
     }
 
     /** The predicate correlating a field-grain relation to the field row being projected. */
@@ -827,90 +796,114 @@ final class SchemaQueries {
     }
 
     /**
-     * The field's path as the store walks it: each element stepped from where the one before it
-     * landed, so a row exists only for an element the walk took. Where it could not take one, the
-     * field's {@link #pathStops()} says which element and why.
+     * The field's join paths as the store walks them: each step from where the one before it landed,
+     * at every occurrence of the field and for every type it reaches, so a row exists only for a step
+     * a path took and a field reached along several chains reports a step once. Where a path could
+     * not take one, the field's {@link #pathStops()} says which element and why.
+     *
+     * <p>A step is placed by the element it resolved, found through the claim its path follows: the
+     * claim's position is the anchor its written elements are numbered under. An inferred step wrote
+     * no element and is placed by its own position.
      */
     private static Field<List<Hop>> joinPath() {
-        var p = GRAPHITRON_FIELD_PATH;
-        var k = GRAPHITRON_FIELD_PATH_KEY;
+        var o = GRAPHITRON_OCCURRENCE;
+        var s = GRAPHITRON_JOIN_PATH_STEP;
+        var k = GRAPHITRON_JOIN_PATH_STEP_KEY;
+        var ik = GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
+        var pk = GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
+        var m = GRAPHITRON_JOIN_PATH_STEP_METHOD;
+        var rt = GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
+        var cl = GRAPHITRON_JOIN_PATH_CLAIMED;
+        var c = GRAPHITRON_JOIN_PATH_CLAIM;
+        var ap = GRAPHITRON_AST_PATH_ENTRY;
         var e = GRAPHITRON_PATH_ELEMENT_KEY;
-        var m = GRAPHITRON_FIELD_PATH_METHOD;
-        var rt = GRAPHITRON_FIELD_PATH_ROUTINE;
-        var pk = GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
         var pe = GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
         var sp = SQL_PRIMARY_KEY;
+        Field<String> keySchema = coalesce(k.CONSTRAINT_SCHEMA, ik.CONSTRAINT_SCHEMA);
+        Field<String> keyTable = coalesce(k.CONSTRAINT_TABLE, ik.CONSTRAINT_TABLE);
         return multiset(
-            select(p.POSITION,
-                when(p.ELEMENT_SOURCE_NAME.isNull(), inline("INFERRED"))
-                    .when(exists(selectOne().from(rt).where(
-                        rt.GRAPH_NAME.eq(p.GRAPH_NAME), rt.TYPE_NAME.eq(p.TYPE_NAME),
-                        rt.FIELD_NAME.eq(p.FIELD_NAME), rt.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
-                        rt.START_SCHEMA.eq(p.START_SCHEMA), rt.START_TABLE.eq(p.START_TABLE),
-                        rt.POSITION.eq(p.POSITION))), inline("ROUTINE"))
-                    .when(k.CONSTRAINT_NAME.isNotNull(), inline("KEY"))
+            selectDistinct(coalesce(s.ELEMENT_PLACE, s.POSITION),
+                when(s.ELEMENT_PLACE.isNull(), inline("INFERRED"))
+                    .when(rt.ROUTINE_NAME.isNotNull(), inline("ROUTINE"))
+                    .when(keyTable.isNotNull(), inline("KEY"))
                     .when(pk.TABLE_NAME.isNotNull(), inline("PRIMARY_KEY"))
-                    .when(exists(selectOne().from(m).where(
-                        m.GRAPH_NAME.eq(p.GRAPH_NAME), m.TYPE_NAME.eq(p.TYPE_NAME),
-                        m.FIELD_NAME.eq(p.FIELD_NAME), m.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
-                        m.START_SCHEMA.eq(p.START_SCHEMA), m.START_TABLE.eq(p.START_TABLE),
-                        m.POSITION.eq(p.POSITION))), inline("CONDITION"))
+                    .when(exists(selectOne().from(m).where(m.GRAPH_NAME.eq(s.GRAPH_NAME),
+                        m.COORDINATE.eq(s.COORDINATE), m.TARGET_TYPE.eq(s.TARGET_TYPE),
+                        m.POSITION.eq(s.POSITION))), inline("CONDITION"))
                     .otherwise(inline("TABLE")),
                 coalesce(e.MATCHED_BY, pe.MATCHED_BY),
-                qualified(p.FROM_SCHEMA, p.FROM_TABLE),
-                qualified(p.TO_SCHEMA, p.TO_TABLE),
-                coalesce(k.CONSTRAINT_NAME, sp.CONSTRAINT_NAME),
-                k.CONSTRAINT_SCHEMA.eq(p.FROM_SCHEMA).and(k.CONSTRAINT_TABLE.eq(p.FROM_TABLE)))
-                .from(p)
-                .leftJoin(pk).on(pk.GRAPH_NAME.eq(p.GRAPH_NAME), pk.TYPE_NAME.eq(p.TYPE_NAME),
-                    pk.FIELD_NAME.eq(p.FIELD_NAME), pk.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
-                    pk.START_SCHEMA.eq(p.START_SCHEMA), pk.START_TABLE.eq(p.START_TABLE),
-                    pk.POSITION.eq(p.POSITION))
+                qualified(s.FROM_SCHEMA, s.FROM_TABLE),
+                qualified(s.TO_SCHEMA, s.TO_TABLE),
+                coalesce(k.CONSTRAINT_NAME, ik.CONSTRAINT_NAME, sp.CONSTRAINT_NAME),
+                keySchema.eq(s.FROM_SCHEMA).and(keyTable.eq(s.FROM_TABLE)))
+                .from(o)
+                .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE))
+                .leftJoin(rt).on(rt.GRAPH_NAME.eq(s.GRAPH_NAME), rt.COORDINATE.eq(s.COORDINATE),
+                    rt.TARGET_TYPE.eq(s.TARGET_TYPE), rt.POSITION.eq(s.POSITION))
+                .leftJoin(k).on(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.COORDINATE.eq(s.COORDINATE),
+                    k.TARGET_TYPE.eq(s.TARGET_TYPE), k.POSITION.eq(s.POSITION))
+                .leftJoin(ik).on(ik.GRAPH_NAME.eq(s.GRAPH_NAME), ik.COORDINATE.eq(s.COORDINATE),
+                    ik.TARGET_TYPE.eq(s.TARGET_TYPE), ik.POSITION.eq(s.POSITION))
+                .leftJoin(pk).on(pk.GRAPH_NAME.eq(s.GRAPH_NAME), pk.COORDINATE.eq(s.COORDINATE),
+                    pk.TARGET_TYPE.eq(s.TARGET_TYPE), pk.POSITION.eq(s.POSITION))
                 .leftJoin(sp).on(sp.SOURCE_NAME.eq(pk.TABLE_SOURCE_NAME),
                     sp.TABLE_SCHEMA.eq(pk.TABLE_SCHEMA), sp.TABLE_NAME.eq(pk.TABLE_NAME))
-                .leftJoin(pe).on(pe.GRAPH_NAME.eq(p.GRAPH_NAME),
-                    pe.SOURCE_NAME.eq(p.ELEMENT_SOURCE_NAME),
-                    pe.SOURCE_LINE.eq(p.ELEMENT_SOURCE_LINE),
-                    pe.SOURCE_COLUMN.eq(p.ELEMENT_SOURCE_COLUMN),
-                    pe.TABLE_SOURCE_NAME.eq(pk.TABLE_SOURCE_NAME),
-                    pe.TABLE_SCHEMA.eq(pk.TABLE_SCHEMA),
-                    pe.TABLE_NAME.eq(pk.TABLE_NAME))
-                .leftJoin(k).on(k.GRAPH_NAME.eq(p.GRAPH_NAME), k.TYPE_NAME.eq(p.TYPE_NAME),
-                    k.FIELD_NAME.eq(p.FIELD_NAME), k.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
-                    k.START_SCHEMA.eq(p.START_SCHEMA), k.START_TABLE.eq(p.START_TABLE),
-                    k.POSITION.eq(p.POSITION))
-                .leftJoin(e).on(e.GRAPH_NAME.eq(p.GRAPH_NAME),
-                    e.SOURCE_NAME.eq(p.ELEMENT_SOURCE_NAME),
-                    e.SOURCE_LINE.eq(p.ELEMENT_SOURCE_LINE),
-                    e.SOURCE_COLUMN.eq(p.ELEMENT_SOURCE_COLUMN),
+                // The claim the path follows, or, for a path that stopped and so follows none, the
+                // occurrence's own claim for the type.
+                .leftJoin(cl).on(cl.GRAPH_NAME.eq(s.GRAPH_NAME), cl.COORDINATE.eq(s.COORDINATE),
+                    cl.TARGET_TYPE.eq(s.TARGET_TYPE))
+                .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME),
+                    c.ELEMENT_COORDINATE.eq(coalesce(cl.CLAIM_COORDINATE, o.ELEMENT_COORDINATE)),
+                    c.TARGET_TYPE.eq(coalesce(cl.CLAIM_TARGET_TYPE, s.TARGET_TYPE)))
+                .leftJoin(ap).on(ap.GRAPH_NAME.eq(c.GRAPH_NAME), ap.SOURCE_NAME.eq(c.SOURCE_NAME),
+                    ap.ANCHOR_LINE.eq(c.SOURCE_LINE), ap.ANCHOR_COLUMN.eq(c.SOURCE_COLUMN),
+                    ap.PLACE.eq(s.ELEMENT_PLACE))
+                .leftJoin(e).on(e.GRAPH_NAME.eq(ap.GRAPH_NAME), e.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                    e.SOURCE_LINE.eq(ap.ELEMENT_LINE), e.SOURCE_COLUMN.eq(ap.ELEMENT_COLUMN),
                     e.CONSTRAINT_SOURCE_NAME.eq(k.CONSTRAINT_SOURCE_NAME),
                     e.CONSTRAINT_SCHEMA.eq(k.CONSTRAINT_SCHEMA),
                     e.CONSTRAINT_TABLE.eq(k.CONSTRAINT_TABLE),
                     e.CONSTRAINT_NAME.eq(k.CONSTRAINT_NAME))
-                .where(ofField(p.GRAPH_NAME, p.TYPE_NAME, p.FIELD_NAME))
-                .orderBy(p.START_SCHEMA.asc(), p.START_TABLE.asc(), p.POSITION.asc()))
+                .leftJoin(pe).on(pe.GRAPH_NAME.eq(ap.GRAPH_NAME), pe.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                    pe.SOURCE_LINE.eq(ap.ELEMENT_LINE), pe.SOURCE_COLUMN.eq(ap.ELEMENT_COLUMN),
+                    pe.TABLE_SOURCE_NAME.eq(pk.TABLE_SOURCE_NAME),
+                    pe.TABLE_SCHEMA.eq(pk.TABLE_SCHEMA),
+                    pe.TABLE_NAME.eq(pk.TABLE_NAME))
+                .where(onOccurrenceOfField(o))
+                .orderBy(coalesce(s.ELEMENT_PLACE, s.POSITION).asc(),
+                    qualified(s.FROM_SCHEMA, s.FROM_TABLE).asc(), qualified(s.TO_SCHEMA, s.TO_TABLE).asc()))
             .convertFrom(r -> r.map(row -> new Hop(row.value1(), row.value2(), row.value3(),
                 row.value4(), row.value5(), row.value6(), Boolean.TRUE.equals(row.value7()))));
     }
 
-    /** Where each of the field's walks stopped short of its path's end; empty where none did. */
+    /** Where each of the field's join paths stopped short of its end; empty where none did. */
     private static Field<List<PathStop>> pathStops() {
-        var s = GRAPHITRON_FIELD_PATH_STOP;
-        var p = GRAPHITRON_FIELD_PATH;
-        // Where the walk stands at the stopping element: the table the step before it landed on, or
-        // the start where it stops on the first.
-        var standing = field(select(qualified(p.TO_SCHEMA, p.TO_TABLE)).from(p).where(
-            p.GRAPH_NAME.eq(s.GRAPH_NAME), p.TYPE_NAME.eq(s.TYPE_NAME), p.FIELD_NAME.eq(s.FIELD_NAME),
-            p.START_SOURCE_NAME.eq(s.START_SOURCE_NAME), p.START_SCHEMA.eq(s.START_SCHEMA),
-            p.START_TABLE.eq(s.START_TABLE), p.POSITION.eq(s.POSITION.minus(1))));
+        var o = GRAPHITRON_OCCURRENCE;
+        var st = GRAPHITRON_JOIN_PATH_STOP;
+        var n = GRAPHITRON_PATH_NEED;
+        var p = GRAPHITRON_JOIN_PATH_STEP;
+        // Where the path stands at the stop: the table the step before it reached, or the need's start
+        // where it stops before its first.
         return multiset(
-            select(s.POSITION,
-                coalesce(standing, qualified(s.START_SCHEMA, s.START_TABLE)),
-                s.MOVES)
-                .from(s)
-                .where(ofField(s.GRAPH_NAME, s.TYPE_NAME, s.FIELD_NAME))
-                .orderBy(s.START_SCHEMA.asc(), s.START_TABLE.asc()))
+            selectDistinct(coalesce(st.ELEMENT_PLACE, st.POSITION),
+                coalesce(qualified(p.TO_SCHEMA, p.TO_TABLE), qualified(n.START_SCHEMA, n.START_TABLE)),
+                st.MOVES)
+                .from(o)
+                .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))
+                .join(n).on(n.GRAPH_NAME.eq(st.GRAPH_NAME), n.COORDINATE.eq(st.COORDINATE),
+                    n.TARGET_TYPE.eq(st.TARGET_TYPE))
+                .leftJoin(p).on(p.GRAPH_NAME.eq(st.GRAPH_NAME), p.COORDINATE.eq(st.COORDINATE),
+                    p.TARGET_TYPE.eq(st.TARGET_TYPE), p.POSITION.eq(st.POSITION.minus(1)))
+                .where(onOccurrenceOfField(o))
+                .orderBy(coalesce(st.ELEMENT_PLACE, st.POSITION).asc()))
             .convertFrom(r -> r.map(Records.mapping(PathStop::new)));
+    }
+
+    /** An occurrence of the field row being projected. */
+    private static Condition onOccurrenceOfField(no.sikt.graphitron.model.tables.GraphitronOccurrence o) {
+        return o.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME)
+            .and(o.ELEMENT_COORDINATE.eq(concat(GRAPHQL_FIELD.TYPE_NAME, inline("."), GRAPHQL_FIELD.FIELD_NAME)))
+            .and(o.KIND.eq("FIELD"));
     }
 
     /**

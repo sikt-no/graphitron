@@ -12,7 +12,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SCOPE_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -60,10 +60,10 @@ class FieldGraphScopeTest {
     }
 
     private static List<String> columnTables(DSLContext dsl, String graph) {
-        var t = INTENT_FIELD_COLUMN_TABLE;
-        return dsl.select(t.TABLE_NAME).from(t)
-            .where(t.GRAPH_NAME.eq(graph), t.TYPE_NAME.eq("Film"), t.FIELD_NAME.eq("languages"))
-            .fetch(t.TABLE_NAME);
+        var t = GRAPHITRON_PATH_NEED;
+        return dsl.select(t.LANDING_TABLE).from(t)
+            .where(t.GRAPH_NAME.eq(graph), t.COORDINATE.eq("Film.languages"))
+            .fetch(t.LANDING_TABLE);
     }
 
     private static List<String> scopeTables(DSLContext dsl, String graph) {

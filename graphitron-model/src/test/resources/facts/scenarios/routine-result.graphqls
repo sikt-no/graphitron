@@ -72,9 +72,13 @@ extend schema @assertContains(relation: "graphitron_field_path", rows: """
   ActorFilm, film,       films_for_actor, 0,        films_for_actor, film
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_source_table", where: "type_name = 'ActorFilm'", rows: """
-  field_name, from_table,      basis
-  filmId,     films_for_actor, SOURCE_TYPE
-  title,      films_for_actor, SOURCE_TYPE
-  film,       films_for_actor, SOURCE_TYPE
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
+    where: "coordinate LIKE 'Actor.%ilms.%'", rows: """
+  coordinate,             table_name
+  Actor.films.filmId,     films_for_actor
+  Actor.films.title,      films_for_actor
+  Actor.films.film,       films_for_actor
+  Actor.longFilms.filmId, films_for_actor
+  Actor.longFilms.title,  films_for_actor
+  Actor.longFilms.film,   films_for_actor
   """)

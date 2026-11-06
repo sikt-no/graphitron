@@ -14,14 +14,17 @@ import java.util.List;
 import java.util.Locale;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 
 /**
  * Every SDL coordinate that binds a given target: the population behind find-references when the
@@ -37,8 +40,8 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
  *
  * <p>Three matching rules appear here and the differences between them are deliberate, because a
  * reader deserves to know which of their answers is resolution-exact and which is name-exact.
- * Where a resolution view exists ({@code intent_bound_table} for a table binding,
- * {@code intent_column_match_claim} for a column) the match is on the resolved target, so
+ * Where a resolution exists ({@code intent_bound_table} for a table binding,
+ * {@code graphitron_occurrence_column} for a column) the match is on the resolved target, so
  * {@code @table(name: "film")} and {@code @table(name: "public.film")} find each other and neither
  * finds a same-named table in another schema. A reference path's hop has no resolution view, so it
  * matches on the name as written, case-insensitively, with a qualifier narrowing rather than
@@ -101,25 +104,32 @@ public final class BindingUsages {
     }
 
     /**
-     * Every coordinate bound to {@code columnName} on {@code table}, read off the column-match
-     * claim so the answer is the resolution's rather than a name comparison's.
+     * Every field declaration reading {@code columnName} on {@code table}, read off the column each
+     * of the field's occurrences reads where its path lands, so the answer is the resolution's rather
+     * than a name comparison's.
      *
-     * <p>The claim covers a field that binds the column with {@code @field(name:)} and a field whose
-     * own name matches it with no directive at all, and both belong in the answer: an author asking
-     * what else maps to this column is asking about the generator's reading, and the generator
-     * reads them the same way.
+     * <p>That covers a field that binds the column with {@code @field(name:)} and a field whose own
+     * name matches it with no directive at all, and both belong in the answer: an author asking what
+     * else maps to this column is asking about the generator's reading, and the generator reads them
+     * the same way. A field reached along several chains is one declaration and one site.
      */
     public static List<Location> ofColumn(StoreHandle store, CatalogTable table, String columnName) {
         if (table == null || columnName == null || columnName.isEmpty()) return List.of();
+        var c = GRAPHITRON_OCCURRENCE_COLUMN;
+        var o = GRAPHITRON_OCCURRENCE;
+        var e = GRAPHQL_FIELD_ELEMENT;
+        var f = GRAPHQL_FIELD;
         var rows = store.dsl()
-            .select(INTENT_COLUMN_MATCH_CLAIM.SOURCE_NAME, INTENT_COLUMN_MATCH_CLAIM.SOURCE_LINE,
-                INTENT_COLUMN_MATCH_CLAIM.SOURCE_COLUMN)
-            .from(INTENT_COLUMN_MATCH_CLAIM)
-            .where(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_COLUMN_MATCH_CLAIM.TABLE_SOURCE_NAME.eq(table.sourceName()))
-            .and(INTENT_COLUMN_MATCH_CLAIM.TABLE_SCHEMA.eq(table.schema()))
-            .and(INTENT_COLUMN_MATCH_CLAIM.TABLE_NAME.eq(table.tableName()))
-            .and(INTENT_COLUMN_MATCH_CLAIM.COLUMN_NAME.eq(columnName))
+            .selectDistinct(f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN)
+            .from(c)
+            .join(o).on(o.GRAPH_NAME.eq(c.GRAPH_NAME), o.COORDINATE.eq(c.COORDINATE), o.KIND.eq("FIELD"))
+            .join(e).on(e.GRAPH_NAME.eq(o.GRAPH_NAME), e.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .join(f).on(f.GRAPH_NAME.eq(e.GRAPH_NAME), f.TYPE_NAME.eq(e.TYPE_NAME), f.FIELD_NAME.eq(e.FIELD_NAME))
+            .where(c.GRAPH_NAME.eq(store.graphName()))
+            .and(c.TABLE_SOURCE_NAME.eq(table.sourceName()))
+            .and(c.TABLE_SCHEMA.eq(table.schema()))
+            .and(c.TABLE_NAME.eq(table.tableName()))
+            .and(c.COLUMN_NAME.eq(columnName))
             .fetch();
         return sorted(locations(rows));
     }

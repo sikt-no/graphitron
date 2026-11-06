@@ -45,7 +45,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
@@ -55,11 +60,16 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.falseCondition;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.max;
+import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
@@ -309,10 +319,15 @@ final class DiagnosticFacts {
         }
     }
 
-    /** The site's own resolution, and one column of the table it names. */
-    record OverrideRow(
-        String typeName, String fieldName, String disposition, String tableSourceName,
-        String tableSchema, String tableName, String columnName, String jooqName
+    /**
+     * One fact about a site's field, which {@code fact} names: {@code CONFLICT}, its producer claims
+     * disagree; {@code WRITTEN}, a path is written at it; {@code NEED}, one need of one of its
+     * occurrences, with its target's kind, the table it lands on, whether a join path was walked
+     * there and whether it stopped, and one column of that table.
+     */
+    record SiteRow(
+        String coordinate, String fact, String targetKind, String tableSourceName, String tableSchema,
+        String tableName, Boolean walked, Boolean stopped, String columnName, String jooqName
     ) {}
 
     /** A table the site's parent is bound to, and one of its columns. */
@@ -381,7 +396,7 @@ final class DiagnosticFacts {
         boolean anyClass,
         List<ParameterRow> parameters,
         List<String> resolvedNodeTypeNames,
-        List<OverrideRow> overrides,
+        List<SiteRow> sites,
         List<ParentRow> parents,
         List<BackingRow> backingSeeds,
         List<BackingRow> backingReached,
@@ -478,11 +493,27 @@ final class DiagnosticFacts {
          * Both orderings belong to the readers that state them and are applied here, not repeated.
          */
         Optional<MemberScope> memberScope(String typeName, String fieldName) {
-            var site = overrideRowsAt(typeName, fieldName);
-            if (!site.isEmpty()) {
-                if (!"RESOLVE".equals(site.getFirst().disposition())) return Optional.empty();
-                return columnScope(site.getFirst().tableName(),
-                    namesOf(site, OverrideRow::columnName, OverrideRow::jooqName));
+            if (fieldName != null) {
+                String coordinate = typeName + "." + fieldName;
+                // Claims that disagree name no table, and the parent must not stand in.
+                var facts = sites.stream().filter(row -> row.coordinate().equals(coordinate)).toList();
+                if (facts.stream().anyMatch(row -> row.fact().equals("CONFLICT"))) return Optional.empty();
+                var site = facts.stream().filter(row -> row.fact().equals("NEED")).toList();
+                if (facts.stream().anyMatch(row -> row.fact().equals("WRITTEN"))) {
+                    // A written path names a table only where every one of its needs was walked to one,
+                    // its landing being stated on its join path alone.
+                    if (site.isEmpty() || site.stream().anyMatch(row -> !Boolean.TRUE.equals(row.walked())
+                            || Boolean.TRUE.equals(row.stopped()))) {
+                        return Optional.empty();
+                    }
+                    return landedScope(site);
+                }
+                // With nothing written, an object field resolves where its path lands.
+                var landed = site.stream()
+                    .filter(row -> row.tableName() != null && row.targetKind() != null
+                        && !row.targetKind().equals("SCALAR") && !row.targetKind().equals("ENUM"))
+                    .toList();
+                if (!landed.isEmpty()) return landedScope(landed);
             }
             return TypeMemberScope.resolve(
                     boundTablesOf(typeName),
@@ -554,11 +585,15 @@ final class DiagnosticFacts {
             return populated ? Resolution.UNKNOWN : Resolution.NO_CENSUS;
         }
 
-        private List<OverrideRow> overrideRowsAt(String typeName, String fieldName) {
-            if (fieldName == null) return List.of();
-            return overrides.stream()
-                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
+        /** The first table the rows land on, in schema then table order, with its columns. */
+        private Optional<MemberScope> landedScope(List<SiteRow> rows) {
+            var first = rows.getFirst();
+            var table = rows.stream()
+                .filter(row -> row.tableSourceName().equals(first.tableSourceName())
+                    && row.tableSchema().equals(first.tableSchema())
+                    && row.tableName().equals(first.tableName()))
                 .toList();
+            return columnScope(first.tableName(), namesOf(table, SiteRow::columnName, SiteRow::jooqName));
         }
 
         private Optional<MemberScope> columnScope(String tableName, List<CatalogColumns.Names> columns) {
@@ -722,7 +757,7 @@ final class DiagnosticFacts {
                 censusHolds(selectOne().from(CODE_CLASS).where(store.reads(CODE_CLASS.SOURCE_NAME))),
                 parameterArm(store, questions.methods),
                 nodeTypeBindingArm(store, questions.nodeTypeNames),
-                overrideArm(store, questions.memberSites),
+                siteArm(store, questions.memberSites),
                 parentArm(store, questions.memberTypeNames),
                 backingArm(store, questions.memberTypeNames, TypeBackingClass.GROUNDED),
                 backingArm(store, questions.memberTypeNames, TypeBackingClass.REACHED),
@@ -994,27 +1029,67 @@ final class DiagnosticFacts {
     }
 
     /**
-     * The site's own resolution and the columns of the table it names, left-joined: a resolution naming
-     * a table the census holds no column for is a row with no column, which is silence rather than a
-     * wrong name, and an inner join would have made it indistinguishable from a site with no
-     * resolution at all.
+     * What the sites' fields say about where a column name written at them resolves, as one list:
+     * the sites whose producer claims disagree, two kinds of producer but for {@code @lookupKey}
+     * beside {@code @routine}, which is deferred rather than refused; the sites a path is written at;
+     * and every need of every occurrence of the sites' fields, with where it lands, whether it
+     * stopped, and the columns of the landing table, left-joined. Where it lands is the join path's
+     * table where one was walked, a written path's landing being stated there, and the need's own
+     * landing otherwise; a need landing nowhere is a row with no table, and a landing the census holds
+     * no column for a row with no column, which is silence rather than a wrong name.
      */
-    private static Field<List<OverrideRow>> overrideArm(
-        StoreHandle store, Collection<FieldCoord> sites
-    ) {
-        var site = INTENT_FIELD_COLUMN_TABLE;
-        return multiset(select(site.TYPE_NAME, site.FIELD_NAME, site.DISPOSITION,
-                site.TABLE_SOURCE_NAME, site.TABLE_SCHEMA, site.TABLE_NAME,
-                SQL_COLUMN.COLUMN_NAME, SQL_COLUMN.JOOQ_NAME)
-            .from(site)
-            .leftJoin(SQL_COLUMN)
-            .on(SQL_COLUMN.SOURCE_NAME.eq(site.TABLE_SOURCE_NAME))
-            .and(SQL_COLUMN.TABLE_SCHEMA.eq(site.TABLE_SCHEMA))
-            .and(SQL_COLUMN.TABLE_NAME.eq(site.TABLE_NAME))
-            .where(site.GRAPH_NAME.eq(store.graphName()))
-            .and(coordinateIn(site.TYPE_NAME, site.FIELD_NAME, sites))
-            .orderBy(site.TYPE_NAME, site.FIELD_NAME, SQL_COLUMN.ORDINAL))
-            .convertFrom(rows -> rows.map(Records.mapping(OverrideRow::new)));
+    private static Field<List<SiteRow>> siteArm(StoreHandle store, Collection<FieldCoord> sites) {
+        var pc = GRAPHITRON_PRODUCER_CLAIM;
+        var c = GRAPHITRON_JOIN_PATH_CLAIM;
+        var o = GRAPHITRON_OCCURRENCE;
+        var n = GRAPHITRON_PATH_NEED;
+        var jp = GRAPHITRON_JOIN_PATH;
+        var st = GRAPHITRON_JOIN_PATH_STOP;
+        var t = GRAPHITRON_TYPE;
+        Field<String> noText = inline(null, String.class);
+        Field<Boolean> noFlag = inline(null, Boolean.class);
+        Field<Integer> noOrdinal = inline(null, Integer.class);
+        return multiset(select(pc.COORDINATE, inline("CONFLICT"), noText, noText, noText, noText, noFlag,
+                noFlag, noText, noText, noOrdinal)
+            .from(pc)
+            .where(pc.GRAPH_NAME.eq(store.graphName()))
+            .and(pc.COORDINATE.in(coordinates(sites)))
+            .groupBy(pc.COORDINATE)
+            .having(count().gt(1)
+                .and(not(count().eq(2).and(min(pc.KIND).eq("LOOKUP")).and(max(pc.KIND).eq("ROUTINE")))))
+            .unionAll(selectDistinct(c.ELEMENT_COORDINATE, inline("WRITTEN"), noText, noText, noText, noText,
+                    noFlag, noFlag, noText, noText, noOrdinal)
+                .from(c)
+                .where(c.GRAPH_NAME.eq(store.graphName()))
+                .and(c.ELEMENT_COORDINATE.in(coordinates(sites))))
+            .unionAll(selectDistinct(o.ELEMENT_COORDINATE, inline("NEED"), t.KIND,
+                    coalesce(jp.TARGET_SOURCE_NAME, n.LANDING_SOURCE_NAME), coalesce(jp.TARGET_SCHEMA, n.LANDING_SCHEMA),
+                    coalesce(jp.TARGET_TABLE, n.LANDING_TABLE), field(jp.TARGET_TABLE.isNotNull()),
+                    field(st.POSITION.isNotNull()), SQL_COLUMN.COLUMN_NAME,
+                    SQL_COLUMN.JOOQ_NAME, SQL_COLUMN.ORDINAL)
+                .from(o)
+                .join(n).on(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE))
+                .leftJoin(jp).on(jp.GRAPH_NAME.eq(n.GRAPH_NAME), jp.COORDINATE.eq(n.COORDINATE),
+                    jp.TARGET_TYPE.eq(n.TARGET_TYPE))
+                .leftJoin(st).on(st.GRAPH_NAME.eq(n.GRAPH_NAME), st.COORDINATE.eq(n.COORDINATE),
+                    st.TARGET_TYPE.eq(n.TARGET_TYPE))
+                .leftJoin(t).on(t.GRAPH_NAME.eq(n.GRAPH_NAME), t.TYPE_NAME.eq(n.TARGET_TYPE))
+                .leftJoin(SQL_COLUMN)
+                .on(SQL_COLUMN.SOURCE_NAME.eq(coalesce(jp.TARGET_SOURCE_NAME, n.LANDING_SOURCE_NAME)))
+                .and(SQL_COLUMN.TABLE_SCHEMA.eq(coalesce(jp.TARGET_SCHEMA, n.LANDING_SCHEMA)))
+                .and(SQL_COLUMN.TABLE_NAME.eq(coalesce(jp.TARGET_TABLE, n.LANDING_TABLE)))
+                .where(o.GRAPH_NAME.eq(store.graphName()))
+                .and(o.KIND.in("FIELD", "INPUT_FIELD"))
+                .and(o.ELEMENT_COORDINATE.in(coordinates(sites))))
+            .orderBy(1, 2, 5, 6, 11))
+            .convertFrom(rows -> rows.map(row -> new SiteRow(row.value1(), row.value2(), row.value3(),
+                row.value4(), row.value5(), row.value6(), row.value7(), row.value8(), row.value9(),
+                row.value10())));
+    }
+
+    /** The sites as element coordinates. */
+    private static List<String> coordinates(Collection<FieldCoord> sites) {
+        return sites.stream().map(site -> site.typeName() + "." + site.fieldName()).toList();
     }
 
     /**

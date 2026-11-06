@@ -10,6 +10,7 @@ import org.jooq.Records;
 import org.jooq.TableField;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -22,7 +23,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
@@ -30,6 +36,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.falseCondition;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
@@ -450,15 +457,45 @@ final class InlayFacts {
             .convertFrom(rows -> rows.map(Records.mapping(MethodRow::new)));
     }
 
-    /** The tables the region's fields' statements land on, through the type that binds each. */
+    /**
+     * The tables the region's fields' statements land on: where each occurrence lands for each object
+     * type it reaches, its join path's table where one was walked and the need's own landing
+     * otherwise; and for a root, where its producer lifts its records.
+     */
     private static Field<List<TargetTableRow>> targetTableArm(StoreHandle store, Collection<String> typeNames) {
-        var tt = GRAPHITRON_FIELD_TARGET_TABLE;
-        var b = GRAPHITRON_TABLETYPE;
-        return multiset(selectDistinct(tt.TYPE_NAME, tt.FIELD_NAME, b.TABLE_NAME).from(tt)
-            .join(b).on(b.GRAPH_NAME.eq(tt.GRAPH_NAME), b.TYPE_NAME.eq(tt.ARRIVING_TYPE_NAME))
-            .where(tt.GRAPH_NAME.eq(store.graphName()), tt.TYPE_NAME.in(typeNames))
-            .orderBy(tt.TYPE_NAME, tt.FIELD_NAME, b.TABLE_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(TargetTableRow::new)));
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var n = GRAPHITRON_PATH_NEED;
+        var jp = GRAPHITRON_JOIN_PATH;
+        var t = GRAPHITRON_TYPE;
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+        var ft = GRAPHITRON_FIELD_TARGET;
+        var rt = GRAPHITRON_RESULT_TABLE;
+        Field<String> landed = coalesce(jp.TARGET_TABLE, n.LANDING_TABLE);
+        return multiset(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, landed).from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+            .join(n).on(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE))
+            .leftJoin(jp).on(jp.GRAPH_NAME.eq(n.GRAPH_NAME), jp.COORDINATE.eq(n.COORDINATE),
+                jp.TARGET_TYPE.eq(n.TARGET_TYPE))
+            .join(t).on(t.GRAPH_NAME.eq(n.GRAPH_NAME), t.TYPE_NAME.eq(n.TARGET_TYPE), t.KIND.notIn("SCALAR", "ENUM"))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames), landed.isNotNull())
+            .union(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, r.TABLE_NAME).from(f)
+                .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+                .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.COORDINATE), p.START.eq("ROOT"))
+                .join(r).on(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE), r.TABLE_NAME.isNotNull())
+                .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames)))
+            // A root producing a connection or records of no one table: its target's rows' tables.
+            .union(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, rt.TABLE_NAME).from(f)
+                .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+                .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.COORDINATE), p.START.eq("ROOT"))
+                .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME), ft.FIELD_NAME.eq(f.FIELD_NAME))
+                .join(rt).on(rt.GRAPH_NAME.eq(ft.GRAPH_NAME), rt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
+                .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))))
+            .convertFrom(rows -> rows.map(Records.mapping(TargetTableRow::new)).stream()
+                .sorted(Comparator.comparing(TargetTableRow::typeName).thenComparing(TargetTableRow::fieldName)
+                    .thenComparing(TargetTableRow::tableName))
+                .toList());
     }
 
     private static String simpleName(String className) {

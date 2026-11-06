@@ -1,6 +1,7 @@
-# The types whose tables a field's statements land on: the target where it binds a table, and each
-# table-bound participant where it does not. A name and not a table, so two participants on one
-# table are two rows, and a member that binds nothing, or binds ambiguously, lands nowhere.
+# Where a root field's statements land: the table its producer lifts its records onto, none where
+# the records are of several tables or none named, and the tables its target type's rows are rows
+# of, which a connection's element answers. A type with no table, or one binding ambiguously, holds
+# rows of no table.
 
 type Film @table(name: "film") { title: String }
 type Reel @table(name: "film") { title: String }
@@ -24,23 +25,21 @@ extend type Query {
   films: [Film!]! @asConnection
 }
 
-extend schema @assertContains(relation: "graphitron_field_target_table", rows: """
-  type_name,                 field_name, arriving_type_name, basis
-  Query,                     film,       Film,               TARGET
-  Query,                     reels,      Film,               PARTICIPANT
-  Query,                     reels,      Reel,               PARTICIPANT
-  Query,                     mixed,      Actor,              PARTICIPANT
-  Query,                     credited,   Credited,           TARGET
-  Query,                     films,      Film,               TARGET
-  QueryFilmsConnection,      nodes,      Film,               TARGET
-  QueryFilmsConnectionEdge,  node,       Film,               TARGET
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_result",
+    where: "coordinate <> 'Query.anchor'", rows: """
+  coordinate,     shape,         table_name
+  Query.film,     SINGLE_RECORD, film
+  Query.reels,    RECORD_LIST,
+  Query.mixed,    RECORD_LIST,
+  Query.credited, RECORD_LIST,   actor
+  Query.films,    CONNECTION,
   """)
 
-extend schema @assertAbsent(relation: "graphitron_field_target_table", rows: """
-  type_name, field_name, arriving_type_name
-  Query,     mixed,      Note
-  Query,     mixed,      Event
-  Query,     credited,   Clip
-  Query,     note,       Note
-  Film,      title,      String
+extend schema @expectEquals(relation: "graphitron_result_table", where: "type_name <> 'FactAnchor'", rows: """
+  type_name, table_name
+  Film,      film
+  Reel,      film
+  Actor,     actor
+  Credited,  actor
+  Clip,      actor
   """)

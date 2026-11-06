@@ -140,12 +140,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   """)
 
 # Nothing departs from the parent's table through a field producing its own object.
-extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
-  type_name,          field_name
-  SharedTranslations, nb
-  FilmCardWrapper,    example
-  RecordExample,      fieldA
-  """)
+extend schema @assertEmpty(relation: "graphitron_occurrence_source_table",
+    where: "coordinate LIKE 'Film.sharedTranslations.%' OR coordinate LIKE 'Inventory.filmCardData.%'")
 
 # The same reads at each occurrence, where the path lands: the nesting type's fields once per table
 # they are reached from, the record-backed carrier's under the service that returns it, and a field

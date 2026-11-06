@@ -10,8 +10,6 @@ import no.sikt.graphitron.model.derive.OccurrenceProducers;
 import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
-import no.sikt.graphitron.model.derive.FieldSourceTables;
-import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.FieldPaths;
@@ -119,10 +117,6 @@ public final class GraphitronAssemblyCapture {
         // record class, and what the producers' resolved methods ground, closed over the members
         // each backed class offers. The classpath was read before this gatherer ran.
         TypeBackings.derive(dsl, graph, readAt);
-        // The types whose tables each field's statements land on, off the targets and bindings above.
-        FieldTargetTables.derive(dsl, graph, readAt);
-        // And the tables their reads depart from, off the same bindings and the targets.
-        FieldSourceTables.derive(dsl, graph, readAt);
         // Last, each output field's fetcher, off the targets, bindings and backings above.
         Fetchers.derive(dsl, graph, readAt);
         // How each field under a held object takes its keys off it, off the producers and results

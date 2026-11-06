@@ -95,7 +95,7 @@ class FieldInformationHoverTest {
             .contains("**Fetch** reads a column of its parent's row")
             .contains("**Column** `film.title` varchar")
             .contains("not null")
-            .contains("**Source** `film`, the parent type's table")
+            .contains("**Source** `film`")
             .doesNotContain("TABLE_COLUMN")
             .doesNotContain("**Defects**");
     }
@@ -166,7 +166,7 @@ class FieldInformationHoverTest {
     }
 
     @Test
-    void aNestingTypesFieldSaysItsTableIsInherited() {
+    void aNestingTypesFieldReadsTheTableItsParentIsReachedFrom() {
         var file = file("""
             type FilmDetails {
                 title: String
@@ -174,7 +174,7 @@ class FieldInformationHoverTest {
             """);
         assertThat(hoverAt(file, 1, "    titl".length()))
             .contains("**Column** `film.title`")
-            .contains("**Source** `film`, inherited through `FilmDetails`, which has no table of its own");
+            .contains("**Source** `film`");
     }
 
     @Test

@@ -15,10 +15,10 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
 }
 
-extend schema @assertContains(relation: "graphitron_field_source_table", rows: """
-  type_name,          field_name, from_table, basis
-  FilmDetailsCarrier, filmId,     film,       RECORD_CLASS
-  FilmDetailsCarrier, language,   film,       RECORD_CLASS
+extend schema @assertContains(relation: "graphitron_occurrence_source_table", rows: """
+  coordinate,                      table_name
+  Query.filmDetailsBatch.filmId,   film
+  Query.filmDetailsBatch.language, film
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
