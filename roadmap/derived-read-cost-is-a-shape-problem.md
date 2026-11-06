@@ -303,18 +303,13 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_field_path_method_candidate` goes with the old family.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
-  * **The old walk's readers read the join path, and the old family goes** `open`, F's.
-    MCP `joinPath` and `pathStops` read `graphitron_join_path_step` and its stops, the fanout lint a
-    fanout view over the steps, and `RoutineWriteQuery` the routine's steps and target. The output-field
-    arm of `graphitron_node_id_instruction_rule` reads `graphitron_join_path`'s target, and the checks whether
-    a field writes a path read `graphitron_join_path_claim`. The `intent_` views over the walk
-    dissolve rather than move (Alf, 2026-11-06): `intent_mutation_routine_seat` into
-    `RoutineWriteQuery`'s own query, `intent_field_column_table` into the LSP's `FieldColumnTable` and
-    `DiagnosticFacts` reading the join path, its stops and its claims, and `intent_column_match_claim`
-    with `intent_resolved_field_claim` into `BindingUsages` and MCP reading
-    `graphitron_occurrence_column`, which holds a written path's scalars. Each reader is compared against the old relation before it goes;
-    then `FieldPaths` and every `graphitron_field_path*` relation go, with the gate tests and fact
-    documents.
+  * **The old walk's readers read the join path, and the old family goes** `blocked`, F's, on "The claims go".
+    The editor, MCP, the fanout lint and `RoutineWriteQuery` read the join path, and
+    `intent_field_column_table`, `intent_mutation_routine_seat` and the field table relations are
+    gone. Left: `intent_column_match_claim` still reads `graphitron_field_path_landing`; once it
+    dissolves, the output-field arm of `graphitron_node_id_instruction_rule` reads
+    `graphitron_join_path`'s target, and `FieldPaths` and every `graphitron_field_path*` relation go,
+    with the gate tests and fact documents.
   * **The reference-step family goes** `open`, F's.
     The argument arm of `graphitron_node_id_instruction_rule` and `graphitron_node_id_decode_hop_rule`
     read the join path's steps at the argument and input-field occurrences, G's to move or agree;
@@ -738,8 +733,9 @@ classified records have no reader left and can go with the walk.
   occurrence's producer, bindings, column and node id, and the corpus's claim expectations and
   `ColumnMatchShadowTest` are deleted rather than restated. `intent_column_match_claim`,
   `intent_resolved_field_claim`, `intent_authored_type_claim`, `intent_authored_claim_conflict` and
-  `intent_authored_field_claim` dissolve, the last once `intent_field_column_table` stops reading
-  `intent_authored_claim_conflict`.
+  `intent_authored_field_claim` dissolve. `BindingUsages`' column usages and the inferred column
+  rows of MCP's claims already read `graphitron_occurrence_column`, and `intent_field_column_table`
+  is gone, so `intent_authored_claim_conflict` has no reader left.
 * **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
   `TypeMemberScope` read `graphitron_tabletype` or `graphitron_result_table` instead of
   `intent_bound_table`, and `EditorReadsNoViewTest` takes another control.
