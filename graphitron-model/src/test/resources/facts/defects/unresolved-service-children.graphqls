@@ -1,0 +1,26 @@
+# A @service whose method the class does not declare is a defect at its reference, and the fields
+# under it read nothing: what the service hands over is unknown, and the parent's row is not it.
+
+type Film @table(name: "film") {
+  title: String
+  "The class declares no such method."
+  strayNotes: FilmNotes
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "noSuchMethod"})
+}
+
+type FilmNotes { note: String }
+
+extend type Query { films: [Film!]! }
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  coordinate,      code
+  Film.strayNotes, CODE_REFERENCE_METHOD_NOT_FOUND
+  """)
+
+# Its fields are reached, and have no source and no need.
+extend schema @assertContains(relation: "graphitron_occurrence", rows: """
+  coordinate
+  Film.strayNotes.note
+  """)
+extend schema @assertEmpty(relation: "graphitron_occurrence_source", where: "coordinate LIKE 'Film.strayNotes.%'")
+extend schema @assertEmpty(relation: "graphitron_path_need", where: "coordinate LIKE 'Film.strayNotes.%'")

@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -513,7 +514,7 @@ public final class OccurrenceSources {
         var pf = GRAPHITRON_FIELD.as("pf");
         var cf = GRAPHITRON_FIELD.as("cf");
         var pt = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("pt");
-        var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
+        var pc = GRAPHITRON_PRODUCER_CLAIM.as("pc");
         var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
         var xm = CODE_METHOD.as("xm");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
@@ -526,9 +527,11 @@ public final class OccurrenceSources {
                 pt.TOUCHED_AT.eq(touchedAt))
             .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"))
-            .and(notExists(selectOne().from(ps)
-                .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
-                    ps.FIELD_NAME.eq(pf.FIELD_NAME))))
+            // A written service decides, resolved or not: an unresolved one is its own defect, and
+            // its children read nothing rather than the parent's row.
+            .and(notExists(selectOne().from(pc)
+                .where(pc.GRAPH_NAME.eq(pf.GRAPH_NAME), pc.COORDINATE.eq(pf.COORDINATE),
+                    pc.KIND.eq("SERVICE"))))
             .and(notExists(selectOne().from(xr)
                 .join(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME),
                     xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME), xm.METHOD_NAME.eq(xr.METHOD_NAME),
@@ -558,7 +561,7 @@ public final class OccurrenceSources {
         var pf = GRAPHITRON_FIELD.as("pf");
         var cf = GRAPHITRON_FIELD.as("cf");
         var j = GRAPHITRON_JOIN_PATH.as("j");
-        var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
+        var pc = GRAPHITRON_PRODUCER_CLAIM.as("pc");
         var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
         var xm = CODE_METHOD.as("xm");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
@@ -572,9 +575,11 @@ public final class OccurrenceSources {
             .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"))
             .and(writesPath(pf))
-            .and(notExists(selectOne().from(ps)
-                .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
-                    ps.FIELD_NAME.eq(pf.FIELD_NAME))))
+            // A written service decides, resolved or not: an unresolved one is its own defect, and
+            // its children read nothing rather than the parent's row.
+            .and(notExists(selectOne().from(pc)
+                .where(pc.GRAPH_NAME.eq(pf.GRAPH_NAME), pc.COORDINATE.eq(pf.COORDINATE),
+                    pc.KIND.eq("SERVICE"))))
             .and(notExists(selectOne().from(xr)
                 .join(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME),
                     xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME), xm.METHOD_NAME.eq(xr.METHOD_NAME),
