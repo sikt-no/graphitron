@@ -2,8 +2,10 @@ package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import org.jooq.Configuration;
 import org.jooq.DSLContext;
 import org.jooq.Result;
+import org.jooq.impl.DSL;
 
 import java.util.List;
 
@@ -110,6 +112,14 @@ public final class SampleQueryService {
      */
     public static Integer filmCount(DSLContext dsl) {
         return dsl.fetchCount(Tables.FILM);
+    }
+
+    /**
+     * {@link #filmCount} over a jOOQ {@code Configuration} rather than a {@code DSLContext}: the
+     * witness that a parameter of that type is the jOOQ context too.
+     */
+    public static Integer filmCountOn(Configuration configuration) {
+        return DSL.using(configuration).fetchCount(Tables.FILM);
     }
 
     /**

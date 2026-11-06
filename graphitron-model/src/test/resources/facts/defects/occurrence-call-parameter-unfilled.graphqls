@@ -1,24 +1,59 @@
-# A service call's parameter that nothing fills, or that two written fills reach. The first takes a
-# method whose ids parameter has no argument of its name and no pair; the second names the userId
-# parameter in argMapping and in contextArguments both, so nothing says which fills it.
+# A service call's parameter that nothing fills, that more than one argument could fill by type, or
+# that two written fills reach, and the edges around them. unfilledFilms takes a method whose ids
+# parameter, a List<Integer>, has no argument of its name, no pair and no argument of its type.
+# ambiguousFilms offers two lists of Int to that one parameter, so type cannot choose. greetedTwice names userId in argMapping and in contextArguments both, so nothing says which
+# fills it. namelessList calls a class compiled without -parameters, whose parameters carry no name
+# for an argument to match; the one Int argument still fills the one int parameter by type. unlandedFilms
+# names filmIds in a pair whose path lands nowhere: that is the pair's defect, so the parameter has no
+# fill and is not reported unfilled a second time. contextPair fills userId from a $context pair,
+# which this site refuses while the fill itself is still stated.
 
 extend type Query {
-  unfilledFilms(other: [Int!]): String @service(service: {
+  unfilledFilms(other: [String!]): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByService"})
+  ambiguousFilms(first: [Int!], second: [Int!]): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByServiceRenamed"})
   greetedTwice(name: String): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
       method: "greet", argMapping: "userId: name"}, contextArguments: ["userId"])
+  namelessList(limit: Int!): [String] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.nameless.NamelessService",
+      method: "list"})
+  unlandedFilms(ids: [Int!]): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByServiceRenamed", argMapping: "filmIds: nowhere"})
+  contextPair: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet", argMapping: "userId: $context.userId"})
 }
 
 extend schema @assertContains(relation: "graphitron_occurrence_call_parameter_defect", rows: """
   coordinate,          position, parameter_name, code
   Query.unfilledFilms, 1,        ids,            PARAMETER_UNFILLED
+  Query.ambiguousFilms, 1,       filmIds,        PARAMETER_AMBIGUOUS
   Query.greetedTwice,  0,        userId,         PARAMETER_FILLED_TWICE
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defect", rows: """
+  coordinate
+  Query.unlandedFilms
+  Query.contextPair
+  Query.namelessList
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter", rows: """
   coordinate,          position
   Query.unfilledFilms, 1
   Query.greetedTwice,  0
+  Query.ambiguousFilms, 1
+  Query.unlandedFilms, 1
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", rows: """
+  coordinate,          position, fill,        context_key
+  Query.unlandedFilms, 0,        DSL_CONTEXT,
+  Query.contextPair,   0,        CONTEXT_KEY, userId
+  Query.namelessList,  0,        ARGUMENT,
   """)

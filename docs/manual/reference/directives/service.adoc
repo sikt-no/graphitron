@@ -70,7 +70,36 @@ public class SampleQueryService {
 }
 ----
 
-The framework constructs the service with whatever it can resolve from the request context (a `DSLContext` for the request's database session is the most common parameter); the rest of the method signature is the field's GraphQL arguments, mapped by name (or by `argMapping` overrides).
+The framework constructs the service with whatever it can resolve from the request context (a `DSLContext` for the request's database session is the most common parameter); the rest of the method signature is filled from the field's GraphQL arguments, as the next section sets out.
+
+[[parameter-filling]]
+== How each parameter is filled
+
+Each parameter of the method is filled once, by the first of these that reaches it:
+
+. *What you wrote.* An `argMapping` entry naming the parameter: an argument path, `$session`, or
+  `$session.<member>`. A `contextArguments` element naming it: the request context's value under
+  that key.
+. *Its type, for the jOOQ context.* A `DSLContext` or a `Configuration` parameter takes the
+  request's jOOQ context.
+. *Its name.* An argument of the field with the parameter's name.
+. *The call's source.* On a non-root field, a collection parameter takes the parent keys the batch
+  hands the call; see the batching constraint below.
+. *Its type.* A parameter still open takes an argument still open when each is the other's only
+  match by type: the same list-ness, and an element the argument's value arrives as. An input object
+  arrives as the class it is built into, which any class outside the JDK can be; an enum as a class
+  or a `String`; a scalar as its Java type, boxed or not. A sole `[EndreInput!]!` argument therefore
+  fills a sole `List<EndreInputRecord>` parameter whatever the two are called.
+
+A parameter an `argMapping` entry names is that entry's, even where the entry's path lands nowhere;
+the entry's own error reports it, and nothing else stands in. Three refusals name the parameter at
+the `@service`:
+
+* *Unfilled*: nothing above reaches it. Name it after its argument, or bind it in `argMapping` or
+  `contextArguments`.
+* *Ambiguous*: it could take more than one argument by type, or an argument it could take could go to
+  another parameter too. Name it after its argument, or bind it in `argMapping`.
+* *Filled twice*: an `argMapping` entry and a `contextArguments` element both name it. Write it once.
 
 [[arg-mapping]]
 == Binding a parameter to a nested input field

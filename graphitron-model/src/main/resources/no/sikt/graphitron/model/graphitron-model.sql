@@ -13916,6 +13916,81 @@ COMMENT ON VIEW graphitron_occurrence_call_parameter_written IS 'A fill an autho
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.context_key IS 'on CONTEXT_KEY, the key the request context carries the value under';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.session_member IS 'on SESSION_MEMBER, the member of the session handle';
 
+CREATE VIEW graphitron_occurrence_call_parameter_candidate
+  (graph_name, coordinate, position, parameter_name, argument_coordinate) AS
+-- A parameter no written fill, no type, no name and no source fills, paired with each argument of
+-- the call no pair has taken and no parameter is named after, where the two agree on type: the
+-- same list-ness, and an element the argument's value can arrive as. An input object arrives as a
+-- class the input is built into, which nothing in the schema names, so any class outside the JDK
+-- qualifies; an enum as a class or a String; a scalar as its Java type. A primitive erases to no
+-- class, so its element is the declared type, int for int.
+WITH open_parameter (graph_name, coordinate, position, parameter_name, element, many) AS (
+  SELECT s.graph_name, s.coordinate, p.position, p.parameter_name,
+         COALESCE(p.element_class, p.erased_class, p.parameter_type), COALESCE(p.delivery, '') = 'MANY'
+    FROM graphitron_occurrence_producer_service s
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    JOIN code_method_parameter p
+      ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
+     AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+   WHERE p.role NOT IN ('DSL_CONTEXT', 'CONFIGURATION')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
+                      WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
+                        AND pr.directive_name = 'service' AND pr.owner = 'service'
+                        AND pr.parameter_name = p.parameter_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_call_context_key k
+                      WHERE k.graph_name = s.graph_name AND k.coordinate = o.element_coordinate
+                        AND k.directive_name = 'service' AND k.owner = 'service'
+                        AND k.parameter_name = p.parameter_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence a
+                      WHERE a.graph_name = s.graph_name AND a.parent_coordinate = s.coordinate
+                        AND a.name = p.parameter_name AND a.kind = 'FIELD_ARGUMENT')
+     AND NOT (COALESCE(p.delivery, '') = 'MANY'
+              AND EXISTS (SELECT 1 FROM graphitron_occurrence_source os
+                           WHERE os.graph_name = s.graph_name AND os.coordinate = s.coordinate))
+),
+open_argument (graph_name, call_coordinate, coordinate, kind, named_type, is_list) AS (
+  SELECT a.graph_name, a.parent_coordinate, a.coordinate, t.kind, ga.named_type, ga.is_list
+    FROM graphitron_occurrence a
+    JOIN graphitron_occurrence_producer_service s
+      ON s.graph_name = a.graph_name AND s.coordinate = a.parent_coordinate
+    JOIN graphitron_argument ga ON ga.graph_name = a.graph_name AND ga.coordinate = a.element_coordinate
+    JOIN graphitron_type t ON t.graph_name = ga.graph_name AND t.type_name = ga.named_type
+   WHERE a.kind = 'FIELD_ARGUMENT'
+     AND NOT EXISTS (SELECT 1 FROM code_method_parameter p
+                      WHERE p.source_name = s.method_source_name AND p.class_name = s.method_class_name
+                        AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+                        AND p.parameter_name = a.name)
+     -- A pair's path landing on the argument or under it takes the argument.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                      JOIN graphitron_occurrence lo
+                        ON lo.graph_name = l.graph_name AND lo.coordinate = l.landing_coordinate
+                     WHERE l.graph_name = a.graph_name AND l.call_coordinate = a.parent_coordinate
+                       AND l.directive_name = 'service' AND l.owner = 'service'
+                       AND lo.argument_coordinate = a.coordinate)
+)
+SELECT p.graph_name, p.coordinate, p.position, p.parameter_name, a.coordinate
+  FROM open_parameter p
+  JOIN open_argument a ON a.graph_name = p.graph_name AND a.call_coordinate = p.coordinate
+ WHERE a.is_list = p.many
+   AND CASE a.kind
+         WHEN 'INPUT_OBJECT' THEN POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%'
+         WHEN 'ENUM' THEN (POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%')
+                          OR p.element = 'java.lang.String'
+         WHEN 'SCALAR' THEN EXISTS (
+           SELECT 1 FROM (VALUES ('ID', 'java.lang.String'), ('String', 'java.lang.String'),
+                                 ('Int', 'java.lang.Integer'), ('Int', 'int'),
+                                 ('Float', 'java.lang.Double'), ('Float', 'double'),
+                                 ('Boolean', 'java.lang.Boolean'), ('Boolean', 'boolean'))
+                         b (scalar, java_class)
+            WHERE b.scalar = a.named_type AND b.java_class = p.element)
+         ELSE FALSE END;
+COMMENT ON VIEW graphitron_occurrence_call_parameter_candidate IS 'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree. For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two.';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.coordinate IS 'the producer occurrence making the call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.position IS 'the open parameter''s position';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.parameter_name IS 'the open parameter''s name, what a message names';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.argument_coordinate IS 'the argument occurrence it could take';
+
 CREATE VIEW graphitron_occurrence_call_parameter_rule
   (graph_name, coordinate, position, parameter_name, fill, landing_coordinate, context_key,
    session_member) AS
@@ -13933,7 +14008,7 @@ SELECT w.graph_name, w.coordinate, w.position, w.parameter_name, w.fill, w.landi
 UNION
 -- A parameter nothing written names is inferred, in this order: the jOOQ context by its type, then
 -- an argument of the call by the parameter's name, then the call's source by a collection's shape
--- where the call has one. A parameter a pair names is the pair's to fill even where the pair fills
+-- where the call has one, then an argument by type. A parameter a pair names is the pair's to fill even where the pair fills
 -- nothing, so a pair whose path does not land is the pair's defect and no inference stands in.
 SELECT s.graph_name, s.coordinate, p.position, p.parameter_name,
        CASE WHEN p.role IN ('DSL_CONTEXT', 'CONFIGURATION') THEN 'DSL_CONTEXT'
@@ -13961,7 +14036,18 @@ SELECT s.graph_name, s.coordinate, p.position, p.parameter_name,
    AND (p.role IN ('DSL_CONTEXT', 'CONFIGURATION') OR a.coordinate IS NOT NULL
         OR (p.delivery = 'MANY'
             AND EXISTS (SELECT 1 FROM graphitron_occurrence_source os
-                         WHERE os.graph_name = s.graph_name AND os.coordinate = s.coordinate)));
+                         WHERE os.graph_name = s.graph_name AND os.coordinate = s.coordinate)))
+UNION
+-- Last, by type: a parameter and an argument that are each other's only candidate.
+SELECT c.graph_name, c.coordinate, c.position, c.parameter_name, 'ARGUMENT', c.argument_coordinate,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_call_parameter_candidate c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate o
+                    WHERE o.graph_name = c.graph_name AND o.coordinate = c.coordinate
+                      AND o.position = c.position AND o.argument_coordinate <> c.argument_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate o
+                    WHERE o.graph_name = c.graph_name AND o.argument_coordinate = c.argument_coordinate
+                      AND o.position <> c.position);
 COMMENT ON VIEW graphitron_occurrence_call_parameter_rule IS 'One row the call-parameter rule computes, in the shape graphitron_occurrence_call_parameter stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.';
 
 CREATE TABLE graphitron_occurrence_call_parameter (
@@ -14034,8 +14120,16 @@ SELECT DISTINCT w.graph_name, w.coordinate, w.position, w.parameter_name, 'PARAM
                     WHERE c.graph_name = w.graph_name AND c.coordinate = w.coordinate
                       AND c.position = w.position)
 UNION ALL
--- A parameter no fill reaches, where no pair names it: a pair that fills nothing is the pair's
--- defect, already reported where it is written.
+-- A parameter with candidates by type that did not bind: it could take more than one argument, or
+-- an argument it could take could go to another parameter, so nothing says which.
+SELECT DISTINCT c.graph_name, c.coordinate, c.position, c.parameter_name, 'PARAMETER_AMBIGUOUS'
+  FROM graphitron_occurrence_call_parameter_candidate c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter s
+                    WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
+                      AND s.position = c.position)
+UNION ALL
+-- A parameter no fill reaches and no argument could fill by type, where no pair names it: a pair
+-- that fills nothing is the pair's defect, already reported where it is written.
 SELECT s.graph_name, s.coordinate, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
   FROM graphitron_occurrence_producer_service s
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
@@ -14051,13 +14145,16 @@ SELECT s.graph_name, s.coordinate, p.position, p.parameter_name, 'PARAMETER_UNFI
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'service' AND pr.owner = 'service'
-                      AND pr.parameter_name = p.parameter_name);
+                      AND pr.parameter_name = p.parameter_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate c
+                    WHERE c.graph_name = s.graph_name AND c.coordinate = s.coordinate
+                      AND c.position = p.position);
 COMMENT ON VIEW graphitron_occurrence_call_parameter_defect IS 'A parameter of a service call that no fill or two fills reach: one row per producer occurrence, parameter and code. For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.coordinate IS 'the producer occurrence making the call';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.position IS 'the parameter''s position';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED or PARAMETER_FILLED_TWICE, codes of graphitron_defect_type';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE, codes of graphitron_defect_type';
 
 -- After the occurrence producers and the call parameters, the latest relations its arms read.
 CREATE VIEW graphitron_entry_defect_rule
@@ -19979,6 +20076,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence-call-parameter-fill',
    'one fill an author wrote for one parameter position of one producer occurrence''s call, in one graph',
    'graph_name, coordinate, position, fill, landing_coordinate, context_key, session_member', 'sdl'),
+  ('graph-occurrence-call-parameter-candidate',
+   'one argument one open parameter of one producer occurrence''s call could take by type, in one graph',
+   'graph_name, coordinate, position, argument_coordinate', 'sdl'),
   ('graph-occurrence-call-parameter-defect',
    'one parameter position of one producer occurrence''s call that one rule refuses, in one graph',
    'graph_name, coordinate, position, code', 'sdl'),
@@ -20391,6 +20491,8 @@ INSERT INTO graphitron_defect_type VALUES
    'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.', 'graphitron'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
    'A @service method has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and neither the jOOQ context''s type nor a collection the call''s source can hand it. Name it in argMapping or contextArguments, or rename it after the argument it takes.', 'graphitron'),
+  ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',
+   'A @service method''s parameter could take more than one of the call''s arguments by type, or an argument it could take could go to another parameter as well, so nothing says which: name it after its argument, or bind it in argMapping.', 'graphitron'),
   ('PARAMETER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_FILLED_TWICE',
    'A @service method''s parameter is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.', 'graphitron'),
   ('SERVICE_HOLDER_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_HOLDER_UNBUILDABLE',
@@ -20617,6 +20719,10 @@ INSERT INTO meta_relation VALUES
    'A fill an author wrote for one parameter of one service call: a $session pair, an argument path a pair lands, or a context key.',
    'For example argMapping: "ids: input.ids" on @service at Query.filmsByPath draws an ARGUMENT row landing on Query.filmsByPath(input.ids:).',
    'A view because both the rule and the defect read it: the rule takes a parameter''s one written fill, and two written fills are the defect''s, so the written fills are stated once beneath both.'),
+  ('graphitron_occurrence_call_parameter_candidate', 'graph-occurrence-call-parameter-candidate', 'graphitron',
+   'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree.',
+   'For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two.',
+   'A view because both the rule and the defect read it: a pair that is each other''s only candidate binds, and a parameter whose candidates do not pair off is ambiguous.'),
   ('graphitron_occurrence_call_parameter_rule', 'graph-occurrence-call-parameter', 'graphitron',
    'One row the call-parameter rule computes, in the shape graphitron_occurrence_call_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.',

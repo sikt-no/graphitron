@@ -1,15 +1,46 @@
-# What fills each parameter of a service call. Written fills come first: an argument path an
-# argMapping pair names, and a context key. Where nothing is written, the jOOQ context fills a
-# parameter of its type, an argument of the call fills the parameter of its name, and a collection
-# at a call with a source takes what the source hands it. An argument a call takes is bound to the
-# parameter that takes it, seen from the argument.
+# What fills each parameter of a service call. Written fills come first: the session handle or one of
+# its members, a context key, and an argument path an argMapping pair names, which may land on an
+# input field. Where nothing is written, the jOOQ context fills a parameter of its type, DSLContext or
+# Configuration; an argument of the call fills the parameter of its name; and a collection at a call
+# with a source takes what the source hands it, in each shape a batched child service signs. Last, a
+# parameter and an argument that are each other's only match by type bind whatever their names: a
+# list of an input object and a List of the record class it is built into, a list of Int and a
+# List<Integer>. A call
+# under a type with no table of its own is made once per parent and filled under each. An argument a
+# call takes is bound to the parameter that takes it, seen from the argument.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary"
+)
 
 type Film @table(name: "film") {
   title: String
   titleUppercase: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmService",
       method: "titleUppercase"})
+  titleLowercase: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "titleLowercase"})
+  titleTitlecase: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "titleTitlecase"})
+  sessionLabel: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummarySessionService",
+      method: "labelledFilms", argMapping: "label: $session.label"})
 }
+
+type FilmBlurb @table(name: "film") { description: String }
+type FilmBlurbHolder {
+  blurb: FilmBlurb
+  filmCount: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmCount"})
+}
+
+input FilmIdsInput { ids: [Int!] }
+input FilmDraftIn { title: String }
+type FilmDraftsCountedPayload { count: Int }
 
 extend type Query {
   callFilms(ids: [Int!]): [Film] @service(service: {
@@ -18,32 +49,70 @@ extend type Query {
   callFilmsRenamed(ids: [Int!]): [Film] @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByServiceRenamed", argMapping: "filmIds: ids"})
+  callFilmsByPath(input: FilmIdsInput): [Film] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByPath", argMapping: "filmIds: input.ids"})
   callGreeting: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
       method: "greet"}, contextArguments: ["userId"])
+  callPrincipal: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummarySessionService",
+      method: "labelOf", argMapping: "summary: $session"})
+  callCountOn: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmCountOn"})
+  callFilmsByType(wanted: [Int!]): [Film] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByServiceRenamed"})
+  countDrafts(in: [FilmDraftIn!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "count"})
+  holderOne(filmId: Int!): FilmBlurbHolder @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  holderTwo(filmId: Int!): FilmBlurbHolder @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
 }
 
 extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", rows: """
-  coordinate,            position, parameter_name, fill,        landing_coordinate,            context_key
-  Query.callFilms,        0,       dsl,            DSL_CONTEXT, ,
-  Query.callFilms,        1,       ids,            ARGUMENT,    Query.callFilms(ids:),
-  Query.callFilmsRenamed, 0,       dsl,            DSL_CONTEXT, ,
-  Query.callFilmsRenamed, 1,       filmIds,        ARGUMENT,    Query.callFilmsRenamed(ids:),
-  Query.callGreeting,     0,       userId,         CONTEXT_KEY, ,                              userId
-  Film.titleUppercase,    0,       filmIds,        SOURCE,      ,
-  Film.titleUppercase,    1,       dsl,            DSL_CONTEXT, ,
+  coordinate,                   position, parameter_name, fill,           landing_coordinate,            context_key, session_member
+  Query.callFilms,              0,        dsl,            DSL_CONTEXT,    ,                              ,
+  Query.callFilms,              1,        ids,            ARGUMENT,       Query.callFilms(ids:),         ,
+  Query.callFilmsRenamed,       0,        dsl,            DSL_CONTEXT,    ,                              ,
+  Query.callFilmsRenamed,       1,        filmIds,        ARGUMENT,       Query.callFilmsRenamed(ids:),  ,
+  Query.callFilmsByPath,        1,        filmIds,        ARGUMENT,       Query.callFilmsByPath(input.ids:), ,
+  Query.callGreeting,           0,        userId,         CONTEXT_KEY,    ,                              userId,
+  Query.callPrincipal,          0,        dsl,            DSL_CONTEXT,    ,                              ,
+  Query.callPrincipal,          1,        summary,        SESSION,        ,                              ,
+  Query.callCountOn,            0,        configuration,  DSL_CONTEXT,    ,                              ,
+  Query.callFilmsByType,        1,        filmIds,        ARGUMENT,       Query.callFilmsByType(wanted:), ,
+  Query.countDrafts,            0,        drafts,         ARGUMENT,       Query.countDrafts(in:),        ,
+  Query.holderOne,              0,        filmId,         ARGUMENT,       Query.holderOne(filmId:),      ,
+  Query.holderOne,              1,        dsl,            DSL_CONTEXT,    ,                              ,
+  Query.holderOne.filmCount,    0,        dsl,            DSL_CONTEXT,    ,                              ,
+  Query.holderTwo.filmCount,    0,        dsl,            DSL_CONTEXT,    ,                              ,
+  Film.titleUppercase,          0,        filmIds,        SOURCE,         ,                              ,
+  Film.titleUppercase,          1,        dsl,            DSL_CONTEXT,    ,                              ,
+  Film.titleLowercase,          0,        filmIds,        SOURCE,         ,                              ,
+  Film.titleTitlecase,          0,        films,          SOURCE,         ,                              ,
+  Film.sessionLabel,            0,        films,          SOURCE,         ,                              ,
+  Film.sessionLabel,            1,        dsl,            DSL_CONTEXT,    ,                              ,
+  Film.sessionLabel,            2,        label,          SESSION_MEMBER, ,                              ,            label
   """)
 
 extend schema @assertContains(relation: "graphitron_occurrence_parameter", rows: """
-  coordinate,                   call_coordinate,        position
-  Query.callFilms(ids:),        Query.callFilms,        1
-  Query.callFilmsRenamed(ids:), Query.callFilmsRenamed, 1
+  coordinate,                        call_coordinate,        position
+  Query.callFilms(ids:),             Query.callFilms,        1
+  Query.callFilmsRenamed(ids:),      Query.callFilmsRenamed, 1
+  Query.callFilmsByPath(input.ids:), Query.callFilmsByPath,  1
+  Query.holderOne(filmId:),          Query.holderOne,        0
+  Query.callFilmsByType(wanted:),    Query.callFilmsByType,  1
+  Query.countDrafts(in:),            Query.countDrafts,      0
   """)
 
+# Nothing in this document is unfilled or filled twice.
 extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defect", rows: """
-  coordinate
-  Query.callFilms
-  Query.callFilmsRenamed
-  Query.callGreeting
-  Film.titleUppercase
+  code
+  PARAMETER_UNFILLED
+  PARAMETER_AMBIGUOUS
+  PARAMETER_FILLED_TWICE
   """)
