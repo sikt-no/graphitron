@@ -73,7 +73,12 @@ class FieldColumnTableTest {
     @Test
     void aWrittenPathNoJoinPathReachesIsSilent() {
         assertThat(scope("Film", "credits")).containsInstanceOf(Scope.Silent.class);
-        assertThat(scope("FilmFilter", "languageName")).containsInstanceOf(Scope.Silent.class);
+    }
+
+    @Test
+    void anInputFieldsWrittenPathResolvesWhereItsJoinPathLands() {
+        assertThat(scope("FilmFilter", "languageName")).get()
+            .isInstanceOfSatisfying(Scope.Resolved.class, r -> assertThat(r.table().tableName()).isEqualTo("language"));
     }
 
     @Test

@@ -8,9 +8,18 @@
 # its target table the last step's. A need nothing covers is INFERRED over the one key joining its
 # two tables, and its one step rides that key. The defects these rules raise are
 # defects/path-rule-defects.
+#
+# An argument's or input field's need starts where its field lands for the type, one need per type
+# its field reaches. One writing a path follows its own @referenceFor naming the type, else its own
+# @reference, whatever type the need reaches; nothing is inherited at an argument. One carrying
+# @nodeId and writing nothing for the need is INFERRED over the one key its start declares to the
+# node's table, and that table is where its path lands.
+
+interface Node { id: ID! }
 
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
-type Store @table(name: "store") {
+type Store implements Node @table(name: "store") @node {
+  id: ID!
   storeId: Int @field(name: "store_id")
   "A key the departing table declares, ridden toward what it references."
   manager: Staff @reference(path: [{key: "store_manager_staff_id_fkey"}])
@@ -58,6 +67,10 @@ type Language @table(name: "language") {
 }
 
 extend type Query {
+  people(
+    "Per member of Person, to the node's table: Customer inferred, Staff stated."
+    storeId: ID @nodeId(typeName: "Store") @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+  ): [Person!]!
   customers: [Customer!]!
   staff: [Staff!]!
   stores: [Store!]!
@@ -72,6 +85,8 @@ extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPT
   Customer.city,             String,      JOIN, WRITTEN
   Customer.homeAddress,      Address,     JOIN, INHERITED
   Customer.store,            Store,       JOIN, INFERRED
+  Query.people(storeId:),    Customer,    JOIN, INFERRED
+  Query.people(storeId:),    Staff,       JOIN, WRITTEN
   Language.media,            FilmItem,    JOIN, WRITTEN
   Language.media,            ShortItem,   JOIN, WRITTEN
   Staff.address,             Address,     JOIN, INFERRED
@@ -104,6 +119,7 @@ extend schema @expectEquals(relation: "graphitron_join_path_claimed", rows: """
   coordinate,                target_type, claim_coordinate,         claim_target_type
   Customer.city,             String,      Customer.city,            String
   Customer.homeAddress,      Address,     Person.homeAddress,       Address
+  Query.people(storeId:),    Staff,       Query.people(storeId:),   Staff
   Language.media,            FilmItem,    Language.media,           MediaItem
   Language.media,            ShortItem,   Language.media,           MediaItem
   Staff.homeAddress,         Address,     Person.homeAddress,       Address
@@ -161,4 +177,30 @@ extend schema @assertAbsent(relation: "graphitron_join_path_stop", rows: """
   coordinate
   Staff.store
   Store.peopleByCondition
+  """)
+
+# An argument's path starts where its field lands for each type, the member's table, and lands on
+# the node's table: Customer over customer's one key to store, Staff by the key its @referenceFor
+# writes.
+extend schema @expectEquals(relation: "graphitron_path_need", where: "coordinate = 'Query.people(storeId:)'", rows: """
+  coordinate,              target_type, start_table, landing_table
+  Query.people(storeId:),  Customer,    customer,    customer
+  Query.people(storeId:),  Staff,       staff,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path", where: "coordinate = 'Query.people(storeId:)'", rows: """
+  coordinate,              target_type, target_table
+  Query.people(storeId:),  Customer,    store
+  Query.people(storeId:),  Staff,       store
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_claimed", where: "coordinate = 'Query.people(storeId:)'", rows: """
+  coordinate,              target_type, claim_coordinate,        claim_target_type
+  Query.people(storeId:),  Staff,       Query.people(storeId:),  Staff
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_column", where: "coordinate = 'Query.people(storeId:)'", rows: """
+  coordinate,              target_type, position, ordinal, from_table, from_column, to_table, to_column
+  Query.people(storeId:),  Customer,    0,        0,       customer,   store_id,    store,    store_id
+  Query.people(storeId:),  Staff,       0,        0,       staff,      store_id,    store,    store_id
   """)

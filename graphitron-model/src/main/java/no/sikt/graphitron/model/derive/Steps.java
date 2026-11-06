@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
@@ -476,8 +477,10 @@ public final class Steps {
             .set(s.TO_TABLE_REF, excluded(s.TO_TABLE_REF))
             .execute();
 
-        // The one foreign key between two tables, in whichever direction it is declared.
+        // The one foreign key between two tables, in whichever direction it is declared for an
+        // output field, and the one the start declares for an argument or input field.
         var rc = SQL_REFERENTIAL_CONSTRAINT.as("rc");
+        var ko = GRAPHITRON_OCCURRENCE.as("ko");
         var ik = GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
         dsl.insertInto(ik)
             .columns(ik.GRAPH_NAME, ik.COORDINATE, ik.TARGET_TYPE, ik.POSITION,
@@ -492,12 +495,14 @@ public final class Steps {
                     j.TARGET_TYPE.eq(p.TARGET_TYPE))
                 .join(n).on(n.GRAPH_NAME.eq(p.GRAPH_NAME), n.COORDINATE.eq(p.COORDINATE),
                     n.TARGET_TYPE.eq(p.TARGET_TYPE))
+                .join(ko).on(ko.GRAPH_NAME.eq(p.GRAPH_NAME), ko.COORDINATE.eq(p.COORDINATE))
                 .join(rc).on(rc.SOURCE_NAME.eq(n.START_SOURCE_NAME).and(rc.TABLE_SCHEMA.eq(n.START_SCHEMA))
                         .and(rc.TABLE_NAME.eq(n.START_TABLE))
                         .and(rc.REFERENCED_SOURCE_NAME.eq(j.TARGET_SOURCE_NAME))
                         .and(rc.REFERENCED_SCHEMA.eq(j.TARGET_SCHEMA))
                         .and(rc.REFERENCED_TABLE.eq(j.TARGET_TABLE))
-                    .or(rc.SOURCE_NAME.eq(j.TARGET_SOURCE_NAME).and(rc.TABLE_SCHEMA.eq(j.TARGET_SCHEMA))
+                    .or(ko.KIND.eq("FIELD").and(rc.SOURCE_NAME.eq(j.TARGET_SOURCE_NAME))
+                        .and(rc.TABLE_SCHEMA.eq(j.TARGET_SCHEMA))
                         .and(rc.TABLE_NAME.eq(j.TARGET_TABLE))
                         .and(rc.REFERENCED_SOURCE_NAME.eq(n.START_SOURCE_NAME))
                         .and(rc.REFERENCED_SCHEMA.eq(n.START_SCHEMA))
@@ -612,6 +617,8 @@ public final class Steps {
         var f = GRAPHITRON_FIELD.as("f");
         var nv = GRAPHITRON_FIELD_TARGET.as("nv");
         var nt = GRAPHITRON_TYPE.as("nt");
+        var a = GRAPHITRON_ARGUMENT.as("a");
+        var at = GRAPHITRON_TYPE.as("at");
         Field<String> kSource = (Field<String>) k.field("CONSTRAINT_SOURCE_NAME");
         Field<String> kSchema = (Field<String>) k.field("CONSTRAINT_SCHEMA");
         Field<String> kTable = (Field<String>) k.field("CONSTRAINT_TABLE");
@@ -620,9 +627,13 @@ public final class Steps {
             .and(s.FROM_SCHEMA.eq(s.TO_SCHEMA)).and(s.FROM_TABLE.eq(s.TO_TABLE));
         Condition departsDeclaring = s.FROM_SOURCE_NAME.eq(kSource).and(s.FROM_SCHEMA.eq(kSchema))
             .and(s.FROM_TABLE.eq(kTable));
-        // A key from a table to itself departs the declaring row where the field reads one row.
-        Condition singleValued = condition(f.IS_LIST).or(nv.WRAPPER_TYPE_NAME.isNotNull()).not()
-            .or(nt.KIND.in("SCALAR", "ENUM"));
+        // A key from a table to itself departs the declaring row where the field reads one row, or
+        // the argument holds one value.
+        Condition singleValued = f.COORDINATE.isNotNull()
+                .and(condition(f.IS_LIST).or(nv.WRAPPER_TYPE_NAME.isNotNull()).not()
+                    .or(nt.KIND.in("SCALAR", "ENUM")))
+            .or(a.COORDINATE.isNotNull()
+                .and(condition(a.IS_LIST).not().or(at.KIND.in("SCALAR", "ENUM"))));
         Condition onFrom = selfReferencing.not().and(departsDeclaring)
             .or(selfReferencing.and(singleValued));
         writeColumns(dsl, dsl.select(s.GRAPH_NAME, s.COORDINATE, s.TARGET_TYPE, s.POSITION,
@@ -651,6 +662,8 @@ public final class Steps {
                 .leftJoin(nv).on(nv.GRAPH_NAME.eq(f.GRAPH_NAME), nv.TYPE_NAME.eq(f.TYPE_NAME),
                     nv.FIELD_NAME.eq(f.FIELD_NAME))
                 .leftJoin(nt).on(nt.GRAPH_NAME.eq(f.GRAPH_NAME), nt.TYPE_NAME.eq(f.NAMED_TYPE))
+                .leftJoin(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME), a.COORDINATE.eq(o.ELEMENT_COORDINATE))
+                .leftJoin(at).on(at.GRAPH_NAME.eq(a.GRAPH_NAME), at.TYPE_NAME.eq(a.NAMED_TYPE))
                 .where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.eq(touchedAt)),
             touchedAt);
     }

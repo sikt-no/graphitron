@@ -72,7 +72,16 @@ union Searchable = Film | Language
 input FilmFilter {
   title: String
   span: YearSpan
+  # Its own path, from film, where its argument starts, to language.
+  languageName: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
 }
+
+# Under an argument writing a path: its field starts and lands where the argument starts.
+input LanguageMatch { languageId: Int @field(name: "language_id") }
+
+type Customer @table(name: "customer") { customerId: Int @field(name: "customer_id") }
+
+type Address implements Node @table(name: "address") @node { id: ID! }
 
 input YearSpan { from: Int @field(name: "release_year") }
 
@@ -115,6 +124,14 @@ type DeletedLanguagesPayload { deletedIds: [ID!] }
 
 extend type Query {
   films(filter: FilmFilter, first: Int): [Film!]!
+  # A written argument path, from film to language.
+  filmsByLanguageName(name: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")): [Film!]!
+  # An argument of an input type writing a path.
+  filmsByLanguage(language: LanguageMatch @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+  # A named node id with nothing written, inferred over customer's one key to address.
+  customers(addressId: ID @nodeId(typeName: "Address")): [Customer!]!
+  # A bare node id, the node its field returns, on that node's own table.
+  languages(id: ID @nodeId): [Language!]!
   search(languageId: Int @field(name: "language_id")): [Searchable]
   topMedia(title: String): MediaItem
   rows(actorId: Int!, minLength: Int!): [Row!]!
@@ -141,8 +158,9 @@ type Mutation {
 
 # Every path that is not empty: the two output fields between two tables one key joins, and each
 # need a claim covers, its path walked: a written path, a @referenceFor, a single-table interface's
-# implementation, the field of a service's carrier, a scalar, a plain type reached by a path, and a
-# root field's @routine, its path ending on the derived table it returns.
+# implementation, the field of a service's carrier, a scalar, a plain type reached by a path, a
+# root field's @routine, its path ending on the derived table it returns, an argument's and an input
+# field's own @reference, and a named node id inferred over the one key its argument's start declares.
 extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPTY'", rows: """
   coordinate,                      target_type,     kind, origin
   Film.actorRows,                  FilmActor,       JOIN, INFERRED
@@ -155,6 +173,10 @@ extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPT
   FilmActor.media,                 Film,            JOIN, WRITTEN
   Query.filmDetailsBatch.language, Language,        JOIN, WRITTEN
   Query.rows,                      Row,             JOIN, WRITTEN
+  Query.customers(addressId:),     Customer,        JOIN, INFERRED
+  Query.films(filter.languageName:), Film,          JOIN, WRITTEN
+  Query.filmsByLanguage(language:), Film,           JOIN, WRITTEN
+  Query.filmsByLanguageName(name:), Film,           JOIN, WRITTEN
   """)
 
 # An empty path for a scalar, a nested object and its field, an argument, an input field, a write
@@ -226,4 +248,54 @@ extend schema @expectEquals(relation: "graphitron_path",
   Film.titleTexts.nn,         String,      JOIN, EMPTY
   Film.castFilms(minLength:), ActorFilm,   JOIN, EMPTY
   Film.castFilms.filmId,      Int,         JOIN, EMPTY
+  """)
+
+# An argument's or input field's own path starts where its field lands, film, and ends where its
+# steps do; a named node id with nothing written ends on the node's table over its start's one key;
+# what hangs under an argument writing a path, and a bare node id on its own node's table, end where
+# they start.
+extend schema @expectEquals(relation: "graphitron_join_path", where: """
+  coordinate IN ('Query.filmsByLanguageName(name:)', 'Query.filmsByLanguage(language:)',
+                 'Query.filmsByLanguage(language.languageId:)', 'Query.films(filter.languageName:)',
+                 'Query.customers(addressId:)', 'Query.languages(id:)')
+  """, rows: """
+  coordinate,                                  target_type, target_table
+  Query.customers(addressId:),                 Customer,    address
+  Query.films(filter.languageName:),           Film,        language
+  Query.filmsByLanguage(language:),            Film,        language
+  Query.filmsByLanguage(language.languageId:), Film,        film
+  Query.filmsByLanguageName(name:),            Film,        language
+  Query.languages(id:),                        Language,    language
+  """)
+
+extend schema @assertContains(relation: "graphitron_path", rows: """
+  coordinate,                                  target_type, kind, origin
+  Query.filmsByLanguage(language.languageId:), Film,        JOIN, EMPTY
+  Query.languages(id:),                        Language,    JOIN, EMPTY
+  """)
+
+# Each follows its own claim, matched by the element: the claim reaches the declared type, a scalar or
+# an input type, while the need reaches the type the field returns.
+extend schema @expectEquals(relation: "graphitron_join_path_claimed", where: """
+  coordinate IN ('Query.filmsByLanguageName(name:)', 'Query.filmsByLanguage(language:)',
+                 'Query.films(filter.languageName:)')
+  """, rows: """
+  coordinate,                         target_type, claim_coordinate,                 claim_target_type
+  Query.films(filter.languageName:),  Film,        FilmFilter.languageName,          String
+  Query.filmsByLanguage(language:),   Film,        Query.filmsByLanguage(language:), LanguageMatch
+  Query.filmsByLanguageName(name:),   Film,        Query.filmsByLanguageName(name:), String
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step", where: """
+  coordinate IN ('Query.filmsByLanguageName(name:)', 'Query.customers(addressId:)')
+  """, rows: """
+  coordinate,                        target_type, position, element_place, from_table, to_table
+  Query.customers(addressId:),       Customer,    0,        ,              customer,   address
+  Query.filmsByLanguageName(name:),  Film,        0,        0,             film,       language
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key",
+    where: "coordinate = 'Query.customers(addressId:)'", rows: """
+  coordinate,                   target_type, position, constraint_name
+  Query.customers(addressId:),  Customer,    0,        customer_address_id_fkey
   """)

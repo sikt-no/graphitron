@@ -6,7 +6,11 @@
 # its join path saying where it lands. An argument reaches what its field reaches, starting where
 # the field lands, where its join path lands for a field that writes a path; under a root field with
 # no path it expands its field's target the same way, starting on each type's table, or on its own
-# source table, the write's, where the type has none. An input field copies its parent's. Every
+# source table, the write's, where the type has none. An input field starts where its parent does
+# and lands where it lands, or on its start where the parent writes a path. An argument or input
+# field writing a path lands on no table yet, as a field does: filmsByLanguageName(name:),
+# filmsByLanguage(language:) and films(filter.languageName:), while language.languageId under the
+# argument writing a path starts and lands on film, where the argument starts. Every
 # start is one of the occurrence's source table rows, start_table_ref saying so. The schema is
 # scenarios/occurrence-source's, with two fields added on FilmActor for the polymorphic targets and
 # Film.castFilms, a path ending on a @routine.
@@ -68,7 +72,16 @@ union Searchable = Film | Language
 input FilmFilter {
   title: String
   span: YearSpan
+  # Its own path, from film, where its argument starts, to language.
+  languageName: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
 }
+
+# Under an argument writing a path: its field starts and lands where the argument starts.
+input LanguageMatch { languageId: Int @field(name: "language_id") }
+
+type Customer @table(name: "customer") { customerId: Int @field(name: "customer_id") }
+
+type Address implements Node @table(name: "address") @node { id: ID! }
 
 input YearSpan { from: Int @field(name: "release_year") }
 
@@ -111,6 +124,14 @@ type DeletedLanguagesPayload { deletedIds: [ID!] }
 
 extend type Query {
   films(filter: FilmFilter, first: Int): [Film!]!
+  # A written argument path, from film to language.
+  filmsByLanguageName(name: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")): [Film!]!
+  # An argument of an input type writing a path.
+  filmsByLanguage(language: LanguageMatch @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+  # A named node id with nothing written, inferred over customer's one key to address.
+  customers(addressId: ID @nodeId(typeName: "Address")): [Customer!]!
+  # A bare node id, the node its field returns, on that node's own table.
+  languages(id: ID @nodeId): [Language!]!
   search(languageId: Int @field(name: "language_id")): [Searchable]
   topMedia(title: String): MediaItem
   rows(actorId: Int!, minLength: Int!): [Row!]!
@@ -167,6 +188,14 @@ extend schema @expectEquals(relation: "graphitron_path_need",
   Mutation.deleteLanguages(in.languageId:), DeletedLanguagesPayload, language,        language,        language
   Query.filmDetailsBatch.filmId,            Int,                     film,            film,            film
   Query.filmDetailsBatch.language,          Language,                film,            film,            language
+  Address.id,                               ID,                      address,         address,         address
+  Customer.customerId,                      Int,                     customer,        customer,        customer
+  Query.customers(addressId:),              Customer,                customer,        customer,        customer
+  Query.films(filter.languageName:),        Film,                    film,            film,
+  Query.filmsByLanguage(language:),         Film,                    film,            film,
+  Query.filmsByLanguage(language.languageId:), Film,                 film,            film,            film
+  Query.filmsByLanguageName(name:),         Film,                    film,            film,
+  Query.languages(id:),                     Language,                language,        language,        language
   Query.films(filter:),                     Film,                    film,            film,            film
   Query.films(filter.span:),                Film,                    film,            film,            film
   Query.films(filter.span.from:),           Film,                    film,            film,            film

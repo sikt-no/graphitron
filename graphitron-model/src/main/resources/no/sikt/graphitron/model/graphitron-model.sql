@@ -10789,6 +10789,14 @@ WITH need (graph_name, coordinate, target_type, element_coordinate, type_name, f
     JOIN graphitron_field f
       ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
 ),
+-- An argument's or input field's needs, each with the element it is an occurrence of.
+slot_need (graph_name, coordinate, target_type, element_coordinate) AS (
+  SELECT n.graph_name, n.coordinate, n.target_type, o.element_coordinate
+    FROM graphitron_path_need n
+    JOIN graphitron_occurrence o
+      ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate
+     AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+),
 -- Each claim an interface's same-named field makes for a need of an implementation: its
 -- @referenceFor naming the need's type first, else its field claim where that walks to the type,
 -- the type itself or a member of the single-table interface it targets. Only where the field's own
@@ -10859,14 +10867,33 @@ SELECT i.graph_name, i.coordinate, i.target_type, MIN(i.claim_coordinate),
                     WHERE j.graph_name = i.graph_name AND j.coordinate = i.coordinate
                       AND j.target_type = i.target_type)
  GROUP BY i.graph_name, i.coordinate, i.target_type
-HAVING COUNT(*) = 1;
-COMMENT ON VIEW graphitron_join_path_claimed_rule IS 'The claim an output field''s need follows: one row per need of a field occurrence that a claim covers and walks to, with the claim and whether it is the field''s own or inherited. For example Staff.homeAddress, writing nothing, follows (Person.homeAddress, Address) as INHERITED, and Store.people''s need for Staff follows its own @referenceFor, (Store.people, Staff).';
+HAVING COUNT(*) = 1
+UNION ALL
+-- An argument's or input field's own @referenceFor naming the need's type. Nothing is inherited at
+-- an argument or input field.
+SELECT s.graph_name, s.coordinate, s.target_type, rf.element_coordinate, rf.target_type, 'WRITTEN'
+  FROM slot_need s
+  JOIN graphitron_join_path_claim rf
+    ON rf.graph_name = s.graph_name AND rf.element_coordinate = s.element_coordinate
+   AND rf.claim_kind = 'REFERENCE_FOR' AND rf.target_type = s.target_type
+UNION ALL
+-- Else its own @reference, matched by the element alone: that claim reaches the declared type, a
+-- scalar or an input type, and not the type the need reaches.
+SELECT s.graph_name, s.coordinate, s.target_type, c.element_coordinate, c.target_type, 'WRITTEN'
+  FROM slot_need s
+  JOIN graphitron_join_path_claim c
+    ON c.graph_name = s.graph_name AND c.element_coordinate = s.element_coordinate
+   AND c.claim_kind IN ('ARGUMENT', 'INPUT_FIELD')
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim rf
+                    WHERE rf.graph_name = s.graph_name AND rf.element_coordinate = s.element_coordinate
+                      AND rf.claim_kind = 'REFERENCE_FOR' AND rf.target_type = s.target_type);
+COMMENT ON VIEW graphitron_join_path_claimed_rule IS 'The claim a need follows: one row per need of an occurrence that a claim covers and walks to, with the claim and whether it is the element''s own or inherited. For example Staff.homeAddress, writing nothing, follows (Person.homeAddress, Address) as INHERITED, Store.people''s need for Staff follows its own @referenceFor, (Store.people, Staff), and an argument writing @reference follows its own claim for every type its field reaches.';
 -- COMMENT ON COLUMN graphitron_join_path_claimed_rule.graph_name IS 'the owning graph''s partition, carried from the need';
--- COMMENT ON COLUMN graphitron_join_path_claimed_rule.coordinate IS 'the field occurrence whose need this is';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.coordinate IS 'the occurrence whose need this is: a field, an argument or an input field';
 -- COMMENT ON COLUMN graphitron_join_path_claimed_rule.target_type IS 'the type the need reaches; with the two columns before it, the need''s key';
--- COMMENT ON COLUMN graphitron_join_path_claimed_rule.claim_coordinate IS 'the declared element the followed claim is written on: the field itself, or an interface''s same-named field';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.claim_coordinate IS 'the declared element the followed claim is written on: the element itself, or an interface''s same-named field';
 -- COMMENT ON COLUMN graphitron_join_path_claimed_rule.claim_target_type IS 'the type the followed claim reaches; with the coordinate before it, the claim''s key';
--- COMMENT ON COLUMN graphitron_join_path_claimed_rule.origin IS 'WRITTEN for the field''s own claim and INHERITED for an interface field''s, as graphitron_path.origin takes it';
+-- COMMENT ON COLUMN graphitron_join_path_claimed_rule.origin IS 'WRITTEN for the element''s own claim and INHERITED for an interface field''s, as graphitron_path.origin takes it';
 
 CREATE VIEW graphitron_join_path_step_rule
   (graph_name, claim_coordinate, claim_target_type, position, element_place,
@@ -10874,7 +10901,7 @@ CREATE VIEW graphitron_join_path_step_rule
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, move,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from,
    routine_source_name, routine_schema, routine_name) AS
--- Each claim on an output field: where it was written, which of its places the path starts at, a
+-- Each claim on a field or an input field: where it was written, which of its places the path starts at, a
 -- root field's leading @routine being its producer's call and so no step, whether the field reads
 -- one row, which is the way a key from a table to itself is ridden, and whether it is a mutation's,
 -- which never takes the step after a routine. The flags are CASE expressions rather than bare
@@ -10904,6 +10931,17 @@ WITH claim (graph_name, claim_coordinate, claim_target_type, source_name, anchor
       ON nv.graph_name = f.graph_name AND nv.type_name = f.type_name AND nv.field_name = f.field_name
     JOIN graphitron_type nt ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
     LEFT JOIN graphql_root_operation ro ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+   UNION ALL
+  -- Each claim on an argument, its path starting at its first place, read as a field reading one
+  -- row where the argument holds one value.
+  SELECT c.graph_name, c.element_coordinate, c.target_type, c.source_name, c.source_line,
+         c.source_column, 0,
+         CASE WHEN NOT a.is_list OR at.kind IN ('SCALAR', 'ENUM') THEN TRUE ELSE FALSE END,
+         FALSE
+    FROM graphitron_join_path_claim c
+    JOIN graphitron_argument a
+      ON a.graph_name = c.graph_name AND a.coordinate = c.element_coordinate
+    JOIN graphitron_type at ON at.graph_name = a.graph_name AND at.type_name = a.named_type
 ),
 -- Each written element from the path's first place on, at the position its step takes, with
 -- whether it is the claim's only element and whether it names a key or a table.
@@ -15419,8 +15457,8 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
           COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column)
 UNION ALL
 -- A named node id whose written path ends on a table other than the node's: the key the id packs or
--- unpacks is not on the rows the path reaches. Reported once per @nodeId, the detail the table
--- reached. An argument's or input field's own @reference states no path yet, so is not judged.
+-- unpacks is not on the rows the path reaches, an argument's or input field's own path included.
+-- Reported once per @nodeId, the detail the table reached.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
        'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
   FROM graphitron_binding_claim cl
@@ -20201,9 +20239,9 @@ INSERT INTO meta_relation VALUES
    'For example {key: "film_actor_actor_id_fkey"} written on a Film field stops the path from film at position 0, no move leaving film.',
    'A stop is a step not taken, which graphitron_join_path_step cannot hold, a row there being a step; a stopped need has its steps and its stop and no path row, a met need its path and its steps. It is the break the editor and the messages name, at the written element the author edits where there is one.'),
   ('graphitron_join_path_claimed_rule', 'path-need', 'graphitron',
-   'The claim an output field''s need follows: one row per need of a field occurrence that a claim covers and walks to, with the claim and whether it is the field''s own or inherited.',
-   'For example Staff.homeAddress, writing nothing, follows (Person.homeAddress, Address) as INHERITED, and Store.people''s need for Staff follows its own @referenceFor, (Store.people, Staff).',
-   'The rule for graphitron_join_path_claimed, kept in the catalog where the gates reading stored definitions see what it reads. The precedence is the manual''s: the field''s own @referenceFor naming the type, then its own claim, then exactly one inherited, an extending interface overriding the one it extends and @referenceFor inherited member by member. The step stage walks each row and writes it beside the path once the walk reaches the target.'),
+   'The claim a need follows: one row per need of an occurrence that a claim covers and walks to, with the claim and whether it is the element''s own or inherited.',
+   'For example Staff.homeAddress, writing nothing, follows (Person.homeAddress, Address) as INHERITED, Store.people''s need for Staff follows its own @referenceFor, (Store.people, Staff), and an argument writing @reference follows its own claim for every type its field reaches.',
+   'The rule for graphitron_join_path_claimed, kept in the catalog where the gates reading stored definitions see what it reads. The precedence is the manual''s: the field''s own @referenceFor naming the type, then its own claim, then exactly one inherited, an extending interface overriding the one it extends and @referenceFor inherited member by member. An argument or input field follows its own @referenceFor naming the type, else its own claim matched by the element alone, and inherits nothing. The step stage walks each row and writes it beside the path once the walk reaches the target.'),
   ('graphitron_join_path_step_rule', 'path-step-move', 'graphitron',
    'A move one written element of a claim allows from a table: one row per claim, position, departure and move, and one row per element with no destination.',
    'For example {key: "customer_address_id_fkey"} on Customer.address allows customer to address, and {table: "language"} on a Film field allows film to language over each of film''s two keys.',

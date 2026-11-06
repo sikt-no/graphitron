@@ -9,9 +9,11 @@ import org.jooq.Table;
 
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
@@ -51,9 +53,13 @@ import static org.jooq.impl.DSL.when;
  * parent's service or write. Where an output field starts and lands on two different tables joined
  * by exactly one route it is {@code INFERRED}, its target its landing: one foreign key in either
  * direction, or, from the derived table a routine returns, the landing's primary key, every column
- * of it matched by name among the routine's result columns. The one step it takes is
- * {@link Steps}'s to write. Any other uncovered field between two tables, the same table included,
- * is a defect, which {@code graphitron_entry_defect_rule} raises.
+ * of it matched by name among the routine's result columns. An argument or input field carrying
+ * {@code @nodeId}, whose node is its {@code typeName} or else the type the need reaches, is
+ * {@code INFERRED} where its start declares exactly one foreign key to the node's table, its target
+ * that table; one starting on the node's table, or declaring no key or several, stays {@code EMPTY},
+ * which {@code graphitron_entry_defect_rule} judges. The one step it takes is {@link Steps}'s to
+ * write. Any other uncovered field between two tables, the same table included, is a defect, which
+ * {@code graphitron_entry_defect_rule} raises.
  *
  * <p>The foreign keys are counted off {@code sql_table_reference}, which holds the count per ordered
  * pair of tables, both orders summed; a self-referencing key never counts, a field starting where
@@ -152,14 +158,32 @@ public final class Paths {
         Condition inferred = o.KIND.eq("FIELD").andNot(sameTable)
             .and(startsOnFunction(n).and(primaryKeyMatched(n))
                 .or(startsOnFunction(n).not().and(foreignKeys(n).eq(1))));
+        // The node an argument's or input field's @nodeId names, its typeName or else the type the
+        // need reaches, and that node's table. A bare one whose need reaches no node takes the one
+        // node over where its path lands, which with nothing written is its start: nothing to infer.
+        var cl = GRAPHITRON_BINDING_CLAIM.as("nic");
+        var gn = GRAPHITRON_NODE.as("nin");
+        var nt = GRAPHITRON_TABLETYPE.as("nit");
+        Condition nodeInferred = sameTable.and(nt.TABLE_NAME.isNotNull())
+            .andNot(nt.TABLE_SOURCE_NAME.eq(n.START_SOURCE_NAME).and(nt.TABLE_SCHEMA.eq(n.START_SCHEMA))
+                .and(nt.TABLE_NAME.eq(n.START_TABLE)))
+            .and(declaredKeys(n, nt).eq(1));
         return select(n.GRAPH_NAME.as("graph_name"), n.COORDINATE.as("coordinate"),
                 n.TARGET_TYPE.as("target_type"),
-                when(sameTable, inline(EMPTY)).otherwise(inline(INFERRED)).as("origin"),
-                n.LANDING_SOURCE_NAME.as("target_source_name"), n.LANDING_SCHEMA.as("target_schema"),
-                n.LANDING_TABLE.as("target_table"))
+                when(nodeInferred, inline(INFERRED)).when(sameTable, inline(EMPTY))
+                    .otherwise(inline(INFERRED)).as("origin"),
+                when(nodeInferred, nt.TABLE_SOURCE_NAME).otherwise(n.LANDING_SOURCE_NAME)
+                    .as("target_source_name"),
+                when(nodeInferred, nt.TABLE_SCHEMA).otherwise(n.LANDING_SCHEMA).as("target_schema"),
+                when(nodeInferred, nt.TABLE_NAME).otherwise(n.LANDING_TABLE).as("target_table"))
             .from(n)
             .join(o).on(o.GRAPH_NAME.eq(n.GRAPH_NAME), o.COORDINATE.eq(n.COORDINATE),
                 o.TOUCHED_AT.eq(touchedAt), o.DEPTH.eq(val(depth)))
+            .leftJoin(cl).on(cl.GRAPH_NAME.eq(o.GRAPH_NAME), cl.COORDINATE.eq(o.ELEMENT_COORDINATE),
+                cl.KIND.eq("NODE_ID"), o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"))
+            .leftJoin(gn).on(gn.GRAPH_NAME.eq(cl.GRAPH_NAME),
+                gn.TYPE_NAME.eq(coalesce(cl.NAMED, n.TARGET_TYPE)))
+            .leftJoin(nt).on(nt.GRAPH_NAME.eq(gn.GRAPH_NAME), nt.TYPE_NAME.eq(gn.TYPE_NAME))
             .where(n.GRAPH_NAME.eq(graph), n.TOUCHED_AT.eq(touchedAt), n.LANDING_TABLE.isNotNull())
             .andNot(covered(o, n))
             .and(empty.or(inferred));
@@ -245,6 +269,16 @@ public final class Paths {
                 .andNotExists(selectOne().from(fc)
                     .where(fc.SOURCE_NAME.eq(n.START_SOURCE_NAME), fc.TABLE_SCHEMA.eq(n.START_SCHEMA),
                         fc.TABLE_NAME.eq(n.START_TABLE), fc.COLUMN_NAME.eq(cc.COLUMN_NAME))));
+    }
+
+    /** How many foreign keys the need's start declares to the node's table {@code nt}. */
+    private static org.jooq.Field<Integer> declaredKeys(GraphitronPathNeed n,
+                                                        no.sikt.graphitron.model.tables.GraphitronTabletype nt) {
+        var f = SQL_TABLE_REFERENCE.as("nk_f");
+        return coalesce(field(select(f.CONSTRAINTS).from(f)
+            .where(f.SOURCE_NAME.eq(n.START_SOURCE_NAME), f.TABLE_SCHEMA.eq(n.START_SCHEMA),
+                f.TABLE_NAME.eq(n.START_TABLE), f.REFERENCED_SOURCE_NAME.eq(nt.TABLE_SOURCE_NAME),
+                f.REFERENCED_SCHEMA.eq(nt.TABLE_SCHEMA), f.REFERENCED_TABLE.eq(nt.TABLE_NAME))), 0);
     }
 
     /** How many foreign keys join the need's start and landing, in either direction. */

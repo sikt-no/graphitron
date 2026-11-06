@@ -7,7 +7,8 @@
 # CONDITION_NO_OVERLOAD_FOR_PAIR or CONDITION_OVERLOAD_TIE. A stopped need keeps the steps it took
 # and has no path; a walk that reached its target has one, whatever its condition's overload. A need
 # nothing covers is judged at the field's declaration, and a claim on a target with no one table at
-# the claim.
+# the claim. An argument's own path is walked for each type its field reaches and reports the same
+# way, at its element.
 
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
 type Film @table(name: "film") { title: String }
@@ -64,6 +65,11 @@ type Store @table(name: "store") {
 }
 
 extend type Query {
+  """
+  An argument's @reference, followed for every member of Person: from customer it reaches store,
+  and from staff the key does not leave.
+  """
+  people(storeId: Int @field(name: "store_id") @reference(path: [{key: "customer_store_id_fkey"}])): [Person!]!
   customers: [Customer!]!
   staff: [Staff!]!
   languages: [Language!]!
@@ -78,6 +84,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   NO_ROUTE_FROM_DEPARTURE,        "the condition's second parameter takes any table, so the path does not say where it arrives; type the parameter with the table it joins to", Customer.anyTable
   NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Customer.brokenCity
   NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Person.customerAddress
+  NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Query.people(storeId:)
   NO_ROUTE_TO_TARGET,             ,                                                                                           Customer.wrongAddress
   REFERENCE_WITHOUT_TARGET_TABLE, Person,                                                                                     Store.peopleByKey
   ROUTE_AMBIGUOUS,                public.language to public.film by film_language_id_fkey or film_original_language_id_fkey,  Language.films
@@ -99,6 +106,7 @@ extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
   Customer.anyTable,       Address,     0,        0,             0
   Customer.brokenCity,     String,      1,        1,             0
   Language.filmsByTable,   Film,        0,        0,             2
+  Query.people(storeId:),  Staff,       0,        0,             0
   Staff.customerAddress,   Address,     0,        0,             0
   """)
 
@@ -118,6 +126,7 @@ extend schema @expectEquals(relation: "graphitron_path", where: "origin IN ('WRI
   Customer.tied,             Address,     WRITTEN
   Language.mediaByMember,    FilmItem,    WRITTEN
   Language.mediaByMember,    ShortItem,   WRITTEN
+  Query.people(storeId:),    Customer,    WRITTEN
   Staff.filteredAddress,     Address,     INHERITED
   """)
 
@@ -135,3 +144,10 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_key",
   Language.mediaByMember,  FilmItem,    0,        film_language_id_fkey
   Language.mediaByMember,  ShortItem,   0,        film_original_language_id_fkey
   """)
+
+# The argument's path for Customer reaches store; the one for Staff stops where it starts, above.
+extend schema @expectEquals(relation: "graphitron_join_path", where: "coordinate = 'Query.people(storeId:)'", rows: """
+  coordinate,              target_type, target_table
+  Query.people(storeId:),  Customer,    store
+  """)
+

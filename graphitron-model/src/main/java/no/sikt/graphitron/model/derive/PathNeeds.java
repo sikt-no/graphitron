@@ -18,6 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
@@ -53,7 +54,10 @@ import static org.jooq.impl.DSL.when;
  * interface's own table for its members where it has one, or on its own one source table where the
  * type has none. A
  * connection's pagination arguments' needs stand until the connection's binding states what they
- * take. An input field copies its parent's needs unchanged.
+ * take. An input field copies its parent's needs and starts, landing where its parent lands, or on
+ * its parent's start where the parent writes a path. An argument or input field writing a path for a
+ * need, its own {@code @reference} or a {@code @referenceFor} naming the need's type, lands on no
+ * table yet, its join path saying where.
  *
  * <p>A need's start is a reference to one of the occurrence's {@code graphitron_occurrence_source_table}
  * rows; a start the rules give that is none of them keeps a null reference, which says so.
@@ -222,6 +226,17 @@ public final class PathNeeds {
                         re.SOURCE_LINE.eq(ap.ELEMENT_LINE), re.SOURCE_COLUMN.eq(ap.ELEMENT_COLUMN))))));
     }
 
+    /**
+     * Whether the argument or input field {@code o} writes a path toward {@code target}: its own
+     * {@code @referenceFor} naming the type, or its own {@code @reference}, which covers every type.
+     */
+    private static Condition claims(GraphitronOccurrence o, Field<String> target) {
+        var c = GRAPHITRON_JOIN_PATH_CLAIM.as("cl_c");
+        return exists(selectOne().from(c)
+            .where(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.ELEMENT_COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .and(c.CLAIM_KIND.ne("REFERENCE_FOR").or(c.TARGET_TYPE.eq(target))));
+    }
+
     /** A field whose target has a table of its own and is no interface reaches it, landing there. */
     private static Select<Record> fieldTableBound(GraphitronOccurrence o, Condition at,
                                                   LocalDateTime touchedAt) {
@@ -313,7 +328,7 @@ public final class PathNeeds {
                                                Condition at, LocalDateTime touchedAt) {
         var pn = GRAPHITRON_PATH_NEED.as("pn");
         var j = GRAPHITRON_JOIN_PATH.as("j");
-        Condition written = writesPath(o);
+        Condition written = claims(o, pn.TARGET_TYPE);
         Condition walked = pn.LANDING_TABLE.isNull();
         Field<String> startSource = when(walked, j.TARGET_SOURCE_NAME).otherwise(pn.LANDING_SOURCE_NAME);
         Field<String> startSchema = when(walked, j.TARGET_SCHEMA).otherwise(pn.LANDING_SCHEMA);
@@ -350,7 +365,7 @@ public final class PathNeeds {
         var ft = GRAPHITRON_FIELD_TARGET.as("ft");
         var gt = GRAPHITRON_TYPE.as("gt");
         var tt = GRAPHITRON_TABLETYPE.as("tt");
-        Condition written = writesPath(o);
+        Condition written = claims(o, ft.TARGET_TYPE_NAME);
         return row(o, ft.TARGET_TYPE_NAME, tt.TABLE_SOURCE_NAME, tt.TABLE_SCHEMA, tt.TABLE_NAME,
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(tt.TABLE_SOURCE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(tt.TABLE_SCHEMA),
@@ -382,7 +397,7 @@ public final class PathNeeds {
         var pm = GRAPHQL_POLY_MEMBER.as("pm");
         var mt = GRAPHITRON_TABLETYPE.as("mt");
         var it = GRAPHITRON_TABLETYPE.as("it");
-        Condition written = writesPath(o);
+        Condition written = claims(o, pm.MEMBER_TYPE_NAME);
         return row(o, pm.MEMBER_TYPE_NAME, coalesce(it.TABLE_SOURCE_NAME, mt.TABLE_SOURCE_NAME),
                 coalesce(it.TABLE_SCHEMA, mt.TABLE_SCHEMA), coalesce(it.TABLE_NAME, mt.TABLE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(mt.TABLE_SOURCE_NAME),
@@ -416,7 +431,7 @@ public final class PathNeeds {
         var tt = GRAPHITRON_TABLETYPE.as("tt");
         var pm = GRAPHQL_POLY_MEMBER.as("pm");
         var mt = GRAPHITRON_TABLETYPE.as("mt");
-        Condition written = writesPath(o);
+        Condition written = claims(o, ft.TARGET_TYPE_NAME);
         return row(o, ft.TARGET_TYPE_NAME, st.TABLE_SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SOURCE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SCHEMA),
@@ -445,12 +460,23 @@ public final class PathNeeds {
                 st.TOUCHED_AT.eq(touchedAt)));
     }
 
-    /** An input field reaches what its parent argument or input field reaches, from where it does. */
+    /**
+     * An input field reaches what its parent argument or input field reaches, from where it starts:
+     * a path its parent writes moves none of what is under it. It lands where its parent lands, or on
+     * its parent's start where the parent writes a path, and on no table yet where it writes one.
+     */
     private static Select<Record> inputFieldCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at, LocalDateTime touchedAt) {
         var pn = GRAPHITRON_PATH_NEED.as("pn");
+        Condition written = claims(o, pn.TARGET_TYPE);
+        Condition parentWalked = pn.LANDING_TABLE.isNull();
         return row(o, pn.TARGET_TYPE, pn.START_SOURCE_NAME, pn.START_SCHEMA, pn.START_TABLE,
-                pn.LANDING_SOURCE_NAME, pn.LANDING_SCHEMA, pn.LANDING_TABLE)
+                when(written, castNull(SQLDataType.VARCHAR))
+                    .when(parentWalked, pn.START_SOURCE_NAME).otherwise(pn.LANDING_SOURCE_NAME),
+                when(written, castNull(SQLDataType.VARCHAR))
+                    .when(parentWalked, pn.START_SCHEMA).otherwise(pn.LANDING_SCHEMA),
+                when(written, castNull(SQLDataType.VARCHAR))
+                    .when(parentWalked, pn.START_TABLE).otherwise(pn.LANDING_TABLE))
             .from(o)
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
             .join(pn).on(pn.GRAPH_NAME.eq(p.GRAPH_NAME), pn.COORDINATE.eq(p.COORDINATE),

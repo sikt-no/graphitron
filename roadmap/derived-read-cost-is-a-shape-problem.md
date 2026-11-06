@@ -312,15 +312,6 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     then `FieldReferenceStepHops`, the argument and input-field step targets,
     `intent_argument_reference_step_hop`, `graphitron_condition_method_route` and the
     `*_reference_step_entry` captures go.
-* **Arguments and input fields have paths from their field's path** `blocked`, on "A path is keyed per pair of tables".
-  An argument's path is anchored at the argument; an input field's written elements become a path
-  per occurrence, one holder per output field, argument and chain of input fields down to it. Both
-  start on the step of their field's path an author named with `as:`, or at its landing, and land on
-  their target type, the `@nodeId` type where one decodes. `NODE_ID_LANDS_ON_TABLE` then judges an
-  argument's or input field's own written path as it does an output field's, which
-  `defects/node-id-lands-on-table` states with `filmsByActor` once the row is there, and
-  `NODE_ID_LANDING_TYPE_DISAGREES` lands a written path's key through its steps' column pairs as it
-  does the one discovered key's today.
 * **`scenarios/path-rules` runs** `blocked`, on "Arguments and input fields have paths from their field's path".
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.
@@ -2007,6 +1998,14 @@ remedy, and sakila's fixtures type both parameters (Alf, 2026-11-05).
 A write whose target binds no table, `ID` or `String` from a `DELETE` among them, gives its
 arguments the table `@mutation(table:)` names, so they and their input fields have a need starting
 and landing there and an `EMPTY` path.
+
+**Decided** (Alf, 2026-11-06). `@nodeId(typeName:)` is a written intention, and an argument's or
+input field's path to the node's table is inferred over the one foreign key; none or several is
+`NODE_ID_LANDS_ON_TABLE`, and the author chooses with `@reference`. A bare `@nodeId` takes the type
+whose table the field's path lands on. An argument's or input field's own written path starts where
+its field lands for each type, `as:` waiting; it follows its own `@referenceFor` naming the need's
+type, else its own `@reference`, and nothing is inherited at an argument. Every input field under an
+argument starts where the argument starts, a `@reference` on one moving none of its children.
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
