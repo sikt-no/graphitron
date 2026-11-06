@@ -727,10 +727,11 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-* **The claims go** `open`. `BindingUsages`, `SchemaQueries`, `DiagnosticFacets` and
-  `AuthoredClaimConflicts` read the producers, the target and its column instead, and
-  `intent_authored_field_claim`, `intent_column_match_claim` and `intent_resolved_field_claim`
-  dissolve.
+* **The claims go** `open`, B's. `BindingUsages`, `SchemaQueries` and `ColumnMatchShadowTest` read
+  the occurrence's producer, bindings, column and node id, and the corpus's claim expectations are
+  deleted rather than restated. `intent_column_match_claim`, `intent_resolved_field_claim` and
+  `intent_authored_field_claim` dissolve, the last once `intent_field_column_table` stops reading
+  `intent_authored_claim_conflict`.
 * **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
   `TypeMemberScope` read `graphitron_tabletype` or `graphitron_result_table` instead of
   `intent_bound_table`, and `EditorReadsNoViewTest` takes another control.
@@ -1136,6 +1137,9 @@ relation rather than what it shadows.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on "The oracle writers' lifecycle cases stay with their writers", "A registration says what pins a relation, not what it shadows" and "Any relation that carries the graph can be asserted empty".
 * **The shadow tests go with their walk side** `blocked`, on "A node is what the manual says takes effect" and "The generator builds no schema". `RoutineSpentInputShadowTest`,
   `ColumnMatchShadowTest`, `InputOccurrenceShadowTest` and `NodeTypeShadowTest` are deleted.
+* **The corpus goes** `blocked`, on "Code generation triggers are read off the occurrence model" and "The shadow tests go with their walk side". The corpus documents, `CorpusExpectations`,
+  `CorpusStore` and `CorpusDocuments` are deleted, each reader becoming a fact document or going
+  with the walk it tests.
 
 ### The editor's answers are tested where the editor gets them `open`
 
@@ -1161,6 +1165,10 @@ in capture, and a path is one forward walk from source to target.
 * **The data model is an architecture page beside the fact model** `open`. A page under
   `docs/architecture/explanation/` states the coordinate, its small facts and the emitter decision,
   rewritten from R333 rather than copied, landing with or after R983's vocabulary.
+* **Code generation triggers are read off the occurrence model** `open`, B's.
+  `code-generation-triggers.adoc` is rewritten around an occurrence's producer, bindings and path,
+  each example a fact document rendered as the manual's are, and `CorpusFragmentRenderer`,
+  `OutcomeBlockRenderer` and the `_example-` fragments go.
 * **A view's column prose lives where the store keeps it** `open`. H2 2.5 refuses `COMMENT ON
   COLUMN` on a view, and 2.4 already dropped those comments when a file store was reopened, so the
   1202 are SQL comments in `graphitron-model.sql` for now. They move to the view's own comment, to
