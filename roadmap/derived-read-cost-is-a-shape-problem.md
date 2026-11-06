@@ -327,7 +327,9 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   start on the step of their field's path an author named with `as:`, or at its landing, and land on
   their target type, the `@nodeId` type where one decodes. `NODE_ID_LANDS_ON_TABLE` then judges an
   argument's or input field's own written path as it does an output field's, which
-  `defects/node-id-lands-on-table` states with `filmsByActor` once the row is there.
+  `defects/node-id-lands-on-table` states with `filmsByActor` once the row is there, and
+  `NODE_ID_LANDING_TYPE_DISAGREES` lands a written path's key through its steps' column pairs as it
+  does the one discovered key's today.
 * **`scenarios/path-rules` runs** `blocked`, on "Arguments and input fields have paths from their field's path".
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.

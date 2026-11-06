@@ -1,0 +1,48 @@
+# A named node id with no route written, decoded through the one foreign key its slot's table
+# declares to the node's, where a landed key column binds as another Java type than the column it
+# lands on. converter_org.org_code carries a converter and binds as String; diverged_ref_child,
+# diverged_ref_sibling and diverged_term_ref spell their copy as a plain bigint, Long, and
+# converter_campus carries the converter too. A key landing only in part is decoded against the
+# node's own table, and own-row identity lands nothing, so neither is judged.
+
+type ConverterOrg @table(name: "converter_org") @node { orgName: String @field(name: "org_name") }
+# The same table keyed on two columns, one of which a foreign key from diverged_ref_child covers.
+type ConverterOrgPair @table(name: "converter_org") @node(keyColumns: ["org_code", "org_name"]) {
+  orgName: String @field(name: "org_name")
+}
+type ConverterCampusTerm @table(name: "converter_campus_term") @node { termName: String @field(name: "term_name") }
+type ConverterCampus @table(name: "converter_campus") { campusName: String @field(name: "campus_name") }
+type DivergedRefChild @table(name: "diverged_ref_child") { childName: String @field(name: "child_name") }
+type DivergedRefSibling @table(name: "diverged_ref_sibling") { siblingName: String @field(name: "sibling_name") }
+type DivergedTermRef @table(name: "diverged_term_ref") { termNo: Int @field(name: "term_no") }
+
+union OrgHolder = DivergedRefChild | DivergedRefSibling
+
+input ChildFilter { ofOrg: ID @nodeId(typeName: "ConverterOrg") }
+
+extend type Query {
+  "The two ends disagree."
+  divergedChildren(ofOrg: ID @nodeId(typeName: "ConverterOrg")): [DivergedRefChild!]!
+  "The same, at an input field."
+  divergedChildrenWhere(where: ChildFilter): [DivergedRefChild!]!
+  "Both ends carry the converter."
+  campuses(ofOrg: ID @nodeId(typeName: "ConverterOrg")): [ConverterCampus!]!
+  "One position of two lands."
+  partial(ofPair: ID @nodeId(typeName: "ConverterOrgPair")): [DivergedRefChild!]!
+  "Every position lands and the first diverges."
+  termRefs(ofTerm: ID @nodeId(typeName: "ConverterCampusTerm")): [DivergedTermRef!]!
+  "Own-row identity."
+  orgs(ids: [ID!] @nodeId(typeName: "ConverterOrg")): [ConverterOrg!]!
+  "Both members disagree: one @nodeId, one row."
+  unrouted(ofOrg: ID @nodeId(typeName: "ConverterOrg")): [OrgHolder!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code LIKE 'NODE_ID_%'
+  """, rows: """
+  coordinate,                      code,                           detail
+  ChildFilter.ofOrg,               NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  Query.divergedChildren(ofOrg:),  NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  Query.termRefs(ofTerm:),         NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  Query.unrouted(ofOrg:),          NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  """)
