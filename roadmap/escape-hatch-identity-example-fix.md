@@ -1,7 +1,7 @@
 ---
 id: R1155
 title: "Fix the escape-hatch identity example, which mounts nothing in autocommit"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: runtime-connection
@@ -114,6 +114,18 @@ R1152 edits the same `acquire(...)` method, adding a settings capture "after `co
 - a request-wide transaction with `set_config(..., true)`: identity is visible before the mutation (control), and the re-read returns null. This pins why the example does not take this form.
 
 The last two pin the doc's stated reasons, so a future jOOQ or Graphitron change that alters them fails here rather than leaving the prose wrong.
+
+## Implementation notes
+
+Delivered as planned; where the code and the plan differ, it is listed here.
+
+- **A refused rollback at acquire surfaces wrapped, not as itself.** The emitted `rethrow` returns an unchecked failure unchanged and wraps a checked one in `RuntimeException`, so the rollback's `SQLException` arrives as the cause, exactly as a refused `setAutoCommit` already did (`SessionHookExecutionTest.failedAutocommitAssertion_isNotARejectedIdentity` asserts the root cause). What the plan's "as itself" protects holds: it is never `SessionMountException`. `ConnectionRuntimeClassGeneratorTest.acquire_rollbackFailure_evictsBeforeTheMount_andIsNeverARejectedMount` pins the log `"getConnection", "abort"`, the not-a-rejection, and the cause; the emitted `acquire(...)` javadoc says the same.
+- **`TenantScatterSubstrateTest` also logs the acquire rollback.** Its fake connection arrives with autocommit off and logs `rollback:<label>`, so `pinInFlightAcrossRelease_isAbortedAndRefused` gains `rollback:A` in its exact log. No other case there changed.
+- **`RoutineCarrierRlsExecutionTest` deletes only its own notes.** It deleted every `secure_note` row, which under the module's class-level parallelism could remove the new test's row between its routine's commit and re-read. It now deletes by its two note texts. The new test also uses its own caller name (`escape-hatch-alice`), because `RoutineCarrierRlsExecutionTest` counts every row visible to `alice`.
+- **The manual says it too.** `docs/manual/reference/mojo-configuration.adoc`, "When your callbacks run", gains one sentence: a pool lending connections with autocommit off works, and what it left open is rolled back, not committed. The behaviour is consumer-visible, and that section already states the autocommit fact consumers rely on.
+- **The doc-symbol guard exempts the new test by module.** `docs/architecture/reference/runtime-extension-points.adoc` names `EscapeHatchSessionIdentityExecutionTest`, which lives in `graphitron-sakila-example`, off `graphitron`'s test classpath; `ArchitectureDocSymbolGuardTest` carries it as a `module:` exemption beside `SessionIdentityPoolIsolationExecutionTest`.
+- **The `@routine` and `@mutation` links** in the example's rationale point at `docs/manual/reference/directives/mutation.adoc` and `routine.adoc#write`.
+- **R1152 landed first**, so the sentence about the reset at release stays as drafted.
 
 ## Out of scope
 
