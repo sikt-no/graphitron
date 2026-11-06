@@ -373,7 +373,8 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(legacyShapes)
             .addMethod(reportFold)
             .addMethod(logSafe)
-            .addMethod(buildRequireColumnAgreement());
+            .addMethod(buildRequireColumnAgreement())
+            .addMethod(buildDecodeInto());
 
         for (NodeType nt : nodeTypes) {
             classBuilder.addMethod(buildPerTypeEncode(nt));
@@ -412,6 +413,51 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("throw $T.newErrorException().message($S + conflictLabel).build()",
                 GRAPHQL_ERROR, "Conflicting values supplied for ")
             .endControlFlow()
+            .build();
+    }
+
+    /**
+     * Emits {@code decodeInto}: an id's key values decoded into {@code columns} of a record the caller
+     * hands over, which may be the node type's own key columns or any columns of another table that
+     * take them, a foreign key referencing the key among them, in key order. Answers the record, or
+     * {@code null} where {@link #buildRequireColumnAgreement() decodeColumns} refuses the id.
+     *
+     * <p>A record several writers fill is passed to each, and its dirty flags, jOOQ's
+     * {@code touched}, are the agreement check: a column no writer has set takes the value, and a column one already has, its flag raised
+     * by a plain field or an earlier decode, keeps it where the values agree and fails the request
+     * where they do not, naming the input field {@code label} rather than the column. So the caller
+     * writes plain fields first and decodes last.
+     */
+    private static MethodSpec buildDecodeInto() {
+        var r = com.palantir.javapoet.TypeVariableName.get("R", ClassName.get("org.jooq", "Record"));
+        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(ClassName.OBJECT));
+        var classWildcard = ParameterizedTypeName.get(ClassName.get(Class.class),
+            WildcardTypeName.subtypeOf(ClassName.OBJECT));
+        var fieldOfObject = ParameterizedTypeName.get(FIELD, ClassName.OBJECT);
+        return MethodSpec.methodBuilder("decodeInto")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(r)
+            .addAnnotation(com.palantir.javapoet.AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked").build())
+            .returns(r)
+            .addParameter(r, "into")
+            .addParameter(String.class, "expectedTypeId")
+            .addParameter(String.class, "base64Id")
+            .addParameter(String.class, "label")
+            .addParameter(com.palantir.javapoet.ArrayTypeName.of(classWildcard), "parseClasses")
+            .addParameter(com.palantir.javapoet.ArrayTypeName.of(fieldWildcard), "columns")
+            .varargs(true)
+            .addStatement("$T values = decodeColumns(expectedTypeId, base64Id, parseClasses, columns)", Object[].class)
+            .addStatement("if (values == null) return null")
+            .beginControlFlow("for (int i = 0; i < columns.length; i++)")
+                .addStatement("$T column = ($T) columns[i]", fieldOfObject, fieldOfObject)
+                .beginControlFlow("if (into.touched(column))")
+                    .addStatement("requireColumnAgreement(label, column.getDataType(), into.get(column), values[i])")
+                .nextControlFlow("else")
+                    .addStatement("into.set(column, values[i])")
+                .endControlFlow()
+            .endControlFlow()
+            .addStatement("return into")
             .build();
     }
 

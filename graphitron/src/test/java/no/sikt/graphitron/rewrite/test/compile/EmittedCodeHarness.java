@@ -74,13 +74,21 @@ public final class EmittedCodeHarness implements AutoCloseable {
     }
 
     /**
-     * {@link #compileFiles} on the terms a consumer compiles generated sources on: Java 17, every
+     * {@link #compile(Map)} on the terms a consumer compiles generated sources on: Java 17, every
      * lint category, and a warning an error. What compiles here compiles in
      * {@code graphitron-sakila-example}'s release-17 build, so an emitter whose output needs a
      * suppression it does not carry, or a construct newer than 17, fails at its own test.
      */
+    public static EmittedCodeHarness compileStrictly(Map<String, TypeSpec> units) {
+        return compile(fileManager -> renderSources(units), STRICT);
+    }
+
+    /** The options a consumer compiles generated sources with, which the strict forms use. */
+    private static final List<String> STRICT = List.of("-proc:none", "--release", "17", "-Xlint:all", "-Werror");
+
+    /** {@link #compileStrictly} for the source files a run wrote, on {@link #compileFiles}' terms. */
     public static EmittedCodeHarness compileFilesStrictly(List<Path> files) {
-        return compile(sourcesAt(files), List.of("-proc:none", "--release", "17", "-Xlint:all", "-Werror"));
+        return compile(sourcesAt(files), STRICT);
     }
 
     private static Function<StandardJavaFileManager, List<JavaFileObject>> sourcesAt(List<Path> files) {
