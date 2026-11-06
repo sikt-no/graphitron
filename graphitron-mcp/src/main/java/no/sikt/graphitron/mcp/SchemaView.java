@@ -204,9 +204,7 @@ final class SchemaView {
     private static Map<String, Object> mapFieldClaim(SchemaQueries.FieldClaim claim) {
         var map = new LinkedHashMap<String, Object>();
         map.put("classifier", claim.classifier());
-        map.put("tier", claim.tier());
         McpWire.putIfNotNull(map, "trigger", claim.trigger() == null ? null : "@" + claim.trigger());
-        McpWire.putIfNotNull(map, "decoded", claim.decoded());
         McpWire.putPosition(map, "location", claim.position());
         return map;
     }

@@ -1111,12 +1111,8 @@ class GraphitronMcpServerTest {
             });
 
         var title = fieldNamed(film, "Film.title");
-        assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
-            .satisfies(claim -> assertThat(claim)
-                .containsEntry("classifier", "TABLE_COLUMN")
-                .containsEntry("tier", "INFERRED")
-                // An inferred claim has no directive, so neither slot is emitted as null.
-                .doesNotContainKey("trigger").doesNotContainKey("decoded"));
+        // Nothing written on it claims anything; the column is what its occurrence binds.
+        assertThat(title).doesNotContainKey("claims");
         assertThat((Map<String, Object>) title.get("column"))
             .containsEntry("table", "public.film")
             .containsEntry("column", "title")
@@ -1148,10 +1144,9 @@ class GraphitronMcpServerTest {
         assertThat((List<Map<String, Object>>) summary.get("claims")).singleElement()
             .satisfies(claim -> assertThat(claim)
                 .containsEntry("classifier", "SERVICE")
-                .containsEntry("tier", "AUTHORED")
                 .containsEntry("trigger", "@service")
-                .containsEntry("decoded", true)
-                .containsKey("location"));
+                .containsKey("location")
+                .doesNotContainKey("tier").doesNotContainKey("decoded"));
         assertThat((List<Map<String, Object>>) summary.get("methods")).containsExactly(Map.of(
             "methodRef", SCHEMA_FIXTURES + "CardService#summary/1",
             "declaredVia", "SERVICE"));
@@ -1160,18 +1155,14 @@ class GraphitronMcpServerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaMasksTheColumnBindingOfAFieldAnAuthoredDirectiveClaims() {
-        // Film.description is named after a column of film, so the structural classifier reads it as a
-        // table column and its own relation keeps that row on purpose, which is what lets a diagnostic
-        // say "would classify as a table column; @service overrides it". The resolution is where the
-        // store says which reading won, and reporting a column binding here would tell an agent the
-        // field's value comes from a column when it comes from a method.
+    void schemaReportsNoColumnForAFieldAServiceProduces() {
+        // Film.description is named after a column of film, but its @service makes it a producer, so
+        // its occurrence binds no column: reporting one would tell an agent the field's value comes
+        // from a column when it comes from a method.
         var description = fieldNamed(onlyType(SCHEMA, "Film"), "Film.description");
 
         assertThat((List<Map<String, Object>>) description.get("claims")).singleElement()
-            .satisfies(claim -> assertThat(claim)
-                .containsEntry("classifier", "SERVICE")
-                .containsEntry("tier", "AUTHORED"));
+            .satisfies(claim -> assertThat(claim).containsEntry("classifier", "SERVICE"));
         assertThat(description).doesNotContainKey("column");
     }
 

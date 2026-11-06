@@ -400,8 +400,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_carrier_directive_rule", Arm.DERIVED);
         registrations.put("graphitron_inherited_directive", Arm.DERIVED);
         registrations.put("graphitron_minted_conflict", Arm.DERIVED);
-        registrations.put("intent_authored_field_claim", Arm.DERIVED);
-        registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
         registrations.put("graphitron_spelled_table", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_hop", Arm.DERIVED);
@@ -452,7 +450,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_resolved_node_key_projection", Arm.DERIVED);
         registrations.put("intent_argmapping_projection_defect", Arm.DERIVED);
         registrations.put("intent_poly_member", Arm.DERIVED);
-        registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("graphitron_field_target_rule", Arm.DERIVED);
         registrations.put("graphitron_fetcher", Arm.DERIVED);
         registrations.put("graphitron_producer", Arm.DERIVED);
@@ -543,12 +540,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_runtime_class", Arm.UNSHADOWED);
         registrations.put("graphitron_runtime_member", Arm.UNSHADOWED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
-        registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
         registrations.put("graphitron_session_handle_member", Arm.DERIVED);
         registrations.put("graphitron_argmapping_parameter", Arm.DERIVED);
-        registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         // The defect collapse. UNSHADOWED because the model it would be compared against
         // states no defect population at all: the walk threw, and a thrown error is not a
         // row anything can be held to. What pins it is the entry-defect fact documents.

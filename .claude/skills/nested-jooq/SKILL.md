@@ -131,9 +131,9 @@ A query is not done when it returns the right rows once.
 - **Grains folded in Java.** `SchemaQueries` is the counter-exemplar: it pairs on the type's own key
   rather than a grouping invented there, so a mis-paired child cannot arise from a projection that never
   joins siblings together.
-- **A deep derivation correlated per driving row.** `intent_column_match_claim`'s own `COMMENT ON` carries
-  the measurement and the rule that a relation joining a derivation this deep wants the derivation first
-  in the `FROM` clause. Read the number there; do not copy it here.
+- **A deep derivation correlated per driving row.** A view carrying a window function or a recursive term
+  cannot be pruned by a predicate applied outside it, so a relation joining it wants it first in the
+  `FROM` clause, read once per answer and paired on its key. `fact-model.adoc` states the rule.
 - **A predicate bound to the wrong alias.** `ReferencePathConditionFixtures.splitFilterParentIncluded` is
   the grain-proof fixture, and it exists because an emitter once bound the hop-0 *target* alias as both
   parameters. Its concrete parameter types make the argument order a compile error rather than a wrong

@@ -36,7 +36,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
@@ -66,7 +65,6 @@ import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.multiset;
-import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectCount;
 import static org.jooq.impl.DSL.selectDistinct;
@@ -110,12 +108,6 @@ final class SchemaQueries {
 
     /** Default page size when listing types; a {@code type} narrow returns the one entry. */
     static final int DEFAULT_LIMIT = 100;
-
-    /**
-     * The classifier a column reading claims where no authored directive claims the field: the column
-     * the field reads at its occurrences, as {@code graphitron_occurrence_column} states it.
-     */
-    private static final String TABLE_COLUMN = "TABLE_COLUMN";
 
     /** The directives a method binding is written under, as the reference site names them. */
     private static final String SERVICE_DIRECTIVE = "service";
@@ -166,26 +158,16 @@ final class SchemaQueries {
     record TypeClaim(String classifier, String trigger, Optional<McpWire.Position> position) {}
 
     /**
-     * One resolved claim on a field: the classification and which tier decided it, plus the authoring
-     * application where the tier is the authored one.
-     *
-     * @param tier {@code AUTHORED} where a directive claimed the coordinate, {@code INFERRED} where a
-     *     structural classifier did at a coordinate no directive covers
-     * @param trigger the claiming directive, {@code null} on an inferred claim, which has none
-     * @param decoded {@code null} on an inferred claim, for the same reason
+     * One claim a directive written on the field makes, as written: the claim's kind, the directive
+     * written at its position, and the position. A claim decides nothing, so a field claiming two
+     * things lists both, and its conflict is the field's {@code conflict} slot.
      */
-    record FieldClaim(
-        String classifier, String tier, String trigger, Boolean decoded,
-        Optional<McpWire.Position> position
-    ) {}
+    record FieldClaim(String classifier, String trigger, Optional<McpWire.Position> position) {}
 
     /**
-     * The claim resolution's whole answer for one coordinate: which classifiers claim it, and the column
-     * the structural one matched where that is the reading that won.
-     *
-     * <p>One value because it is one read. The column match is both a claim and the witness of that
-     * claim, so the relation that says whether the structural reading survived is the same relation the
-     * claim list comes from, and asking twice would mean evaluating the resolution twice.
+     * What one coordinate claims and the column it reads: the claims as written, and the column the
+     * field's occurrences bind, which is what took effect, so a field a directive makes into anything
+     * else has none.
      */
     record ClaimSet(List<FieldClaim> claims, Optional<ColumnBinding> column) {
 
@@ -724,61 +706,61 @@ final class SchemaQueries {
     }
 
     /**
-     * What claims each of the page's coordinates, resolved, plus the column the field reads where no
-     * authored directive claims it.
+     * What each of the page's coordinates claims, plus the column the field reads.
      *
-     * <p>Two statements at the coordinate grain. The authored claims are each one application's; the
-     * column reading is the one {@code graphitron_occurrence_column} states at the field's occurrences,
-     * a {@code TABLE_COLUMN} claim of tier {@code INFERRED} wherever no authored claim stands at the
-     * coordinate, which is the masking the resolution has always applied: a coordinate an authored
-     * directive claims does not report a column binding the directive overrides. A field reading a
-     * column on several tables, one per place it is reached, reports the first in table order.
+     * <p>Two statements at the coordinate grain. The claims are {@code graphitron_claim}'s rows at the
+     * field, each with the directive written at its position. The column is the one
+     * {@code graphitron_occurrence_column} states at the field's occurrences, with the name it matched
+     * by; a field reading a column on several tables, one per place it is reached, reports the first in
+     * table order.
      */
     private static Map<Coordinate, ClaimSet> claims(StoreHandle store, List<String> typeNames) {
-        var a = INTENT_AUTHORED_FIELD_CLAIM;
-        var authored = store.dsl()
-            .select(a.TYPE_NAME, a.FIELD_NAME, a.CLASSIFIER, a.TRIGGER, a.DECODED,
-                a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN)
-            .from(a)
-            .where(a.GRAPH_NAME.eq(store.graphName()).and(a.TYPE_NAME.in(typeNames)))
-            .orderBy(a.TYPE_NAME.asc(), a.FIELD_NAME.asc(), a.CLASSIFIER.asc())
+        var f = GRAPHITRON_FIELD;
+        var c = GRAPHITRON_CLAIM;
+        var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var written = store.dsl()
+            .select(f.TYPE_NAME, f.FIELD_NAME, c.KIND, da.DIRECTIVE_NAME,
+                c.SOURCE_NAME, c.SOURCE_LINE, c.SOURCE_COLUMN)
+            .from(f)
+            .join(c).on(c.GRAPH_NAME.eq(f.GRAPH_NAME), c.COORDINATE.eq(f.COORDINATE))
+            .leftJoin(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.SOURCE_NAME.eq(c.SOURCE_NAME),
+                da.SOURCE_LINE.eq(c.SOURCE_LINE), da.SOURCE_COLUMN.eq(c.SOURCE_COLUMN))
+            .where(f.GRAPH_NAME.eq(store.graphName()).and(f.TYPE_NAME.in(typeNames)))
+            .orderBy(f.TYPE_NAME.asc(), f.FIELD_NAME.asc(), c.KIND.asc(), c.CLAIMER.asc())
             .fetch();
 
-        var f = GRAPHITRON_FIELD;
         var o = GRAPHITRON_OCCURRENCE;
-        var c = GRAPHITRON_OCCURRENCE_COLUMN;
+        var oc = GRAPHITRON_OCCURRENCE_COLUMN;
         var b = GRAPHITRON_BINDING_CLAIM;
         var read = store.dsl()
-            .selectDistinct(f.TYPE_NAME, f.FIELD_NAME, c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME,
-                coalesce(b.NAMED, f.FIELD_NAME), c.MATCHED_BY)
+            .selectDistinct(f.TYPE_NAME, f.FIELD_NAME, oc.TABLE_SCHEMA, oc.TABLE_NAME, oc.COLUMN_NAME,
+                coalesce(b.NAMED, f.FIELD_NAME), oc.MATCHED_BY)
             .from(f)
             .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
-            .join(c).on(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.COORDINATE.eq(o.COORDINATE))
+            .join(oc).on(oc.GRAPH_NAME.eq(o.GRAPH_NAME), oc.COORDINATE.eq(o.COORDINATE))
             .leftJoin(b).on(b.GRAPH_NAME.eq(f.GRAPH_NAME), b.COORDINATE.eq(f.COORDINATE), b.KIND.eq("COLUMN"))
             .where(f.GRAPH_NAME.eq(store.graphName()).and(f.TYPE_NAME.in(typeNames)))
-            .and(notExists(selectOne().from(a).where(a.GRAPH_NAME.eq(f.GRAPH_NAME),
-                a.TYPE_NAME.eq(f.TYPE_NAME), a.FIELD_NAME.eq(f.FIELD_NAME))))
-            .orderBy(f.TYPE_NAME.asc(), f.FIELD_NAME.asc(), c.TABLE_SCHEMA.asc(), c.TABLE_NAME.asc())
+            .orderBy(f.TYPE_NAME.asc(), f.FIELD_NAME.asc(), oc.TABLE_SCHEMA.asc(), oc.TABLE_NAME.asc())
             .fetch();
 
         var claims = new LinkedHashMap<Coordinate, List<FieldClaim>>();
         var columns = new LinkedHashMap<Coordinate, ColumnBinding>();
-        for (var row : authored) {
+        for (var row : written) {
             claims.computeIfAbsent(new Coordinate(row.value1(), row.value2()), ignored -> new ArrayList<>())
-                .add(new FieldClaim(row.value3(), "AUTHORED", row.value4(), row.value5(),
-                    McpWire.position(row.value6(), row.value7(), row.value8())));
+                .add(new FieldClaim(row.value3(), row.value4(),
+                    McpWire.position(row.value5(), row.value6(), row.value7())));
         }
         for (var row : read) {
-            var coordinate = new Coordinate(row.value1(), row.value2());
-            if (columns.containsKey(coordinate)) continue;
-            columns.put(coordinate, new ColumnBinding(row.value3() + "." + row.value4(), row.value5(),
-                row.value6(), row.value7()));
-            claims.computeIfAbsent(coordinate, ignored -> new ArrayList<>())
-                .add(new FieldClaim(TABLE_COLUMN, "INFERRED", null, null, McpWire.position(null, null, null)));
+            columns.putIfAbsent(new Coordinate(row.value1(), row.value2()),
+                new ColumnBinding(row.value3() + "." + row.value4(), row.value5(), row.value6(), row.value7()));
         }
         var sets = new LinkedHashMap<Coordinate, ClaimSet>();
-        claims.forEach((coordinate, list) -> sets.put(coordinate,
-            new ClaimSet(List.copyOf(list), Optional.ofNullable(columns.get(coordinate)))));
+        var coordinates = new java.util.LinkedHashSet<Coordinate>(claims.keySet());
+        coordinates.addAll(columns.keySet());
+        for (var coordinate : coordinates) {
+            sets.put(coordinate, new ClaimSet(List.copyOf(claims.getOrDefault(coordinate, List.of())),
+                Optional.ofNullable(columns.get(coordinate))));
+        }
         return sets;
     }
 

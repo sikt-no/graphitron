@@ -111,8 +111,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
   `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
 * A routine write's carrier refusals in `intent_mutation_routine_seat` and in the walk's routine
   classification. Ends at "A defect is written by the gatherer whose facts it judges, marked and swept by its owner".
-* A field's column picked by `intent_column_match_claim` and stated by
-  `graphitron_occurrence_column`. Ends at "The claims go".
 * An `id: ID` without `@nodeId`, a node id to the generator and a column to the store. Ends at "The generator reads an `id: ID` without `@nodeId` as a column".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
@@ -303,11 +301,10 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_field_path_method_candidate` goes with the old family.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
-  * **The old walk's readers read the join path, and the old family goes** `blocked`, F's, on "The claims go".
+  * **The old walk's readers read the join path, and the old family goes** `open`, F's.
     The editor, MCP, the fanout lint and `RoutineWriteQuery` read the join path, and
     `intent_field_column_table`, `intent_mutation_routine_seat` and the field table relations are
-    gone. Left: `intent_column_match_claim` still reads `graphitron_field_path_landing`; once it
-    dissolves, the output-field arm of `graphitron_node_id_instruction_rule` reads
+    gone. Left: the output-field arm of `graphitron_node_id_instruction_rule` reads
     `graphitron_join_path`'s target, and `FieldPaths` and every `graphitron_field_path*` relation go,
     with the gate tests and fact documents.
   * **The reference-step family goes** `open`, F's.
@@ -726,13 +723,6 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-* **The claims go** `open`, B's. `BindingUsages` and `SchemaQueries` read `graphitron_claim` and the
-  occurrence's producer, bindings, column and node id, and the corpus's claim expectations and
-  `ColumnMatchShadowTest` are deleted rather than restated. `intent_column_match_claim`,
-  `intent_resolved_field_claim`, `intent_authored_type_claim`, `intent_authored_claim_conflict` and
-  `intent_authored_field_claim` dissolve. `BindingUsages`' column usages and the inferred column
-  rows of MCP's claims already read `graphitron_occurrence_column`, and `intent_field_column_table`
-  is gone, so `intent_authored_claim_conflict` has no reader left.
 * **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
   `TypeMemberScope` read `graphitron_tabletype` or `graphitron_result_table` instead of
   `intent_bound_table`, and `EditorReadsNoViewTest` takes another control.
@@ -2482,6 +2472,12 @@ them the `candidates = 1` guard every reader applied, and `TableTypeTest`'s pari
 rewritten over the occurrence model and its examples rendered from fact documents by
 `ManualExamples`; `HowToIndexCoverageTest`'s check that the reference section holds fragments went
 with them.
+
+**The claim views.** `intent_authored_field_claim`, `intent_authored_type_claim`,
+`intent_column_match_claim`, `intent_resolved_field_claim` and `intent_authored_claim_conflict`, with
+their classifier and tier vocabularies (`TABLE_COLUMN`, `AUTHORED`, `INFERRED`, the presence arms'
+`decoded`), `AuthoredClaim.fromClassifier`, and the MCP field claim's `tier` and `decoded`: the claims
+are `graphitron_claim`'s, what took effect the occurrence's.
 
 **The column-match shadow.** `ColumnMatchShadowTest`, which held the walk's column-match arm to the
 claim view over the corpus; the column a field binds is pinned by fact documents, and the walk is no

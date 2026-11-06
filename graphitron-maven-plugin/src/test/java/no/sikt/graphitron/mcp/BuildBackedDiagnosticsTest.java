@@ -92,12 +92,12 @@ class BuildBackedDiagnosticsTest {
                 // row each, so a caller asks membership rather than comparing a joined set.
                 .doesNotContainKey("directives");
 
-            // Both rival claims survive with their own provenance, which is what the conflicted arm
-            // of the retired wire carried and what generalises here to every coordinate.
+            // Both rival claims survive with their own provenance, each named by the kind it claims:
+            // the @mutation's verb and the @service.
             assertThat((List<Map<String, Object>>) fieldNamed(mutation, "Mutation.deleteFilm")
                 .get("claims"))
                 .extracting(claim -> claim.get("classifier"))
-                .containsExactly("MUTATION", "SERVICE");
+                .containsExactly("DELETE", "SERVICE");
 
             // The relation carries both grains and marks the type grain by a null field name, so a
             // field's violation must not surface as its parent type's.
