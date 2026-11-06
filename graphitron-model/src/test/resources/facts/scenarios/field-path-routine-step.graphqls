@@ -52,11 +52,3 @@ extend schema @expectEquals(relation: "graphitron_field_path_parameter", rows: "
   Film,      castRecentFilms, 1,        pActorId,       film_actor, actor_id,
   Film,      castRecentFilms, 1,        pMinLength,     ,           ,            minLength
   """)
-
-# film_actor is entered by its key to film and left by a call bound from its actor_id, so both of its
-# key's columns are bound; films_for_actor's result is left by name and declared undecidable.
-extend schema @expectEquals(relation: "graphitron_field_path_fanout", rows: """
-  type_name, field_name,      position, table_name,      verdict,                    covering_constraint_name
-  Film,      castRecentFilms, 0,        film_actor,      COVERED,                    film_actor_pkey
-  Film,      castRecentFilms, 1,        films_for_actor, UNDECIDABLE_NAME_MATCH_HOP,
-  """)

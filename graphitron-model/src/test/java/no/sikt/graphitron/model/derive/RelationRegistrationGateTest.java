@@ -345,7 +345,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_key_row", Arm.DERIVED);
         registrations.put("graphitron_field_key_row_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path_stop", Arm.DERIVED);
-        registrations.put("graphitron_field_path_fanout", Arm.DERIVED);
         registrations.put("graphitron_field_path_landing", Arm.DERIVED);
         // The paths keyed per need, derived from the entries and the catalog like the field paths
         // above; what pins them is the schema's own keys and checks.

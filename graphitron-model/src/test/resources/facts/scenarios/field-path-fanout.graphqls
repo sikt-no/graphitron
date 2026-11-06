@@ -1,9 +1,8 @@
-# Where a field's path passes through an intermediate table, and whether that table can hold more
-# than one row per set of columns the step arriving there and the step leaving it bind. A PRIMARY
-# KEY or UNIQUE constraint whose every column the two steps bind pins one row: COVERED. Without one
-# the table may repeat a row per bound set: FANS_OUT. A step joined by a method, or matched to a
-# routine's result by name, binds columns no key states, so the question is declined by name. A
-# path's last step is no intermediate and draws no row.
+# The steps a field's path takes through intermediate tables, which the fan-out advisory judges:
+# whether a table one step arrives at and the next leaves can hold more than one row per set of
+# columns the two bind. The steps state how each joins, by a key, by a method alone, or by names
+# matched out of a routine's result; the verdicts are the advisory's own and its tests'. A root
+# field's @routine is its producer's call and no step, so its first step is the element after it.
 
 type Film @table(name: "film") {
   title: String
@@ -80,15 +79,37 @@ extend type Query {
     @reference(path: [{table: "film"}, {key: "film_actor_film_id_fkey"}])
 }
 
-extend schema @expectEquals(relation: "graphitron_field_path_fanout", rows: """
-  type_name,   field_name,      position, table_name,        verdict,                    covering_constraint_name
-  Film,        actors,          0,        film_actor,        COVERED,                    film_actor_pkey
-  Film,        credits,         0,        film_actor,        COVERED,                    film_actor_pkey
-  Film,        credits,         1,        film_actor_credit, FANS_OUT,
-  Film,        bridged,         0,        film_actor,        UNDECIDABLE_CONDITION_HOP,
-  Cast,        players,         0,        film,              UNDECIDABLE_CONDITION_HOP,
-  StintPerson, crews,           0,        stint,             FANS_OUT,
-  StintPerson, singleCrews,     0,        stint_single,      COVERED,                    stint_single_person_key
-  Query,       searchLanguages, 1,        film,              UNDECIDABLE_NAME_MATCH_HOP,
-  Query,       searchCasts,     1,        film,              UNDECIDABLE_NAME_MATCH_HOP,
+extend schema @expectEquals(relation: "graphitron_join_path_step", rows: """
+  coordinate,              target_type, position, from_table,        to_table,          element_place
+  Cast.players,            Cast,        0,        film_actor,        film,              0
+  Cast.players,            Cast,        1,        film,              film_actor,        1
+  Film.actors,             Actor,       0,        film,              film_actor,        0
+  Film.actors,             Actor,       1,        film_actor,        actor,             1
+  Film.bridged,            Actor,       0,        film,              film_actor,        0
+  Film.bridged,            Actor,       1,        film_actor,        actor,             1
+  Film.castLinks,          Cast,        0,        film,              film_actor,        0
+  Film.credits,            Actor,       0,        film,              film_actor,        0
+  Film.credits,            Actor,       1,        film_actor,        film_actor_credit, 1
+  Film.credits,            Actor,       2,        film_actor_credit, actor,             2
+  Query.searchCasts,       Cast,        0,        films_for_actor,   film,              1
+  Query.searchCasts,       Cast,        1,        film,              film_actor,        2
+  Query.searchLanguages,   Language,    0,        films_for_actor,   film,              1
+  Query.searchLanguages,   Language,    1,        film,              language,          2
+  StintPerson.crews,       StintCrew,   0,        stint_person,      stint,             0
+  StintPerson.crews,       StintCrew,   1,        stint,             stint_crew,        1
+  StintPerson.singleCrews, StintCrew,   0,        stint_person,      stint_single,      0
+  StintPerson.singleCrews, StintCrew,   1,        stint_single,      stint_crew,        1
+  """)
+
+# A step joined by a method alone, and one matched to a routine's result by name: the two the
+# question is declined at.
+extend schema @expectEquals(relation: "graphitron_join_path_step_method", rows: """
+  coordinate,   position, method_name
+  Cast.players, 1,        filmToFilmActor
+  Film.bridged, 1,        filmActorJunctionToActor
+  """)
+extend schema @expectEquals(relation: "graphitron_join_path_step_matched_key", rows: """
+  coordinate,            position, table_name
+  Query.searchCasts,     0,        film
+  Query.searchLanguages, 0,        film
   """)

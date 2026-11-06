@@ -26,8 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * That the fan-out advisory reaches the report at an author's coordinate, and stays away from the
  * three places it has no business being.
  *
- * <p>The model module's suite proves the view answers the pair-coverage question and that the
- * producer decodes it; neither says a warning arrives at a field the author wrote, with the
+ * <p>The model module's suite proves the rule answers the pair-coverage question over a captured
+ * graph; it does not say a warning arrives at a field the author wrote, with the
  * position of the hop that multiplies in it. A rule nobody is shown is a rule nobody is subject to.
  *
  * <p>{@code film -> inventory -> store} is the fixture, and it is a real fan-out rather than a
