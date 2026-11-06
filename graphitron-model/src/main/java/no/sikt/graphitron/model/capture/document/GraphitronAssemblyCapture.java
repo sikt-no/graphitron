@@ -10,7 +10,6 @@ import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
-import no.sikt.graphitron.model.derive.FieldTargetColumns;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.Fetchers;
@@ -141,8 +140,6 @@ public final class GraphitronAssemblyCapture {
         // table its parent's result is a row of, or from a root routine's own table, one written
         // element at a time.
         FieldPaths.derive(dsl, graph, readAt);
-        // The column each scalar reads: on a table its read departs from, or where its walk arrives.
-        FieldTargetColumns.derive(dsl, graph, readAt);
         // Last, the defects this gatherer's facts break, off everything above: the rule's rows
         // marked with this reading, the declarations under each condition shape defect, then the
         // argMapping entries under the strings they fault, then the sweep of this gatherer's codes

@@ -112,8 +112,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * A routine write's carrier refusals in `intent_mutation_routine_seat` and in the walk's routine
   classification. Ends at "A defect is written by the gatherer whose facts it judges, marked and swept by its owner".
 * A field's column picked by `intent_column_match_claim` and stated by
-  `graphitron_field_target_column`. Ends at "The claims go".
-* A scalar's column in `graphitron_field_target_column` and in `graphitron_occurrence_column`. Ends at "A scalar's column is read at its path's end".
+  `graphitron_occurrence_column`. Ends at "The claims go".
 * An `id: ID` without `@nodeId`, a node id to the generator and a column to the store. Ends at "The generator reads an `id: ID` without `@nodeId` as a column".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
@@ -195,10 +194,6 @@ shown an error on a schema that generates, and validate can then fail on them.
 * **The sakila example draws no error-severity entry defect** `blocked`, on "A condition method over untyped tables resolves". A build check
   over the reactor's own example holds it.
 * **Entry defects fail validate** `blocked`, on "The sakila example draws no error-severity entry defect". Every error code in `graphitron_entry_defect` stops a build, not only the editor.
-* **The column defects read the match once** `open`. `COLUMN_UNRESOLVED` and `COLUMN_AMBIGUOUS`
-  are one read of `graphitron_field_target_column_match`, not one each through
-  `graphitron_field_path_landing`. On sis, 2026-10-23, the two cost 1.2 s against 0.57 s before
-  the match read the landing, and `graphitron_entry_defect` went from 3.2 to 4.0 s.
 
 ### The path replaces the walk it was built to retire `open`
 
@@ -311,16 +306,14 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
   * **The old walk's readers read the join path, and the old family goes** `open`, F's.
     MCP `joinPath` and `pathStops` read `graphitron_join_path_step` and its stops, the fanout lint a
-    fanout view over the steps, and `RoutineWriteQuery` the routine's steps and target. The landing
-    reads of `graphitron_field_target_column_match` and the output-field arm of
-    `graphitron_node_id_instruction_rule` read `graphitron_join_path`'s target, and the checks whether
+    fanout view over the steps, and `RoutineWriteQuery` the routine's steps and target. The output-field
+    arm of `graphitron_node_id_instruction_rule` reads `graphitron_join_path`'s target, and the checks whether
     a field writes a path read `graphitron_join_path_claim`. The `intent_` views over the walk
     dissolve rather than move (Alf, 2026-11-06): `intent_mutation_routine_seat` into
     `RoutineWriteQuery`'s own query, `intent_field_column_table` into the LSP's `FieldColumnTable` and
     `DiagnosticFacts` reading the join path, its stops and its claims, and `intent_column_match_claim`
     with `intent_resolved_field_claim` into `BindingUsages` and MCP reading
-    `graphitron_occurrence_column`, which holds a written path's scalars once
-    "A scalar's column is read at its path's end" lands. Each reader is compared against the old relation before it goes;
+    `graphitron_occurrence_column`, which holds a written path's scalars. Each reader is compared against the old relation before it goes;
     then `FieldPaths` and every `graphitron_field_path*` relation go, with the gate tests and fact
     documents.
   * **The reference-step family goes** `open`, F's.
@@ -442,7 +435,7 @@ static method needs no holder.
   `Set<List<FilmRecord>>` without parsing a spelling.
 * **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
-* **The argMapping readers read the landing, and the candidate and match go** `blocked`, E's, on "A scalar's column is read at its path's end". R1099's step 2 stored where an argument path lands, `graphitron_argmapping_landing`, under each occurrence of its call; what follows is its readers.
+* **The argMapping readers read the landing, and the candidate and match go** `open`, E's. R1099's step 2 stored where an argument path lands, `graphitron_argmapping_landing`, under each occurrence of its call; what follows is its readers.
   `graphitron_outbox_leaf` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
@@ -520,7 +513,7 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
   under `@service` and `@externalField` an occurrence the call does not take is that defect.
   `ARGUMENT_WITHOUT_CONSUMER` is a code whose `graphitron_defect_type` row names its
   `owner_gatherer`, written and swept through that owner's rule view.
-  * **A path or a column a consumer does not take is a defect** `blocked`, on "An argument's consumer is stated" and "A scalar's column is read at its path's end".
+  * **A path or a column a consumer does not take is a defect** `blocked`, on "An argument's consumer is stated".
     A written path on an occurrence whose consumer takes no table is `PATH_NOT_TAKEN`. A scalar
     argument or input field matching no column at its path's end is `COLUMN_UNRESOLVED` only where
     no call parameter consumes it.
@@ -642,11 +635,6 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
-* **A scalar's column is read at its path's end** `open`, G's.
-  `graphitron_outbox_leaf`, the entry defects and the editor read `graphitron_occurrence_column`, and
-  `graphitron_field_target_column` and its match go. A written path's end is its
-  `graphitron_join_path` target, the need's landing staying null, at an output field and at an
-  argument or input field under a field that writes a path alike.
 * **A field's source is its parent's result** `open`, F's.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read
@@ -937,8 +925,8 @@ someone to profile.
     relation that reads across graphs.
   * **The entry defect rule reads one graph's rows** `open`, unowned. After the chain-break fix the
     whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
-    what still grows is its two column-match parts, 2 to 32 ms, which read
-    `graphitron_field_target_column_match`. Inside the backstop's slack, so not on its known list.
+    what still grew was its two column-match parts, 2 to 32 ms, which read
+    `graphitron_field_target_column_match`, since gone. Inside the backstop's slack, so not on its known list.
     Its merge is also the costliest statement to plan in the build: the rule reaches 116 relations
     through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
   * **An upsert finds the row it updates through one key** `done`.

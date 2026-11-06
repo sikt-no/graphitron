@@ -1,6 +1,6 @@
-# The column a scalar field reads, on each table its read departs from. With no path it is on that
-# table; with a @reference path it is on the table the path arrives at, the applications composed in
-# the order written. The spelling is the @field(name:) where one is written and the field's own name
+# The column a scalar field reads, at each occurrence of it. With no path it is on the table its
+# read departs from; with a @reference path it is on the table the path arrives at, the applications
+# composed in the order written. The spelling is the @field(name:) where one is written and the field's own name
 # otherwise, folded by case, and the SQL name answers before the generated one. A spelling naming no
 # column there, or several, has no row and is a defect at the field. A path that arrives nowhere has
 # no row either, and its defect is the path's alone: the column cannot be judged until the path is
@@ -126,23 +126,6 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
 }
 
-extend schema @expectEquals(relation: "graphitron_field_target_column", rows: """
-  type_name,          field_name,    from_table, to_table,   column_name, matched_by
-  FactAnchor,         paymentId,     payment,    payment,    payment_id,  SQL_NAME
-  Details,            lastUpdate,    film,       film,       last_update, SQL_NAME
-  Details,            lastUpdate,    language,   language,   last_update, SQL_NAME
-  Details,            title,         film,       film,       title,       SQL_NAME
-  Film,               name,          film,       film,       title,       SQL_NAME
-  Film,               plainKey,      film,       language,   name,        SQL_NAME
-  Film,               title,         film,       film,       title,       SQL_NAME
-  Film,               twiceComposed, film,       actor,      first_name,  SQL_NAME
-  Film,               twoHop,        film,       actor,      first_name,  SQL_NAME
-  FilmDetailsCarrier, filmId,        film,       film,       film_id,     SQL_NAME
-  LangDetails,        langName,      film,       language,   name,        SQL_NAME
-  LangInfo,           name,          language,   language,   name,        SQL_NAME
-  Twins,              capital,       case_twins, case_twins, Code,        JOOQ_NAME
-  """)
-
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                    type_name, field_name,   detail
   COLUMN_AMBIGUOUS,        Twins,     code,         code
@@ -162,13 +145,6 @@ extend schema @assertContains(relation: "intent_column_match_claim", rows: """
   type_name, field_name, table_name, column_name
   Film,      plainKey,   language,   name
   Film,      title,      film,       title
-  """)
-
-# The columns an ambiguous spelling folds onto are the match's rows, one each.
-extend schema @assertContains(relation: "graphitron_field_target_column_match", rows: """
-  type_name, field_name, from_table, column_name, candidates
-  Twins,     code,       case_twins, Code,        2
-  Twins,     code,       case_twins, code,        2
   """)
 
 # Nothing departs from the parent's table through a field producing its own object.

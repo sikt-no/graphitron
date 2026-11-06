@@ -749,7 +749,7 @@ COMMENT ON COLUMN graphql_ast_element_entry.declaration_kind IS 'which of the th
 COMMENT ON COLUMN graphql_ast_element_entry.declaration_line IS 'line of the declaration the element was written inside, in the file above, a declaration being written in the file that holds what it declares';
 COMMENT ON COLUMN graphql_ast_element_entry.declaration_column IS 'column of the same. With the file name, the key of graphql_type_declaration for a type, which is where the merge order that numbers a repeated directive application comes from';
 CREATE INDEX graphql_ast_element_entry_coordinate_ix ON graphql_ast_element_entry (graph_name, coordinate);
-COMMENT ON INDEX graphql_ast_element_entry_coordinate_ix IS 'A reader holding a field asks for the declaration it was written at by its coordinate, and the primary key, a written position, serves none of that. Whether a field wrote a path is that question, asked of every field graphitron_field_target_column_match weighs: measured on a sis capture of 2026-10-21, 1898 candidate rows against 10394 element entries, the view took 312 s with no index here and 0.5 s with this one, and graphitron_entry_defect_rule, which reads it, 4.5 s.';
+COMMENT ON INDEX graphql_ast_element_entry_coordinate_ix IS 'A reader holding a field asks for the declaration it was written at by its coordinate, and the primary key, a written position, serves none of that. Whether a field wrote a path is that question: measured on a sis capture of 2026-10-21, a view asking it of 1898 fields against 10394 element entries took 312 s with no index here and 0.5 s with this one.';
 
 CREATE TABLE graphql_ast_touched_coordinate (
   graph_name VARCHAR   NOT NULL,
@@ -6656,40 +6656,6 @@ COMMENT ON COLUMN graphitron_field_source_table.from_table IS 'the departing tab
 COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of three. SOURCE_TYPE: the parent type''s own rows are read on the table, the one bound to it or, where a field''s path ending on a @routine returns it, that function''s result. INHERITED: the parent type has no rows of its own, so the field departs from wherever each field returning it does, through any number of such types, a field that wrote a path or produces its own object with @service or @externalField handing down no row. RECORD_CLASS: the parent type has no rows of its own and is backed by the table''s own record class. A root field has no row, a field whose path begins with a @routine departing from its result';
 COMMENT ON COLUMN graphitron_field_source_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
-CREATE TABLE graphitron_field_target_column (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  from_source_name  VARCHAR NOT NULL,
-  from_schema       VARCHAR NOT NULL,
-  from_table        VARCHAR NOT NULL,
-  to_source_name    VARCHAR NOT NULL,
-  to_schema         VARCHAR NOT NULL,
-  to_table          VARCHAR NOT NULL,
-  column_name       VARCHAR NOT NULL,
-  matched_by        VARCHAR NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, from_source_name, from_schema, from_table),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphitron_field_target (graph_name, type_name, field_name) ON DELETE CASCADE,
-  FOREIGN KEY (to_source_name, to_schema, to_table, column_name)
-    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
-  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME'))
-);
-COMMENT ON TABLE graphitron_field_target_column IS 'The column a scalar field reads: one row per field and table its read departs from, where the field''s spelling names exactly one column of the table it arrives at. For example Film.title reads film.title, and name over @reference(path: [{key: "film_language_id_fkey"}]) departs from film and reads language.name.';
-COMMENT ON COLUMN graphitron_field_target_column.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_target_column.type_name IS 'the type owning the field';
-COMMENT ON COLUMN graphitron_field_target_column.field_name IS 'the field; with the column above a reference into graphitron_field_target, whose target is the scalar or enum read';
-COMMENT ON COLUMN graphitron_field_target_column.from_source_name IS 'the departing table''s catalog partition';
-COMMENT ON COLUMN graphitron_field_target_column.from_schema IS 'the departing table''s SQL schema';
-COMMENT ON COLUMN graphitron_field_target_column.from_table IS 'the table the field''s read departs from: its source table where it has no path, and its path''s start where it has one; in the key, so a field of a type reached from parents on two tables reads a column on each';
-COMMENT ON COLUMN graphitron_field_target_column.to_source_name IS 'the catalog partition of the table holding the column, the first column of the sql_column key this row names';
-COMMENT ON COLUMN graphitron_field_target_column.to_schema IS 'the SQL schema of the table holding the column';
-COMMENT ON COLUMN graphitron_field_target_column.to_table IS 'the table holding the column: the departing table itself where the field has no path, and the table its walk arrives at where it has one';
-COMMENT ON COLUMN graphitron_field_target_column.column_name IS 'the column''s SQL name; with the three columns above a reference into sql_column, so its generated name and binding type are one join away';
-COMMENT ON COLUMN graphitron_field_target_column.matched_by IS 'which name the spelling matched, case folded: SQL_NAME for the column''s own name and JOOQ_NAME for the generated field''s, in that precedence, so the generated name answers only where no SQL name on the table does';
-COMMENT ON COLUMN graphitron_field_target_column.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
 -- ==== What a schema may name in Java ==============================================
 -- One relation per thing an author writes, rather than one index of every class. A census answers
 -- what the classpath holds, so its one scope rule has to serve every reader and serves none of
@@ -12306,126 +12272,6 @@ COMMENT ON VIEW graphitron_field_path_fanout IS 'Where a field''s path passes th
 -- COMMENT ON COLUMN graphitron_field_path_fanout.source_name IS 'the document the @reference application writing the entering element is in, so a message underlines what the author wrote';
 -- COMMENT ON COLUMN graphitron_field_path_fanout.source_line IS 'source line of that @reference application, 1-based';
 -- COMMENT ON COLUMN graphitron_field_path_fanout.source_column IS 'source column of that @reference application, 1-based';
-
-CREATE VIEW graphitron_field_target_column_match
-  (graph_name, type_name, field_name, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, spelling, column_name, matched_by, candidates) AS
--- A scalar or enum field on an output type, on each table its read departs from, matched on the
--- table it arrives at. A field carrying a directive that reads something other than a column is not
--- read here, and neither is an id: ID with no @field on a type implementing Node, which is the node's
--- identity, a nesting type's included. Any other id matches a column.
-WITH leaf_field (graph_name, type_name, field_name, spelling) AS (
-  SELECT ft.graph_name, ft.type_name, ft.field_name, bf.bound_name
-    FROM graphitron_field_target ft
-    JOIN graphitron_type leaf
-      ON leaf.graph_name = ft.graph_name AND leaf.type_name = ft.target_type_name
-     AND leaf.kind IN ('SCALAR', 'ENUM')
-    JOIN graphitron_type parent
-      ON parent.graph_name = ft.graph_name AND parent.type_name = ft.type_name
-     AND parent.kind IN ('OBJECT', 'INTERFACE')
-    JOIN graphitron_field bf
-      ON bf.graph_name = ft.graph_name AND bf.type_name = ft.type_name AND bf.field_name = ft.field_name
-    -- Whether @field was written at all, which the bound name cannot say: an id with none is the
-    -- node's identity.
-    LEFT JOIN graphitron_field_binding_entry fb
-      ON fb.graph_name = ft.graph_name AND fb.type_name = ft.type_name AND fb.field_name = ft.field_name
-   WHERE NOT EXISTS (SELECT 1 FROM graphql_directive_application a
-                      WHERE a.graph_name = ft.graph_name
-                        AND a.coordinate = ft.type_name || '.' || ft.field_name
-                        AND a.directive_name IN ('service', 'externalField', 'routine', 'nodeId',
-                                                 'pivot'))
-     AND NOT (fb.name_ref IS NULL AND ft.field_name = 'id' AND ft.target_type_name = 'ID'
-              AND EXISTS (SELECT 1 FROM graphql_implements_interface ii
-                           WHERE ii.graph_name = ft.graph_name AND ii.type_name = ft.type_name
-                             AND ii.interface_name = 'Node'))
-),
-site (graph_name, type_name, field_name, from_source_name, from_schema, from_table,
-      to_source_name, to_schema, to_table, spelling) AS (
-  -- No path: the column is on a table the read departs from, by the source table's rules that hand
-  -- a row over.
-  SELECT lf.graph_name, lf.type_name, lf.field_name, st.from_source_name, st.from_schema,
-         st.from_table, st.from_source_name, st.from_schema, st.from_table, lf.spelling
-    FROM leaf_field lf
-    JOIN graphitron_field_source_table st
-      ON st.graph_name = lf.graph_name AND st.type_name = lf.type_name AND st.field_name = lf.field_name
-   WHERE st.basis IN ('SOURCE_TYPE', 'INHERITED', 'RECORD_CLASS')
-     -- No path written at the field: no place in the path capture composed for its definition.
-     AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
-                     JOIN graphitron_ast_field_path_entry pe
-                       ON pe.graph_name = fe.graph_name AND pe.source_name = fe.source_name
-                      AND pe.field_line = fe.source_line AND pe.field_column = fe.source_column
-                     WHERE fe.graph_name = lf.graph_name
-                       AND fe.coordinate = lf.type_name || '.' || lf.field_name)
-  UNION ALL
-  -- A path: the column is on the table the path lands on from each start. A walk that stopped
-  -- lands nowhere, so it has no site and its path's defect is the field's.
-  SELECT lf.graph_name, lf.type_name, lf.field_name, l.start_source_name, l.start_schema,
-         l.start_table, l.table_source_name, l.table_schema, l.table_name, lf.spelling
-    FROM leaf_field lf
-    JOIN graphitron_field_path_landing l
-      ON l.graph_name = lf.graph_name AND l.type_name = lf.type_name AND l.field_name = lf.field_name
-   WHERE l.position IS NOT NULL
-)
--- Case folded, the SQL name first: the generated name answers only where no SQL name on the table
--- does, the precedence a written key name resolves by. The candidates are counted per row rather
--- than by a window, which would stop H2 restricting the view to one graph.
-SELECT s.graph_name, s.type_name, s.field_name, s.from_source_name, s.from_schema, s.from_table,
-       s.to_source_name, s.to_schema, s.to_table, s.spelling, c.column_name,
-       CASE WHEN c.column_name IS NULL THEN NULL
-            WHEN c.column_name_upper = UPPER(s.spelling) THEN 'SQL_NAME' ELSE 'JOOQ_NAME' END,
-       CASE WHEN EXISTS (SELECT 1 FROM sql_column n
-                          WHERE n.source_name = s.to_source_name AND n.table_schema = s.to_schema
-                            AND n.table_name = s.to_table AND n.column_name_upper = UPPER(s.spelling))
-            THEN (SELECT COUNT(*) FROM sql_column n
-                   WHERE n.source_name = s.to_source_name AND n.table_schema = s.to_schema
-                     AND n.table_name = s.to_table AND n.column_name_upper = UPPER(s.spelling))
-            ELSE (SELECT COUNT(*) FROM sql_column n
-                   WHERE n.source_name = s.to_source_name AND n.table_schema = s.to_schema
-                     AND n.table_name = s.to_table AND n.jooq_name_upper = UPPER(s.spelling)) END
-  FROM site s
-  LEFT JOIN sql_column c
-    ON c.source_name = s.to_source_name AND c.table_schema = s.to_schema
-   AND c.table_name = s.to_table
-   AND (c.column_name_upper = UPPER(s.spelling)
-        OR (c.jooq_name_upper = UPPER(s.spelling)
-            AND NOT EXISTS (SELECT 1 FROM sql_column o
-                             WHERE o.source_name = s.to_source_name
-                               AND o.table_schema = s.to_schema AND o.table_name = s.to_table
-                               AND o.column_name_upper = UPPER(s.spelling))));
-COMMENT ON VIEW graphitron_field_target_column_match IS 'Every column a scalar field could be read from: one row per field, departing table and matching column on the table it arrives at, and one row with no column where nothing matches. For example Film.title matches film.title once, and code on case_twins matches both Code and code.';
--- COMMENT ON COLUMN graphitron_field_target_column_match.graph_name IS 'the owning graph''s partition, carried from graphitron_field_source_table';
--- COMMENT ON COLUMN graphitron_field_target_column_match.type_name IS 'the type owning the field';
--- COMMENT ON COLUMN graphitron_field_target_column_match.field_name IS 'the field';
--- COMMENT ON COLUMN graphitron_field_target_column_match.from_source_name IS 'the departing table''s catalog partition';
--- COMMENT ON COLUMN graphitron_field_target_column_match.from_schema IS 'the departing table''s SQL schema';
--- COMMENT ON COLUMN graphitron_field_target_column_match.from_table IS 'the departing table''s SQL name';
--- COMMENT ON COLUMN graphitron_field_target_column_match.to_source_name IS 'the arriving table''s catalog partition: the departing table''s where no path is written, the one graphitron_field_path_landing names otherwise';
--- COMMENT ON COLUMN graphitron_field_target_column_match.to_schema IS 'the arriving table''s SQL schema';
--- COMMENT ON COLUMN graphitron_field_target_column_match.to_table IS 'the arriving table''s SQL name, the one the spelling is matched on';
--- COMMENT ON COLUMN graphitron_field_target_column_match.spelling IS 'the name the field reads: @field(name:) where one is written, the field''s own name otherwise';
--- COMMENT ON COLUMN graphitron_field_target_column_match.column_name IS 'a column the spelling names, null on the one row of a departure where none does';
--- COMMENT ON COLUMN graphitron_field_target_column_match.matched_by IS 'SQL_NAME or JOOQ_NAME, as graphitron_field_target_column.matched_by states; null where column_name is';
--- COMMENT ON COLUMN graphitron_field_target_column_match.candidates IS 'how many columns the spelling names on this departing table: 0 is COLUMN_UNRESOLVED, 1 is a target column, and more is COLUMN_AMBIGUOUS';
-
-CREATE VIEW graphitron_field_target_column_rule
-  (graph_name, type_name, field_name, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, column_name, matched_by) AS
-SELECT graph_name, type_name, field_name, from_source_name, from_schema, from_table,
-       to_source_name, to_schema, to_table, column_name, matched_by
-  FROM graphitron_field_target_column_match
- WHERE candidates = 1;
-COMMENT ON VIEW graphitron_field_target_column_rule IS 'One row the field target-column rule computes, in the shape graphitron_field_target_column stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_target_column, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field_target_column_match';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.type_name IS 'the type owning the field';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.field_name IS 'the field';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.from_source_name IS 'the departing table''s catalog partition';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.from_schema IS 'the departing table''s SQL schema';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.from_table IS 'the departing table''s SQL name';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.to_source_name IS 'the arriving table''s catalog partition';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.to_schema IS 'the arriving table''s SQL schema';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.to_table IS 'the arriving table''s SQL name';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.column_name IS 'the one column the spelling names there';
--- COMMENT ON COLUMN graphitron_field_target_column_rule.matched_by IS 'SQL_NAME or JOOQ_NAME, as graphitron_field_target_column.matched_by states';
 
 -- The leaves of an @outbox message: one row per payload key, by the source it reads, resolved against
 -- what the store holds. The mapping's own entries and the configured common payload's, merged.
@@ -20349,9 +20195,6 @@ INSERT INTO meta_grain VALUES
   ('field-departing-table',
    'one table a field''s read departs from, at one field, in one graph',
    'graph_name, type_name, field_name, from_source_name, from_schema, from_table', 'sdl'),
-  ('field-departing-column',
-   'one column a field''s spelling names on one table its read departs from, at one field, in one graph',
-   'graph_name, type_name, field_name, from_source_name, from_schema, from_table, column_name', 'sdl'),
   ('field-arriving-type',
    'one type whose table one of a field''s statements lands on, at one field, in one graph',
    'graph_name, type_name, field_name, arriving_type_name', 'sdl'),
@@ -21837,18 +21680,6 @@ INSERT INTO meta_relation VALUES
    'One row the field source-table rule computes, in the shape graphitron_field_source_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_source_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
-  ('graphitron_field_target_column', 'field-departing-table', 'graphitron',
-   'The column a scalar field reads: one row per field and table its read departs from, where the field''s spelling names exactly one column of the table it arrives at.',
-   'For example Film.title reads film.title, and name over @reference(path: [{key: "film_language_id_fkey"}]) departs from film and reads language.name.',
-   'The column side of a field''s target, beside the table side in graphitron_field_target_table. A field with no path reads the table its read departs from, by graphitron_field_source_table''s rules; one with a path reads where its walk arrives, the path being all its @reference applications composed in written order, so a walk that stops leaves no row and its path''s own defect is the field''s only one. The editor and the generator each matched a field''s name against its parent''s columns through views H2 could not filter per field; stored here, a field''s column is a keyed read. A spelling naming no column, or several, has no row and is COLUMN_UNRESOLVED or COLUMN_AMBIGUOUS at the field instead.'),
-  ('graphitron_field_target_column_rule', 'field-departing-table', 'graphitron',
-   'One row the field target-column rule computes, in the shape graphitron_field_target_column stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_field_target_column, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
-  ('graphitron_field_target_column_match', 'field-departing-column', 'graphitron',
-   'Every column a scalar field could be read from: one row per field, departing table and matching column on the table it arrives at, and one row with no column where nothing matches.',
-   'For example Film.title matches film.title once, and code on case_twins matches both Code and code.',
-   'The match stated once for its two readers: the target column takes the departures with exactly one candidate, and the entry defects report the ones with none or several, so the defect and the fact cannot disagree on what a spelling names. A field with no path arrives where it departs; one with a path arrives where its walk does, and a walk that stops has no row here. A view rather than a table because both readers read it whole, once per capture; the count is a window, which H2 evaluates over the entire view on every read, so a per-field reader joins graphitron_field_target_column instead.'),
   ('graphitron_field_target_table', 'field-arriving-type', 'graphitron',
    'A type whose table one of a field''s statements lands on: one row per field and arriving type, the target where it binds a table and each table-bound participant where it does not.',
    'For example Actor.films lands on Film, and a field returning a union of Book and Movie, which binds no table, lands on Book and on Movie.',

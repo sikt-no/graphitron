@@ -61,10 +61,10 @@ extend schema @assertAbsent(relation: "graphitron_tabletype", rows: """
   ActorFilm
   """)
 
-extend schema @assertContains(relation: "graphitron_field_target_column", rows: """
-  type_name, field_name, from_table,                                    column_name
-  ActorFilm, title,      films_for_actor,                               title
-  Tilgang,   rollekode,  tilganger_for_feidebruker_med_fs_fiktivt_fnr, rollekode
+extend schema @assertContains(relation: "graphitron_occurrence_column", rows: """
+  coordinate,                 bound,                                               column_name
+  Actor.films.title,          public.films_for_actor,                              title
+  Query.tilganger.rollekode,  public.tilganger_for_feidebruker_med_fs_fiktivt_fnr, rollekode
   """)
 
 extend schema @assertContains(relation: "intent_column_match_claim", rows: """

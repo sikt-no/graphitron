@@ -62,7 +62,6 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_path_element_table", "graphitron_path_element_table_rule"),
         new Stage("graphitron_path_element_method", "graphitron_path_element_method_rule"),
         new Stage("graphitron_field_source_table", "graphitron_field_source_table_rule"),
-        new Stage("graphitron_field_target_column", "graphitron_field_target_column_rule"),
         new Stage("graphitron_field_scope_table", "graphitron_field_scope_table_rule"),
         new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
         new Stage("graphitron_input_field_resolving_table",

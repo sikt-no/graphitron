@@ -85,22 +85,16 @@ extend schema @expectEquals(relation: "intent_field_column_table", rows: """
   LanguageEdge,                     node,               RESOLVE,     NAMED_TYPE_TABLE, language
   """)
 
-extend schema @assertContains(relation: "graphitron_field_target_column", rows: """
-  type_name, field_name,     from_table, to_table, column_name
-  Film,      title,          film,       film,     title
-  Language,  name,           language,   language, name
-  Actor,     name,           actor,      actor,    first_name
-  """)
-
-extend schema @assertAbsent(relation: "graphitron_field_target_column", rows: """
-  type_name, field_name
-  Film,      languageName
-  Film,      twice
-  Film,      contestedTitle
-  Film,      nowhere
-  Film,      twoTerminals
-  Venue,     name
-  Note,      text
+# A scalar's own column, at each occurrence: none for a field whose walk arrives nowhere or whose
+# claims disagree, nor under a @table that binds no table.
+extend schema @expectEquals(relation: "graphitron_occurrence_column",
+    where: "coordinate <> 'FactAnchor.paymentId'", rows: """
+  coordinate,    bound,           column_name
+  Actor.name,    public.actor,    first_name
+  Errored.title, public.film,     title
+  Film.title,    public.film,     title
+  Language.name, public.language, name
+  Media.title,   public.film,     title
   """)
 
 # A @table that binds no table, ambiguous or unresolved, is its own defect and a row of no table:
