@@ -70,15 +70,34 @@ public final class EmittedCodeHarness implements AutoCloseable {
      *              {@link #compile(Map)}
      */
     public static EmittedCodeHarness compileFiles(List<Path> files) {
-        return compile(fileManager -> {
+        return compile(sourcesAt(files), List.of("-proc:none"));
+    }
+
+    /**
+     * {@link #compileFiles} on the terms a consumer compiles generated sources on: Java 17, every
+     * lint category, and a warning an error. What compiles here compiles in
+     * {@code graphitron-sakila-example}'s release-17 build, so an emitter whose output needs a
+     * suppression it does not carry, or a construct newer than 17, fails at its own test.
+     */
+    public static EmittedCodeHarness compileFilesStrictly(List<Path> files) {
+        return compile(sourcesAt(files), List.of("-proc:none", "--release", "17", "-Xlint:all", "-Werror"));
+    }
+
+    private static Function<StandardJavaFileManager, List<JavaFileObject>> sourcesAt(List<Path> files) {
+        return fileManager -> {
             var sources = new ArrayList<JavaFileObject>();
             fileManager.getJavaFileObjectsFromPaths(files).forEach(sources::add);
             return sources;
-        });
+        };
     }
 
     private static EmittedCodeHarness compile(
             Function<StandardJavaFileManager, List<JavaFileObject>> sourcesOf) {
+        return compile(sourcesOf, List.of("-proc:none"));
+    }
+
+    private static EmittedCodeHarness compile(
+            Function<StandardJavaFileManager, List<JavaFileObject>> sourcesOf, List<String> options) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             throw new IllegalStateException(
@@ -104,7 +123,7 @@ public final class EmittedCodeHarness implements AutoCloseable {
 
             List<JavaFileObject> sources = sourcesOf.apply(fileManager);
             JavaCompiler.CompilationTask task = compiler.getTask(
-                null, fileManager, collector, List.of("-proc:none"), null, sources);
+                null, fileManager, collector, options, null, sources);
             boolean success = task.call();
             if (!success) {
                 throw new IllegalStateException(
