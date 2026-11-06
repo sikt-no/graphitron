@@ -261,7 +261,8 @@ class ClaimConflictsTest {
      * That a schema too broken to decode still reports its conflicts. {@code @mutation} without its
      * required verb and {@code @routine} without its required name never assemble, so capture writes
      * no semantic row; the claims are the applications, so the coordinates still claim and the
-     * violations arrive as they would from a decoded pair.
+     * violations arrive as they would from a decoded pair. The @mutation's missing verb is a defect
+     * of its own beside the conflict.
      *
      * <p>What stands here is that a real capture of a real broken schema reaches that state and that
      * the report is minted from it.
@@ -283,6 +284,13 @@ class ClaimConflictsTest {
                 .containsExactly(
                     "Field 'Mutation.createFilm': @service, @mutation are mutually exclusive",
                     "Field 'Query.broken': @service, @routine are mutually exclusive");
+            assertThat(dsl.select(GRAPHITRON_ENTRY_DEFECT_SITE.COORDINATE)
+                .from(GRAPHITRON_ENTRY_DEFECT_SITE)
+                .where(GRAPHITRON_ENTRY_DEFECT_SITE.GRAPH_NAME.eq(GRAPH),
+                    GRAPHITRON_ENTRY_DEFECT_SITE.CODE.eq("MUTATION_WITHOUT_VERB"))
+                .fetch(GRAPHITRON_ENTRY_DEFECT_SITE.COORDINATE))
+                .as("a @mutation with no verb is a defect of its own, at the @mutation")
+                .containsExactly("Mutation.createFilm");
         });
     }
 

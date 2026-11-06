@@ -15397,6 +15397,16 @@ SELECT m.graph_name, m.source_name, m.source_line, m.source_column,
   FROM graphitron_ast_mutation_entry m
  WHERE m.operation = 'UPSERT'
 UNION ALL
+-- A @mutation with no verb, at the @mutation as written: the verb is the write graphitron
+-- generates, so without one there is none. Its claim, WRITE, still conflicts with a @service.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'MUTATION_WITHOUT_VERB', CAST(NULL AS VARCHAR)
+  FROM graphitron_directive_application da
+ WHERE da.directive_name = 'mutation' AND da.origin = 'AUTHORED'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
+                    WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
+                      AND m.source_line = da.source_line AND m.source_column = da.source_column)
+UNION ALL
 -- An @outbox that is not on a field writing a table with @mutation: no write, no message.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_NOT_A_WRITE',
        CAST(NULL AS VARCHAR)
@@ -20880,6 +20890,8 @@ INSERT INTO graphitron_defect_type VALUES
    'An element''s directives claim two things it cannot be at once, such as a @service, whose author provides the code, beside a @mutation, whose code graphitron generates.', 'graphitron'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.', 'graphitron'),
+  ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
+   '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.', 'graphitron'),
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
    '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.', 'graphitron'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
