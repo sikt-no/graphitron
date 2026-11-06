@@ -1,7 +1,7 @@
 ---
 id: R1154
 title: "Refuse acquisition after release in the single-tenant connection carrier"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: runtime-connection
