@@ -16,7 +16,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
@@ -135,15 +136,19 @@ public final class FieldInformation {
             .convertFrom(rows -> rows.map(Records.mapping(Target::new)))
             .as("info_target");
 
-        var c = GRAPHITRON_FIELD_TARGET_COLUMN;
+        // The field's column at each of its occurrences, on the table each one's path lands on.
+        var o = GRAPHITRON_OCCURRENCE;
+        var c = GRAPHITRON_OCCURRENCE_COLUMN;
         var sc = SQL_COLUMN;
-        columns = multiset(selectDistinct(c.TO_TABLE, c.COLUMN_NAME, sc.SQL_TYPE, sc.NULLABLE, c.MATCHED_BY,
+        columns = multiset(selectDistinct(c.TABLE_NAME, c.COLUMN_NAME, sc.SQL_TYPE, sc.NULLABLE, c.MATCHED_BY,
                 sc.DESCRIPTION)
-            .from(c)
-            .join(sc).on(sc.SOURCE_NAME.eq(c.TO_SOURCE_NAME), sc.TABLE_SCHEMA.eq(c.TO_SCHEMA),
-                sc.TABLE_NAME.eq(c.TO_TABLE), sc.COLUMN_NAME.eq(c.COLUMN_NAME))
-            .where(c.GRAPH_NAME.eq(graph), c.TYPE_NAME.eq(typeName), c.FIELD_NAME.eq(fieldName))
-            .orderBy(c.TO_TABLE, c.COLUMN_NAME))
+            .from(o)
+            .join(c).on(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.COORDINATE.eq(o.COORDINATE))
+            .join(sc).on(sc.SOURCE_NAME.eq(c.TABLE_SOURCE_NAME), sc.TABLE_SCHEMA.eq(c.TABLE_SCHEMA),
+                sc.TABLE_NAME.eq(c.TABLE_NAME), sc.COLUMN_NAME.eq(c.COLUMN_NAME))
+            .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(typeName + "." + fieldName),
+                o.KIND.eq("FIELD"))
+            .orderBy(c.TABLE_NAME, c.COLUMN_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(Column::new)))
             .as("info_columns");
 

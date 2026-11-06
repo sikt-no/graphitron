@@ -20,7 +20,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
@@ -420,10 +421,15 @@ final class InlayFacts {
 
     /** The columns the region's scalar fields read, on the tables holding them. */
     private static Field<List<TargetColumnRow>> targetColumnArm(StoreHandle store, Collection<String> typeNames) {
-        var c = GRAPHITRON_FIELD_TARGET_COLUMN;
-        return multiset(selectDistinct(c.TYPE_NAME, c.FIELD_NAME, c.TO_TABLE, c.COLUMN_NAME).from(c)
-            .where(c.GRAPH_NAME.eq(store.graphName()), c.TYPE_NAME.in(typeNames))
-            .orderBy(c.TYPE_NAME, c.FIELD_NAME, c.TO_TABLE))
+        // Each field's column at each of its occurrences, read through the field it is an occurrence of.
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var c = GRAPHITRON_OCCURRENCE_COLUMN;
+        return multiset(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, c.TABLE_NAME, c.COLUMN_NAME).from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+            .join(c).on(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
+            .orderBy(f.TYPE_NAME, f.FIELD_NAME, c.TABLE_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(TargetColumnRow::new)));
     }
 
