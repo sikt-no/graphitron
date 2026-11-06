@@ -32,16 +32,21 @@ import java.util.function.Function;
  * <p>A value the wire hands over as the parameter takes it is passed as it is: the jOOQ context, a
  * context value, the session handle or one of its members, the batch's keys where the parameter
  * takes them in the frame's shape, and an argument or input field of a scalar type, read null-safe
- * through the input objects above it. Anything else has to be built into the parameter's type
- * first, an input object into a class, an enum into its Java type, a node id into its key, keys
- * into another shape, and this emitter does not build: it says which parameter needs building and
- * why, and emits nothing.
+ * through the input objects above it. An enum arrives as its runtime value's string, so it is
+ * passed as it is into a {@code String} and through {@code valueOf} into a Java enum. Anything else
+ * has to be built into the parameter's type first, an input object into a class, a node id into its
+ * key, keys into another shape, and this emitter does not build: it says which parameter needs
+ * building and why, and emits nothing.
  */
 public final class FillEmitter {
 
     private FillEmitter() {}
 
     private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName STRING = ClassName.get("java.lang", "String");
+    /** The landing types a fill reads as they arrive: an enum arrives as its runtime value's string. */
+    private static final Set<String> SCALAR_OR_ENUM = Set.of("SCALAR", "ENUM");
     private static final String CONFIGURATION = "org.jooq.Configuration";
     /** The body's own names, which a local named after a parameter must not shadow. */
     private static final Set<String> TAKEN = Set.of("env", "dsl", "keys", "batch", "first");
@@ -115,14 +120,18 @@ public final class FillEmitter {
                 }
                 case "ARGUMENT" -> {
                     var landing = fill.landing().orElseThrow();
-                    if (landing.nodeId() || !"SCALAR".equals(landing.typeKind())) {
+                    if (landing.nodeId() || !SCALAR_OR_ENUM.contains(landing.typeKind())) {
                         return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
                             landing.nodeId() ? "it takes a node id, which is decoded into its key"
                                 : "it takes " + landing.typeKind().toLowerCase().replace('_', ' ')
                                     + " " + String.join(".", landing.path())
                                     + ", which is built into " + type);
                     }
-                    statements.add(argument(type, local, landing.path()));
+                    if ("ENUM".equals(landing.typeKind()) && !STRING.equals(elementOf(type))) {
+                        statements.addAll(enumValue(type, local, landing.path()));
+                    } else {
+                        statements.add(argument(type, local, landing.path()));
+                    }
                     arguments.add(CodeBlock.of("$L", local));
                 }
                 default -> throw new IllegalStateException("no fill " + fill.fill() + " at "
@@ -149,6 +158,29 @@ public final class FillEmitter {
         var boxed = type.box();
         var value = CodeBlock.of("$L ? ($T) map$L.get($S) : null", read.build(), boxed, last, path.get(last));
         return declare(boxed, local, value);
+    }
+
+    /**
+     * An enum argument into a Java enum. graphql-java hands an enum value over as its runtime value,
+     * the string the schema gives it, so the string is read off the fetch and turned into the
+     * parameter's constant of the same name, or into a list of them.
+     */
+    private static List<CodeBlock> enumValue(TypeName type, String local, List<String> path) {
+        var wire = local + "Wire";
+        if (type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())) {
+            var element = list.typeArguments().getFirst();
+            return List.of(argument(ParameterizedTypeName.get(LIST, STRING), wire, path),
+                CodeBlock.of("$T $L = $L == null ? null : $L.stream().map($T::valueOf).toList()",
+                    type, local, wire, wire, element));
+        }
+        return List.of(argument(STRING, wire, path),
+            CodeBlock.of("$T $L = $L == null ? null : $T.valueOf($L)", type, local, wire, type, wire));
+    }
+
+    /** A type's element: the type a {@code List} holds, or the type itself. */
+    private static TypeName elementOf(TypeName type) {
+        return type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())
+            ? list.typeArguments().getFirst() : type;
     }
 
     /** A value read as {@code Object} and cast to the parameter's type. */

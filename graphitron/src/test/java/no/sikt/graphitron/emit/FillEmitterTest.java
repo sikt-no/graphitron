@@ -57,6 +57,9 @@ class FillEmitterTest {
         "Handle", """
             public record Handle(String label) {}
             """,
+        "Mood", """
+            public enum Mood { HAPPY, SAD }
+            """,
         "Runtime", """
             import graphql.schema.DataFetchingEnvironment;
             import org.jooq.DSLContext;
@@ -105,6 +108,18 @@ class FillEmitterTest {
         fill(7, "count", "int", "int", "ARGUMENT", null, null, scalar("input", "count"))),
         true);
 
+    private static FillQuery.Landing enumAt(String... path) {
+        return new FillQuery.Landing(List.of(path), "ENUM", false);
+    }
+
+    /** A root call taking enum arguments: as a String, as a Java enum nested, as a list of one. */
+    private static final FillQuery.Row ENUMS = new FillQuery.Row("Query.enums", "Query.enums", List.of(
+        fill(0, "moodName", "java.lang.String", "java.lang.String", "ARGUMENT", null, null, enumAt("moodName")),
+        fill(1, "mood", "fillrun.Mood", "fillrun.Mood", "ARGUMENT", null, null, enumAt("input", "mood")),
+        fill(2, "moods", "java.util.List<fillrun.Mood>", "java.util.List", "ARGUMENT", null, null,
+            enumAt("moods"))),
+        true);
+
     /** A root call taking the jOOQ context as a Configuration. */
     private static final FillQuery.Row CONFIGURED = new FillQuery.Row("Query.configured", "Query.configured",
         List.of(fill(0, "configuration", "org.jooq.Configuration", "org.jooq.Configuration", "DSL_CONTEXT",
@@ -123,6 +138,7 @@ class FillEmitterTest {
         var host = TypeSpec.classBuilder("Probes").addModifiers(Modifier.PUBLIC)
             .addMethod(probe("root", ROOT, Optional.empty()))
             .addMethod(probe("configured", CONFIGURED, Optional.empty()))
+            .addMethod(probe("enums", ENUMS, Optional.empty()))
             .addMethod(probe("child", CHILD, Optional.of(KEYS)))
             .build();
         var dir = Files.createTempDirectory("fill");
@@ -185,6 +201,23 @@ class FillEmitterTest {
             DSL.using(SQLDialect.POSTGRES));
         assertThat(values[2]).isNull();
         assertThat(values[3]).isNull();
+    }
+
+    @Test
+    void anEnumIsPassedAsItsStringOrTurnedIntoTheJavaConstant() throws Exception {
+        var arguments = Map.<String, Object>of("moodName", "HAPPY", "input", Map.of("mood", "SAD"),
+            "moods", List.of("HAPPY", "SAD"));
+        var values = (Object[]) probes.get("enums").invoke(null, env(arguments), DSL.using(SQLDialect.POSTGRES));
+        var mood = harness.load(PACKAGE + ".Mood");
+        assertThat(values[0]).isEqualTo("HAPPY");
+        assertThat(values[1]).isEqualTo(mood.getEnumConstants()[1]);
+        assertThat(values[2]).isEqualTo(List.of(mood.getEnumConstants()));
+    }
+
+    @Test
+    void anAbsentEnumIsNull() throws Exception {
+        var values = (Object[]) probes.get("enums").invoke(null, env(Map.of()), DSL.using(SQLDialect.POSTGRES));
+        assertThat(values).containsOnlyNulls();
     }
 
     @Test
