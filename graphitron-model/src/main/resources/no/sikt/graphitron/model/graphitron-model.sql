@@ -13783,95 +13783,81 @@ COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that l
 -- an id: ID with no @field on a node or a type implementing Node, nor at an argument or input field
 -- whose need reaches a node: such an id is the node's identity, and where its table also has a column
 -- of the name the manual makes the collision an error rather than either reading. Nor does an
--- occurrence the node id rule already bound, which the stage writes first. A scalar
--- whose declaration writes a path has no landing until its steps say where, and no row until then.
--- The candidates are counted per row rather than by a window, which would stop H2 restricting the
--- view to one graph.
+-- occurrence the node id rule already bound, which the stage writes first. Where a path lands is the
+-- join path's table where one is walked, a written path's landing being stated there and not on the
+-- need, and the need's own landing otherwise. One flat select and no WITH, so H2 takes the writer's
+-- graph into it; the candidates are counted per row rather than by a window, for the same reason.
 CREATE VIEW graphitron_occurrence_column_rule
   (graph_name, coordinate, bound, table_source_name, table_schema, table_name, column_name,
    matched_by) AS
-WITH scalar (graph_name, coordinate, spelling) AS (
-  SELECT o.graph_name, o.coordinate, COALESCE(cl.named, o.name)
-    FROM graphitron_occurrence o
-    LEFT JOIN graphitron_field f
-      ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-    LEFT JOIN graphitron_argument a
-      ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
-    JOIN graphitron_type t
-      ON t.graph_name = o.graph_name AND t.type_name = COALESCE(f.named_type, a.named_type)
-     AND t.kind IN ('SCALAR', 'ENUM')
-    LEFT JOIN graphitron_binding_claim cl
-      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-     AND cl.kind = 'COLUMN'
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                      WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                        AND x.kind IN ('NODE_ID', 'EXPRESSION'))
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                      WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
-                        AND d.directive_name IN ('service', 'routine', 'pivot'))
-     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                      WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
-     AND NOT (cl.named IS NULL AND o.kind = 'FIELD' AND o.name = 'id' AND f.named_type = 'ID'
-              AND (EXISTS (SELECT 1 FROM graphql_implements_interface ii
-                            WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
-                              AND ii.interface_name = 'Node')
-                   OR EXISTS (SELECT 1 FROM graphitron_node nd
-                               WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
-     AND NOT (cl.named IS NULL AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
-              AND COALESCE(f.named_type, a.named_type) = 'ID'
-              AND EXISTS (SELECT 1 FROM graphitron_path_need pn
-                            LEFT JOIN graphitron_join_path jp
-                              ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-                             AND jp.target_type = pn.target_type
-                           WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                             AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-                             AND (EXISTS (SELECT 1 FROM graphitron_node tn
-                                           WHERE tn.graph_name = pn.graph_name
-                                             AND tn.type_name = pn.target_type)
-                                  OR (SELECT COUNT(*) FROM graphitron_tabletype bt
-                                        JOIN graphitron_node n2
-                                          ON n2.graph_name = bt.graph_name AND n2.type_name = bt.type_name
-                                       WHERE bt.graph_name = pn.graph_name
-                                         AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-                                         AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
-                                         AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) = 1)))
-),
-landing (graph_name, coordinate, spelling, table_source_name, table_schema, table_name) AS (
-  -- Where the need's path ends: the join path's table where one is walked, a written path's landing
-  -- being stated there and not on the need, and the need's own landing otherwise.
-  SELECT DISTINCT s.graph_name, s.coordinate, s.spelling,
-         COALESCE(jp.target_source_name, n.landing_source_name),
-         COALESCE(jp.target_schema, n.landing_schema), COALESCE(jp.target_table, n.landing_table)
-    FROM scalar s
-    JOIN graphitron_path_need n
-      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate
-    LEFT JOIN graphitron_join_path jp
-      ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
-     AND jp.target_type = n.target_type
-   WHERE COALESCE(jp.target_table, n.landing_table) IS NOT NULL
-)
-SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
-       l.table_schema, l.table_name, c.column_name, 'SQL_NAME'
-  FROM landing l
+SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_name, c.source_name,
+       c.table_schema, c.table_name, c.column_name,
+       CASE WHEN c.column_name_upper = UPPER(COALESCE(cl.named, o.name)) THEN 'SQL_NAME' ELSE 'JOOQ_NAME' END
+  FROM graphitron_occurrence o
+  LEFT JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_argument a
+    ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = o.graph_name AND t.type_name = COALESCE(f.named_type, a.named_type)
+   AND t.kind IN ('SCALAR', 'ENUM')
+  LEFT JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+   AND cl.kind = 'COLUMN'
+  JOIN graphitron_path_need n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
+   AND jp.target_type = n.target_type
   JOIN sql_column c
-    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
-   AND c.table_name = l.table_name AND c.column_name_upper = UPPER(l.spelling)
- WHERE (SELECT COUNT(*) FROM sql_column n
-         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
-           AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling)) = 1
-UNION ALL
-SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
-       l.table_schema, l.table_name, c.column_name, 'JOOQ_NAME'
-  FROM landing l
-  JOIN sql_column c
-    ON c.source_name = l.table_source_name AND c.table_schema = l.table_schema
-   AND c.table_name = l.table_name AND c.jooq_name_upper = UPPER(l.spelling)
- WHERE NOT EXISTS (SELECT 1 FROM sql_column n
-                    WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
-                      AND n.table_name = l.table_name AND n.column_name_upper = UPPER(l.spelling))
-   AND (SELECT COUNT(*) FROM sql_column n
-         WHERE n.source_name = l.table_source_name AND n.table_schema = l.table_schema
-           AND n.table_name = l.table_name AND n.jooq_name_upper = UPPER(l.spelling)) = 1;
+    ON c.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND c.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+   AND c.table_name = COALESCE(jp.target_table, n.landing_table)
+   AND (c.column_name_upper = UPPER(COALESCE(cl.named, o.name)) OR c.jooq_name_upper = UPPER(COALESCE(cl.named, o.name)))
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                      AND d.directive_name IN ('service', 'routine', 'pivot'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+   AND NOT (cl.named IS NULL AND o.kind = 'FIELD' AND o.name = 'id' AND f.named_type = 'ID'
+            AND (EXISTS (SELECT 1 FROM graphql_implements_interface ii
+                          WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
+                            AND ii.interface_name = 'Node')
+                 OR EXISTS (SELECT 1 FROM graphitron_node nd
+                             WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
+   AND NOT (cl.named IS NULL AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
+            AND COALESCE(f.named_type, a.named_type) = 'ID'
+            AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+                          LEFT JOIN graphitron_join_path jp
+                            ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                           AND jp.target_type = pn.target_type
+                         WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+                           AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+                           AND (EXISTS (SELECT 1 FROM graphitron_node tn
+                                         WHERE tn.graph_name = pn.graph_name
+                                           AND tn.type_name = pn.target_type)
+                                OR (SELECT COUNT(*) FROM graphitron_tabletype bt
+                                      JOIN graphitron_node n2
+                                        ON n2.graph_name = bt.graph_name AND n2.type_name = bt.type_name
+                                     WHERE bt.graph_name = pn.graph_name
+                                       AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                                       AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                                       AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) = 1)))
+   -- The SQL name, where exactly one column of the table carries it.
+   AND ((c.column_name_upper = UPPER(COALESCE(cl.named, o.name))
+         AND (SELECT COUNT(*) FROM sql_column m
+               WHERE m.source_name = c.source_name AND m.table_schema = c.table_schema
+                 AND m.table_name = c.table_name AND m.column_name_upper = UPPER(COALESCE(cl.named, o.name))) = 1)
+     -- Else the generated name, where no SQL name answers and exactly one generated one does.
+     OR (c.jooq_name_upper = UPPER(COALESCE(cl.named, o.name))
+         AND NOT EXISTS (SELECT 1 FROM sql_column m
+                          WHERE m.source_name = c.source_name AND m.table_schema = c.table_schema
+                            AND m.table_name = c.table_name AND m.column_name_upper = UPPER(COALESCE(cl.named, o.name)))
+         AND (SELECT COUNT(*) FROM sql_column m
+               WHERE m.source_name = c.source_name AND m.table_schema = c.table_schema
+                 AND m.table_name = c.table_name AND m.jooq_name_upper = UPPER(COALESCE(cl.named, o.name))) = 1));
 COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.coordinate IS 'the scalar occurrence';
