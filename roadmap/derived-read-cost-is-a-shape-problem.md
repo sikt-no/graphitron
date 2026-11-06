@@ -465,6 +465,11 @@ static method needs no holder.
   primary key: where the source states the target's key, as foreign-key columns on its row or an
   accessor on its object, the loader carries that and the continuation is a lookup on a derived target
   table, the `@lookupKey` shape; a `SOURCE`-filled parameter receives whichever key the split carries.
+* **An enum hands graphql-java its Java constants** `open`, off the critical path. A GraphQL enum bound
+  to one Java enum, by `@enum` or by every use agreeing, defines its values as that class's constants,
+  so graphql-java converts arguments both ways and every `valueOf` in the emitters goes; the store
+  states each enum's Java class and whether a class is an enum, and uses that disagree are decided
+  there. Output serializes unchanged, graphql-java matching a constant or its name either way.
 * **The service fields are emitted from the store** `blocked`, E's, on "A producer's fetcher parts are emitted from the store". The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
   the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
   changes on purpose, its behaviour does not.
