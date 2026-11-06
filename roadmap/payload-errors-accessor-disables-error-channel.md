@@ -203,3 +203,70 @@ Build: this is a documentation plus test item; the verification build is the ful
   fork for the author and user to settle before Ready; (a) may deserve its own item.
 
 Provenance: reported by the kreg Graphitron 10 port session (fs-plattform's kreg module on 10.0.0-RC46, branch `worktree-kreg-g10` at `7858137af4`, not pushed), 2026-10-30; the reporter found it present on graphitron `origin/main` the same day.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready (session_01FY5UvvUTnAY9rzFZp6gVWc, 2026-11-06)
+
+Verdict: withhold. The goal reads cleanly and is viable: the defect is real and located where the
+spec says. `BuildContext.detectErrorsFieldShape` admits only a `ReturnTypeRef.PolymorphicReturnType`,
+the manual's "Carrier shapes: union vs single type" promises the single type, and channel-wins is
+what the tree does. No sakila fixture uses a single `@error` list element today (checked every
+`.graphqls` under `graphitron-sakila-example`), so nothing existing changes behaviour. One blocking
+finding on the item's own open question, two on question two (fit), two smaller ones on the tests.
+
+**Finding 1 (question one: viability). The open question is a design fork the spec itself says must
+settle before Ready.** The fan-out question (kreg case 27: one exception, four errors, path suffixed
+with the message code) decides whether the Decision section stands as written, and with it the manual
+sentence "An errors list your service returns on success is therefore dropped". Option (a) also
+reopens the `ErrorRouter` / handler contract, which is far larger than this item. Recommendation for
+the author and user: take (b) here (state in the manual's Graphitron 9 migration notes that fan-out
+with a path suffix has no v10 equivalent yet) and file (a) as its own Backlog item, so this item stays
+a bug fix whose title and goal match its scope.
+
+**Finding 2 (question two: fit). "`liftToErrorsField` takes the same rule" understates the classifier
+change, and the seam needs naming.** A single `@error` object type resolves through
+`BuildContext.resolveReturnType` to `ReturnTypeRef.ScalarReturnType`: `TypeBuilder.lookAheadVerdict`
+returns an `ErrorType`, which is none of the four arms there. `liftToErrorsField` takes a
+`PolymorphicReturnType` parameter, and every call site gates on that type before calling it:
+`FieldBuilder` at the DML, `@service` and `@routine` carrier blocks and the record-parent switch's
+`PolymorphicReturnType` arm, and `ServiceDirectiveResolver` before `classify`. A `ScalarReturnType`
+goes to `recordReadFieldOrUnclassified` instead, which is the "no accessor ... matched SDL field" the
+kreg variant hit. So fixing the predicate in `detectErrorsFieldShape` alone leaves the field-level
+lift unreached. The spec should say which shape the fix extends, for example (i) an
+`ErrorType` arm in `resolveReturnType` (a new `ReturnTypeRef` variant, which every exhaustive switch
+over it then has to take), or (ii) one shared member-resolution helper (union members, interface
+implementations, or the single `@error` object) used by both `detectErrorsFieldShape` and a
+`liftToErrorsField` that accepts any `ReturnTypeRef`, with the call sites reached for the scalar case
+too. (ii) keeps the change inside the two methods the javadoc already ties together; the author's
+call. Either way the spec should also say what `liftToErrorsField`'s non-outcome fallback (a
+`RecordReadField` over the given return type) and its precise rejections become for the single type:
+a non-list `errors: X` and a non-null list `[X!]!` should get the same "must be a list" and
+`NonNullableErrorsField` diagnostics the union gets, not silently fall back to a data field.
+
+**Finding 3 (question two: fit). Widening `detectErrorsFieldShape` widens every carrier family, and
+the Tests section covers only `@service`.** The predicate is also read by
+`BuildContext.scanStructuralPayload` (DML, `@service` and `@routine` emitted carriers),
+`GraphitronSchemaBuilder`'s DML DELETE errors-field pass, and `MutationInputResolver`. That is the
+right outcome, since the manual's promise is not `@service`-specific, but the spec should state it and
+pin one non-`@service` case (a DML payload with a single-type `errors` field classifies an
+`ErrorsField`). The `GraphitronSchemaBuilderTest` case `DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED`
+already uses `errors: [ValidationErr]` with a single `@error` type; after the fix its `errors` field is
+a carrier rather than a data-field candidate, so the implementer should confirm the case still asserts
+what its description says.
+
+**Finding 4 (tests). The negative pipeline case is aimed at the wrong discriminator.** `implements
+Error` plays no part in recognising an `@error` type: `ErrorIndex` is built from `classifyType`
+verdicts, which key off the `@error` directive, and neither the code nor the manual names an `Error`
+interface. After the fix, the same type without `implements Error` is a carrier too; the kreg fourth
+variant showed "no channel" only because no single type forms one today. The negative should be a list
+whose element is a single non-`@error` object type, still a plain field. Consider dropping
+`implements Error` from the Goal's example so it does not read as a requirement.
+
+**Finding 5 (tests, smaller).** The single-type execution test needs a new sakila SDL type, payload
+and service method, as no fixture has the shape; name them the way the accessor-populated case does.
+The type-resolver "check" can be a statement: `GraphitronSchemaClassGenerator.isErrorOnlyPolymorphic`
+keys off `UnionType` / `InterfaceType`, so a single-type field registers none. The javadoc-hygiene
+bullet misses `FieldRenamedSetterShapeFilmReviewPayload`, whose class comment carries the same
+"catch-arm payload-factory" wording, and the `GraphQLQueryTest` comment near the `title` defaulted-slot
+assertion.
