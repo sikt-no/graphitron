@@ -1,0 +1,31 @@
+query RunningExample
+    @factDocument(path: "scenarios/occurrence-model")
+    @factRows(relation: "graphitron_occurrence")
+    @factRows(relation: "graphitron_occurrence_source_table")
+    @factRows(relation: "graphitron_path")
+    @factRows(relation: "graphitron_join_path_step")
+    @factRows(relation: "graphitron_occurrence_binding")
+    @factRows(relation: "graphitron_occurrence_column")
+    @factRows(relation: "graphitron_occurrence_producer") {
+  films(filter: {title: "ACADEMY DINOSAUR"}) {
+    title
+    details { length releaseYear }
+    language { name }
+    inventory { inventoryId }
+    actors { lastName }
+  }
+}
+
+query ProducerKinds
+    @factDocument(path: "scenarios/producer-kinds")
+    @factRows(relation: "graphitron_occurrence_producer")
+    @factRows(relation: "graphitron_occurrence_producer_result") {
+  films { title language { name } originalLanguage { name } }
+  filmsByKey(film_id: [1]) { __typename }
+  filmsByService(ids: [1]) { __typename }
+  rows(actorId: 1, minLength: 90) { title }
+}
+
+mutation ProducerWrite @factDocument(path: "scenarios/producer-kinds") {
+  createFilm(in: {title: "ACADEMY DINOSAUR"}) { __typename }
+}

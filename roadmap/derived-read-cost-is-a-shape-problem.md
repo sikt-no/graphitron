@@ -1133,9 +1133,9 @@ relation rather than what it shadows.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on "The oracle writers' lifecycle cases stay with their writers", "A registration says what pins a relation, not what it shadows" and "Any relation that carries the graph can be asserted empty".
 * **The shadow tests go with their walk side** `blocked`, on "A node is what the manual says takes effect" and "The generator builds no schema". `RoutineSpentInputShadowTest`,
   `ColumnMatchShadowTest`, `InputOccurrenceShadowTest` and `NodeTypeShadowTest` are deleted.
-* **The corpus goes** `blocked`, on "Code generation triggers are read off the occurrence model" and "The shadow tests go with their walk side". The corpus documents, `CorpusExpectations`,
-  `CorpusStore` and `CorpusDocuments` are deleted, each reader becoming a fact document or going
-  with the walk it tests.
+* **The corpus goes** `blocked`, on "The shadow tests go with their walk side". The corpus
+  documents and `CorpusStore` are deleted, each reader becoming a fact document or going with the walk
+  it tests; `CorpusExpectations` and `CorpusDocuments` stay, the fact documents' assertions and loader.
 
 ### The editor's answers are tested where the editor gets them `open`
 
@@ -1161,10 +1161,9 @@ in capture, and a path is one forward walk from source to target.
 * **The data model is an architecture page beside the fact model** `open`. A page under
   `docs/architecture/explanation/` states the coordinate, its small facts and the emitter decision,
   rewritten from R333 rather than copied, landing with or after R983's vocabulary.
-* **Code generation triggers are read off the occurrence model** `open`, B's.
-  `code-generation-triggers.adoc` is rewritten around an occurrence's producer, bindings and path,
-  each example a fact document rendered as the manual's are, and `CorpusFragmentRenderer`,
-  `OutcomeBlockRenderer` and the `_example-` fragments go.
+* **The documentation examples render without the walk** `open`. `QueryViewRenderer` builds its
+  schema with `GraphitronSchemaBuilder`; it reads the emitted schema capture builds instead, so a
+  page's examples outlive the walk.
 * **A view's column prose lives where the store keeps it** `open`. H2 2.5 refuses `COMMENT ON
   COLUMN` on a view, and 2.4 already dropped those comments when a file store was reopened, so the
   1202 are SQL comments in `graphitron-model.sql` for now. They move to the view's own comment, to
@@ -2474,6 +2473,13 @@ gatherer roster row `document` is now `graphql-source`, `graphql-ast`, `graphitr
 its index `ix_resolved_type_binding_type` and its grain `resolved-type-binding` went into
 `graphitron_tabletype`, which binds a type to its one table and an ambiguous `@table` to none; with
 them the `candidates = 1` guard every reader applied, and `TableTypeTest`'s parity check.
+
+**The corpus's worked-example fragments.** `CorpusFragmentRenderer`, `CorpusFragmentRendererTest`,
+`CorpusFragmentTest`, `OutcomeBlockRenderer`, `OutcomeBlockRendererTest` and the 34
+`docs/architecture/reference/_example-<id>.adoc` fragments, with the code generation triggers page
+rewritten over the occurrence model and its examples rendered from fact documents by
+`ManualExamples`; `HowToIndexCoverageTest`'s check that the reference section holds fragments went
+with them.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

@@ -1,1234 +1,291 @@
 = Code Generation Triggers
 
-You wrote a schema pattern. What does Graphitron generate from it, and where does each piece land?
-This page answers that, following the chain the generator actually runs: the schema becomes facts,
-the facts resolve into a verdict per coordinate, the verdicts join into command rows, and each row
-renders into a generated unit. Worked examples carry the bulk of the answer; every block in them is
-rendered from a live fixture, not transcribed.
+What graphitron generates from a schema follows from what the store states about each place in it.
+This page reads those statements off one running example, the store's own rows beside the schema
+that wrote them, and says what each kind of statement makes graphitron generate. Every schema block
+and every table here is rendered from a fact document, and the build checks each table against a
+real capture of that document.
 
 '''
 
 == The chain
-
-Four stages, each reading only the stage before it.
 
 [#diagram-chain]
 [source,mermaid]
 ----
 flowchart LR
     SDL[GraphQL schema] --> CAP[capture]
-    CAP --> F[("facts<br/>graphitron_ / graphql_")]
-    F --> DER[derivation]
-    DER --> V[("verdicts<br/>intent_ views")]
-    V --> PLAN[planning]
-    PLAN --> C[("command rows")]
-    C --> REN[render]
-    REN --> OUT[generated units]
+    CAT[jOOQ catalog] --> CAP
+    CAP --> F[("facts<br/>graphql_ / graphitron_ / sql_")]
+    F --> ANC[anchoring]
+    ANC --> O[("occurrences<br/>source, path, bind, producer")]
+    O --> EMIT[emit]
+    EMIT --> OUT[generated units]
 ----
 
-*Capture* transcribes the schema into the fact store: one relation per thing the SDL states, in the
-author's vocabulary (`graphql_`) and in Graphitron's (`graphitron_`). Capture decides nothing; it
-records. *Derivation* asks the questions whose answers are verdicts, as SQL views over those facts
-(`intent_`). *Planning* joins verdicts into command rows, one row per thing that will be generated.
-*Render* folds each row into an emitted unit, a class or a method, and folds nothing else.
+*Capture* reads the schema, the jOOQ catalog, the configuration and the classpath into the store,
+one family of relations per corpus. *Anchoring* is each gatherer's last step: over the captured facts
+it states, for every place a field, argument or input field is used, where its values come from, how
+it reaches what it needs, what it binds and whether it runs something of its own. *Emit* reads those
+statements and writes the generated code.
 
-The depth lives elsewhere and this page does not restate it: stage order and what is still
-transitional in
-xref:../explanation/pipeline-overview.adoc[Pipeline overview], the modelling discipline every
-relation obeys in xref:../explanation/fact-model.adoc[The fact model] and its gentler sibling
-xref:../explanation/naming-the-row.adoc[Naming the row], and per-relation detail with the sentence
-each relation's own comment states in xref:schema/index.adoc[the generated schema reference].
+The modelling rules every relation obeys are in xref:../explanation/fact-model.adoc[The fact model]
+and xref:../explanation/modeling-discipline.adoc[Modelling discipline]; each relation's columns and
+its full comment are in xref:schema/index.adoc[the generated schema reference].
 
 One transitional note, so nothing here reads as more settled than it is. A classification walk
-(`GraphitronSchemaBuilder` and the sealed `GraphitronSchema` model) still runs alongside capture and
-still feeds parts of planning. It is a surface being drained, not a place to extend: new facts land
-in the store, and consumers re-source onto the store one at a time. Sections of this page that are
-still written in the walk's vocabulary say so on the section.
+(`GraphitronSchemaBuilder` and the sealed `GraphitronSchema` model) still runs beside the store and
+still feeds parts of generation. This page describes what the store states, which is what the
+generator is moving onto, one emitter at a time.
 
 '''
 
-== How a coordinate gets its verdict
+== The running example
 
-This is the page's closed vocabulary. A coordinate is a `(type, field)` pair, or a type on its own;
-its verdict is not one decision but the answer to several independent questions asked of the facts.
-Each question is a relation, each relation states its own rule in its own comment, and the sections
-below name the relation rather than restating the rule. Follow a name into
-xref:schema/index.adoc[the generated schema reference] for its columns and its full comment.
+A film, the plain type holding two of its columns, and the three tables a film reaches: its
+language by the key written, its inventory by the one key inventory has to film, and its actors
+through `film_actor`. The root field takes a filter.
+
+[source,graphql]
+----
+include::examples/code-generation-triggers.graphqls[tag=RunningExample]
+----
+
+'''
+
+== The occurrence
+
+An *occurrence* is a use of a declared field, argument or input field, at the place it is reached.
+Its coordinate spells that place: `Film.title` on the table-bound `Film`, `Film.details.length` for
+the field of `FilmDetails`, which has no table of its own and is only reached under `Film.details`,
+and `Query.films(filter.title:)` for an input field inside an argument. The element coordinate names
+what it is an occurrence of, so a field declared once is an occurrence at every place it is reached.
+
+A chain starts at a field of a root type or of a table-bound type, and grows through each field
+whose type has no table of its own: an argument hangs under its field, an input field under its
+argument. A field whose type is table-bound ends the chain, and that type's fields start chains of
+their own.
+
+include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_occurrence]
+
+Everything below is stated per occurrence, not per declaration. A plain type reached under two
+fields is two sets of facts, because what its fields read can differ at each place.
+
+'''
+
+== Source
+
+An occurrence's *source* is what its values come from: rows of one or more tables, `TABLE`, or an
+instance of a class, `OBJECT`. `graphitron_occurrence_source` states the kind, and its two subtypes
+name the tables or the class.
+
+* A field of a table-bound type reads that type's table.
+* A field nested in a plain type reads what its parent reads, so `Film.details.length` reads `film`.
+* An argument reads the table of its field's target, and an input field its argument's.
+* A field reached under a producer that hands back objects reads what that producer produces: a
+  table record is rows of its table, any other class an object.
+* A field of a root type has no source. It executes from nothing, so `Query.films` has no row.
+
+include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_occurrence_source_table]
+
+'''
+
+== Path
+
+An occurrence with a table source must reach the type it returns, and an argument the type its field
+returns. `graphitron_path_need` states each such need with the table it starts on and the table it
+lands on, and `graphitron_path` says how the need is met: by joins from a table source, `JOIN`, or
+by accessor calls on an object, `ACCESSOR`. A path's origin says where it came from.
 
 [cols="1,3"]
 |===
-| Question | The relation that answers it
+| Origin | Meaning
 
-| What did the author claim, on a field?
-| `intent_authored_field_claim`. One arm pair per claiming directive (`@service`, `@externalField`,
-  `@nodeId`, `@lookupKey`, `@routine`, `@mutation`): a decoded arm reading the semantic relation, and
-  a presence arm falling back to the raw application where the decode declined.
+| `WRITTEN`
+| The author wrote it, with `@reference` or `@routine` on the element.
 
-| What did the author claim, on a type?
-| `graphitron_claim`, its type family: `TABLE_TYPE` from `@table` and `ERROR_TYPE` from `@error`, as
-  written whether or not the table resolves.
+| `INHERITED`
+| Written on an interface's field, and followed by each implementation's field.
 
-| Which catalog table does a type bind?
-| `intent_bound_table`, resolving `@table`'s reference through `graphitron_spelled_table`: the `name`
-  argument as written, or the type name where the argument was omitted.
+| `INFERRED`
+| Nothing was written, and the path rides the one foreign key between the two tables.
 
-| What does the catalog match on its own?
-| `intent_column_match_claim`, the structural classifier: a field whose name resolves against the
-  table its site navigates to claims `TABLE_COLUMN`, with no directive involved.
-
-| So what won?
-| `intent_resolved_field_claim`. The authored rows unioned with the inferred rows at coordinates the
-  authored relation does not cover. Its `tier` column says which: `AUTHORED`, or `INFERRED` for a
-  structural reading that survived the anti-join.
-
-| What contradicts?
-| `graphitron_entry_defect`, code `CLAIMS_CONFLICT`: one row per element at whose declaration two
-  claims of `graphitron_claim` cannot stand together, with each claim in
-  `graphitron_entry_defect_claim` under it. `ROUTINE_LOOKUP_DEFERRED` is the one pair
-  `graphitron_claim_inclusion` reports otherwise.
+| `EMPTY`
+| The path ends where it starts: a column on its own table, a plain type nested in its parent's
+  table, an argument filtering its own field's table.
 |===
 
-Two properties of this layer are worth stating outright, because they are what make it the
-vocabulary to learn rather than one of several.
+include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_path]
 
-*Masking is a join, not a guard.* A structural classifier never checks whether a directive was
-written; `intent_resolved_field_claim`'s anti-join does the masking, at the coordinate grain. Any
-authored claim at a coordinate masks every structural reading there, presence arms included, because
-a directive whose decode declined still diverted the walk.
+A join path's steps are `graphitron_join_path_step`, one per table it moves through, with the
+column pairs it joins on in `graphitron_join_path_step_column` and the key it rode in
+`graphitron_join_path_step_key` where one was written, or `graphitron_join_path_step_inferred_key`
+where the step inferred it.
 
-*A conflict is a fact, not a failure.* A claim defect is written wherever the claims are, and fails
-the build there, a type no field reaches included, which is precisely where an author most needs the
-signal; the editor shows the same rows. Which claims win is each reader's question: the relation
-states the claims and their priorities and decides nothing. What that does
-to generation is xref:../explanation/typed-rejection.adoc[Typed rejection]'s subject, and
-<<when-nothing-is-generated,When nothing is generated>> below.
+include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_join_path_step]
+
+A need nothing meets is a defect at the written position. Had `Film.language` written no key, the
+two keys `film` has to `language` would leave its need unmet, and the store would state a
+`ROUTE_AMBIGUOUS` defect at the field naming both.
 
 '''
 
-== What one generated thing is
+== Bind
 
-A command row is one thing that will be generated. Planning mints the rows; render folds each into an
-emitted unit and folds nothing else. The relations below are the whole command tier.
+What an occurrence takes is its *binding*, `graphitron_occurrence_binding`, one row per occurrence
+and place it binds, keyed by the place and stating its kind.
+
+[cols="1,3"]
+|===
+| Kind | What the occurrence takes
+
+| `COLUMN`
+| A column where its path lands: a scalar reads it, an argument or input field narrows by it.
+
+| `TABLE`
+| The table an object or list it returns joins to.
+
+| `NODE_ID`
+| A node identity, packing or unpacking the key columns of its node's table.
+
+| `VALUE`
+| A member's value off its parent's object.
+
+| `PARAMETER`
+| A parameter of a call that consumes it, such as a `@service` method's.
+
+| `EXPRESSION`
+| A value an `@externalField` method computes in its producer's query.
+
+| `RESULT_EXPRESSION`
+| A value computed over what its producer produced.
+|===
+
+Each kind has a relation of its own beneath the binding stating what it takes. In the running
+example every scalar binds a column, and so does the filter's `title`, which narrows by
+`film.title`:
+
+include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_occurrence_binding]
+
+`graphitron_occurrence_column` names the column, and how the name matched it: by the SQL name, or by
+the name jOOQ generated for it, which answers only where no SQL name on the table does.
+
+include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_occurrence_column]
+
+The store does not state every binding yet. In the running example `Film.language`, `Film.actors`
+and `Film.inventory` have no `TABLE` row, and the arguments a `@routine` consumes have no
+`PARAMETER` row; their writers are still being moved onto the occurrence.
+
+'''
+
+== Producer
+
+An occurrence that binds and runs nothing belongs to the query of its *producer*, the nearest
+occurrence up its chain that executes something of its own. `graphitron_occurrence_producer` states
+each producer, what it runs and where it starts.
+
+* A `ROOT` producer is a field of a root type. It has no source and runs from nothing.
+* A `CHILD` producer starts a query of its own from what its parent produced, batched over all its
+  parents: a `@splitQuery` field, a table-bound field under a parent that holds an object rather than
+  rows, a payload's data field re-read by key after a write, or a child `@service`.
+
+A child the parent's query can join in does not produce: it binds, and its join path continues its
+producer's query. In the running example only `Query.films` produces; every field below it, the
+language, the actors and the inventory among them, is read by the one query it runs.
+
+include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_occurrence_producer]
+
+One producer of each kind a root runs, and a split child:
+
+[source,graphql]
+----
+include::examples/code-generation-triggers.graphqls[tag=ProducerKinds]
+
+include::examples/code-generation-triggers.graphqls[tag=ProducerWrite]
+----
+
+include::examples/_code-generation-triggers.adoc[tag=ProducerKinds-graphitron_occurrence_producer]
+
+`Film.language` is a `CHILD` because it is written `@splitQuery`; `Film.originalLanguage`, joined in,
+produces nothing. A connection carries two more, `COUNT` for its `totalCount` and `FACETS` for its
+facets, each run only when a client asks for it; `graphitron_producer` states them for the field
+today, and the occurrence will once the connection model lands.
+
+What a producer produces is `graphitron_occurrence_producer_result`: its shape, one record, a list
+of records, a connection page, an object or a scalar, with the class its values are where one is
+named and, for records, the table they are rows of. The occurrences under a producer bind into that
+result.
+
+include::examples/_code-generation-triggers.adoc[tag=ProducerKinds-graphitron_occurrence_producer_result]
+
+A producer's subtypes state what it calls. `graphitron_occurrence_producer_service` names a
+`SERVICE` producer's method and, for an instance method, the constructor its object is made with;
+`graphitron_occurrence_producer_routine` a `ROUTINE` producer's database routine;
+`graphitron_occurrence_producer_write` a write's table. `graphitron_occurrence_call_parameter` says
+what fills each parameter of a call: an argument, which then binds that parameter, as
+`Query.filmsByService(ids:)` binds the second parameter of `filmsByService`, or a value graphitron
+supplies, such as the jOOQ context. `graphitron_occurrence_producer_key_row` states where a child
+producer under an object starts: the key it takes off that object, lifted onto the key's table.
+
+'''
+
+== What the facts generate
+
+Each producer becomes a data fetcher, and each producer kind decides what that fetcher runs.
+
+[cols="1,3"]
+|===
+| Producer | What its fetcher runs
+
+| `SELECT`
+| One jOOQ query from its start, `ROOT` from the producer's own table and `CHILD` batched over its
+  parents' keys through a DataLoader, selecting what every occurrence under it binds.
+
+| `LOOKUP`
+| The same query, keyed by the values the caller supplies, returning one result per key in the order
+  given.
+
+| `COUNT`, `FACETS`
+| A count or a facet aggregation over the same rows and arguments as the connection that carries it.
+
+| `INSERT`, `UPDATE`, `DELETE`
+| The write on its table, then a re-read of the written rows by key for whatever the client selected.
+
+| `ROUTINE`
+| A call to the database routine, its rows read as the routine's derived table.
+
+| `SERVICE`
+| A call to the method, its parameters filled as `graphitron_occurrence_call_parameter` says, and
+  the result read as `graphitron_occurrence_producer_result` says.
+|===
+
+The occurrences under a producer shape its query rather than add fetchers. A `COLUMN` binding is a
+selected column, or under an argument a predicate on it. A join path is a join in the producer's
+query, or a nested `multiset` for a list. A `NODE_ID` binding packs or unpacks key columns, and an
+`EXPRESSION` binding is its method's value selected in place. A field that neither produces nor needs
+a value of its own, a plain type's field reading its parent's row, is served by the default property
+fetcher and generates nothing of its own.
+
+Between these facts and the code sits the planning tier as it stands today: emit joins what it
+reads into command rows, one per thing it will write, and renders each into a class or a method.
+The command relations, with the grain each states:
 
 include::_command-relations.adoc[]
 
-Each row's sentence above is the first sentence of that relation's own javadoc, rendered at build
-rather than transcribed here, so a relation added or renamed in the code shows up in this table or
-fails the render.
-
-*Unit names are minted in one place.* Every `UnitRef` and `UnitMethodRef` comes from the naming
-schemes in `GeneratedUnits` and from nowhere else, which `PackageImportDirectionTest` enforces by
-pinning the minting site. That single mint is what makes an emitted name in a worked example below
-trustworthy: it is the name the run produced, not a name a doc author reconstructed.
-
-*Closure is asserted, and the gaps are disclosed rather than implied.* `LauncherRelationClosureTest`
-joins the relation the run actually rendered from against the emit walk and against the classified
-model, in both directions: every coordinate the covered families claim has exactly one row, every
-row's `(owner, method)` names a method the run declared, and no two rows claim the same method. The
-covered families come from the producer's own declared membership, never a hand-maintained
-restatement. Two absences are pinned as absences, so they read as decisions:
-
-- the batched polymorphic pair is emitted and uncommitted, its rows methods named through the same
-  `GeneratedUnits` scheme with no row behind them;
-- an encoded-DML return arm carries no reentry.
-
-The relations' own populations disclose their transitional edges the same way: `LauncherRelation`
-covers migrated root SELECT coordinates, and `FetcherEdgeRelation` the covered non-launcher
-families. Both are widening as consumers re-source onto the store.
-
-=== Derived tables
-
-Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
-
-- *Derived source table* ; built from parent source records. Contains the FK-relevant columns from the parent: the parent's PK/unique-key columns when the FK is on the child side, or the FK columns themselves when the FK is on the parent side. Used for `@splitQuery` table fields, user-provided returns (`@service`), and mutation read-backs.
-- *Derived target table* ; built from `@lookupKey` argument values (from `SelectedField.getArguments()`). Each argument value (or list element) is one row. *Identical for every source in a batch* ; all N parents in a batch share the same request arguments, so M (the number of lookup rows) is constant for the entire batch. Base result count is exactly N × M.
-
-*`@condition` on lookup fields is allowed.* The condition method, however, must preserve the N × M positional contract: each (source, target) pair produced by the derived-table cross join is either kept in full or dropped in full, and no additional rows may be introduced. In practice this means the condition should be a predicate over the pair of rows, not a filter that can change the per-parent result cardinality non-uniformly. Violating the contract desynchronises batch dispatch ; the client receives rows that cannot be reattached to their source. The contract is a developer responsibility, not a build-time check.
-
-=== Conditions
-
-|===
-| Kind | Purpose | Source
-
-| *Reference condition* | How two tables are joined within a scope | `@reference` directive, carried on the hop's `On` axis: FK key → `On.ColumnPairs`; condition method → `On.Predicate`
-| *Filter condition* | Narrows the result set of the current scope | `@condition` directive, arguments, cursor
-| *Lookup condition* | Filters the (source × target) row pairs produced by a lookup's derived target table. Must preserve the N × M positional contract ; see <<derived-tables,Derived tables>> above. | `@condition` directive on a field with `@lookupKey`
-|===
-
-=== Batch-shaping directives
-
-Two directives change the shape of the batch rather than what a coordinate classifies as.
-
-`@splitQuery` on a field whose parent is bound to a table forces a new SQL statement, dispatched
-through a DataLoader keyed by the parent's key columns. On a field whose parent is class-backed it is
-redundant, because the handoff into that parent already opened a new statement; that case is a build
-*warning*, not an error.
-
-`@lookupKey` turns the field's argument values into the derived target table above. It blocks
-pagination, which is what preserves the N × M result invariant, and it does not by itself open or
-close a statement. A field can carry both directives; the lookup rides along on whatever statement
-`@splitQuery` opened.
-
 '''
 
-== Type Classification
-
-[NOTE]
-====
-*Transitional.* This section describes the sealed type leaves the classification walk produces, a
-surface being drained rather than one to extend. What it states is accurate today. For the
-architecture the walk drains into, see
-xref:../explanation/pipeline-overview.adoc[Pipeline overview].
-====
-
-The worked examples in this section are not written here. Each one is an `include::` of a fragment
-rendered from the classification test corpus (`graphitron/src/test/resources/corpus`, one GraphQL
-document per example): the SDL shown is the live fixture the classifier runs against, projected
-through a documented query by the query-as-view renderer with the test-only assertion directives
-stripped, and the table beside it states what a real capture and a real generation run make of those
-coordinates. `CorpusFragmentTest` compares every fragment against what the corpus renders now, so a
-displayed example is always one the pipeline actually produces the stated outcome for, and this page
-holds no expectation of its own: what it authors is the prose, the teaching order, and which examples
-to show. The reference table that follows enumerates the verdicts not yet migrated to a worked
-example.
-
-[#table-type]
-=== `@table` over an object type
-
-A type carrying `@table(name:)` classifies as `TableType`, the pivot for SQL generation, unless a
-nodehood or discrimination trigger takes precedence: `@node`, `@discriminate`, or `implements Node`
-over a table whose jOOQ class publishes `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`. A root field
-returning a `TableType` enters a new query scope rooted in that table, and a scalar child whose name
-matches a column projects inline.
-
-include::_example-catalog.adoc[]
-
-`Film` classifies as `TableType` (full SQL generation: queries, joins, projections); `Query.film`
-enters the scope; `Film.title` projects an inline column. The root type itself classifies as
-`RootType`, which is a fetchers class and nothing more: a root type binds no table, so it opens no
-query scope of its own and only wires the fields hanging off it. Asserted by the `catalog` corpus
-example via `@classifiedType(as: TableType)` on `Film` and `@classifiedType(as: RootType)` on `Query`.
-The field descriptions are written on the coordinates themselves, in the corpus document, so the
-sentence teaching a coordinate lives where the coordinate does.
-
-[#node-type]
-=== `@node` over a table
-
-A `@table` type that also carries nodehood classifies as `NodeType` rather than `TableType`: either
-`@node(keyColumns:)` written on it, or `implements Node` over a table whose jOOQ class publishes
-`__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS`. Nodehood is a stronger claim than table-binding, so it
-takes precedence. The `@nodeId` field is where it shows: the coordinate carries an authored `NODE_ID`
-claim, and the emitted fetcher encodes the key columns into a Relay global id rather than projecting
-a column.
-
-include::_example-node-type.adoc[]
-
-Note the tier: `NODE_ID` is `authored`, where `Film.title` in the first example was `inferred`. The
-directive is what makes the difference, and it is the anti-join in `intent_resolved_field_claim` that
-records it: an authored claim at a coordinate masks any structural reading there. Asserted by the
-`node-type` corpus example via `@classifiedType(as: NodeType)`.
-
-=== Global ids over a composite key
-
-`@nodeId` encodes a type's key columns into one opaque id. The key does not have to be a single
-column, and the id can be produced from a table other than the one that defines the type: written
-with `typeName:`, `@nodeId` names the type whose key shape to encode, and reads the columns for it
-from wherever the coordinate sits.
-
-include::_example-composite-node-key.adoc[]
-
-Both `@nodeId` coordinates claim `NODE_ID` and both emit, with or without `typeName:`. The
-difference is which key shape gets encoded, not which verdict is reached. Asserted by the
-`composite-node-key` corpus example.
-
-[#nesting-type]
-=== An object type with no binding
-
-An object type carrying no `@table` and reached from no producer is a grouping type: it has no table
-of its own, and its fields resolve against whatever scope its parent opened. It generates a fetchers
-class, because its fields still need wiring, but it opens no query.
-
-include::_example-nesting.adoc[]
-
-`FilmDetails.title` and `FilmDetails.description` read columns of `film`, the table its parent bound,
-which is what "nested under the parent's scope" means concretely. They fold into the parent's SELECT
-and are projected inline, so the grouping object itself needs no query of its own: `Film.details` is
-wired as a passthrough that hands the parent's source object straight down. The parameter lists in
-the block are the tell. A coordinate with a read to launch takes a `DataFetchingEnvironment`; one
-that is only a value read off the row already in hand takes an `Object`. `Film.details` returns an
-object and still takes an `Object`, which is what makes it a passthrough rather than a fetch.
-Asserted by the `nesting` corpus example via `@classifiedType(as: NestingType)`.
-
-[#scalar-type]
-=== `@scalarType` over a scalar
-
-A `scalar` declaration carrying `@scalarType(scalar:)` names a `public static final GraphQLScalarType`
-constant, and that constant is the whole binding:
-
-include::_example-scalar-type.adoc[]
-
-Both scalars classify as `ScalarType`, and neither generates anything of its own. What the verdict
-buys is a registration and a Java type. The constant is registered on the synthesized schema through
-`.additionalType(...)`, and graphitron reflects on its `Coercing<I, O>` to recover the Java type the
-scalar stands for.
-
-The two coordinates show why that recovered type matters, because they are the two places it is
-consumed. `Payment.amount` is an ordinary column read whose projection needs a `Field<X>`, and `X` is
-what the reflection resolved. `Query.price` takes the scalar as a `@service` parameter, and the same
-resolution is what lets the argument bind to the method's parameter type. Nothing about either
-coordinate's own verdict changes: `amount` is the same `TABLE_COLUMN` a `String` column would be, and
-`price` is the same `SERVICE` any other service root is.
-
-The spec's own built-ins (`Int`, `Float`, `String`, `Boolean`, `ID`) register the same way, but their
-Java types come from a closed table rather than from reflection, because the spec binds those names.
-Writing `@scalarType` on one of them is a hard validation error rather than an override. A non-spec
-scalar with no `@scalarType` is the other error: it classifies as `UnclassifiedType` and the build
-points at `@scalarType(scalar:)` as the single fix, never falling back to `Object`.
-
-Asserted by the `scalar-type` corpus example via `@classifiedType(as: ScalarType)`.
-
-[#backing-class]
-=== A Java class on either side of the boundary
-
-The types so far took their verdict from a directive the author wrote. A type that carries no binding
-directive can still get one from Java, by sitting at the boundary where a `@service` method hands a
-value out or takes one in. Nothing is declared; the verdict is read off the method's signature by
-reflection, and which leaf it lands on is simply what kind of Java thing the reflected class is.
-
-Three kinds, and the same three on both sides. Take the result side first: the type is what a producer
-returns.
-
-include::_example-result-backing.adoc[]
-
-The three result types land on `PojoResultType.Backed`, `JavaRecordType`, and `JooqTableRecordType`,
-and the fourth `ResultType` leaf, `JooqRecordType`, is what a table-less jOOQ `Record` reflects to. All
-four generate the same thing: a `*Fetchers` class and nothing else. A backed type owns no SQL scope,
-because graphitron did not build the value, it received it.
-
-What the leaf does decide is how a field on such a type resolves. Every one of them classifies as a
-plain field read, which is why all three child rows above say "no claiming directive": no directive
-claims them, and the resolution is structural. But the structure differs by leaf. `PojoBacked.id`
-resolves against a readable accessor, `JavaRecordBacked.name` against a record component, and
-`JooqTableRecordBacked.title` against a column of the record's own table. A field naming something the
-class does not expose is a build error at that coordinate, not a runtime null.
-
-The input side is the mirror image: the type is what a consumer takes.
-
-include::_example-input-backing.adoc[]
-
-Only the three roots appear, because an input type has no fields to resolve; it has fields to
-*populate*. The input leaves mirror the result ones (`PojoInputType`, `JavaRecordInputType`,
-`JooqRecordInputType`, `JooqTableRecordInputType`), and again none of them generates a class. What each
-one generates is the population code inside the root's own fetcher, so the service body receives its
-declared parameter type rather than a `Map`.
-
-The direction of the obligation flips here, and that is the part worth reading twice. On the result
-side an SDL field must find something on the class; a class member the schema ignores is simply not
-exposed. On the input side a Java *record* inverts it: the canonical constructor needs every component,
-so the input type must declare a field for each one. That is why `JavaRecordBackedInput` carries both
-`name` and `value` while `JavaRecordBacked` carries only `name`. A plain class does not invert it,
-because JavaBean population fills what it is given and leaves the rest at its default.
-
-`PojoInputType` carries a second population it does not share with the others: an input type that no
-`@service` parameter ever reflects still classifies as `PojoInputType`, unbound. That input has no
-backing class at all, and its fields resolve per usage against each consuming field's table, so the
-same input reused on two different tables resolves differently at each one.
-
-Asserted by the `result-backing` and `input-backing` corpus examples.
-
-[#error-type]
-=== `@error` over an object type
-
-Every type so far takes its values from something the generator can go and read: a table, a service
-return, a component of a record. An `@error` type is the one that does not. Its values come from a
-Java exception thrown while some other field was being resolved, and `handlers:` is where the author
-says which exceptions those are.
-
-It also does not reach the schema on its own. It arrives through an `errors:` slot on a `@service`
-payload, and that slot is what wires the try/catch: the carrier's error channel records which
-`@error` types this call can produce, so the generated fetcher knows what to map a caught throwable
-into.
-
-include::_example-error-type.adoc[]
-
-`path` and `message` are required on every `@error` type, and graphitron supplies both values itself.
-That is why each gets a generated method taking the `DataFetchingEnvironment` rather than a source
-object: `path` synthesises from the execution context, the response path of the field whose
-payload holds the error (a `GraphQLError` carrying its own path, as a validation-derived source
-does, routes through `GraphQLError.getPath()` instead, so the per-element paths survive), and
-`message` resolves at build time to the handler's `description:` when the author
-wrote one and to the source's `getMessage()` when they did not.
-
-Any field beyond those two is the author's. `severity` is one, and its row reads `no method of its
-own` because nothing needs generating for it: the schema's registration wires a
-`PropertyDataFetcher` straight onto the accessor, reading `getSeverity()` off whatever was caught.
-The accessor name is the field's own unless `@field(name:)` names a different one. Graphitron does
-check at classify time that every extra field has an accessor to read from on every class in the
-channel, but that check fires on the carrier and not on the `@error` type, so an extra field never
-moves the type's verdict away from `ErrorType`.
-
-The payload's `data` field is a plain passthrough over the record the service returned, the
-reflection-derived backing of <<backing-class,the previous section>>. `errors` is not. It is the
-error channel's own coordinate, and the method in its row is where a caught throwable becomes a list
-the wire can carry.
-
-What that method looks like depends on how the carrier ships the errors, which the classifier
-resolves once, with the parent's channel in scope, and which has two answers. Here the errors ride
-an error-list arm of the value the producer returned, so the emitted method takes the source and
-unwraps that arm, resolving to null on the success arm to honour the field's nullability; that is the
-`(Object)` signature in the block above. Every producer-bound payload takes this form, whether a
-`@service`, a `@mutation` or a `@routine` field returns it. A plain class-backed parent whose
-`errors`-shaped field is a slot the developer populated emits no method at all: the registration
-wires a `PropertyDataFetcher` onto the property, the way `severity` is wired above. Only that second
-form is a passthrough, and a producer-bound payload like this one does not take it.
-
-The rest of the `handlers:` option set (SQL-state and vendor-code matching, validation fan-out,
-`matches:` message filters) is in `docs/manual/reference/directives/error.adoc`; the classification
-verdict does not vary with any of it.
-
-Asserted by the `error-type` corpus example.
-
-=== Reference table
-
-What is left here is the surface a worked example cannot show. The corpus renders patterns that
-classify and generate, so a deprecation warning and two rejections have no example to be pulled into;
-they stay stated rather than demonstrated.
-
-|===
-| Classification Trigger on Type | `GraphitronType` Variant | Generator Output
-
-| Input type with `@table` (deprecated location; see `docs/manual/reference/directives/table.adoc`) | Whatever the same input without the directive classifies as | No generation decision of its own: the directive is ignored, `name:` is never read, and no reader consults it (the input-axis binding arm and the three nesting guards that once did were all deleted, so inertness is uniform). A non-fatal per-usage build warning announces the deprecation and carries the per-verb migration guidance (drop the directive for filters and lookup args; `@mutation(table:)` for DELETE and encoded-ID / scalar returns; return-derivation for INSERT/UPDATE). A future release rejects the location.
-| Unresolvable directives | `UnclassifiedType` | Validation error ; build fails
-| Conflicting type directives (`@table` with `@error`) | Arm-order winner | Validation error from the store-backed conflict detection (`ClaimConflicts`); build fails
-|===
-
-*Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
-- `TableBackedType` ; groups `TableType`, `NodeType`, `TableInterfaceType`. Builders switch on this to detect table-mapped types.
-- `ResultType` and `InputType` group the reflection-derived leaves, four each, worked through under
-  <<backing-class,A Java class on either side of the boundary>>.
-
-'''
-
-[#field-classification]
-== Field Classification
-
-[NOTE]
-====
-*Transitional.* This section describes the sealed field leaves the classification walk produces and
-the generator output each drives, a surface being drained rather than one to extend. What it states
-is accurate today. For the architecture the walk drains into, see
-xref:../explanation/pipeline-overview.adoc[Pipeline overview].
-====
-
-A field's classification factors into three asserted axes plus a derived layer. The worked examples below
-render the dimensional form from the corpus; the leaf-name tables that follow are a curated reference,
-enumerating each sealed variant and the generator output it drives. The corpus, not these tables, is the
-coverage source of truth: `VariantCoverageTest` guarantees every output-field leaf is demonstrated by a
-corpus fixture, so a variant absent from a table below is still tested, just not featured here in prose.
-
-A field is an edge: it *arrives into* a `source`, *performs* an `operation`, and *projects* a `target`.
-The three asserted axes are:
-
-* *`source`*, the field's arrival endpoint, a wrapper around a shape. The wrapper arm *is* position and
-  the legality gate: `Root` (permitting `Query` / `Mutation`) is a root field, `OnlyChild` / `Child` is a
-  nested field (one or many source objects arriving). Write operations are legal only on `Root.Mutation`,
-  `NodeResolve` only on `Root.Query`, `Nest` only on a nested source. The nested arms wrap a
-  `SourceShape` (`Table` / `Record`), the catalog-vs-Java polarity of what arrives at `env.getSource()`.
-* *`operation`*, the verb the field performs: reads (`Fetch`, `Paginate`, `Lookup`, `NodeResolve`,
-  `Nest`, and the modeled-but-unpopulated `EntityResolve` / `Count` / `Facet`), writes (`Insert`,
-  `Upsert`, `Update`, `Delete`, and the unpopulated `UpdateMatching` / `DeleteMatching`), and the
-  developer `ServiceCall` (the read-vs-write split it once carried is now read off the `source` root).
-* *`target`*, the field's projection endpoint, a wrapper (`Single` / `List`) around a `TargetShape`.
-  The shape carries *build-vs-consume*: `Table` / `Column` are catalog shapes graphitron *builds* the SQL
-  for; `Record` / `Field` are domain shapes graphitron *consumes* without having built; `Connection`,
-  `Interface`, `Union` are the container and polymorphic shapes. `Table:Column :: Record:Field`
-  (mirror : reflect). A Relay connection is `Single(Connection(...))`, its windowed-read verb the
-  `Paginate` operation.
-
-The *derived layer* is computed from those three plus the field's slots and schema position, never
-asserted: *fetch-related* (a `Fetch` reaching a related entity over a join-path), *re-fetch* (a
-service/DML producer yielding a `Table` shape, forcing a re-projection), *new-query* (`@splitQuery` /
-polymorphic / record-handoff opening a fresh keyed query), and *polarity* (mutating-or-not, from the
-`source` root and the write operations). The governing principle is *assert what nothing else carries;
-derive what another axis or slot already forces*. The subsections below sound out the derived layer and
-each axis in turn.
-
-[#derived-layer]
-=== The derived layer: same verdict, different mechanism
-
-Two fields can share an identical `(source, operation, target)` verdict yet emit different SQL, because
-the fetcher/loader mechanism is *derived*, not asserted. The cleanest illustration is the new-query
-derivation: a `@table` child reachable by a foreign key from a `@table` parent inlines as a correlated
-subquery folded into the parent's SELECT, while adding `@splitQuery` opens a new keyed query dispatched
-through a DataLoader. Both classify identically (`source = Child(Table)`, `operation = Fetch`,
-`target = Single(Table)`); only the derived new-query layer differs, forced by the `@splitQuery` slot.
-
-include::_example-child-table.adoc[]
-
-`City.country` and `City.countrySplit` return the same `Country` over the same `city -> country` foreign
-key and carry the same `Child` / `Fetch` / `Table` verdict; `@splitQuery` flips only the derived
-new-query layer, not an asserted axis. Asserted by the `child-table` corpus example.
-
-The two mechanisms are worth naming, because every `@table` child on the page is one or the other.
-Inline means a `DSL.multiset` correlated subquery projected into the parent's `$project` block, and at
-single cardinality that subquery adds a `.limit(1)` and a read-side unwrap lambda to turn the one-row
-list back into an object. Split means an async DataLoader fetcher plus a `rows*()` method that takes
-the parent keys as a batch.
-
-[#record-handoff]
-==== The record-handoff boundary
-
-`@splitQuery` is not the only trigger for the new-query derivation. A `@table` child reached by a foreign
-key inlines under a `@table` parent, but the *same* FK-reached child re-queries under a record-backed
-parent, because the record handoff has already opened a new DataLoader-backed scope that the correlated
-subquery cannot fold back into. The parent's table-ness, not a directive, forces the derived re-query
-here; the asserted verdict is unchanged.
-
-include::_example-record-table.adoc[]
-
-`Film.language` (`TableField`) and `FilmDetails.language` (a record-sourced `BatchedTableField`) return the same `Language`
-over the same `film_language_id_fkey` foreign key and carry the same `Fetch` / `Table` operation and
-target; they differ only on the source shape (`Child(Table)` vs `Child(Record)`), and the record handoff
-forces a derived keyed re-query under `FilmDetails`, not a different asserted axis. That re-query is
-what the emitted names above are: `FilmDetails.language` gets an async DataLoader fetcher and a
-`rows*()` method, keyed on the foreign-key columns lifted off the parent's jOOQ `TableRecord`, where
-`Film.language` folds into the parent's own SELECT. Asserted by the `record-table` corpus example.
-
-[#target-shape]
-=== `target` shape: build-vs-consume (Column vs. Field)
-
-The `target` shape records what domain object the value is, and with it whether graphitron *builds* the
-SQL (catalog: `Table` / `Column`) or *consumes* a value it did not build (domain: `Record` / `Field`).
-Two scalar flavors hinge on the parent's table-ness: a scalar under a `@table` parent projects a `Column`
-(a real database column graphitron projects), while under a record-backed parent (a plain object with no
-`@table`, here produced as a service method's return type) a scalar projects a `Field` (a POJO property
-read off a record graphitron only reflects). A nested non-table object under a record parent is the object
-flavor of the same `Field` shape. All three are `Fetch`; the parent's table-ness moves the source shape
-(`Table` vs `Record`) and with it the target shape across the build-vs-consume line.
-
-include::_example-mapping.adoc[]
-
-`Film.title` classifies with target shape `Column` (`title` is a column of the `film` table graphitron
-builds the projection for). `FilmStats.count`, a scalar under the record-backed `FilmStats`, classifies
-with target shape `Field` (a property graphitron reflects). `FilmDetails.stats`, a nested non-table object
-under the record-backed `FilmDetails`, also classifies with target shape `Field` (its object flavor). All
-hold `operation = Fetch`; the two record-backed cases also carry `source = Child(Record)`. Neither
-record-backed case emits SQL of its own: both are wiring values, and what the generator has to decide
-for each is only *where on the backing object the value is*, carried as the leaf's sealed
-`ValueLocator` arm (a typed column, a resolved accessor, a by-name read, or graphql-java's default
-property read). Asserted by the `mapping` corpus example.
-
-[#polymorphic-fields]
-=== Polymorphic fields: interfaces, unions, and Relay nodes
-
-A field returning an interface, a union, or a Relay `Node` is *catalog-bound* over the participant
-types: classification resolves the polymorphic type to its participant `@table` rows and projects each
-branch from the catalog. The target shape is therefore `Interface` / `Union` (the projection lands on
-participant table rows), with the participant set carried as a *derived slot* rather than as a distinct
-shape value. The operation is `Fetch` for interface and union fields (root or child) and `NodeResolve`
-for the Relay `node` / `nodes` roots; the new keyed query a plain-interface or union field opens
-(`InterfaceField` / `UnionField`, and the polymorphic roots `QueryInterfaceField` / `QueryUnionField` /
-`QueryNodeField` / `QueryNodesField`) is a *derived* new-query, not an asserted axis. The one structural
-difference is a `@table`+`@discriminate` interface child (`TableInterfaceField` /
-`BatchedTableInterfaceField`): it is foreign-key-correlatable from the parent, but the discriminated
-re-projection is still its own statement rather than a fold into the parent's SELECT, so what the
-cardinality decides is *how many* statements, not whether there is one. It follows the same rule as the
-multi-table pair above, with the participant conjunct holding structurally (the parse boundary rejects a
-non-table implementor of a discriminated interface): list cardinality batches through a DataLoader,
-single cardinality fetches per parent. Either way its asserted `Child` / `Fetch` / `Table` verdict is the
-same.
-
-include::_example-interface.adoc[]
-
-`Customer.address` returns the plain interface `Named` (implemented by the `@table` type `Address`),
-so it classifies with `source = Child`, `operation = Fetch`, target shape `Interface` (`InterfaceField`):
-a derived new keyed query projects the participant table, with `Address` recorded as the participant slot.
-`Named` itself classifies as `InterfaceType`, the verdict for an interface carrying no `@table` of its
-own, and generates a fetchers class. Asserted by the `interface` corpus example via
-`@classifiedType(as: InterfaceType)`.
-
-A union child follows the same dimensional rule. The selection descends into each participant through an
-inline fragment (`... on Film`, `... on Actor`), and classification resolves the union to its participant
-`@table` rows:
-
-include::_example-union.adoc[]
-
-`FilmActor.related` returns the union `FilmOrActor`, so it classifies with `source = Child`,
-`operation = Fetch`, target shape `Union` (`UnionField`): a derived new keyed query projects whichever
-participant table a row resolves to, with `Film` and `Actor` recorded as the participant slots.
-`FilmOrActor` itself classifies as `UnionType` and generates a fetchers class, the same shape
-`InterfaceType` gets: a union binds no table, and its participants carry the catalog binding. Asserted
-by the `union` corpus example via `@classifiedType(as: UnionType)`.
-
-The `@table`+`@discriminate` interface child is a further leaf on this same polymorphic rule, and the
-one where cardinality forks the delivery; it gets its own worked example under
-<<one-table-many-participants,One table, many participants>> below. The Relay `Node` root
-(`QueryNodeField`, `operation = NodeResolve`, target shape `Interface`) is another, worked through
-under <<relay-node,Any root that returns `Node`>>.
-
-A discriminated interface may also be a *joined-table* (class-table) inheritance: each concrete type
-declares its own detail `@table` distinct from the discriminated base, with its inherited (base-resident)
-fields carrying a `@reference` back to the base and its own columns living on the detail table. Such a
-participant classifies as a `ParticipantRef.JoinedTableBound` carrying the resolved child-to-parent hop
-(rather than a single-table `TableBound`); its inherited field is a `ColumnBackedReferenceField` resolved on
-the base and its own field a plain `ColumnBackedField` on the detail table. The interface fetcher selects from
-the base and emits a discriminator-gated `LEFT JOIN` to each participant's detail table, projecting the
-shared fields off the base and each participant's detail-exclusive columns off its detail alias; the same
-concrete type is independently queryable on its own, resolving its inherited fields through the parent
-reference. The child-to-parent join must be PK=FK (the detail table's foreign-key columns to the base are
-its own primary key, single-column or composite), which keeps the base-to-detail join single-valued.
-Asserted by the `joined-table-interface` corpus example.
-
-`@asConnection` on a discriminated interface root moves the coordinate along the operations and target
-axes exactly as it does on a plain table root: the member set gains `Paginate`, and the target becomes
-`Single` of shape `Connection`. Nothing about the source axis changes, so the launch stays the
-discriminated composition and the page is cut over it.
-
-That composition may be paginated because every join it emits is proven single-valued: the
-base-to-detail join is the PK=FK edge above, and a participant scalar reached one `@reference` hop off
-the base is projected as a capped correlated subselect, not joined in. `LIMIT` slices rows, so the
-property that makes a page correct is that one row is one entity; both facts above are what establish
-it, and `totalCount` counts the base under the same predicate the page ran under.
-
-include::_example-paginated-joined-table-interface.adoc[]
-
-Asserted by the `paginated-joined-table-interface` corpus example.
-
-==== Where a participant's projection alias comes from
-
-A single-table discriminated interface runs *one* statement, and every participant's projection folds
-into its one select list. Two participants can therefore project two different values under one name,
-which makes the SELECT alias load-bearing: the fold collects terms into a set that treats two aliased
-terms with the same alias as the same term, so a name minting one alias in both arms can carry only one
-of the two projections. The alias namespace answers that by naming an owner.
-
-* A field a participant *declares itself* is owned by that participant type. Two participants declaring
-  the same field name over different `@reference` paths are two distinct terms, and each type's data
-  fetcher reads its own.
-* A field the *interface* declares is owned by the interface, so every participant's arm mints the
-  identical alias. That is deliberate: the agreeing case is one shared term for every implementer,
-  exactly as before.
-
-The split shows up in the author-facing promise, and where the field is declared decides which half
-applies:
-
-[cols="1,1"]
-|===
-| Divergence | What happens
-
-| Two participants *declare* an interface field differently (different resolved path, condition or
-  arguments)
-| Build error, a deferred rejection naming both declarations. One shared alias cannot carry two
-  projections, and the generator does not qualify interface-declared names per participant yet.
-
-| A *query* selects an interface-declared field with different arguments per type
-| Runtime client error. Every arm merges every occurrence of a shared name, so one arm would have to
-  serve one selection's arguments to the other type's rows.
-
-| A *query* selects a participant-declared field with different arguments or sub-selections per type
-| Resolved per type. Each arm sees only its own occurrences, so nothing is merged across types and
-  there is nothing to disagree about.
-|===
-
-A participant that also participates in a *joined-table* interface is the one shape left out: its
-inherited references would be projected off the base under the unqualified alias, which its qualified
-read cannot address, so that coordinate is a deferred rejection rather than a silent miss. No schema
-reaches it today: a single-hop `@reference` off a discriminated base is claimed as a cross-table
-participant field, which projects under its own fixed `<TypeName>_<fieldName>` alias and so never
-enters the result-key namespace at all. The rejection is a backstop against a future change that
-moves such a coordinate back into that namespace, not a shape to write a schema against.
-
-[#one-table-many-participants]
-==== One table, many participants
-
-An interface carrying `@table` plus `@discriminate(on:)` is a single table read through a column that
-says which participant each row is. The interface's own fields resolve against that table, and the
-participants add nothing but a discriminator value. Both cardinalities are below, because this is the
-one polymorphic child where cardinality decides something.
-
-include::_example-table-interface.adoc[]
-
-`MediaItem.title` shows something the emitted column is there to make visible: a coordinate can carry
-a verdict and still emit no method of its own. It is projected by the enclosing fetcher's
-discriminated read, not wired separately. A blank in that column is a fact about where the work
-happens, not a gap.
-
-The two child coordinates carry the same asserted `Child` / `Fetch` / `Table` verdict and differ only
-below it. `Language.mediaList` is a list, so it batches: a DataLoader fetcher and a `rows*()` method,
-with the discriminated re-projection running over the batch's parent-input `VALUES` anchor.
-`Inventory.media` is single, so it fetches per parent row, one re-projection each. The batch key is
-the foreign-key hop's source side rather than the parent's primary key, because one foreign key
-correlates the whole participant set here instead of each participant holding its own. What
-cardinality decides is *how many* statements, not whether there is one; either way the re-projection
-is its own statement rather than a fold into the parent's SELECT, which is what separates this child
-from a plain `@table` child. The `@reference` on the list side is not part of that difference: it is
-there because `film` holds two foreign keys to `language` and one of them has to be named.
-
-Asserted by the `table-interface` corpus example via `@classifiedType(as: TableInterfaceType)`.
-
-==== A reference on one participant only
-
-Participants of a discriminated interface may reach past the shared table. A `@reference` on one of
-them is read for that participant's rows alone, gated by the discriminator, and it does get a method,
-because it is not part of the shared projection.
-
-include::_example-participant-reference.adoc[]
-
-Both coordinates carry the same verdict at the same tier, and only one of them emits: the shared
-interface field folds into the discriminated read, the participant-local reference does not. Asserted
-by the `participant-reference` corpus example.
-
-=== Reading the generator-output column
-
-The "`*Fetchers` Generates" column in the tables below names which of four emission paths a variant
-drives. The four are an exhaustive, disjoint partition of every field leaf, enforced by
-`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`, so a new leaf cannot be added
-without declaring its path:
-
-* *Fetcher method* ; a real method on the generated `*Fetchers` class: a synchronous field fetcher, or
-  an asynchronous DataLoader fetcher paired with a `rows*()` batch method (called out as DataLoader-backed
-  where it matters). These are the `IMPLEMENTED_LEAVES`.
-* *Inline projection* ; no per-field method ; the value is projected straight into the enclosing
-  projection unit's SELECT by the generated `$project` method (`ProjectionUnitRenderer`). This
-  bucket is derived from the projection producer's membership declaration
-  (`ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` minus the dual-arm kinds).
-* *Wiring value* ; no generated method either ; the field is registered as a `DataFetcher` / `ColumnFetcher`
-  value through `FetcherEmitter` / `FetcherRegistrationsEmitter`. These are `IMPLEMENTED_LEAVES` leaves with
-  an empty dispatch arm.
-* *Deferred stub* ; a throwing stub method standing in for generation that is not built yet, paired with a
-  build-time validator rejection. The set is empty today (`STUBBED_VARIANTS`): the last stub retired when the
-  rooted-at-parent NodeId reference deferral moved to the validator, which rejects the `NodeIdEncodeKeys`
-  compaction on `ColumnBackedReferenceField` at every arity ahead of generation.
-
-=== Looking a root up by keys the caller supplies
-
-`@lookupKey` marks an argument whose values are the keys to look up. It is the only claim on this page
-written on an *argument* rather than on the field, and the claim still lands on the field: the
-coordinate reads `LOOKUP_KEY`, authored.
-
-include::_example-lookup.adoc[]
-
-The contract on the root is positional: one output element per key passed, with `null` at the position
-of a key that matched nothing. That is what forces the return type's elements to be nullable, and a
-`[Film!]!` there is an author error whose message says so. `Film.filmId` inside the looked-up rows is
-an ordinary inferred column read, unaffected by how its rows were reached.
-
-The root's read is synchronous. There is no parent set to batch over, so `Query.filmById` is a thin
-fetcher over a `lookupFilmById` rows method that runs the statement and returns its rows directly. A
-rows method is not by itself a sign of batching; it is what makes the read callable from outside the
-fetcher, so entity resolution can reach the same statement.
-
-`FilmActor.actors` carries the same directive one level down and reads `no claiming directive`.
-Position is what decides. On a root there is nothing but the argument to say where the rows come from,
-so `@lookupKey` claims the coordinate. On a child the return type has already said it, and the argument
-only keys the correlated subquery the child was going to be either way, so the child keeps whatever
-verdict its return type gives it. The axis that does move is the operation: the child is
-`Child` / `Lookup` / `Table` rather than `Child` / `Fetch` / `Table`, and what it emits is the ordinary
-inline shape, a `DSL.multiset` correlated subquery whose keyset arrives as a VALUES join over the
-argument's values. Asserted by the `lookup` corpus example.
-
-[#lookup-child]
-==== Batching the child lookup
-
-`@splitQuery` does to a lookup-keyed child what it does to a plain one, and it is worth seeing on this
-shape because two directives are now in play on the same field.
-
-include::_example-split-lookup.adoc[]
-
-`Store.customers` classifies exactly as `FilmActor.actors` above does: same unclaimed coordinate, same
-`Child` / `Lookup` / `Table` verdict. `@splitQuery` replaces the inline correlated subquery with an
-async DataLoader fetcher and a `rows*()` method keyed on the lookup values, which is the same
-substitution <<derived-layer,the derived layer>> makes on a child with no lookup at all.
-
-The two directives are independent axes, so the four combinations of them are the four spellings a
-`@table` child has: neither (inline subquery), `@splitQuery` alone (batched by the parent's foreign
-key), `@lookupKey` alone (inline, keyed by the argument), and both (batched, keyed by the argument).
-Only `@lookupKey` moves an asserted axis. Asserted by the `split-lookup` corpus example.
-
-[#paginated-child]
-==== The one spelling that paginates
-
-Exactly one of those four spellings can carry `@asConnection`.
-
-include::_example-paginated-child.adoc[]
-
-A page needs a statement of its own to put a window on, and `@splitQuery` is what opens one, so it is a
-precondition here rather than a companion directive. The other three spellings are refused, for two
-different reasons. The inline child is refused because its correlated subquery is folded into the
-parent's SELECT and there is nothing to window: `@asConnection` without `@splitQuery` is rejected
-outright. Either lookup-keyed spelling is refused because a page would break the positional
-correspondence `@lookupKey` establishes, and that holds whether or not `@splitQuery` is also present.
-
-`CountryCitiesConnection` and `CountryCitiesConnectionEdge` are synthesised for the coordinate and named after it,
-exactly as on <<pagination-and-facets,a paginated root>>; being batched changes where the rows come
-from, not how the wrapper types are made.
-
-The two directives contribute one `VALUES` derived table each, so what a spelling builds follows from
-what it carries: `@splitQuery` a <<derived-tables,derived source table>> of parent rows, `@lookupKey` a
-derived target table of argument values. The batched lookup carries both and its base result count is
-N × M; a root lookup has no parent side, so it returns exactly M. Asserted by the `paginated-child`
-corpus example.
-
-=== Query Fields
-
-A root field's position is an axis value, not a separate classification: `source = Query` is what
-makes it a root, and the return type decides the rest exactly as it does on a child. The default case
-is the plain `@table` return of the <<table-type,`@table` type example>>, which emits a full
-fetcher: the condition call, the orderBy build, and the inline DSL chain
-(`dsl.select(Type.$project(...)).from(table)...`) that opens the query scope. The polymorphic returns
-are the <<polymorphic-fields,polymorphic section>> above, where a
-root and a child differ only in where they arrive: a multi-table interface or union root emits per-
-participant polymorphic projection through a derived new keyed query, and a `@table`+`@discriminate`
-interface root is the discriminated composition shown there under `@asConnection`.
-
-What is left is the `@service` pair, the failure row, and the Relay node roots, which get a worked
-example of their own at the end of this section:
-
-|===
-| Schema Pattern | `QueryField` Variant | `*Fetchers` Generates
-
-| `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table type | `QueryServiceRecordField` | Fetcher method
-| Anything else | `UnclassifiedField`** | Validation error ; build fails
-|===
-
-The federation `_entities` field is *not* modelled as a `QueryField` permit; it is resolved by `federation-graphql-java-support` directly and dispatched through the generated `EntityFetcherDispatch` runtime helper. The corresponding entity-resolution metadata is carried in `GraphitronSchema.entitiesByType`.
-
-NOTE: A `@service` field's input *parameter* may itself be a generated jOOQ `TableRecord` (singular or `List<…>`), distinct from the field's return type. When the parameter's SDL input type classifies as `JooqTableRecordInputType`, the call site binds it on the *column axis* rather than instantiating a Java bean: each plain input field names a column through `@field(name:)`, and an optional `@nodeId` field decodes the record's scalar key. The parameter is materialised by a generated `create<Record>` (singular) / `create<Record>List` (list) helper on the `*Fetchers` class (the `CallSiteExtraction.JooqRecord` binding), which loads the columns through `record.fromArray(…, Tables.<T>.<col>…)` and decodes the identity through `NodeIdEncoder.decodeColumns`. The binding is coordinate-agnostic: it applies identically whether the `@service` field is a root field or a `@table`-parent child field, sharing one helper.
-
-NOTE: On that same column axis, several plain input fields may name *one* column, which is the standard GraphQL rename-deprecation shape: add the new field, keep the old one marked `@deprecated` until its removal date, and point both at the column. `InputBeanResolver` admits the overlap when all but at most one of the colliding fields carry native `@deprecated`, and merges the group into a single `CallSiteExtraction.ColumnBinding` carrying *ordered read paths* rather than several writers on one column. Precedence is the live (non-deprecated) path first, then the deprecated paths in reverse declaration order; the emitted load tries them in that order and takes the first `containsKey`-present one, so a client sending both names gets the live value, a client sending only the old name still writes, and a client sending neither leaves the column `changed=false`. Two *live* fields on one column stay an author error (`JooqRecordInputError.LiveColumnCollision`). This is the only write path that admits the pattern: the INSERT and UPDATE mutation paths reject an all-plain column overlap on their own mechanisms (a SET map holding one value per column, and a bulk VALUES join that cannot name one derived column twice).
-
-[#relay-node]
-==== Any root that returns `Node`
-
-A root field whose element type is the `Node` interface is a node fetcher. Its *name* has nothing to
-do with it:
-
-include::_example-relay-node.adoc[]
-
-All three roots classify the same way: `source = Query`, `operation = NodeResolve`, target shape
-`Interface`. Recognition is by signature, never by field name, and `internalFilmNode` is in the example
-to make that testable rather than merely stated. A federation subgraph commonly publishes an extra
-by-id entry point under its own name; name-based dispatch would classify that as a plain interface
-root and give it a keyed query over the participants instead of node resolution.
-
-Cardinality is the one axis that changes the delivery. The single-valued roots read the `id` argument
-and return the row synchronously. The list root fans its ids out into DataLoaders keyed by the
-execution path, so ids arriving at the same path batch into one read, and returns a future. Both go
-through one generated dispatcher, which peels the type prefix off each global id and resolves the row
-through the same entity dispatch federation `_entities` uses; a null, malformed, or unknown-prefix id
-comes back as `null` rather than an error, which is what the Relay spec asks for. That dispatcher is
-emitted only when the schema classifies at least one `NodeType`.
-
-`Film` carries `@node` and its `id` carries `@nodeId`, which is what makes it reachable by global id at
-all; that declaration is the <<node-type,`@node` example>> above. Asserted by the `relay-node`
-corpus example.
-
-[#mutation-fields]
-=== Mutation Fields
-
-A mutation whose `@mutation(typeName:)` writes the catalog and returns a `@table` type classifies with
-`source = Mutation`, the write verb as its `operation` (`Insert` / `Update` / `Delete`), and
-target shape `Table`. The write produces the affected row, then a follow-up `SELECT` re-projects it
-through the catalog; that read-back is the *derived re-fetch* (a write producer yielding a `Table` shape),
-not a separate asserted axis. The mutation's input object is part of the rendered closure, so the excerpt
-shows the plain input the write consumes; the `@table` return names the write target:
-
-include::_example-dml.adoc[]
-
-`Mutation.createFilm` inserts a `film` row from `FilmInput` and projects the inserted row as the `@table`
-type `Film`: `source = Mutation`, `operation = Insert`, target shape `Table` (`MutationField.DmlTableField` carrying an Insert write arm),
-the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
-
-The other two write verbs differ from `INSERT` in what they can hand back, and the pair below is
-that difference alone: same claim, same tier, one returning the written row and one returning an id.
-
-include::_example-mutation-roots.adoc[]
-
-`UPDATE` behaves like `INSERT`: it writes, then re-projects the affected row, so its target shape is
-`Table` and the return type names the write target. `DELETE` cannot do that, because after the write
-there is no row left to project; `RETURNING` carries the primary key and nothing else, so the return
-tops out at an encoded `ID` and the target shape is `Column`. That is also why `deleteFilm` has to
-say `@mutation(table: "film")`: an `ID` return names no type, so the write target has nowhere else to
-come from. Both coordinates carry the same `MUTATION` claim at the same tier, which is the point:
-the verb is a slot of the claim, not a claim of its own. Asserted by the `mutation-roots` corpus
-example, which also pins the `multiRow` broadcast form of `DELETE`.
-
-==== Returning a payload wrapper instead of the row
-
-A mutation may hand back a carrier rather than the written row: a plain object with one data field
-naming what was written, optionally beside an errors-shaped field. The carrier binds no table, so the
-write's affected rows reach it as a record and the coordinate's target shape is `Record` instead of
-`Table`. The claim and the verb are unchanged; what moves is where the read-back lives.
-
-include::_example-dml-payloads.adoc[]
-
-On a direct `@table` return the write and the re-projection are one coordinate's business, the derived
-re-fetch above. A carrier splits them into two. The mutation emits a two-step fetcher: the per-kind DML
-chain runs inside `transactionResult` with a PK-only `RETURNING`, and the data field owns the follow-up
-`SELECT`, issued outside the transaction as its own keyed query off the returned keys. That is why
-the carrier's `film` field carries a nested verdict of its own rather than continuing the write's: it
-arrives as `OnlyChild` on a `Record` source shape (the `RETURNING` record, not a catalog row), and
-projects `Single` of shape `Table`. Its operation members are the reentry into the catalog and the
-projection itself.
-
-Bulk input takes the same shape with a list-shaped data field: one `transactionResult` runs the per-row
-DML and accumulates a typed result in input order, and the write target is derived from that
-`@table`-element data field rather than from the carrier. `DELETE` is the one verb whose carrier cannot
-hold a `@table` data field, for the reason `deleteFilm` above cannot project one; its only admissible
-data field is an encoded id read off the deleted row's `RETURNING` record. Asserted by the
-`dml-payloads` corpus example, which also pins both bulk forms, and by `dml-delete-payload` for the
-`DELETE` carrier.
-
-[#mutation-service]
-==== A mutation whose producer is a Java method
-
-`@mutation` is not the only way onto a mutation root. `@service` puts a Java method behind the
-coordinate instead of a DML write, and the claim it lands is `SERVICE`, not `MUTATION`: no verb, no
-write target, nothing for `@mutation(table:)` to name. What the return type still decides is the
-target shape, and the pair below is that difference alone.
-
-include::_example-mutation-service.adoc[]
-
-Both roots are `source = Mutation`, `operation = ServiceCall`. `importFilm` returns `Film`, a `@table`
-type, so the service's values have to become catalog rows again: target shape `Table`, and the
-coordinate opens a keyed re-query the way the child-coordinate `@service` pair below does, which is
-why `Film.title` reads a column of `film` rather than a property of whatever the method returned.
-`summariseFilm` returns a type that binds no table, so there is nothing to look up and the service's
-own value is the answer: target shape `Record`. That is the same table-vs-non-table split
-`service-table-child` and `service-scalar-child` draw on a child coordinate, one rung up; the parent
-being a mutation root moves the source axis and nothing else.
-
-A root carries one of the two claims, never both; the conflict row below says what happens when an
-author writes both. Asserted by the `mutation-service` corpus example.
-
-Four of the five rows left below are rejections, which the corpus does not render: it demonstrates
-patterns that classify and generate, so a build failure has no worked example to be pulled into. The
-first row is the exception, a live pattern still stated rather than shown.
-
-|===
-| Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
-
-| `@mutation(typeName: INSERT, table: "…")`, returning `ID` | `DmlTableField` (Insert write arm) | As the direct-`@table` INSERT above; an encoded-`ID` return names no table, so `@mutation(table:)` names it on the field. Byte-identical carrier across the two rungs
-| `@mutation(typeName: UPSERT, table: "…")` (`table:` on a verb that does not read it) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE`, `INSERT`, and `UPDATE` only
-| `@mutation(typeName: DELETE)` input keyed by exactly the primary key (directly or through a node id), returning a payload whose id field echoes the key, or `ID` / `[ID!]` directly | `MutationDmlRecordField` / `MutationBulkDmlRecordField` / `DmlTableField` (Delete write arm carrying `DeleteRows.IdempotentByPrimaryKey`) | A key matching no row counts as already deleted: it is echoed from the input in its slot, the call commits, and the response holds every input key in input order. A list input runs one `DELETE ... RETURNING` per row in one transaction
-| `@mutation(typeName: DELETE, failOnMissing: true)` input covering a primary key or unique key, extra filter columns allowed | `MutationDmlRecordField` / `MutationBulkDmlRecordField` / `DmlTableField` (Delete write arm carrying `DeleteRows.FailOnMissing`) | A key matching no row fails the call: the bulk loop throws at that row and rolls every row back, a single row throws after its statement. The throw is routed through the payload's errors field, or redacted
-| `failOnMissing: true` on `INSERT` / `UPDATE` / `UPSERT` | `UnclassifiedField` (typed `FailOnMissingError.UnsupportedVerb`) | Validation error ; build fails
-| `@mutation(typeName: DELETE)` without `failOnMissing: true` whose input covers only a unique key, adds a filter column beside the primary key, or binds a key column twice | `UnclassifiedField` (typed `DeleteRowsError.IdempotentDeleteNeedsPrimaryKey`) | Validation error ; build fails. Key the input by the primary key, or add `failOnMissing: true`
-| `@mutation(typeName: DELETE)` without `failOnMissing: true` whose response ids encode a node key reaching beyond the primary key, with an input that supplies only the primary key's plain columns | `UnclassifiedField` (typed `DeleteRowsError.IdempotentDeleteEchoUnencodable`) | Validation error ; build fails. Key the input by the node id instead, or add `failOnMissing: true`
-| `@mutation(typeName: DELETE, multiRow: true, failOnMissing: true)` whose input covers no key | `UnclassifiedField` (typed `DeleteRowsError.FailOnMissingNeedsKey`) | Validation error ; build fails
-| `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `UnclassifiedField` (typed deferral; the Upsert write arm has no live producer) | Rejected at classification. UPSERT is recognised and deliberately not generated: the write arm has no producer today, so the coordinate defers rather than erroring.
-| Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
-| Both `@service` and `@mutation` | Arm-order winner | Validation error from the store-backed conflict detection (`ClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying both claims' decoded slot facts (verb, table, method)
-|===
-
-The direct-return `DmlTableField` permit is guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
-
-=== When the value comes from somewhere other than the catalog
-
-Three directives take a coordinate away from the catalog and put a producer behind it. All three
-land as an `AUTHORED` claim, and the claim name is what the outcome block shows.
-
-`@service` names a Java method. What the generator does with its return depends on whether that
-return is a table type or not, and the pair below isolates exactly that: same directive, same
-parent, one returning `@table` rows and one returning a scalar.
-
-include::_example-service-table-child.adoc[]
-
-The service returns values, and `Film` is a table type, so the values have to become table rows
-again: the coordinate opens a new keyed query, batched through a DataLoader, and `Film.title` reads
-a column of `film` inside it. Asserted by the `service-table-child` corpus example.
-
-Change the return to a scalar and the re-query disappears, because there is nothing to look up:
-
-include::_example-service-scalar-child.adoc[]
-
-Same verdict, same tier, and a fetcher method that hands back what the service returned. Asserted by
-the `service-scalar-child` corpus example.
-
-[#class-backed-service]
-Neither of those two verdicts is a statement about the parent. Move the same pair onto a parent that
-is not a table at all, a plain object whose backing class the generator reflects off its own
-`@service` producer, and the verdicts do not move:
-
-include::_example-service-child-class-backed-parent.adoc[]
-
-The parent here is class-backed: no `@table`, no `@record`, its backing class reflected off
-`makeLanguageKeyed`'s return type. Its two children carry the same `SERVICE` claim and the same two
-verdicts the `@table`-parented pair above carries, and `filmsViaService` still batches its `Film` rows
-through a DataLoader, keying the batch on the record the parent hands down rather than on a parent
-table row. What the parent's shape moves is the *source* axis, `Child(Record)` instead of
-`Child(Table)`, and the key the batch is built from with it. It does not move the claim, the target,
-or which leaf the coordinate lands on: both service leaves are minted under either parent, so no leaf
-name answers what arrives at `getSource()`. Asserted by the `service-child-class-backed-parent` corpus
-example.
-
-The last pair separates two things that both look like "this column is not where you would expect".
-`@reference` keeps the value in the catalog and changes which table it is read from, so the claim
-stays `TABLE_COLUMN` and stays `inferred`: the name still matched, just at the far end of a named
-foreign key. `@externalField` takes the value out of the catalog entirely and claims the coordinate.
-
-include::_example-reference-and-computed.adoc[]
-
-This is the clearest reading of what the tier column means. `@reference` is written on
-`languageName` and the tier is still `inferred`, because `@reference` is not a claiming directive:
-it moves the site the name resolves against, and `intent_column_match_claim` then matches there. Only
-`@externalField` claims, so only `computedRating` reads `authored`. Asserted by the
-`reference-and-computed` corpus example.
-
-=== Reading a database routine
-
-`@routine` points a field at a table-valued function instead of a table. The return type is bound to
-the function's result by that field and carries no `@table`, which a type naming a function is refused
-for; the result set has a shape, and the type's children still resolve as columns of it. `argMapping:`
-binds the field's GraphQL arguments to the function's parameters by name.
-
-include::_example-routine-table-valued-read.adoc[]
-
-`ROUTINE` is one of the claims `intent_authored_field_claim` carries, so the routine coordinate is
-`authored` while its children stay `inferred` column matches: from the children's point of view
-nothing is unusual, they are reading a relation that happens to be a function result. Asserted by the
-`routine-table-valued-read` corpus example.
-
-[#pagination-and-facets]
-=== Pagination, and facets over the same filter
-
-`@asConnection` rewrites a list field into a Relay connection. The connection, edge and page-info
-types do not exist in the schema the author wrote; they are synthesised for the coordinate and named
-after it. `@asFacet` on an input field adds facet counts computed over the same filter.
-
-include::_example-faceted-connection.adoc[]
-
-The coordinates named `QueryFilmsConnection` and `QueryFilmsConnectionEdge` are the synthesised types, and they
-emit fetchers of their own: that is what makes them visible here at all, since nothing in the authored
-SDL mentions them. Neither carries a claim, because `@asConnection` shapes the read rather than
-claiming the coordinate. Asserted by the `faceted-connection` corpus example, whose `@synthesises`
-assertion pins the full mint set including the facets and page-info types this query does not select.
-
-Page-info is the one wrapper in that mint set that is not per-coordinate. A schema has exactly one
-`PageInfo`, landing on `PageInfoType`, however many connections it carries: the classifier synthesises
-it once when some connection exists and the author did not declare it, and reuses the author's own
-declaration when they did, which is what a hand-written or federated schema relies on. The reused
-half is asserted by the `connection` corpus example, whose SDL declares the whole Relay triad
-outright.
-
-[#pagination-arguments]
-==== The arguments the expansion appends
-
-`@asConnection` appends `first` and `after` to the carrier, after whatever arguments the author
-wrote. `first` carries the connection's page size, which is the application's `defaultFirstValue`
-where it states one.
-
-An author who paginates on their own terms keeps what they wrote. The forward pair lands beside a
-backward one rather than in place of it, so a field declaring `last` and `before` emits all four.
-
-include::_example-backward-paginated-connection.adoc[]
-
-Where the author declares one of the two appended names themselves, theirs stands and only the
-missing one is appended. What they wrote is emitted as written, so an argument declared bare stays
-bare rather than acquiring the connection's page size. Asserted by the `authored-pagination-argument`
-corpus example.
-
-include::_example-authored-pagination-argument.adoc[]
-
-=== Turning rows into fields
-
-`@pivot` reads a table whose rows are the values you want as fields, and turns one row per key into
-one field per key. The vocabulary argument names the enum whose values map to the key column, so the
-target type's fields and the pivot's rows line up by name.
-
-include::_example-pivot.adoc[]
-
-No coordinate here carries a claim: `@pivot` and `@reference` are both shaping directives rather than
-claiming ones, and `TranslatedTexts` is a grouping type whose fields are filled from the pivoted
-aggregate rather than matched against a column. The `nn` and `nb` fields get their key values from the
-`Sprak` enum's own `@field(name:)` renames. Asserted by the `pivot` corpus example.
-
-=== Child Fields (on `@table` parent)
-
-==== Scalar / Enum return type
-
-A scalar child of a `@table` parent takes its value from a column, and both spellings of that are
-worked through above: the column matched by name in the <<table-type,`@table` type example>>, and the
-column renamed by `@field(name:)` in the <<derived-layer,derived layer example>>. Either way the
-coordinate's verdict is `TABLE_COLUMN`, and the outcome block beside each shows the emitted accessor.
-What is left is the one spelling the build refuses:
-
-|===
-| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
-
-| `@nodeId(typeName:)`, non-FK-mirror target | `ColumnBackedReferenceField` (`compaction = NodeIdEncodeKeys`; arity = the target key's column count) | Nothing yet. A rooted-at-parent NodeId reference is rejected at validate time as deferred, at every arity, because no emitter brings the target's key columns into scope. The rejection is keyed on the variant class itself (`Rejection.StubKey.VariantClass`), so what the deferral names is the shape that has to grow an emitter
-|===
-
-==== Object return type
-
-Every return type a child can have is worked through above, so none of them is repeated here. The four
-spellings of a plain `@table` child are the <<derived-layer,derived layer example>> and the
-<<lookup-child,child lookup pair>>; the polymorphic return types are
-<<polymorphic-fields,Polymorphic fields>>, with the discriminated interface child's cardinality fork
-under <<one-table-many-participants,One table, many participants>>; the plain object with no `@table`
-is the <<nesting-type,unbound object type example>>. What is left is the three rows the build refuses:
-
-|===
-| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
-
-| Conflicting directives | Arm-order winner | Validation error from the store-backed conflict detection (`ClaimConflicts`); build fails. The LSP/MCP projection reports `FieldClassification.Conflicted` carrying the claims
-| `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
-| `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.
-|===
-
-=== Child Fields (on a class-backed parent)
-
-The parent here is a type whose backing class is reflection-derived from its producer (a `@service`
-return, or a parent-accessor chain), not declared via a directive.
-
-A class-backed parent is not a separate classification either. It moves the source axis to
-`Child(Record)` and, with it, the key the child's query is built from; it does not move the claim or
-the target. The worked examples above cover most of what that means: scalars and nested non-table
-objects under such a parent in the <<target-shape,`target` shape example>>, an FK-reached `@table`
-child in the <<record-handoff,record-handoff example>>, and both `@service` forms in the
-<<class-backed-service,class-backed service pair>>, and the `errors:` slot in the
-<<error-type,`@error` example>>. What is left is the two forms no example shows, one of which does
-not currently generate:
-
-|===
-| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
-
-| Return `@table` with `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`, keyed lookup arm) | *Nothing.* Single cardinality is rejected at validate time (single-cardinality `@lookupKey` is not supported); the list spelling passes validation and reaches no emission, because the batched-lookup cell has no producer. Pinned as the corpus's one recorded launcher-production gap by the `record-method` example
-|===
-
-=== Input Fields (resolved against the consuming field's table)
-
-|===
-| Schema Pattern | `InputField` Variant | Used for
-
-| `@field(name:)` or matching column name | `InputField.ColumnBackedField` (arity 1) | Maps input argument to a table column
-| `@reference` on input scalar | `InputField.ColumnBackedReferenceField` (arity 1) | Maps input argument to a FK column
-| `@nodeId` on input scalar | `InputField.ColumnBackedField` (`NodeIdDecodeKeys` extraction; arity = the node key's column count) | Decodes a NodeId into the consumer table's key columns
-| `@nodeId(typeName:)` on input scalar, FK targets the target's key columns | `InputField.ColumnBackedReferenceField` (`NodeIdDecodeKeys` extraction, `FilterBinding.Local`; arity = the target key's column count) | Decodes a NodeId into FK columns on the consumer's own table; the predicate compares those columns directly
-| `@nodeId(typeName:)` on input scalar, FK targets other columns | `InputField.ColumnBackedReferenceField` (`NodeIdDecodeKeys` extraction, `FilterBinding.Remote`) | Decodes a NodeId whose value no column of the consumer's table holds, so the filter compares the *target's* key columns inside a correlated `EXISTS` over the FK. Read-side only: writing such a carrier, or using it as a `@lookupKey` column, is rejected at validate time (it would need a subquery translating the key back into an FK-column value)
-| Nested input object | `InputField.NestingField` | Expands nested input fields inline against the same table
-|===
-
-`InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies input-object fields against the consuming field's resolved table: the return-type table on the filter and arg-level `@lookupKey` paths, the write-target table on the DML paths.
-
-**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 5 SQL-generating child field variants (`TableField`, `BatchedTableField`, `TableInterfaceField`, `BatchedTableInterfaceField`, `ServiceTableField`). The batched leaf is source-gated, and a `@lookupKey` correspondence rides on its fetch sibling as the seal's `LookupResolution` arm rather than as a leaf of its own.
-
-'''
-
-== Classification without a directive
-
-Most coordinates on this page carry a directive. Some carry none and still classify, and the verdict
-layer says so in one column rather than as a separate rule: `intent_column_match_claim` claims
-`TABLE_COLUMN` for a field whose name resolves against the table its site navigates to, with no
-directive involved, and `intent_resolved_field_claim.tier` reads `INFERRED` where such a reading
-survived the anti-join against the authored claims.
-
-Every outcome block above shows this happening. `Film.title` under <<the-chain,the first example>>
-is `TABLE_COLUMN`, inferred: nothing was written on it, and the catalog matched the name.
-
-The return type does not change that. A field whose GraphQL type is an enum is still a column read;
-the enum-ness lives in the conversion between the column's value and the GraphQL value, not in the
-classification.
-
-include::_example-enum-column.adoc[]
-
-`Film.rating` lands on the same verdict as `Film.title`, at the same tier, and emits the same shape of
-fetcher method. `Rating` itself classifies as `EnumType` and generates nothing: its values become the
-strings or ints the column holds at bind time, which is the whole of what the enum contributes.
-Asserted by the `enum-column` corpus example.
-
-A field returning a `*Connection` type is the same story one level out: `@asConnection` shapes the
-read and claims nothing, so neither the field nor the synthesised connection types carry a claim. See
-<<pagination-and-facets,Pagination, and facets over the same filter>>.
-
-'''
-
-[#when-nothing-is-generated]
 == When nothing is generated
 
-A pattern the generator refuses still classifies. Capture records the same facts, derivation resolves
-the same verdict, and then planning mints no command row: the run produces *diagnostic* rows instead,
-and render has nothing to fold.
+A schema that asks for something the store cannot state is refused at the written position, as a
+defect in `graphitron_entry_defect` with a code and the place the author wrote. A need no path meets,
+a column that is not there: each is a defect beside the facts it judges, and the build reports it
+where the author wrote it. The relation and its codes are in xref:schema/index.adoc[the generated
+schema reference].
 
-That is why a worked example can show a verdict and no emitted names, and why the one on this page
-that does, under <<target-shape,`target` shape>>, is not a gap in the tables. Its outcome block
-states the absence, because "generates nothing" is an answer to this page's question, not a missing
-row.
-
-The diagnostics themselves are a closed vocabulary and a small one. `rejection_validation_error`
-carries one row per rejection, keyed by the graph and the emit order of the walk's error stream, with
-a `kind` column whose `CHECK` constraint holds the three-way fork:
-
-[cols="1,3"]
-|===
-| `kind` | What it means
-
-| `AUTHOR_ERROR`
-| The schema says something Graphitron understands and refuses. The author can fix it; the message
-  names what and, where a name was close, what was probably meant.
-
-| `INVALID_SCHEMA`
-| The schema is not well-formed enough to classify against.
-
-| `DEFERRED`
-| A recognised combination with no live producer. The coordinate is understood and deliberately not
-  generated, which is different from being wrong.
-|===
-
-The taxonomy behind those rows, why rejection is a returned value rather than a thrown exception, and
-how a coordinate carries its own refusal, is
-xref:../explanation/typed-rejection.adoc[Typed rejection]. What an author sees for each is the
-manual's diagnostics glossary.
-
-'''
-
-== Where the code lives
-
-Six top-level packages under `no.sikt.graphitron`. The map states ownership: which package a change
-belongs in, not what each package will become.
-
-[cols="1,3"]
-|===
-| Package | What it owns
-
-| `facts`
-| Capture. Visitors that transcribe a schema into store rows, one per thing the SDL states. Decides
-  nothing.
-
-| `command`
-| The command vocabulary: the row types planning mints and render reads, plus the catalog and
-  argument value types they carry. `KeyProjectionRelation` lives here rather than in `plan`, because
-  it is keyed by the coordinate an `argMapping` sits on rather than by a generation run.
-
-| `plan`
-| Planning. The command producers, the relations they mint into, `EmitPlan` that runs them, and
-  `GeneratedUnits`, the single site every generated unit name is minted from.
-
-| `render`
-| The render shell. One fold per command row into emitted source, and nothing that decides.
-
-| `rewrite`
-| The classification walk and the sealed model it produces, plus the generators still driven from
-  that model. *Transitional*: this is the surface being drained. A change here should be asked
-  whether it belongs in one of the four above instead. Its `derive` subpackage is recorded as
-  misnamed, with the split filed as its own work.
-
-| `docs`
-| Build-time renderers that emit documentation fragments, such as the command-relation table above.
-  Never on a consumer's classpath.
-|===
-
-Every relation, every fact and every verdict has its rule stated once, in its own comment in the
-store's DDL, and rendered browsable at xref:schema/index.adoc[the generated schema reference]. That
-is the reference to reach for when this page names a relation and you want its columns.
-
-'''
-
-*See also:*
-
-- xref:../explanation/pipeline-overview.adoc[Pipeline overview] ; what runs when, and what is still transitional
-- xref:../explanation/fact-model.adoc[The fact model] ; the discipline every relation obeys
-- xref:../explanation/typed-rejection.adoc[Typed rejection] ; the refusal taxonomy behind the diagnostic rows
-- xref:runtime-extension-points.adoc[Runtime Extension Points] ; the emitted classes a consumer plugs into
-- xref:../principles/development-principles.adoc[Graphitron Development Principles] ; the axioms and the named enforcement behind each
+What an author wrote is stated apart from what took effect. `graphitron_claim` holds each claim a
+directive makes, a producer such as `@service` or `@mutation`, a binding such as `@field(name:)` or
+`@nodeId`, a type's `@table` or `@error`, as written, and decides nothing; the occurrence's producer
+and bindings are what took effect. Two claims one element cannot hold together are one
+`CLAIMS_CONFLICT` at its declaration, each claim weighed a row of `graphitron_entry_defect_claim`
+under it, and `ROUTINE_LOOKUP_DEFERRED` is the one pair `graphitron_claim_inclusion` reports
+otherwise.

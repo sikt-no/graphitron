@@ -99,6 +99,7 @@
                                         <include>manual/**/*.adoc</include>
                                         <include>manual/**/examples/*.graphqls</include>
                                         <include>architecture/**/*.adoc</include>
+                                        <include>architecture/**/examples/*.graphqls</include>
                                         <include>architecture/**/images/**</include>
                                         <include>history/**/*.adoc</include>
                                     </includes>

@@ -1,0 +1,68 @@
+# One producer of each kind, the producer section of the code generation triggers page. A root field
+# runs from nothing: a select, a lookup by the keys the caller supplies, a service's method, a
+# routine, or a write. A child produces only where it starts a query of its own, as a @splitQuery
+# child does from its parent's key; a child the parent's query joins in produces nothing.
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+  originalLanguage: Language @reference(path: [{key: "film_original_language_id_fkey"}])
+}
+
+type Language @table(name: "language") { name: String }
+
+type Row { title: String }
+
+input FilmInput {
+  title: String
+  languageId: Int @field(name: "language_id")
+}
+
+extend type Query {
+  films: [Film!]!
+  filmsByKey(film_id: [Int!] @lookupKey): [Film]!
+  filmsByService(ids: [Int!]!): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByService"})
+  rows(actorId: Int!, minLength: Int!): [Row!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+type Mutation {
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,           kind,    start
+  Film.language,        SELECT,  CHILD
+  Mutation.createFilm,  INSERT,  ROOT
+  Query.films,          SELECT,  ROOT
+  Query.filmsByKey,     LOOKUP,  ROOT
+  Query.filmsByService, SERVICE, ROOT
+  Query.rows,           ROUTINE, ROOT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_result",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,           shape,         table_name
+  Film.language,        SINGLE_RECORD, language
+  Mutation.createFilm,  SINGLE_RECORD, film
+  Query.films,          RECORD_LIST,   film
+  Query.filmsByKey,     RECORD_LIST,   film
+  Query.filmsByService, RECORD_LIST,   film
+  Query.rows,           RECORD_LIST,   films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                         bound,                  kind
+  Film.title,                         public.film,            COLUMN
+  Language.name,                      public.language,        COLUMN
+  Mutation.createFilm(in.languageId:), public.film,           COLUMN
+  Mutation.createFilm(in.title:),     public.film,            COLUMN
+  Query.filmsByKey(film_id:),         public.film,            COLUMN
+  Query.filmsByService(ids:),         "no.sikt.graphitron.rewrite.test.services.SampleQueryService#filmsByService(Lorg/jooq/DSLContext;Ljava/util/List;)Lorg/jooq/Result;:1", PARAMETER
+  Query.rows.title,                   public.films_for_actor, COLUMN
+  """)

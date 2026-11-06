@@ -14,11 +14,11 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The approval over every manual example rendered from a fact document ({@link ManualExamples}), and
- * the floors that keep the queries, the rendered files and the pages talking about the same set.
+ * The approval over every documentation example rendered from a fact document
+ * ({@link ManualExamples}), its schema and the rows it shows, and the floors that keep the queries,
+ * the rendered files and the pages talking about the same set.
  *
- * <p>The approval idiom is {@link CorpusFragmentTest}'s: a render that differs from the committed
- * file is left under {@code target/manual-examples}, and the failure gives the {@code cp} that
+ * <p>A render that differs from the committed file is left under {@code target/manual-examples}, and the failure gives the {@code cp} that
  * approves it. It lands under {@code target} because the committed files live in the published
  * documentation tree.
  *
@@ -37,12 +37,29 @@ class ManualExampleTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("queries")
     void theRenderedExampleIsWhatTheFactDocumentHolds(Path query) throws IOException {
-        Path approved = ManualExamples.renderedFile(query);
-        String rendered = ManualExamples.render(query);
+        approve(query, ManualExamples.renderedFile(query), ManualExamples.render(query));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("queries")
+    void theRenderedRowsAreWhatTheFactDocumentAsserts(Path query) throws IOException {
+        Path approved = ManualExamples.rowsFile(query);
+        var rendered = ManualExamples.renderRows(query);
+        if (rendered.isPresent()) {
+            approve(query, approved, rendered.get());
+        } else {
+            assertThat(approved)
+                .as("no example in %s shows rows, so the table file renders from nothing. Delete it.",
+                    query)
+                .doesNotExist();
+        }
+    }
+
+    private static void approve(Path query, Path approved, String rendered) throws IOException {
         String committed = Files.isRegularFile(approved) ? Files.readString(approved) : null;
 
         Path left = Path.of("target", "manual-examples")
-            .resolve(ManualExamples.manual().relativize(approved));
+            .resolve(ManualExamples.docs().relativize(approved));
         if (rendered.equals(committed)) {
             Files.deleteIfExists(left);
             return;
@@ -80,7 +97,8 @@ class ManualExampleTest {
 
     @Test
     void everyRenderedExampleHasAQuery() {
-        List<String> orphans = ManualExamples.rendered().stream()
+        List<String> orphans = Stream.concat(ManualExamples.rendered().stream(),
+                ManualExamples.renderedRows().stream())
             .filter(r -> !Files.isRegularFile(ManualExamples.queryFile(r)))
             .map(Path::toString)
             .toList();
@@ -102,9 +120,16 @@ class ManualExampleTest {
                     .collect(java.util.stream.Collectors.joining("\n"));
             }
             for (var example : ManualExamples.examples(query)) {
-                String line = ManualExamples.includeLine(rendered, example.name());
-                if (!pages.contains(line)) {
-                    missing.add(line + " (" + query + ")");
+                var lines = new java.util.ArrayList<String>();
+                lines.add(ManualExamples.includeLine(rendered, example.name()));
+                for (String relation : example.relations()) {
+                    lines.add(ManualExamples.includeLine(ManualExamples.rowsFile(query),
+                        ManualExamples.rowsRegion(example.name(), relation)));
+                }
+                for (String line : lines) {
+                    if (!pages.contains(line)) {
+                        missing.add(line + " (" + query + ")");
+                    }
                 }
             }
         }

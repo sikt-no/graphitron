@@ -21,13 +21,12 @@ import java.util.stream.Stream;
 /**
  * The spec-by-example corpus, loaded from the folder of GraphQL documents at
  * {@code graphitron-model/src/test/resources/corpus}. One example is one document: the annotated fixture
- * schema, the prose that teaches it as SDL descriptions, and optionally the projection operation the
- * documentation renders it through. The filename is the example's id, so adding an example is adding
+ * schema, the prose that teaches it as SDL descriptions, and optionally a projection operation. The
+ * filename is the example's id, so adding an example is adding
  * a file.
  *
- * <p><b>Read from the source tree, not the classpath.</b> The folder resolves as a path, the way
- * {@link CorpusFragmentRenderer} resolves the documentation page, so what the corpus asserts is exactly
- * what an author edits and a stale copy under {@code target/test-classes} cannot answer for a
+ * <p><b>Read from the source tree, not the classpath.</b> The folder resolves as a path, so what the
+ * corpus asserts is exactly what an author edits and a stale copy under {@code target/test-classes} cannot answer for a
  * document that is no longer there.
  *
  * <p><b>The prelude is a document too.</b> {@code _prelude.graphqls} holds the test-only directive

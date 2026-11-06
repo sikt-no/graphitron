@@ -1,0 +1,74 @@
+# Rendered by ManualExampleTest from code-generation-triggers.graphql. Do not edit.
+
+# tag::RunningExample[]
+type Query {
+  films(filter: FilmFilter): [Film!]!
+}
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+  language: Language @reference(path: [{key : "film_language_id_fkey"}])
+  inventory: [Inventory!]!
+  actors: [Actor!]!
+      @reference(path: [{key : "film_actor_film_id_fkey"}, {key : "film_actor_actor_id_fkey"}])
+}
+
+type FilmDetails {
+  length: Int
+  releaseYear: Int @field(name: "release_year")
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type Inventory @table(name: "inventory") {
+  inventoryId: Int @field(name: "inventory_id")
+}
+
+type Actor @table(name: "actor") {
+  lastName: String @field(name: "last_name")
+}
+
+input FilmFilter {
+  title: String
+}
+# end::RunningExample[]
+
+# tag::ProducerKinds[]
+type Query {
+  films: [Film!]!
+  filmsByKey(film_id: [Int!] @lookupKey): [Film]!
+  filmsByService(ids: [Int!]!): [Film!]!
+      @service(service: {className : "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method : "filmsByService"})
+  rows(actorId: Int!, minLength: Int!): [Row!]!
+      @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+      @defaultOrder(fields: [{name : "film_id"}])
+}
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @splitQuery @reference(path: [{key : "film_language_id_fkey"}])
+  originalLanguage: Language @reference(path: [{key : "film_original_language_id_fkey"}])
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type Row {
+  title: String
+}
+# end::ProducerKinds[]
+
+# tag::ProducerWrite[]
+type Mutation {
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+}
+
+input FilmInput {
+  title: String
+  languageId: Int @field(name: "language_id")
+}
+# end::ProducerWrite[]

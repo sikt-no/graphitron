@@ -6,7 +6,11 @@ import graphql.language.DirectivesContainer;
 import graphql.language.StringValue;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.test.CorpusDocuments.Document;
+import no.sikt.graphitron.model.test.CorpusExpectations;
+import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import no.sikt.graphitron.model.test.FactDocuments;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DSL;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -17,10 +21,10 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * A manual page's schema example, rendered from a query over a fact document rather than written by
- * hand, so an example cannot show what the store does not hold.
+ * A documentation page's schema example, rendered from a query over a fact document rather than
+ * written by hand, so an example cannot show what the store does not hold.
  *
- * <p>A page's examples are two files in an {@code examples} folder beside it, named for the page: a
+ * <p>A page's examples are files in an {@code examples} folder beside it, named for the page: a
  * {@code .graphql} file holding one named operation or fragment per example, each marked
  * {@code @factDocument(path:)} naming the fact document it selects from as its folder and name
  * ({@code scenarios/result-external-field}), and the {@code .graphqls} file holding what
@@ -28,29 +32,38 @@ import java.util.stream.Stream;
  * and the fact documents' own stripped. Each example renders into a tag region named for its
  * definition, which the page includes where the example belongs, leaving the header out.
  *
- * <p>The rendered file is committed for the reason {@link CorpusFragmentRenderer} gives for its
- * fragments: an {@code include::} resolves in every build, including the ones that skip tests and
- * could never have rendered it, and {@link ManualExampleTest} holds the committed file to the render.
+ * <p>An example may also mark {@code @factRows(relation:)}, once per relation, to show the rows its
+ * fact document asserts for that relation. Those render as tables into the page's {@code _}-prefixed
+ * {@code .adoc} beside the other two, a region each named for the example and the relation. The rows
+ * are the document's own assertion, which {@code FactExpectationTest} holds to the store.
+ *
+ * <p>The rendered files are committed so that an {@code include::} resolves in every build, including the ones that skip tests and
+ * could never have rendered it, and {@link ManualExampleTest} holds the committed files to the render.
  */
 final class ManualExamples {
 
-    /** One example: the definition's name, which is its tag region, the fact document, the selection. */
-    record Example(String name, String path, String selection) {}
+    /**
+     * One example: the definition's name, which is its tag region, the fact document, the selection,
+     * and the relations whose asserted rows it shows.
+     */
+    record Example(String name, String path, String selection, List<String> relations) {}
 
     private static final String QUERY_SUFFIX = ".graphql";
     private static final String RENDERED_SUFFIX = ".graphqls";
+    private static final String ROWS_PREFIX = "_";
+    private static final String ROWS_SUFFIX = ".adoc";
     private static final String FOLDER = "examples";
     private static final String DIRECTIVE = "factDocument";
+    private static final String ROWS_DIRECTIVE = "factRows";
 
-    /** The manual's root, resolved from either the reactor root or a module directory. */
-    private static final List<Path> ROOT_CANDIDATES = List.of(Path.of("..", "docs", "manual"),
-        Path.of("docs", "manual"));
+    /** The documentation root, resolved from either the reactor root or a module directory. */
+    private static final List<Path> ROOT_CANDIDATES = List.of(Path.of("..", "docs"), Path.of("docs"));
 
     private ManualExamples() {}
 
-    static Path manual() {
+    static Path docs() {
         return ROOT_CANDIDATES.stream().filter(Files::isDirectory).findFirst()
-            .orElseThrow(() -> new IllegalStateException("no docs/manual under " + ROOT_CANDIDATES));
+            .orElseThrow(() -> new IllegalStateException("no docs under " + ROOT_CANDIDATES));
     }
 
     /** Every example query under the manual, sorted by path. */
@@ -68,14 +81,35 @@ final class ManualExamples {
         return query.resolveSibling(baseName(query) + RENDERED_SUFFIX);
     }
 
+    /** Every rendered table file under the documentation, sorted by path. */
+    static List<Path> renderedRows() {
+        return files(ROWS_SUFFIX).stream()
+            .filter(p -> p.getFileName().toString().startsWith(ROWS_PREFIX))
+            .toList();
+    }
+
     /** The query a rendered file is written from, beside it. */
     static Path queryFile(Path rendered) {
-        return rendered.resolveSibling(baseName(rendered) + QUERY_SUFFIX);
+        String base = baseName(rendered);
+        if (rendered.getFileName().toString().endsWith(ROWS_SUFFIX)) {
+            base = base.substring(ROWS_PREFIX.length());
+        }
+        return rendered.resolveSibling(base + QUERY_SUFFIX);
+    }
+
+    /** The table file a query writes its examples' rows to, beside it. */
+    static Path rowsFile(Path query) {
+        return query.resolveSibling(ROWS_PREFIX + baseName(query) + ROWS_SUFFIX);
     }
 
     /** The line a page beside the {@code examples} folder includes one example's region with. */
     static String includeLine(Path rendered, String example) {
         return "include::" + FOLDER + "/" + rendered.getFileName() + "[tag=" + example + "]";
+    }
+
+    /** The region one example's rows for one relation render into. */
+    static String rowsRegion(String example, String relation) {
+        return example + "-" + relation;
     }
 
     /**
@@ -102,8 +136,10 @@ final class ManualExamples {
                 throw new IllegalArgumentException(query + "'s " + name + " must carry one @"
                     + DIRECTIVE + "(path:), and carries " + paths.size());
             }
+            var relations = ((DirectivesContainer<?>) definition).getDirectives(ROWS_DIRECTIVE).stream()
+                .map(d -> stringArgument(d, "relation")).toList();
             examples.add(new Example(name, paths.getFirst(),
-                graphql.language.AstPrinter.printAst(definition)));
+                graphql.language.AstPrinter.printAst(definition), relations));
         }
         if (examples.stream().map(Example::name).distinct().count() != examples.size()) {
             throw new IllegalArgumentException(query + " names two examples alike");
@@ -137,6 +173,61 @@ final class ManualExamples {
                 .append("\n# end::").append(example.name()).append("[]\n");
         }
         return out.toString();
+    }
+
+    /**
+     * What the query file's examples render as tables, one region per example and relation, or
+     * nothing where no example shows rows: the committed text of {@link #rowsFile}.
+     */
+    static Optional<String> renderRows(Path query) {
+        var csvReader = DSL.using(SQLDialect.H2);
+        var out = new StringBuilder("// Rendered by ManualExampleTest from " + query.getFileName()
+            + ". Do not edit.\n");
+        boolean any = false;
+        for (Example example : examples(query)) {
+            if (example.relations().isEmpty()) continue;
+            Document document = factDocument(example.path()).orElseThrow(() ->
+                new IllegalArgumentException(query + "'s " + example.name() + " names the fact"
+                    + " document '" + example.path() + "', which does not exist"));
+            List<Block> blocks = CorpusExpectations.declaredBlocks(csvReader, document.id(),
+                document.sdl());
+            for (String relation : example.relations()) {
+                var matching = blocks.stream()
+                    .filter(b -> b.relation().equalsIgnoreCase(relation))
+                    .filter(b -> b.mode() == CorpusExpectations.Mode.EQUALS
+                        || b.mode() == CorpusExpectations.Mode.CONTAINS)
+                    .toList();
+                if (matching.size() != 1) {
+                    throw new IllegalArgumentException(query + "'s " + example.name() + " shows '"
+                        + relation + "', which " + example.path() + " asserts " + matching.size()
+                        + " times; it must assert it once");
+                }
+                String region = rowsRegion(example.name(), relation);
+                out.append("\n// tag::").append(region).append("[]\n")
+                    .append(table(matching.getFirst()))
+                    .append("// end::").append(region).append("[]\n");
+                any = true;
+            }
+        }
+        return any ? Optional.of(out.toString()) : Optional.empty();
+    }
+
+    /** One assertion's rows as an AsciiDoc table, each value as code and an empty cell left empty. */
+    private static String table(Block block) {
+        var out = new StringBuilder();
+        out.append("[cols=\"").append(String.join(",", block.columns().stream().map(c -> "1").toList()))
+            .append("\",options=\"header\"]\n|===\n");
+        for (String column : block.columns()) {
+            out.append("| ").append(column).append('\n');
+        }
+        for (List<String> row : block.rows()) {
+            out.append('\n');
+            for (String cell : row) {
+                out.append(cell == null || cell.isEmpty() ? "|" : "| `" + cell.replace("|", "\\|") + "`")
+                    .append('\n');
+            }
+        }
+        return out.append("|===\n").toString();
     }
 
     /** The width past which a line's directives go one to a line beneath it. */
@@ -251,11 +342,16 @@ final class ManualExamples {
     }
 
     private static String path(Directive directive) {
-        return Optional.ofNullable(directive.getArgument("path"))
+        return stringArgument(directive, "path");
+    }
+
+    private static String stringArgument(Directive directive, String name) {
+        return Optional.ofNullable(directive.getArgument(name))
             .map(Argument::getValue)
             .filter(StringValue.class::isInstance)
             .map(v -> ((StringValue) v).getValue())
-            .orElseThrow(() -> new IllegalArgumentException("@" + DIRECTIVE + " needs path: as a string"));
+            .orElseThrow(() -> new IllegalArgumentException(
+                "@" + directive.getName() + " needs " + name + ": as a string"));
     }
 
     private static String baseName(Path file) {
@@ -264,8 +360,10 @@ final class ManualExamples {
     }
 
     private static List<Path> files(String suffix) {
-        try (Stream<Path> walk = Files.walk(manual())) {
-            return walk.filter(p -> p.getParent().getFileName().toString().equals(FOLDER))
+        Path root = docs();
+        try (Stream<Path> walk = Files.walk(root)) {
+            return walk.filter(p -> !root.relativize(p).startsWith("target"))
+                .filter(p -> p.getParent().getFileName().toString().equals(FOLDER))
                 .filter(p -> p.getFileName().toString().endsWith(suffix))
                 .sorted()
                 .toList();

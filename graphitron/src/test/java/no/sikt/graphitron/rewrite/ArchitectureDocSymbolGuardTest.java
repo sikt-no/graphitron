@@ -137,15 +137,12 @@ class ArchitectureDocSymbolGuardTest {
         Map<String, String> exempt = new LinkedHashMap<>();
 
         // emitted: written into a consumer's sources by a generator, never declared here.
-        exempt.put("ColumnFetcher", "emitted: per-app runtime class");
         exempt.put("ConnectionResult", "emitted: per-app runtime class");
-        exempt.put("EntityFetcherDispatch", "emitted: per-app federation dispatch class");
         exempt.put("Graphitron", "emitted: per-app entry-point class carrying newExecutionInput");
         exempt.put("GraphitronContext", "emitted: per-app context interface");
         exempt.put("GraphitronContextImpl", "emitted: the consumer's own implementation of it");
         exempt.put("MountedSession", "emitted: per-app view of the connection a mount callback receives");
         exempt.put("SessionState", "emitted: per-app carrier of a request's mount and unmount callbacks");
-        exempt.put("NodeIdEncoder", "emitted: per-app node-id encoder");
         exempt.put("NodeIdStrategy", "emitted: per-app node-id strategy interface");
         exempt.put("OrderByResult", "emitted: per-app order-by result class");
         exempt.put("Outcome", "emitted: error-channel result type in generated output");
@@ -168,7 +165,6 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("StoreFixture", "module: graphitron-lsp and graphitron-mcp");
         exempt.put("StoreClientBoundaryTest", "module: graphitron-lsp and graphitron-mcp");
         exempt.put("BuiltStoreFixture", "module: graphitron-maven-plugin");
-        exempt.put("FieldClassification.Conflicted", "module: the LSP/MCP classification projection");
         exempt.put("ClasspathChangeRoundTest", "module: graphitron-maven-plugin");
         exempt.put("DevMojo", "module: graphitron-maven-plugin");
         exempt.put("DevMojoTest", "module: graphitron-maven-plugin");
@@ -193,21 +189,6 @@ class ArchitectureDocSymbolGuardTest {
 
         // schema: a GraphQL type from a worked example, not a Java type at all.
         exempt.put("FilmDetails", "schema: worked-example GraphQL type");
-        exempt.put("FilmInput", "schema: worked-example GraphQL input type");
-        exempt.put("FilmOrActor", "schema: worked-example GraphQL union");
-        exempt.put("FilmStats", "schema: worked-example GraphQL type");
-        exempt.put("MediaItem", "schema: worked-example GraphQL interface");
-        exempt.put("Rating", "schema: worked-example GraphQL enum over a catalog column");
-        exempt.put("PojoBacked", "schema: worked-example GraphQL type over a plain Java backing class");
-        exempt.put("JavaRecordBacked", "schema: worked-example GraphQL type over a Java record");
-        exempt.put("JooqTableRecordBacked", "schema: worked-example GraphQL type over a jOOQ TableRecord");
-        exempt.put("JavaRecordBackedInput", "schema: worked-example GraphQL input over a Java record");
-        exempt.put("QueryFilmsConnection", "schema: a GraphQL type @asConnection synthesises for a coordinate");
-        exempt.put("QueryFilmsConnectionEdge", "schema: a GraphQL type @asConnection synthesises for a coordinate");
-        exempt.put("CountryCitiesConnection", "schema: a GraphQL type @asConnection synthesises for a coordinate");
-        exempt.put("CountryCitiesConnectionEdge", "schema: a GraphQL type @asConnection synthesises for a coordinate");
-        exempt.put("Sprak", "schema: worked-example GraphQL enum naming a pivot vocabulary");
-        exempt.put("TranslatedTexts", "schema: worked-example GraphQL type");
         exempt.put("Foo", "schema: placeholder type in a worked example");
         exempt.put("Int", "schema: GraphQL built-in scalar");
         exempt.put("ExternalCodeReference", "schema: the directives schema's shared input type");
@@ -216,10 +197,6 @@ class ArchitectureDocSymbolGuardTest {
         // accurate prose about a decision, so there is no live symbol for it to point at.
         exempt.put("ConditionDirectives", "rejected: a utility class the design considered and did not build");
         exempt.put("NodeIdField", "rejected: an input-field variant argument resolution leaves out of scope");
-
-        // value: an enum constant or axis value. The index holds types, not fields.
-        exempt.put("Fetch", "value: an Operation axis constant");
-        exempt.put("Nest", "value: an Operation axis constant");
 
         // library: a third-party type not on this module's classpath.
         exempt.put("JsonWebToken", "library: MicroProfile JWT, reached only from graphitron-jakarta-rest");

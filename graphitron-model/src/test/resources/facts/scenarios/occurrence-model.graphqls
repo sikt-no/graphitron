@@ -1,0 +1,128 @@
+# The occurrence model on one small schema, the running example of the code generation triggers page.
+# Each field, argument and input field is an occurrence at the place it is reached; FilmDetails has no
+# table, so its fields are reached under Film.details. Every occurrence here reads rows of a table, and
+# each target type an occurrence must reach is met by a join path: Film.language by the key written,
+# film having two to language, Film.inventory by the one key inventory has to film, Film.actors by the
+# two keys written through film_actor, and a column by the empty path that ends where it starts.
+# Each scalar binds the column it reads, and the filter's title the column it narrows. Only the root
+# field produces: the query it runs reads every field below it, the children joined in.
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+  inventory: [Inventory!]!
+  actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+type FilmDetails {
+  length: Int
+  releaseYear: Int @field(name: "release_year")
+}
+
+type Language @table(name: "language") { name: String }
+
+type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+
+type Actor @table(name: "actor") { lastName: String @field(name: "last_name") }
+
+input FilmFilter { title: String }
+
+extend type Query { films(filter: FilmFilter): [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_occurrence",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                 element_coordinate,    kind,           depth
+  Actor.lastName,             Actor.lastName,        FIELD,          0
+  Film.actors,                Film.actors,           FIELD,          0
+  Film.details,               Film.details,          FIELD,          0
+  Film.details.length,        FilmDetails.length,    FIELD,          1
+  Film.details.releaseYear,   FilmDetails.releaseYear, FIELD,        1
+  Film.inventory,             Film.inventory,        FIELD,          0
+  Film.language,              Film.language,         FIELD,          0
+  Film.title,                 Film.title,            FIELD,          0
+  Inventory.inventoryId,      Inventory.inventoryId, FIELD,          0
+  Language.name,              Language.name,         FIELD,          0
+  Query.films,                Query.films,           FIELD,          0
+  Query.films(filter:),       Query.films(filter:),  FIELD_ARGUMENT, 1
+  Query.films(filter.title:), FilmFilter.title,      INPUT_FIELD,    2
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                 table_name
+  Actor.lastName,             actor
+  Film.actors,                film
+  Film.details,               film
+  Film.details.length,        film
+  Film.details.releaseYear,   film
+  Film.inventory,             film
+  Film.language,              film
+  Film.title,                 film
+  Inventory.inventoryId,      inventory
+  Language.name,              language
+  Query.films(filter:),       film
+  Query.films(filter.title:), film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                 target_type, kind, origin
+  Actor.lastName,             String,      JOIN, EMPTY
+  Film.actors,                Actor,       JOIN, WRITTEN
+  Film.details,               FilmDetails, JOIN, EMPTY
+  Film.details.length,        Int,         JOIN, EMPTY
+  Film.details.releaseYear,   Int,         JOIN, EMPTY
+  Film.inventory,             Inventory,   JOIN, INFERRED
+  Film.language,              Language,    JOIN, WRITTEN
+  Film.title,                 String,      JOIN, EMPTY
+  Inventory.inventoryId,      Int,         JOIN, EMPTY
+  Language.name,              String,      JOIN, EMPTY
+  Query.films(filter:),       Film,        JOIN, EMPTY
+  Query.films(filter.title:), Film,        JOIN, EMPTY
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,     target_type, position, from_table, to_table
+  Film.actors,    Actor,       0,        film,       film_actor
+  Film.actors,    Actor,       1,        film_actor, actor
+  Film.inventory, Inventory,   0,        film,       inventory
+  Film.language,  Language,    0,        film,       language
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                 bound,            kind
+  Actor.lastName,             public.actor,     COLUMN
+  Film.details.length,        public.film,      COLUMN
+  Film.details.releaseYear,   public.film,      COLUMN
+  Film.title,                 public.film,      COLUMN
+  Inventory.inventoryId,      public.inventory, COLUMN
+  Language.name,              public.language,  COLUMN
+  Query.films(filter.title:), public.film,      COLUMN
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_column",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,                 bound,            column_name,  matched_by
+  Actor.lastName,             public.actor,     last_name,    SQL_NAME
+  Film.details.length,        public.film,      length,       SQL_NAME
+  Film.details.releaseYear,   public.film,      release_year, SQL_NAME
+  Film.title,                 public.film,      title,        SQL_NAME
+  Inventory.inventoryId,      public.inventory, inventory_id, SQL_NAME
+  Language.name,              public.language,  name,         SQL_NAME
+  Query.films(filter.title:), public.film,      title,        SQL_NAME
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,  kind,   start
+  Query.films, SELECT, ROOT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_result",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate,  shape,       table_name
+  Query.films, RECORD_LIST, film
+  """)

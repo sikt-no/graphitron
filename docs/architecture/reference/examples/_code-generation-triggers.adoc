@@ -1,0 +1,386 @@
+// Rendered by ManualExampleTest from code-generation-triggers.graphql. Do not edit.
+
+// tag::RunningExample-graphitron_occurrence[]
+[cols="1,1,1,1",options="header"]
+|===
+| coordinate
+| element_coordinate
+| kind
+| depth
+
+| `Actor.lastName`
+| `Actor.lastName`
+| `FIELD`
+| `0`
+
+| `Film.actors`
+| `Film.actors`
+| `FIELD`
+| `0`
+
+| `Film.details`
+| `Film.details`
+| `FIELD`
+| `0`
+
+| `Film.details.length`
+| `FilmDetails.length`
+| `FIELD`
+| `1`
+
+| `Film.details.releaseYear`
+| `FilmDetails.releaseYear`
+| `FIELD`
+| `1`
+
+| `Film.inventory`
+| `Film.inventory`
+| `FIELD`
+| `0`
+
+| `Film.language`
+| `Film.language`
+| `FIELD`
+| `0`
+
+| `Film.title`
+| `Film.title`
+| `FIELD`
+| `0`
+
+| `Inventory.inventoryId`
+| `Inventory.inventoryId`
+| `FIELD`
+| `0`
+
+| `Language.name`
+| `Language.name`
+| `FIELD`
+| `0`
+
+| `Query.films`
+| `Query.films`
+| `FIELD`
+| `0`
+
+| `Query.films(filter:)`
+| `Query.films(filter:)`
+| `FIELD_ARGUMENT`
+| `1`
+
+| `Query.films(filter.title:)`
+| `FilmFilter.title`
+| `INPUT_FIELD`
+| `2`
+|===
+// end::RunningExample-graphitron_occurrence[]
+
+// tag::RunningExample-graphitron_occurrence_source_table[]
+[cols="1,1",options="header"]
+|===
+| coordinate
+| table_name
+
+| `Actor.lastName`
+| `actor`
+
+| `Film.actors`
+| `film`
+
+| `Film.details`
+| `film`
+
+| `Film.details.length`
+| `film`
+
+| `Film.details.releaseYear`
+| `film`
+
+| `Film.inventory`
+| `film`
+
+| `Film.language`
+| `film`
+
+| `Film.title`
+| `film`
+
+| `Inventory.inventoryId`
+| `inventory`
+
+| `Language.name`
+| `language`
+
+| `Query.films(filter:)`
+| `film`
+
+| `Query.films(filter.title:)`
+| `film`
+|===
+// end::RunningExample-graphitron_occurrence_source_table[]
+
+// tag::RunningExample-graphitron_path[]
+[cols="1,1,1,1",options="header"]
+|===
+| coordinate
+| target_type
+| kind
+| origin
+
+| `Actor.lastName`
+| `String`
+| `JOIN`
+| `EMPTY`
+
+| `Film.actors`
+| `Actor`
+| `JOIN`
+| `WRITTEN`
+
+| `Film.details`
+| `FilmDetails`
+| `JOIN`
+| `EMPTY`
+
+| `Film.details.length`
+| `Int`
+| `JOIN`
+| `EMPTY`
+
+| `Film.details.releaseYear`
+| `Int`
+| `JOIN`
+| `EMPTY`
+
+| `Film.inventory`
+| `Inventory`
+| `JOIN`
+| `INFERRED`
+
+| `Film.language`
+| `Language`
+| `JOIN`
+| `WRITTEN`
+
+| `Film.title`
+| `String`
+| `JOIN`
+| `EMPTY`
+
+| `Inventory.inventoryId`
+| `Int`
+| `JOIN`
+| `EMPTY`
+
+| `Language.name`
+| `String`
+| `JOIN`
+| `EMPTY`
+
+| `Query.films(filter:)`
+| `Film`
+| `JOIN`
+| `EMPTY`
+
+| `Query.films(filter.title:)`
+| `Film`
+| `JOIN`
+| `EMPTY`
+|===
+// end::RunningExample-graphitron_path[]
+
+// tag::RunningExample-graphitron_join_path_step[]
+[cols="1,1,1,1,1",options="header"]
+|===
+| coordinate
+| target_type
+| position
+| from_table
+| to_table
+
+| `Film.actors`
+| `Actor`
+| `0`
+| `film`
+| `film_actor`
+
+| `Film.actors`
+| `Actor`
+| `1`
+| `film_actor`
+| `actor`
+
+| `Film.inventory`
+| `Inventory`
+| `0`
+| `film`
+| `inventory`
+
+| `Film.language`
+| `Language`
+| `0`
+| `film`
+| `language`
+|===
+// end::RunningExample-graphitron_join_path_step[]
+
+// tag::RunningExample-graphitron_occurrence_binding[]
+[cols="1,1,1",options="header"]
+|===
+| coordinate
+| bound
+| kind
+
+| `Actor.lastName`
+| `public.actor`
+| `COLUMN`
+
+| `Film.details.length`
+| `public.film`
+| `COLUMN`
+
+| `Film.details.releaseYear`
+| `public.film`
+| `COLUMN`
+
+| `Film.title`
+| `public.film`
+| `COLUMN`
+
+| `Inventory.inventoryId`
+| `public.inventory`
+| `COLUMN`
+
+| `Language.name`
+| `public.language`
+| `COLUMN`
+
+| `Query.films(filter.title:)`
+| `public.film`
+| `COLUMN`
+|===
+// end::RunningExample-graphitron_occurrence_binding[]
+
+// tag::RunningExample-graphitron_occurrence_column[]
+[cols="1,1,1,1",options="header"]
+|===
+| coordinate
+| bound
+| column_name
+| matched_by
+
+| `Actor.lastName`
+| `public.actor`
+| `last_name`
+| `SQL_NAME`
+
+| `Film.details.length`
+| `public.film`
+| `length`
+| `SQL_NAME`
+
+| `Film.details.releaseYear`
+| `public.film`
+| `release_year`
+| `SQL_NAME`
+
+| `Film.title`
+| `public.film`
+| `title`
+| `SQL_NAME`
+
+| `Inventory.inventoryId`
+| `public.inventory`
+| `inventory_id`
+| `SQL_NAME`
+
+| `Language.name`
+| `public.language`
+| `name`
+| `SQL_NAME`
+
+| `Query.films(filter.title:)`
+| `public.film`
+| `title`
+| `SQL_NAME`
+|===
+// end::RunningExample-graphitron_occurrence_column[]
+
+// tag::RunningExample-graphitron_occurrence_producer[]
+[cols="1,1,1",options="header"]
+|===
+| coordinate
+| kind
+| start
+
+| `Query.films`
+| `SELECT`
+| `ROOT`
+|===
+// end::RunningExample-graphitron_occurrence_producer[]
+
+// tag::ProducerKinds-graphitron_occurrence_producer[]
+[cols="1,1,1",options="header"]
+|===
+| coordinate
+| kind
+| start
+
+| `Film.language`
+| `SELECT`
+| `CHILD`
+
+| `Mutation.createFilm`
+| `INSERT`
+| `ROOT`
+
+| `Query.films`
+| `SELECT`
+| `ROOT`
+
+| `Query.filmsByKey`
+| `LOOKUP`
+| `ROOT`
+
+| `Query.filmsByService`
+| `SERVICE`
+| `ROOT`
+
+| `Query.rows`
+| `ROUTINE`
+| `ROOT`
+|===
+// end::ProducerKinds-graphitron_occurrence_producer[]
+
+// tag::ProducerKinds-graphitron_occurrence_producer_result[]
+[cols="1,1,1",options="header"]
+|===
+| coordinate
+| shape
+| table_name
+
+| `Film.language`
+| `SINGLE_RECORD`
+| `language`
+
+| `Mutation.createFilm`
+| `SINGLE_RECORD`
+| `film`
+
+| `Query.films`
+| `RECORD_LIST`
+| `film`
+
+| `Query.filmsByKey`
+| `RECORD_LIST`
+| `film`
+
+| `Query.filmsByService`
+| `RECORD_LIST`
+| `film`
+
+| `Query.rows`
+| `RECORD_LIST`
+| `films_for_actor`
+|===
+// end::ProducerKinds-graphitron_occurrence_producer_result[]
