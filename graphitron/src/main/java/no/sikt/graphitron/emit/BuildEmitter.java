@@ -49,13 +49,20 @@ public final class BuildEmitter {
      * The helpers that make {@code build}'s class, the first named {@code name} and taking the input
      * object's map, the rest making the classes of its nested input objects.
      */
-    public static List<MethodSpec> helpers(BuildQuery.Build build, String name) {
+    public static List<MethodSpec> helpers(BuildQuery.Build build, String name, Runtime runtime) {
         var out = new ArrayList<MethodSpec>();
-        helper(build, name, out);
+        helper(build, name, runtime, out);
         return out;
     }
 
-    private static void helper(BuildQuery.Build build, String name, List<MethodSpec> out) {
+    /**
+     * The generated runtime a node id is decoded through: the encoder whose {@code decodeInto} loads
+     * a record, and the statement that refuses an id it answers null for, given the input field's
+     * name.
+     */
+    public record Runtime(ClassName nodeIdEncoder, java.util.function.Function<String, CodeBlock> invalidId) {}
+
+    private static void helper(BuildQuery.Build build, String name, Runtime runtime, List<MethodSpec> out) {
         var type = SessionIdentityRows.classOf(build.className());
         var method = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -66,27 +73,82 @@ public final class BuildEmitter {
         out.add(null);
         int index = out.size() - 1;
         var counter = new int[] {0};
+        // The node ids, one record per member however many fields decode into it: declared and
+        // filled first at POSITIONAL, where they are constructor arguments, and after every plain
+        // setter at SETTERS, so the decode's agreement check sees each plain write.
+        var decoded = new java.util.LinkedHashMap<String, List<BuildQuery.Member>>();
+        for (var member : build.members()) {
+            member.decode().ifPresent(d -> decoded.computeIfAbsent(member.slot().slotName(), k -> new ArrayList<>()).add(member));
+        }
         if ("POSITIONAL".equals(build.shape())) {
+            var records = decodes(method, decoded, runtime, counter);
             var arguments = new ArrayList<CodeBlock>();
             for (var slot : build.slots()) {
                 var member = build.members().stream()
                     .filter(m -> m.slot().position() == slot.position()).findFirst();
-                arguments.add(member.isPresent()
-                    ? value(member.get(), name, counter, out)
-                    : defaultOf(SessionIdentityRows.typeOf(slot.slotType())));
+                arguments.add(member.isEmpty() ? defaultOf(SessionIdentityRows.typeOf(slot.slotType()))
+                    : member.get().decode().isPresent() ? CodeBlock.of("$L", records.get(slot.slotName()))
+                    : value(member.get(), name, runtime, counter, out));
             }
             method.addStatement("return new $T($L)", type, CodeBlock.join(arguments, ", "));
         } else {
             method.addStatement("$T out = new $T()", type, type);
             for (var member : build.members()) {
+                if (member.decode().isPresent()) {
+                    continue;
+                }
                 var sent = sent(member.path(), counter);
                 method.beginControlFlow("if ($L)", sent)
-                    .addStatement("out.$L($L)", member.slot().methodName(), value(member, name, counter, out))
+                    .addStatement("out.$L($L)", member.slot().methodName(), value(member, name, runtime, counter, out))
+                    .endControlFlow();
+            }
+            var records = decodes(method, decoded, runtime, counter);
+            for (var group : decoded.values()) {
+                var anySent = CodeBlock.join(group.stream().map(m -> sent(m.path(), counter)).toList(), " || ");
+                method.beginControlFlow("if ($L)", anySent)
+                    .addStatement("out.$L($L)", group.getFirst().slot().methodName(),
+                        records.get(group.getFirst().slot().slotName()))
                     .endControlFlow();
             }
             method.addStatement("return out");
         }
         out.set(index, method.build());
+    }
+
+    /**
+     * Each node id member's record, decoded from every field naming the member into one instance: a
+     * record made only when an id arrives, so a member no id fills stays null, and an id
+     * {@code decodeInto} refuses refused for the input field it came from. Answers each member's local.
+     */
+    private static java.util.Map<String, String> decodes(MethodSpec.Builder method,
+                                                         java.util.Map<String, List<BuildQuery.Member>> decoded,
+                                                         Runtime runtime, int[] counter) {
+        var locals = new java.util.HashMap<String, String>();
+        for (var entry : decoded.entrySet()) {
+            var local = "decoded" + (++counter[0]);
+            var recordType = SessionIdentityRows.classOf(entry.getValue().getFirst().decode().orElseThrow().recordClass());
+            method.addStatement("$T $L = null", recordType, local);
+            for (var member : entry.getValue()) {
+                var d = member.decode().orElseThrow();
+                var maps = maps(member.path(), counter);
+                var read = CodeBlock.of("$L.get($S)", maps.last(), member.path().getLast());
+                var id = "id" + (++counter[0]);
+                var label = String.join(".", member.path());
+                var columns = CodeBlock.join(d.columnJavaNames().stream()
+                    .map(c -> CodeBlock.of("$T.$L.$L", SessionIdentityRows.classOf(d.tablesClass()), d.tableField(), c))
+                    .toList(), ", ");
+                method.beginControlFlow(maps.guard().isEmpty() ? "if ($L instanceof $T $L)" : "if ($L && $L instanceof $T $L)",
+                        maps.guard().isEmpty() ? new Object[] {read, STRING, id} : new Object[] {maps.guard(), read, STRING, id})
+                    .addStatement("if ($L == null) $L = new $T()", local, local, recordType)
+                    .beginControlFlow("if ($T.decodeInto($L, $S, $L, $S, null, $L) == null)",
+                        runtime.nodeIdEncoder(), local, d.typeId(), id, label, columns)
+                    .addStatement(runtime.invalidId().apply(label))
+                    .endControlFlow()
+                    .endControlFlow();
+            }
+            locals.put(entry.getKey(), local);
+        }
+        return locals;
     }
 
     /** Whether the client sent the field: every map on the way is there, and the last holds its name. */
@@ -97,14 +159,15 @@ public final class BuildEmitter {
     }
 
     /** A member's value, read off its map and made into what the member takes. */
-    private static CodeBlock value(BuildQuery.Member member, String name, int[] counter, List<MethodSpec> out) {
+    private static CodeBlock value(BuildQuery.Member member, String name, Runtime runtime, int[] counter,
+                                   List<MethodSpec> out) {
         var slotType = SessionIdentityRows.typeOf(member.slot().slotType());
         var maps = maps(member.path(), counter);
         var read = CodeBlock.of("$L.get($S)", maps.last(), member.path().getLast());
         CodeBlock made;
         if (member.nested().isPresent()) {
             var helperName = name + "_" + member.slot().slotName();
-            helper(member.nested().get(), helperName, out);
+            helper(member.nested().get(), helperName, runtime, out);
             made = member.list()
                 ? listOf(read, CodeBlock.of("e instanceof $T m ? $L(m) : null", ANY_MAP, helperName), counter)
                 : CodeBlock.of("$L instanceof $T map$L ? $L(map$L) : null", read, ANY_MAP, ++counter[0], helperName, counter[0]);

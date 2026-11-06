@@ -15,11 +15,16 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
@@ -36,10 +41,14 @@ import static org.jooq.impl.DSL.selectOne;
  * the member's class in turn. A nested input object that matches no member is a grouping, its fields
  * binding against the enclosing class as if they were declared there.
  *
+ * <p>A node id field fills a member that is a jOOQ record by decoding into it: the record's own key
+ * where it is a row of the node type's table, else its foreign key referencing that key. Several node
+ * id fields may fill one member, decoding into the one record.
+ *
  * <p>What cannot be made this way is refused with the reason, an input object being made into a
  * class nothing says how to construct, an input field matching no member, a list of groups, two
- * fields on one member, and the jOOQ record and node id axes, which bind on columns rather than
- * members and are not built here yet.
+ * plain fields on one member, a node id that cannot be decoded into its member, and a parameter that
+ * is a jOOQ record itself, which binds on columns rather than members and is not built here yet.
  */
 public final class BuildQuery {
 
@@ -54,10 +63,25 @@ public final class BuildQuery {
      * a grouping's names first; the kind of type it is; whether it is a list; and, for an input
      * object, the construction of the member's class.
      */
-    public record Member(Slot slot, List<String> path, String typeKind, boolean list, Optional<Build> nested) {
+    public record Member(Slot slot, List<String> path, String typeKind, boolean list, Optional<Build> nested,
+                         Optional<Decode> decode) {
         public Member {
             path = List.copyOf(path);
             Objects.requireNonNull(nested, "nested");
+            Objects.requireNonNull(decode, "decode");
+        }
+    }
+
+    /**
+     * A node id decoded into the member's jOOQ record: the type id the id must carry, the table the
+     * record is a row of as the generated code names it, and the record's columns the key values
+     * load into, in key order: the node type's own key where the record is a row of its table, else
+     * the record's foreign key referencing that key.
+     */
+    public record Decode(String typeId, String tablesClass, String tableField, String recordClass,
+                         List<String> columnJavaNames) {
+        public Decode {
+            columnJavaNames = List.copyOf(columnJavaNames);
         }
     }
 
@@ -88,10 +112,10 @@ public final class BuildQuery {
     public static Map<Root, Result> read(StoreHandle store) {
         var children = inputFields(store);
         var constructions = constructions(store);
-        var records = recordClasses(store);
+        var catalog = Catalog.read(store);
         var out = new HashMap<Root, Result>();
         roots(store).forEach((root, className) -> out.put(root,
-            build(root.landingCoordinate(), className, children, constructions, records, new ArrayList<>())));
+            build(root.landingCoordinate(), className, children, constructions, catalog, new ArrayList<>())));
         return out;
     }
 
@@ -156,17 +180,11 @@ public final class BuildQuery {
         return out;
     }
 
-    /** The record classes of the catalog's tables, which bind on columns rather than members. */
-    private static java.util.Set<String> recordClasses(StoreHandle store) {
-        return new java.util.HashSet<>(store.dsl().select(SQL_TABLE.RECORD_CLASS_FQN).from(SQL_TABLE)
-            .where(SQL_TABLE.RECORD_CLASS_FQN.isNotNull())
-            .fetch(SQL_TABLE.RECORD_CLASS_FQN));
-    }
 
     private static Result build(String occurrence, String className, Map<String, List<InputField>> children,
-                                Map<String, Construction> constructions, java.util.Set<String> records,
+                                Map<String, Construction> constructions, Catalog catalog,
                                 List<String> prefix) {
-        if (records.contains(className)) {
+        if (catalog.tables().containsKey(className)) {
             return new Result.Refused(className + " is a jOOQ record, which binds on columns");
         }
         var construction = constructions.get(className);
@@ -174,14 +192,17 @@ public final class BuildQuery {
             return new Result.Refused("nothing says how to make " + className);
         }
         var members = new ArrayList<Member>();
-        var reason = bind(occurrence, construction, children, constructions, records, prefix, members);
+        var reason = bind(occurrence, construction, children, constructions, catalog, prefix, members);
         if (reason != null) {
             return new Result.Refused(reason);
         }
         var bound = new HashMap<String, String>();
         for (var m : members) {
+            boolean sharedDecode = m.decode().isPresent() && members.stream()
+                .filter(o -> o.slot().slotName().equals(m.slot().slotName()))
+                .allMatch(o -> o.decode().isPresent());
             var earlier = bound.put(m.slot().slotName(), String.join(".", m.path()));
-            if (earlier != null) {
+            if (earlier != null && !sharedDecode) {
                 return new Result.Refused(earlier + " and " + String.join(".", m.path())
                     + " both fill member " + m.slot().slotName() + " of " + className);
             }
@@ -196,16 +217,12 @@ public final class BuildQuery {
      */
     private static String bind(String occurrence, Construction construction,
                                Map<String, List<InputField>> children, Map<String, Construction> constructions,
-                               java.util.Set<String> records, List<String> prefix, List<Member> members) {
+                               Catalog catalog, List<String> prefix, List<Member> members) {
         for (var field : children.getOrDefault(occurrence, List.of())) {
             var path = new ArrayList<>(prefix);
             path.add(field.name());
             var slot = construction.slots().stream()
                 .filter(s -> s.slotName().equals(field.boundName())).findFirst();
-            if (field.nodeId()) {
-                return "input field " + String.join(".", path) + " is a node id, which decodes into "
-                    + "its key and is not built here yet";
-            }
             if (slot.isEmpty()) {
                 boolean renamed = !field.boundName().equals(field.name());
                 if ("INPUT_OBJECT".equals(field.typeKind()) && !renamed) {
@@ -213,7 +230,7 @@ public final class BuildQuery {
                         return "input field " + String.join(".", path) + " matches no member of "
                             + construction.className() + " and is a list, so it cannot group";
                     }
-                    var reason = bind(field.coordinate(), construction, children, constructions, records,
+                    var reason = bind(field.coordinate(), construction, children, constructions, catalog,
                         path, members);
                     if (reason != null) {
                         return reason;
@@ -223,17 +240,159 @@ public final class BuildQuery {
                 return "input field " + String.join(".", path) + " names member " + field.boundName()
                     + ", which " + construction.className() + " does not have";
             }
+            var memberClass = slot.get().elementClass() != null ? slot.get().elementClass() : slot.get().erasedClass();
             Optional<Build> nested = Optional.empty();
-            if ("INPUT_OBJECT".equals(field.typeKind())) {
-                var memberClass = slot.get().elementClass() != null ? slot.get().elementClass() : slot.get().erasedClass();
-                var result = build(field.coordinate(), memberClass, children, constructions, records, List.of());
+            Optional<Decode> decode = Optional.empty();
+            if (field.nodeId()) {
+                if (field.list()) {
+                    return "input field " + String.join(".", path) + " is a list of node ids, which is not built here yet";
+                }
+                var decoded = catalog.decode(field.coordinate(), memberClass);
+                if (decoded instanceof String reason) {
+                    return "input field " + String.join(".", path) + ": " + reason;
+                }
+                decode = Optional.of((Decode) decoded);
+            } else if ("INPUT_OBJECT".equals(field.typeKind())) {
+                var result = build(field.coordinate(), memberClass, children, constructions, catalog, List.of());
                 if (result instanceof Result.Refused refused) {
                     return refused.reason();
                 }
                 nested = Optional.of(((Result.Built) result).build());
             }
-            members.add(new Member(slot.get(), path, field.typeKind(), field.list(), nested));
+            members.add(new Member(slot.get(), path, field.typeKind(), field.list(), nested, decode));
         }
         return null;
+    }
+
+    /** A table as the generated code names it: its constants class and field, and its key. */
+    private record Table(String source, String schema, String name, String tablesClass, String tableField) {}
+
+    /** One node id binding: the node's table, the type id and the key columns in key order. */
+    private record Binding(String source, String schema, String table, String typeId, List<String> columns) {}
+
+    /** One column's generated name, and whether a converter sits on it. */
+    private record Column(String javaName, boolean converted) {}
+
+    /**
+     * The catalog and node facts a node id's decode reads: each input field's node id bindings, the
+     * table each record class is a row of, the foreign key column pairs between tables, and each
+     * column's generated name.
+     */
+    private record Catalog(Map<String, List<Binding>> bindings, Map<String, Table> tables,
+                           Map<String, Map<String, List<String[]>>> foreignKeys, Map<String, Column> columns) {
+
+        static Catalog read(StoreHandle store) {
+            var n = GRAPHITRON_OCCURRENCE_NODE_ID;
+            var gn = GRAPHITRON_NODE;
+            var bindingRows = new java.util.LinkedHashMap<String, java.util.LinkedHashMap<String, Binding>>();
+            store.dsl().select(n.COORDINATE, n.TABLE_SOURCE_NAME, n.TABLE_SCHEMA, n.TABLE_NAME,
+                    coalesce(gn.TYPE_ID, n.NODE_TYPE_NAME), n.COLUMN_NAME)
+                .from(n)
+                .leftJoin(gn).on(gn.GRAPH_NAME.eq(n.GRAPH_NAME), gn.TYPE_NAME.eq(n.NODE_TYPE_NAME))
+                .where(n.GRAPH_NAME.eq(store.graphName()))
+                .orderBy(n.COORDINATE, n.TABLE_SCHEMA, n.TABLE_NAME, n.POSITION)
+                .forEach(r -> bindingRows.computeIfAbsent(r.value1(), k -> new java.util.LinkedHashMap<>())
+                    .computeIfAbsent(key(r.value2(), r.value3(), r.value4()),
+                        k -> new Binding(r.value2(), r.value3(), r.value4(), r.value5(), new ArrayList<>()))
+                    .columns().add(r.value6()));
+            var bindings = new HashMap<String, List<Binding>>();
+            bindingRows.forEach((coordinate, byTable) -> bindings.put(coordinate, List.copyOf(byTable.values())));
+
+            var t = SQL_TABLE;
+            var sc = SQL_SCHEMA;
+            var tables = new HashMap<String, Table>();
+            store.dsl().select(t.RECORD_CLASS_FQN, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME,
+                    sc.TABLES_CLASS_FQN, t.JOOQ_NAME)
+                .from(t)
+                .join(sc).on(sc.SOURCE_NAME.eq(t.SOURCE_NAME), sc.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
+                .forEach(r -> tables.putIfAbsent(r.value1(),
+                    new Table(r.value2(), r.value3(), r.value4(), r.value5(), r.value6())));
+
+            // Referencing column by referenced column, per constraint, per ordered pair of tables.
+            var rc = SQL_REFERENTIAL_CONSTRAINT_COLUMN;
+            var cc = SQL_CONSTRAINT_COLUMN.as("cc");
+            var rk = SQL_CONSTRAINT_COLUMN.as("rk");
+            var foreignKeys = new HashMap<String, Map<String, List<String[]>>>();
+            store.dsl().select(rc.SOURCE_NAME, rc.TABLE_SCHEMA, rc.TABLE_NAME, rc.REFERENCED_SOURCE_NAME,
+                    rc.REFERENCED_SCHEMA, rc.REFERENCED_TABLE, rc.CONSTRAINT_NAME, cc.COLUMN_NAME, rk.COLUMN_NAME)
+                .from(rc)
+                .join(cc).on(cc.SOURCE_NAME.eq(rc.SOURCE_NAME), cc.TABLE_SCHEMA.eq(rc.TABLE_SCHEMA),
+                    cc.TABLE_NAME.eq(rc.TABLE_NAME), cc.CONSTRAINT_NAME.eq(rc.CONSTRAINT_NAME),
+                    cc.POSITION.eq(rc.POSITION))
+                .join(rk).on(rk.SOURCE_NAME.eq(rc.REFERENCED_SOURCE_NAME), rk.TABLE_SCHEMA.eq(rc.REFERENCED_SCHEMA),
+                    rk.TABLE_NAME.eq(rc.REFERENCED_TABLE), rk.CONSTRAINT_NAME.eq(rc.REFERENCED_CONSTRAINT_NAME),
+                    rk.POSITION.eq(rc.REFERENCED_POSITION))
+                .forEach(r -> foreignKeys
+                    .computeIfAbsent(key(r.value1(), r.value2(), r.value3()) + "->" + key(r.value4(), r.value5(), r.value6()),
+                        k -> new java.util.TreeMap<>())
+                    .computeIfAbsent(r.value7(), k -> new ArrayList<>())
+                    .add(new String[] {r.value8(), r.value9()}));
+
+            var c = SQL_COLUMN;
+            var columns = new HashMap<String, Column>();
+            store.dsl().select(c.SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME,
+                    c.BINDING_TYPE, c.DATABASE_TYPE)
+                .from(c)
+                .forEach(r -> columns.put(key(r.value1(), r.value2(), r.value3()) + "." + r.value4(),
+                    new Column(r.value5(), !r.value6().equals(r.value7()))));
+            return new Catalog(bindings, tables, foreignKeys, columns);
+        }
+
+        private static String key(String source, String schema, String table) {
+            return source + "/" + schema + "." + table;
+        }
+
+        /**
+         * The decode of the node id at {@code coordinate} into a member of class {@code memberClass},
+         * or why it cannot be built: answers a {@link Decode} or a reason.
+         */
+        Object decode(String coordinate, String memberClass) {
+            var bound = bindings.getOrDefault(coordinate, List.of());
+            if (bound.size() != 1) {
+                return bound.isEmpty() ? "no node type is bound to the id"
+                    : "the id is one of several node types, which is not built here yet";
+            }
+            var binding = bound.getFirst();
+            var target = tables.get(memberClass);
+            if (target == null) {
+                return "member type " + memberClass + " is not a jOOQ record a node id can decode into";
+            }
+            var targetKey = key(target.source(), target.schema(), target.name());
+            var nodeKey = key(binding.source(), binding.schema(), binding.table());
+            List<String> targetColumns;
+            if (targetKey.equals(nodeKey)) {
+                targetColumns = binding.columns();
+            } else {
+                var byConstraint = foreignKeys.getOrDefault(targetKey + "->" + nodeKey, Map.of());
+                if (byConstraint.size() != 1) {
+                    return byConstraint.isEmpty() ? target.name() + " has no foreign key to " + binding.table()
+                        : target.name() + " has " + byConstraint.size() + " foreign keys to " + binding.table()
+                            + ", so nothing says which the id fills";
+                }
+                var pairs = byConstraint.values().iterator().next();
+                targetColumns = new ArrayList<>();
+                for (var keyColumn : binding.columns()) {
+                    var referencing = pairs.stream().filter(pair -> pair[1].equals(keyColumn))
+                        .map(pair -> pair[0]).findFirst();
+                    if (referencing.isEmpty()) {
+                        return target.name() + "'s foreign key to " + binding.table()
+                            + " does not reference key column " + keyColumn;
+                    }
+                    targetColumns.add(referencing.get());
+                }
+            }
+            var javaNames = new ArrayList<String>();
+            for (var column : targetColumns) {
+                var known = columns.get(targetKey + "." + column);
+                if (known == null) {
+                    return "column " + column + " of " + target.name() + " is not in the catalog";
+                }
+                if (known.converted()) {
+                    return "column " + column + " carries a converter, which a node id decode does not build yet";
+                }
+                javaNames.add(known.javaName());
+            }
+            return new Decode(binding.typeId(), target.tablesClass(), target.tableField(), memberClass, javaNames);
+        }
     }
 }

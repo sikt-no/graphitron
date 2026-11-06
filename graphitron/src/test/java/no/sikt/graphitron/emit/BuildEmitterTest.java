@@ -56,7 +56,7 @@ class BuildEmitterTest {
 
     private static BuildQuery.Member member(BuildQuery.Slot slot, List<String> path, String kind, boolean list,
                                             BuildQuery.Build nested) {
-        return new BuildQuery.Member(slot, path, kind, list, Optional.ofNullable(nested));
+        return new BuildQuery.Member(slot, path, kind, list, Optional.ofNullable(nested), Optional.empty());
     }
 
     private static final BuildQuery.Slot TITLE = slot("<init>", 0, "title", "java.lang.String");

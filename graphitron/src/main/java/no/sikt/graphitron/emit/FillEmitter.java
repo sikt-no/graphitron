@@ -59,11 +59,18 @@ public final class FillEmitter {
      */
     public record Runtime(Function<String, CodeBlock> contextArgument,
                           Function<String, CodeBlock> sessionHandle,
-                          BiFunction<String, String, CodeBlock> sessionMember) {
+                          BiFunction<String, String, CodeBlock> sessionMember,
+                          BuildEmitter.Runtime build) {
         public Runtime {
             Objects.requireNonNull(contextArgument, "contextArgument");
             Objects.requireNonNull(sessionHandle, "sessionHandle");
             Objects.requireNonNull(sessionMember, "sessionMember");
+        }
+
+        /** A runtime for fills that build nothing through a node id decode. */
+        public Runtime(Function<String, CodeBlock> contextArgument, Function<String, CodeBlock> sessionHandle,
+                       BiFunction<String, String, CodeBlock> sessionMember) {
+            this(contextArgument, sessionHandle, sessionMember, null);
         }
     }
 
@@ -143,7 +150,7 @@ public final class FillEmitter {
                                         + " is made into " + type);
                         }
                         var helper = "build" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
-                        helpers.addAll(BuildEmitter.helpers(built.build(), helper));
+                        helpers.addAll(BuildEmitter.helpers(built.build(), helper, runtime.build()));
                         statements.add(argument(ClassName.get(Object.class), local + "Wire", landing.path()));
                         statements.add(made(type, local, helper));
                         arguments.add(CodeBlock.of("$L", local));
