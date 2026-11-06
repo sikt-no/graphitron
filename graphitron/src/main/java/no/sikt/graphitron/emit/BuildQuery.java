@@ -98,6 +98,13 @@ public final class BuildQuery {
     public sealed interface Result {
         record Built(Build build) implements Result {}
         record Refused(String reason) implements Result {}
+
+        /**
+         * A node id argument decoded straight into its parameter: into the parameter's own jOOQ
+         * record ({@code RECORD}), or into the node type's record and taken from it as the key's
+         * {@code RecordN} ({@code RECORD_N}) or {@code RowN} ({@code ROW_N}).
+         */
+        record Decoded(Decode decode, String shape) implements Result {}
     }
 
     /** One call's argument fill to build: the call, the position and the occurrence it takes. */
@@ -116,7 +123,50 @@ public final class BuildQuery {
         var out = new HashMap<Root, Result>();
         roots(store).forEach((root, className) -> out.put(root,
             build(root.landingCoordinate(), className, children, constructions, catalog, new ArrayList<>())));
+        nodeIdRoots(store).forEach((root, className) -> out.put(root,
+            decodeParameter(root.landingCoordinate(), className, catalog)));
         return out;
+    }
+
+    /** The argument fills that land on a node id, with the class the parameter or its elements take. */
+    private static Map<Root, String> nodeIdRoots(StoreHandle store) {
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var s = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        var p = CODE_METHOD_PARAMETER;
+        var n = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var out = new HashMap<Root, String>();
+        store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
+            .from(c)
+            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE))
+            .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
+                p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
+            .where(c.GRAPH_NAME.eq(store.graphName()), c.FILL.eq("ARGUMENT"),
+                exists(selectOne().from(n).where(n.GRAPH_NAME.eq(c.GRAPH_NAME), n.COORDINATE.eq(c.LANDING_COORDINATE))))
+            .forEach(r -> out.put(new Root(r.value1(), r.value2(), r.value3()), r.value4()));
+        return out;
+    }
+
+    /**
+     * How a node id argument fills a parameter of {@code className}: a table's record decodes it
+     * directly, a {@code RecordN} or {@code RowN} takes the key off the node type's own record.
+     */
+    private static Result decodeParameter(String coordinate, String className, Catalog catalog) {
+        Object decoded;
+        String shape;
+        if (catalog.tables().containsKey(className)) {
+            decoded = catalog.decode(coordinate, className);
+            shape = "RECORD";
+        } else if (className.matches("org\\.jooq\\.Record\\d+")) {
+            decoded = catalog.decodeOwn(coordinate);
+            shape = "RECORD_N";
+        } else if (className.matches("org\\.jooq\\.Row\\d+")) {
+            decoded = catalog.decodeOwn(coordinate);
+            shape = "ROW_N";
+        } else {
+            return new Result.Refused("a node id cannot be decoded into " + className);
+        }
+        return decoded instanceof Decode decode ? new Result.Decoded(decode, shape)
+            : new Result.Refused((String) decoded);
     }
 
     /** The argument fills that land on an input object, with the class the parameter takes. */
@@ -346,6 +396,20 @@ public final class BuildQuery {
          * The decode of the node id at {@code coordinate} into a member of class {@code memberClass},
          * or why it cannot be built: answers a {@link Decode} or a reason.
          */
+        Object decodeOwn(String coordinate) {
+            var bound = bindings.getOrDefault(coordinate, List.of());
+            if (bound.size() != 1) {
+                return bound.isEmpty() ? "no node type is bound to the id"
+                    : "the id is one of several node types, which is not built here yet";
+            }
+            var binding = bound.getFirst();
+            var nodeKey = key(binding.source(), binding.schema(), binding.table());
+            return tables.entrySet().stream()
+                .filter(e -> key(e.getValue().source(), e.getValue().schema(), e.getValue().name()).equals(nodeKey))
+                .map(e -> decode(coordinate, e.getKey()))
+                .findFirst().orElse("the node type's table " + binding.table() + " has no record class");
+        }
+
         Object decode(String coordinate, String memberClass) {
             var bound = bindings.getOrDefault(coordinate, List.of());
             if (bound.size() != 1) {

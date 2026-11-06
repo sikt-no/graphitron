@@ -46,6 +46,7 @@ public final class FillEmitter {
 
     private static final ClassName MAP = ClassName.get("java.util", "Map");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName STRING = ClassName.get("java.lang", "String");
     /** The landing types a fill reads as they arrive: an enum arrives as its runtime value's string. */
     private static final Set<String> SCALAR_OR_ENUM = Set.of("SCALAR", "ENUM");
@@ -141,6 +142,17 @@ public final class FillEmitter {
                 }
                 case "ARGUMENT" -> {
                     var landing = fill.landing().orElseThrow();
+                    if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Decoded decoded) {
+                        var helper = "decode" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
+                        helpers.add(decodeHelper(helper, type, decoded, String.join(".", landing.path()), runtime.build()));
+                        statements.add(argument(ClassName.get(Object.class), local + "Wire", landing.path()));
+                        statements.add(CodeBlock.of("$T $L = $L($LWire)", type, local, helper, local));
+                        arguments.add(CodeBlock.of("$L", local));
+                        continue;
+                    }
+                    if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Refused refused) {
+                        return new Result.NeedsBuilding(fill.position(), fill.parameterName(), refused.reason());
+                    }
                     if (!landing.nodeId() && "INPUT_OBJECT".equals(landing.typeKind())) {
                         var build = builds.get(fill.position());
                         if (!(build instanceof BuildQuery.Result.Built built)) {
@@ -211,6 +223,64 @@ public final class FillEmitter {
         }
         return List.of(argument(STRING, wire, path),
             CodeBlock.of("$T $L = $L == null ? null : $T.valueOf($L)", type, local, wire, type, wire));
+    }
+
+    /**
+     * The helper decoding a node id argument, or a list or set of them, into the parameter: each id
+     * into a new record of the decode's table through {@code decodeInto}, its key taken off the
+     * record as a {@code RecordN} or {@code RowN} where the parameter wants that, an id it refuses
+     * refused for the argument, an absent one null.
+     */
+    private static MethodSpec decodeHelper(String name, TypeName type, BuildQuery.Result.Decoded decoded,
+                                           String label, BuildEmitter.Runtime runtime) {
+        var d = decoded.decode();
+        var record = SessionIdentityRows.classOf(d.recordClass());
+        var columns = CodeBlock.join(d.columnJavaNames().stream()
+            .map(c -> CodeBlock.of("$T.$L.$L", SessionIdentityRows.classOf(d.tablesClass()), d.tableField(), c))
+            .toList(), ", ");
+        var taken = switch (decoded.shape()) {
+            case "RECORD_N" -> CodeBlock.of("decoded.into($L)", columns);
+            case "ROW_N" -> CodeBlock.of("decoded.into($L).valuesRow()", columns);
+            default -> CodeBlock.of("decoded");
+        };
+        var method = MethodSpec.methodBuilder(name)
+            .addModifiers(javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC)
+            .returns(type)
+            .addParameter(Object.class, "wire");
+        var collection = type instanceof ParameterizedTypeName p
+            && (LIST.equals(p.rawType()) || SET.equals(p.rawType())) ? (ParameterizedTypeName) type : null;
+        if (collection == null) {
+            method.beginControlFlow("if (!(wire instanceof $T id))", STRING)
+                .addStatement("return null")
+                .endControlFlow();
+            decodeOne(method, record, d, columns, label, runtime);
+            return method.addStatement("return $L", taken).build();
+        }
+        method.beginControlFlow("if (!(wire instanceof $T<?> ids))", ClassName.get("java.util", "Collection"))
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T out = new $T<>()", type,
+                LIST.equals(collection.rawType()) ? ClassName.get("java.util", "ArrayList")
+                    : ClassName.get("java.util", "LinkedHashSet"))
+            .beginControlFlow("for (Object element : ids)")
+            .beginControlFlow("if (!(element instanceof $T id))", STRING)
+            .addStatement("out.add(null)")
+            .addStatement("continue")
+            .endControlFlow();
+        decodeOne(method, record, d, columns, label, runtime);
+        return method.addStatement("out.add($L)", taken)
+            .endControlFlow()
+            .addStatement("return out")
+            .build();
+    }
+
+    private static void decodeOne(MethodSpec.Builder method, TypeName record, BuildQuery.Decode d, CodeBlock columns,
+                                  String label, BuildEmitter.Runtime runtime) {
+        method.addStatement("$T decoded = $T.decodeInto(new $T(), $S, id, $S, null, $L)",
+                record, runtime.nodeIdEncoder(), record, d.typeId(), label, columns)
+            .beginControlFlow("if (decoded == null)")
+            .addStatement(runtime.invalidId().apply(label))
+            .endControlFlow();
     }
 
     /** An input object, or a list of them, made into the parameter's class by {@code helper}. */
