@@ -550,8 +550,8 @@ pass and no stratum that clears and recomputes.
   ratchet that can only lose rows.
 * **`GraphitronAssemblyCapture` is gone, its steps the anchor's own lines** `blocked`, on the child
   below and on "Nothing resolves a path but the walk".
-  * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns`,
-    `NodeIdCandidates` and `SpelledTables`; the path steps go with the walk.
+  * **The assembly steps that clear and refill are marked and swept** `open`. `NodeKeyColumns` and
+    `SpelledTables`; the path steps go with the walk.
 * **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
@@ -1048,7 +1048,7 @@ branch is G's (Alf, 2026-11-05).
   on a `@reference` field once its path's landing is filled.
 * **Encode and decode read the target type, and the old node-id relations go** `open`, G's.
   The generator, filter and carrier roles and E's node-id readers read `graphitron_occurrence_node_id`,
-  and `graphitron_node_id_instruction`, `graphitron_node_id_candidate`, the
+  and `graphitron_node_id_instruction`, the
   `graphitron_node_id_decode_*` relations and the census `NodeIdDecodeCoverageFacts` reads go.
 
 ### A polymorphic id resolves per member, to the overload that accepts it `open`

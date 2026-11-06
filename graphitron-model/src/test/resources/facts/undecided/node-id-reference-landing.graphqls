@@ -1,0 +1,59 @@
+# What a bare @nodeId on a field carrying @reference becomes: the node over the table its path lands
+# on. actorId's path lands on actor, which one node binds; filmId's lands on film, which Film and
+# Film2 both bind, so it becomes nothing.
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+# A node whose id is not declared for Node, which binds it to nothing.
+type Language @table(name: "language") @node {
+  id: ID! @nodeId
+}
+
+type Actor implements Node @table(name: "actor") @node {
+  id: ID! @nodeId
+}
+
+# Bound to a table but not a node, so neither its own field nor a member's place in Titled draws a row.
+type Store implements Titled @table(name: "store") {
+  storeId: ID! @nodeId
+  title: String
+}
+
+type Film2 implements Node & Titled @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+interface Node { id: ID! }
+
+interface Titled { title: String }
+
+union Credit = Film | Actor
+
+extend type Query {
+  film(id: ID! @nodeId): Film
+  credit(id: ID! @nodeId): Credit
+  titled(id: ID! @nodeId): Titled
+  store(id: ID! @nodeId): Store
+  named(id: ID! @nodeId(typeName: "Film")): Credit
+  referenced(id: ID! @nodeId @reference(path: [{table: "film"}])): Credit
+  inventories: [Inventory]
+}
+
+type Inventory implements Node @table(name: "inventory") @node {
+  id: ID! @nodeId
+  filmId: ID! @nodeId @reference(path: [{table: "film"}])
+  # A path landing on actor, a table one node type binds.
+  actorId: ID @nodeId @reference(path: [{table: "film"}, {table: "film_actor"}, {table: "actor"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: """
+  coordinate LIKE 'Inventory.%'
+  """, rows: """
+  coordinate,        basis,                  node_type_name, position
+  Inventory.actorId, TARGET_TABLE_NODE_TYPE, Actor,          0
+  Inventory.id,      CONTAINING_NODE_TYPE,   Inventory,      0
+  """)

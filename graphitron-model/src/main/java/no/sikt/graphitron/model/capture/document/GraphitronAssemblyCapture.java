@@ -15,7 +15,6 @@ import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.FieldPaths;
-import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
@@ -84,7 +83,6 @@ public final class GraphitronAssemblyCapture {
         NodeKeyColumns.derive(dsl, graph);
         // The legacy key shape each type id answers to, against the current keys just written.
         NodeLegacyKeyShapes.derive(dsl, graph);
-        NodeIdCandidates.derive(dsl, graph);
         targets(dsl, graph, readAt);
         // What each field's written directives claim it runs, off the anchor's fields and
         // applications; the fetchers and the entry defects below read it.

@@ -6706,21 +6706,6 @@ COMMENT ON COLUMN graphitron_node_legacy_key_defect.code IS 'the rule, as graphi
 COMMENT ON COLUMN graphitron_node_legacy_key_defect.detail IS 'what the author fixes: the spelling or column the rule failed on, or the shared type id';
 COMMENT ON COLUMN graphitron_node_legacy_key_defect.site IS 'where the editor points: NODE for a shape the type''s @node states, TABLE for one its table class states or a type id it shares, which every bound type carries a @table for';
 
-CREATE TABLE graphitron_node_id_candidate (
-  graph_name     VARCHAR NOT NULL,
-  coordinate     VARCHAR NOT NULL,
-  node_type_name VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, node_type_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, node_type_name) REFERENCES graphitron_node (graph_name, type_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_node_id_candidate IS 'A node type a bare @nodeId at a coordinate may be the ID of: one row per coordinate and node type. For example id: ID! @nodeId on a Film node draws Film.id and Film, and a bare @nodeId on an argument of a field returning a union of Film and Actor draws a row for each.';
-COMMENT ON COLUMN graphitron_node_id_candidate.graph_name IS 'the owning graph''s partition, carried from the element and the node alike';
-COMMENT ON COLUMN graphitron_node_id_candidate.coordinate IS 'the schema coordinate the bare @nodeId was written on, a Node.id field or an argument. The application itself is the entry row at the position graphql_directive_application gives this coordinate, so the coordinate is all this relation repeats of it';
-COMMENT ON COLUMN graphitron_node_id_candidate.node_type_name IS 'a node type the ID may belong to. The foreign key into graphitron_node is the rule that only a node can be a candidate, so a declaring type, a return type or a member that is not a node is a row this relation cannot hold rather than one a reader filters out';
-
 CREATE TABLE graphitron_field_source_table (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
@@ -20548,9 +20533,6 @@ INSERT INTO meta_grain VALUES
   ('node-type',
    'one graph type that is a node, in one graph',
    'graph_name, type_name', 'catalog'),
-  ('node-id-candidate',
-   'one node type a bare @nodeId at one coordinate may be the ID of, in one graph',
-   'graph_name, coordinate, node_type_name', 'sdl'),
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
    'graph_name, type_name, position', 'catalog'),
@@ -21997,10 +21979,6 @@ INSERT INTO meta_relation VALUES
    'Which of a graph''s types are nodes, with the wire type id each answers to: one row per node type, from the authored population and the published one alike.',
    'For example a Customer carrying @node over @table draws a row, a type merely implementing Node over a table whose class publishes __NODE_TYPE_ID draws one beside it, and a @node on a type with no @table draws none.',
    'Nodehood as a resolved fact rather than a membership view over two arms, which is the difference between what an author wrote and what took effect. @node only takes effect on a type that also carries @table, so the table binding is the precondition on both arms and not a filter a reader remembers; a @node on an unbound type stays in the decode, and the anti-join between the two is where an author is told the directive did nothing. The type id rides along because it is total over this population and over no other: three tiers answer, the author''s declaration, the backing class''s published constant and the type''s own name, and the last always answers, so a reader encoding an id needs no fallback and the column needs no nullness. Which tier answered is a column because a diagnostic about two types colliding on one id has to say where each came from. The key columns are not here and that is deliberate: an author may declare the id and leave the columns to the catalog or the reverse, so the two axes resolve separately and a single declared-versus-inferred flag over the node would be wrong for half the schemas that have one. Written as a stage of the graphitron gatherer after the binding it stands on, both sources being in hand there: the catalog crawler has flushed and the @node decode is the gatherer''s own.'),
-  ('graphitron_node_id_candidate', 'node-id-candidate', 'graphitron',
-   'A node type a bare @nodeId at a coordinate may be the ID of: one row per coordinate and node type.',
-   'For example id: ID! @nodeId on a Film node draws Film.id and Film, and a bare @nodeId on an argument of a field returning a union of Film and Actor draws a row for each.',
-   'What the build infers where the author left the type out, apart from what they wrote, which is the entry and nothing else. A written typeName is a forced choice and draws no row here, since a candidate no reader consults is a claim with no use. Inferred by type and never by table: on the id a type declares for Node the type declaring it, any other output field binding to nothing, on an argument the field''s return type or each node member of an interface or union return, so a type over a table several nodes share answers for itself. A table-bound type is authoritative where one answers, so an argument takes its return type with or without @reference. The landing of a @reference path where no type answers, and the input field, whose candidates are the union over its uses, are arms still to come. Several candidates are a fact and not a defect; whether one site may take several is a question for the defects that read this. Written as a stage of the graphitron gatherer after graphitron_node, which it keys into, and cleared and rewritten per graph, the row carrying no provenance a mark could sweep by.'),
   ('graphitron_node_keycolumn', 'node-key-position', 'graphitron',
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',
