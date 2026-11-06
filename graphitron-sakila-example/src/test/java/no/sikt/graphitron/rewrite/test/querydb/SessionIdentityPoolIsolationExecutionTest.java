@@ -11,6 +11,7 @@ import graphql.execution.instrumentation.InstrumentationState;
 import graphql.execution.instrumentation.SimplePerformantInstrumentation;
 import graphql.execution.instrumentation.parameters.InstrumentationFieldFetchParameters;
 import graphql.execution.instrumentation.parameters.InstrumentationFieldParameters;
+import graphql.schema.DataFetcher;
 import io.agroal.api.AgroalDataSource;
 import io.agroal.api.configuration.supplier.AgroalDataSourceConfigurationSupplier;
 import io.agroal.api.security.NamePrincipal;
@@ -40,7 +41,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,22 +74,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * at commit, or in a nested transaction the service caught, a query field that fails without
  * touching the database, a rejected mount, a cancel before execution, a cancel noticed while a
  * field completes, a cancel and a thrown exception during the synchronous dispatch of a later
- * root field, the multi-tenant carrier's own release loop, and a consumer unmount that clears
+ * root field, a consumer fetcher that asks for a connection after a cancel released the
+ * operation's, the multi-tenant carrier's own release loop, and a consumer unmount that clears
  * nothing, which the PostgreSQL reset at release backs up. Each failure path also
  * checks that the failure the log recorded is the one the case names, not an earlier permission
  * error.
  *
- * <p>Not yet covered, because each is a known defect today and a case here would either fail or
- * assert the defect:
- * <ul>
- *   <li>a fetcher on the single-tenant carrier that takes a connection after the operation has
- *       released, which leaves a mounted connection no one returns;</li>
- *   <li>what the pool does after a rejected mount: Graphitron evicts with {@code abort()}, which
- *       closes the physical connection, but Agroal takes the aborted wrapper back like any return
- *       and hands the dead connection to the next borrower, whose request then fails. Identity
- *       cannot cross there, so the rejected-mount case pins that the database session is gone
- *       and runs on a pool of its own.</li>
- * </ul>
+ * <p>Not yet covered, because it is a known defect today and a case here would either fail or
+ * assert the defect: what the pool does after a rejected mount. Graphitron evicts with
+ * {@code abort()}, which closes the physical connection, but Agroal takes the aborted wrapper back
+ * like any return and hands the dead connection to the next borrower, whose request then fails.
+ * Identity cannot cross there, so the rejected-mount case pins that the database session is gone
+ * and runs on a pool of its own.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -416,6 +417,41 @@ class SessionIdentityPoolIsolationExecutionTest {
         assertThat(secureNotesAs(null)).isEmpty();
     }
 
+    @Test
+    void fetcherThatAsksForAConnectionAfterACancelReleased_isRefused_andTheNextBorrowIsClean()
+            throws Exception {
+        // late stands in for a consumer fetcher whose work outlives its operation: it returns a
+        // future at once and asks for the default connection only when the test lets it, after b's
+        // dispatch cancelled the request and release returned the pool's one connection.
+        var proceed = new CountDownLatch(1);
+        var refusal = new AtomicReference<Throwable>();
+        var straggler = new CompletableFuture<Void>();
+        var stragglerEngine = Graphitron.runtime(pool, SQLDialect.POSTGRES)
+            .newGraphQL(Graphitron.buildSchema(b -> {}), new StragglerThenCancel("late", "b", proceed, refusal, straggler))
+            .build();
+        var before = Counts.of(pool);
+
+        ExecutionResult result = stragglerEngine.execute(
+            ownedInput(ALICE, "{ a: secureNotes { note } late: secureNotes { note } b: secureNotes { note } }"));
+        assertAborted(result);
+        assertThat(Counts.of(pool).since(before)).as("a pinned the one connection; release returned it")
+            .isEqualTo(new Counts(1, 0));
+
+        proceed.countDown();
+        straggler.get(30, TimeUnit.SECONDS);
+        assertThat(refusal.get())
+            .as("the late request is refused rather than handed a fresh connection nothing will return")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("A connection was requested after the operation had released its connections.");
+        assertThat(Counts.of(pool).since(before)).as("the refused request borrowed nothing")
+            .isEqualTo(new Counts(1, 0));
+        assertThat(identityOnNextBorrow(pool))
+            .as("the next borrow returns at all, rather than waiting on a connection never released,"
+                + " and reads no identity")
+            .isNullOrEmpty();
+        assertThat(secureNotesAs(null)).isEmpty();
+    }
+
     // ===== the multi-tenant carrier =====
 
     @Test
@@ -627,6 +663,63 @@ class SessionIdentityPoolIsolationExecutionTest {
                 if (throwInstead) {
                     throw new InjectedFailure(alias);
                 }
+                parameters.getExecutionContext().getExecutionInput().cancel();
+            }
+            return super.beginFieldExecution(parameters, state);
+        }
+    }
+
+    /**
+     * Replaces the fetcher of the root field aliased {@code late} with one that returns a pending
+     * future and, on another thread, waits for {@code proceed} before asking the field's carrier
+     * for the default connection, recording what that call threw into {@code refusal}; then cancels
+     * the request when the root field aliased {@code cancelAt} begins executing, as
+     * {@link AbortAtFieldExecution} does. {@code done} completes once the late call has returned
+     * or thrown.
+     */
+    private static final class StragglerThenCancel extends SimplePerformantInstrumentation {
+        private final String late;
+        private final String cancelAt;
+        private final CountDownLatch proceed;
+        private final AtomicReference<Throwable> refusal;
+        private final CompletableFuture<Void> done;
+
+        StragglerThenCancel(String late, String cancelAt, CountDownLatch proceed,
+                            AtomicReference<Throwable> refusal, CompletableFuture<Void> done) {
+            this.late = late;
+            this.cancelAt = cancelAt;
+            this.proceed = proceed;
+            this.refusal = refusal;
+            this.done = done;
+        }
+
+        @Override
+        public DataFetcher<?> instrumentDataFetcher(DataFetcher<?> dataFetcher,
+                InstrumentationFieldFetchParameters parameters, InstrumentationState state) {
+            var path = parameters.getExecutionStepInfo().getPath();
+            if (path.getLevel() != 1 || !late.equals(path.getSegmentName())) {
+                return dataFetcher;
+            }
+            return env -> CompletableFuture.supplyAsync(() -> {
+                try {
+                    if (!proceed.await(30, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("the test never let the late fetcher proceed");
+                    }
+                    no.sikt.graphitron.generated.schema.TenantConnections.dslDefault(env);
+                } catch (Throwable thrown) {
+                    refusal.set(thrown);
+                } finally {
+                    done.complete(null);
+                }
+                return List.of();
+            });
+        }
+
+        @Override
+        public InstrumentationContext<Object> beginFieldExecution(
+                InstrumentationFieldParameters parameters, InstrumentationState state) {
+            var path = parameters.getExecutionStepInfo().getPath();
+            if (path.getLevel() == 1 && cancelAt.equals(path.getSegmentName())) {
                 parameters.getExecutionContext().getExecutionInput().cancel();
             }
             return super.beginFieldExecution(parameters, state);

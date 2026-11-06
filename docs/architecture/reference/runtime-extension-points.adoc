@@ -66,7 +66,10 @@ then runs your unmount callback, on PostgreSQL follows it with a reset
 <<hook-state-contract>>), and releases the
 connection on every completion path, including a query cancelled through
 `ExecutionInput.cancel()` or abandoned by an exception during dispatch. A connection whose unmount or reset failed is evicted, never returned to the
-pool.
+pool. Once the operation has released, it takes no new connection: a request
+for one after that point, for example from one of your fetchers still running
+asynchronously after the operation was cancelled, is refused with an
+`IllegalStateException` rather than given a connection nothing would return.
 
 === Session identity through `<sessionState>`
 

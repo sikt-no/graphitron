@@ -198,6 +198,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName TIME_UNIT = ClassName.get("java.util.concurrent", "TimeUnit");
     private static final ClassName ATOMIC_INTEGER = ClassName.get("java.util.concurrent.atomic", "AtomicInteger");
     private static final ClassName ATOMIC_REFERENCE = ClassName.get("java.util.concurrent.atomic", "AtomicReference");
+    private static final ClassName ATOMIC_BOOLEAN = ClassName.get("java.util.concurrent.atomic", "AtomicBoolean");
     private static final ClassName THREAD_LOCAL = ClassName.get("java.lang", "ThreadLocal");
     private static final TypeName OBJECT_KEY = ClassName.get(Object.class);
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
@@ -324,10 +325,11 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * The acquisition-scoped pinned connection: acquire/release lifecycle with fail-closed + evict.
-     * Multi-tenant builds additionally emit {@code abort()}, the straggler seam the scatter helper's
-     * timeout path routes through: evict without the unmount hook, safe against a worker that may
-     * still be executing on the connection. The emitted shape follows the resolved
+     * The acquisition-scoped pinned connection: acquire/release lifecycle with fail-closed + evict,
+     * plus {@code abort()}: evict without the unmount hook, safe against another thread that may
+     * still be executing on the connection (a scatter worker past its join deadline, or a pin that
+     * completed after the carrier released). {@code release()} and {@code abort()} share one
+     * compare-and-set flag, so whichever runs first is the only one that acts. The emitted shape follows the resolved
      * session identity the store states: none configured means no mount call at all; a handle-less mount
      * means no handle field; a handled mount adds the typed handle field {@code release} reads.
      * Multi-tenant builds give {@code acquire} an {@code Optional<K>} parameter ({@value #MOUNTED_TENANT}) naming the
@@ -371,7 +373,11 @@ public final class ConnectionRuntimeClassGenerator {
                 + "before the mount as {@code {names, values}}, for release to restore after its reset;\n"
                 + "{@code null} when the dialect is not PostgreSQL, which is what tells release not to reset.\n")
             .build();
-        var releasedField = FieldSpec.builder(boolean.class, "released", Modifier.PRIVATE).build();
+        var releasedField = FieldSpec.builder(ATOMIC_BOOLEAN, "released", Modifier.PRIVATE, Modifier.FINAL)
+            .initializer("new $T()", ATOMIC_BOOLEAN)
+            .addJavadoc("Set by whichever of {@code release()} and {@code abort()} runs first; the other, and any\n"
+                + "repeat of either, then does nothing.\n")
+            .build();
 
         var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
@@ -517,10 +523,9 @@ public final class ConnectionRuntimeClassGenerator {
         var releaseBuilder = MethodSpec.methodBuilder("release")
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
-            .beginControlFlow("if (released)")
+            .beginControlFlow("if (!released.compareAndSet(false, true))")
             .addStatement("return")
             .endControlFlow()
-            .addStatement("released = true")
             .beginControlFlow("try")
             .addComment("Graphitron asserts autocommit on a connection it owns: if the operation left a")
             .addComment("transaction open (e.g. it died mid-mutation before the provider settled), roll it")
@@ -670,11 +675,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addJavadoc("The mount's returned handle for this connection.\n")
                 .build());
         }
-        builder.addMethod(release);
-        if (multiTenant) {
-            builder.addMethod(abortMethod());
-        }
-        builder
+        builder.addMethod(release)
+            .addMethod(abortMethod())
             .addMethod(close)
             .addMethod(evict)
             .addMethod(closeReturningToPool)
@@ -751,29 +753,31 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code abort()}: the straggler release path. A scatter worker past its deadline may still be
-     * mid-statement on this connection, so neither the unmount method (a second concurrent user of
-     * the connection) nor {@code close()} (returns a possibly-live connection to the pool) is safe;
-     * {@code Connection.abort} is the JDBC primitive designed for exactly this. {@code synchronized}
-     * because a straggler worker's self-abort and the dispatch thread's {@code releaseAll} can race
-     * on the same instance; {@code release()} needs no synchronization (release and abort never
-     * target the same instance: the carrier's per-key remove arbitrates which path processes an
-     * entry, and release is only chosen for keys whose worker has settled).
+     * {@code abort()}: the release path for a connection another thread may still be using. A
+     * scatter worker past its deadline, or a fetcher that received a pin which completed after the
+     * carrier released, may be mid-statement on this connection, so neither the unmount method (a
+     * second concurrent user of the connection) nor {@code close()} (returns a possibly-live
+     * connection to the pool) is safe; {@code Connection.abort} is the JDBC primitive designed for
+     * exactly this. The {@code released} compare-and-set decides which of {@code release()} and
+     * {@code abort()} acts on an instance, so concurrent or repeated calls in any combination evict
+     * or release exactly once. Inside the carrier the per-key remove already routes each entry to one
+     * processor; the shared flag makes the promise hold for any caller.
      */
     private static MethodSpec abortMethod() {
         return MethodSpec.methodBuilder("abort")
-            .addModifiers(Modifier.PUBLIC, Modifier.SYNCHRONIZED)
+            .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
-            .beginControlFlow("if (released)")
+            .beginControlFlow("if (!released.compareAndSet(false, true))")
             .addStatement("return")
             .endControlFlow()
-            .addStatement("released = true")
             .addStatement("evict(connection, abortExecutor)")
-            .addJavadoc("Evicts the connection without running the unmount method, for a connection whose\n"
-                + "worker may still be executing on it (a scatter straggler past the join deadline). The\n"
-                + "identity cannot be proven unmounted and the connection cannot be proven idle, so it is\n"
-                + "aborted and never returned to the pool; the straggler's eventual completion lands\n"
-                + "harmlessly on the dead connection. Idempotent, and safe against a concurrent abort.\n")
+            .addJavadoc("Evicts the connection without running the unmount method, for a connection another\n"
+                + "thread may still be executing on: a scatter straggler past the join deadline, or a pin\n"
+                + "that completed after the operation released its connections. The identity cannot be\n"
+                + "proven unmounted and the connection cannot be proven idle, so it is aborted and never\n"
+                + "returned to the pool; the other thread's eventual completion lands harmlessly on the dead\n"
+                + "connection. Idempotent, and a no-op after {@link #release()}, as {@code release()} is\n"
+                + "after it: the two share one flag.\n")
             .build();
     }
 
@@ -1380,6 +1384,21 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
+     * The message {@code entryFor} refuses with once the carrier is closed: before pinning
+     * ({@code pinned} false) or for a pin that completed after release ({@code pinned} true). It
+     * names a routed key's tenant and says nothing of the default source's empty key. The
+     * multi-tenant refusal after a pin keeps naming the scatter deadline, which shares its check.
+     */
+    private static CodeBlock closedRefusal(boolean multiTenant, boolean pinned) {
+        if (multiTenant && pinned) {
+            return CodeBlock.of("$S + key + $S", "Key '",
+                "' was pinned after its scatter deadline or after the operation completed.");
+        }
+        return CodeBlock.of("$S + key.map(k -> $S + k + $S).orElse($S) + $S", "A connection",
+            " for tenant '", "'", "", " was requested after the operation had released its connections.");
+    }
+
+    /**
      * The per-operation connection carrier, unified across both topologies with single-tenant as
      * the one-key case: one entry per <em>distinct</em> key within an operation, keyed by
      * {@code Optional<tenantKey>} with {@code Optional.empty()} as the default source (the map is
@@ -1395,7 +1414,9 @@ public final class ConnectionRuntimeClassGenerator {
      * <p>Acquisition is lazy on every path: {@code dslFor(key)} / {@code dslDefault()} pin and
      * mount on first demand and reuse thereafter, so an operation that touches no database never
      * pins and never mounts. {@code releaseAll()} releases every entry on every completion path,
-     * per-connection eviction on unmount failure, idempotent.
+     * per-connection eviction on unmount failure, idempotent. Release closes the carrier: any
+     * acquisition after that point is refused, in both topologies, and a pin that was in flight
+     * when the carrier closed is aborted rather than handed out or leaked.
      *
      * <p>The {@code DSL.using(...) + TransactionProvider} binding lives here, single-sourced, so
      * the many per-field routing sites consume {@code dslFor(key)} / {@code getDslContext(env)}
@@ -1452,8 +1473,9 @@ public final class ConnectionRuntimeClassGenerator {
                 + "rather than retrying the mount: the payload is one identity for every key.\n")
             .build();
         var closedField = FieldSpec.builder(boolean.class, "closed", Modifier.PRIVATE, Modifier.VOLATILE)
-            .addJavadoc("Set by {@link #releaseAll} before draining, so a straggler worker that finishes\n"
-                + "pinning after the operation completed aborts its own connection instead of leaking it.\n")
+            .addJavadoc("Set by {@link #releaseAll} before draining. An acquisition that starts after it is set\n"
+                + "is refused before taking a connection; one whose pin completes after it is set aborts\n"
+                + "its own connection instead of leaking it into an operation that has already released.\n")
             .build();
         var scatterWorkerMarkerField = FieldSpec.builder(
                 ParameterizedTypeName.get(THREAD_LOCAL, ClassName.get(Boolean.class)), "SCATTER_WORKER",
@@ -1569,6 +1591,12 @@ public final class ConnectionRuntimeClassGenerator {
                 .endControlFlow();
         }
         entryForBuilder
+            .beginControlFlow("if (closed)")
+            .addComment("The operation already released its connections. Refuse before borrowing: nothing")
+            .addComment("would ever release a connection pinned now. This saves the borrow; the check after")
+            .addComment("the pin below is the guard, since it also sees a pin that started before release.")
+            .addStatement("throw new $T($L)", IllegalStateException.class, closedRefusal(multiTenant, false))
+            .endControlFlow()
             .addStatement("$T entry", entryType)
             .beginControlFlow("try")
             .addComment("Per-key single acquisition: exactly one pin per key, the map's one minting")
@@ -1609,19 +1637,26 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .addStatement("throw e")
             .endControlFlow();
-        if (multiTenant) {
-            entryForBuilder
-                .beginControlFlow("if (closed || (key.isPresent() && timedOutTenants.contains(key.get())))")
-                .addComment("The operation moved on (released, or this key's join deadline passed) while the pin")
-                .addComment("was in flight; never hand out a connection the release path can no longer own.")
-                .addStatement("$T stale = entries.remove(key)", entryType)
-                .beginControlFlow("if (stale != null)")
-                .addStatement("stale.pinned.abort()")
-                .endControlFlow()
-                .addStatement("throw new $T($S + key + $S)", IllegalStateException.class,
-                    "Key '", "' was pinned after its scatter deadline or after the operation completed.")
-                .endControlFlow();
-        }
+        entryForBuilder
+            .beginControlFlow(multiTenant
+                ? "if (closed || (key.isPresent() && timedOutTenants.contains(key.get())))"
+                : "if (closed)")
+            .addComment(multiTenant
+                ? "The operation moved on (released, or this key's join deadline passed) while the pin"
+                : "The operation released while the pin was in flight; never hand out a connection the")
+            .addComment(multiTenant
+                ? "was in flight; never hand out a connection the release path can no longer own."
+                : "release path can no longer own.")
+            .addComment("The entry was published before closed was read, and releaseAll sets closed before it")
+            .addComment("drains, so either the drain removed and released this entry or the remove below wins")
+            .addComment("it. Abort rather than release: another caller may hold the same entry and be running")
+            .addComment("a statement on it.")
+            .addStatement("$T stale = entries.remove(key)", entryType)
+            .beginControlFlow("if (stale != null)")
+            .addStatement("stale.pinned.abort()")
+            .endControlFlow()
+            .addStatement("throw new $T($L)", IllegalStateException.class, closedRefusal(multiTenant, true))
+            .endControlFlow();
         var entryFor = entryForBuilder
             .addStatement("return entry")
             .addJavadoc("Resolves (minting on first demand) the carrier entry for {@code key}:\n"
@@ -1674,22 +1709,20 @@ public final class ConnectionRuntimeClassGenerator {
         var releaseAllBuilder = MethodSpec.methodBuilder("releaseAll")
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class);
+        releaseAllBuilder
+            .addComment("Close before draining, so an acquisition that finishes pinning after this point")
+            .addComment("aborts its own connection instead of leaking a fresh pin into a completed operation.")
+            .addStatement("closed = true")
+            .addStatement("$T failure = null", RuntimeException.class)
+            .beginControlFlow("for ($T key : entries.keySet())", optionalKey)
+            .addComment("remove() hands each entry to exactly one processor, against a late acquisition's")
+            .addComment("concurrent self-abort of the same entry.")
+            .addStatement("$T entry = entries.remove(key)", entryType)
+            .beginControlFlow("if (entry == null)")
+            .addStatement("continue")
+            .endControlFlow();
         if (multiTenant) {
             releaseAllBuilder
-                .addComment("Close before draining, so a straggler worker that finishes pinning after this point")
-                .addComment("aborts its own connection instead of leaking a fresh pin into a completed operation.")
-                .addStatement("closed = true");
-        }
-        releaseAllBuilder.addStatement("$T failure = null", RuntimeException.class);
-        if (multiTenant) {
-            releaseAllBuilder
-                .beginControlFlow("for ($T key : entries.keySet())", optionalKey)
-                .addComment("remove() arbitrates each entry to exactly one processor, against a straggler's")
-                .addComment("concurrent self-abort of the same entry.")
-                .addStatement("$T entry = entries.remove(key)", entryType)
-                .beginControlFlow("if (entry == null)")
-                .addStatement("continue")
-                .endControlFlow()
                 .beginControlFlow("if (key.isPresent() && timedOutTenants.contains(key.get()))")
                 .addComment("A TimedOut outcome means the join stopped waiting, not that the worker stopped")
                 .addComment("working: the connection may still be mid-statement. A JDBC call cannot be safely")
@@ -1697,32 +1730,19 @@ public final class ConnectionRuntimeClassGenerator {
                 .addComment("connection whose worker may still be executing on it.")
                 .addStatement("entry.pinned.abort()")
                 .addStatement("continue")
-                .endControlFlow()
-                .beginControlFlow("try")
-                .addStatement("entry.pinned.release()")
-                .nextControlFlow("catch ($T e)", RuntimeException.class)
-                .addComment("release() already evicted this connection on unmount failure; keep releasing the")
-                .addComment("rest so one entry's failed unmount never orphans another's connection.")
-                .beginControlFlow("if (failure == null)")
-                .addStatement("failure = e")
-                .endControlFlow()
-                .endControlFlow()
                 .endControlFlow();
-        } else {
-            releaseAllBuilder
-                .beginControlFlow("for ($T entry : entries.values())", entryType)
-                .beginControlFlow("try")
-                .addStatement("entry.pinned.release()")
-                .nextControlFlow("catch ($T e)", RuntimeException.class)
-                .addComment("release() already evicted this connection on unmount failure; keep releasing the")
-                .addComment("rest so one entry's failed unmount never orphans another's connection.")
-                .beginControlFlow("if (failure == null)")
-                .addStatement("failure = e")
-                .endControlFlow()
-                .endControlFlow()
-                .endControlFlow()
-                .addStatement("entries.clear()");
         }
+        releaseAllBuilder
+            .beginControlFlow("try")
+            .addStatement("entry.pinned.release()")
+            .nextControlFlow("catch ($T e)", RuntimeException.class)
+            .addComment("release() already evicted this connection on unmount failure; keep releasing the")
+            .addComment("rest so one entry's failed unmount never orphans another's connection.")
+            .beginControlFlow("if (failure == null)")
+            .addStatement("failure = e")
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow();
         var releaseAll = releaseAllBuilder
             .beginControlFlow("if (failure != null)")
             .addStatement("throw failure")
@@ -1731,15 +1751,17 @@ public final class ConnectionRuntimeClassGenerator {
                 ? "Releases every pinned connection on every completion path (success, error,\n"
                     + "cancellation): each {@code release()} unmounts identity and returns or evicts its own\n"
                     + "connection, and one entry's unmount failure does not orphan the others. Idempotent:\n"
-                    + "the map is drained, so a redundant call is a no-op. Rethrows the first release failure\n"
-                    + "after attempting them all. A tenant whose scatter worker missed the join deadline is\n"
+                    + "the drain removes each entry exactly once, so a redundant call is a no-op. Rethrows the\n"
+                    + "first release failure after attempting them all. Closes the carrier first: any later\n"
+                    + "acquisition is refused. A tenant whose scatter worker missed the join deadline is\n"
                     + "routed through {@code PinnedConnection.abort()}: its worker may still be executing, so\n"
                     + "the connection is evicted, never closed under a live statement nor returned to the pool.\n"
                 : "Releases every pinned connection on every completion path (success, error,\n"
                     + "cancellation): each {@code release()} unmounts identity and returns or evicts its own\n"
                     + "connection, and one entry's unmount failure does not orphan the others. Idempotent:\n"
-                    + "the map is cleared, so a redundant call is a no-op. Rethrows the first release failure\n"
-                    + "after attempting them all.\n")
+                    + "the drain removes each entry exactly once, so a redundant call is a no-op. Rethrows the\n"
+                    + "first release failure after attempting them all. Closes the carrier first: any later\n"
+                    + "acquisition is refused.\n")
             .build();
 
         var entryClass = TypeSpec.classBuilder("Entry")
@@ -1775,7 +1797,8 @@ public final class ConnectionRuntimeClassGenerator {
                     + "thread.\n"
                 : "Per-operation carrier of the pinned connections for one request, with single-tenant as\n"
                     + "the one-key case of the unified per-key design. See\n"
-                    + "{@code ConnectionRuntimeClassGenerator} for the full contract.\n");
+                    + "{@code ConnectionRuntimeClassGenerator} for the full contract. {@link #releaseAll}\n"
+                    + "closes the carrier: any acquisition after that point is refused.\n");
         if (multiTenant) {
             carrier.addField(FieldSpec.builder(ParameterizedTypeName.get(DATA_TYPE, tenantKey), "TENANT_COLUMN_TYPE",
                         Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -1809,9 +1832,9 @@ public final class ConnectionRuntimeClassGenerator {
             carrier.addField(mountFailureField);
         }
         if (multiTenant) {
-            carrier.addField(timedOutField)
-                .addField(closedField);
+            carrier.addField(timedOutField);
         }
+        carrier.addField(closedField);
         carrier.addMethod(constructor)
             .addMethod(entryFor)
             .addMethod(dslFor)

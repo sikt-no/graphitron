@@ -343,7 +343,7 @@ class TenantRuntimeKeyTypeTest {
         var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
         assertThat(pinned)
             .as("the straggler abort seam: evict without the unmount method")
-            .contains("synchronized void abort()");
+            .contains("public void abort()");
     }
 
     @Test
@@ -407,8 +407,10 @@ class TenantRuntimeKeyTypeTest {
             .doesNotContain("Outcome")
             .doesNotContain("timedOutTenants");
 
+        // The abort seam is not fan-out substrate either: a pin that completes after the carrier
+        // released aborts its own connection in both topologies.
         var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
-        assertThat(pinned).doesNotContain("synchronized void abort()");
+        assertThat(pinned).contains("public void abort()");
     }
 
     @Test

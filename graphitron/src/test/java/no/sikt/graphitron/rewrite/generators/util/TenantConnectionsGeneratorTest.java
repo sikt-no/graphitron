@@ -25,6 +25,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,7 +54,7 @@ class TenantConnectionsGeneratorTest {
     private static Class<?> commitPolicyClass;
     private static Object commitPolicyCommit;
 
-    private final List<String> events = new ArrayList<>();
+    private final List<String> events = java.util.Collections.synchronizedList(new ArrayList<>());
 
     @BeforeAll
     static void compile() {
@@ -163,6 +166,107 @@ class TenantConnectionsGeneratorTest {
     }
 
     @Test
+    void releaseAll_twice_unmountsAndReturnsEachConnectionOnce() throws Throwable {
+        Object runtime = newRuntime(Map.of());
+        Object tc = newTenantConnections(runtime, session());
+        dslDefault(tc);
+        events.clear();
+
+        releaseAll(tc);
+        releaseAll(tc);
+
+        assertThat(events)
+            .as("the drain removes each entry once, so the second releaseAll finds nothing to release")
+            .containsExactly("disconnect:default", "reset:default", "close:default");
+    }
+
+    @Test
+    void acquisitionAfterRelease_isRefused_withoutBorrowingOrMounting() throws Throwable {
+        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
+        Object tc = newTenantConnections(runtime, session());
+        dslDefault(tc);
+        releaseAll(tc);
+        events.clear();
+
+        assertThatThrownBy(() -> dslDefault(tc))
+            .as("a straggler asking for the default connection after release is refused")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("A connection was requested after the operation had released its connections.");
+        assertThatThrownBy(() -> dslFor(tc, "A"))
+            .as("so is one asking for a keyed connection the operation never pinned")
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(events)
+            .as("the refusal comes before the pool: nothing is borrowed, so nothing is left mounted")
+            .isEmpty();
+    }
+
+    @Test
+    void pinInFlightAcrossRelease_isAbortedAndRefused() throws Throwable {
+        var entered = new CountDownLatch(1);
+        var gate = new CountDownLatch(1);
+        Object runtime = newRuntime(gated(fakeDataSource("default", false), entered, gate), Map.of());
+        Object tc = newTenantConnections(runtime, session());
+
+        var late = CompletableFuture.runAsync(() -> {
+            try {
+                dslDefault(tc);
+            } catch (Throwable e) {
+                throw new java.util.concurrent.CompletionException(e);
+            }
+        });
+        try {
+            assertThat(entered.await(5, TimeUnit.SECONDS)).as("the acquisition is parked inside the pin").isTrue();
+            // Release runs while the pin is in flight. Bounded, so a drain that waited on the pin's
+            // map bin fails this case instead of hanging it.
+            CompletableFuture.runAsync(() -> {
+                try {
+                    releaseAll(tc);
+                } catch (Throwable e) {
+                    throw new java.util.concurrent.CompletionException(e);
+                }
+            }).get(5, TimeUnit.SECONDS);
+        } finally {
+            gate.countDown();
+        }
+
+        assertThatThrownBy(() -> late.get(5, TimeUnit.SECONDS))
+            .as("the pin that completed after release is never handed out")
+            .hasCauseInstanceOf(IllegalStateException.class);
+        assertThat(events)
+            .as("the late pin aborts its own connection: evicted, never unmounted under a possibly-live"
+                + " statement and never returned to the pool")
+            .containsExactly("getConnection:default", "connect:default", "abort:default");
+    }
+
+    @Test
+    void pinnedConnection_releaseThenAbort_returnsOnceAndNeverEvicts() throws Throwable {
+        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
+        Object pinned = acquireForTenant(runtime, "A", session());
+        events.clear();
+
+        invoke(() -> pinned.getClass().getMethod("release").invoke(pinned));
+        invoke(() -> pinned.getClass().getMethod("abort").invoke(pinned));
+
+        assertThat(events)
+            .as("release and abort share one flag: the abort after a release does nothing")
+            .containsExactly("disconnect:A", "reset:A", "close:A");
+    }
+
+    @Test
+    void pinnedConnection_abortThenRelease_evictsOnceAndNeverUnmounts() throws Throwable {
+        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
+        Object pinned = acquireForTenant(runtime, "A", session());
+        events.clear();
+
+        invoke(() -> pinned.getClass().getMethod("abort").invoke(pinned));
+        invoke(() -> pinned.getClass().getMethod("release").invoke(pinned));
+
+        assertThat(events)
+            .as("release and abort share one flag: the release after an abort does nothing")
+            .containsExactly("abort:A");
+    }
+
+    @Test
     void sessionHandle_onAMountedConnection_returnsTheHandleWrittenAtMint() throws Throwable {
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
         Object tc = newTenantConnections(runtime, session());
@@ -193,7 +297,10 @@ class TenantConnectionsGeneratorTest {
     // --- driving helpers -------------------------------------------------------------------------
 
     private Object newRuntime(Map<String, DataSource> tenantSources) throws Throwable {
-        DataSource defaultDs = fakeDataSource("default", false);
+        return newRuntime(fakeDataSource("default", false), tenantSources);
+    }
+
+    private Object newRuntime(DataSource defaultDs, Map<String, DataSource> tenantSources) throws Throwable {
         return runtimeClass.getConstructor(DataSource.class, Map.class, SQLDialect.class)
             .newInstance(defaultDs, new LinkedHashMap<Object, DataSource>(tenantSources), SQLDialect.POSTGRES);
     }
@@ -208,8 +315,9 @@ class TenantConnectionsGeneratorTest {
             .newInstance(runtime, commitPolicyCommit, session);
     }
 
-    private void acquireForTenant(Object runtime, Object key, Object session) throws Throwable {
-        invoke(() -> runtimeClass.getMethod("acquireForTenant", Object.class, sessionStateClass()).invoke(runtime, key, session));
+    private Object acquireForTenant(Object runtime, Object key, Object session) throws Throwable {
+        return invoke(() -> runtimeClass.getMethod("acquireForTenant", Object.class, sessionStateClass())
+            .invoke(runtime, key, session));
     }
 
     private static Class<?> sessionStateClass() {
@@ -237,13 +345,17 @@ class TenantConnectionsGeneratorTest {
         }
     }
 
+    private void dslDefault(Object tc) throws Throwable {
+        invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
+    }
+
     private void releaseAll(Object tc) throws Throwable {
         invoke(() -> tenantConnectionsClass.getMethod("releaseAll").invoke(tc));
     }
 
-    private static void invoke(ThrowingSupplier body) throws Throwable {
+    private static Object invoke(ThrowingSupplier body) throws Throwable {
         try {
-            body.get();
+            return body.get();
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -264,6 +376,23 @@ class TenantConnectionsGeneratorTest {
                     return fakeConnection(label, failDisconnect);
                 }
                 return objectMethodOrDefault(proxy, method, args, "fakeDataSource:" + label);
+            });
+    }
+
+    /**
+     * Wraps {@code inner} so {@code getConnection} signals {@code entered}, then parks until
+     * {@code gate} opens: an acquisition held inside the pin, for racing it against release.
+     */
+    private DataSource gated(DataSource inner, CountDownLatch entered, CountDownLatch gate) {
+        return (DataSource) Proxy.newProxyInstance(
+            harness.classLoader(), new Class<?>[]{DataSource.class}, (proxy, method, args) -> {
+                if (method.getName().equals("getConnection")) {
+                    entered.countDown();
+                    if (!gate.await(10, TimeUnit.SECONDS)) {
+                        throw new SQLException("gate never opened");
+                    }
+                }
+                return method.invoke(inner, args);
             });
     }
 

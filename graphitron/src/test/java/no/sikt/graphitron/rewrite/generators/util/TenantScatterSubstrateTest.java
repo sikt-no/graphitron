@@ -289,6 +289,64 @@ class TenantScatterSubstrateTest {
     }
 
     @Test
+    void acquisitionAfterRelease_isRefused_withoutBorrowingOrMounting() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        dslFor(tc, "A");
+        releaseAll(tc);
+        events.clear();
+
+        assertThatThrownBy(() -> dslFor(tc, "A"))
+            .as("a key the operation pinned and released is not pinned again")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("A connection for tenant 'A' was requested after the operation had released its connections.");
+        assertThatThrownBy(() -> dslFor(tc, "B"))
+            .as("nor is a key it never touched")
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(events)
+            .as("the refusal comes before the pool: nothing is borrowed, so nothing is left mounted")
+            .isEmpty();
+    }
+
+    @Test
+    void pinInFlightAcrossRelease_isAbortedAndRefused() throws Throwable {
+        var entered = new CountDownLatch(1);
+        var gate = new CountDownLatch(1);
+        var sources = new LinkedHashMap<String, DataSource>();
+        sources.put("A", gated(fakeDataSource("A", false), entered, gate));
+        Object runtime = newRuntime(sources, 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+
+        var late = java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                dslFor(tc, "A");
+            } catch (Throwable e) {
+                throw new java.util.concurrent.CompletionException(e);
+            }
+        });
+        try {
+            assertThat(entered.await(5, TimeUnit.SECONDS)).as("the acquisition is parked inside the pin").isTrue();
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    releaseAll(tc);
+                } catch (Throwable e) {
+                    throw new java.util.concurrent.CompletionException(e);
+                }
+            }).get(5, TimeUnit.SECONDS);
+        } finally {
+            gate.countDown();
+        }
+
+        assertThatThrownBy(() -> late.get(5, TimeUnit.SECONDS))
+            .as("the pin that completed after release is never handed out")
+            .hasCauseInstanceOf(IllegalStateException.class);
+        assertThat(events)
+            .filteredOn(e -> !e.startsWith("setAutoCommit:"))
+            .as("the late pin aborts its own connection: never unmounted, never returned to the pool")
+            .containsExactly("getConnection:A", "connect:A", "abort:A");
+    }
+
+    @Test
     void straggler_releaseAllAbortsItsConnection_neverReusesIt_andCompletionLandsHarmlessly() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
         Object tc = newTenantConnections(runtime);
@@ -862,6 +920,23 @@ class TenantScatterSubstrateTest {
                     return fakeConnection(label, failDisconnect);
                 }
                 return objectMethodOrDefault(proxy, method, args, "fakeDataSource:" + label);
+            });
+    }
+
+    /**
+     * Wraps {@code inner} so {@code getConnection} signals {@code entered}, then parks until
+     * {@code gate} opens: an acquisition held inside the pin, for racing it against release.
+     */
+    private DataSource gated(DataSource inner, CountDownLatch entered, CountDownLatch gate) {
+        return (DataSource) Proxy.newProxyInstance(
+            harness.classLoader(), new Class<?>[]{DataSource.class}, (proxy, method, args) -> {
+                if (method.getName().equals("getConnection")) {
+                    entered.countDown();
+                    if (!gate.await(10, TimeUnit.SECONDS)) {
+                        throw new SQLException("gate never opened");
+                    }
+                }
+                return method.invoke(inner, args);
             });
     }
 
