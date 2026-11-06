@@ -272,7 +272,7 @@ class CommandSeamRatchetTest {
      *
      * <p>Lowered 147 to 136 when the routine-write producer stopped walking: its membership switch
      * over the mutation hierarchy (nine arms, two of them minting a row and seven declaring the
-     * shapes that do not) and the two narrowings that reached it are gone, the seat relation stating
+     * shapes that do not) and the two narrowings that reached it are gone, the store-side admission stating
      * membership instead. What stayed is the error-channel read, and it costs this pin nothing
      * because it narrows to {@code WithErrorChannel}, an interface the whole classified model
      * shares rather than a leaf of any of the seven hierarchies. That is the shape a conversion

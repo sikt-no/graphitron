@@ -1,5 +1,6 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -14,15 +15,14 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_ROUTINE_SEAT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for {@code intent_mutation_routine_seat}: which seat a mutation
- * root's {@code @routine} occupies, and where it occupies none, which precondition stopped it.
+ * {@link RoutineWriteQuery}'s admission: which seat a mutation root's {@code @routine} occupies, and
+ * where it occupies none, which precondition stopped it.
  *
- * <p>The relation's contract is totality, so every case here asserts the whole graph's rows rather
- * than a projection of them: a coordinate that should draw no row, or should draw a different
+ * <p>The admission's contract is totality, so every case here asserts the whole graph's seatings
+ * rather than a projection of them: a coordinate that should draw no row, or should draw a different
  * verdict than the one under test, fails the case it appears in. The one emitting verdict is a case
  * at each seat and the thirteen refusals are a case each, which is what makes the vocabulary closed
  * in fact and not only in the comment.
@@ -283,8 +283,10 @@ class MutationRoutineSeatTest {
     }
 
     /**
-     * The terminus rule, and it is the author's {@code @table} that is compared: the chain lands on
-     * {@code rental} and the return type's own binding names {@code actor}.
+     * A chain ending on a table its return type is not bound to: the path written ends on
+     * {@code rental} and the return type's own binding names {@code actor}, so no join path reaches
+     * {@code Actor} and the chain is unresolved. The terminus rule compares a join path's landing
+     * with the return's table, and a join path only exists where it reaches the type's table.
      */
     @Test
     void aReturnTableTheChainDoesNotLandOnRefuses() {
@@ -297,7 +299,7 @@ class MutationRoutineSeatTest {
                 @reference(path: [{table: "rental"}])
             }
             """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN TERMINUS_NOT_RETURN_TABLE Actor"));
+                "Mutation.rentFilm CHAIN CHAIN_UNRESOLVED Actor"));
     }
 
     // ===== The carrier seat's own refusals =====
@@ -445,14 +447,10 @@ class MutationRoutineSeatTest {
      * verdict, cannot hide behind a filter.
      */
     private static List<String> seats(DSLContext dsl) {
-        var s = INTENT_MUTATION_ROUTINE_SEAT;
-        return dsl.select(s.TYPE_NAME, s.FIELD_NAME, s.SEAT, s.VERDICT, s.RETURN_TYPE_NAME)
-            .from(s)
-            .where(s.GRAPH_NAME.eq(GRAPH))
-            .orderBy(s.TYPE_NAME, s.FIELD_NAME)
-            .fetch()
-            .map(row -> row.get(s.TYPE_NAME) + "." + row.get(s.FIELD_NAME) + " "
-                + row.get(s.SEAT) + " " + row.get(s.VERDICT) + " " + row.get(s.RETURN_TYPE_NAME));
+        return RoutineWriteQuery.seatings(new StoreHandle(dsl, GRAPH)).stream()
+            .map(s -> s.typeName() + "." + s.fieldName() + " " + s.seat() + " " + s.verdict() + " "
+                + s.returnTypeName())
+            .toList();
     }
 
     private void withCapturedStore(String sdl, Consumer<DSLContext> body) {

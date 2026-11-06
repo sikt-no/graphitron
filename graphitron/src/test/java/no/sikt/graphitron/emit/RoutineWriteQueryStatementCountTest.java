@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Three
- * statements at three grains, and three however many coordinates the graph holds, however many
+ * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Four
+ * statements at four grains, and four however many coordinates the graph holds, however many
  * hops their chains cross and however many arguments their routines take.
  *
  * <p>An enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for being
@@ -50,7 +50,7 @@ class RoutineWriteQueryStatementCountTest {
 
     /**
      * The wide corpus: both seats, three admitted coordinates, one of them a chain crossing two
-     * hops, plus a DML write the seat relation refuses. Every axis the coordinate statement's
+     * hops, plus a DML write admission refuses. Every axis the coordinate statement's
      * correlated {@code MULTISET}s fan out over is populated more than once here, which is what
      * makes the equality against the narrow corpus mean something.
      */
@@ -91,8 +91,8 @@ class RoutineWriteQueryStatementCountTest {
         type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
         """;
 
-    /** One per grain: the coordinate, the chain hop's pairing, the carrier's captured pairing. */
-    private static final int GRAINS = 3;
+    /** One per grain: admission, the coordinate, the chain hop's pairing, the carrier's captured pairing. */
+    private static final int GRAINS = 4;
 
     @TempDir
     Path tmp;
@@ -121,7 +121,7 @@ class RoutineWriteQueryStatementCountTest {
 
     @Test
     void aGraphWithNoRoutineWriteCostsTheSame() {
-        // Absence is an answer, and it is the same three statements: nothing here may probe a
+        // Absence is an answer, and it is the same four statements: nothing here may probe a
         // relation at a time to discover that none of them holds a row, and nothing may skip a
         // grain because an earlier one came back empty. Either shape makes the count a function of
         // the corpus in the direction the pin is blind to reading as a saving.
