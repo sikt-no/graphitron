@@ -11,7 +11,6 @@ import no.sikt.graphitron.model.derive.OccurrenceProducers;
 import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
-import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -101,8 +100,6 @@ public final class GraphitronAssemblyCapture {
         PathElements.derive(dsl, graph, readAt);
         // Where a field's path ends on a @routine, off the targets and the elements just resolved.
         RoutineResults.derive(dsl, graph, readAt);
-        FieldReferenceStepHops.deriveKeyed(dsl, graph);
-        FieldReferenceStepHops.deriveKeyless(dsl, graph);
         // Every place a field or an argument is reached, off the targets written above and the
         // anchor's table types: a chain grows through a field whose target is an object type with no
         // table. Here rather than as a line of the anchor because the targets are written above; it

@@ -1,7 +1,8 @@
-# How a condition routes a path hop when the path element names it and no table and no key: the
+# How a condition alone moves a path when the path element names it and no table and no key: the
 # method's own signature is the only route there is, parameter 0 the departure and parameter 1 the
-# arrival. Each argument below writes one case, every method being in ConditionMethodRouteFixtures,
-# and the rows are every route the document draws, so a case drawing none is one with no row.
+# arrival, and of its overloads the one whose departure the path stands on is taken. Each argument
+# below writes one case, every method being in ConditionMethodRouteFixtures: an arrival naming no
+# table moves nowhere, a stop, and a method that is not a condition or does not exist is unresolved.
 
 type Customer @table(name: "customer") {
   customerId: Int
@@ -36,11 +37,48 @@ extend type Query {
   ): [Customer!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_condition_method_route", rows: """
-  method,            from_table, to_table
-  customerToAddress, customer,   address
-  agreeingOnBoth,    customer,   address
-  agreeingOnArrival, customer,   address
-  agreeingOnArrival, film_actor, address
-  oneParameterBesideTwo, customer, address
+extend schema @expectEquals(relation: "graphitron_join_path_step", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Customer.%'", rows: """
+  coordinate, target_type, position, element_place, from_table, to_table
+  Customer.addressByCondition, Address, 0, 0, customer, address
+  Query.customers(agreeing:), Customer, 0, 0, customer, address
+  Query.customers(besideKey:), Customer, 0, 0, customer, address
+  Query.customers(concrete:), Customer, 0, 0, customer, address
+  Query.customers(diverging:), Customer, 0, 0, customer, address
+  Query.customers(nonTableBeside:), Customer, 0, 0, customer, address
+  Query.customers(oneParameter:), Customer, 0, 0, customer, address
+  Query.customers(perDeparture:), Customer, 0, 0, customer, address
+  Query.customers(wildcardBeside:), Customer, 0, 0, customer, address
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_method", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Customer.%'", rows: """
+  coordinate, target_type, position, method_name
+  Customer.addressByCondition, Address, 0, customerToAddress
+  Query.customers(agreeing:), Customer, 0, agreeingOnBoth
+  Query.customers(besideKey:), Customer, 0, besideAKey
+  Query.customers(concrete:), Customer, 0, customerToAddress
+  Query.customers(diverging:), Customer, 0, divergingArrivals
+  Query.customers(nonTableBeside:), Customer, 0, nonTableBesideConcrete
+  Query.customers(oneParameter:), Customer, 0, oneParameterBesideTwo
+  Query.customers(perDeparture:), Customer, 0, agreeingOnArrival
+  Query.customers(wildcardBeside:), Customer, 0, wildcardBesideConcrete
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_stop", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Customer.%'", rows: """
+  coordinate, target_type, position, element_place, moves
+  Query.customers(anyTable:), Customer, 0, 0, 0
+  Query.customers(missing:), Customer, 0, 0, 0
+  Query.customers(notACondition:), Customer, 0, 0, 0
+  Query.customers(notATable:), Customer, 0, 0, 0
+  Query.customers(primitive:), Customer, 0, 0, 0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Customer.%'", rows: """
+  code, coordinate
+  CODE_REFERENCE_METHOD_NOT_FOUND, Query.customers(missing:)
+  COLUMN_UNRESOLVED, Customer.customerId
+  ELEMENT_UNRESOLVED, Query.customers(missing:)
+  ELEMENT_UNRESOLVED, Query.customers(notACondition:)
+  NO_ROUTE_FROM_DEPARTURE, Query.customers(anyTable:)
+  NO_ROUTE_FROM_DEPARTURE, Query.customers(notATable:)
+  NO_ROUTE_FROM_DEPARTURE, Query.customers(primitive:)
   """)

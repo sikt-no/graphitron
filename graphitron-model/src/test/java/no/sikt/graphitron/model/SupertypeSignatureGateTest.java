@@ -173,20 +173,6 @@ class SupertypeSignatureGateTest {
         // the way the pair above did, when a conversion took both out of the register and made them
         // tables this gate's scan reaches.
         Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table"),
-        // Where a @reference path element lands, under the two keys the two sites ask it by: an
-        // argument's coordinate, and an input field's with the resolving table it was handed. One
-        // set per arm of the split, because the split is on key shape and the arms keep their own:
-        // the keyed two carry the constraint and its orientation, the keyless two do not. The
-        // payload grouping each set is the walk itself, which is the point rather than a
-        // coincidence: one builder states it and two coordinates call it, so the schema showing two
-        // relations with one payload is that claim arriving where a gate can see it. No supertype
-        // is owed, for the reason the pairs above give: a relation over both would carry an
-        // argument name null on half its rows and a resolving triple null on the other half, and no
-        // reader could key into it.
-        Set.of("graphitron_argument_reference_step_target_keyed",
-               "graphitron_input_field_reference_step_target_keyed"),
-        Set.of("graphitron_argument_reference_step_target_keyless",
-               "graphitron_input_field_reference_step_target_keyless"),
         // A path's start, whose payload is its kind alone; the routine start is not here because it
         // is keyed by its producer alone. graphitron_occurrence_source joins it on a payload of its
         // kind alone, keyed by the occurrence: the successor of the start, which starts every
@@ -220,7 +206,6 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_carrier_directive", "graphitron_configured_tag",
                "graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
                "graphql_directive_application_arg"),
-        Set.of("graphitron_argument_reference_step_entry", "graphitron_field_reference_step_entry"),
         // What a key: spelling names, under the two kinds of key it can name: a foreign key, keyed by
         // the constraint, and a table's own primary key, keyed by the table. The shared payload is
         // only which namespace the spelling matched in. No supertype is owed: each relation's
@@ -337,7 +322,6 @@ class SupertypeSignatureGateTest {
         // that view is for readers outside this store, and going through it would put a second view
         // body in every detection component that asks this question.
         "intent_poly_member|graphql_implements_interface,graphql_union_member",
-        "graphitron_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
         // The carriers' tags, authored or configured: the union graphitron_directive_application_arg
         // makes for every coordinate, made here for carriers alone, and stored for the reason the
         // set above gives.

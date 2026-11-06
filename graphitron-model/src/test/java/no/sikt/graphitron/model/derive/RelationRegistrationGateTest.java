@@ -80,8 +80,7 @@ class RelationRegistrationGateTest {
             "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_table_entry", "graphitron_field_binding_entry",
             "graphitron_argument_binding_entry", "graphitron_scalar_type_entry",
-            "graphitron_field_reference_entry", "graphitron_field_reference_step_entry",
-            "graphitron_argument_reference_entry", "graphitron_argument_reference_step_entry",
+            "graphitron_field_reference_entry", "graphitron_argument_reference_entry",
             "graphitron_reference_for_entry", "graphitron_argument_reference_for_entry",
             "graphitron_service_entry", "graphitron_external_field_entry", "graphitron_connection_entry", "graphitron_facet_entry",
             "graphitron_order_by_entry", "graphitron_default_order_entry", "graphitron_default_order_field_entry", "graphitron_mutation_entry",
@@ -402,20 +401,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_minted_conflict", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
         registrations.put("graphitron_spelled_table", Arm.DERIVED);
-        registrations.put("graphitron_field_reference_step_hop", Arm.DERIVED);
-        registrations.put("graphitron_field_reference_step_hop_keyed", Arm.DERIVED);
-        registrations.put("graphitron_field_reference_step_hop_keyless", Arm.DERIVED);
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
         registrations.put("sql_table_reference", Arm.DERIVED);
-        registrations.put("graphitron_condition_method_route", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
-        registrations.put("graphitron_argument_reference_step_target_keyed", Arm.DERIVED);
-        registrations.put("graphitron_argument_reference_step_target_keyless", Arm.DERIVED);
-        registrations.put("graphitron_input_field_reference_step_target_keyed", Arm.DERIVED);
-        registrations.put("graphitron_input_field_reference_step_target_keyless", Arm.DERIVED);
-        registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
-        registrations.put("graphitron_argument_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_connection_element_type", Arm.DERIVED);
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
         registrations.put("graphitron_type_backing", Arm.DERIVED);
@@ -425,7 +414,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argument_scope_table", Arm.DERIVED);
         registrations.put("graphitron_input_field_resolving_table", Arm.DERIVED);
         registrations.put("graphitron_input_field_resolving_table_rule", Arm.DERIVED);
-        registrations.put("graphitron_input_field_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
         registrations.put("sql_constraint_hop", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);

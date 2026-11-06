@@ -17,7 +17,8 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_LANDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.upper;
@@ -160,8 +161,7 @@ class NameMatchedKeyPairTest {
             }
             """, dsl -> {
             assertThat(carrierHops(dsl)).isEmpty();
-            // A name-match hop's source is a candidacy over every function result exposing
-            // rental's key, so other catalog routines may appear beside rent_film.
+            // The join path's step from the routine's result to rental.
             assertThat(authoredNameMatchedHops(dsl)).contains("rent_film->rental");
         });
     }
@@ -282,13 +282,15 @@ class NameMatchedKeyPairTest {
                 + " " + lower(row.value5()) + "->" + lower(row.value6()));
     }
 
-    /** The authored view's name-matched rows, so a case can say which of the two relations answered. */
+    /** The join path's name-matched steps, so a case can say which of the two relations answered. */
     private static List<String> authoredNameMatchedHops(DSLContext dsl) {
-        var s = GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
+        var s = GRAPHITRON_JOIN_PATH_STEP;
+        var mk = GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
         return dsl.select(s.FROM_TABLE, s.TO_TABLE)
             .from(s)
+            .join(mk).on(mk.GRAPH_NAME.eq(s.GRAPH_NAME), mk.COORDINATE.eq(s.COORDINATE),
+                mk.TARGET_TYPE.eq(s.TARGET_TYPE), mk.POSITION.eq(s.POSITION))
             .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(s.VIA.eq("NAME_MATCH"))
             .orderBy(s.FROM_TABLE, s.TO_TABLE)
             .fetch()
             .map(row -> lower(row.get(s.FROM_TABLE)) + "->" + lower(row.get(s.TO_TABLE)));

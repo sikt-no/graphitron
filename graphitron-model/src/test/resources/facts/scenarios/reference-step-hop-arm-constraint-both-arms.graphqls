@@ -1,6 +1,5 @@
-# A key element and a bare condition element, which put a row in each of the two tables the hop is
-# stored as: the keyed one, whose rows a foreign key identifies, and the keyless one, whose rows
-# none does. The union view presents both under the one name readers spell.
+# A key element and a bare condition element, each a step of its field's join path stated by the
+# subtype saying how it joins: the key it rides, or the condition method its two tables chose.
 
 type Film @table(name: "film") {
   title: String
@@ -14,18 +13,12 @@ type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "las
 
 extend type Query { films: [Film!]! }
 
-extend schema @assertContains(relation: "graphitron_field_reference_step_hop_keyed", rows: """
-  type_name, field_name, position, via, key_matched_by, from_table, to_table,   constraint_name,         fk_on_from
-  Film,      filmActors, 0,        KEY, SQL_NAME,       film,       film_actor, film_actor_film_id_fkey, FALSE
+extend schema @expectEquals(relation: "graphitron_join_path_step_key", where: "coordinate LIKE 'Film.%'", rows: """
+  coordinate, target_type, position, constraint_name
+  Film.filmActors, FilmActor, 0, film_actor_film_id_fkey
   """)
 
-extend schema @assertContains(relation: "graphitron_field_reference_step_hop_keyless", rows: """
-  type_name, field_name,            position, via,       from_table, to_table
-  Film,      filmActorsByCondition, 0,        CONDITION, film,       film_actor
-  """)
-
-extend schema @assertContains(relation: "graphitron_field_reference_step_hop", rows: """
-  type_name, field_name,            via
-  Film,      filmActors,            KEY
-  Film,      filmActorsByCondition, CONDITION
+extend schema @expectEquals(relation: "graphitron_join_path_step_method", where: "coordinate LIKE 'Film.%'", rows: """
+  coordinate, target_type, position, method_name
+  Film.filmActorsByCondition, FilmActor, 0, filmToFilmActor
   """)

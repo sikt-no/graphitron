@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
-import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
 import no.sikt.graphitron.model.derive.ArgumentScopeTables;
 import no.sikt.graphitron.model.derive.NodeIdDecodeColumns;
 import no.sikt.graphitron.model.derive.NodeIdDecodeHopColumns;
@@ -14,8 +13,6 @@ import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.FieldScopeTables;
-import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
-import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import org.jooq.DSLContext;
@@ -146,22 +143,17 @@ public final class SeededStore {
             NodeKeyColumns.derive(dsl, graph);
             NodeLegacyKeyShapes.derive(dsl, graph);
             ArgMappingCandidates.derive(dsl, graph);
-            // The reference stratum's own resolutions, in the order capture runs them: the
-            // spelling first, then the two hop arms that read it. Here for the reason the name
+            // The reference stratum's own resolution of a spelling. Here for the reason the name
             // matches above are here, that the rows are a stage's now where they used to be a
             // rule computed on read, and a harness that seeds the catalog by hand gets nothing
             // from a stage nobody ran.
             SpelledTables.derive(dsl, graph);
-            FieldReferenceStepHops.deriveKeyed(dsl, graph);
-            FieldReferenceStepHops.deriveKeyless(dsl, graph);
             // The derivation stratum's stages, after the gatherer's own above because that is
             // where each one's rule reads from, in the order DerivationStratum runs them. The
             // hand-written producers are not among them: a seeded case writes their tables itself.
             FieldScopeTables.derive(dsl, graph);
             ArgumentScopeTables.derive(dsl, graph);
             InputFieldResolvingTables.derive(dsl, graph);
-            ArgumentReferenceStepTargets.derive(dsl, graph);
-            InputFieldReferenceStepTargets.derive(dsl, graph);
             NodeIdInstructions.derive(dsl, graph);
             NodeIdDecodeHops.derive(dsl, graph);
             NodeIdDecodeHopColumns.derive(dsl, graph);
@@ -179,10 +171,11 @@ public final class SeededStore {
      *
      * <p>Beside rather than instead of is the whole of what selects a relation into this method.
      *
-     * <p>The method reference is the mixed case and shows both halves at once. Nine of its sites
-     * keep relations of their own and are transcribed from them below; the tenth, the source row,
-     * carried nothing beyond the shared fact, so it has no relation to transcribe from and a case
-     * meaning that site writes {@code graphitron_method_reference_entry} itself.
+     * <p>The method reference is the mixed case and shows both halves at once. Some of its sites
+     * keep relations of their own and are transcribed from them below; the others, a path step's
+     * condition and the source row among them, carry nothing beyond the shared fact, so they have no
+     * relation to transcribe from and a case meaning one writes
+     * {@code graphitron_method_reference_entry} itself.
      *
      * <p>Modelling capture rather than deriving anything, which is why it is named apart from the
      * refresh below it and why the refresh keeps the property of being an entry point production
@@ -203,12 +196,6 @@ public final class SeededStore {
                      table_ref_namespace_part AS namespace_part,
                      COALESCE(table_ref_name_part, type_name) AS name_part
                 FROM graphitron_table_entry
-              UNION
-              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_field_reference_step_entry WHERE table_ref IS NOT NULL
-              UNION
-              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_argument_reference_step_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
                 FROM graphitron_mutation_entry WHERE table_ref IS NOT NULL
@@ -240,29 +227,6 @@ public final class SeededStore {
                    class_name, method, source_name, source_line, source_column
               FROM graphitron_external_field_entry
              WHERE class_name IS NOT NULL AND method IS NOT NULL
-            UNION ALL
-            SELECT s.graph_name, 'FIELD_REFERENCE_STEP',
-                   s.type_name || '.' || s.field_name || '#' || CAST(s.ordinal AS VARCHAR)
-                     || '[' || CAST(s.position AS VARCHAR) || ']',
-                   s.type_name, s.field_name, NULL, s.ordinal, s.position,
-                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_field_reference_step_entry s
-              JOIN graphitron_field_reference_entry d
-                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
-               AND d.field_name = s.field_name AND d.ordinal = s.ordinal
-             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
-            UNION ALL
-            SELECT s.graph_name, 'ARGUMENT_REFERENCE_STEP',
-                   s.type_name || '.' || s.field_name || '(' || s.argument_name || ')#'
-                     || CAST(s.ordinal AS VARCHAR) || '[' || CAST(s.position AS VARCHAR) || ']',
-                   s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
-                   s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_argument_reference_step_entry s
-              JOIN graphitron_argument_reference_entry d
-                ON d.graph_name = s.graph_name AND d.type_name = s.type_name
-               AND d.field_name = s.field_name AND d.argument_name = s.argument_name
-               AND d.ordinal = s.ordinal
-             WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
             """);
     }
 

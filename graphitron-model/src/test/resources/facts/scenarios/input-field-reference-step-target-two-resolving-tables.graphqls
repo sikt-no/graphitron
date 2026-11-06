@@ -1,8 +1,8 @@
-# One input field's @reference path walked once per table it is classified against. CityFilter is
-# passed to a field over customer and to one over staff; each reaches address by its own key, and
-# from address the second element takes the one key to city whichever table the chain left from.
-# Those second hops agree on every column but the resolving table, which keeps the two chains apart
-# in the rows and in the counts: without it, each would count two candidates where it has one.
+# One input field's @reference path walked once per occurrence, from where its argument starts.
+# CityFilter is passed to a field over customer and to one over staff; each reaches address by its own
+# key, and from address the second element takes the one key to city whichever table the walk left
+# from. The occurrence keeps the two walks apart, and the argument holding the input field, writing
+# nothing, ends where it starts.
 
 type Customer @table(name: "customer") { customerId: Int @field(name: "customer_id") }
 type Staff @table(name: "staff") { staffId: Int @field(name: "staff_id") }
@@ -16,10 +16,27 @@ extend type Query {
   staff(filter: CityFilter): [Staff!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_input_field_reference_step_target", rows: """
-  resolving_table, position, from_table, to_table, constraint_name,          targets, candidates
-  customer,        0,        customer,   address,  customer_address_id_fkey, 1,       1
-  customer,        1,        address,    city,     address_city_id_fkey,     1,       1
-  staff,           0,        staff,      address,  staff_address_id_fkey,    1,       1
-  staff,           1,        address,    city,     address_city_id_fkey,     1,       1
+extend schema @expectEquals(relation: "graphitron_join_path_step", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate, target_type, position, element_place, from_table, to_table
+  Query.customers(filter.inCity:), Customer, 0, 0, customer, address
+  Query.customers(filter.inCity:), Customer, 1, 1, address, city
+  Query.staff(filter.inCity:), Staff, 0, 0, staff, address
+  Query.staff(filter.inCity:), Staff, 1, 1, address, city
   """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate, target_type, position, constraint_name
+  Query.customers(filter.inCity:), Customer, 0, customer_address_id_fkey
+  Query.customers(filter.inCity:), Customer, 1, address_city_id_fkey
+  Query.staff(filter.inCity:), Staff, 0, staff_address_id_fkey
+  Query.staff(filter.inCity:), Staff, 1, address_city_id_fkey
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate, target_type, target_table
+  Query.customers(filter.inCity:), Customer, city
+  Query.customers(filter:), Customer, customer
+  Query.staff(filter.inCity:), Staff, city
+  Query.staff(filter:), Staff, staff
+  """)
+

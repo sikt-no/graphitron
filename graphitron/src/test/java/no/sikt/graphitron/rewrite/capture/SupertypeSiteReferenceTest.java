@@ -109,14 +109,13 @@ class SupertypeSiteReferenceTest {
             + " AND d.directive_name = 'condition'"
             + " AND d.coordinate = s.type_name || '.' || s.field_name || '(' || s.argument_name || ':)'",
         "FIELD_REFERENCE_STEP",
-        "graphitron_field_reference_step_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'reference' AND d.ordinal = s.ordinal"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name",
         "ARGUMENT_REFERENCE_STEP",
-        "graphitron_argument_reference_step_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.argument_name = s.argument_name AND d.ordinal = s.ordinal"
-            + " AND d.position = s.step_position",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'reference' AND d.ordinal = s.ordinal"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name || '(' || s.argument_name || ':)'",
         "REFERENCE_FOR_STEP",
         "graphql_directive_application d WHERE d.graph_name = s.graph_name"
             + " AND d.directive_name = 'referenceFor' AND d.ordinal = s.ordinal"

@@ -5,26 +5,28 @@ import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
-import org.jooq.Record5;
-import org.jooq.Result;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The name-matched arm of {@code graphitron_field_reference_step_hop}: a {@code {table:}} element
- * departing a table-valued function's result, which declares no foreign key, is keyed by matching the
- * named table's primary-key columns against the result's columns by name.
+ * The name-matched step of a join path: a {@code {table:}} element departing a table-valued
+ * function's result, which declares no foreign key, is keyed by matching the named table's
+ * primary-key columns against the result's columns by name.
  *
- * <p>Every case captures real SDL against the test catalog, a hand-seeded hop being free to describe
- * one the catalog cannot make. The fixtures use {@code films_for_actor}, whose result exposes
+ * <p>Every case captures real SDL against the test catalog, a hand-seeded step being free to describe
+ * one the catalog cannot make. The fixture uses {@code films_for_actor}, whose result exposes
  * {@code film_id}, so the name-match to {@code film} succeeds.
  */
 @PipelineTier
@@ -34,46 +36,34 @@ class NameMatchedStepHopTest {
     Path tmp;
 
     /**
-     * What the name-matched arm carries. No foreign key is involved, so the two foreign-key columns
-     * are null rather than borrowed; the constraint
-     * such a hop does key by is the arrival's primary key, which the arriving triple already reaches
-     * through {@code sql_primary_key} and which carrying here would only duplicate.
+     * The step leaves the function the root's {@code @routine} returns and reaches {@code film} as a
+     * name-matched step, riding no foreign key: no key subtype holds a row for it.
      */
     @Test
-    void aNameMatchedHopNamesNoForeignKey() {
+    void aNameMatchedStepRidesNoForeignKey() {
         withCaptured(filmHop("[{table: \"film\"}]"), dsl -> {
-            var rows = hops(dsl, "NAME_MATCH");
-            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FROM_TABLE))
-                .stream().map(NameMatchedStepHopTest::lower).toList())
-                .as("every function result in the graph's sources exposing film_id is a candidate")
-                .containsExactlyInAnyOrder("films_for_actor", "films_for_actor_or_all");
-            assertThat(rows).allSatisfy(row -> {
-                assertThat(lower(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.TO_TABLE)))
-                    .isEqualTo("film");
-                assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME)).isNull();
-                assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FK_ON_FROM)).isNull();
-                assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.KEY_MATCHED_BY)).isNull();
-            });
+            var s = GRAPHITRON_JOIN_PATH_STEP;
+            var mk = GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
+            List<String> steps = dsl.select(s.FROM_TABLE, s.TO_TABLE)
+                .from(s)
+                .join(mk).on(mk.GRAPH_NAME.eq(s.GRAPH_NAME), mk.COORDINATE.eq(s.COORDINATE),
+                    mk.TARGET_TYPE.eq(s.TARGET_TYPE), mk.POSITION.eq(s.POSITION))
+                .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH), s.COORDINATE.eq("Query.recentFilms"))
+                .fetch(r -> lower(r.value1()) + "->" + lower(r.value2()));
+            assertThat(steps).containsExactly("films_for_actor->film");
+            assertThat(dsl.fetchCount(GRAPHITRON_JOIN_PATH_STEP_KEY,
+                    GRAPHITRON_JOIN_PATH_STEP_KEY.COORDINATE.eq("Query.recentFilms")))
+                .isZero();
+            assertThat(dsl.fetchCount(GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY,
+                    GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY.COORDINATE.eq("Query.recentFilms")))
+                .isZero();
         });
-    }
-
-    /**
-     * The same element still resolves its foreign-key arm, which is what lets one written
-     * {@code {table:}} element serve both parent shapes. The two arms cannot produce one row: a
-     * function result declares no foreign key for the other arm to discover.
-     */
-    @Test
-    void theForeignKeyArmOfTheSameElementIsUntouched() {
-        withCaptured(filmHop("[{table: \"film\"}]"), dsl ->
-            assertThat(hops(dsl, "TABLE"))
-                .as("film's own foreign keys, discovered as before")
-                .isNotEmpty());
     }
 
     // ===== Helpers =====
 
     /**
-     * The root routine-then-hops fixture: {@code films_for_actor} in the FROM and one
+     * The root routine-then-steps fixture: {@code films_for_actor} in the FROM and one
      * {@code @reference} application carrying {@code path}.
      */
     private static String filmHop(String path) {
@@ -86,22 +76,6 @@ class NameMatchedStepHopTest {
                 @reference(path: %s)
             }
             """.formatted(path);
-    }
-
-    private static Result<Record5<String, String, String, Boolean, String>>
-            hops(DSLContext dsl, String via) {
-        return dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME,
-            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FROM_TABLE,
-            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.TO_TABLE,
-            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FK_ON_FROM,
-            GRAPHITRON_FIELD_REFERENCE_STEP_HOP.KEY_MATCHED_BY)
-            .from(GRAPHITRON_FIELD_REFERENCE_STEP_HOP)
-            .where(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.VIA.eq(via))
-            .orderBy(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.POSITION,
-                GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FROM_TABLE,
-                GRAPHITRON_FIELD_REFERENCE_STEP_HOP.TO_TABLE)
-            .fetch();
     }
 
     private static String lower(String value) {

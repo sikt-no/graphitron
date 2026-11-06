@@ -101,17 +101,11 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       whose multischema schemas supply the shapes the cases turn on (two foreign keys between
  *       one pair of tables, a key pointing back at its own table, a constraint name two schemas
  *       both declare, a table name two schemas both declare);
- *       the {@code argument-reference-step-target} fact documents bind the argument-site pair
- *       ({@code intent_argument_reference_step_hop} and
- *       {@code graphitron_argument_reference_step_target}, the hop view pinned through the chain for
- *       the same reason) against that same catalog, and state one path at both sites, the arms
- *       being textually parallel, which is what keeps a change to one from silently leaving the
- *       other behind;
- *       the {@code condition-method-route} fact documents bind
- *       {@code graphitron_condition_method_route}, the rung both hop views join for an element that
- *       names a condition and neither a key nor a table, the asymmetry between the two parameters
- *       asserted from both sides, an unresolvable arrival being no route where an unresolvable
- *       departure is every table in the graph's sources;
+ *       the {@code argument-reference-step-target} fact documents bind an argument's own join path
+ *       against that same catalog, and state one path at both sites, which is what keeps a change to
+ *       one from silently leaving the other behind;
+ *       the {@code condition-method-route} fact documents bind the steps and stops a condition
+ *       element alone takes, an unresolvable arrival being no move;
  *       the relation that named why a route was absent is gone, having reached no surface in the
  *       time it existed, so a silence at that hop is now unexplained rather than explained to
  *       nobody;

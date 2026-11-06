@@ -12,7 +12,8 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
@@ -135,14 +136,15 @@ class QualifiedReferenceDecodeTest {
     @DisplayName("a path element's key and table partition by the same rule")
     void aPathElementPartitionsByTheSameRule(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            var s = GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+            var k = GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
             assertThat(halves(store.dsl()
-                .select(s.KEY_REF_NAMESPACE_PART, s.KEY_REF_NAME_PART)
-                .from(s).where(s.FIELD_NAME.eq("language")).fetchOne()))
+                .select(k.KEY_REF_NAMESPACE_PART, k.KEY_REF_NAME_PART)
+                .from(k).where(k.KEY_REF.eq("public.film_language_id_fkey")).fetchOne()))
                 .containsExactly("public", "film_language_id_fkey");
+            var t = GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
             assertThat(halves(store.dsl()
-                .select(s.TABLE_REF_NAMESPACE_PART, s.TABLE_REF_NAME_PART)
-                .from(s).where(s.FIELD_NAME.eq("categories")).fetchOne()))
+                .select(t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
+                .from(t).where(t.TABLE_REF.eq("public.film_category")).fetchOne()))
                 .containsExactly("public", "film_category");
         }
     }

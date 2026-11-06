@@ -99,13 +99,12 @@ class WarmStartRefreshTest {
      *
      * <p>It carries a {@code @reference} path between two bound types as well, and that half is
      * load-bearing rather than scenery. The reference stratum keys at a path element, so a schema
-     * that authors no path leaves the spelling resolution, both hop arms and the walk over them
-     * empty, and a case asserting that a second capture changes no row count would pass on them
-     * without ever writing one. With the path here it fails on a stage that appends instead of
-     * reconciling, which is the one failure mode the answer oracle cannot see. The same path is
-     * written a second and third time, on an argument and on an input field the same field
-     * consumes, because the argument-site and input-field walks are stages keyed at their own
-     * coordinates and a field-site path puts no row in either.
+     * that authors no path leaves the spelling resolution and the join path's steps empty, and a
+     * case asserting that a second capture changes no row count would pass on them without ever
+     * writing one. With the path here it fails on a stage that appends instead of reconciling,
+     * which is the one failure mode the answer oracle cannot see. The same path is written a second
+     * and third time, on an argument and on an input field the same field consumes, whose join
+     * paths are walked at their own occurrences.
      */
     private static final String TABLE_BOUND_SDL = """
         type Query {
@@ -190,11 +189,7 @@ class WarmStartRefreshTest {
             .as("the reference stratum takes rows on this schema, without which this case counts"
                 + " zero against zero on the relations it is here for")
             .containsEntry("GRAPHITRON_SPELLED_TABLE", 2)
-            .hasEntrySatisfying("GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED",
-                rows -> assertThat(rows).isPositive())
-            .hasEntrySatisfying("GRAPHITRON_ARGUMENT_REFERENCE_STEP_TARGET_KEYED",
-                rows -> assertThat(rows).isPositive())
-            .hasEntrySatisfying("GRAPHITRON_INPUT_FIELD_REFERENCE_STEP_TARGET_KEYED",
+            .hasEntrySatisfying("GRAPHITRON_JOIN_PATH_STEP_KEY",
                 rows -> assertThat(rows).isPositive());
 
         Map<String, Integer> twice;

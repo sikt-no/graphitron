@@ -1,7 +1,7 @@
 # A condition whose departure names no generated table, by the wildcard or by a primitive, departs
-# from every table in the graph's sources and arrives where its second parameter says; the chain
-# narrows the departure. Every table is the whole catalog, so the rows below are a sample of the
-# departures and the arrivals they must not have, rather than the list.
+# from wherever the path stands and arrives where its second parameter says. The step is taken from
+# customer either way; the wildcard's overload takes the pair, and no overload takes customer for a
+# primitive.
 
 type Customer @table(name: "customer") { customerId: Int }
 
@@ -13,21 +13,21 @@ extend type Query {
 }
 
 # Departures no signature names, among them, every one arriving at address.
-extend schema @assertContains(relation: "graphitron_condition_method_route", rows: """
-  method,            from_table, to_table
-  anythingToAddress, actor,      address
-  anythingToAddress, address,    address
-  anythingToAddress, customer,   address
-  anythingToAddress, film,       address
-  anythingToAddress, film_actor, address
-  intToAddress,      actor,      address
-  intToAddress,      customer,   address
-  intToAddress,      film,       address
+extend schema @expectEquals(relation: "graphitron_join_path_step", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Customer.%'", rows: """
+  coordinate, target_type, position, element_place, from_table, to_table
+  Query.customers(primitive:), Customer, 0, 0, customer, address
+  Query.customers(wildcard:), Customer, 0, 0, customer, address
   """)
 
-extend schema @assertAbsent(relation: "graphitron_condition_method_route", rows: """
-  method,            from_table, to_table
-  anythingToAddress, customer,   customer
-  anythingToAddress, address,    customer
-  intToAddress,      customer,   customer
+extend schema @expectEquals(relation: "graphitron_join_path_step_method", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Customer.%'", rows: """
+  coordinate, target_type, position, method_name
+  Query.customers(wildcard:), Customer, 0, anythingToAddress
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_join_path_stop")
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Customer.%'", rows: """
+  code, coordinate
+  COLUMN_UNRESOLVED, Customer.customerId
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Query.customers(primitive:)
   """)

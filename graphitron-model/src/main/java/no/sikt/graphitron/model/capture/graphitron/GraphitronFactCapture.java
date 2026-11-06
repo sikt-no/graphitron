@@ -12,7 +12,6 @@ import graphql.language.ObjectValue;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
-import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -35,14 +34,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
@@ -136,14 +133,13 @@ public final class GraphitronFactCapture {
                 // The relation this arm wrote is derived now, by GraphitronAnchor, out of the entry
                 // the document's own reader writes. What stays here is the spelling, which is a
                 // different relation: graphitron_spelled_reference_entry is keyed by the value and
-                // written from seven sites, so it moves when the last of them does rather than when
+                // written from several sites, so it moves when the last of them does rather than when
                 // the first does. The claim stays with it, first-wins per type being what decides
                 // whose spelling the corpus records when a type carries more than one application.
                 if (!sink.claim(GRAPHITRON_TABLE_ENTRY, type)) return;
                 // The site records what the author wrote, which on a bare @table is nothing; the
                 // spelling it resolves against is the type's own name, and that is the fact the
-                // supertype holds. Split rather than passed through spelledReference because this
-                // is the one site whose spelling is not the value it stores.
+                // supertype holds, so this site's spelling is not the value it stores.
                 String written = string(directive, "name");
                 spelling(written == null ? type : written);
             }
@@ -209,19 +205,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setOrdinal(ordinal);
-                    row.setPosition(position);
-                    spelledReference(step.table(), row::setTableRef,
-                        row::setTableRefNamespacePart, row::setTableRefNamePart);
-                    qualified(step.key(), row::setKeyRef,
-                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
-                    row.setClassName(step.className());
-                    row.setMethod(step.method());
-                    row.setArgmapping(step.argMapping());
-                    sink.add(row);
+                    spelling(step.table());
                     methodReference("FIELD_REFERENCE_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
                         step.className(), step.method(), directive);
@@ -285,7 +269,7 @@ public final class GraphitronFactCapture {
             case "mutation" -> {
                 // The relation is derived now, by GraphitronAnchor. What is left is the spelling,
                 // for the reason @table's arm carries: graphitron_spelled_reference_entry is keyed
-                // by the value across the seven sites that write one, so it moves when the last of
+                // by the value across the several sites that write one, so it moves when the last of
                 // them does. The claim stays with it, first-wins per coordinate being what decides
                 // whose spelling the corpus records where a field carries more than one application.
                 if (!sink.claim(GRAPHITRON_MUTATION_ENTRY, type, field)) return;
@@ -347,20 +331,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setArgumentName(argument);
-                    row.setOrdinal(ordinal);
-                    row.setPosition(position);
-                    spelledReference(step.table(), row::setTableRef,
-                        row::setTableRefNamespacePart, row::setTableRefNamePart);
-                    qualified(step.key(), row::setKeyRef,
-                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
-                    row.setClassName(step.className());
-                    row.setMethod(step.method());
-                    row.setArgmapping(step.argMapping());
-                    sink.add(row);
+                    spelling(step.table());
                     methodReference("ARGUMENT_REFERENCE_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
                         step.className(), step.method(), directive);
@@ -561,40 +532,6 @@ public final class GraphitronFactCapture {
     }
 
     /**
-     * Writes a qualifiable reference: the value as written, then the two halves of its split. One
-     * call rather than three so a site cannot record the value without its decode, which is the
-     * invariant every reader of the parts relies on. See {@link QualifiedNameGrammar} for the split.
-     */
-    private static void qualified(String written, Consumer<String> value,
-                                  Consumer<String> namespacePart, Consumer<String> namePart) {
-        value.accept(written);
-        namespacePart.accept(QualifiedNameGrammar.namespacePart(written));
-        namePart.accept(QualifiedNameGrammar.namePart(written));
-    }
-
-    /**
-     * A qualifiable reference that names a table or a routine, written to its own site's relation
-     * and to {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE_ENTRY} beside it. The
-     * second write is what makes the spelling a fact rather than something a reader reconstructs by
-     * unioning the seven relations that carry one; the first is unchanged, each site still recording
-     * where its own spelling was written.
-     *
-     * <p>Not {@link #qualified} itself, and the difference is the subject rather than the shape: a
-     * key reference splits by the same grammar and names a constraint, which is a different fact
-     * with no supertype of its own. A site calling the wrong one of these two would put constraint
-     * names in the catalog-resolution relation, so they are named apart.
-     *
-     * <p>Deduplicated through {@link FactSink#claim}, because the same spelling authored at five
-     * coordinates is one row: the relation is keyed by the spelling and the primary key is what says
-     * a second write of it is the same fact and not a second one.
-     */
-    private void spelledReference(String written, Consumer<String> value,
-                                  Consumer<String> namespacePart, Consumer<String> namePart) {
-        qualified(written, value, namespacePart, namePart);
-        spelling(written);
-    }
-
-    /**
      * One spelling into {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE_ENTRY},
      * deduplicated through {@link FactSink#claim} because the same spelling authored at five
      * coordinates is one row: the relation is keyed by the spelling and the primary key is what says
@@ -750,12 +687,10 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ARGUMENT_NODE_ID_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY,
-        GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
         GRAPHITRON_FIELD_NODE_ID_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
-        GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY,
         GRAPHITRON_METHOD_REFERENCE_ENTRY,
         GRAPHITRON_MULTITABLE_REFERENCE_ENTRY,
         GRAPHITRON_ORDER_BY_ENTRY,

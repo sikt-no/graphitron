@@ -306,12 +306,6 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     gone. Left: the output-field arm of `graphitron_node_id_instruction_rule` reads
     `graphitron_join_path`'s target, and `FieldPaths` and every `graphitron_field_path*` relation go,
     with the gate tests and fact documents.
-  * **The reference-step family goes** `open`, F's.
-    The argument arm of `graphitron_node_id_instruction_rule` and `graphitron_node_id_decode_hop_rule`
-    read the join path's steps at the argument and input-field occurrences, G's to move or agree;
-    then `FieldReferenceStepHops`, the argument and input-field step targets,
-    `intent_argument_reference_step_hop`, `graphitron_condition_method_route` and the
-    `*_reference_step_entry` captures go.
 * **`scenarios/path-rules` runs** `blocked`, on "Arguments and input fields have paths from their field's path".
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.
@@ -2495,6 +2489,24 @@ on fact-document fixtures.
 **The producer-method views.** `intent_field_producer_reference` and `intent_field_producer_method`,
 with `FieldProducerMethodTest`, now `CodeReferenceClasspathScopeTest` over `graphitron_code_reference`:
 a code reference resolves there, and an overload or an absence is a defect of its own.
+
+**The reference-step family** (2026-11-06). `FieldReferenceStepHops` with
+`graphitron_field_reference_step_hop`, `graphitron_field_reference_step_hop_keyed` and
+`graphitron_field_reference_step_hop_keyless`; `ArgumentReferenceStepTargets` with
+`graphitron_argument_reference_step_target`, `graphitron_argument_reference_step_target_keyed` and
+`graphitron_argument_reference_step_target_keyless`; `InputFieldReferenceStepTargets` with
+`graphitron_input_field_reference_step_target`, `graphitron_input_field_reference_step_target_keyed`
+and `graphitron_input_field_reference_step_target_keyless`; `ReferenceStepWalk`;
+`intent_argument_reference_step_hop`; `graphitron_condition_method_route`; and the captures
+`graphitron_field_reference_step_entry` and `graphitron_argument_reference_step_entry`, a path
+element's spelling now read off `graphitron_ast_reference_table_step_entry`,
+`graphitron_ast_reference_key_step_entry` and `graphitron_ast_reference_condition_step_entry`. The
+grains `reference-step-hop`, `reference-step-keyed-hop`, `reference-step-keyless-hop`,
+`argument-reference-step-target`, `argument-reference-step-keyed-target`,
+`argument-reference-step-keyless-target`, `input-field-reference-step-target`,
+`input-field-reference-step-keyed-target`, `input-field-reference-step-keyless-target` and
+`condition-method-route` went with them, and so did `ReferenceStepRecombinationTest`. Every reader
+reads `graphitron_join_path_step` and its subtypes at the occurrence.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

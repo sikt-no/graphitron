@@ -1,11 +1,11 @@
-# An argument's @reference path walked from the table its field's named type binds, which is what
-# lets a root field's argument depart at all, and through a connection from its element type's
-# table. The walk is the field site's: the same path at both sites resolves to the same hops. Two
-# arguments of one field are two chains. A bare condition is a hop its method's parameters route,
-# composing after a key hop; beside a key the key routes it. A wildcard arrival, or overloads
-# arriving at two tables, route nothing; overloads agreeing on the arrival route from their own
-# departures. A first element naming no key ends the chain, and a field whose type binds nothing
-# gives its arguments nowhere to start.
+# An argument's @reference path walked from where its field lands, the table its field's named type
+# binds for a root field, and through a connection from its element type's table. The walk is the
+# field site's: the same path at both sites takes the same steps. Two arguments of one field are two
+# walks. A bare condition is a step its method's overload for the pair takes, composing after a key
+# step; beside a key the key is the step and a condition no overload of which takes the pair is a
+# defect. A wildcard arrival moves nowhere, a table two keys reach is ambiguous, and a first element
+# naming no key is unresolved, each a stop. A root field's refused @reference and a field whose type
+# binds nothing give their arguments nowhere to start.
 
 type Film @table(name: "film") {
   title: String
@@ -51,22 +51,56 @@ extend type Query {
   ): [Customer!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_argument_reference_step_target", rows: """
-  field_name, argument_name,      position, via,       key_matched_by, from_table, to_table,         constraint_name,                fk_on_from, targets, candidates
-  films,      inActor,            0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
-  films,      inActor,            1,        KEY,       SQL_NAME,       film_actor, actor,            film_actor_actor_id_fkey,       TRUE,       1,       1
-  films,      viaJunction,        0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
-  films,      titled,             0,        TABLE,     ,               film,       film_translation, film_translation_film_id_fkey,  FALSE,      1,       1
-  films,      inLanguage,         0,        TABLE,     ,               film,       language,         film_language_id_fkey,          TRUE,       1,       2
-  films,      inLanguage,         0,        TABLE,     ,               film,       language,         film_original_language_id_fkey, TRUE,       1,       2
-  films,      byCondition,        0,        CONDITION, ,               film,       film_actor,       ,                               ,           1,       1
-  films,      keyThenCondition,   0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
-  films,      keyThenCondition,   1,        CONDITION, ,               film_actor, actor,            ,                               ,           1,       1
-  films,      conditionBesideKey, 0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
-  pagedFilms, inActor,            0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
-  rootPath,   inActor,            0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
-  customers,  perDeparture,       0,        CONDITION, ,               customer,   address,          ,                               ,           1,       1
+extend schema @expectEquals(relation: "graphitron_join_path_step", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate, target_type, position, element_place, from_table, to_table
+  Query.customers(diverging:), Customer, 0, 0, customer, address
+  Query.customers(perDeparture:), Customer, 0, 0, customer, address
+  Query.films(byCondition:), Film, 0, 0, film, film_actor
+  Query.films(conditionBesideKey:), Film, 0, 0, film, film_actor
+  Query.films(inActor:), Film, 0, 0, film, film_actor
+  Query.films(inActor:), Film, 1, 1, film_actor, actor
+  Query.films(keyThenCondition:), Film, 0, 0, film, film_actor
+  Query.films(keyThenCondition:), Film, 1, 1, film_actor, actor
+  Query.films(titled:), Film, 0, 0, film, film_translation
+  Query.films(viaJunction:), Film, 0, 0, film, film_actor
+  Query.pagedFilms(inActor:), Film, 0, 0, film, film_actor
   """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_key", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate, target_type, position, constraint_name
+  Query.films(conditionBesideKey:), Film, 0, film_actor_film_id_fkey
+  Query.films(inActor:), Film, 0, film_actor_film_id_fkey
+  Query.films(inActor:), Film, 1, film_actor_actor_id_fkey
+  Query.films(keyThenCondition:), Film, 0, film_actor_film_id_fkey
+  Query.films(viaJunction:), Film, 0, film_actor_film_id_fkey
+  Query.pagedFilms(inActor:), Film, 0, film_actor_film_id_fkey
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_method", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate, target_type, position, method_name
+  Query.customers(diverging:), Customer, 0, divergingArrivals
+  Query.customers(perDeparture:), Customer, 0, agreeingOnArrival
+  Query.films(byCondition:), Film, 0, filmToFilmActor
+  Query.films(keyThenCondition:), Film, 1, filmActorJunctionToActor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_stop", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate, target_type, position, element_place, moves
+  Query.customers(anyTable:), Customer, 0, 0, 0
+  Query.films(inLanguage:), Film, 0, 0, 2
+  Query.films(unresolved:), Film, 0, 0, 0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "coordinate LIKE 'Query.%'", rows: """
+  code, coordinate
+  CONDITION_NO_OVERLOAD_FOR_PAIR, Query.films(conditionBesideKey:)
+  ELEMENT_UNRESOLVED, Query.films(unresolved:)
+  FIELD_WITHOUT_FETCHER, Query.report
+  NO_ROUTE_FROM_DEPARTURE, Query.customers(anyTable:)
+  ROOT_REFERENCE_WITHOUT_ROUTINE, Query.rootPath
+  ROUTE_AMBIGUOUS, Query.films(inLanguage:)
+  """)
+
 
 # The field site, where Film.actors writes inActor's path and its join path agrees with it step for
 # step.
@@ -84,9 +118,4 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_key",
   Film.actors, 1,        film_actor_actor_id_fkey
   """)
 
-# Both elements of the unresolved path were authored; only their resolution declines.
-extend schema @assertContains(relation: "graphitron_argument_reference_step_entry", rows: """
-  field_name, argument_name, position
-  films,      unresolved,    0
-  films,      unresolved,    1
-  """)
+

@@ -1,6 +1,6 @@
 # Where a field's @reference walk stops. film declares two keys to language, so a table element
 # naming language is one destination by two routes, and the walk stops on the two moves. A first
-# element naming no key stops it though both elements are stored, a type with no @table gives its
+# element naming no key stops it at that element, a type with no @table gives its
 # path nowhere to start, and a condition whose arrival is the wildcard moves nowhere even where the
 # field's own type binds a table.
 
@@ -59,9 +59,9 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
   Film.strayDetails.length
   """)
 
-# Both elements of the unresolved path were authored; only their resolution declines.
-extend schema @assertContains(relation: "graphitron_field_reference_step_entry", rows: """
-  type_name, field_name, position
-  Film,      unresolved, 0
-  Film,      unresolved, 1
+# The unresolved path's first element names no key, which is where its walk stops.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "coordinate = 'Film.unresolved'", rows: """
+  code, coordinate
+  ELEMENT_UNRESOLVED, Film.unresolved
   """)
+

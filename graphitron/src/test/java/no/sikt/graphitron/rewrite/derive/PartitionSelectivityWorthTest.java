@@ -60,9 +60,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p><b>The two readers, and why neither of them moves any more.</b>
- * {@code graphitron_node_id_decode_hop_rule} and {@code graphitron_node_id_instruction_rule} both reach
- * {@code graphitron_field_reference_step_hop} through the same chain, and on a consumer-size store
- * both paid the cliff; the instruction view is the one an instrumented round measured at 592 s. On
+ * {@code graphitron_node_id_decode_hop_rule} and {@code graphitron_node_id_instruction_rule} both
+ * reached the reference walk's hop relation through the same chain, before both came to read the
+ * join path instead, and on a consumer-size store both paid the cliff; the instruction view is the one an instrumented round measured at 592 s. On
  * this repository's twelve-unit fixture neither moves. Measured: the decode hop visits 524 rows
  * bare, 512 declared and 512 analysed, so the declaration reaches the analysed cost exactly and the
  * bare regime sits twelve rows above it; the instruction view visits 2151 bare, 2151 declared and
@@ -95,6 +95,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * all. What has no fixture evidence any more is the cost claim, for the reason the fact-model
  * architecture page gives with its scaling figures: a per-driving-row cost is linear in driving rows,
  * and a fixture whose partitions are small is precisely where a partition scan is cheap.
+ *
+ * <p>Since both readers read the join path rather than the reference walk, the decode hop visits 404
+ * rows bare and 404 declared, below the 512 it paid declared before, and still unmoved.
  */
 @PipelineTier
 class PartitionSelectivityWorthTest {
@@ -107,9 +110,8 @@ class PartitionSelectivityWorthTest {
 
     /**
      * The reader the cliff was visible on until keys on the relations it reads took it: the rule
-     * whose read of {@code graphitron_field_reference_step_hop} was the index choice the
-     * declaration decided. It also joins both {@code @reference} walk targets, on the columns their
-     * keys lead with, which is how the last fall below reached it.
+     * whose read of the reference walk's hops was the index choice the declaration decided, and
+     * which reads the join path's steps now.
      */
     private static final String DECODE_HOP = "graphitron_node_id_decode_hop_rule";
 
@@ -172,7 +174,7 @@ class PartitionSelectivityWorthTest {
 
     /**
      * The claim. Told only what the model states about its partition dimension, the planner reaches
-     * the cost a fully analysed store reaches, on both readers over the reference walk.
+     * the cost a fully analysed store reaches, on both readers.
      */
     @Test
     @DisplayName("the declaration alone buys the analysed store's cost")

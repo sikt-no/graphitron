@@ -1,7 +1,5 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.derive.ArgumentReferenceStepTargets;
-import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.DerivationStratum;
 import no.sikt.graphitron.model.derive.ViewReferences;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
@@ -98,13 +96,6 @@ class StageOrderGateTest {
             Set.of("graphitron_argument_scope_table")),
         new Step("InputFieldResolvingTables", "graphitron_input_field_resolving_table_rule",
             Set.of("graphitron_input_field_resolving_table")),
-        new Step("ArgumentReferenceStepTargets", null, ArgumentReferenceStepTargets::statements,
-            Set.of("graphitron_argument_reference_step_target_keyed",
-                "graphitron_argument_reference_step_target_keyless")),
-        new Step("InputFieldReferenceStepTargets", null,
-            InputFieldReferenceStepTargets::statements,
-            Set.of("graphitron_input_field_reference_step_target_keyed",
-                "graphitron_input_field_reference_step_target_keyless")),
         new Step("NodeIdInstructions", "graphitron_node_id_instruction_rule",
             Set.of("graphitron_node_id_instruction")),
         new Step("NodeIdDecodeHops", "graphitron_node_id_decode_hop_rule",
@@ -153,31 +144,6 @@ class StageOrderGateTest {
                 .as(step.name() + " reaches no stored relation, so the order above was checked"
                     + " against nothing")
                 .isNotEmpty()));
-    }
-
-    /**
-     * The jOOQ half of the read set, shown reading a real dependency rather than merely being
-     * non-empty. A stage stated as jOOQ is where the seam could fail silently: a walk that named no
-     * relation this gate recognised would give an empty read set, and the case above and the order
-     * check would both pass on it. So one statement's read set is asserted to hold the relation its
-     * seed joins, which is exactly the edge that decides where the stage may sit.
-     */
-    @Test
-    @DisplayName("a jOOQ stage's read set holds the relation its seed departs from")
-    void aJooqStageReadsWhatItsSeedJoins() {
-        withStore(dsl -> {
-            assertThat(readSetOf(dsl, stepNamed("ArgumentReferenceStepTargets")))
-                .as("the argument-site walk seeds on the table an argument's own content binds"
-                    + " against, and the read set derived from its statements has to say so")
-                .contains("graphitron_argument_scope_table");
-            assertThat(readSetOf(dsl, stepNamed("InputFieldReferenceStepTargets")))
-                .as("the input-field walk seeds on the table an input field is classified against")
-                .contains("graphitron_input_field_resolving_table");
-        });
-    }
-
-    private static Step stepNamed(String name) {
-        return STRATUM.stream().filter(step -> step.name().equals(name)).findFirst().orElseThrow();
     }
 
     /**
