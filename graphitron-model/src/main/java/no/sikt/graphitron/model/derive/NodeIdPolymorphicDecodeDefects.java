@@ -3,63 +3,70 @@ package no.sikt.graphitron.model.derive;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
-import static no.sikt.graphitron.model.Tables.INTENT_POLY_MEMBER;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
-import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The polymorphic {@code @nodeId} rules, projected from the store: a {@code typeName:} naming a
  * multitable interface or union either reaches a {@code @service} slot whose declared Java type every
  * member's generated record is, in which case the decode is carried out and the store carries a
- * {@code POLYMORPHIC_RECORD} destination, or it is one of the six refusals below. The reduction
- * lives in {@code intent_node_id_polymorphic_decode_defect}, which picks between them on the
- * coordinate, the member set and the slot's type and shape; what remains here is the decode of that
- * view's closed six-verdict vocabulary into {@link Rejection} arms and the prose they carry. At a
- * list argument the slot is a {@code java.util.List} and its element is what every member's record
+ * {@code POLYMORPHIC_RECORD} destination, or it is one of the six refusals below. The refusals are
+ * entry defects at the {@code @nodeId}, which the graphitron rule picks between on the coordinate,
+ * the member set and the slot's type and shape, a per-member verdict naming its members in
+ * {@code graphitron_entry_defect_member}; what remains here is the decode of those codes into
+ * {@link Rejection} arms and the prose they carry, one per member where a verdict names members. At
+ * a list argument the slot is a {@code java.util.List} and its element is what every member's record
  * has to be.
  *
- * <p>A sibling of {@link NodeIdDecodeDefects} rather than more arms on it, for the reason the two
- * views are siblings: that family's verdicts are a function of the slot's shape and the node key's
- * arity, and these six are decided on facts that relation does not read. The shape verdict's name
- * recurs in both vocabularies, each family composing its own remedy for its own population. The two populations are disjoint by
- * construction, the incumbent joining the key shape on the slot's resolved type and a container
- * resolving no key of its own.
+ * <p>A sibling of {@link NodeIdDecodeDefects} rather than more arms on it: that family's verdicts are
+ * a function of the slot's shape and the node key's arity, and these six are decided on the
+ * container's members. The shape verdict's code is shared, each family composing its own remedy for
+ * its own population, and the two populations are disjoint by construction, a container's id being
+ * judged as a container and never against a single node's key.
  *
  * <p>Every arm is {@link Rejection.AuthorError.Structural} and none is a deferral. Each of the six
  * is fixed in the author's own schema or signature: name a type instead of the container, annotate a
  * member with {@code @node}, declare the slot one rung wider, or move the directive to a coordinate
  * the rule reaches. No arm here fails while promising an emitter later.
  *
- * <p>The population is the view's and this class narrows it once more, on the terms
- * {@link NodeIdDecodeDefects} states: the view states its whole predicate and no consumer's
- * filter, and this is the <em>build-error</em> consumer, so it
- * joins {@code intent_type_domain} on the refused coordinate's owning type. The editor's diagnostic
- * arm asks the same rows a different question and joins nothing, a refused instruction at an
- * unreached coordinate being exactly where an author most needs to be told, which is also what makes
- * {@code CONTAINER_NOT_AT_A_SLOT} worth stating at all.
+ * <p>Every such defect fails the build: the rule judges occurrences, so a defect is one the generator
+ * reaches.
  */
 public final class NodeIdPolymorphicDecodeDefects {
 
     private NodeIdPolymorphicDecodeDefects() {}
 
     /**
-     * Every relation this component's statements name. {@code memberNames} reads the two membership
-     * views once per container, which is a read of each body per row.
+     * Every relation this component's statements name.
      */
-    public static final Set<Table<?>> READS = Set.of(INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT,
-        INTENT_TYPE_DOMAIN, INTENT_NODE_CONTAINER_MEMBER, INTENT_POLY_MEMBER);
+    public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT_SITE,
+        GRAPHITRON_ENTRY_DEFECT_MEMBER, GRAPHITRON_BINDING_CLAIM, GRAPHITRON_TYPE, GRAPHITRON_NODE,
+        GRAPHITRON_NODE_ID_SLOT, GRAPHITRON_OCCURRENCE, GRAPHITRON_ARGUMENT, GRAPHQL_ARGUMENT,
+        GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, SQL_TABLE);
 
     /** Which precondition stopped the polymorphic decode, in the view's own closed vocabulary. */
     private enum Verdict {
@@ -98,15 +105,19 @@ public final class NodeIdPolymorphicDecodeDefects {
          */
         SLOT_SHAPE_MISMATCH;
 
-        /** The verdict a store row carries; an unknown value is vocabulary drift, a build bug. */
-        static Verdict of(String verdict) {
+        /** The entry defect code the verdict is written under. */
+        String code() {
+            return "NODE_ID_" + name();
+        }
+
+        static Verdict of(String code) {
             return Arrays.stream(values())
-                .filter(v -> v.name().equals(verdict))
+                .filter(v -> v.code().equals(code))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
-                    "the polymorphic node id decode defect view produced verdict '" + verdict
+                    "the polymorphic node id decode defects produced code '" + code
                     + "', which no " + Verdict.class.getSimpleName()
-                    + " value names; the view arms and the enum must move together"));
+                    + " value names; the rule and the enum must move together"));
         }
     }
 
@@ -144,62 +155,115 @@ public final class NodeIdPolymorphicDecodeDefects {
     public record Defect(String coordinate, String containerName, String memberTypeName,
                          Rejection rejection, SourceLocation location) {}
 
-    /**
-     * Projects every refused polymorphic decode over {@code graphName}'s emitted partition. Empty for
-     * a graph whose container-naming {@code @nodeId}s all reach slots that can take them, and for one
-     * whose refusals all sit outside the classification domain.
-     */
+    /** The slot a container's id lands in, at one declared argument or input field. */
+    private record Slot(String paramName, String slotJavaType, Integer listDepth) {}
+
+    /** The graph's refusals of an id naming a container, in type, field, coordinate and code order. */
     public static Detection detect(DSLContext dsl, String graphName) {
-        var v = INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
-        return new Detection(dsl.selectFrom(v)
-            .where(v.GRAPH_NAME.eq(graphName), inDomain(graphName))
-            .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.USE_SITE, v.VERDICT, v.MEMBER_TYPE_NAME)
-            .fetch(row -> new Defect(
-                row.getTypeName() + "." + row.getFieldName(),
-                row.getContainerName(), row.getMemberTypeName(),
-                rejectionOf(Verdict.of(row.getVerdict()), row.getContainerName(),
-                    row.getContainerKind(), row.getMemberTypeName(), row.getMemberRecordClass(),
-                    row.getSlotJavaType(), row.getArgumentListDepth(), row.getParamName(),
-                    row.getUseSite(),
-                    memberNames(dsl, graphName, row.getContainerName())),
-                location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()))));
+        var e = GRAPHITRON_ENTRY_DEFECT_SITE;
+        var cl = GRAPHITRON_BINDING_CLAIM;
+        var t = GRAPHITRON_TYPE;
+        var codes = Arrays.stream(Verdict.values()).map(Verdict::code).toList();
+        var slots = slots(dsl, graphName);
+        var members = members(dsl, graphName);
+        var out = new ArrayList<Defect>();
+        dsl.select(e.TYPE_NAME, e.FIELD_NAME, e.COORDINATE, e.CODE, cl.NAMED, t.KIND,
+                e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN)
+            .from(e)
+            .join(cl).on(cl.GRAPH_NAME.eq(e.GRAPH_NAME), cl.COORDINATE.eq(e.COORDINATE),
+                cl.KIND.eq("NODE_ID"))
+            .join(t).on(t.GRAPH_NAME.eq(cl.GRAPH_NAME), t.TYPE_NAME.eq(cl.NAMED))
+            .where(e.GRAPH_NAME.eq(graphName), e.CODE.in(codes), t.KIND.in("INTERFACE", "UNION"),
+                notExists(selectOne().from(GRAPHITRON_NODE).where(
+                    GRAPHITRON_NODE.GRAPH_NAME.eq(t.GRAPH_NAME),
+                    GRAPHITRON_NODE.TYPE_NAME.eq(t.TYPE_NAME))))
+            .orderBy(e.TYPE_NAME, e.FIELD_NAME, e.COORDINATE, e.CODE)
+            .forEach(row -> {
+                var verdict = Verdict.of(row.value4());
+                String coordinate = row.value1() + "." + row.value2();
+                String container = row.value5();
+                var slot = slots.getOrDefault(row.value3(), new Slot(null, null, null));
+                var location = new SourceLocation(row.value8(), row.value9(), row.value7());
+                List<String> named = containerMembers(dsl, graphName, container);
+                var namedMembers = defectMembers(dsl, graphName, row.value7(), row.value8(),
+                    row.value9(), row.value4());
+                if (namedMembers.isEmpty()) {
+                    out.add(new Defect(coordinate, container, null,
+                        rejectionOf(verdict, container, row.value6(), null, null,
+                            slot.slotJavaType(), slot.listDepth(), slot.paramName(), row.value3(),
+                            named),
+                        location));
+                }
+                for (String member : namedMembers) {
+                    out.add(new Defect(coordinate, container, member,
+                        rejectionOf(verdict, container, row.value6(), member, members.get(member),
+                            slot.slotJavaType(), slot.listDepth(), slot.paramName(), row.value3(),
+                            named),
+                        location));
+                }
+            });
+        return new Detection(out);
     }
 
-    /**
-     * The build-error consumer's population: the refused coordinate's owning type is a member of the
-     * classification domain. The same predicate both grains of the sibling family use, and located on
-     * the owning type because the refused slot sits on that type's field.
-     */
-    private static Condition inDomain(String graphName) {
-        var d = INTENT_TYPE_DOMAIN;
-        var v = INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
-        return exists(selectOne().from(d)
-            .where(d.GRAPH_NAME.eq(graphName), d.TYPE_NAME.eq(v.TYPE_NAME)));
+    /** Each declared argument or input field's slot, the least parameter where uses differ. */
+    private static Map<String, Slot> slots(DSLContext dsl, String graphName) {
+        var s = GRAPHITRON_NODE_ID_SLOT;
+        var o = GRAPHITRON_OCCURRENCE;
+        var a = GRAPHITRON_ARGUMENT;
+        var g = GRAPHQL_ARGUMENT;
+        var out = new HashMap<String, Slot>();
+        dsl.select(s.ELEMENT_COORDINATE, s.PARAMETER_NAME, s.LANDING_TYPE, s.SLOT_SHAPE, g.LIST_DEPTH)
+            .from(s)
+            .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.ID_COORDINATE))
+            .join(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME),
+                a.COORDINATE.eq(coalesce(o.ARGUMENT_COORDINATE, o.COORDINATE)))
+            .join(g).on(g.GRAPH_NAME.eq(a.GRAPH_NAME), g.TYPE_NAME.eq(a.TYPE_NAME),
+                g.FIELD_NAME.eq(a.FIELD_NAME), g.ARGUMENT_NAME.eq(a.ARGUMENT_NAME))
+            .where(s.GRAPH_NAME.eq(graphName))
+            .orderBy(s.ELEMENT_COORDINATE, s.PARAMETER_NAME)
+            .forEach(r -> out.putIfAbsent(r.value1(), new Slot(r.value2(),
+                "LIST".equals(r.value4()) ? "java.util.List" : r.value3(), r.value5())));
+        return out;
     }
 
-    /**
-     * The container's table-bound members, in source order: the candidate list a message quotes. Read
-     * as rows off the member relation rather than assembled from prose, so a message names the very
-     * set the resolution axis draws its candidates from.
-     */
-    private static List<String> memberNames(DSLContext dsl, String graphName, String containerName) {
-        var m = INTENT_NODE_CONTAINER_MEMBER;
-        var p = INTENT_POLY_MEMBER;
+    /** Each table-bound type's generated record, by type name. */
+    private static Map<String, String> members(DSLContext dsl, String graphName) {
+        var tt = GRAPHITRON_TABLETYPE;
+        var r = SQL_TABLE;
+        var out = new HashMap<String, String>();
+        dsl.select(tt.TYPE_NAME, r.RECORD_CLASS_FQN)
+            .from(tt)
+            .join(r).on(r.SOURCE_NAME.eq(tt.TABLE_SOURCE_NAME), r.TABLE_SCHEMA.eq(tt.TABLE_SCHEMA),
+                r.TABLE_NAME.eq(tt.TABLE_NAME))
+            .where(tt.GRAPH_NAME.eq(graphName))
+            .forEach(row -> out.put(row.value1(), row.value2()));
+        return out;
+    }
+
+    /** The members one defect names, in name order. */
+    private static List<String> defectMembers(DSLContext dsl, String graphName, String sourceName,
+                                              int line, int column, String code) {
+        var m = GRAPHITRON_ENTRY_DEFECT_MEMBER;
         return dsl.select(m.MEMBER_TYPE_NAME)
             .from(m)
-            .join(p).on(p.GRAPH_NAME.eq(m.GRAPH_NAME), p.CONTAINER_NAME.eq(m.CONTAINER_NAME),
-                p.MEMBER_TYPE_NAME.eq(m.MEMBER_TYPE_NAME))
-            .where(m.GRAPH_NAME.eq(graphName), m.CONTAINER_NAME.eq(containerName),
-                m.IS_TABLE_BOUND.isTrue())
+            .where(m.GRAPH_NAME.eq(graphName), m.SOURCE_NAME.eq(sourceName), m.SOURCE_LINE.eq(line),
+                m.SOURCE_COLUMN.eq(column), m.CODE.eq(code))
+            .orderBy(m.MEMBER_TYPE_NAME)
+            .fetch(r -> r.value1());
+    }
+
+    /** A container's table-bound members, in the order the schema declares them. */
+    private static List<String> containerMembers(DSLContext dsl, String graphName, String containerName) {
+        var p = GRAPHQL_POLY_MEMBER;
+        var tt = GRAPHITRON_TABLETYPE;
+        return dsl.select(p.MEMBER_TYPE_NAME)
+            .from(p)
+            .join(tt).on(tt.GRAPH_NAME.eq(p.GRAPH_NAME), tt.TYPE_NAME.eq(p.MEMBER_TYPE_NAME))
+            .where(p.GRAPH_NAME.eq(graphName), p.CONTAINER_NAME.eq(containerName))
             .orderBy(p.POSITION)
             .fetch(r -> r.value1());
     }
 
-    /**
-     * Decodes one verdict into the rejection the report carries. Each message states the operands the
-     * view compared and nothing it did not, and each names the remedy the verdict's own precedence
-     * makes available: outward in, the coordinate first, then the container, then the member.
-     */
     private static Rejection rejectionOf(Verdict verdict, String containerName, String containerKind,
                                          String memberTypeName, String memberRecordClass,
                                          String slotJavaType, Integer argumentListDepth,
@@ -267,12 +331,5 @@ public final class NodeIdPolymorphicDecodeDefects {
             + ". Declare the parameter as a type every implementation's record is (" + supertypes
             + "), or make the argument a list";
     }
-
-    /** The store's position columns as a graphql-java location; {@code null} when unpositioned. */
-    private static SourceLocation location(String sourceName, Integer line, Integer column) {
-        if (line == null || column == null) {
-            return null;
-        }
-        return new SourceLocation(line, column, sourceName);
-    }
 }
+

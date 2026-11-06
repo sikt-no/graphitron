@@ -22,6 +22,9 @@ union WithRental = Customer | Staff | Rental
 union MixedOccupant = Customer | Staff | Rental | Ghost
 union Anything = Ghost
 union KeylessOccupant = Customer | FilmListing
+# Two node types over one table: neither binds, the id's decode not knowing which a key names.
+type CustomerAlias @table(name: "customer") @node { firstName: String @field(name: "first_name") }
+union SharedOccupant = Customer | CustomerAlias
 
 # A single-table interface: the container binds a table itself.
 interface MediaItem @table(name: "film") { title: String }
@@ -75,27 +78,43 @@ extend type Query {
   # A slot typed as neither a record nor a key column's type.
   greet(userId: ID @nodeId(typeName: "AddressOccupant")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
+  # The same slot over members sharing a table: no member binds, so no member is refused either.
+  shared(userId: ID @nodeId(typeName: "SharedOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
 }
 
-extend schema @expectEquals(relation: "intent_node_id_polymorphic_decode_defect", rows: """
-  use_site,                         container_name,  verdict,                      member_type_name
-  Customer.occupantId,              AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
-  Query.anything(occupant),         Anything,        NO_TABLE_MEMBERS,
-  Query.filtered(filter.occupantId:), AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
-  Query.greet(userId),              AddressOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, Customer
-  Query.greet(userId),              AddressOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, Staff
-  Query.keyless(occupant),          KeylessOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, FilmListing
-  Query.inventories(item),          MediaItem,       CONTAINER_NOT_AT_A_SLOT,
-  Query.media(occupant),            MediaItem,       SINGLE_TABLE_CONTAINER,
-  Query.mediaItems(filter.itemId:),  MediaItem,       CONTAINER_NOT_AT_A_SLOT,
-  Query.mediaItems(item),           MediaItem,       CONTAINER_NOT_AT_A_SLOT,
-  Query.occupants(occupant),        AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
-  Query.titleTitlecase(films),      AddressOccupant, SLOT_SHAPE_MISMATCH,
-  Query.withRental(occupant),       WithRental,      MEMBER_NOT_NODE_TYPE,         Rental
+# Each refusal is one defect at the @nodeId, an input field's at its declaration.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'NODE_ID_SINGLE_TABLE_CONTAINER', 'NODE_ID_NO_TABLE_MEMBERS', 'NODE_ID_MEMBER_NOT_NODE_TYPE', 'NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER', 'NODE_ID_SLOT_SHAPE_MISMATCH')
+  """, rows: """
+  coordinate,                   code
+  Customer.occupantId,          NODE_ID_CONTAINER_NOT_AT_A_SLOT
+  MediaFilter.itemId,           NODE_ID_CONTAINER_NOT_AT_A_SLOT
+  OccupantFilter.occupantId,    NODE_ID_CONTAINER_NOT_AT_A_SLOT
+  Query.anything(occupant:),    NODE_ID_NO_TABLE_MEMBERS
+  Query.greet(userId:),         NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER
+  Query.inventories(item:),     NODE_ID_CONTAINER_NOT_AT_A_SLOT
+  Query.keyless(occupant:),     NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER
+  Query.media(occupant:),       NODE_ID_SINGLE_TABLE_CONTAINER
+  Query.mediaItems(item:),      NODE_ID_CONTAINER_NOT_AT_A_SLOT
+  Query.occupants(occupant:),   NODE_ID_CONTAINER_NOT_AT_A_SLOT
+  Query.titleTitlecase(films:), NODE_ID_SLOT_SHAPE_MISMATCH
+  Query.withRental(occupant:),  NODE_ID_MEMBER_NOT_NODE_TYPE
   """)
 
-# The disjointness: no polymorphic slot draws a row in the per-node-type view.
-extend schema @assertEmpty(relation: "intent_node_id_decode_defect")
+# The members a per-member defect names, beneath it; the members sharing a table name none.
+extend schema @expectEquals(relation: "graphitron_entry_defect_member", rows: """
+  code,                                 member_type_name
+  NODE_ID_MEMBER_NOT_NODE_TYPE,         Rental
+  NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, Customer
+  NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, FilmListing
+  NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, Staff
+  """)
+
+# The disjointness: no container draws a single node's key verdict.
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  code IN ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
+  """)
 
 # A container naming instruction is one row per use site, not one per member ...
 extend schema @expectEquals(relation: "graphitron_node_id_instruction", where: "use_site = 'Query.occupant(occupant)'", rows: """
@@ -103,12 +122,13 @@ extend schema @expectEquals(relation: "graphitron_node_id_instruction", where: "
   ARGUMENT, Query.occupant(occupant), EXPLICIT_TYPE_NAME, AddressOccupant,    POLY_CONTAINER
   """)
 
-# ... so a two-member container is still one candidate slot, which is what tells the incumbent
-# view's quiet at greet apart from its ambiguity filter.
-extend schema @expectEquals(relation: "intent_node_id_decode_slot", where: "use_site IN ('Query.occupant(occupant)', 'Query.greet(userId)')", rows: """
-  use_site,                 candidates
-  Query.greet(userId),      1
-  Query.occupant(occupant), 1
+# ... and one slot, the parameter the argument is named for.
+extend schema @expectEquals(relation: "graphitron_node_id_slot", where: """
+  element_coordinate IN ('Query.occupant(occupant:)', 'Query.greet(userId:)')
+  """, rows: """
+  element_coordinate,        parameter_name, by_name
+  Query.greet(userId:),      userId,         TRUE
+  Query.occupant(occupant:), occupant,       TRUE
   """)
 
 # Every member's record is assignable to the UpdatableRecord slot.

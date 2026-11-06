@@ -23,13 +23,13 @@ import no.sikt.graphitron.model.derive.NodeIdPolymorphicDecodeDefects;
 /**
  * The store-backed home of the {@code @nodeId} decode rules at a producer parameter: real SDL
  * captured into a fact store, and the violations {@link NodeIdDecodeDefects} projects from
- * {@code intent_node_id_decode_defect}. This is the tier that says an author's schema reaches that
- * relation in the shape the rules read, and that the report a consumer meets is minted from what it
+ * the entry defects at the {@code @nodeId}. This is the tier that says an author's schema reaches
+ * the rule in the shape it reads, and that the report a consumer meets is minted from what it
  * finds.
  *
- * <p>What the view decides is not asked here. That is the relation's own algebra, its three verdicts
- * and the three populations it excludes, and it lives in the module whose DDL declares it, in the
- * {@code node-id-decode-defect} document under graphitron-model's {@code src/test/resources/facts}. What stands here is the decode: which {@link Rejection} arm each verdict becomes, the prose it
+ * <p>What the rule decides is not asked here. That is the rule's own algebra, its three verdicts
+ * and the populations it excludes, and it lives in the module whose DDL declares it, in the
+ * {@code node-id-decode-defect-slot-verdicts} document under graphitron-model's {@code src/test/resources/facts}. What stands here is the decode: which {@link Rejection} arm each verdict becomes, the prose it
  * carries, the location it points at, and the population this consumer asks about.
  *
  * <p>Every fixture below spells a schema that used to compile. An author annotated an argument
@@ -223,14 +223,13 @@ class NodeIdDecodeDefectsTest {
     // ===== The population this consumer asks about =====
 
     /**
-     * The build-error population is the classification domain, so the same refusal at a coordinate
-     * no root operation reaches mints nothing: only an emitted coordinate can fail a build. The view
-     * itself states no such filter and the editor's diagnostic arm reads it ungated, a coordinate
-     * nothing reaches being where an author most needs to be told.
+     * The store judges every occurrence it holds, and holds one for a field no root operation
+     * reaches, so the same refusal there fails the build: a decode that cannot be carried out is
+     * refused wherever it is written.
      */
     @Test
-    void aRefusalOutsideTheClassificationDomainFailsNoBuild() {
-        assertThat(detect("""
+    void aRefusalOutsideTheClassificationDomainIsStillRefused() {
+        assertThat(messages(detect("""
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
                 id: ID! @nodeId
@@ -241,9 +240,12 @@ class NodeIdDecodeDefectsTest {
                 films(key: ID! @nodeId(typeName: "Film")): [Film!]!
                     @service(service: {className: "%s", method: "getFilmsByStringKey"})
             }
-            """.formatted(SERVICE_STUB)))
-            .as("no root operation reaches Orphan, so no emitted source carries this decode")
-            .isEmpty();
+            """.formatted(SERVICE_STUB))))
+            .as("the store holds Orphan's occurrence, so the refusal stands there too")
+            .containsExactly("Field 'Orphan.films': argument 'key' carries the @nodeId(typeName:"
+                + " \"Film\") and the producer method declares a parameter 'key' of that name, so the"
+                + " decoded key lands there, and its key column 'film_id' jOOQ binds as Integer, but"
+                + " 'key' takes String; declare the parameter with the column's own type");
     }
 
     // ===== Helpers =====

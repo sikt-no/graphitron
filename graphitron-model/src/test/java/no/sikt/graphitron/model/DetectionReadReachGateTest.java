@@ -83,36 +83,19 @@ class DetectionReadReachGateTest {
             "intent_resolved_node_key_projection",
             "intent_resolved_node_key_shape"));
 
+        // The defects are entry defects, read off the site view, which places them through the
+        // element field; the facts a message names come from the slot view, over stored tables.
         REACH.put("NodeIdDecodeDefects", Set.of(
-            "graphitron_argmapping_match",
-            "graphql_element_field",
-            "intent_argmapping_bound_parameter_type",
-            "intent_field_producer_method",
-            "intent_field_producer_reference",
-            "intent_node_id_decode_defect",
-            "intent_node_id_decode_slot",
-            "intent_resolved_node_key_shape"));
+            "graphitron_entry_defect_site",
+            "graphitron_node_id_slot",
+            "graphql_element_field"));
 
         REACH.put("NodeIdPolymorphicDecodeDefects", Set.of(
-            "graphitron_argmapping_match",
+            "graphitron_entry_defect_site",
+            "graphitron_node_id_slot",
             "graphql_element_field",
-            "intent_argmapping_bound_parameter_type",
-            "intent_field_producer_method",
-            "intent_field_producer_reference",
-            // Expanded here once per container by memberNames.
-            "intent_node_container_member",
-            "intent_node_id_decode_slot",
-            "intent_node_id_polymorphic_decode_defect",
-            // The nodehood membership view, now sourced on two captured tables. The inferred
-            // derivation and the defect rule under it were reached only through it and are gone
-            // from this component's reach: a captured relation counts once and truncates the tree
-            // for every rule above it, where the derivation re-evaluated the chain per naming.
-            "graphitron_node_type",
-            // Also read by the carrier data-channel stage's rule; expanded here once per container
-            // by memberNames.
-            "intent_poly_member",
-            "intent_record_slot_assignable",
-            "intent_resolved_node_key_shape"));
+            // A container's members, in declared order, for the messages that list them.
+            "graphql_poly_member"));
 
         // Twelve relations until graphitron_node_id_decode_hop was registered, and six of them were
         // reached only through it: the two argument-site reference-target relations, the
@@ -209,7 +192,7 @@ class DetectionReadReachGateTest {
             // would satisfy an equality against sets nobody had filled in.
             assertThat(observed.values().stream().mapToInt(Set::size).sum())
                 .as("view bodies the detection pass expands, across every component")
-                .isGreaterThan(45);
+                .isGreaterThan(30);
             assertThat(observed)
                 .as("what the detection pass evaluates on every read, per component. A relation "
                     + "arriving here is a rule a dev round re-expands at boot and after every "

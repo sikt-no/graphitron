@@ -436,11 +436,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_node_id_decode_hop", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop_column", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_column", Arm.DERIVED);
-        registrations.put("intent_node_id_decode_slot", Arm.DERIVED);
         registrations.put("intent_record_slot_assignable", Arm.DERIVED);
         registrations.put("intent_node_container_member", Arm.DERIVED);
-        registrations.put("intent_node_id_polymorphic_decode_defect", Arm.DERIVED);
-        registrations.put("intent_node_id_decode_defect", Arm.DERIVED);
         registrations.put("intent_node_id_decode_landing_defect", Arm.DERIVED);
         registrations.put("intent_reference_for_application", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
@@ -561,6 +558,9 @@ class RelationRegistrationGateTest {
         // The methods a condition overload defect names, on the same terms.
         registrations.put("graphitron_entry_defect_method", Arm.UNSHADOWED);
         registrations.put("graphitron_entry_defect_claim", Arm.UNSHADOWED);
+        registrations.put("graphitron_entry_defect_member", Arm.UNSHADOWED);
+        registrations.put("graphitron_entry_defect_member_rule", Arm.UNSHADOWED);
+        registrations.put("graphitron_node_id_slot", Arm.UNSHADOWED);
         registrations.put("graphitron_entry_defect_path_step", Arm.UNSHADOWED);
         registrations.put("graphitron_argmapping_pair_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_claim_kind", Arm.UNSHADOWED);

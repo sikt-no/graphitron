@@ -66,13 +66,26 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
 }
 
-extend schema @expectEquals(relation: "intent_node_id_decode_defect", rows: """
-  use_site,                     node_type_name, verdict,                      arity, key_column_name, column_java_type,  slot_java_type,   slot_shape, landing_java_type,                                   argument_list_depth
-  Query.greetings(userId),      Film,           KEY_COLUMN_TYPE_DISAGREEMENT, 1,     film_id,         java.lang.Integer, java.lang.String, SINGLE,     java.lang.String,                                    0
-  Query.pairings(userId),       FilmActor,      KEY_ARITY_EXCEEDS_SLOT,       2,     ,                ,                  java.lang.String, SINGLE,     java.lang.String,                                    0
-  Query.pairingsByIds(ids),     FilmActor,      KEY_ARITY_EXCEEDS_SLOT,       2,     ,                ,                  java.util.List,   LIST,       java.lang.Integer,                                   1
-  Query.rateFilms(ratings),     Film,           KEY_COLUMN_TYPE_DISAGREEMENT, 1,     film_id,         java.lang.Integer, java.util.List,   LIST,       no.sikt.graphitron.rewrite.test.services.FilmRating, 1
-  Query.titleTitlecase(films),  Film,           SLOT_SHAPE_MISMATCH,          1,     film_id,         java.lang.Integer, java.util.Set,    MISMATCH,   java.util.Set,                                       1
-  Query.filmActorByIds(ids),    FilmActor,      SLOT_SHAPE_MISMATCH,          2,     ,                ,                  java.util.List,   MISMATCH,   java.util.List,                                      0
-  Query.untypedPairing(ids),    FilmActor,      KEY_ARITY_EXCEEDS_SLOT,       2,     ,                ,                  ,                 ,           ,                                                    
+# Each refusal is a defect at the @nodeId, the parameter it lands in as its detail.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('NODE_ID_SLOT_SHAPE_MISMATCH', 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
+  """, rows: """
+  coordinate,                     code,                                 detail
+  Query.greetings(userId:),       NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, userId
+  Query.pairings(userId:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
+  Query.pairingsByIds(ids:),      NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
+  Query.rateFilms(ratings:),      NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, ratings
+  Query.titleTitlecase(films:),   NODE_ID_SLOT_SHAPE_MISMATCH,          films
+  Query.filmActorByIds(ids:),     NODE_ID_SLOT_SHAPE_MISMATCH,          ids
+  Query.untypedPairing(ids:),     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
+  """)
+
+# What the decode lands in at each slot the verdicts read.
+extend schema @assertContains(relation: "graphitron_node_id_slot", rows: """
+  element_coordinate,            parameter_name, by_name, slot_shape, landing_type
+  Query.greetings(userId:),      userId,         TRUE,    SINGLE,     java.lang.String
+  Query.pairingsByIds(ids:),     ids,            TRUE,    LIST,       java.lang.Integer
+  Query.rateFilms(ratings:),     ratings,        TRUE,    LIST,       no.sikt.graphitron.rewrite.test.services.FilmRating
+  Query.titleTitlecase(films:),  films,          TRUE,    MISMATCH,   java.util.Set
+  Query.filmActorByIds(ids:),    ids,            TRUE,    MISMATCH,   java.util.List
   """)

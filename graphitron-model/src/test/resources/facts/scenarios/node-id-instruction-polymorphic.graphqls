@@ -61,6 +61,6 @@ extend schema @expectEquals(relation: "graphitron_node_id_instruction", where: "
   ARGUMENT, Query,     media,      someId,        ,     Query.media(someId), TARGET_TABLE_NODE_TYPE, Film,  NODE_TYPE,          FALSE
   """)
 
-extend schema @assertEmpty(relation: "intent_node_id_decode_defect", where: """
-  use_site = 'Query.media(someId)'
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate = 'Query.media(someId:)' AND code IN ('NODE_ID_SLOT_SHAPE_MISMATCH', 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'NODE_ID_SINGLE_TABLE_CONTAINER', 'NODE_ID_NO_TABLE_MEMBERS', 'NODE_ID_MEMBER_NOT_NODE_TYPE', 'NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER')
   """)

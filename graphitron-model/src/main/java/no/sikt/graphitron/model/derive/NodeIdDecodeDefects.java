@@ -3,29 +3,41 @@ package no.sikt.graphitron.model.derive;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_DEFECT;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnsOf;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.nodeIdSpelling;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
-import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.count;
+import static org.jooq.impl.DSL.min;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The {@code @nodeId} decode rules at a producer parameter, projected from the store: an argument
  * carrying a decoding {@code @nodeId} whose value a producer method's parameter of that name
- * receives either has its decode carried out or is one of the three refusals below. The reduction lives in {@code intent_node_id_decode_defect}, which
- * picks between them on the slot's shape and then the node key's arity in one pass; what remains
- * here is the decode of that view's closed three-verdict vocabulary into {@link Rejection} arms and
- * the prose they carry.
+ * receives either has its decode carried out or is one of the three refusals below. The refusals
+ * are entry defects at the {@code @nodeId}, which the graphitron rule picks between on the slot's
+ * shape and then the node key's arity; what remains here is the decode of those codes into
+ * {@link Rejection} arms and the prose they carry, from the slot in {@code graphitron_node_id_slot}
+ * and the key the occurrence binds in {@code graphitron_occurrence_node_id}.
  *
  * <p>A {@code java.util.List} parameter at a list argument is judged on its element, which is where
  * one decoded id lands: the emitter's list decode hands over a {@code java.util.List} with one
@@ -43,12 +55,7 @@ import static org.jooq.impl.DSL.selectOne;
  * in one line of the author's own signature, or by binding the argument onto a key column with
  * {@code argMapping}, and no arm here fails while promising an emitter later.
  *
- * <p>The population is the view's and this class narrows it once more: the view states its whole
- * predicate and no consumer's filter, and this is the <em>build-error</em> consumer, so it joins
- * {@code intent_type_domain} on the refused coordinate's owning type. Only a coordinate the generator intends to classify can fail
- * a build. The editor's diagnostic arm asks a different question of the same rows and joins nothing,
- * a refused instruction at an unreached coordinate being exactly where an author most needs to be
- * told, which is why the filter lives here rather than in the view.
+ * <p>Every such defect fails the build, at any coordinate the store holds an occurrence for.
  *
  * <p>The wording converges with {@link ArgmappingProjectionDefects} rather than being renegotiated:
  * that family refuses the same two facts one carrier over, where an {@code argMapping} entry binds
@@ -64,7 +71,9 @@ public final class NodeIdDecodeDefects {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
-        Set.of(INTENT_NODE_ID_DECODE_DEFECT, INTENT_TYPE_DOMAIN));
+        Set.of(GRAPHITRON_ENTRY_DEFECT_SITE, GRAPHITRON_BINDING_CLAIM, GRAPHITRON_TYPE, GRAPHITRON_NODE,
+            GRAPHITRON_NODE_ID_SLOT, GRAPHITRON_OCCURRENCE_NODE_ID,
+            GRAPHITRON_ARGUMENT, GRAPHQL_ARGUMENT, SQL_COLUMN, SQL_TABLE));
 
     /** Which precondition stopped the decode, in the view's own closed vocabulary. */
     private enum Verdict {
@@ -93,15 +102,19 @@ public final class NodeIdDecodeDefects {
          */
         SLOT_SHAPE_MISMATCH;
 
-        /** The verdict a store row carries; an unknown value is vocabulary drift, a build bug. */
-        static Verdict of(String verdict) {
+        /** The entry defect code the verdict is written under. */
+        String code() {
+            return "NODE_ID_" + name();
+        }
+
+        static Verdict of(String code) {
             return Arrays.stream(values())
-                .filter(v -> v.name().equals(verdict))
+                .filter(v -> v.code().equals(code))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
-                    "the node id decode defect view produced verdict '" + verdict + "', which no "
+                    "the node id decode defects produced code '" + code + "', which no "
                     + Verdict.class.getSimpleName()
-                    + " value names; the view arms and the enum must move together"));
+                    + " value names; the rule and the enum must move together"));
         }
     }
 
@@ -138,51 +151,87 @@ public final class NodeIdDecodeDefects {
     public record Defect(String coordinate, String argumentName, String paramName,
                          String nodeTypeName, Rejection rejection, SourceLocation location) {}
 
-    /**
-     * Projects every refused decode over {@code graphName}'s emitted partition. Empty for a graph
-     * whose argument-carried node ids all reach parameters that can take them, and for one whose
-     * refusals all sit outside the classification domain.
-     */
+    /** The slot and key facts a message names, at one argument and parameter. */
+    private record Slot(String argumentName, String landingType, String slotShape, Integer listDepth,
+                        String nodeTypeName, int arity, String keyColumnName, String columnJavaType,
+                        String recordClass) {}
+
+    /** The graph's refusals, in type, field and argument order. */
     public static Detection detect(DSLContext dsl, String graphName) {
-        var v = INTENT_NODE_ID_DECODE_DEFECT;
-        return new Detection(dsl.selectFrom(v)
-            .where(v.GRAPH_NAME.eq(graphName), inDomain(graphName))
-            .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.USE_SITE, v.ARGUMENT_NAME)
-            .fetch(row -> new Defect(
-                row.getTypeName() + "." + row.getFieldName(),
-                row.getArgumentName(), row.getParamName(), row.getNodeTypeName(),
-                rejectionOf(Verdict.of(row.getVerdict()), row.getArgumentName(),
-                    row.getParamName(), row.getNodeTypeName(), row.getArity(),
-                    row.getKeyColumnName(), row.getColumnJavaType(), row.getRecordClass(),
-                    row.getSlotJavaType(), row.getLandingJavaType(),
-                    "LIST".equals(row.getSlotShape()), row.getArgumentListDepth(),
-                    keyColumnsOf(dsl, graphName, row.getNodeTypeName())),
-                location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()))));
+        var slots = slots(dsl, graphName);
+        var e = GRAPHITRON_ENTRY_DEFECT_SITE;
+        // A container's shape mismatch shares the code and is the polymorphic family's.
+        var cl = GRAPHITRON_BINDING_CLAIM;
+        var t = GRAPHITRON_TYPE;
+        var n = GRAPHITRON_NODE;
+        var codes = Arrays.stream(Verdict.values()).map(Verdict::code).toList();
+        return new Detection(dsl.select(e.TYPE_NAME, e.FIELD_NAME, e.COORDINATE, e.CODE, e.DETAIL,
+                e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN)
+            .from(e)
+            .where(e.GRAPH_NAME.eq(graphName), e.CODE.in(codes), notExists(selectOne()
+                .from(cl)
+                .join(t).on(t.GRAPH_NAME.eq(cl.GRAPH_NAME), t.TYPE_NAME.eq(cl.NAMED))
+                .where(cl.GRAPH_NAME.eq(e.GRAPH_NAME), cl.COORDINATE.eq(e.COORDINATE),
+                    cl.KIND.eq("NODE_ID"), t.KIND.in("INTERFACE", "UNION"),
+                    notExists(selectOne().from(n).where(n.GRAPH_NAME.eq(t.GRAPH_NAME),
+                        n.TYPE_NAME.eq(t.TYPE_NAME))))))
+            .orderBy(e.TYPE_NAME, e.FIELD_NAME, e.COORDINATE)
+            .fetch(row -> {
+                var slot = slots.get(row.value3() + "#" + row.value5());
+                if (slot == null) {
+                    throw new IllegalStateException("the node id decode defect at '" + row.value3()
+                        + "' names parameter '" + row.value5() + "', which no slot holds; the rule"
+                        + " and the slot relation must move together");
+                }
+                boolean listSlot = "LIST".equals(slot.slotShape());
+                String slotJavaType = listSlot ? LIST : slot.landingType();
+                return new Defect(row.value1() + "." + row.value2(), slot.argumentName(),
+                    row.value5(), slot.nodeTypeName(),
+                    rejectionOf(Verdict.of(row.value4()), slot.argumentName(), row.value5(),
+                        slot.nodeTypeName(), slot.arity(), slot.keyColumnName(),
+                        slot.columnJavaType(), slot.recordClass(), slotJavaType, slot.landingType(),
+                        listSlot, slot.listDepth(), keyColumnsOf(dsl, graphName, slot.nodeTypeName())),
+                    new SourceLocation(row.value7(), row.value8(), row.value6()));
+            }));
     }
 
     /**
-     * The build-error consumer's population: the refused coordinate's owning type is a member of the
-     * classification domain. The refused argument sits on that type's field, so the field's
-     * population is its type's, which is the one predicate both grains of the sibling family use.
+     * Each by-name argument slot's facts, keyed by the argument's coordinate and the parameter: the
+     * slot's shape and landing, the argument's list depth, and the key its occurrence binds.
      */
-    private static Condition inDomain(String graphName) {
-        var d = INTENT_TYPE_DOMAIN;
-        var v = INTENT_NODE_ID_DECODE_DEFECT;
-        return exists(selectOne().from(d)
-            .where(d.GRAPH_NAME.eq(graphName), d.TYPE_NAME.eq(v.TYPE_NAME)));
+    private static Map<String, Slot> slots(DSLContext dsl, String graphName) {
+        var s = GRAPHITRON_NODE_ID_SLOT;
+        var n = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var c = SQL_COLUMN;
+        var t = SQL_TABLE;
+        var a = GRAPHITRON_ARGUMENT;
+        var g = GRAPHQL_ARGUMENT;
+        var out = new HashMap<String, Slot>();
+        dsl.select(s.ELEMENT_COORDINATE, s.PARAMETER_NAME, a.ARGUMENT_NAME, s.LANDING_TYPE,
+                s.SLOT_SHAPE, g.LIST_DEPTH, min(n.NODE_TYPE_NAME), count(), min(n.COLUMN_NAME),
+                min(c.BINDING_TYPE), min(t.RECORD_CLASS_FQN))
+            .from(s)
+            .join(n).on(n.GRAPH_NAME.eq(s.GRAPH_NAME), n.COORDINATE.eq(s.ID_COORDINATE))
+            .leftJoin(c).on(c.SOURCE_NAME.eq(n.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(n.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(n.TABLE_NAME), c.COLUMN_NAME.eq(n.COLUMN_NAME))
+            .leftJoin(t).on(t.SOURCE_NAME.eq(n.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(n.TABLE_SCHEMA),
+                t.TABLE_NAME.eq(n.TABLE_NAME))
+            .join(a).on(a.GRAPH_NAME.eq(s.GRAPH_NAME), a.COORDINATE.eq(s.ELEMENT_COORDINATE))
+            .join(g).on(g.GRAPH_NAME.eq(a.GRAPH_NAME), g.TYPE_NAME.eq(a.TYPE_NAME),
+                g.FIELD_NAME.eq(a.FIELD_NAME), g.ARGUMENT_NAME.eq(a.ARGUMENT_NAME))
+            .where(s.GRAPH_NAME.eq(graphName), s.SITE.eq("FIELD_ARGUMENT"), s.BY_NAME.isTrue())
+            .groupBy(s.ELEMENT_COORDINATE, s.ID_COORDINATE, s.PARAMETER_NAME, a.ARGUMENT_NAME,
+                s.LANDING_TYPE, s.SLOT_SHAPE, g.LIST_DEPTH)
+            .forEach(r -> {
+                int arity = r.value8();
+                String record = "org.jooq.Record".equals(r.value11()) ? null : r.value11();
+                out.putIfAbsent(r.value1() + "#" + r.value2(), new Slot(r.value3(), r.value4(),
+                    r.value5(), r.value6(), r.value7(), arity, arity == 1 ? r.value9() : null,
+                    arity == 1 ? r.value10() : null, record));
+            });
+        return out;
     }
 
-    /**
-     * Decodes one verdict into the rejection the report carries. All three are structural: there is
-     * no closed name set to have missed here, the author having named no column for an editor to
-     * offer alternatives to, which is what distinguishes these from the sibling family's typed
-     * unknown-column arm.
-     *
-     * <p>Each message states the operands the view compared and nothing it did not: the arity arm
-     * quotes the count the join read, the type arm quotes both types off the row rather than
-     * resolving them again here, and the shape arm quotes the container the parameter declares, so
-     * none can describe a comparison other than the one that refused the instruction.
-     */
     private static Rejection rejectionOf(Verdict verdict, String argumentName, String paramName,
                                          String nodeTypeName, int arity, String keyColumnName,
                                          String columnJavaType, String recordClass,
@@ -289,11 +338,5 @@ public final class NodeIdDecodeDefects {
             + "' of that name, so the decoded key lands there";
     }
 
-    /** The store's position columns as a graphql-java location; {@code null} when unpositioned. */
-    private static SourceLocation location(String sourceName, Integer line, Integer column) {
-        if (line == null || column == null) {
-            return null;
-        }
-        return new SourceLocation(line, column, sourceName);
-    }
 }
+

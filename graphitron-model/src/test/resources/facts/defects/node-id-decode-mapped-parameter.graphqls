@@ -20,11 +20,12 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: other"})
 }
 
-# The slot is the mapped parameter, typed off the method the reference resolved to.
-extend schema @expectEquals(relation: "intent_node_id_decode_slot", rows: """
-  use_site,          carrier,          param_name, java_type
-  Query.film(ids),   MAPPED_PARAMETER, id,         java.lang.Integer
-  Query.films(ids),  MAPPED_PARAMETER, userId,     java.lang.String
+# The slot is the mapped parameter, typed off the method the reference resolved to, and not the
+# one the argument is named for.
+extend schema @expectEquals(relation: "graphitron_node_id_slot", rows: """
+  element_coordinate, parameter_name, by_name, landing_type
+  Query.film(ids:),   id,             FALSE,   java.lang.Integer
+  Query.films(ids:),  userId,         FALSE,   java.lang.String
   """)
 
 # One destination however the parameter was reached: the name match stands aside where a pair
@@ -35,7 +36,7 @@ extend schema @expectEquals(relation: "intent_argmapping_projection_defect", row
   """)
 
 # And no refusal at the argument, which is the stand-aside.
-extend schema @assertAbsent(relation: "intent_node_id_decode_defect", rows: """
-  use_site
-  Query.films(ids)
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  coordinate,        code
+  Query.films(ids:), NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT
   """)

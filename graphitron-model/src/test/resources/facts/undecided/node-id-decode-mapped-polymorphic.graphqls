@@ -18,7 +18,6 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantsByMapping", argMapping: "keys: occupant"})
 }
 
-extend schema @assertAbsent(relation: "intent_node_id_polymorphic_decode_defect", rows: """
-  use_site
-  Query.occupants(occupant)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate = 'Query.occupants(occupant:)' AND code IN ('NODE_ID_SLOT_SHAPE_MISMATCH', 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'NODE_ID_SINGLE_TABLE_CONTAINER', 'NODE_ID_NO_TABLE_MEMBERS', 'NODE_ID_MEMBER_NOT_NODE_TYPE', 'NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER')
   """)

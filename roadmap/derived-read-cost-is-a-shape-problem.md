@@ -346,15 +346,12 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * the landing: `PATH_STOPS_SHORT`, `LANDING_TYPE_DISAGREEMENT`;
   * the participant set: a name no consumer's participants carry, and a consumer returning a single
     table, at the input-field and the argument site;
-  * the slot: `KEY_COLUMN_TYPE_DISAGREEMENT`, `KEY_ARITY_EXCEEDS_SLOT`, `SLOT_SHAPE_MISMATCH`;
-  * the polymorphic container: `CONTAINER_NOT_AT_A_SLOT`, `SINGLE_TABLE_CONTAINER`,
-    `NO_TABLE_MEMBERS`, `MEMBER_NOT_NODE_TYPE`, `SLOT_NOT_SUPERTYPE_OF_MEMBER`, `SLOT_SHAPE_MISMATCH`;
   * a `@referenceFor` on a slot without `@nodeId`, which only the walk refuses today.
 
-  The views `intent_node_id_decode_defect`, `intent_node_id_decode_landing_defect`,
-  `intent_node_id_polymorphic_decode_defect` and `intent_record_slot_assignable` go, and
-  `NodeIdDecodeDefects`, `NodeIdPolymorphicDecodeDefects`, `NodeIdLandingDefects` and
-  `ReferenceForParticipantDefects` read the rows. The walk's copies of the same refusals go with
+  The slot and container rules are already entry defects, the `NODE_ID_` codes over
+  `graphitron_node_id_slot`, with the members a container defect names in
+  `graphitron_entry_defect_member`. The view `intent_node_id_decode_landing_defect` goes, and
+  `NodeIdLandingDefects` and `ReferenceForParticipantDefects` read the rows. The walk's copies of the same refusals go with
   them, so an author meets one error rather than two: the four container refusals in
   `BuildContext` and `NodeIdLeafResolver`, and the refusal of `@referenceFor` without `@nodeId` in
   `BuildContext` and `FieldBuilder`. Two cases are settled by fact documents on the way: a
@@ -2578,3 +2575,11 @@ this. What moved:
 
 Rounds 1 to 3 (2026-08-28, Spec to Ready) and round 4 (2026-09-09, In Progress) are addressed and are
 in this file's git history. Nothing is open.
+
+**Node-id decode defects moved onto the occurrence** (2026-11-06). `intent_node_id_decode_slot`,
+`intent_node_id_decode_defect` and `intent_node_id_polymorphic_decode_defect`, with their verdicts
+`KEY_ARITY_EXCEEDS_SLOT`, `KEY_COLUMN_TYPE_DISAGREEMENT`, `SLOT_SHAPE_MISMATCH`,
+`CONTAINER_NOT_AT_A_SLOT`, `SINGLE_TABLE_CONTAINER`, `NO_TABLE_MEMBERS`, `MEMBER_NOT_NODE_TYPE` and
+`SLOT_NOT_SUPERTYPE_OF_MEMBER` as view values: the slot is `graphitron_node_id_slot`, the verdicts
+are entry defect codes with the `NODE_ID_` prefix, and a container defect's members are
+`graphitron_entry_defect_member`.
