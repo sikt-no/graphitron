@@ -177,7 +177,10 @@ public final class EmittedCodeHarness implements AutoCloseable {
 
     private static String formatDiagnostics(DiagnosticCollector<JavaFileObject> collector) {
         return collector.getDiagnostics().stream()
-            .filter(d -> d.getKind() == Diagnostic.Kind.ERROR || d.getKind() == Diagnostic.Kind.WARNING)
+            // A deprecation or unchecked warning is a mandatory one, which a strict compile fails on
+            // as surely as on any other; leaving it out reported a failure without its cause.
+            .filter(d -> d.getKind() == Diagnostic.Kind.ERROR || d.getKind() == Diagnostic.Kind.WARNING
+                || d.getKind() == Diagnostic.Kind.MANDATORY_WARNING)
             .map(Object::toString)
             .collect(Collectors.joining("\n"));
     }
