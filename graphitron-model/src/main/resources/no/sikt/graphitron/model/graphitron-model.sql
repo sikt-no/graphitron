@@ -15456,9 +15456,9 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
  GROUP BY COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
           COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column)
 UNION ALL
--- A named node id whose written path ends on a table other than the node's: the key the id packs or
--- unpacks is not on the rows the path reaches, an argument's or input field's own path included.
--- Reported once per @nodeId, the detail the table reached.
+-- A named node id whose written or inferred path ends on a table other than the node's: the key the
+-- id packs or unpacks is not on the rows the path reaches, an argument's or input field's own path
+-- included. Reported once per @nodeId, the detail the table reached.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
        'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
   FROM graphitron_binding_claim cl
@@ -15473,7 +15473,7 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
   JOIN graphitron_path p
     ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
-   AND p.origin IN ('WRITTEN', 'INHERITED')
+   AND p.origin IN ('WRITTEN', 'INHERITED', 'INFERRED')
   JOIN graphitron_join_path jp
     ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
    AND jp.target_type = p.target_type
@@ -15547,8 +15547,9 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
               ELSE 0 END <> 1
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
--- A named node id at an argument or input field with no route written, whose slot's table reaches
--- the node's by its one foreign key and lands every key column on a column of its own, where a landed
+-- A named node id at an argument or input field with no route written and its path empty, whose
+-- slot's table reaches the node's by its one foreign key and lands every key column on a column of
+-- its own, where a landed
 -- pair disagrees on the Java type jOOQ binds them as: no predicate compares the decoded value with
 -- the column it binds. A key landing only in part is decoded against the node's own table, where no
 -- landed column is compared. The exclusions are the no-route rule's. Reported once per @nodeId, the
@@ -15618,6 +15619,68 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                                          AND r2.table_schema = rc.table_schema
                                          AND r2.table_name = rc.table_name
                                          AND r2.constraint_name = rc.constraint_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application r
+                    WHERE r.graph_name = cl.graph_name AND r.coordinate = cl.coordinate
+                      AND r.directive_name IN ('reference', 'referenceFor'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application dc
+                     JOIN graphitron_ast_input_value_condition_entry ce
+                       ON ce.graph_name = dc.graph_name AND ce.source_name = dc.source_name
+                      AND ce.source_line = dc.source_line AND ce.source_column = dc.source_column
+                    WHERE dc.graph_name = cl.graph_name AND dc.coordinate = cl.coordinate
+                      AND dc.directive_name = 'condition' AND ce.override)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.parent_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.argument_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence fo
+                     JOIN graphitron_producer_claim pc
+                       ON pc.graph_name = fo.graph_name AND pc.coordinate = fo.element_coordinate
+                      AND pc.kind = 'SERVICE'
+                    WHERE fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate)
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+UNION ALL
+-- The same where the slot's path to the node's table is inferred over that one key: each key column
+-- lands on the column its step pairs it with, every position landing. The exclusions are the
+-- no-route rule's, a slot writing any route among them.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_LANDING_TYPE_DISAGREES', MIN(k.column_name)
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_occurrence o
+    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
+  JOIN graphitron_path p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'INFERRED'
+  JOIN graphitron_occurrence_node_id k
+    ON k.graph_name = o.graph_name AND k.coordinate = o.coordinate
+  JOIN graphitron_join_path_step_column sc
+    ON sc.graph_name = p.graph_name AND sc.coordinate = p.coordinate
+   AND sc.target_type = p.target_type
+   AND sc.to_source_name = k.table_source_name AND sc.to_schema = k.table_schema
+   AND sc.to_table = k.table_name AND sc.to_column = k.column_name
+  JOIN sql_column lc
+    ON lc.source_name = sc.from_source_name AND lc.table_schema = sc.from_schema
+   AND lc.table_name = sc.from_table AND lc.column_name = sc.from_column
+  JOIN sql_column nc
+    ON nc.source_name = k.table_source_name AND nc.table_schema = k.table_schema
+   AND nc.table_name = k.table_name AND nc.column_name = k.column_name
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
+   AND lc.binding_type <> nc.binding_type
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
+                    WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
+                      AND k2.bound = k.bound
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column s2
+                                       WHERE s2.graph_name = sc.graph_name
+                                         AND s2.coordinate = sc.coordinate
+                                         AND s2.target_type = sc.target_type
+                                         AND s2.to_source_name = k2.table_source_name
+                                         AND s2.to_schema = k2.table_schema
+                                         AND s2.to_table = k2.table_name
+                                         AND s2.to_column = k2.column_name))
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application r
                     WHERE r.graph_name = cl.graph_name AND r.coordinate = cl.coordinate
                       AND r.directive_name IN ('reference', 'referenceFor'))
@@ -17400,9 +17463,10 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
                  node_type_ref, has_reference, source_name, source_line, source_column) AS (
   SELECT n.graph_name, 'OUTPUT_FIELD', n.type_name, n.field_name, CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), n.type_name || '.' || n.field_name, n.node_type_ref,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
-                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
-                              AND s.field_name = n.field_name)
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim c
+                            WHERE c.graph_name = n.graph_name
+                              AND c.element_coordinate = n.type_name || '.' || n.field_name
+                              AND c.claim_kind <> 'REFERENCE_FOR')
               THEN TRUE ELSE FALSE END,
          n.source_name, n.source_line, n.source_column
     FROM graphitron_field_node_id_entry n
@@ -17412,9 +17476,10 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
   -- One row per place the input field is reached: its occurrences are its use sites.
   SELECT n.graph_name, 'INPUT_FIELD', n.type_name, n.field_name, NULL,
          o.coordinate, o.coordinate, n.node_type_ref,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
-                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
-                              AND s.field_name = n.field_name)
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim c
+                            WHERE c.graph_name = n.graph_name
+                              AND c.element_coordinate = n.type_name || '.' || n.field_name
+                              AND c.claim_kind <> 'REFERENCE_FOR')
               THEN TRUE ELSE FALSE END,
          n.source_name, n.source_line, n.source_column
     FROM graphitron_field_node_id_entry n
@@ -17425,41 +17490,46 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
   SELECT n.graph_name, 'ARGUMENT', n.type_name, n.field_name, n.argument_name,
          NULL, n.type_name || '.' || n.field_name || '(' || n.argument_name || ')',
          n.node_type_ref,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step_entry s
-                            WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
-                              AND s.field_name = n.field_name
-                              AND s.argument_name = n.argument_name)
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim c
+                            WHERE c.graph_name = n.graph_name
+                              AND c.element_coordinate = n.type_name || '.' || n.field_name
+                                  || '(' || n.argument_name || ':)'
+                              AND c.claim_kind <> 'REFERENCE_FOR')
               THEN TRUE ELSE FALSE END,
          n.source_name, n.source_line, n.source_column
     FROM graphitron_argument_node_id_entry n
 ),
 slot_table (graph_name, site, type_name, field_name, argument_name, path,
             table_source_name, table_schema, table_name) AS (
-  -- Where the field's walk from its parent's result lands.
+  -- Where the field's written path lands, at each of its occurrences.
   -- Driven from the output field's own entry rather than instructed, which H2 would evaluate
   -- again for every step it pairs with.
   SELECT n.graph_name, 'OUTPUT_FIELD', n.type_name, n.field_name, CAST(NULL AS VARCHAR),
-         CAST(NULL AS VARCHAR), l.table_source_name, l.table_schema, l.table_name
+         CAST(NULL AS VARCHAR), jp.target_source_name, jp.target_schema, jp.target_table
     FROM graphitron_field_node_id_entry n
     JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
      AND t.kind = 'OBJECT'
-    JOIN graphitron_field_path_landing l
-      ON l.graph_name = n.graph_name AND l.type_name = n.type_name
-     AND l.field_name = n.field_name AND l.kind = 'RESULT'
-   WHERE EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
-                  WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
-                    AND s.field_name = n.field_name)
+    JOIN graphitron_occurrence o
+      ON o.graph_name = n.graph_name AND o.element_coordinate = n.type_name || '.' || n.field_name
+     AND o.kind = 'FIELD'
+    JOIN graphitron_path p
+      ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'WRITTEN'
+    JOIN graphitron_join_path jp
+      ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+     AND jp.target_type = p.target_type
    UNION
+  -- Where an argument's written path lands, at each of its occurrences.
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
-         tg.to_source_name, tg.to_schema, tg.to_table
+         jp.target_source_name, jp.target_schema, jp.target_table
     FROM instructed i
-    JOIN graphitron_argument_reference_step_target tg
-      ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
-     AND tg.field_name = i.field_name AND tg.argument_name = i.argument_name
-     AND tg.position = (SELECT MAX(s.position) FROM graphitron_argument_reference_step_entry s
-                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
-                           AND s.field_name = tg.field_name
-                           AND s.argument_name = tg.argument_name AND s.ordinal = tg.ordinal)
+    JOIN graphitron_occurrence o
+      ON o.graph_name = i.graph_name AND o.kind = 'FIELD_ARGUMENT'
+     AND o.element_coordinate = i.type_name || '.' || i.field_name || '(' || i.argument_name || ':)'
+    JOIN graphitron_path p
+      ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'WRITTEN'
+    JOIN graphitron_join_path jp
+      ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+     AND jp.target_type = p.target_type
    WHERE i.site = 'ARGUMENT' AND i.has_reference
    UNION
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
@@ -17551,9 +17621,10 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
 SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
        f.type_name || '.' || f.field_name,
        'OWN_ID_FIELD', nt.type_name, 'NODE_TYPE',
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
-                          WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
-                            AND s.field_name = f.field_name)
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim c
+                          WHERE c.graph_name = f.graph_name
+                            AND c.element_coordinate = f.type_name || '.' || f.field_name
+                            AND c.claim_kind <> 'REFERENCE_FOR')
             THEN TRUE ELSE FALSE END,
        f.source_name, f.source_line, f.source_column
   FROM graphql_field f
@@ -17567,10 +17638,11 @@ SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
 SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NULL,
        a.type_name || '.' || a.field_name || '(' || a.argument_name || ')',
        'TARGET_ID_NAME', nt.type_name, 'NODE_TYPE',
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step_entry s
-                          WHERE s.graph_name = a.graph_name AND s.type_name = a.type_name
-                            AND s.field_name = a.field_name
-                            AND s.argument_name = a.argument_name)
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim c
+                          WHERE c.graph_name = a.graph_name
+                            AND c.element_coordinate = a.type_name || '.' || a.field_name
+                                || '(' || a.argument_name || ':)'
+                            AND c.claim_kind <> 'REFERENCE_FOR')
             THEN TRUE ELSE FALSE END,
        a.source_name, a.source_line, a.source_column
   FROM graphql_argument a
@@ -17586,9 +17658,10 @@ SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NUL
  UNION ALL
 SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, o.coordinate, o.coordinate,
        'TARGET_ID_NAME', tn.type_name, 'NODE_TYPE',
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
-                          WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
-                            AND s.field_name = f.field_name)
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim c
+                          WHERE c.graph_name = f.graph_name
+                            AND c.element_coordinate = f.type_name || '.' || f.field_name
+                            AND c.claim_kind <> 'REFERENCE_FOR')
             THEN TRUE ELSE FALSE END,
        f.source_name, f.source_line, f.source_column
   FROM graphql_field f
@@ -17654,7 +17727,7 @@ COMMENT ON COLUMN graphitron_node_id_instruction.use_site IS 'the consuming coor
 COMMENT ON COLUMN graphitron_node_id_instruction.basis IS 'which rule stated the instruction and resolved its target, in a closed vocabulary of five disjoint rules. EXPLICIT_TYPE_NAME: @nodeId(typeName: T). CONTAINING_NODE_TYPE: bare @nodeId on a non-@reference object field whose containing type is itself a node, the manual''s inference rule (a). TARGET_TABLE_NODE_TYPE: bare @nodeId whose target comes from a table, the manual''s inference rule (b), demanding exactly one node type over that table. OWN_ID_FIELD: a node type''s own id field with no directive, which is a node ID by construction. TARGET_ID_NAME: a slot named for the target''s own id with no directive, an argument of a node-returning field or an input field consumed against a node-backed table. Provenance and shape at once, which is why it is one column and not two: typeName: is rejected outright on a node type''s own id field, so the forms are not interchangeable and a rejection has to be able to say which one the author wrote';
 COMMENT ON COLUMN graphitron_node_id_instruction.resolved_type_name IS 'the type the instruction''s basis resolved, written or inferred; never NULL, the population being instructions whose target resolved to something. A name and never a binding, on graphitron_field_target.target_type_name''s terms: what sort of type it is, and therefore which relation answers for it, is the kind column beside it. Where the kind is NODE_TYPE this is the node type itself and the opaque format''s other end is one join away, graphitron_node_keycolumn on this name and the graph giving the key columns in order and graphitron_node the typeId. Where the kind is POLY_CONTAINER it is a multitable interface or union that resolves no key of its own. Renamed from node_type_name when the container population landed, rather than widening that name''s promise: a container is not a node type, and a column that meant one thing at two kinds would have every reader restating which';
 COMMENT ON COLUMN graphitron_node_id_instruction.resolved_type_kind IS 'which sort of type the name beside it is, in a closed vocabulary of two. NODE_TYPE: a node type, whose key the decode yields directly. POLY_CONTAINER: a multitable interface or union whose @table members are node types, where the wire id''s own type prefix decides which member''s key the decode yields. A column rather than a predicate each reader re-evaluates, on carries_reference_path''s own justification in this relation: three relations fork on it and several more take it as a filter, and re-deriving it would mean each of them joining graphitron_node_type or graphql_type to answer a question this view has already answered. Deliberately not a sixth basis: basis states which authored rule stood the instruction up, and a written typeName: is one rule whatever it resolves to, so splitting it would split one authored predicate on a resolution fact';
-COMMENT ON COLUMN graphitron_node_id_instruction.carries_reference_path IS 'whether the slot carries an @reference path of its own, read on the captured relation the slot''s site keys: the argument-site steps on ARGUMENT, the field-site steps on the two field sites. Carried because it decides how the instruction navigates to the node type''s table and because two of the bases above are already disjoint on it, so a reader resolving the navigation would otherwise re-derive a predicate this view has already evaluated. It says a path is written and nothing about whether one resolves; where the path resolves to is the reference-target views'' answer and a slot whose path reaches nothing is TRUE here all the same';
+COMMENT ON COLUMN graphitron_node_id_instruction.carries_reference_path IS 'whether the slot carries an @reference path of its own, read as a graphitron_join_path_claim on the slot''s declaration other than a @referenceFor. Carried because it decides how the instruction navigates to the node type''s table and because two of the bases above are already disjoint on it, so a reader resolving the navigation would otherwise re-derive a predicate this view has already evaluated. It says a path is written and nothing about whether one resolves; where the path resolves to is the join path''s answer and a slot whose path reaches nothing is TRUE here all the same';
 COMMENT ON COLUMN graphitron_node_id_instruction.source_name IS 'the SDL file the instruction was captured from; the directive application''s own position on the three directive bases, and the slot declaration''s on the two name-carried ones, there being no application to locate';
 COMMENT ON COLUMN graphitron_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_node_id_instruction.source_column IS 'source column, 1-based per the graphql-java convention';
@@ -17719,73 +17792,99 @@ CREATE VIEW graphitron_node_id_decode_hop_rule
    origin_source_name, origin_schema, origin_table, position, via,
    from_source_name, from_schema, from_table,
    to_source_name, to_schema, to_table, constraint_name, fk_on_from, last_position) AS
+-- Each step the slot's join path takes from the endpoint's departure, at each occurrence of the slot
+-- whose need starts there, written or inferred. A step rides a written key, a key a written table
+-- names, the one key an inferred path rides, or a primary key matched by name; a step of any other
+-- kind is no hop. Needs from one departure taking the same step are one hop, a written one named
+-- before the inferred. A need that stopped keeps the steps it took before the stop, the chain
+-- ending there.
 SELECT graph_name, site, type_name, field_name, argument_name, path, use_site,
-       origin_source_name, origin_schema, origin_table, position, via,
+       origin_source_name, origin_schema, origin_table, position, MAX(via),
        from_source_name, from_schema, from_table,
        to_source_name, to_schema, to_table, constraint_name, fk_on_from,
-       CAST(MAX(position) OVER (PARTITION BY graph_name, use_site,
-                                             origin_source_name, origin_schema,
-                                             origin_table) AS INT)
-  FROM (SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
+       CAST(MAX(MAX(position)) OVER (PARTITION BY graph_name, use_site,
+                                                  origin_source_name, origin_schema,
+                                                  origin_table) AS INT)
+  FROM (SELECT DISTINCT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
                e.use_site,
                e.from_source_name AS origin_source_name, e.from_schema AS origin_schema,
                e.from_table AS origin_table,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.position, itg.position) ELSE 0 END AS position,
-               CASE WHEN e.navigation = 'AUTHORED_PATH' THEN COALESCE(tg.via, itg.via)
-                    ELSE 'DISCOVERED' END AS via,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.from_source_name, itg.from_source_name)
-                    ELSE e.from_source_name END AS from_source_name,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.from_schema, itg.from_schema)
-                    ELSE e.from_schema END AS from_schema,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.from_table, itg.from_table)
-                    ELSE e.from_table END AS from_table,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.to_source_name, itg.to_source_name)
-                    ELSE e.to_source_name END AS to_source_name,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.to_schema, itg.to_schema)
-                    ELSE e.to_schema END AS to_schema,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.to_table, itg.to_table)
-                    ELSE e.to_table END AS to_table,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.constraint_name, itg.constraint_name)
-                    ELSE d.constraint_name END AS constraint_name,
-               CASE WHEN e.navigation = 'AUTHORED_PATH'
-                    THEN COALESCE(tg.fk_on_from, itg.fk_on_from)
-                    ELSE TRUE END AS fk_on_from
+               s.position,
+               CASE WHEN k.constraint_name IS NOT NULL THEN 'KEY'
+                    WHEN ik.constraint_name IS NOT NULL AND s.element_place IS NULL THEN 'DISCOVERED'
+                    WHEN ik.constraint_name IS NOT NULL THEN 'TABLE'
+                    ELSE 'NAME_MATCH' END AS via,
+               s.from_source_name, s.from_schema, s.from_table,
+               s.to_source_name, s.to_schema, s.to_table,
+               COALESCE(k.constraint_name, ik.constraint_name) AS constraint_name,
+               CASE WHEN COALESCE(k.constraint_name, ik.constraint_name) IS NULL THEN NULL
+                    WHEN COALESCE(k.constraint_source_name, ik.constraint_source_name) = s.from_source_name
+                     AND COALESCE(k.constraint_schema, ik.constraint_schema) = s.from_schema
+                     AND COALESCE(k.constraint_table, ik.constraint_table) = s.from_table
+                    THEN TRUE ELSE FALSE END AS fk_on_from
           FROM intent_node_id_decode_endpoint e
-          LEFT JOIN graphitron_argument_reference_step_target tg
-            ON e.navigation = 'AUTHORED_PATH' AND e.site = 'ARGUMENT'
-           AND tg.graph_name = e.graph_name AND tg.type_name = e.type_name
-           AND tg.field_name = e.field_name AND tg.argument_name = e.argument_name
-           AND tg.ordinal = 0 AND tg.candidates = 1
-          LEFT JOIN graphitron_input_field_reference_step_target itg
-            ON e.navigation = 'AUTHORED_PATH' AND e.site = 'INPUT_FIELD'
-           AND itg.graph_name = e.graph_name AND itg.type_name = e.type_name
-           AND itg.field_name = e.field_name
-           AND itg.resolving_source_name = e.from_source_name
-           AND itg.resolving_schema = e.from_schema
-           AND itg.resolving_table = e.from_table
-           AND itg.ordinal = 0 AND itg.candidates = 1
-          LEFT JOIN sql_table_reference tr
-            ON e.navigation = 'DISCOVERED_KEY' AND tr.constraints = 1
-           AND tr.source_name = e.from_source_name AND tr.table_schema = e.from_schema
-           AND tr.table_name = e.from_table
-           AND tr.referenced_source_name = e.to_source_name
-           AND tr.referenced_schema = e.to_schema AND tr.referenced_table = e.to_table
-          LEFT JOIN sql_referential_constraint d
-            ON d.source_name = tr.source_name AND d.table_schema = tr.table_schema
-           AND d.table_name = tr.table_name
-           AND d.referenced_source_name = tr.referenced_source_name
-           AND d.referenced_schema = tr.referenced_schema
-           AND d.referenced_table = tr.referenced_table
-         WHERE tg.position IS NOT NULL OR itg.position IS NOT NULL
-            OR d.constraint_name IS NOT NULL) walked;
+          JOIN graphitron_occurrence o
+            ON o.graph_name = e.graph_name AND e.site = 'ARGUMENT' AND o.kind = 'FIELD_ARGUMENT'
+           AND o.element_coordinate = e.type_name || '.' || e.field_name || '(' || e.argument_name || ':)'
+          JOIN graphitron_path_need n
+            ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+           AND n.start_source_name = e.from_source_name AND n.start_schema = e.from_schema
+           AND n.start_table = e.from_table
+          JOIN graphitron_join_path_step s
+            ON s.graph_name = n.graph_name AND s.coordinate = n.coordinate
+           AND s.target_type = n.target_type
+          LEFT JOIN graphitron_join_path_step_key k
+            ON k.graph_name = s.graph_name AND k.coordinate = s.coordinate
+           AND k.target_type = s.target_type AND k.position = s.position
+          LEFT JOIN graphitron_join_path_step_inferred_key ik
+            ON ik.graph_name = s.graph_name AND ik.coordinate = s.coordinate
+           AND ik.target_type = s.target_type AND ik.position = s.position
+          LEFT JOIN graphitron_join_path_step_matched_key mk
+            ON mk.graph_name = s.graph_name AND mk.coordinate = s.coordinate
+           AND mk.target_type = s.target_type AND mk.position = s.position
+         WHERE e.navigation IN ('AUTHORED_PATH', 'DISCOVERED_KEY')
+           AND (k.constraint_name IS NOT NULL OR ik.constraint_name IS NOT NULL
+                OR mk.table_name IS NOT NULL)
+         UNION
+        SELECT DISTINCT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
+               e.use_site, e.from_source_name, e.from_schema, e.from_table,
+               s.position,
+               CASE WHEN k.constraint_name IS NOT NULL THEN 'KEY'
+                    WHEN ik.constraint_name IS NOT NULL AND s.element_place IS NULL THEN 'DISCOVERED'
+                    WHEN ik.constraint_name IS NOT NULL THEN 'TABLE'
+                    ELSE 'NAME_MATCH' END,
+               s.from_source_name, s.from_schema, s.from_table,
+               s.to_source_name, s.to_schema, s.to_table,
+               COALESCE(k.constraint_name, ik.constraint_name),
+               CASE WHEN COALESCE(k.constraint_name, ik.constraint_name) IS NULL THEN NULL
+                    WHEN COALESCE(k.constraint_source_name, ik.constraint_source_name) = s.from_source_name
+                     AND COALESCE(k.constraint_schema, ik.constraint_schema) = s.from_schema
+                     AND COALESCE(k.constraint_table, ik.constraint_table) = s.from_table
+                    THEN TRUE ELSE FALSE END
+          FROM intent_node_id_decode_endpoint e
+          JOIN graphitron_path_need n
+            ON n.graph_name = e.graph_name AND e.site = 'INPUT_FIELD' AND n.coordinate = e.path
+           AND n.start_source_name = e.from_source_name AND n.start_schema = e.from_schema
+           AND n.start_table = e.from_table
+          JOIN graphitron_join_path_step s
+            ON s.graph_name = n.graph_name AND s.coordinate = n.coordinate
+           AND s.target_type = n.target_type
+          LEFT JOIN graphitron_join_path_step_key k
+            ON k.graph_name = s.graph_name AND k.coordinate = s.coordinate
+           AND k.target_type = s.target_type AND k.position = s.position
+          LEFT JOIN graphitron_join_path_step_inferred_key ik
+            ON ik.graph_name = s.graph_name AND ik.coordinate = s.coordinate
+           AND ik.target_type = s.target_type AND ik.position = s.position
+          LEFT JOIN graphitron_join_path_step_matched_key mk
+            ON mk.graph_name = s.graph_name AND mk.coordinate = s.coordinate
+           AND mk.target_type = s.target_type AND mk.position = s.position
+         WHERE e.navigation IN ('AUTHORED_PATH', 'DISCOVERED_KEY')
+           AND (k.constraint_name IS NOT NULL OR ik.constraint_name IS NOT NULL
+                OR mk.table_name IS NOT NULL)) walked
+ GROUP BY graph_name, site, type_name, field_name, argument_name, path, use_site,
+          origin_source_name, origin_schema, origin_table, position,
+          from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+          constraint_name, fk_on_from;
 COMMENT ON VIEW graphitron_node_id_decode_hop_rule IS 'One row the @nodeId decode-hop rule computes, in the shape graphitron_node_id_decode_hop stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_node_id_decode_hop, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_node_id_decode_hop_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_node_id_decode_hop.graph_name, whose comment carries what the value means';
 -- COMMENT ON COLUMN graphitron_node_id_decode_hop_rule.site IS 'the site of a row of this rule, which the stage inserts into graphitron_node_id_decode_hop.site, whose comment carries what the value means';
@@ -17845,8 +17944,8 @@ COMMENT ON COLUMN graphitron_node_id_decode_hop.use_site IS 'the consuming coord
 COMMENT ON COLUMN graphitron_node_id_decode_hop.origin_source_name IS 'the catalog partition of the table the decode departs from, carried from the endpoint relation. With the two columns below it this is the branch: a slot whose consuming field returns a multi-table polymorphic container has one endpoint pair per branch, and the decode is stated once per branch, so the branch is part of this relation''s key and of every relation''s below it. Distinct from from_source_name beside it, which is the step''s own departure: the two agree at position 0 and part company after it, an intermediate table being where a later step departs';
 COMMENT ON COLUMN graphitron_node_id_decode_hop.origin_schema IS 'the departing table''s SQL schema, carried from the endpoint relation';
 COMMENT ON COLUMN graphitron_node_id_decode_hop.origin_table IS 'the departing table''s SQL name, carried from the endpoint relation; the branch this row''s chain belongs to';
-COMMENT ON COLUMN graphitron_node_id_decode_hop.position IS 'the hop''s 0-based position along the path, in authored order; always 0 on a discovered key, that arm resolving one hop and never a chain. Contiguous from 0 up to wherever the chain stopped, which is the reference-target view''s own property carried through';
-COMMENT ON COLUMN graphitron_node_id_decode_hop.via IS 'which arm resolved the hop: KEY, TABLE or NAME_MATCH carried from the reference-target view where the author wrote the path, DISCOVERED where nothing was written and the single connecting key answered. A closed vocabulary of four, and what a reader asks to learn whether every hop is a foreign key at all, a NAME_MATCH hop joining on none';
+COMMENT ON COLUMN graphitron_node_id_decode_hop.position IS 'the hop''s 0-based position along the path, in authored order; always 0 on a discovered key, that arm resolving one hop and never a chain. Contiguous from 0 up to wherever the chain stopped, a stopped join path keeping the steps it took';
+COMMENT ON COLUMN graphitron_node_id_decode_hop.via IS 'which step of the slot''s join path the hop is: KEY a written key, TABLE a key a written table names, NAME_MATCH a primary key matched by name, and DISCOVERED the one key an inferred path rides where nothing was written. A closed vocabulary of four, and what a reader asks to learn whether every hop is a foreign key at all, a NAME_MATCH hop joining on none';
 COMMENT ON COLUMN graphitron_node_id_decode_hop.from_source_name IS 'the departing table''s catalog partition: the slot''s own table at position 0, the previous hop''s arrival after that';
 COMMENT ON COLUMN graphitron_node_id_decode_hop.from_schema IS 'the departing table''s SQL schema';
 COMMENT ON COLUMN graphitron_node_id_decode_hop.from_table IS 'the departing table''s SQL name';
@@ -18181,14 +18280,17 @@ stopped (graph_name, use_site, node_type_name,
    WHERE j.navigation = 'AUTHORED_PATH'
      AND (h.to_source_name <> j.target_source_name OR h.to_schema <> j.target_schema
           OR h.to_table <> j.target_table)
-     AND h.last_position + 1 = CASE WHEN j.site = 'ARGUMENT'
-           THEN (SELECT COUNT(*) FROM graphitron_argument_reference_step_entry s
-                  WHERE s.graph_name = j.graph_name AND s.type_name = j.type_name
-                    AND s.field_name = j.field_name AND s.argument_name = j.argument_name
-                    AND s.ordinal = 0)
-           ELSE (SELECT COUNT(*) FROM graphitron_field_reference_step_entry fs
-                  WHERE fs.graph_name = j.graph_name AND fs.type_name = j.type_name
-                    AND fs.field_name = j.field_name AND fs.ordinal = 0) END
+     AND h.last_position + 1 = (SELECT COUNT(*) FROM graphitron_join_path_claim c
+                                   JOIN graphitron_ast_path_entry pe
+                                     ON pe.graph_name = c.graph_name AND pe.source_name = c.source_name
+                                    AND pe.anchor_line = c.source_line
+                                    AND pe.anchor_column = c.source_column
+                                  WHERE c.graph_name = j.graph_name
+                                    AND c.claim_kind IN ('ARGUMENT', 'INPUT_FIELD')
+                                    AND c.element_coordinate = CASE WHEN j.site = 'ARGUMENT'
+                                          THEN j.type_name || '.' || j.field_name || '('
+                                               || j.argument_name || ':)'
+                                          ELSE j.type_name || '.' || j.field_name END)
 )
 SELECT j.graph_name, j.site, j.type_name, j.field_name, j.argument_name, j.path, j.use_site,
        j.node_type_name, j.root_type_name, j.root_field_name, j.branches,
@@ -21352,7 +21454,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_node_id_decode_hop', 'nodeid-decode-hop', 'graphitron',
    'The foreign-key hops a decode traverses from the slot''s own table to the node type''s, one row per hop in authored order.',
    'For example a @nodeId argument naming Film on a field whose statement is rooted in inventory draws one row, the hop over inventory_film_id_fkey from inventory to film.',
-   'The ordinal-keyed child of intent_node_id_decode_endpoint, following the parent-plus-steps shape, so a reader takes the path as rows in order rather than parsing a serialized one. Two populations reach it and the endpoint relation''s navigation column is what tells them apart, so they are disjoint by construction and not by a predicate stated twice. An authored path contributes the hops a reference-target view resolved, and there are two such views because there are two decoding sites: an argument''s path departs from the argument''s own scope table and an input field''s from the table its consuming field handed the expansion. The argument-site view came first, authoring it being that work''s stated prerequisite, and the input-field one closed the shape this relation once had to name as unwalkable. Which of the two answers is decided by the site rather than by trying both: each is joined under its own site predicate and the columns are read with COALESCE over the pair, so a row can only ever have come from the view its site names. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it.'),
+   'The ordinal-keyed child of intent_node_id_decode_endpoint, following the parent-plus-steps shape, so a reader takes the path as rows in order rather than parsing a serialized one. Two populations reach it, an authored path and the one key discovered, and both read the steps of the slot''s join path at each occurrence whose need starts on the endpoint''s departure: a written path''s for the first, an inferred path''s for the second. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it.'),
   ('graphitron_node_id_decode_hop_rule', 'nodeid-decode-hop', 'graphitron',
    'One row the @nodeId decode-hop rule computes, in the shape graphitron_node_id_decode_hop stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_node_id_decode_hop, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
