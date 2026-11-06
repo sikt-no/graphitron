@@ -310,8 +310,9 @@ class DiagnosticFactsTest {
     @DisplayName("the pilot arm carries the report's own message and the canonical file spelling")
     void pilotArmMessageMatchesTheReports() {
         var sdl = """
-            type Film @table(name: "film") {
-                id: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @nodeId
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node {
+                id: ID! @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @nodeId
             }
             type Query { film: Film }
             """;
@@ -514,8 +515,9 @@ class DiagnosticFactsTest {
         });
 
         Path conflict = write(tmp, """
-            type Film @table(name: "film") {
-                id: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @nodeId
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node {
+                id: ID! @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @nodeId
             }
             type Query { film: Film }
             """);

@@ -585,6 +585,13 @@ pass and no stratum that clears and recomputes.
     `ON DELETE CASCADE`, so a swept defect takes its details with it. What remains is the routine seat's refusals, which
     `intent_mutation_routine_seat` and the walk's routine classification still make, becoming codes
     the graphitron gatherer writes.
+  * **A defect is keyed by the occurrence it judges, with the written position where there is one** `open`.
+    `graphitron_occurrence_defect`, keyed (graph, coordinate, code) with a cascade from the occurrence,
+    carries the written position as an attribute where the problem was written, the element's
+    declaration being where an editor points otherwise, and `graphitron_entry_defect_site` reads both
+    (Alf, 2026-11-05). A defect about what an occurrence means moves there, the `@nodeId`, column and
+    path defects among them, since one declaration reused under several fields fails at some and not
+    others; one about what was written stays at its position.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
     `InputOccurrencePaths` and `AuthoredClaimRejectionRows` go with the relations they write.
@@ -1060,9 +1067,10 @@ branch is G's (Alf, 2026-11-05).
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
 * **A node id's path end is checked against its node** `open`, G's.
-  Where an occurrence's path lands on a table other than its node's, the defect the landing views
-  state today is the binding's, at the claim's written position: `NODE_ID_LANDS_ON_TABLE`, read off
-  the `graphitron_join_path` target.
+  Where an occurrence's path lands on a table other than its node's, or a `typeName:` has no route
+  from the slot's table, the defect the landing views state today is the binding's, at the claim's
+  written position: `NODE_ID_LANDS_ON_TABLE`, read off the `graphitron_join_path` target, beside
+  the `NODE_ID_` codes `node-id-instruction-unresolved` states.
 * **Encode and decode read the target type, and the old node-id relations go** `blocked`, G's, on "A node id's path end is checked against its node".
   The generator, filter and carrier roles and E's node-id readers read `graphitron_occurrence_node_id`,
   and `graphitron_node_id_instruction`, `graphitron_node_id_candidate`, the
@@ -1118,15 +1126,6 @@ here with a document that shows it.
   branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
   application with no entry beside it never return a row, and they go. `@routine` and `@mutation`
   decline what they cannot read, so theirs stay.
-* **What the manual refuses of a `@nodeId` is a defect row** `open`, G's. The generator refuses these and the store records nothing:
-  a bare `@nodeId` on a field of a type that is not a node, a `typeName:` naming a type without
-  `@node`, arguments of a node-returning field matched to columns its table lacks, a `typeName:`
-  with no route from the slot's table, a bare `@nodeId` on an input field under a multi-table
-  field whose members disagree, an id whose needs reach several nodes where the manual lets none
-  stand for all, and an id with no directive beside a column of its name, which binds neither. A
-  bare `@nodeId` argument names its field's return type, so `films(filmId: ID @nodeId): [Film]` is
-  a `Film` id even where a second node type shares `film`. A document
-  `node-id-instruction-unresolved` under `defects` states all of these, at the occurrence.
 * **A `@nodeId` beside `@field(name:)` names a target of the decode's shape** `blocked`, G's, on "A table class's column fields are stated" and "What an occurrence takes is a binding".
   The name is the `NODE_ID` claim's target: under a table source a column, under an object source a
   member, and its type, a column's generated `Field<T>` or the member's, matches the shape the encode

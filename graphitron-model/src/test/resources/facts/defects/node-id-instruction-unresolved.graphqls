@@ -1,0 +1,78 @@
+# What the manual refuses of a @nodeId, one case per rule, each at the place an author edits: the
+# @nodeId where one is written, the declaration where what is missing is a directive. film is
+# Film's and FilmAlias's table, so a bare id over it names no one node, and plain_id has a column
+# named id beside the id its node publishes.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  "Not an ID: the directive would bind the wire value undecoded."
+  titleId: String @nodeId(typeName: "Film")
+}
+
+type FilmAlias implements Node @table(name: "film") @node { id: ID! }
+
+type Language implements Node @table(name: "language") @node {
+  "A node's own id is its identity already; typeName: names what the type answers."
+  id: ID! @nodeId(typeName: "Language")
+}
+
+type Inventory @table(name: "inventory") {
+  "Bare on a type that is no node: nothing to inherit."
+  filmNode: ID @nodeId
+  "A type with no @node, and a name no type carries."
+  storeId: ID @nodeId(typeName: "Store")
+  nowhere: ID @nodeId(typeName: "Nope")
+}
+
+type Store @table(name: "store") { storeId: Int @field(name: "store_id") }
+
+"Over film, which two nodes share, and no node itself."
+type FilmCard @table(name: "film") { title: String }
+
+input CardFilter { id: ID }
+
+type PlainNode implements Node @table(name: "plain_id") @node {
+  "No directive, and plain_id has a column named id."
+  id: ID!
+}
+
+input PlainFilter { id: ID }
+
+extend type Query {
+  "Lands on inventory, which no node declares itself over."
+  inventories(filmId: ID @nodeId): [Inventory!]!
+  "Lands on film, which two nodes declare themselves over."
+  cards(filmId: ID @nodeId): [FilmCard!]!
+  "An input id named for its target, over film."
+  cardsBy(where: CardFilter): [FilmCard!]!
+  "An input id named for its target, over plain_id."
+  plains(where: PlainFilter): [PlainNode!]!
+  films: [Film!]!
+  filmAliases: [FilmAlias!]!
+  languages: [Language!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code LIKE 'NODE_ID_%'
+  """, rows: """
+  coordinate,                 code,                             detail
+  CardFilter.id,              NODE_ID_TARGET_AMBIGUOUS,         Query.cardsBy(where.id:)
+  Film.titleId,               NODE_ID_NOT_ID_TYPE,              String
+  Inventory.filmNode,         NODE_ID_CONTAINING_TYPE_NOT_NODE, Inventory
+  Inventory.nowhere,          NODE_ID_TYPE_NAME_NOT_NODE,       Nope
+  Inventory.storeId,          NODE_ID_TYPE_NAME_NOT_NODE,       Store
+  Language.id,                NODE_ID_TYPE_NAME_ON_OWN_ID,      Language
+  PlainFilter.id,             NODE_ID_SHADOWS_COLUMN,           id
+  PlainNode.id,               NODE_ID_SHADOWS_COLUMN,           id
+  Query.cards(filmId:),       NODE_ID_TARGET_AMBIGUOUS,         Query.cards(filmId:)
+  Query.inventories(filmId:), NODE_ID_TARGET_UNRESOLVED,        Query.inventories(filmId:)
+  """)
+
+# Neither a node id nor a column where the id shadows one.
+extend schema @assertAbsent(relation: "graphitron_occurrence_node_id", rows: """
+  coordinate
+  PlainNode.id
+  Query.plains(where.id:)
+  """)

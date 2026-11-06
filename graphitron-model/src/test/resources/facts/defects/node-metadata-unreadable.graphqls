@@ -27,7 +27,9 @@ extend schema @expectEquals(relation: "graphitron_node_keycolumn", rows: """
   Half,      0,        id,          CATALOG_PRIMARY_KEY
   """)
 
+# The table also has a column named id, which the directive-less id shadows.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                     type_name, field_name, detail
   NODE_METADATA_UNREADABLE, Half,      ,           node_metadata_half
+  NODE_ID_SHADOWS_COLUMN,   Half,     id,          id
   """)
