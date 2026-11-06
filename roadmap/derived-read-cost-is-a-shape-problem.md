@@ -326,7 +326,9 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   An argument's path is anchored at the argument; an input field's written elements become a path
   per occurrence, one holder per output field, argument and chain of input fields down to it. Both
   start on the step of their field's path an author named with `as:`, or at its landing, and land on
-  their target type, the `@nodeId` type where one decodes.
+  their target type, the `@nodeId` type where one decodes. `NODE_ID_LANDS_ON_TABLE` then judges an
+  argument's or input field's own written path as it does an output field's, which
+  `defects/node-id-lands-on-table` states with `filmsByActor` once the row is there.
 * **`scenarios/path-rules` runs** `blocked`, on "Arguments and input fields have paths from their field's path".
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.
@@ -1049,12 +1051,7 @@ branch is G's (Alf, 2026-11-05).
 * **The corpus is written against the model** `open`, G's. Fact documents state a written
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
-* **A node id's path end is checked against its node** `open`, G's.
-  Where an occurrence's path lands on a table other than its node's, or a `typeName:` has no route
-  from the slot's table, the defect the landing views state today is the binding's, at the claim's
-  written position: `NODE_ID_LANDS_ON_TABLE`, read off the `graphitron_join_path` target, beside
-  the `NODE_ID_` codes `node-id-instruction-unresolved` states.
-* **Encode and decode read the target type, and the old node-id relations go** `blocked`, G's, on "A node id's path end is checked against its node".
+* **Encode and decode read the target type, and the old node-id relations go** `open`, G's.
   The generator, filter and carrier roles and E's node-id readers read `graphitron_occurrence_node_id`,
   and `graphitron_node_id_instruction`, `graphitron_node_id_candidate`, the
   `graphitron_node_id_decode_*` relations and the census `NodeIdDecodeCoverageFacts` reads go.

@@ -1,0 +1,71 @@
+# Where a named node id's path ends, against the node's table. A written path must end there. With
+# none, the slot's own table must be the node's or reach it by exactly one foreign key: on an output
+# field in either direction, at an argument or input field one the slot's table declares. film
+# declares two keys to language, inventory one to film, and nothing joins film to actor directly.
+# An id handed to a call by argMapping or under a @service binds no predicate and owes no route.
+# An argument's own @reference states no path yet, so filmsByActor, ending on language for a node on
+# actor, is not judged here.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  "Two keys to language: no route without a path."
+  languageId: ID @nodeId(typeName: "Language")
+  "The key named, ending on language."
+  languageByKey: ID @nodeId(typeName: "Language") @reference(path: [{key: "film_language_id_fkey"}])
+  "A path ending on language, for a node on actor."
+  wrongLanding: ID @nodeId(typeName: "Actor") @reference(path: [{key: "film_language_id_fkey"}])
+  "No key between film and actor."
+  actorId: ID @nodeId(typeName: "Actor")
+}
+
+type Language implements Node @table(name: "language") @node { id: ID! }
+
+type Actor implements Node @table(name: "actor") @node { id: ID! }
+
+type Inventory @table(name: "inventory") {
+  "One key to film."
+  filmId: ID @nodeId(typeName: "Film")
+}
+
+input FilmFilter {
+  "Two keys to language."
+  languageId: ID @nodeId(typeName: "Language")
+  "Its own table's node."
+  id: ID @nodeId(typeName: "Film")
+}
+
+input InventoryFilter { filmId: ID @nodeId(typeName: "Film") }
+
+"Two keys to language, but the id goes to a call, not a predicate."
+input LanguageFilter { languageId: ID @nodeId(typeName: "Language") }
+
+extend type Query {
+  films(languageId: ID @nodeId(typeName: "Language")): [Film!]!
+  filmsByKey(languageId: ID @nodeId(typeName: "Language")
+               @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+  filmsByActor(actorId: ID @nodeId(typeName: "Actor")
+                 @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+  filmsWhere(where: FilmFilter): [Film!]!
+  inventories(filmId: ID @nodeId(typeName: "Film")): [Inventory!]!
+  inventoriesWhere(where: InventoryFilter): [Inventory!]!
+  filmsMapped(where: LanguageFilter): [Film!]!
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.FilmConditions",
+                           method: "byLanguage", argMapping: "languageId: where.languageId"})
+  filmsServed(languageId: ID @nodeId(typeName: "Language")): [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  languages: [Language!]!
+  actors: [Actor!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code LIKE 'NODE_ID_%'
+  """, rows: """
+  coordinate,                code,                   detail
+  Film.actorId,              NODE_ID_LANDS_ON_TABLE, public.film
+  Film.languageId,           NODE_ID_LANDS_ON_TABLE, public.film
+  Film.wrongLanding,         NODE_ID_LANDS_ON_TABLE, public.language
+  FilmFilter.languageId,     NODE_ID_LANDS_ON_TABLE, public.film
+  Query.films(languageId:),  NODE_ID_LANDS_ON_TABLE, public.film
+  """)
