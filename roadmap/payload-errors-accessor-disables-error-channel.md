@@ -356,3 +356,60 @@ Finding 3: the Goal states the cross-family scope; Tests add a DML case and the 
 `DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED`. Finding 4: the negative is a plain object element, and
 the Goal's example drops `implements Error`. Finding 5: the execution fixture is named, the
 type-resolver check is a statement, and the hygiene list covers every `payload-factory` comment.
+
+### Round 2: Spec → Ready (session_01FY5UvvDHUCucMtrxBma63e, 2026-11-06)
+
+Verdict: withhold. The revision answers round 1 on the classifier side: the five gated call sites,
+the single type resolving to `ReturnTypeRef.ScalarReturnType`, the shared member-resolution helper
+and the cross-family scope all check out against trunk, and the goal is clear (a single `@error`
+element becomes a carrier, as the manual promises; an errors accessor on the backing class is
+ignored and the manual says so). Question one holds. Question two fails on one finding: the
+carrier rule lives in two places, and the plan changes one.
+
+**Finding 1 (question two: fit; it also bears on viability). The fact store states the carrier
+rule too, emission reads the store's answer, and the plan leaves the store's rule as it is.**
+`graphitron_errors_field` (filled from the view `graphitron_errors_field_rule` in
+`graphitron-model.sql`) admits a field only when its element is a container in
+`graphql_poly_member` whose every member is `@error`; `container_name` is `NOT NULL` and documented
+as "the union or interface the list holds". `graphitron_producer_outcome` holds a foreign key into
+it. `no.sikt.graphitron.emit.ErrorChannelRelation` reads both tables (producer to outcome type, and
+outcome type to members by joining `graphql_poly_member` on `container_name`) and feeds
+`ErrorMappingsClassGenerator`'s per-outcome dispatch constants and
+`TypeFetcherEmissionContext.mappingsConstant`. That method throws "the walk and the store have
+drifted" when the walk gave a field a channel and the store states no outcome for it. So under the
+plan as written, the first single-type carrier passes classification and fails generation with a
+generator-bug `IllegalStateException`; the sentence "the rest of the channel (handler rules,
+`ErrorMappings`, the catch arm ...) already works from a `List<ErrorType>` and needs no change" does
+not hold for the per-outcome constants. The errors-field entry defects (`ERRORS_FIELD_NOT_A_LIST`,
+`ERRORS_FIELD_NON_NULL`, `ERRORS_FIELD_MIXED_MEMBERS`) are derived in the store as well, so the
+"precise rejections" bullet has a store half.
+
+Two tests already pin the current rule and will fail or need changing, and neither is named:
+`OutcomeAgreementTest` (walk against store, whose SDL spells the single-member-union workaround,
+`union CarrierError = SimpleErr`), and the fact document
+`graphitron-model/src/test/resources/facts/defects/producer-outcome.graphqls`, whose description
+states the union-or-interface rule and whose `DirectPayload { errors: [FilmInvalid] }` case says
+the opposite of this item: "A list of one @error object rather than of a union or an interface:
+the value's own field, as anywhere else."
+
+What would satisfy it: the Implementation names the store-side change and how it is shaped. How
+does `graphitron_errors_field` represent a single-type element (for example `container_name`
+holding the `@error` type itself, with `ErrorChannelRelation`'s member read resolving a
+non-container to itself; or a member relation of its own), and does that keep the relation's
+grain, column comment and `NOT NULL`? That is a fact-store modeling decision (see
+`docs/architecture/explanation/modeling-discipline.adoc`) and the author's to make. Then the plan
+says whether the walk-side helper is a second copy of the store's rule or reads it, so the two
+cannot drift again; updates `producer-outcome.graphqls` (the `DirectPayload` case and the file
+description) and the entry-defect expectations for a single type; and adds a single-type producer to
+`OutcomeAgreementTest`.
+
+**Finding 2 (non-blocking, re-check list).** One more fixture changes verdict under the fix:
+`graphitron-model/src/test/resources/corpus/error-type.graphqls` declares
+`SakPayload { errors: [ExtraFieldError] }` under the `@service` field `Query.sak`, so it becomes a
+carrier. Its `ExtraFieldError` carries a `severity` field that its `GENERIC` handler's
+`java.lang.IllegalArgumentException` has no accessor for, which `HandlerAccessorCheck` reports once
+a channel forms. List it beside `DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED`. Separately, the
+non-outcome fallback the plan extends to the single type (`RecordReadField` with
+`ValueLocator.DefaultRead(name)`) is weaker than what that field gets today through
+`recordReadFieldOrUnclassified` (an accessor resolved against the backing class, `@field(name:)`
+honoured); the union already has this, so it is consistent, but the plan should say it is meant.
