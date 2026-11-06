@@ -13775,13 +13775,15 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
    AND cl.kind = 'NODE_ID' AND cl.named IS NULL
   JOIN graphitron_path_need pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-   AND pn.landing_table IS NOT NULL
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
   JOIN graphitron_node_keycolumn k
-    ON k.graph_name = pn.graph_name
+    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
    AND k.type_name = (SELECT bt.type_name FROM graphitron_tabletype bt
                         JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
-                       WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = pn.landing_source_name
-                         AND bt.table_schema = pn.landing_schema AND bt.table_name = pn.landing_table
+                       WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                         AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
                          AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
                                            JOIN graphitron_node n2
                                              ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
@@ -13828,16 +13830,18 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
    AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
   JOIN graphitron_path_need pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-   AND pn.landing_table IS NOT NULL
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
   JOIN graphitron_node_keycolumn k
-    ON k.graph_name = pn.graph_name
+    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
    AND k.type_name = COALESCE(
          (SELECT tn.type_name FROM graphitron_node tn
            WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type),
          (SELECT bt.type_name FROM graphitron_tabletype bt
             JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
-           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = pn.landing_source_name
-             AND bt.table_schema = pn.landing_schema AND bt.table_name = pn.landing_table
+           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+             AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
              AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
                                JOIN graphitron_node n2
                                  ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
@@ -13848,12 +13852,15 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
                                 AND b2.type_name <> bt.type_name)))
  WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_path_need p2
+                     LEFT JOIN graphitron_join_path jp2
+                       ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
+                      AND jp2.target_type = p2.target_type
                     WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
                       AND p2.target_type <> pn.target_type
                       AND (o.kind <> 'FIELD_ARGUMENT'
-                           OR (p2.landing_source_name = pn.landing_source_name
-                               AND p2.landing_schema = pn.landing_schema
-                               AND p2.landing_table = pn.landing_table))
+                           OR (COALESCE(jp2.target_source_name, p2.landing_source_name) = COALESCE(jp.target_source_name, pn.landing_source_name)
+                               AND COALESCE(jp2.target_schema, p2.landing_schema) = COALESCE(jp.target_schema, pn.landing_schema)
+                               AND COALESCE(jp2.target_table, p2.landing_table) = COALESCE(jp.target_table, pn.landing_table)))
                       AND COALESCE(
                             (SELECT t2.type_name FROM graphitron_node t2
                               WHERE t2.graph_name = p2.graph_name AND t2.type_name = p2.target_type),
@@ -13861,9 +13868,9 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
                                JOIN graphitron_node n3
                                  ON n3.graph_name = b3.graph_name AND n3.type_name = b3.type_name
                               WHERE b3.graph_name = p2.graph_name
-                                AND b3.table_source_name = p2.landing_source_name
-                                AND b3.table_schema = p2.landing_schema
-                                AND b3.table_name = p2.landing_table
+                                AND b3.table_source_name = COALESCE(jp2.target_source_name, p2.landing_source_name)
+                                AND b3.table_schema = COALESCE(jp2.target_schema, p2.landing_schema)
+                                AND b3.table_name = COALESCE(jp2.target_table, p2.landing_table)
                                 AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b4
                                                   JOIN graphitron_node n4
                                                     ON n4.graph_name = b4.graph_name
@@ -13888,16 +13895,18 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
     ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
   JOIN graphitron_path_need pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-   AND pn.landing_table IS NOT NULL
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
   JOIN graphitron_node_keycolumn k
-    ON k.graph_name = pn.graph_name
+    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
    AND k.type_name = COALESCE(
          (SELECT tn.type_name FROM graphitron_node tn
            WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type),
          (SELECT bt.type_name FROM graphitron_tabletype bt
             JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
-           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = pn.landing_source_name
-             AND bt.table_schema = pn.landing_schema AND bt.table_name = pn.landing_table
+           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+             AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
              AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
                                JOIN graphitron_node n2
                                  ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
@@ -13912,6 +13921,9 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
                       AND x.kind IN ('NODE_ID', 'COLUMN'))
    AND NOT EXISTS (SELECT 1 FROM graphitron_path_need p2
+                     LEFT JOIN graphitron_join_path jp2
+                       ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
+                      AND jp2.target_type = p2.target_type
                     WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
                       AND p2.target_type <> pn.target_type
                       AND COALESCE(
@@ -13921,9 +13933,9 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
                                JOIN graphitron_node n3
                                  ON n3.graph_name = b3.graph_name AND n3.type_name = b3.type_name
                               WHERE b3.graph_name = p2.graph_name
-                                AND b3.table_source_name = p2.landing_source_name
-                                AND b3.table_schema = p2.landing_schema
-                                AND b3.table_name = p2.landing_table
+                                AND b3.table_source_name = COALESCE(jp2.target_source_name, p2.landing_source_name)
+                                AND b3.table_schema = COALESCE(jp2.target_schema, p2.landing_schema)
+                                AND b3.table_name = COALESCE(jp2.target_table, p2.landing_table)
                                 AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b4
                                                   JOIN graphitron_node n4
                                                     ON n4.graph_name = b4.graph_name
@@ -14030,8 +14042,11 @@ WITH scalar (graph_name, coordinate, spelling) AS (
      AND NOT (cl.named IS NULL AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
               AND COALESCE(f.named_type, a.named_type) = 'ID'
               AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+                            LEFT JOIN graphitron_join_path jp
+                              ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                             AND jp.target_type = pn.target_type
                            WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                             AND pn.landing_table IS NOT NULL
+                             AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
                              AND (EXISTS (SELECT 1 FROM graphitron_node tn
                                            WHERE tn.graph_name = pn.graph_name
                                              AND tn.type_name = pn.target_type)
@@ -14039,17 +14054,23 @@ WITH scalar (graph_name, coordinate, spelling) AS (
                                         JOIN graphitron_node n2
                                           ON n2.graph_name = bt.graph_name AND n2.type_name = bt.type_name
                                        WHERE bt.graph_name = pn.graph_name
-                                         AND bt.table_source_name = pn.landing_source_name
-                                         AND bt.table_schema = pn.landing_schema
-                                         AND bt.table_name = pn.landing_table) = 1)))
+                                         AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                                         AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                                         AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) = 1)))
 ),
 landing (graph_name, coordinate, spelling, table_source_name, table_schema, table_name) AS (
-  SELECT DISTINCT s.graph_name, s.coordinate, s.spelling, n.landing_source_name,
-         n.landing_schema, n.landing_table
+  -- Where the need's path ends: the join path's table where one is walked, a written path's landing
+  -- being stated there and not on the need, and the need's own landing otherwise.
+  SELECT DISTINCT s.graph_name, s.coordinate, s.spelling,
+         COALESCE(jp.target_source_name, n.landing_source_name),
+         COALESCE(jp.target_schema, n.landing_schema), COALESCE(jp.target_table, n.landing_table)
     FROM scalar s
     JOIN graphitron_path_need n
       ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate
-   WHERE n.landing_table IS NOT NULL
+    LEFT JOIN graphitron_join_path jp
+      ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
+     AND jp.target_type = n.target_type
+   WHERE COALESCE(jp.target_table, n.landing_table) IS NOT NULL
 )
 SELECT l.graph_name, l.coordinate, l.table_schema || '.' || l.table_name, l.table_source_name,
        l.table_schema, l.table_name, c.column_name, 'SQL_NAME'
@@ -15705,11 +15726,17 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
  WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
    AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+                 LEFT JOIN graphitron_join_path jp
+                   ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                  AND jp.target_type = pn.target_type
                 WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                  AND pn.landing_table IS NOT NULL)
+                  AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL)
    AND NOT EXISTS (SELECT 1 FROM graphitron_path_need pn
+                     LEFT JOIN graphitron_join_path jp
+                       ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                      AND jp.target_type = pn.target_type
                     WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                      AND pn.landing_table IS NOT NULL
+                      AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
                       AND (EXISTS (SELECT 1 FROM graphitron_node tn
                                     WHERE tn.graph_name = pn.graph_name
                                       AND tn.type_name = pn.target_type)
@@ -15717,9 +15744,9 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                                         JOIN graphitron_node nn
                                           ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
                                        WHERE bt.graph_name = pn.graph_name
-                                         AND bt.table_source_name = pn.landing_source_name
-                                         AND bt.table_schema = pn.landing_schema
-                                         AND bt.table_name = pn.landing_table)))
+                                         AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                                         AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                                         AND bt.table_name = COALESCE(jp.target_table, pn.landing_table))))
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
 -- A bare @nodeId at an argument or input field whose needs reach nodes but decide none: a table
@@ -15738,8 +15765,11 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id b
                     WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
    AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+                 LEFT JOIN graphitron_join_path jp
+                   ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                  AND jp.target_type = pn.target_type
                 WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                  AND pn.landing_table IS NOT NULL
+                  AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
                   AND (EXISTS (SELECT 1 FROM graphitron_node tn
                                 WHERE tn.graph_name = pn.graph_name
                                   AND tn.type_name = pn.target_type)
@@ -15747,9 +15777,9 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                                     JOIN graphitron_node nn
                                       ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
                                    WHERE bt.graph_name = pn.graph_name
-                                     AND bt.table_source_name = pn.landing_source_name
-                                     AND bt.table_schema = pn.landing_schema
-                                     AND bt.table_name = pn.landing_table)))
+                                     AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                                     AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                                     AND bt.table_name = COALESCE(jp.target_table, pn.landing_table))))
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
 -- An input field's id: ID with neither @nodeId nor @field, landing on a table several nodes declare
@@ -15764,8 +15794,11 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
     ON f.graph_name = fe.graph_name AND f.type_name = fe.type_name AND f.field_name = fe.field_name
   JOIN graphitron_path_need pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-   AND pn.landing_table IS NOT NULL
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
  WHERE o.kind = 'INPUT_FIELD' AND o.name = 'id' AND f.named_type = 'ID'
+   AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
    AND f.source_line IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
@@ -15774,8 +15807,8 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
                     WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type)
    AND (SELECT COUNT(*) FROM graphitron_tabletype bt
           JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
-         WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = pn.landing_source_name
-           AND bt.table_schema = pn.landing_schema AND bt.table_name = pn.landing_table) > 1
+         WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+           AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) > 1
  GROUP BY f.graph_name, f.source_name, f.source_line, f.source_column
 UNION ALL
 -- A node type's own id: ID with neither @nodeId nor @field, over a table with a column of that name:
@@ -15809,7 +15842,9 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
   FROM graphitron_occurrence o
   JOIN graphitron_path_need pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-   AND pn.landing_table IS NOT NULL
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
   LEFT JOIN graphitron_node tn
     ON tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type
   LEFT JOIN (SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name, bt.type_name
@@ -15824,8 +15859,8 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
                                    AND b3.table_name = bt.table_name
                                    AND b3.type_name <> bt.type_name)) ln
     ON tn.type_name IS NULL AND o.kind = 'INPUT_FIELD'
-   AND ln.graph_name = pn.graph_name AND ln.table_source_name = pn.landing_source_name
-   AND ln.table_schema = pn.landing_schema AND ln.table_name = pn.landing_table
+   AND ln.graph_name = pn.graph_name AND ln.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+   AND ln.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND ln.table_name = COALESCE(jp.target_table, pn.landing_table)
   JOIN graphitron_tabletype bt
     ON bt.graph_name = pn.graph_name AND bt.type_name = COALESCE(tn.type_name, ln.type_name)
   JOIN sql_column c
@@ -15843,6 +15878,7 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
    AND a.field_name = ae.field_name AND a.argument_name = ae.argument_name
  WHERE o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
    AND COALESCE(f.named_type, a.named_type) = 'ID'
+   AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
    AND COALESCE(f.source_line, a.source_line) IS NOT NULL
    AND (o.kind = 'INPUT_FIELD'
         OR NOT EXISTS (SELECT 1 FROM graphitron_path_need p2
