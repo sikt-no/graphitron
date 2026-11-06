@@ -80,3 +80,52 @@ extend schema @expectEquals(relation: "graphitron_field_key_row", where: "type_n
   type_name,       field_name, kind,     table_name, arity
   FilmCardWrapper, film,       ACCESSOR, film,       ONE
   """)
+
+# What each occurrence under an @externalField reads is the value its Field carries, not the
+# parent's row. Field<FilmRecord> carries a table's own record, so filmId reads film. FilmCardData is
+# no table's record, so example and film read an instance of it; film reads its key off the value
+# through the film() accessor, the lift being its producer's, so film itself has no need.
+extend schema @expectEquals(relation: "graphitron_occurrence_source",
+    where: "coordinate LIKE 'Inventory.film%'", rows: """
+  coordinate,                    kind
+  Inventory.filmCardData,         TABLE
+  Inventory.filmCardData.example, OBJECT
+  Inventory.filmCardData.film,    OBJECT
+  Inventory.filmRef,              TABLE
+  Inventory.filmRef.filmId,       TABLE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
+    where: "coordinate LIKE 'Inventory.film%'", rows: """
+  coordinate,               table_name
+  Inventory.filmCardData,   inventory
+  Inventory.filmRef,        inventory
+  Inventory.filmRef.filmId, film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_source_object",
+    where: "coordinate LIKE 'Inventory.film%'", rows: """
+  coordinate,                     class_name
+  Inventory.filmCardData.example, no.sikt.graphitron.rewrite.test.services.FilmCardData
+  Inventory.filmCardData.film,    no.sikt.graphitron.rewrite.test.services.FilmCardData
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_need",
+    where: "coordinate LIKE 'Inventory.film%'", rows: """
+  coordinate,               target_type,     start_table, landing_table
+  Inventory.filmCardData,   FilmCardWrapper, inventory,   inventory
+  Inventory.filmRef,        FilmCard,        inventory,   inventory
+  Inventory.filmRef.filmId, Int,             film,        film
+  """)
+
+# Under example, read off an object of no class, fieldA has nowhere to read from.
+extend schema @assertContains(relation: "graphitron_occurrence", rows: """
+  coordinate
+  Inventory.filmCardData.example.fieldA
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_occurrence_source",
+    where: "coordinate = 'Inventory.filmCardData.example.fieldA'")
+
+extend schema @assertEmpty(relation: "graphitron_path_need",
+    where: "coordinate = 'Inventory.filmCardData.example.fieldA'")

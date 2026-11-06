@@ -16,6 +16,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
@@ -40,6 +41,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.castNull;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
@@ -286,15 +288,18 @@ public final class OccurrenceSources {
     }
 
     /**
-     * A nested field under a parent whose service hands back an object, a table record or not,
-     * takes its rows by its key row where it has one of kind COLUMNS: the key row's table. A parent
-     * read off an object and an errors field give none.
+     * A nested field under a parent whose service hands back an object, a table record or not, or
+     * whose {@code @externalField} hands over the value its {@code Field} carries, takes its rows by
+     * its key row where it has one of kind COLUMNS: the key row's table. A parent read off an object
+     * and an errors field give none.
      */
     private static Select<Record> keyRow(GraphitronOccurrence o, GraphitronOccurrence p,
                                          Condition at, LocalDateTime touchedAt) {
         var pf = GRAPHITRON_FIELD.as("pf");
         var cf = GRAPHITRON_FIELD.as("cf");
         var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
+        var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
+        var xm = CODE_METHOD.as("xm");
         var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
         var po = GRAPHITRON_OCCURRENCE_SOURCE.as("po");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
@@ -302,12 +307,20 @@ public final class OccurrenceSources {
             .from(o)
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
             .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
-            .join(ps).on(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
-                ps.FIELD_NAME.eq(pf.FIELD_NAME))
             .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .join(kr).on(kr.GRAPH_NAME.eq(cf.GRAPH_NAME), kr.TYPE_NAME.eq(cf.TYPE_NAME),
                 kr.FIELD_NAME.eq(cf.FIELD_NAME), kr.KIND.eq("COLUMNS"))
             .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"))
+            .and(exists(selectOne().from(ps)
+                    .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
+                        ps.FIELD_NAME.eq(pf.FIELD_NAME)))
+                .or(exists(selectOne().from(xr)
+                    .join(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME),
+                        xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME), xm.METHOD_NAME.eq(xr.METHOD_NAME),
+                        xm.DESCRIPTOR.eq(xr.METHOD_DESCRIPTOR))
+                    .where(xr.GRAPH_NAME.eq(pf.GRAPH_NAME), xr.COORDINATE.eq(pf.COORDINATE),
+                        xr.DIRECTIVE_NAME.eq("externalField"), xr.KIND.eq("ROOT"),
+                        xm.RESULT_FIRST_ARGUMENT_CLASS.isNotNull()))))
             .and(notExists(selectOne().from(po)
                 .where(po.GRAPH_NAME.eq(p.GRAPH_NAME), po.COORDINATE.eq(p.COORDINATE),
                     po.KIND.eq(OBJECT), po.TOUCHED_AT.eq(touchedAt))))
@@ -318,7 +331,8 @@ public final class OccurrenceSources {
 
     /**
      * A nested field with no COLUMNS key row under a parent whose service hands back a table's own
-     * record reads that table, the record class matched in the graph's own catalog.
+     * record, or whose {@code @externalField}'s {@code Field} carries one, reads that table, the
+     * record class matched in the graph's own catalog.
      */
     private static Select<Record> record(GraphitronOccurrence o, GraphitronOccurrence p,
                                          Condition at, LocalDateTime touchedAt) {
@@ -326,22 +340,29 @@ public final class OccurrenceSources {
         var cf = GRAPHITRON_FIELD.as("cf");
         var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
         var m = CODE_METHOD.as("m");
+        var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
+        var xm = CODE_METHOD.as("xm");
         var gs = STORE_GRAPH_SOURCE.as("gs");
         var st = SQL_TABLE.as("st");
         var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
         var po = GRAPHITRON_OCCURRENCE_SOURCE.as("po");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
+        // The class the parent hands over: its service's result, or the class its Field carries.
+        Field<String> handed = coalesce(m.RESULT_ELEMENT_CLASS, xm.RESULT_FIRST_ARGUMENT_CLASS);
         return row(o, TABLE, st.SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME, null)
             .from(o)
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
             .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
-            .join(ps).on(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
+            .leftJoin(ps).on(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
                 ps.FIELD_NAME.eq(pf.FIELD_NAME))
-            .join(m).on(m.SOURCE_NAME.eq(ps.METHOD_SOURCE_NAME), m.CLASS_NAME.eq(ps.METHOD_CLASS_NAME),
+            .leftJoin(m).on(m.SOURCE_NAME.eq(ps.METHOD_SOURCE_NAME), m.CLASS_NAME.eq(ps.METHOD_CLASS_NAME),
                 m.METHOD_NAME.eq(ps.METHOD_NAME), m.DESCRIPTOR.eq(ps.METHOD_DESCRIPTOR))
+            .leftJoin(xr).on(xr.GRAPH_NAME.eq(pf.GRAPH_NAME), xr.COORDINATE.eq(pf.COORDINATE),
+                xr.DIRECTIVE_NAME.eq("externalField"), xr.KIND.eq("ROOT"))
+            .leftJoin(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME), xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME),
+                xm.METHOD_NAME.eq(xr.METHOD_NAME), xm.DESCRIPTOR.eq(xr.METHOD_DESCRIPTOR))
             .join(gs).on(gs.GRAPH_NAME.eq(o.GRAPH_NAME))
-            .join(st).on(st.SOURCE_NAME.eq(gs.SOURCE_NAME),
-                st.RECORD_CLASS_FQN.eq(m.RESULT_ELEMENT_CLASS))
+            .join(st).on(st.SOURCE_NAME.eq(gs.SOURCE_NAME), st.RECORD_CLASS_FQN.eq(handed))
             .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"))
             .and(notExists(selectOne().from(kr)
@@ -357,8 +378,9 @@ public final class OccurrenceSources {
 
     /**
      * A nested field with no COLUMNS key row under a parent whose service hands back a class that is
-     * no table's record reads an instance of that class, the parent's own method's result and no
-     * class the type may otherwise be backed by.
+     * no table's record, or whose {@code @externalField}'s {@code Field} carries one, reads an
+     * instance of that class, the parent's own method's and no class the type may otherwise be
+     * backed by.
      */
     private static Select<Record> object(GraphitronOccurrence o, GraphitronOccurrence p,
                                          Condition at, LocalDateTime touchedAt) {
@@ -366,24 +388,32 @@ public final class OccurrenceSources {
         var cf = GRAPHITRON_FIELD.as("cf");
         var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
         var m = CODE_METHOD.as("m");
+        var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
+        var xm = CODE_METHOD.as("xm");
         var gs = STORE_GRAPH_SOURCE.as("gs");
         var st = SQL_TABLE.as("st");
         var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
         var po = GRAPHITRON_OCCURRENCE_SOURCE.as("po");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
-        return row(o, OBJECT, null, null, null, m.RESULT_ELEMENT_CLASS)
+        // The class the parent hands over: its service's result, or the class its Field carries.
+        Field<String> handed = coalesce(m.RESULT_ELEMENT_CLASS, xm.RESULT_FIRST_ARGUMENT_CLASS);
+        return row(o, OBJECT, null, null, null, handed)
             .from(o)
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
             .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
-            .join(ps).on(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
+            .leftJoin(ps).on(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
                 ps.FIELD_NAME.eq(pf.FIELD_NAME))
-            .join(m).on(m.SOURCE_NAME.eq(ps.METHOD_SOURCE_NAME), m.CLASS_NAME.eq(ps.METHOD_CLASS_NAME),
+            .leftJoin(m).on(m.SOURCE_NAME.eq(ps.METHOD_SOURCE_NAME), m.CLASS_NAME.eq(ps.METHOD_CLASS_NAME),
                 m.METHOD_NAME.eq(ps.METHOD_NAME), m.DESCRIPTOR.eq(ps.METHOD_DESCRIPTOR))
+            .leftJoin(xr).on(xr.GRAPH_NAME.eq(pf.GRAPH_NAME), xr.COORDINATE.eq(pf.COORDINATE),
+                xr.DIRECTIVE_NAME.eq("externalField"), xr.KIND.eq("ROOT"))
+            .leftJoin(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME), xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME),
+                xm.METHOD_NAME.eq(xr.METHOD_NAME), xm.DESCRIPTOR.eq(xr.METHOD_DESCRIPTOR))
             .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
-            .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"), m.RESULT_ELEMENT_CLASS.isNotNull())
+            .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"), handed.isNotNull())
             .and(notExists(selectOne().from(gs)
                 .join(st).on(st.SOURCE_NAME.eq(gs.SOURCE_NAME))
-                .where(gs.GRAPH_NAME.eq(o.GRAPH_NAME), st.RECORD_CLASS_FQN.eq(m.RESULT_ELEMENT_CLASS))))
+                .where(gs.GRAPH_NAME.eq(o.GRAPH_NAME), st.RECORD_CLASS_FQN.eq(handed))))
             .and(notExists(selectOne().from(kr)
                 .where(kr.GRAPH_NAME.eq(cf.GRAPH_NAME), kr.TYPE_NAME.eq(cf.TYPE_NAME),
                     kr.FIELD_NAME.eq(cf.FIELD_NAME), kr.KIND.eq("COLUMNS"))))
@@ -472,10 +502,11 @@ public final class OccurrenceSources {
     }
 
     /**
-     * A nested field of a plain type under a parent with a table source, and no service of its own
-     * handing it an object, reads its parent's tables; an errors field reads none, a field whose
-     * parent field writes a path reads where that path lands instead, and a field of a connection
-     * reads none, binding into the page its returning producer produces.
+     * A nested field of a plain type under a parent with a table source, and no service or
+     * {@code @externalField} of its own handing it an object, reads its parent's tables; an errors
+     * field reads none, a field whose parent field writes a path reads where that path lands
+     * instead, and a field of a connection reads none, binding into the page its returning producer
+     * produces.
      */
     private static Select<Record> nestedCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                              Condition at, LocalDateTime touchedAt) {
@@ -483,6 +514,8 @@ public final class OccurrenceSources {
         var cf = GRAPHITRON_FIELD.as("cf");
         var pt = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("pt");
         var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
+        var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
+        var xm = CODE_METHOD.as("xm");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
         var pw = GRAPHITRON_FIELD_TARGET.as("pw");
         return row(o, TABLE, pt.TABLE_SOURCE_NAME, pt.TABLE_SCHEMA, pt.TABLE_NAME, null)
@@ -496,6 +529,13 @@ public final class OccurrenceSources {
             .and(notExists(selectOne().from(ps)
                 .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
                     ps.FIELD_NAME.eq(pf.FIELD_NAME))))
+            .and(notExists(selectOne().from(xr)
+                .join(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME),
+                    xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME), xm.METHOD_NAME.eq(xr.METHOD_NAME),
+                    xm.DESCRIPTOR.eq(xr.METHOD_DESCRIPTOR))
+                .where(xr.GRAPH_NAME.eq(pf.GRAPH_NAME), xr.COORDINATE.eq(pf.COORDINATE),
+                    xr.DIRECTIVE_NAME.eq("externalField"), xr.KIND.eq("ROOT"),
+                    xm.RESULT_FIRST_ARGUMENT_CLASS.isNotNull())))
             .andNot(writesPath(pf))
             .and(notExists(selectOne().from(ef)
                 .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
@@ -508,10 +548,10 @@ public final class OccurrenceSources {
     }
 
     /**
-     * A nested field of a plain type under a parent field that writes a path, and no service of its
-     * own handing it an object, reads each table the parent's join path reaches, a row per table; a
-     * path that stops reaches none. An errors field reads none, and neither does a field of a
-     * connection.
+     * A nested field of a plain type under a parent field that writes a path, and no service or
+     * {@code @externalField} of its own handing it an object, reads each table the parent's join
+     * path reaches, a row per table; a path that stops reaches none. An errors field reads none, and
+     * neither does a field of a connection.
      */
     private static Select<Record> nestedPath(GraphitronOccurrence o, GraphitronOccurrence p,
                                              Condition at, LocalDateTime touchedAt) {
@@ -519,6 +559,8 @@ public final class OccurrenceSources {
         var cf = GRAPHITRON_FIELD.as("cf");
         var j = GRAPHITRON_JOIN_PATH.as("j");
         var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
+        var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
+        var xm = CODE_METHOD.as("xm");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
         var pw = GRAPHITRON_FIELD_TARGET.as("pw");
         return row(o, TABLE, j.TARGET_SOURCE_NAME, j.TARGET_SCHEMA, j.TARGET_TABLE, null)
@@ -533,6 +575,13 @@ public final class OccurrenceSources {
             .and(notExists(selectOne().from(ps)
                 .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
                     ps.FIELD_NAME.eq(pf.FIELD_NAME))))
+            .and(notExists(selectOne().from(xr)
+                .join(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME),
+                    xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME), xm.METHOD_NAME.eq(xr.METHOD_NAME),
+                    xm.DESCRIPTOR.eq(xr.METHOD_DESCRIPTOR))
+                .where(xr.GRAPH_NAME.eq(pf.GRAPH_NAME), xr.COORDINATE.eq(pf.COORDINATE),
+                    xr.DIRECTIVE_NAME.eq("externalField"), xr.KIND.eq("ROOT"),
+                    xm.RESULT_FIRST_ARGUMENT_CLASS.isNotNull())))
             .and(notExists(selectOne().from(ef)
                 .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
                     ef.FIELD_NAME.eq(cf.FIELD_NAME))))
