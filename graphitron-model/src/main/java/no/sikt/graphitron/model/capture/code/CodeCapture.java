@@ -181,7 +181,8 @@ public final class CodeCapture {
      * package and the reactor gate keeps jar classes out of the member arms, and a handle is
      * routinely a jOOQ record or a class of a sibling, so this class is read whole on purpose,
      * from the entries the build declared, and only its slots are written: it is not a method an
-     * author may name, so none of the directive arms gain it.
+     * author may name, so none of the directive arms gain it. A transitive entry is not one of
+     * them: a handle there writes nothing, as a class no entry holds does.
      *
      * <p>Only the class itself is read, so the slots are the members it declares, which is the
      * rule a handle's members follow: a jOOQ record handle offers {@code principal} and
@@ -197,7 +198,10 @@ public final class CodeCapture {
         if (handle.isEmpty()) {
             return;
         }
+        // The entries this run reads, never one it skipped: a skipped entry is not this run's to
+        // read and has no source row for the class it holds to hang on.
         var entries = reading.sources().stream()
+            .filter(source -> !(source instanceof ClasspathSourceCapture.ClasspathSource.Skipped))
             .map(source -> java.nio.file.Path.of(source.sourceName()))
             .toList();
         var at = ClassfileCensus.readNamed(entries, handle.get());

@@ -1,0 +1,23 @@
+# A session handle is read from the entries the build declares, never from a transitive one. The
+# generated catalog is transitive here, so the jOOQ record it holds offers no members as a handle:
+# none of its slots is written, and a $session member read off it finds nothing to read. The capture
+# completes; it does not fail on a class whose entry it never read.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord"
+)
+
+type Film @table(name: "film") {
+  title: String
+  sessionNumber: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SessionIdentityService",
+      method: "mountedSessionNumber", argMapping: "number: $session.sessionNo"})
+}
+
+extend type Query { films: [Film!]! }
+
+extend schema @assertAbsent(relation: "code_read_slot", rows: """
+  class_name
+  no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord
+  """)
