@@ -1,7 +1,7 @@
 ---
 id: R1133
 title: "A single @error type as the errors field's element is not recognised as an error channel"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: error-channel
@@ -502,3 +502,22 @@ errors-field entry-defect arm; the walk keeps its copy, held to the store by an 
 `OutcomeAgreementTest`. Tests update `producer-outcome.graphqls` and add two single-type defect
 cases. A member relation and a column rename are recorded as considered. Finding 2: the corpus
 fixture is on the re-check list, and the non-outcome fallback is stated as deliberate.
+
+### Round 3: Spec → Ready (session_01FY5Uvw1aYRTZLXhw4kFSrU, 2026-11-06)
+
+Verdict: sign off. Question one: when this lands, a payload whose `errors:` lists one `@error` type
+directly gets the same channel a union gets, for `@service`, DML and `@routine` producers alike, so a
+claimed throw arrives as typed data instead of a redacted top-level error; the manual says an errors
+accessor on the payload class is never read and that one exception is one error. Every symbol,
+test, fixture and manual anchor the plan names exists as named. Question two: the plan widens the
+one rule in both places it lives (the walk's shared helper and `graphitron_errors_field_rule`, with
+`ErrorChannelRelation` resolving a non-container to itself), adds no relation and no `ReturnTypeRef`
+variant, and `OutcomeAgreementTest` holds the two copies together.
+
+Non-blocking. The store's entry-defect arm runs over every field, while the walk lifts only at the
+five sites; that is the union's behaviour today, but for the single type it means fact documents that
+reach an `@error` type through a bare field gain an editor-only defect: `corpus/error-field.graphqls`
+(`Query.err: MyError`), `facts/undecided/error-handlers.graphqls` (`Query.lone` and siblings) and
+`facts/defects/claims-conflict.graphqls` (`Query.failures: [Failure!]!`). No expectation there
+breaks (filtered by code, or undecided), so this is a heads-up, not a re-check item.
+`ERRORS_IN_A_ROW` already fires on a row field targeting an `@error` type, so it does not widen.
