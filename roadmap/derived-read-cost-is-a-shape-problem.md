@@ -262,8 +262,7 @@ argument's path is anchored at the argument; an input field's exists only per oc
 output field; both start on a step of their field's path, the one an author named with `as:`, or at
 its landing. The rules are stated in "User documentation (first-client check): paths" below, the
 relations in "Path model (draft)", and `scenarios/path-rules` asserts both. Today
-`graphitron_field_scope_table`, `intent_input_occurrence_path`, `intent_input_occurrence_path_step`,
-`intent_argument_reference_step_hop` and the argument and input-field step targets derive part of
+`graphitron_field_scope_table`, `intent_argument_reference_step_hop` and the argument and input-field step targets derive part of
 this at read time, keyed by field alone; the `intent_argmapping_` relations go with "The argMapping readers read the landing, and the candidate and match go". R1099, the
 author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
 this branch rather than modelling inputs again. Taken up on 2026-10-31. The relations it retires
@@ -364,12 +363,6 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `BuildContext` and `FieldBuilder`. Two cases are settled by fact documents on the way: a
   polymorphic id at a parameter bound through `argMapping`, which only the store may check, and the
   participant set's single-table message at the argument site, which has no test.
-* **The occurrences are only those a directive ends at** `open`. `intent_input_occurrence_path`
-  enumerates every path through every input type, 18 s of a warm sis capture's 39 s of derivation
-  (7,054 step rows), while its readers ask only about occurrences ending at an input field
-  carrying `@nodeId`, `@referenceFor` or `@reference`. The enumeration prunes an input type none of
-  whose reachable fields carries one. "A chain of input types costs its occurrences, not its paths"
-  bounds the same walk from the other side.
 * **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `blocked`, on "Arguments and input fields have paths from their field's path".
   The landing and participant arms read the walk from the using field's target, and the occurrence,
   scope, resolving, step-target and decode relations go, with `graphitron_node_id_instruction` once
@@ -584,8 +577,8 @@ pass and no stratum that clears and recomputes.
     path defects among them, since one declaration reused under several fields fails at some and not
     others; one about what was written stays at its position.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
-  * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
-    `InputOccurrencePaths` and `AuthoredClaimRejectionRows` go with the relations they write.
+  * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`
+    and `AuthoredClaimRejectionRows` go with the relations they write.
 * **`FactSink` and `FactWrites` are gone, each writer stating its own insert** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". A capture site builds a generated record, sets one column at a time and hands it to a sink that assembles the insert at run time, with `FactWrites` overriding that for thirteen relations; the statement a writer issues is nowhere in its source. Twenty-nine relations still arrive that way: the legacy `graphitron_*_entry` decodes from `GraphitronFactCapture`, which leave with their node, then the schema inputs and extensions from `SdlFactCapture` and `SdlCoordinates`, the configuration from `StoredRecipe`, the Java declarations from `EmittedRegistry`, the build warnings, rejections, lint findings and javac diagnostics, and the `sql_` catalog from `JooqFactCapture`. Each writes through its own statement instead, set-based where it reads the store and bound once per row through `BindBatch` where it reads a corpus, the shape `GraphQLAstEntries` writes in. It absorbs R701, which stated the same end from the column side.
 * **The federation capture writes in the capture's shape, marked and swept** `done`.
   `FederationCapture` writes each `federation_version*` relation through one `BindBatch`
@@ -1097,10 +1090,6 @@ Stating the seeded cases as documents put real schemas in front of rules that ha
 hand-written rows, and six of those rules answered wrongly, threw, or never fired. Each is fixed
 here with a document that shows it.
 
-* **A chain of input types costs its occurrences, not its paths** `open`.
-  `InputOccurrencePaths.copyParentSteps` enumerates every path through an input type chain, so
-  twenty levels of two fields each is a million paths and a capture that ran past fourteen minutes.
-  A document holding that chain stands guard.
 * **The claim views keep only the presence branches capture reaches** `open`. The decodes of
   `@service`, `@externalField`, `@nodeId`, `@table` and `@error` always write an entry, so the
   branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
@@ -2294,6 +2283,17 @@ participant's own path is its `@referenceFor` claim, `graphitron_ast_path_entry`
 `FieldReferenceStepTargets`: a field's walk is `graphitron_join_path_step`. The old walk's start
 subtypes `graphitron_field_path_start_result`, `graphitron_field_path_start_binding` and
 `graphitron_field_path_start_lifted`, their kind staying on `graphitron_field_path_start`.
+
+**Input occurrence paths dissolved into the occurrence** (2026-11-06). `InputOccurrencePaths`,
+`intent_input_occurrence_path` and `intent_input_occurrence_path_step`, with
+`InputOccurrenceShadowTest`: an input field's use site is its `graphitron_occurrence` coordinate,
+spelled `Query.films(where.someId:)`, its declared argument the occurrence's `argument_coordinate`
+and its descent the parent chain.
+
+**The departing column dropped** (2026-11-06). `graphitron_field_target_column`,
+`graphitron_field_target_column_match`, `graphitron_field_target_column_rule`, the grain
+`field-departing-column` and the writer `FieldTargetColumns`: a field's column is
+`graphitron_occurrence_column`, at the table its occurrence's path lands on.
 
 **Relations retired.** Eight per-site argMapping tables into `graphitron_arg_mapping_pair`:
 `graphitron_argument_condition_arg_mapping_pair`,
