@@ -1,7 +1,7 @@
 ---
 id: R1155
 title: "Fix the escape-hatch identity example, which mounts nothing in autocommit"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: runtime-connection
