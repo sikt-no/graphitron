@@ -1,4 +1,4 @@
-"What an @service reference resolves to, over real Java rather than seeded rows. Four shapes make up the answer and three of them are absences, which is why they are stated as one population: an overloaded name is every match and an arity rather than a pick, a name the class does not declare resolves to nothing, and so does a class the reading never reached. Telling the last two apart is the point of the claim on code_class beside it, absence alone saying only that the reference did not resolve."
+"What an @service or @externalField reference resolves to, over real Java rather than seeded rows. A reference resolves where exactly one method answers; an overloaded name, a name the class does not declare and a class the reading never reached each resolve to nothing and draw a defect of their own, which is what tells a missing method from a missing class."
 type Film @table(name: "film") {
     filmId: ID
     title: String
@@ -32,14 +32,12 @@ extend type Film {
         @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.services.FilmService"})
 }
 
-# The whole resolved population of this graph. Two rows for one field is the overload; the two
-# fields that resolve to nothing are absent from it, which is the assertion about them.
-extend schema @expectEquals(relation: "intent_field_producer_method", rows: """
-  type_name, field_name,  declared_via, method_name,    candidates
-  Query,     topRated,    SERVICE,      topRated,       2
-  Query,     topRated,    SERVICE,      topRated,       2
-  Query,     uppercased,  SERVICE,      titleUppercase, 1
-  Film,      titleUppercase, EXTERNAL_FIELD, titleUppercase, 1
+# The whole resolved population of this graph: a reference resolves where exactly one method
+# answers, so the overload and the two absences have no row.
+extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
+  coordinate,          method_name
+  Film.titleUppercase, titleUppercase
+  Query.uppercased,    titleUppercase
   """)
 
 # Which of the two absences is which. The class behind `absent` was read; the one behind `unread`
@@ -49,12 +47,13 @@ extend schema @assertContains(relation: "code_class", rows: """
   no.sikt.graphitron.rewrite.test.services.FilmService
   """)
 
-# The reference survives whether or not it resolves: all four are references, two are methods.
-extend schema @expectEquals(relation: "intent_field_producer_reference", rows: """
-  type_name, field_name, method_name
-  Query,     topRated,   topRated
-  Query,     uppercased, titleUppercase
-  Query,     absent,     noSuchMethod
-  Query,     unread,     get
-  Film,      titleUppercase, titleUppercase
+# What each reference that did not resolve draws instead, at the position it was written. The
+# service naming no method draws nothing: the fallback to the field's own name is the external
+# field's alone.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'CODE_REFERENCE%'", rows: """
+  code,                            type_name, field_name, detail
+  CODE_REFERENCE_CLASS_NOT_READ,   Query,     unread,     no.sikt.graphitron.rewrite.test.services.NotOnTheClasspath
+  CODE_REFERENCE_METHOD_AMBIGUOUS, Query,     topRated,   no.sikt.graphitron.rewrite.test.services.FilmService.topRated
+  CODE_REFERENCE_METHOD_NOT_FOUND, Query,     absent,     no.sikt.graphitron.rewrite.test.services.FilmService.noSuchMethod
   """)

@@ -98,7 +98,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
   "The readers read the paths, and the old path relations go".
 * An output field's walk in `graphitron_field_path*` and in `graphitron_join_path_step*`, both every
   capture, the defects the new one's alone. Ends at "The old walk's readers read the join path, and the old family goes".
-* `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
 * The walk's unknown-method rejections beside the stored code-reference defects. Ends at "The walk's unknown-method rejections go".
@@ -370,10 +369,7 @@ classpath and catalog, and every reader reads that resolution rather than a view
   `ServiceCatalog.admitConditionShape` refuses a `@condition` set with `AmbiguousMethod` where
   `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same, and at a path step it refuses on
   axes the generated call never reaches, as for `agreeingOnBoth`.
-* **Every producer reader reads `graphitron_code_reference`** `open`. `SchemaQueries`,
-  `DeclarationFacts` and the other readers of `intent_field_producer_method` are rewritten against
-  the resolution, each with an SDL test passing before and after, and the view goes.
-* **The per-site copies and coordinate-keyed entries go** `blocked`, on "Every producer reader reads `graphitron_code_reference`" and "The code-reference subject converts". The twins lose their
+* **The per-site copies and coordinate-keyed entries go** `blocked`, on "The code-reference subject converts". The twins lose their
   class, method and argMapping columns, and `graphitron_service_entry` and
   `graphitron_external_field_entry` go with their writers.
 * **The walk's unknown-method rejections go** `blocked`, on "Entry defects fail validate".
@@ -726,10 +722,6 @@ classified records have no reader left and can go with the walk.
 * **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
   `TypeMemberScope` read `graphitron_tabletype` or `graphitron_result_table` instead of
   `intent_bound_table`, and `EditorReadsNoViewTest` takes another control.
-* **The directive-argument hover reads a stored relation** `open`. `FieldColumnTable`, behind the
-  completion, hover and member diagnostic at a `@field(name:)` or `@defaultOrder` site, reads a
-  relation a capture writes, and `intent_field_column_table` dissolves. Evaluated on demand it
-  takes about 60 s per graph on sis, 2026-10-23, on trunk and after the column scope went alike.
 
 ### Validate is a query over the store, and runs against the model alone `open`
 
@@ -2500,6 +2492,10 @@ prefix with `CorpusExpectations.APPARATUS_PREFIX` and `LAUNCHER_COMMAND_RELATION
 `scenarios/routine-result`, the second moved to `scenarios/synthesized-node-type-id`, and
 `QueryViewRenderer`'s corpus prelude, `render(String, String)` and `touchedCoordinates`, its test now
 on fact-document fixtures.
+
+**The producer-method views.** `intent_field_producer_reference` and `intent_field_producer_method`,
+with `FieldProducerMethodTest`, now `CodeReferenceClasspathScopeTest` over `graphitron_code_reference`:
+a code reference resolves there, and an overload or an absence is a defect of its own.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

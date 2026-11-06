@@ -153,13 +153,10 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       and where the reading lives: {@code no.sikt.graphitron.model.capture.code.CodeCaptureTest}
  *       binds it against a real reading of this build's own classes, both arms and every near-miss
  *       of the bean rule stated as a fixture whose declared form the test did not write;
- *       {@code no.sikt.graphitron.model.intent.FieldProducerMethodTest} binds the producer pair,
- *       {@code intent_field_producer_reference} naming the method an authored Java reference spells
- *       and {@code intent_field_producer_method} the census method it resolves to, to rows stated on
- *       both sides in the module whose DDL declares them, a reference and the census it is matched
- *       against being names and nothing else; half its cases pin what the resolution refuses to
- *       decide (an overloaded name is rows and an arity, never a pick) and two pin what survives it,
- *       a reference the census matched nothing for still being a reference;
+ *       {@code no.sikt.graphitron.model.capture.document.CodeReferenceClasspathScopeTest} binds a
+ *       code reference's resolution to its own graph's classpath, and the
+ *       {@code code-reference-resolution} fact document what the resolution refuses to decide, an
+ *       overloaded name resolving to neither and drawing its own defect;
  *       the fact document {@code field-routine-method.graphqls} binds
  *       {@code graphitron_path_element_routine}, the routine with a generated call a
  *       {@code @routine} application resolves to, over the real catalog, with the two causes of

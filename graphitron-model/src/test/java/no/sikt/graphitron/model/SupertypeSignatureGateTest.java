@@ -338,7 +338,6 @@ class SupertypeSignatureGateTest {
         // body in every detection component that asks this question.
         "intent_poly_member|graphql_implements_interface,graphql_union_member",
         "graphitron_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
-        "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
         // The carriers' tags, authored or configured: the union graphitron_directive_application_arg
         // makes for every coordinate, made here for carriers alone, and stored for the reason the
         // set above gives.
