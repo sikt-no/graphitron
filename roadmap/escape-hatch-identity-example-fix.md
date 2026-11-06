@@ -1,13 +1,13 @@
 ---
 id: R1155
 title: "Fix the escape-hatch identity example, which mounts nothing in autocommit"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: runtime-connection
 depends-on: []
 created: 2026-11-05
-last-updated: 2026-11-05
+last-updated: 2026-11-06
 ---
 
 # Fix the escape-hatch identity example, which mounts nothing in autocommit

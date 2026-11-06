@@ -20,9 +20,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1133` | A single @error type as the errors field's element is not recognised as an error channel | Spec | 2026-11-03 <sub>created 2026-10-30</sub> | [plan](payload-errors-accessor-disables-error-channel.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R1146` | An invalid id to a Node-returning lookup returns null with no error | Spec | 2026-11-04 <sub>created 2026-11-03</sub> | [plan](node-lookup-invalid-id-returns-null.md) |
-| `R1155` | Fix the escape-hatch identity example, which mounts nothing in autocommit | Spec | 2026-11-05 | [plan](escape-hatch-identity-example-fix.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | Spec | 2026-10-29 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
+| `R1155` | Fix the escape-hatch identity example, which mounts nothing in autocommit | Ready | 2026-11-06 <sub>created 2026-11-05</sub> | [plan](escape-hatch-identity-example-fix.md) |
 | `R1154` | Refuse acquisition after release in the single-tenant connection carrier | In Review | 2026-11-06 <sub>created 2026-11-05</sub> | [plan](single-tenant-carrier-closed-guard.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
@@ -608,7 +608,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### runtime-connection
 
 - `R1159` [**A rejected mount poisons the pool: abort() eviction hands the dead connection to the next borrower**](evicted-connection-returns-to-pool-dead.md) — Backlog, bug
-- `R1155` [**Fix the escape-hatch identity example, which mounts nothing in autocommit**](escape-hatch-identity-example-fix.md) — Spec, bug
+- `R1155` [**Fix the escape-hatch identity example, which mounts nothing in autocommit**](escape-hatch-identity-example-fix.md) — Ready, bug
 - `R1154` [**Refuse acquisition after release in the single-tenant connection carrier**](single-tenant-carrier-closed-guard.md) — In Review, bug
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
