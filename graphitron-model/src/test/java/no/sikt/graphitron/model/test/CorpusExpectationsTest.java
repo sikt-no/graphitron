@@ -25,7 +25,7 @@ class CorpusExpectationsTest {
     private static final DSLContext PARSER = DSL.using(SQLDialect.DEFAULT);
 
     private static Block block(String csv) {
-        return CorpusExpectations.decode(PARSER, "doc", "intent_resolved_field_claim", csv);
+        return CorpusExpectations.decode(PARSER, "doc", "graphitron_field", csv);
     }
 
     @Test
@@ -121,7 +121,7 @@ class CorpusExpectationsTest {
 
     @Test
     void anUnknownRelationOrColumnDoesNotResolve() {
-        Map<String, Set<String>> catalog = Map.of("intent_resolved_field_claim",
+        Map<String, Set<String>> catalog = Map.of("graphitron_field",
             Set.of("graph_name", "type_name", "field_name"));
 
         assertThat(CorpusExpectations.unresolvedNames(block("type_name\nFilm\n"), catalog)).isEmpty();

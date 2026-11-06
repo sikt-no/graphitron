@@ -1,9 +1,9 @@
-# Which classification an author claims at each coordinate, one row per claiming directive whose
-# arguments decoded. @service claims anywhere, @externalField and @nodeId nowhere on a root,
-# @routine anywhere but Mutation and Subscription, @lookupKey on Query alone and @mutation on
-# Mutation alone, and no type claim lands on a root. A repeated @routine is one claim at its first
-# application and several marked arguments one claim at the first argument. An input-typed
-# argument without the directive claims nothing, the directive being declared on arguments only.
+# What each claiming directive claims, as written and wherever written, roots included: a claim decides
+# nothing, so a @table or @error on a root type and an @externalField or @nodeId on a root field are
+# claims like any other, for the readers and the conflict rule to weigh. A repeated @routine is one
+# claim at its first application, and each marked argument its own LOOKUP claim on the field. An
+# input-typed argument without the directive claims nothing, the directive being declared on
+# arguments only.
 
 type Film @table(name: "film") {
   title: String
@@ -61,32 +61,35 @@ type Subscription @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
   marked(id: ID @lookupKey): Film
 }
 
-extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
-  type_name,    field_name,  classifier,     trigger,       decoded
-  Film,         claimed,     SERVICE,        service,       TRUE
-  Film,         claimed,     EXTERNAL_FIELD, externalField, TRUE
-  Film,         claimed,     NODE_ID,        nodeId,        TRUE
-  Film,         routine,     ROUTINE,        routine,       TRUE
-  Query,        claimed,     SERVICE,        service,       TRUE
-  Query,        routine,     ROUTINE,        routine,       TRUE
-  Query,        marked,      LOOKUP_KEY,     lookupKey,     TRUE
-  Query,        repeated,    ROUTINE,        routine,       TRUE
-  Query,        markedTwice, LOOKUP_KEY,     lookupKey,     TRUE
-  Mutation,     claimed,     SERVICE,        service,       TRUE
-  Mutation,     mutation,    MUTATION,       mutation,      TRUE
-  Subscription, claimed,     SERVICE,        service,       TRUE
-  """)
-
-# The collapses answer with a position: the first @routine's line and the first marked argument's.
-extend schema @assertContains(relation: "intent_authored_field_claim", rows: """
-  type_name, field_name,  source_line
-  Query,     repeated,    105
-  Query,     markedTwice, 108
-  """)
-
-extend schema @expectEquals(relation: "intent_authored_type_claim", where: "type_name <> 'FactAnchor'", rows: """
-  type_name, classifier, trigger, decoded
-  Film,      TABLE,      table,   TRUE
-  Failure,   TABLE,      table,   TRUE
-  Failure,   ERROR,      error,   TRUE
+extend schema @expectEquals(relation: "graphitron_claim",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId', 'FactAnchor')", rows: """
+  coordinate          , kind      , claimer                   , source_line
+  Failure             , ERROR_TYPE, Failure                   , 90
+  Failure             , TABLE_TYPE, Failure                   , 90
+  Film                , TABLE_TYPE, Film                      , 79
+  Film.claimed        , EXPRESSION, Film.claimed              , 83
+  Film.claimed        , NODE_ID   , Film.claimed              , 84
+  Film.claimed        , SERVICE   , Film.claimed              , 82
+  Mutation            , ERROR_TYPE, Mutation                  , 115
+  Mutation            , TABLE_TYPE, Mutation                  , 115
+  Mutation.claimed    , EXPRESSION, Mutation.claimed          , 118
+  Mutation.claimed    , NODE_ID   , Mutation.claimed          , 119
+  Mutation.claimed    , SERVICE   , Mutation.claimed          , 117
+  Mutation.mutation   , INSERT    , Mutation.mutation         , 121
+  Mutation.routine    , ROUTINE   , Mutation.routine          , 120
+  Query               , ERROR_TYPE, Query                     , 96
+  Query               , TABLE_TYPE, Query                     , 96
+  Query.claimed       , EXPRESSION, Query.claimed             , 99
+  Query.claimed       , NODE_ID   , Query.claimed             , 100
+  Query.claimed       , SERVICE   , Query.claimed             , 98
+  Query.marked        , LOOKUP    , Query.marked(id:)         , 103
+  Query.markedTwice   , LOOKUP    , Query.markedTwice(first:) , 108
+  Query.markedTwice   , LOOKUP    , Query.markedTwice(second:), 109
+  Query.repeated      , ROUTINE   , Query.repeated            , 105
+  Query.routine       , ROUTINE   , Query.routine             , 101
+  Subscription        , ERROR_TYPE, Subscription              , 125
+  Subscription        , TABLE_TYPE, Subscription              , 125
+  Subscription.claimed, EXPRESSION, Subscription.claimed      , 128
+  Subscription.claimed, NODE_ID   , Subscription.claimed      , 129
+  Subscription.claimed, SERVICE   , Subscription.claimed      , 127
   """)

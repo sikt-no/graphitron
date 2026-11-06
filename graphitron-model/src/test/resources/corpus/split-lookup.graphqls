@@ -6,12 +6,6 @@ type Store @table(name: "store") {
 }
 extend type Query { store: Store }
 
-extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
-  type_name,    field_name, classifier,   tier
-  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
-  Customer,     firstName,  TABLE_COLUMN, INFERRED
-  """)
-
 extend schema @expectEquals(relation: "intent_bound_table", rows: """
   type_name,    table_name
   CorpusAnchor, category

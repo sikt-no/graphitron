@@ -51,9 +51,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rows live under their own {@code plan_} prefix and their own admitted case rather than merged into
  * the captured population.
  *
- * <p>All 57 documents are captured into one store, one graph per document, which is the shape
- * {@code derive/ColumnMatchShadowTest} already uses; the whole corpus's expectations are then one
- * query per relation and column list.
+ * <p>All 57 documents are captured into one store, one graph per document; the whole corpus's
+ * expectations are then one query per relation and column list.
  *
  * <p>Beside the comparison sit the floors that keep a block honest:
  * <ul>

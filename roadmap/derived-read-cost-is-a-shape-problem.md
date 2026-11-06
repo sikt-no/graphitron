@@ -734,9 +734,9 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-* **The claims go** `open`, B's. `BindingUsages`, `SchemaQueries` and `ColumnMatchShadowTest` read
-  `graphitron_claim` and the occurrence's producer, bindings, column and node id, and the corpus's
-  claim expectations are deleted rather than restated. `intent_column_match_claim`,
+* **The claims go** `open`, B's. `BindingUsages` and `SchemaQueries` read `graphitron_claim` and the
+  occurrence's producer, bindings, column and node id, and the corpus's claim expectations and
+  `ColumnMatchShadowTest` are deleted rather than restated. `intent_column_match_claim`,
   `intent_resolved_field_claim`, `intent_authored_type_claim`, `intent_authored_claim_conflict` and
   `intent_authored_field_claim` dissolve, the last once `intent_field_column_table` stops reading
   `intent_authored_claim_conflict`.
@@ -1139,7 +1139,7 @@ relation rather than what it shadows.
 * **The fact model cites what pins it** `blocked`, on "A registration says what pins a relation, not what it shadows". `fact-model.adoc` stops naming `FactCaptureAgreementTest`.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on "The oracle writers' lifecycle cases stay with their writers", "A registration says what pins a relation, not what it shadows" and "Any relation that carries the graph can be asserted empty".
 * **The shadow tests go with their walk side** `blocked`, on "A node is what the manual says takes effect" and "The generator builds no schema". `RoutineSpentInputShadowTest`,
-  `ColumnMatchShadowTest`, `InputOccurrenceShadowTest` and `NodeTypeShadowTest` are deleted.
+  `InputOccurrenceShadowTest` and `NodeTypeShadowTest` are deleted.
 * **The corpus goes** `blocked`, on "The shadow tests go with their walk side". The corpus
   documents and `CorpusStore` are deleted, each reader becoming a fact document or going with the walk
   it tests; `CorpusExpectations` and `CorpusDocuments` stay, the fact documents' assertions and loader.
@@ -2487,6 +2487,10 @@ them the `candidates = 1` guard every reader applied, and `TableTypeTest`'s pari
 rewritten over the occurrence model and its examples rendered from fact documents by
 `ManualExamples`; `HowToIndexCoverageTest`'s check that the reference section holds fragments went
 with them.
+
+**The column-match shadow.** `ColumnMatchShadowTest`, which held the walk's column-match arm to the
+claim view over the corpus; the column a field binds is pinned by fact documents, and the walk is no
+oracle for it.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

@@ -27,9 +27,9 @@ import java.util.Set;
  * schema, once per asserted relation:
  *
  * <pre>{@code
- * extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
- *   type_name, field_name, classifier,   tier
- *   Country,   name,       COLUMN_MATCH, INFERRED
+ * extend schema @expectEquals(relation: "graphitron_occurrence_column", rows: """
+ *   coordinate,   table_name, column_name
+ *   Country.name, country,    country
  *   """)
  * }</pre>
  *

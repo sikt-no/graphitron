@@ -1,10 +1,9 @@
-# Which column a field's own name claims on the table its type is bound to, no directive involved.
-# The name is the @field binding where one is written, matched across case, and only a scalar or
-# enum leaf carries a column. A field matching nothing claims nothing and leaves the binding
-# standing, a bare @table binds the table its type is named for, a qualified one splits on its
-# dot, and a name two schemas declare binds both candidates and claims nothing. A root's binding
-# is masked. An authored @service wins its coordinate in the reduction while the column reading
-# survives beside it, and a node's id over a table with an id column reads that column.
+# Which column a scalar binds on the table its type is bound to, no directive involved but @field.
+# The name is the @field binding where one is written, matched across case, the SQL name answering
+# before the generated one, and only a scalar or enum leaf binds a column. A field matching nothing
+# binds nothing, a bare @table binds the table its type is named for, a qualified one splits on its
+# dot, and a name two schemas declare binds both candidates and so no column. A field a @service
+# produces binds no column of its own, and a node's id is a node id rather than its table's id column.
 
 interface Node { id: ID! }
 
@@ -55,26 +54,6 @@ extend type Query @table(name: "film") {
   holders: [Holder!]!
 }
 
-extend schema @expectEquals(relation: "intent_column_match_claim", where: "type_name <> 'FactAnchor'", rows: """
-  type_name, field_name,  matched_name, matched_by, table_source_name,                              table_schema,  table_name,   column_name
-  Film,      title,       title,        JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         title
-  Film,      year,        release_year, JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         release_year
-  Film,      certificate, rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
-  Film,      heading,     TITLE,        JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         title
-  Film,      Rating,      Rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
-  Film,      rating,      rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
-  Served,    title,       title,        JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         title
-  Served,    rating,      rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
-  Qualified, body,        body,         JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.multischema_a, multischema_a, note,         body
-  Holder,    id,          id,           JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        array_holder, id
-  """)
-
-# The row carries the field's own declaration position, not the binding's.
-extend schema @assertContains(relation: "intent_column_match_claim", rows: """
-  type_name, field_name, source_line, source_column
-  Film,      title,      85,          3
-  """)
-
 extend schema @expectEquals(relation: "intent_bound_table", where: "type_name <> 'FactAnchor'", rows: """
   type_name, table_schema,  table_name,   candidates
   Film,      public,        film,         1
@@ -87,8 +66,20 @@ extend schema @expectEquals(relation: "intent_bound_table", where: "type_name <>
   Holder,    public,        array_holder, 1
   """)
 
-extend schema @expectEquals(relation: "intent_resolved_field_claim", where: "type_name = 'Served'", rows: """
-  type_name, field_name, classifier,   tier
-  Served,    title,      SERVICE,      AUTHORED
-  Served,    rating,     TABLE_COLUMN, INFERRED
+extend schema @expectEquals(relation: "graphitron_occurrence_column",
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
+  coordinate      , table_schema , table_name, column_name , matched_by
+  Film.Rating     , public       , film      , rating      , SQL_NAME
+  Film.certificate, public       , film      , rating      , SQL_NAME
+  Film.heading    , public       , film      , title       , SQL_NAME
+  Film.rating     , public       , film      , rating      , SQL_NAME
+  Film.title      , public       , film      , title       , SQL_NAME
+  Film.year       , public       , film      , release_year, SQL_NAME
+  Qualified.body  , multischema_a, note      , body        , SQL_NAME
+  Served.rating   , public       , film      , rating      , SQL_NAME
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer", where: "coordinate LIKE 'Served.%'", rows: """
+  coordinate  , kind   , start
+  Served.title, SERVICE, CHILD
   """)

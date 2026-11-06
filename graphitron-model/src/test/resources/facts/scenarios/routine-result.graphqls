@@ -67,12 +67,6 @@ extend schema @assertContains(relation: "graphitron_occurrence_column", rows: ""
   Query.tilganger.rollekode,  public.tilganger_for_feidebruker_med_fs_fiktivt_fnr, rollekode
   """)
 
-extend schema @assertContains(relation: "intent_column_match_claim", rows: """
-  type_name, field_name, table_name,                                    column_name
-  ActorFilm, title,      films_for_actor,                               title
-  Tilgang,   rollekode,  tilganger_for_feidebruker_med_fs_fiktivt_fnr, rollekode
-  """)
-
 extend schema @assertContains(relation: "graphitron_field_path", rows: """
   type_name, field_name, start_table,     position, from_table,      to_table
   ActorFilm, film,       films_for_actor, 0,        films_for_actor, film

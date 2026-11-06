@@ -139,14 +139,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   ROUTE_AMBIGUOUS,         Film,      languageName,
   """)
 
-# A field's own name claims the column where its read arrives: the path's arrival for the field
-# that wrote one, the parent's own table for the field that did not.
-extend schema @assertContains(relation: "intent_column_match_claim", rows: """
-  type_name, field_name, table_name, column_name
-  Film,      plainKey,   language,   name
-  Film,      title,      film,       title
-  """)
-
 # Nothing departs from the parent's table through a field producing its own object.
 extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
   type_name,          field_name

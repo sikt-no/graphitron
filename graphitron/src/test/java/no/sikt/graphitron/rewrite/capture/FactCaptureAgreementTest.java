@@ -88,12 +88,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       binds the stored lookup claims to {@code LookupFacts.triggersFor} over a real capture, while
  *       the {@code authored-claim} fact documents in graphitron-model bind each arm pair, its
  *       position mask and its ordinal collapse over SDL captured against the sakila catalog in the
- *       module whose DDL declares them; the column-match view carries its reason in two places for the same reason,
- *       though the two questions asked of it have different lifetimes.
- *       {@code no.sikt.graphitron.rewrite.derive.ColumnMatchShadowTest} binds the view and the
- *       reduction over it to the classification walk's fall-through arm over the spec-by-example
- *       corpus, which is the half that retires when the walk does, while
- *       the {@code column-match-claim} fact documents bind what the view returns, and the table
+ *       module whose DDL declares them;
+ *       the {@code column-match-claim} fact documents bind the column a field binds, and the table
  *       resolution it stands on ({@code intent_bound_table}) through the claim's own table witness,
  *       over captured SDL in the module whose DDL declares them: bare, qualified and ambiguous
  *       bindings, a graph resolving through its own catalog and no other, and the bindings a
