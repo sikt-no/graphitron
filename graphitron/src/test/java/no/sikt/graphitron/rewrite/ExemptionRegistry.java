@@ -182,14 +182,6 @@ public final class ExemptionRegistry {
      */
     public static final Map<Class<?>, Exemption> NOT_CORPUS_COVERED = Map.of();
 
-    /**
-     * Launcher command arms ({@code LaunchSource} / {@code ResultShape}) no corpus
-     * {@code plan_launcher_command} block spells. Empty: the corpus's declared rows currently
-     * reach every arm; the ratchet in {@link #assertHonoured} forces a newly reached arm off
-     * this map the moment its declaration lands.
-     */
-    public static final Map<Class<?>, Exemption> LAUNCHER_COMMITMENT_GAPS = Map.of();
-
     // ===== Domain and covered-set derivations =====
 
     /**
@@ -225,8 +217,7 @@ public final class ExemptionRegistry {
     /**
      * The {@link OperationMember} leaf arms the corpus demonstrates at member grain: every arm
      * in a declared {@code operations:} list that agrees with the produced member rows at its
-     * coordinate (the {@code corpusCommittedLauncherArms()} agreement-gate shape: declaration
-     * alone claims nothing, production alone claims nothing).
+     * coordinate: declaration alone claims nothing, production alone claims nothing.
      */
     private static Set<Class<?>> corpusDeclaredMemberArms() {
         var covered = new HashSet<Class<?>>();
@@ -254,50 +245,6 @@ public final class ExemptionRegistry {
                     ClassifiedHarness.forEachWithRiddenFields(c, r -> covered.add(r.getClass()));
                 }
             });
-        }
-        return covered;
-    }
-
-    /**
-     * The launcher command arms the corpus demonstrates: every {@code LaunchSource} and
-     * {@code ResultShape} arm a document's {@code plan_launcher_command} block spells.
-     *
-     * <p>The agreement half is not restated here, it is enforced elsewhere and this reads the
-     * declaration alone on purpose. A block asserts set equality with the produced relation in
-     * both directions, per document, and {@code CorpusExpectationTest} is what checks it against
-     * a real production; a token that names no arm cannot survive that check, because no row
-     * carries it. So the witness a declared arm gives is worth what it was worth when a
-     * coordinate directive carried both sides at once, with the two halves now sitting in the
-     * gates that own them rather than in one loop.
-     *
-     * <p>Tokens no arm answers to are dropped rather than counted as a null member: the coverage
-     * comparison is over arm classes, and a typo is the corpus expectation's failure to report,
-     * not this map's.
-     */
-    private static Set<Class<?>> corpusCommittedLauncherArms() {
-        var arms = new java.util.HashMap<String, Class<?>>();
-        GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.LaunchSource.class)
-            .forEach(c -> arms.put(c.getSimpleName(), c));
-        GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.ResultShape.class)
-            .forEach(c -> arms.put(c.getSimpleName(), c));
-        var csvReader = org.jooq.impl.DSL.using(org.jooq.SQLDialect.H2);
-        var covered = new HashSet<Class<?>>();
-        for (var example : CorpusDocuments.documents()) {
-            for (var block : CorpusExpectations.declaredBlocks(csvReader, example.id(), example.sdl())) {
-                if (!block.relation().equalsIgnoreCase(CorpusExpectations.LAUNCHER_COMMAND_RELATION)) {
-                    continue;
-                }
-                for (var column : List.of("source", "result")) {
-                    int index = block.columns().indexOf(column);
-                    if (index < 0) {
-                        continue;
-                    }
-                    block.rows().stream()
-                        .map(row -> arms.get(row.get(index)))
-                        .filter(java.util.Objects::nonNull)
-                        .forEach(covered::add);
-                }
-            }
         }
         return covered;
     }
@@ -334,29 +281,6 @@ public final class ExemptionRegistry {
         NOT_CORPUS_COVERED);
 
     /**
-     * The launcher commitment obligation: every {@code LaunchSource} and {@code ResultShape}
-     * arm must be spelled by a corpus {@code plan_launcher_command} block or carry a typed
-     * exemption. This is also what the retired SDL enums mirroring the two seals used to buy,
-     * now stated once: an arm added to either seal and exercised by no document fails here,
-     * where before it failed a mirror floor against an enum a document had to spell.
-     * {@code ResultShape.LoaderDelegated}'s coverage is entailed by the
-     * service source arms through the {@code LauncherCommand} compact constructor's
-     * biconditional (service source iff {@code LoaderDelegated}), so that cell is not an
-     * independent witness: it arrives with {@code ServiceCall} / {@code ServiceTableLift} and
-     * cannot be reached without them.
-     */
-    public static final Obligation LAUNCHER_COMMITMENT = new Obligation(
-        "launcher-commitment: LaunchSource and ResultShape arms vs the corpus's declared launcher rows",
-        memo(() -> {
-            var domain = new HashSet<Class<?>>(
-                GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.LaunchSource.class));
-            domain.addAll(GeneratorCoverageTest.sealedLeaves(no.sikt.graphitron.command.ResultShape.class));
-            return domain;
-        }),
-        memo(ExemptionRegistry::corpusCommittedLauncherArms),
-        LAUNCHER_COMMITMENT_GAPS);
-
-    /**
      * All rows: the discovery guard's registration authority, and the subjects of
      * {@code ExemptionRegistryTest}'s parameterized meta-test at pipeline tier. Every row is
      * corpus-backed, so one list serves both and a new row cannot reach the registry without
@@ -364,7 +288,7 @@ public final class ExemptionRegistry {
      */
     public static List<Obligation> obligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, MEMBER_ARMS,
-            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
+            SOURCE_SHAPE_CORPUS);
     }
 
     private static <T> Supplier<T> memo(Supplier<T> s) {

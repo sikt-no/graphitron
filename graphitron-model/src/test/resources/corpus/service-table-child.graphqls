@@ -16,13 +16,6 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Language,     language
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,      source,           result
-  Language,  filmsViaService, ServiceTableLift, LoaderDelegated
-  Query,     corpusAnchor,    AnchorTable,      SingleRecord
-  Query,     language,        AnchorTable,      SingleRecord
-  """)
-
 {
   language {
     name

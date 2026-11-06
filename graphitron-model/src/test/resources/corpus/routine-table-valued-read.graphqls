@@ -17,17 +17,6 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   """)
 
 # Tilgang's rows are the routine's result, which binds no table.
-extend schema @expectEquals(relation: "graphitron_tabletype", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  """)
-
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,       result
-  Query,     corpusAnchor, AnchorTable,  SingleRecord
-  Query,     tilganger,    RoutineChain, RecordList
-  """)
-
 {
   tilganger(env: "test", serviceId: "svc", feideId: "user@example.org") {
     organisasjonskode

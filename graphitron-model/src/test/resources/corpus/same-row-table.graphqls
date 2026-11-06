@@ -18,10 +18,3 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CitySummary,  city
   CorpusAnchor, category
   """)
-
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,    source,      result
-  Query,     city,          AnchorTable, SingleRecord
-  Query,     citySummaries, AnchorTable, RecordList
-  Query,     corpusAnchor,  AnchorTable, SingleRecord
-  """)

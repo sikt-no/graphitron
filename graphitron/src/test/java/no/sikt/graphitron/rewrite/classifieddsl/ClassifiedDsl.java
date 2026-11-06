@@ -37,12 +37,8 @@ import no.sikt.graphitron.model.test.CorpusDocuments;
  * </ul>
  *
  * <p>A fourth coordinate directive used to sit here, asserting the arm tokens of a coordinate's
- * launcher command row against the relation a canonical run produces. It is retired: the same fact
- * is now an ordinary {@code @expectEquals} block over
- * {@link CorpusExpectations#LAUNCHER_COMMAND_RELATION}, which asserts every launcher row of a
- * document rather than the coordinates an author remembered to annotate, and needs no SDL enum
- * mirroring a sealed arm set to type it. What its enums bought, a build failure when a seal grows an
- * arm nobody exercises, is now the launcher-commitment obligation's to state.
+ * launcher command row against the relation a canonical run produces. It is retired, with the
+ * planner's launcher rows asserted nowhere: the planner is the walk's, and the walk is dissolving.
  */
 public final class ClassifiedDsl {
 

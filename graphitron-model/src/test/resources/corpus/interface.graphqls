@@ -22,11 +22,4 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Customer,     customer
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,      result
-  Query,     city,         AnchorTable, SingleRecord
-  Query,     corpusAnchor, AnchorTable, SingleRecord
-  Query,     customer,     AnchorTable, SingleRecord
-  """)
-
 { customer { address { name } } }

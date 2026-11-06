@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import no.sikt.graphitron.model.test.CorpusDocuments;
 import graphql.language.AstPrinter;
 import graphql.language.Definition;
 import graphql.language.Directive;
@@ -53,7 +52,7 @@ import java.util.stream.Stream;
 /**
  * The query-as-view renderer. Prose embeds a GraphQL <em>query</em> (or a fragment {@code on Type})
  * naming the coordinates it wants to show; the renderer resolves that selection against the
- * assembled corpus schema and regenerates minimal SDL for the touched closure. One mechanism does
+ * assembled fixture schema and regenerates minimal SDL for the touched closure. One mechanism does
  * three jobs at once:
  *
  * <ol>
@@ -90,7 +89,7 @@ import java.util.stream.Stream;
  * authored field that produces them prints instead.
  *
  * <p><strong>Descriptions.</strong> The prose saying <em>why</em> a coordinate exists is the
- * coordinate's own SDL description in the corpus document, so it survives regeneration here without
+ * coordinate's own SDL description in the fact document, so it survives regeneration here without
  * this renderer knowing about it, and capture transcribes the same text into
  * {@code graphql_field.description} / {@code graphql_type.description}. The projection used to be
  * that prose's home, as {@code # ...} comments this renderer stamped on as descriptions; a document
@@ -134,33 +133,7 @@ public final class QueryViewRenderer {
         }
     }
 
-    /** The classification corpus's prelude, which every corpus document is read over. */
-    private static final Prelude CORPUS = Prelude.of(CorpusDocuments.prelude());
-
-    /**
-     * The output-field coordinates the {@code selection} touches, parent type to field names.
-     *
-     * <p>Exposed because the outcome block beside a rendered example must speak about exactly the
-     * coordinates the example shows. Deriving that set a second way, from the rendered SDL or from
-     * the fixture, would let the two halves of one example disagree about what the example is.
-     */
-    public static Map<String, Set<String>> touchedCoordinates(String fixtureSdl, String selection) {
-        String full = CORPUS.text() + "\n" + fixtureSdl;
-        TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
-        GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
-
-        Document doc = new Parser().parseDocument(selection);
-        Touched touched = new Touched();
-        new Walk(schema, indexFragments(doc), touched).fromDocument(doc);
-        return Map.copyOf(touched.fieldsByParent);
-    }
-
-    /** Renders the SDL closure the {@code selection} (a query/mutation or fragment document) touches over {@code fixtureSdl}. */
-    public static String render(String fixtureSdl, String selection) {
-        return render(CORPUS, fixtureSdl, selection);
-    }
-
-    /** The same rendering over a fixture read with another {@code prelude}, a fact document's. */
+    /** Renders the SDL closure the {@code selection} (a query/mutation or fragment document) touches over {@code fixtureSdl}, read with {@code prelude}. */
     static String render(Prelude prelude, String fixtureSdl, String selection) {
         Set<String> internal = prelude.directives();
         String full = prelude.text() + "\n" + fixtureSdl;
@@ -338,11 +311,11 @@ public final class QueryViewRenderer {
      * The type named {@code name}, with its {@code extend} blocks folded into it.
      *
      * <p>graphql-java keeps a type's extensions beside its definition rather than in it. A fixture
-     * contributes its roots with {@code extend type Query}, because the base schema in
-     * {@link CorpusDocuments#prelude()} declares the root once for every fixture, so reading the
+     * contributes its roots with {@code extend type Query}, because the prelude it is read over
+     * declares the root once for every fixture, so reading the
      * definition alone would render the base schema's {@code Query} and none of the fields the
      * example is about. Folding here also keeps {@code extend} out of the rendered block: the page
-     * shows the reader the schema they would write, not how the corpus assembles it.
+     * shows the reader the schema they would write, not how the fixture assembles it.
      */
     private static TypeDefinition<?> merged(TypeDefinitionRegistry registry, String name) {
         TypeDefinition<?> def = registry.getTypeOrNull(name);

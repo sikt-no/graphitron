@@ -475,31 +475,6 @@ public final class ClassifiedHarness {
     }
 
     /**
-     * The simple names of the concrete sealed {@link no.sikt.graphitron.command.LaunchSource}
-     * arms, the vocabulary a corpus block spells in its {@code source} column. The recursive
-     * walker flattens the {@code Correlated} / {@code Reentry} capability seals to their
-     * concrete arms.
-     *
-     * <p>No SDL enum mirrors this set any more. The seal is the vocabulary's only owner, and
-     * the store's own convention rejects a CHECK that hand-copies a compiler-enforced taxonomy,
-     * so what binds a block's spelling to the arms is the launcher-commitment coverage
-     * obligation in {@code ExemptionRegistry}: an arm no block reaches fails it, and a token no
-     * arm answers to is a row the corpus expectation cannot produce.
-     */
-    public static List<String> launchSourceArmSimpleNames() {
-        return sealedLeafSimpleNames(no.sikt.graphitron.command.LaunchSource.class);
-    }
-
-    /**
-     * The simple names of the sealed {@link no.sikt.graphitron.command.ResultShape} arms, the
-     * vocabulary a corpus block spells in its {@code result} column. Bound to the blocks the
-     * same way {@link #launchSourceArmSimpleNames()} is.
-     */
-    public static List<String> resultShapeArmSimpleNames() {
-        return sealedLeafSimpleNames(no.sikt.graphitron.command.ResultShape.class);
-    }
-
-    /**
      * The simple names of every concrete sealed leaf of {@code seal}, in discovery order and
      * <em>preserving duplicates</em>, so a mirror that compares by simple name can assert the set has no
      * duplicate names before relying on the name-based comparison (the discipline

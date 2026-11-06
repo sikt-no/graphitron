@@ -25,9 +25,3 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Individual,   party_individual
   Party,        party
   """)
-
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,             result
-  Query,     allParties,   DiscriminatedTable, RecordList
-  Query,     corpusAnchor, AnchorTable,        SingleRecord
-  """)

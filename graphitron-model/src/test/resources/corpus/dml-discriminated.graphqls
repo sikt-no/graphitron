@@ -30,10 +30,3 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   FilmContent,  content
   ShortContent, content
   """)
-
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,    source,               result
-  Mutation,  createContent, DiscriminatedReentry, SingleRecord
-  Query,     content,       DiscriminatedTable,   SingleRecord
-  Query,     corpusAnchor,  AnchorTable,          SingleRecord
-  """)

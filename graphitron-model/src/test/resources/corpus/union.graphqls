@@ -20,10 +20,4 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   FilmActor,    film_actor
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,      result
-  Query,     corpusAnchor, AnchorTable, SingleRecord
-  Query,     filmActor,    AnchorTable, SingleRecord
-  """)
-
 { filmActor { related { ... on Film { title } ... on Actor { firstName } } } }

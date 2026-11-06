@@ -31,16 +31,6 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   MediaItem,    film
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,      source,                       result
-  Language,  mediaConnection, DiscriminatedCorrelatedChain, Connection
-  Language,  mediaList,       DiscriminatedCorrelatedChain, RecordList
-  Query,     corpusAnchor,    AnchorTable,                  SingleRecord
-  Query,     inventory,       AnchorTable,                  SingleRecord
-  Query,     language,        AnchorTable,                  SingleRecord
-  Query,     topMedia,        DiscriminatedTable,           SingleRecord
-  """)
-
 {
   language {
     mediaList { title }

@@ -19,13 +19,6 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   FilmActorNote, film_actor_note
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,    source,      result
-  Query,     corpusAnchor,  AnchorTable, SingleRecord
-  Query,     filmActor,     AnchorTable, SingleRecord
-  Query,     filmActorNote, AnchorTable, SingleRecord
-  """)
-
 {
   filmActor {
     id

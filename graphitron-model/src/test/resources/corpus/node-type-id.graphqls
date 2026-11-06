@@ -29,18 +29,3 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Film,         film
   FilmActor,    film_actor
   """)
-
-extend schema @expectEquals(relation: "graphitron_synthesized_node_type_id", rows: """
-  type_name, type_id
-  Customer,  Customer
-  Film,      F
-  FilmActor, FilmActor
-  """)
-
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,      result
-  Query,     corpusAnchor, AnchorTable, SingleRecord
-  Query,     customer,     AnchorTable, SingleRecord
-  Query,     film,         AnchorTable, SingleRecord
-  Query,     filmActor,    AnchorTable, SingleRecord
-  """)

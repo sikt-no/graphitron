@@ -1,0 +1,29 @@
+# A graph that composes @nodeType publishes each node type's wire type id in the emitted schema. The
+# id is the one @node(typeId:) declares, else the one the table's generated class states, else the
+# type's own name. Composing is the only opt-in, and it needs no federation @link: the document
+# declares the directive the way a schema that does not link federation has to, and applies it.
+
+directive @composeDirective(name: String!) repeatable on SCHEMA
+
+extend schema @composeDirective(name: "@nodeType")
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node(typeId: "F") { id: ID! @nodeId }
+
+type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
+
+type Customer implements Node @table(name: "customer") @node { id: ID! @nodeId }
+
+extend type Query {
+  film: Film
+  filmActor: FilmActor
+  customer: Customer
+}
+
+extend schema @expectEquals(relation: "graphitron_synthesized_node_type_id", rows: """
+  type_name, type_id
+  Customer,  Customer
+  Film,      F
+  FilmActor, FilmActor
+  """)

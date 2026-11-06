@@ -106,23 +106,6 @@ public final class CorpusExpectations {
     public static final String GRAPH_COLUMN = "graph_name";
 
     /**
-     * The prefix marking a relation as apparatus: rows a planner produced and the corpus run
-     * landed, rather than rows capture wrote. Blocks over these are held apart from the captured
-     * population by {@code CorpusExpectationTest}, so a reader of any block can tell which kind
-     * of claim it is making from the relation's name alone.
-     */
-    public static final String APPARATUS_PREFIX = "plan_";
-
-    /**
-     * The apparatus relation holding each document's produced launcher command rows, one row per
-     * migrated root SELECT coordinate. Landed per reader rather than declared in the fact
-     * schema: the rows are a function of the schema and a planner, not of captured facts, and
-     * the launcher command relation is plan-tier by design with no store relation scheduled to
-     * arrive, so there is no lifetime for a declared scaffolding relation's charter to state.
-     */
-    public static final String LAUNCHER_COMMAND_RELATION = APPARATUS_PREFIX + "launcher_command";
-
-    /**
      * The store's identifiers are unquoted DDL, so the engine folds them upward and a quoted
      * lower-case name finds nothing. Every name a document writes goes through here, which is also
      * what lets a document spell a relation the way its own DDL and its comments do.
@@ -281,9 +264,8 @@ public final class CorpusExpectations {
      * The blocks one document declares, read off its own SDL instead of out of a capture.
      *
      * <p>The sibling of {@link #blocks(DSLContext)}, for the one reader that needs a document's
-     * declarations without standing up a store: the launcher-commitment coverage obligation in
-     * {@code ExemptionRegistry}, which asks which command arms the corpus demonstrates and has no
-     * store to ask. Both entry points end in {@link #decode}, so the CSV half is one
+     * declarations without standing up a store: a documentation example showing a fact document's
+     * asserted rows, rendered by {@code ManualExamples}. Both entry points end in {@link #decode}, so the CSV half is one
      * implementation and cannot answer two ways; what differs is only how the application is
      * located, a graphql-java parse here against the transcribed directive rows there.
      *

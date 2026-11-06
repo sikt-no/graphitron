@@ -27,12 +27,6 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Party,        party
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,             result
-  Query,     corpusAnchor, AnchorTable,        SingleRecord
-  Query,     parties,      DiscriminatedTable, Connection
-  """)
-
 {
   parties(first: 2) {
     edges {

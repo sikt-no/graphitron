@@ -2483,6 +2483,17 @@ are `graphitron_claim`'s, what took effect the occurrence's.
 claim view over the corpus; the column a field binds is pinned by fact documents, and the walk is no
 oracle for it.
 
+**The planner's rows in the corpus.** The 61 `plan_launcher_command` blocks, the `plan_` apparatus
+prefix with `CorpusExpectations.APPARATUS_PREFIX` and `LAUNCHER_COMMAND_RELATION`,
+`CorpusExpectationTest.landTheLauncherCommands` and `theApparatusPopulationStaysDistinguishable`,
+`ExemptionRegistry`'s `LAUNCHER_COMMITMENT` obligation with `LAUNCHER_COMMITMENT_GAPS` and
+`corpusCommittedLauncherArms`, and `ClassifiedHarness.launchSourceArmSimpleNames` and
+`resultShapeArmSimpleNames`: the planner is the walk's and dissolves with it. With them the corpus's
+`graphitron_tabletype` and `graphitron_synthesized_node_type_id` blocks, the first pinned by
+`scenarios/routine-result`, the second moved to `scenarios/synthesized-node-type-id`, and
+`QueryViewRenderer`'s corpus prelude, `render(String, String)` and `touchedCoordinates`, its test now
+on fact-document fixtures.
+
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading
 it. The column is gone and that view reads neither relation now. A dated note says so in its body;

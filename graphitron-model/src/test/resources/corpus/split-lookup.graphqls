@@ -13,11 +13,4 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Store,        store
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,                result
-  Query,     corpusAnchor, AnchorTable,           SingleRecord
-  Query,     store,        AnchorTable,           SingleRecord
-  Store,     customers,    CorrelatedLookupChain, RecordList
-  """)
-
 { store { customers(customer_id: "1") { firstName } } }

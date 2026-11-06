@@ -11,12 +11,6 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Film,         film
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,      result
-  Query,     corpusAnchor, AnchorTable, SingleRecord
-  Query,     film,         AnchorTable, SingleRecord
-  """)
-
 {
   film {
     id

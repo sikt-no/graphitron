@@ -21,13 +21,6 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   Country,      country
   """)
 
-extend schema @expectEquals(relation: "plan_launcher_command", rows: """
-  type_name, field_name,   source,          result
-  Country,   cities,       CorrelatedChain, Connection
-  Query,     corpusAnchor, AnchorTable,     SingleRecord
-  Query,     country,      AnchorTable,     SingleRecord
-  """)
-
 {
   country {
     cities(first: 2) {

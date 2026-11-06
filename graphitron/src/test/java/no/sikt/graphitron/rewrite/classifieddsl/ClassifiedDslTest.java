@@ -570,8 +570,6 @@ class ClassifiedDslTest {
         assertThat(ClassifiedHarness.memberArmSimpleNames()).as("OperationMember arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetWrapperArmSimpleNames()).as("Target wrapper arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.targetShapeArmSimpleNames()).as("TargetShape arm names").doesNotHaveDuplicates();
-        assertThat(ClassifiedHarness.launchSourceArmSimpleNames()).as("LaunchSource arm names").doesNotHaveDuplicates();
-        assertThat(ClassifiedHarness.resultShapeArmSimpleNames()).as("ResultShape arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.graphitronTypeNonFailureLeafSimpleNames())
             .as("GraphitronType's sealed leaves must have unique simple names: the TypeVerdict mirror "
                 + "compares by simple name, so a future nested leaf reusing a name would silently conflate two")

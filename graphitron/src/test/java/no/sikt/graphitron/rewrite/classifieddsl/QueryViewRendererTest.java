@@ -1,54 +1,55 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import no.sikt.graphitron.model.test.CorpusDocuments;
-import no.sikt.graphitron.model.test.CorpusDocuments.Document;
+import no.sikt.graphitron.model.test.FactDocuments;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A check for {@link QueryViewRenderer}: a query selects a closure of the annotated corpus, and the
- * renderer regenerates real SDL for it, pruned to the selected fields (job 3) with the test-only
- * directives stripped (job 2) but real Graphitron directives retained.
+ * A check for {@link QueryViewRenderer}: a query selects a closure of a fixture read over the fact
+ * documents' prelude, and the renderer regenerates real SDL for it, pruned to the selected fields
+ * (job 3) with the prelude's own directives stripped (job 2) but real Graphitron directives retained.
  *
- * <p>The pre-migration hardening (Spec §"Pre-migration hardening" item 3) adds two closure expansions
- * exercised below over the real corpus-only fixtures, the proof that the verdicts which landed
- * corpus-only because the renderer could not show their closure are now renderable: the input-object
- * closure from a kept field's arguments, and fragment selection (inline {@code ... on Type} and a bare
- * top-level {@code fragment on Type}) for the polymorphic and type-display cases. Leaf vocabulary
- * (scalars, enums) is referenced by name but never expanded.
+ * <p>Two closure expansions are exercised below: the input-object closure from a kept field's
+ * arguments, and fragment selection (inline {@code ... on Type} and a bare top-level
+ * {@code fragment on Type}) for the polymorphic and type-display cases. Leaf vocabulary (scalars,
+ * enums) is referenced by name but never expanded.
  */
 @PipelineTier
 class QueryViewRendererTest {
 
-    private static String sdlOf(String id) {
-        return CorpusDocuments.documents().stream()
-            .filter(e -> e.id().equals(id))
-            .map(Document::sdl)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("no corpus document with id '" + id + "'"));
+    private static final QueryViewRenderer.Prelude FACTS =
+        QueryViewRenderer.Prelude.of(FactDocuments.prelude());
+
+    private static String render(String fixture, String selection) {
+        return QueryViewRenderer.render(FACTS, fixture, selection);
     }
 
     private static final String FIXTURE = """
         extend type Query {
-          film: Film @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
-          actor: Actor @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
+          film: Film
+          actor: Actor
         }
 
-        type Film @table(name: "film") @classifiedType(as: TableType) {
-          title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
-          releaseYear: Int @field(name: "release_year") @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+        type Film @table(name: "film") {
+          title: String
+          releaseYear: Int @field(name: "release_year")
         }
 
         type Actor @table(name: "actor") {
-          firstName: String @field(name: "first_name") @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+          firstName: String @field(name: "first_name")
         }
+
+        extend schema @assertContains(relation: "graphitron_tabletype", rows: \"""
+          type_name, table_name
+          Film,      film
+          \""")
         """;
 
     @Test
-    void rendersSelectedFieldsWithTestDirectivesStripped() {
-        String out = QueryViewRenderer.render(FIXTURE, "{ film { releaseYear } }");
+    void rendersSelectedFieldsWithThePreludesDirectivesStripped() {
+        String out = render(FIXTURE, "{ film { releaseYear } }");
 
         // Job 1 (import what's relevant): the selected closure (Query entry + Film) is rendered, and a
         // real Graphitron type directive (@table) survives.
@@ -57,10 +58,9 @@ class QueryViewRendererTest {
         assertThat(out).contains("releaseYear");
         assertThat(out).contains("@table");
 
-        // Job 2 (strip the test directives): the internal directives never print, but a real
-        // Graphitron directive on a rendered field (@field) survives regeneration.
-        assertThat(out).doesNotContain("@classified");
-        assertThat(out).doesNotContain("classifiedType");
+        // Job 2 (strip the prelude's directives): the fact document's assertion never prints, but a
+        // real Graphitron directive on a rendered field (@field) survives regeneration.
+        assertThat(out).doesNotContain("assertContains");
         assertThat(out).contains("@field");
 
         // Job 3 (bound the snippet): a sibling field of a rendered type (Film.title) is pruned to the
@@ -73,13 +73,18 @@ class QueryViewRendererTest {
 
     @Test
     void mutationInputObjectIsExpandedFromTheFieldArgument() {
-        String out = QueryViewRenderer.render(sdlOf("dml"), "mutation { createFilm { title } }");
+        String out = render("""
+            type Film @table(name: "film") { title: String }
+            input FilmInput { title: String }
+            type Mutation {
+              createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+            }
+            """, "mutation { createFilm { title } }");
 
         assertThat(out)
             .as("the @mutation field renders with its real directive and input argument")
             .contains("createFilm(in: FilmInput!): Film")
-            .contains("@mutation(typeName: INSERT)")
-            .doesNotContain("@classified");
+            .contains("@mutation(typeName: INSERT)");
         assertThat(out)
             .as("the input object reached from the argument is emitted in full")
             .contains("input FilmInput");
@@ -87,8 +92,22 @@ class QueryViewRendererTest {
 
     @Test
     void everyInputObjectFromAMutationsArgumentsRenders() {
-        String out = QueryViewRenderer.render(sdlOf("mutation-roots"),
-            "mutation { updateFilm { title } deleteFilm { title } createFilmPayload { film { title } } }");
+        String out = render("""
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
+            type FilmPayload { film: Film }
+            input FilmKeyInput { filmId: Int! @field(name: "film_id") }
+            input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
+            input FilmTitleInput { title: String @field(name: "title") }
+            input FilmCreateInput { title: String }
+            type Mutation {
+              updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+              deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+              deleteFilmsBroadcast(in: FilmTitleInput!): ID
+                @mutation(typeName: DELETE, multiRow: true, table: "film")
+              createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
+            }
+            """, "mutation { updateFilm { title } deleteFilm createFilmPayload { film { title } } }");
 
         assertThat(out)
             .as("each selected mutation pulls in exactly its own argument's input object")
@@ -98,39 +117,46 @@ class QueryViewRendererTest {
             .contains("filmId: Int!");
         assertThat(out)
             .as("an input object no selected mutation references is not dragged in")
-            .doesNotContain("FilmTitleInput")
-            .doesNotContain("@classified");
+            .doesNotContain("FilmTitleInput");
     }
 
     @Test
     void unionRendersThroughInlineFragments() {
-        String out = QueryViewRenderer.render(sdlOf("union"),
-            "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }");
+        String out = render("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor = Film | Actor
+            type FilmActor @table(name: "film_actor") { related: FilmOrActor }
+            extend type Query { filmActor: FilmActor }
+            """, "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }");
 
         assertThat(out)
             .as("the union declaration and both fragment-selected members render")
             .contains("union FilmOrActor = Film | Actor")
             .contains("related: FilmOrActor")
             .contains("title: String")
-            .contains("firstName: String")
-            .doesNotContain("@classified");
+            .contains("firstName: String");
     }
 
     @Test
     void relayNodeRendersInterfaceAndScalarArgumentWithoutExpandingTheScalar() {
-        String out = QueryViewRenderer.render(sdlOf("relay-node"),
-            "{ node(id: \"1\") { ... on Film { id title } } }");
+        String out = render("""
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
+            extend type Query {
+              "Relay's own entry point: one global id at a time."
+              node(id: ID!): Node
+            }
+            """, "{ node(id: \"1\") { ... on Film { id title } } }");
 
         assertThat(out)
             .as("the polymorphic root, its scalar argument, and the interface declaration render. "
                 + "The field and its argument are matched separately because AstPrinter breaks the "
-                + "argument list onto its own line once the field carries a description, which the "
-                + "corpus document gives this coordinate")
+                + "argument list onto its own line once the field carries a description")
             .contains("\"Relay's own entry point: one global id at a time.\"")
             .contains("id: ID!): Node")
             .contains("interface Node")
-            .contains("type Film implements Node")
-            .doesNotContain("@classified");
+            .contains("type Film implements Node");
         assertThat(out)
             .as("a scalar argument type is named but not expanded as a definition")
             .doesNotContain("scalar ID");
@@ -138,15 +164,27 @@ class QueryViewRendererTest {
 
     @Test
     void topLevelFragmentDisplaysAnOutputTypeNoQueryReaches() {
-        String out = QueryViewRenderer.render(sdlOf("error-type"),
-            "fragment e on ExtraFieldError { path message severity }");
+        String out = render("""
+            enum Severity { LOW HIGH }
+            type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+              path: [String!]!
+              message: String!
+              severity: Severity!
+            }
+            type SakPayload {
+              data: String
+              errors: [ExtraFieldError]
+            }
+            extend type Query {
+              sak: SakPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
+            }
+            """, "fragment e on ExtraFieldError { path message severity }");
 
         assertThat(out)
             .as("the @error type renders directly from a fragment on it, real directive kept")
             .contains("type ExtraFieldError @error")
-            .contains("path: [String!]!")
-            .doesNotContain("@classifiedType")
-            .doesNotContain("@classified(");
+            .contains("path: [String!]!");
         assertThat(out)
             .as("an enum the fixture declares and the excerpt names renders too: a leaf the "
                 + "excerpt mentions and never shows is what closure honesty forbids")
@@ -155,12 +193,12 @@ class QueryViewRendererTest {
 
     @Test
     void aFieldsOwnDescriptionSurvivesRegeneration() {
-        String out = QueryViewRenderer.render("""
+        String out = render("""
             extend type Query { film: Film }
 
             type Film @table(name: "film") {
               "The film's display title."
-              title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+              title: String
             }
             """, "{ film { title } }");
 
@@ -173,12 +211,12 @@ class QueryViewRendererTest {
 
     @Test
     void aTypesOwnDescriptionSurvivesRegeneration() {
-        String out = QueryViewRenderer.render("""
+        String out = render("""
             extend type Query { film: Film }
 
             "A film in the catalog."
             type Film @table(name: "film") {
-              title: String @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+              title: String
             }
             """, "{ film { title } }");
 
@@ -190,7 +228,7 @@ class QueryViewRendererTest {
 
     @Test
     void aFixtureWithoutDescriptionsRendersNone() {
-        String out = QueryViewRenderer.render(FIXTURE, "{ film { releaseYear } }");
+        String out = render(FIXTURE, "{ film { releaseYear } }");
 
         // The no-regression pin: a fixture that describes nothing renders no description, so no block
         // string appears and no rendered line is a bare SDL description (a leading quoted string). The
@@ -207,14 +245,18 @@ class QueryViewRendererTest {
 
     @Test
     void lookupKeyScalarArgumentRendersWithoutInputExpansion() {
-        String out = QueryViewRenderer.render(sdlOf("split-lookup"),
-            "{ store { customers { firstName } } }");
+        String out = render("""
+            type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
+            type Store @table(name: "store") {
+              customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
+            }
+            extend type Query { store: Store }
+            """, "{ store { customers { firstName } } }");
 
         assertThat(out)
             .as("the @lookupKey scalar argument and @splitQuery field render")
             .contains("customers(customer_id: ID! @lookupKey)")
-            .contains("@splitQuery")
-            .doesNotContain("@classified");
+            .contains("@splitQuery");
         assertThat(out)
             .as("a scalar @lookupKey argument pulls in no input object")
             .doesNotContain("input ");
