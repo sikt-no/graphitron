@@ -23,6 +23,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
@@ -34,7 +37,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectCount;
@@ -166,6 +171,10 @@ public final class FieldInformation {
         var rp = GRAPHITRON_OCCURRENCE_PRODUCER;
         var pr2 = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
         var rt = GRAPHITRON_RESULT_TABLE;
+        var um = GRAPHQL_UNION_MEMBER;
+        var ii = GRAPHQL_IMPLEMENTS_INTERFACE;
+        var mt = GRAPHITRON_TABLETYPE.as("info_member_table");
+        var ct = GRAPHITRON_TABLETYPE.as("info_container_table");
         Field<String> landedTable = coalesce(jp.TARGET_TABLE, pn.LANDING_TABLE);
         targetTables = multiset(selectDistinct(pn.TARGET_TYPE, coalesce(jp.TARGET_SCHEMA, pn.LANDING_SCHEMA),
                 landedTable).from(o)
@@ -189,7 +198,22 @@ public final class FieldInformation {
                 .join(t).on(t.GRAPH_NAME.eq(o.GRAPH_NAME), t.TYPE_NAME.eq(typeName),
                     t.FIELD_NAME.eq(fieldName))
                 .join(rt).on(rt.GRAPH_NAME.eq(t.GRAPH_NAME), rt.TYPE_NAME.eq(t.TARGET_TYPE_NAME))
-                .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD"))))
+                .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD")))
+            // A root returning a union or an interface that binds no table: each member that binds one.
+            .union(selectDistinct(mt.TYPE_NAME, mt.TABLE_SCHEMA, mt.TABLE_NAME).from(o)
+                .join(rp).on(rp.GRAPH_NAME.eq(o.GRAPH_NAME), rp.COORDINATE.eq(o.COORDINATE), rp.START.eq("ROOT"))
+                .join(pr2).on(pr2.GRAPH_NAME.eq(rp.GRAPH_NAME), pr2.COORDINATE.eq(rp.COORDINATE),
+                    pr2.TABLE_NAME.isNull())
+                .join(t).on(t.GRAPH_NAME.eq(o.GRAPH_NAME), t.TYPE_NAME.eq(typeName),
+                    t.FIELD_NAME.eq(fieldName))
+                .join(mt).on(mt.GRAPH_NAME.eq(t.GRAPH_NAME),
+                    exists(selectOne().from(um).where(um.GRAPH_NAME.eq(mt.GRAPH_NAME),
+                            um.UNION_NAME.eq(t.TARGET_TYPE_NAME), um.MEMBER_TYPE_NAME.eq(mt.TYPE_NAME)))
+                        .or(exists(selectOne().from(ii).where(ii.GRAPH_NAME.eq(mt.GRAPH_NAME),
+                            ii.INTERFACE_NAME.eq(t.TARGET_TYPE_NAME), ii.TYPE_NAME.eq(mt.TYPE_NAME)))))
+                .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD"))
+                .and(notExists(selectOne().from(ct).where(ct.GRAPH_NAME.eq(t.GRAPH_NAME),
+                    ct.TYPE_NAME.eq(t.TARGET_TYPE_NAME))))))
             .convertFrom(rows -> rows.map(Records.mapping(TargetTable::new)).stream()
                 .sorted(Comparator.comparing(TargetTable::typeName)
                     .thenComparing(TargetTable::schema).thenComparing(TargetTable::table))

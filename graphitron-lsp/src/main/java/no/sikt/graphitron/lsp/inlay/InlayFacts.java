@@ -34,11 +34,15 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.falseCondition;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
@@ -472,6 +476,10 @@ final class InlayFacts {
         var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
         var ft = GRAPHITRON_FIELD_TARGET;
         var rt = GRAPHITRON_RESULT_TABLE;
+        var um = GRAPHQL_UNION_MEMBER;
+        var ii = GRAPHQL_IMPLEMENTS_INTERFACE;
+        var mt = GRAPHITRON_TABLETYPE.as("member_table");
+        var ct = GRAPHITRON_TABLETYPE.as("container_table");
         Field<String> landed = coalesce(jp.TARGET_TABLE, n.LANDING_TABLE);
         return multiset(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, landed).from(f)
             .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
@@ -491,7 +499,21 @@ final class InlayFacts {
                 .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.COORDINATE), p.START.eq("ROOT"))
                 .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME), ft.FIELD_NAME.eq(f.FIELD_NAME))
                 .join(rt).on(rt.GRAPH_NAME.eq(ft.GRAPH_NAME), rt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
-                .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))))
+                .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames)))
+            // A root returning a union or an interface that binds no table: each member that binds one.
+            .union(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, mt.TABLE_NAME).from(f)
+                .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+                .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.COORDINATE), p.START.eq("ROOT"))
+                .join(r).on(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE), r.TABLE_NAME.isNull())
+                .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME), ft.FIELD_NAME.eq(f.FIELD_NAME))
+                .join(mt).on(mt.GRAPH_NAME.eq(ft.GRAPH_NAME),
+                    exists(selectOne().from(um).where(um.GRAPH_NAME.eq(mt.GRAPH_NAME),
+                            um.UNION_NAME.eq(ft.TARGET_TYPE_NAME), um.MEMBER_TYPE_NAME.eq(mt.TYPE_NAME)))
+                        .or(exists(selectOne().from(ii).where(ii.GRAPH_NAME.eq(mt.GRAPH_NAME),
+                            ii.INTERFACE_NAME.eq(ft.TARGET_TYPE_NAME), ii.TYPE_NAME.eq(mt.TYPE_NAME)))))
+                .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
+                .and(notExists(selectOne().from(ct).where(ct.GRAPH_NAME.eq(ft.GRAPH_NAME),
+                    ct.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))))))
             .convertFrom(rows -> rows.map(Records.mapping(TargetTableRow::new)).stream()
                 .sorted(Comparator.comparing(TargetTableRow::typeName).thenComparing(TargetTableRow::fieldName)
                     .thenComparing(TargetTableRow::tableName))

@@ -29,6 +29,7 @@ class FieldInformationHoverTest {
 
         type Query {
             films: [Film]
+            mixed: [Mixed]
             twins: [Twins]
             card: FilmCard @service(service: {className: "%s", method: "makeFilmRecord"})
             hopped(actorId: Int!, minLength: Int!): [Film!]!
@@ -52,6 +53,8 @@ class FieldInformationHoverTest {
         type FilmDetails {
             title: String
         }
+
+        union Mixed = Film | Language | FilmDetails
 
         type Language implements Node @table(name: "language") @node {
             id: ID!
@@ -137,6 +140,18 @@ class FieldInformationHoverTest {
             .contains("**Node** `Language` · id `Language` · keys `language_id`")
             .contains("**Path** 1 element")
             .doesNotContain("**Column**");
+    }
+
+    @Test
+    void aRootFieldReturningAUnionNamesItsMembersTables() {
+        // The producer lifts records of several tables, so the members binding one answer.
+        var file = file("""
+            type Query {
+                mixed: [Mixed]
+            }
+            """);
+        assertThat(hoverAt(file, 1, "    mix".length()))
+            .contains("**Target** `Mixed` → `Film` `public.film`, `Language` `public.language`");
     }
 
     @Test

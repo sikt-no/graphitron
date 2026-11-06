@@ -40,7 +40,10 @@ class LabelHintsTest {
             card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
             left: Contested @service(service: {className: "%1$s", method: "makeFilmRecord"})
             right: Contested @service(service: {className: "%1$s", method: "makeFilmPojo"})
+            mixed: [Mixed]
         }
+
+        union Mixed = Film | Language | Note
 
         type Film @table(name: "film") {
             title: String
@@ -97,6 +100,17 @@ class LabelHintsTest {
             }
             """);
         assertThat(labels(file, fullRange())).containsExactly("film", "\u2192 language");
+    }
+
+    @Test
+    void aRootFieldReturningAUnionIsLabelledWithItsMembersTables() {
+        // The producer lifts records of several tables, so the members binding one answer; Note binds none.
+        var file = file("""
+            type Query {
+                mixed: [Mixed]
+            }
+            """);
+        assertThat(labels(file, fullRange())).containsExactly("\u2192 film, language");
     }
 
     @Test
