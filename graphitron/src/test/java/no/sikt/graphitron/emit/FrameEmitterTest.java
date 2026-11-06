@@ -10,6 +10,10 @@ import graphql.execution.ResultPath;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import graphql.Scalars;
+import no.sikt.graphitron.emit.stub.Body;
+import no.sikt.graphitron.emit.stub.ErrorMappings;
+import no.sikt.graphitron.emit.stub.ErrorRouter;
+import no.sikt.graphitron.emit.stub.Outcome;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
@@ -34,17 +38,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * under an object the frame reads each parent's key off its row and runs the body once for the
  * batch, each parent getting its own key's value.
  *
- * <p>The body, the jOOQ context and the error runtime are stubs standing in for the generated ones;
- * the batching runs through a real {@link DataLoaderRegistry}.
+ * <p>The body, the jOOQ context and the error runtime are the stubs in
+ * {@link no.sikt.graphitron.emit.stub}, standing in for the generated ones; the batching runs through
+ * a real {@link DataLoaderRegistry}. Compiled strictly, as a consumer compiles generated sources.
  */
 @UnitTier
 class FrameEmitterTest {
 
     private static final String PACKAGE = "framerun";
-    private static final ClassName BODY = ClassName.get(PACKAGE, "Body");
-    private static final ClassName ROUTER = ClassName.get(PACKAGE, "ErrorRouter");
-    private static final ClassName OUTCOME = ClassName.get(PACKAGE, "Outcome");
-    private static final ClassName MAPPINGS = ClassName.get(PACKAGE, "ErrorMappings");
+    private static final ClassName BODY = ClassName.get(Body.class);
+    private static final ClassName ROUTER = ClassName.get(ErrorRouter.class);
+    private static final ClassName OUTCOME = ClassName.get(Outcome.class);
+    private static final ClassName MAPPINGS = ClassName.get(ErrorMappings.class);
 
     private static final FrameEmitter.Runtime RUNTIME = new FrameEmitter.Runtime(ROUTER, OUTCOME, MAPPINGS,
         type -> type.toUpperCase(), env -> CodeBlock.of("$T.dsl($L)", BODY, env));
@@ -53,70 +58,8 @@ class FrameEmitterTest {
         "no.sikt.graphitron.rewrite.test.jooq.public_.Tables", "FILM",
         List.of(new FrameQuery.KeyColumn("film_id", "FILM_ID", "java.lang.Integer")));
 
-    /** The generated runtime and the body, as the stubs this test compiles beside the fetchers. */
-    private static final Map<String, String> STUBS = Map.of(
-        "Body", """
-            import graphql.schema.DataFetchingEnvironment;
-            import java.util.Map;
-            import java.util.Set;
-            import java.util.stream.Collectors;
-            import org.jooq.DSLContext;
-            import org.jooq.Record1;
-            public final class Body {
-                public static int batches;
-                public static DSLContext dsl(DataFetchingEnvironment env) { return null; }
-                public static Integer count(DataFetchingEnvironment env, DSLContext dsl) { return 42; }
-                public static Integer fail(DataFetchingEnvironment env, DSLContext dsl) { throw new IllegalStateException("body failed"); }
-                public static String lookup(DataFetchingEnvironment env, DSLContext dsl) { return "found"; }
-                public static String refuse(DataFetchingEnvironment env, DSLContext dsl) { throw new IllegalStateException("refused"); }
-                public static Map<Record1<Integer>, String> upper(Set<Record1<Integer>> keys, DataFetchingEnvironment env, DSLContext dsl) {
-                    batches++;
-                    return keys.stream().collect(Collectors.toMap(k -> k, k -> "film " + k.value1()));
-                }
-            }
-            """,
-        "ErrorRouter", """
-            import graphql.GraphqlErrorBuilder;
-            import graphql.execution.DataFetcherResult;
-            import graphql.schema.DataFetchingEnvironment;
-            public final class ErrorRouter {
-                public static <P> DataFetcherResult<P> surfaceClientErrorOrRedact(Throwable thrown, DataFetchingEnvironment env) {
-                    return DataFetcherResult.<P>newResult()
-                        .error(GraphqlErrorBuilder.newError().message("redacted: " + thrown.getMessage()).build()).build();
-                }
-                public static Throwable claim(Throwable thrown, String[] mappings, DataFetchingEnvironment env) {
-                    return "refused".equals(thrown.getMessage()) ? new Claimed(mappings[0] + " " + thrown.getMessage()) : null;
-                }
-                static final class Claimed extends RuntimeException {
-                    Claimed(String message) { super(message); }
-                    @Override public String toString() { return getMessage(); }
-                }
-            }
-            """,
-        "Outcome", """
-            import java.util.List;
-            public interface Outcome<T> {
-                final class Success<T> implements Outcome<T> {
-                    private final T value;
-                    public Success(T value) { this.value = value; }
-                    @Override public String toString() { return "Success(" + value + ")"; }
-                }
-                final class ErrorList<T> implements Outcome<T> {
-                    private final List<Throwable> errors;
-                    public ErrorList(List<Throwable> errors) { this.errors = errors; }
-                    @Override public String toString() { return "ErrorList(" + errors + ")"; }
-                }
-            }
-            """,
-        "ErrorMappings", """
-            public final class ErrorMappings {
-                public static final String[] PAYLOAD = {"claimed"};
-            }
-            """);
-
     private static EmittedCodeHarness harness;
     private static Map<String, Method> fetchers;
-    private static Class<?> body;
 
     @BeforeAll
     static void emit() throws Exception {
@@ -132,17 +75,10 @@ class FrameEmitterTest {
             .addMethod(FrameEmitter.render(child, "upper", TypeName.get(String.class), BODY, "upper", RUNTIME))
             .build();
         var dir = java.nio.file.Files.createTempDirectory("frame");
-        var files = new java.util.ArrayList<java.nio.file.Path>();
-        files.add(com.palantir.javapoet.JavaFile.builder(PACKAGE, host).build().writeToPath(dir));
-        for (var stub : STUBS.entrySet()) {
-            var file = dir.resolve(PACKAGE).resolve(stub.getKey() + ".java");
-            java.nio.file.Files.writeString(file, "package " + PACKAGE + ";\n" + stub.getValue());
-            files.add(file);
-        }
-        harness = EmittedCodeHarness.compileFiles(files);
+        harness = EmittedCodeHarness.compileFilesStrictly(
+            List.of(com.palantir.javapoet.JavaFile.builder(PACKAGE, host).build().writeToPath(dir)));
         fetchers = new java.util.HashMap<>();
         for (var m : harness.load(PACKAGE + ".Fetchers").getDeclaredMethods()) fetchers.put(m.getName(), m);
-        body = harness.load(PACKAGE + ".Body");
     }
 
     @AfterAll
@@ -198,6 +134,6 @@ class FrameEmitterTest {
         }
         registry.dispatchAll();
         assertThat(futures).extracting(f -> f.get().getData()).containsExactly("film 3", "film 1", "film 2");
-        assertThat(body.getField("batches").get(null)).isEqualTo(1);
+        assertThat(Body.batches).isEqualTo(1);
     }
 }

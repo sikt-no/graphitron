@@ -10,6 +10,8 @@ import com.palantir.javapoet.TypeSpec;
 import graphql.GraphQLContext;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
+import no.sikt.graphitron.emit.stub.FillRuntime;
+import no.sikt.graphitron.emit.stub.Mood;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
@@ -23,8 +25,6 @@ import org.junit.jupiter.api.Test;
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that compiling them checks the types, and a value the wire does not hand over as the parameter
  * takes it refused with the parameter's name rather than emitted.
  *
- * <p>The context and session runtime are stubs standing in for the generated ones. Compiled
+ * <p>The context and session runtime are the stubs in {@link no.sikt.graphitron.emit.stub}, standing
+ * in for the generated ones. Compiled
  * strictly, on the terms a consumer compiles generated sources on, so an unchecked cast without its
  * suppression fails here rather than in the example build.
  */
@@ -47,34 +48,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FillEmitterTest {
 
     private static final String PACKAGE = "fillrun";
-    private static final ClassName RUNTIME_CLASS = ClassName.get(PACKAGE, "Runtime");
+    private static final ClassName RUNTIME_CLASS = ClassName.get(FillRuntime.class);
     private static final FillEmitter.Runtime RUNTIME = new FillEmitter.Runtime(
         key -> CodeBlock.of("$T.contextArgument(env, $S)", RUNTIME_CLASS, key),
         coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", RUNTIME_CLASS, coordinate),
         (member, coordinate) -> CodeBlock.of("$T.sessionMember_$L(dsl, $S)", RUNTIME_CLASS, member, coordinate));
-
-    private static final Map<String, String> STUBS = Map.of(
-        "Handle", """
-            public record Handle(String label) {}
-            """,
-        "Mood", """
-            public enum Mood { HAPPY, SAD }
-            """,
-        "Runtime", """
-            import graphql.schema.DataFetchingEnvironment;
-            import org.jooq.DSLContext;
-            public final class Runtime {
-                public static Object contextArgument(DataFetchingEnvironment env, String key) {
-                    return env.getGraphQlContext().get(key);
-                }
-                public static Handle sessionHandle(DSLContext dsl, String coordinate) {
-                    return new Handle("handle for " + coordinate);
-                }
-                public static String sessionMember_label(DSLContext dsl, String coordinate) {
-                    return "label for " + coordinate;
-                }
-            }
-            """);
 
     private static final TypeName ENV = ClassName.get(DataFetchingEnvironment.class);
     private static final TypeName DSL_CONTEXT = ClassName.get(DSLContext.class);
@@ -103,7 +81,7 @@ class FillEmitterTest {
         fill(3, "deep", "java.lang.String", "java.lang.String", "ARGUMENT", null, null,
             scalar("input", "inner", "deep")),
         fill(4, "userId", "java.lang.String", "java.lang.String", "CONTEXT_KEY", "userId", null, null),
-        fill(5, "summary", "fillrun.Handle", "fillrun.Handle", "SESSION", null, null, null),
+        fill(5, "summary", "no.sikt.graphitron.emit.stub.Handle", "no.sikt.graphitron.emit.stub.Handle", "SESSION", null, null, null),
         fill(6, "label", "java.lang.String", "java.lang.String", "SESSION_MEMBER", null, "label", null),
         fill(7, "count", "int", "int", "ARGUMENT", null, null, scalar("input", "count"))),
         true);
@@ -115,8 +93,8 @@ class FillEmitterTest {
     /** A root call taking enum arguments: as a String, as a Java enum nested, as a list of one. */
     private static final FillQuery.Row ENUMS = new FillQuery.Row("Query.enums", "Query.enums", List.of(
         fill(0, "moodName", "java.lang.String", "java.lang.String", "ARGUMENT", null, null, enumAt("moodName")),
-        fill(1, "mood", "fillrun.Mood", "fillrun.Mood", "ARGUMENT", null, null, enumAt("input", "mood")),
-        fill(2, "moods", "java.util.List<fillrun.Mood>", "java.util.List", "ARGUMENT", null, null,
+        fill(1, "mood", "no.sikt.graphitron.emit.stub.Mood", "no.sikt.graphitron.emit.stub.Mood", "ARGUMENT", null, null, enumAt("input", "mood")),
+        fill(2, "moods", "java.util.List<no.sikt.graphitron.emit.stub.Mood>", "java.util.List", "ARGUMENT", null, null,
             enumAt("moods"))),
         true);
 
@@ -142,14 +120,8 @@ class FillEmitterTest {
             .addMethod(probe("child", CHILD, Optional.of(KEYS)))
             .build();
         var dir = Files.createTempDirectory("fill");
-        var files = new ArrayList<Path>();
-        files.add(JavaFile.builder(PACKAGE, host).build().writeToPath(dir));
-        for (var stub : STUBS.entrySet()) {
-            var file = dir.resolve(PACKAGE).resolve(stub.getKey() + ".java");
-            Files.writeString(file, "package " + PACKAGE + ";\n" + stub.getValue());
-            files.add(file);
-        }
-        harness = EmittedCodeHarness.compileFilesStrictly(files);
+        harness = EmittedCodeHarness.compileFilesStrictly(
+            List.of(JavaFile.builder(PACKAGE, host).build().writeToPath(dir)));
         probes = new HashMap<>();
         for (var m : harness.load(PACKAGE + ".Probes").getDeclaredMethods()) probes.put(m.getName(), m);
     }
@@ -208,10 +180,9 @@ class FillEmitterTest {
         var arguments = Map.<String, Object>of("moodName", "HAPPY", "input", Map.of("mood", "SAD"),
             "moods", List.of("HAPPY", "SAD"));
         var values = (Object[]) probes.get("enums").invoke(null, env(arguments), DSL.using(SQLDialect.POSTGRES));
-        var mood = harness.load(PACKAGE + ".Mood");
         assertThat(values[0]).isEqualTo("HAPPY");
-        assertThat(values[1]).isEqualTo(mood.getEnumConstants()[1]);
-        assertThat(values[2]).isEqualTo(List.of(mood.getEnumConstants()));
+        assertThat(values[1]).isEqualTo(Mood.SAD);
+        assertThat(values[2]).isEqualTo(List.of(Mood.HAPPY, Mood.SAD));
     }
 
     @Test
@@ -237,7 +208,7 @@ class FillEmitterTest {
     @Test
     void anInputObjectIsLeftToBuildingByName() {
         var row = new FillQuery.Row("Query.drafts", "Query.drafts", List.of(
-            fill(0, "drafts", "java.util.List<fillrun.Handle>", "java.util.List", "ARGUMENT", null, null,
+            fill(0, "drafts", "java.util.List<no.sikt.graphitron.emit.stub.Handle>", "java.util.List", "ARGUMENT", null, null,
                 new FillQuery.Landing(List.of("in"), "INPUT_OBJECT", false))), true);
         assertThat(FillEmitter.emit(row, Optional.empty(), RUNTIME))
             .isInstanceOfSatisfying(FillEmitter.Result.NeedsBuilding.class, refused -> {
@@ -249,7 +220,7 @@ class FillEmitterTest {
     @Test
     void keysInAnotherShapeAreLeftToBuilding() {
         var row = new FillQuery.Row("Film.titlecase", "Film.titlecase", List.of(
-            fill(0, "films", "java.util.Set<fillrun.Handle>", "java.util.Set", "SOURCE", null, null, null)),
+            fill(0, "films", "java.util.Set<no.sikt.graphitron.emit.stub.Handle>", "java.util.Set", "SOURCE", null, null, null)),
             true);
         assertThat(FillEmitter.emit(row, Optional.of(KEYS), RUNTIME))
             .isInstanceOf(FillEmitter.Result.NeedsBuilding.class);
