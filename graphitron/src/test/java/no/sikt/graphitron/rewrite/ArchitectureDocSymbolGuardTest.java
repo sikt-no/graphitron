@@ -160,6 +160,7 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("TriggerDispatchMatrixTest", "module: graphitron-lsp");
         exempt.put("DiagnosticsAggregateTest", "module: graphitron-maven-plugin");
         exempt.put("SchemaQueries", "module: graphitron-mcp");
+        exempt.put("EscapeHatchSessionIdentityExecutionTest", "module: graphitron-sakila-example");
         exempt.put("SakilaDatabase", "module: graphitron-sakila-example");
         exempt.put("SakilaDatabaseGuardTest", "module: graphitron-sakila-example");
         exempt.put("SessionIdentityPoolIsolationExecutionTest", "module: graphitron-sakila-example");

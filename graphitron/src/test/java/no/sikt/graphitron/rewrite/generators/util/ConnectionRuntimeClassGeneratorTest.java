@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>The autocommit facts asserted here carry the deleted re-fire's guarantee: graphitron asserts
  * the transaction mode on a connection it owns (before the mount, so the mount is its own
- * committed transaction; at release before the unmount, rolling back first because switching
+ * committed transaction; at both acquire and release, rolling back first because switching
  * autocommit on commits an open transaction). No {@code afterSettle} and no re-fire exist.
  */
 @UnitTier
@@ -107,6 +107,8 @@ class ConnectionRuntimeClassGeneratorTest {
     @BeforeEach
     void resetEvents() {
         events.clear();
+        arrivesInAutocommit = false;
+        rollbackThrows = null;
         LifecycleHookFixture.reset(events);
     }
 
@@ -116,7 +118,7 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned);
 
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
+            "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
     }
 
     @Test
@@ -130,7 +132,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
         // Connection acquired, mount attempted and failed, connection evicted (aborted) rather
         // than returned; unmount never runs and no connection is handed back for SQL.
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "capture", "connect->H1", "abort");
+        assertThat(events).containsExactly("getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "abort");
     }
 
     @Test
@@ -145,7 +147,7 @@ class ConnectionRuntimeClassGeneratorTest {
         // Unmount attempted and failed, so the physical connection is aborted, never close()d
         // back into the pool, and the reset never runs on it.
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "abort");
+            "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "abort");
     }
 
     @Test
@@ -155,20 +157,20 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned); // e.g. completion signal
 
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
+            "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
     }
 
     @Test
     void release_isOutcomeAgnostic_unmountFiresOnEveryCompletionPath() throws Throwable {
         // Success path: the operation completed and the caller releases.
         assertThat(driveRelease(() -> { /* normal completion */ })).containsExactly(
-            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
+            "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
 
         // Error path: the operation threw; the caller still releases in its finally.
         resetEvents();
         assertThat(driveRelease(() -> { throw new RuntimeException("operation failed"); }))
             .containsExactly(
-                "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
+                "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
     }
 
     @Test
@@ -184,7 +186,7 @@ class ConnectionRuntimeClassGeneratorTest {
             plain.load(SCHEMA_PACKAGE + ".PinnedConnection")
                 .getMethod("release").invoke(pinned);
 
-            assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "close");
+            assertThat(events).containsExactly("getConnection", "rollback", "setAutoCommit:true", "close");
         }
     }
 
@@ -193,14 +195,43 @@ class ConnectionRuntimeClassGeneratorTest {
     @Test
     void acquire_assertsAutocommit_beforeTheMountRuns() throws Throwable {
         // The fake DataSource hands out connections with autocommit=false (a pool can be
-        // configured that way); acquire must assert the mode before the mount, or on Postgres
+        // configured that way); acquire must force the mode before the mount, rolling back first
+        // so nothing the pool left open is committed by the switch, or on Postgres
         // the mount's session-scoped state would sit in an implicit never-committed transaction
         // and revert with a later rollback, leaving the operation running unmounted under RLS.
         acquire(fakeDataSource());
 
         assertThat(events)
-            .as("autocommit is asserted after pinning, then the settings captured, before the mount")
-            .startsWith("getConnection", "setAutoCommit:true", "capture", "connect->H1");
+            .as("after pinning, the pool's open work is rolled back and autocommit forced, then the "
+                + "settings captured, before the mount")
+            .startsWith("getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1");
+    }
+
+    @Test
+    void acquire_connectionArrivingInAutocommit_isNotRolledBack() throws Throwable {
+        // The rollback is for a pool that lent the connection with autocommit off, where a
+        // transaction may be open; a connection already in autocommit has none to discard.
+        arrivesInAutocommit = true;
+
+        release(acquire(fakeDataSource()));
+
+        assertThat(events).containsExactly(
+            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
+    }
+
+    @Test
+    void acquire_rollbackFailure_evictsBeforeTheMount_andIsNeverARejectedMount() {
+        // Discarding what the pool left open is a deployment concern, not an identity rejection:
+        // a refused rollback evicts like a refused setAutoCommit and never reaches the consumer's
+        // mapping of mount failures.
+        rollbackThrows = new java.sql.SQLException("connection is broken", "08006");
+
+        assertThatThrownBy(() -> acquire(fakeDataSource()))
+            .as("a refused rollback at acquire is never mapped as an identity rejection; it surfaces "
+                + "as the acquire's unchecked rethrow, like a refused setAutoCommit")
+            .satisfies(t -> assertThat(t.getClass().getSimpleName()).isNotEqualTo("SessionMountException"))
+            .hasCause(rollbackThrows);
+        assertThat(events).containsExactly("getConnection", "abort");
     }
 
     @Test
@@ -215,7 +246,7 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned);
 
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "capture", "connect->H1",
+            "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1",
             "setAutoCommit:false",                       // the simulated abandoned mutation transaction
             "rollback", "setAutoCommit:true",            // release settles before unmounting
             "disconnect:H1", "reset", "close");
@@ -294,7 +325,7 @@ class ConnectionRuntimeClassGeneratorTest {
         assertThatThrownBy(() -> acquire(fakeDataSource()))
             .as("a failed capture is a deployment fault, never mapped as an identity rejection")
             .isSameAs(captureThrows);
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "capture", "abort");
+        assertThat(events).containsExactly("getConnection", "rollback", "setAutoCommit:true", "capture", "abort");
     }
 
     @Test
@@ -306,7 +337,7 @@ class ConnectionRuntimeClassGeneratorTest {
             .as("a failed reset surfaces, wrapped as the release's unchecked rethrow")
             .hasCause(resetThrows);
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "abort");
+            "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "abort");
     }
 
     @Test
@@ -320,7 +351,7 @@ class ConnectionRuntimeClassGeneratorTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("autocommit off");
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "capture", "connect->H1",
+            "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1",
             "disconnect:H1", "setAutoCommit:false", "abort");
     }
 
@@ -331,7 +362,7 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned);
 
         assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+            "getConnection", "rollback", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
     }
 
     @Test
@@ -350,7 +381,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
         release(acquire(fakeDataSource(), SQLDialect.POSTGRES, sessionState));
 
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "capture", "reset", "close");
+        assertThat(events).containsExactly("getConnection", "rollback", "setAutoCommit:true", "capture", "reset", "close");
     }
 
     // --- the fetcher-exception log and response -----------------------------------------------
@@ -632,7 +663,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     /** One connection's whole life: pinned, captured, mounted, unmounted, reset, returned to the pool. */
     private static final List<String> PIN_AND_RELEASE = List.of(
-        "getConnection", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
+        "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "reset", "close");
 
     private CompletableFuture<ExecutionResult> executeOverEngine(String operation, SynchronousAbortDriver.Abort abort)
             throws Throwable {
@@ -775,9 +806,10 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     private Connection fakeConnection(List<String> log) {
-        // Starts autocommit=false: pools (Agroal, Hikari) can be configured to hand out connections
-        // that way, and the lifecycle asserts the mode rather than trusting the pool's configuration.
-        boolean[] autoCommit = {false};
+        // Starts autocommit=false by default: pools (Agroal, Hikari) can be configured to hand out
+        // connections that way, and the lifecycle forces the mode rather than trusting the pool's
+        // configuration. This default is the fixture in which removing the forcing fails.
+        boolean[] autoCommit = {arrivesInAutocommit};
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 case "close" -> { log.add("close"); yield null; }
@@ -785,7 +817,13 @@ class ConnectionRuntimeClassGeneratorTest {
                 case "setAutoCommit" -> { autoCommit[0] = (Boolean) args[0]; log.add("setAutoCommit:" + args[0]); yield null; }
                 case "getAutoCommit" -> autoCommit[0];
                 case "commit" -> { log.add("commit"); yield null; }
-                case "rollback" -> { log.add("rollback"); yield null; }
+                case "rollback" -> {
+                    if (rollbackThrows != null) {
+                        throw rollbackThrows;
+                    }
+                    log.add("rollback");
+                    yield null;
+                }
                 // The capture of session settings at acquire (executeQuery, logged), and the probe a
                 // mutation field's settle runs before it commits (execute, not logged).
                 case "createStatement" -> FakeSessionSettings.captureStatement(harness.classLoader(), captureRows,
@@ -807,6 +845,10 @@ class ConnectionRuntimeClassGeneratorTest {
             });
     }
 
+    /** The autocommit mode the fake connection arrives in; off by default, as a pool may lend it. */
+    private boolean arrivesInAutocommit;
+    /** When set, the fake connection's {@code rollback} throws it instead of logging. */
+    private java.sql.SQLException rollbackThrows;
     /** Settings the fake capture answers with, as {@code {name, value}} rows; none by default. */
     private List<String[]> captureRows = List.of();
     /** When set, the fake capture throws it. */

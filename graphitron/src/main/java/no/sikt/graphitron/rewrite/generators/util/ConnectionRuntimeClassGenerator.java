@@ -46,10 +46,10 @@ import java.util.Optional;
  *
  * <h2>The lifecycle contract (unit-pinned in {@code ConnectionRuntimeClassGeneratorTest})</h2>
  * <ul>
- *   <li><b>Acquire.</b> {@code DataSource.getConnection()}, then {@code setAutoCommit(true)}, then
- *       (on PostgreSQL, when the build mounts) the capture of the built-in settings the connection
- *       carries session-set, then the mount method with the typed payload, capturing its returned
- *       handle. <b>Fail closed:</b> if mount throws (it may have partially mounted session state
+ *   <li><b>Acquire.</b> {@code DataSource.getConnection()}, then a rollback if autocommit is off,
+ *       then {@code setAutoCommit(true)}, then (on PostgreSQL, when the build mounts) the capture
+ *       of the built-in settings the connection carries session-set, then the mount method with
+ *       the typed payload, capturing its returned handle. <b>Fail closed:</b> if mount throws (it may have partially mounted session state
  *       first), the connection is evicted, never returned, and the failure propagates before any
  *       operation SQL runs.</li>
  *   <li><b>Release.</b> Any transaction the operation left open is rolled back and autocommit
@@ -84,10 +84,12 @@ import java.util.Optional;
  * snapshot, and the unmount at release must take effect immediately. Asserting the mode at
  * acquire excludes all of that before any SQL runs. The same fact read from the other end is why
  * {@code release} rolls back <em>before</em> switching the mode: JDBC commits an open transaction
- * when autocommit is turned on, so that order is load-bearing too. What the assertion asks of a
- * consumer's mount is a documented precondition on the hook contract: mount session-scoped state,
- * in the database's own session vocabulary; transaction-scoped storage ({@code SET LOCAL},
- * {@code ON COMMIT DELETE ROWS} rows) is gone by the mount's own implicit commit and never worked.
+ * when autocommit is turned on, so that order is load-bearing too. Acquire rolls back before
+ * switching for the same reason: a pool may hand over a connection with autocommit off and a
+ * transaction open, and that work must be discarded, not committed under the caller's request.
+ * What the assertion asks of a consumer's mount is a documented precondition on the hook
+ * contract: mount session-scoped state, in the database's own session vocabulary;
+ * transaction-scoped storage ({@code SET LOCAL}, {@code ON COMMIT DELETE ROWS} rows) is gone by the mount's own implicit commit and never worked.
  *
  * <h2>Load-bearing invariant: one connection per operation, one thread per connection</h2>
  * Pinning exactly one connection per distinct source within an operation is safe because generated
@@ -439,8 +441,13 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("Graphitron asserts the connection's transaction mode: autocommit-on is the resting")
             .addComment("state on a connection it owns, whatever the pool lent. The mount must be its own")
             .addComment("committed transaction (session-scoped state set inside a lazily-opened transaction")
-            .addComment("would be reverted by the first failing mutation field's rollback), so the assertion")
-            .addComment("runs before any hook SQL.")
+            .addComment("would be reverted by the first failing mutation field's rollback), so the mode is")
+            .addComment("forced before any hook SQL. Roll back what the pool left open first: JDBC commits an")
+            .addComment("open transaction when autocommit is turned on, and work graphitron did not issue must")
+            .addComment("not be committed under this request.")
+            .beginControlFlow("if (!connection.getAutoCommit())")
+            .addStatement("connection.rollback()")
+            .endControlFlow()
             .addStatement("connection.setAutoCommit(true)");
         if (mounts) {
             String args = mountCallArgs(multiTenant);
@@ -448,10 +455,10 @@ public final class ConnectionRuntimeClassGenerator {
                 .addComment("On PostgreSQL, capture the built-in settings the connection carries session-set (what")
                 .addComment("the pool configured after connecting) before the mount can change any, so release can")
                 .addComment("put them back after its RESET ALL. Outside the rejection mapping below: a failed")
-                .addComment("capture is a deployment fault, like a failed autocommit assertion.")
+                .addComment("capture is a deployment fault, like a failure forcing autocommit.")
                 .addStatement("$L = dialect.family() == $T.POSTGRES ? captureSessionSettings(connection) : null",
                     RESTORE, SQL_DIALECT)
-                .addComment("Only the mount itself is a rejected identity: a failed autocommit assertion above is")
+                .addComment("Only the mount itself is a rejected identity: a failure forcing autocommit above is")
                 .addComment("a deployment fault and must not reach a consumer's mapping of identity rejections.")
                 .beginControlFlow("try");
             if (handleType != null) {
@@ -486,17 +493,19 @@ public final class ConnectionRuntimeClassGenerator {
         acquireBuilder.addStatement("return new $T($L)", pinnedConnection, constructed.toString());
         var acquire = acquireBuilder
             .addJavadoc(mounts
-                ? "Pins one connection, asserts autocommit on it, on PostgreSQL captures the built-in\n"
-                    + "settings it carries session-set (for release to restore after its reset), and mounts\n"
-                    + "identity through the generated hook's static {@code mount}, with the typed payload.\n"
-                    + "The mount therefore always runs outside any transaction, as its own committed\n"
-                    + "statement, whatever the pool's configuration. Fail-closed: a throwing mount (or a\n"
-                    + "failed autocommit assertion or capture) evicts the connection and propagates before\n"
-                    + "any operation SQL runs; the mount's own throw propagates as\n"
-                    + "{@code SessionMountException}, the assertion's and the capture's as themselves.\n"
-                : "Pins one connection and asserts autocommit on it (the resting state graphitron holds an\n"
-                    + "owned connection in). No {@code <sessionState>} is configured, so no identity is\n"
-                    + "mounted and no hook runs. Fail-closed: a failed assertion evicts the connection.\n")
+                ? "Pins one connection, forces autocommit on it, first rolling back any transaction the\n"
+                    + "pool left open, on PostgreSQL captures the built-in settings it carries session-set\n"
+                    + "(for release to restore after its reset), and mounts identity through the generated\n"
+                    + "hook's static {@code mount}, with the typed payload. The mount therefore always runs\n"
+                    + "outside any transaction, as its own committed statement, whatever the pool's\n"
+                    + "configuration. Fail-closed: a throwing mount (or a failure forcing autocommit, or a\n"
+                    + "failed capture) evicts the connection and propagates before any operation SQL runs;\n"
+                    + "the mount's own throw propagates as {@code SessionMountException}, the others never\n"
+                    + "do (an unchecked failure as itself, a checked one wrapped unchecked).\n"
+                : "Pins one connection and forces autocommit on it, first rolling back any transaction the\n"
+                    + "pool left open (autocommit is the resting state graphitron holds an owned connection\n"
+                    + "in). No {@code <sessionState>} is configured, so no identity is mounted and no hook\n"
+                    + "runs. Fail-closed: a failure doing so evicts the connection.\n")
             .build();
 
         var connectionAccessor = MethodSpec.methodBuilder("connection")

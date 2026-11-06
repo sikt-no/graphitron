@@ -342,8 +342,9 @@ class TenantScatterSubstrateTest {
             .hasCauseInstanceOf(IllegalStateException.class);
         assertThat(events)
             .filteredOn(e -> !e.startsWith("setAutoCommit:"))
-            .as("the late pin aborts its own connection: never unmounted, never returned to the pool")
-            .containsExactly("getConnection:A", "connect:A", "abort:A");
+            .as("the late pin aborts its own connection: never unmounted, never returned to the pool "
+                + "(the fake arrives with autocommit off, so acquire rolls back before forcing it on)")
+            .containsExactly("getConnection:A", "rollback:A", "connect:A", "abort:A");
     }
 
     @Test

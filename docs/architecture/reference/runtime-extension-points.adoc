@@ -112,10 +112,11 @@ contract is stated here and holds for every `<sessionState>`:
   `ON COMMIT DELETE ROWS`), no work left uncommitted for a later commit to
   persist.
 * *You may assume no transaction is open.* Graphitron invokes both methods
-  outside any open transaction, structurally: acquisition asserts the
-  connection arrives in autocommit and fails closed if it does not (a pool
-  configured `autoCommit=false` is a deployment error surfaced at the first
-  acquisition, not silently worked around), and release settles any transaction
+  outside any open transaction, structurally: acquisition puts the connection
+  in autocommit before the mount runs, first rolling back any transaction the
+  pool handed over open (switching autocommit on would otherwise commit it), so
+  a pool configured with `autoCommit=false` works and nothing it left open is
+  committed under your request; and release settles any transaction
   the operation left open before unmount runs (so your clears take effect
   immediately rather than being reverted by the pool's return-rollback).
 * *On PostgreSQL a reset backs your unmount up.* Graphitron captures the
@@ -262,8 +263,9 @@ Under `CommitPolicy.ROLLBACK_ONLY`, the dev-execution mode, each field is one
 savepoint in a single operation transaction that is discarded at the end, so
 later fields observe earlier ones. That is the only savepoint Graphitron takes.
 
-On the escape-hatch path you own the `DSLContext` and its transactions, and
-Graphitron opens no scope. The same effect there is a consumer `Instrumentation`
+On the escape-hatch path Graphitron opens no scope per mutation field; each
+generated write runs in its own transaction on your `DSLContext`, which commits
+when the write's statement returns. The same effect there is a consumer `Instrumentation`
 that opens a transaction on your connection when a top-level mutation field
 starts and settles it when the next one starts or the operation completes, with
 a jOOQ `TransactionListener` if code must run as each transaction begins.
@@ -551,18 +553,71 @@ pinned connection and the database enforces the policies automatically.
 
 === On the escape-hatch path
 
-You own the session state: set it on the `DSLContext` you return before handing
-it to `Graphitron.newExecutionInput(dsl, ...)`. Hold a single connection for the
-request so the `SET` and every query share it:
+You own the connection and the identity on it, so you do by hand what the
+owned path's mount and unmount do: set identity session-scoped on a connection
+in autocommit before the request runs, and clear it before the connection goes
+back to the pool. Hold one connection for the whole request, so the set, every
+query, and the clear share it.
 
 [source,java]
 ----
-// ILLUSTRATIVE: setting session context on the escape-hatch DSLContext
+// ILLUSTRATIVE: session identity on the escape-hatch DSLContext
 Connection conn = dataSource.getConnection();
-DSLContext ctx = DSL.using(conn, SQLDialect.POSTGRES);
-ctx.execute("SELECT set_config('app.user_id', ?, true)", userId); // isLocal=true: transaction-scoped
-var input = Graphitron.newExecutionInput(ctx, /* contextArguments... */).query(q).build();
+try {
+    settle(conn);
+    DSLContext ctx = DSL.using(conn, SQLDialect.POSTGRES);
+    ctx.execute("select set_config('app.user_id', ?, false)", userId); // false: session-scoped
+    var input = Graphitron.newExecutionInput(ctx, /* contextArguments... */).query(q).build();
+    result = engine.execute(input);
+} finally {
+    try {
+        settle(conn);
+        DSL.using(conn, SQLDialect.POSTGRES).execute("select set_config('app.user_id', '', false)");
+        conn.close();
+    } catch (Exception clearFailed) {
+        conn.abort(Runnable::run); // identity not proven cleared: evict, never hand it on
+        throw clearFailed;
+    }
+}
+
+// Autocommit on, with nothing left open. Roll back first: JDBC commits an open
+// transaction when autocommit is switched on.
+static void settle(Connection conn) throws SQLException {
+    if (!conn.getAutoCommit()) {
+        conn.rollback();
+        conn.setAutoCommit(true);
+    }
+}
 ----
+
+Why each piece is there:
+
+* *Session scope, set in autocommit.* The third argument `false` makes the
+  setting last for the session; set in autocommit it is committed at once, so
+  the commits and rollbacks your request goes on to make cannot revert it.
+  `true` does not work in either place you might put it. In autocommit it
+  reverts at the end of its own statement. Inside a transaction you open around
+  the whole request it reverts at that transaction's first commit, and
+  Graphitron's generated mutations each open and commit a transaction on the
+  `DSLContext` you pass (see
+  xref:../../manual/reference/directives/mutation.adoc[`@mutation`] and
+  xref:../../manual/reference/directives/routine.adoc#write[`@routine`]), so
+  identity ends with the first mutation field.
+* *The clear runs after execution, in autocommit.* With
+  `engine.executeAsync(...)`, run the `finally` block when the returned future
+  completes, not when `executeAsync` returns; the connection stays borrowed
+  until then. The `settle` before the clear matters: a clear issued inside a
+  transaction your request left open is reverted when the pool rolls that
+  transaction back on return.
+* *Clear to the empty string.* A custom setting PostgreSQL has seen cannot
+  return to unset; the policy's `NULLIF` treats `''` as no identity.
+* *Evict when the clear fails.* `close()` hands a connection back to the pool,
+  still carrying identity if the clear did not run; `abort` makes the pool
+  discard it.
+
+Graphitron's own reset at release covers only connections it borrowed itself,
+so the clear on this path is yours. `EscapeHatchSessionIdentityExecutionTest`
+runs this shape against PostgreSQL with row-level security.
 
 === Producing the claims payload
 

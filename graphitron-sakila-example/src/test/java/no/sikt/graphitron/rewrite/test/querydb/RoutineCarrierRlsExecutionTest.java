@@ -72,9 +72,19 @@ class RoutineCarrierRlsExecutionTest {
     @AfterAll
     static void stopDatabase() {
         if (superDsl != null) {
-            superDsl.execute("delete from secure_note");
+            deleteOwnNotes();
             dropProbeRole();
         }
+    }
+
+    /**
+     * Deletes the notes this class wrote, by their text: {@code secure_note} is shared with other
+     * classes that run concurrently, so a whole-table delete would remove their rows mid-test.
+     */
+    private static void deleteOwnNotes() {
+        superDsl.deleteFrom(DSL.table("secure_note"))
+            .where(DSL.field("note", String.class).in("invisible to alice", "visible to alice"))
+            .execute();
     }
 
     /**
@@ -143,7 +153,7 @@ class RoutineCarrierRlsExecutionTest {
                     .isZero();
             }
         } finally {
-            superDsl.execute("delete from secure_note");
+            deleteOwnNotes();
         }
     }
 
@@ -183,7 +193,7 @@ class RoutineCarrierRlsExecutionTest {
             assertThat(note.get("ownerId")).isEqualTo("alice");
             assertThat(payload.get("errors")).isNull();
         } finally {
-            superDsl.execute("delete from secure_note");
+            deleteOwnNotes();
         }
     }
 }

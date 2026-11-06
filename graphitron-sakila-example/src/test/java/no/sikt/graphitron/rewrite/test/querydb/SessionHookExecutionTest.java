@@ -365,6 +365,35 @@ class SessionHookExecutionTest {
     }
 
     @Test
+    void acquire_discardsATransactionThePoolLeftOpen_ratherThanCommittingIt() throws Exception {
+        // A connection handed over with autocommit off and an uncommitted insert in it: switching
+        // autocommit on would commit that insert under this request, so acquire rolls it back
+        // first. The marker row is this case's own; it counts and deletes only that key.
+        Connection raw = probeConnection();
+        try {
+            raw.setAutoCommit(false);
+            try (Statement st = raw.createStatement()) {
+                st.execute("select set_config('app.user_id', 'alice', true)"); // satisfies the policy's check
+                st.executeUpdate("insert into rls_probe values (102, 'alice', 'left-open-by-the-pool')");
+            }
+            Executor sameThread = Runnable::run;
+            no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
+                    singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
+                    no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"))
+                .release();
+
+            assertThat(dsl.fetchCount(DSL.table("rls_probe"), DSL.field("id").eq(102)))
+                .as("the pool's open transaction was rolled back at acquire, not committed")
+                .isZero();
+        } finally {
+            if (!raw.isClosed()) {
+                raw.close();
+            }
+            dsl.execute("delete from rls_probe where id = 102"); // superuser cleanup
+        }
+    }
+
+    @Test
     void sessionBoundServiceParameter_readsTheMountedHandleThroughTheEngine() throws Exception {
         // The $session round trip through the real owned-connection engine: the emitted service
         // call site reads the handle off the pinned connection's carrier entry, so the service
