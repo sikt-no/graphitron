@@ -46,7 +46,7 @@
           meta-index probes that each walk every constraint, so jOOQ's foreign-key read of the fact
           schema takes minutes instead of seconds. https://github.com/h2database/h2database/issues/4523
         -->
-        <version.com.h2database>2.5.250</version.com.h2database>
+        <version.com.h2database>2.5.252</version.com.h2database>
         <!--
           The one glob dialect behind <schemaInputs> patterns: SchemaRecipe.expand in graphitron
           owns the walk (plexus DirectoryScanner includes), so the build's own scan and the
