@@ -138,7 +138,13 @@ public final class FrameEmitter {
             .indent()
             .addStatement("$T first = ($T) batch.getKeyContextsList().get(0)", ENV, ENV)
             .addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("first"))
+            // The body may throw what the call throws, checked or not; the loader's function may
+            // not, so a throw becomes the batch's failed future, which the error routing below reads.
+            .beginControlFlow("try")
             .addStatement("return $T.completedFuture($T.$L(keys, first, dsl))", FUTURE, bodyClass, body)
+            .nextControlFlow("catch ($T thrown)", Exception.class)
+            .addStatement("return $T.failedFuture(thrown)", FUTURE)
+            .endControlFlow()
             .unindent()
             .add("}));\n")
             .unindent()
