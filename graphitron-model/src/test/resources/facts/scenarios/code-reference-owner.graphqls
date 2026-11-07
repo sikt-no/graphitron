@@ -24,7 +24,6 @@ extend type Query {
   ): [Customer!]!
 }
 
-# The columns only: a document is read behind a shared prelude, so its lines are not its own.
 extend schema @expectEquals(relation: "graphitron_ast_code_reference_entry", rows: """
   class_name,                                                                  method,                    argument_name, argument_index, path_index
   no.sikt.graphitron.rewrite.test.services.FilmCarrierService,                 filmsByIds,                service,                     ,

@@ -28,8 +28,8 @@ import java.util.List;
  * coordinates, captured by {@link GraphitronStore#captured(RunContext)} and generated from what that
  * captured. So everything the run declares reaches the store the way it does in production, and an
  * emitter reading the run's configuration from the store finds it there. What the scenario is captured
- * over is what {@code FactExpectationTest} checks: the document as {@link FactDocuments#captured}
- * spells it, the sakila catalog and the classpath corpus.
+ * over is what {@code FactExpectationTest} checks: the files {@link FactDocuments#write} lays down
+ * for it, the prelude and the document, the sakila catalog and the classpath corpus.
  *
  * <p>A scenario is a fact document the store records no defect for, which is the folder's claim and
  * {@code FactExpectationTest}'s to check; a scenario this refuses is a defect the store does not
@@ -66,9 +66,8 @@ public final class GenerateTestSchemas {
                 if (FactDocuments.statesConfiguration(scenario)) {
                     continue;
                 }
-                var file = directory.resolve(scenario.id() + ".graphqls");
-                Files.writeString(file, FactDocuments.captured(scenario));
-                generate(file, scenario.id(), packagePrefix + "." + scenario.id().replace('-', '_'),
+                var files = FactDocuments.write(directory.resolve(scenario.id()), scenario);
+                generate(files, scenario.id(), packagePrefix + "." + scenario.id().replace('-', '_'),
                     outputDirectory);
             }
         } finally {
@@ -77,11 +76,12 @@ public final class GenerateTestSchemas {
     }
 
     /** One scenario's run: its context, its capture, and the generator over what it captured. */
-    private static void generate(Path file, String graph, String outputPackage, Path outputDirectory) {
-        var inputs = List.of(SchemaInput.file(file));
+    private static void generate(List<Path> files, String graph, String outputPackage,
+                                 Path outputDirectory) {
+        var inputs = files.stream().map(SchemaInput::file).toList();
         var ctx = new RunContext(
             inputs,
-            file.getParent(),
+            files.getFirst().getParent(),
             graph,
             outputDirectory,
             outputDirectory.getParent().resolve("generated-resources-graphitron"),

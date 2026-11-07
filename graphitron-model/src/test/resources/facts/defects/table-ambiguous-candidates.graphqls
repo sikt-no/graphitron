@@ -17,15 +17,15 @@ extend type Query {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'TABLE_%'", rows: """
   code,            type_name, source_line, detail
-  TABLE_AMBIGUOUS, Ledger,    79,          ledger
-  TABLE_AMBIGUOUS, Note,      77,          note
+  TABLE_AMBIGUOUS, Ledger,    8,           ledger
+  TABLE_AMBIGUOUS, Note,      6,           note
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_table", rows: """
   code,            source_line, table_schema,  table_name
-  TABLE_AMBIGUOUS, 77,          multischema_a, note
-  TABLE_AMBIGUOUS, 77,          multischema_b, note
-  TABLE_AMBIGUOUS, 79,          multischema_a, ledger
-  TABLE_AMBIGUOUS, 79,          multischema_b, ledger
-  TABLE_AMBIGUOUS, 79,          public,        ledger
+  TABLE_AMBIGUOUS, 6,           multischema_a, note
+  TABLE_AMBIGUOUS, 6,           multischema_b, note
+  TABLE_AMBIGUOUS, 8,           multischema_a, ledger
+  TABLE_AMBIGUOUS, 8,           multischema_b, ledger
+  TABLE_AMBIGUOUS, 8,           public,        ledger
   """)

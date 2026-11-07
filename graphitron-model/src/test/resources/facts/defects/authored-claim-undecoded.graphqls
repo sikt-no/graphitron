@@ -33,24 +33,24 @@ type Subscription {
 # Assembly refuses every bare @routine and @mutation, and the @lookupKey on a field.
 extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
   stage,    error_class,                           source_line
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  81
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  82
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  86
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  87
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  88
-  ASSEMBLY, DirectiveIllegalLocationError,         91
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  95
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  96
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  100
-  ASSEMBLY, DirectiveMissingNonNullArgumentError,  101
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  10
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  11
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  15
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  16
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  17
+  ASSEMBLY, DirectiveIllegalLocationError,         20
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  24
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  25
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  29
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  30
   """)
 
 extend schema @expectEquals(relation: "graphitron_claim",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId', 'FactAnchor')", rows: """
   coordinate       , kind      , claimer          , source_line
-  Film             , TABLE_TYPE, Film             , 79
-  Mutation.mutation, WRITE     , Mutation.mutation, 96
-  Mutation.routine , ROUTINE   , Mutation.routine , 95
-  Query.repeated   , ROUTINE   , Query.repeated   , 89
-  Query.routine    , ROUTINE   , Query.routine    , 86
+  Film             , TABLE_TYPE, Film             , 8
+  Mutation.mutation, WRITE     , Mutation.mutation, 25
+  Mutation.routine , ROUTINE   , Mutation.routine , 24
+  Query.repeated   , ROUTINE   , Query.repeated   , 18
+  Query.routine    , ROUTINE   , Query.routine    , 15
   """)

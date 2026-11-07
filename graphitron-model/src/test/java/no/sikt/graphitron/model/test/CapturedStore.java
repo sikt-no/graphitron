@@ -446,6 +446,25 @@ public final class CapturedStore implements AutoCloseable {
             + " did not stop at the parse");
     }
 
+    /**
+     * A graph read over several files the caller has already written and dated, captured into the
+     * thread's store under a configuration the caller states: the shape a fact document's graph has,
+     * its prelude and itself. {@link #file()} is the last file, the one the graph is about.
+     *
+     * <p>The files rather than their texts, because a file's name and time are part of what the
+     * reading is given: the name is the source a claim's rows carry, and the time decides which file
+     * is read first.
+     */
+    public static CapturedStore ofCatalogFilesWith(Path directory, String graphName, List<Path> files,
+                                                   CatalogInput jooq, List<ClasspathEntry> classpath,
+                                                   SubjectConfig configuration) {
+        var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
+        var store = ThreadConfinedStore.borrow();
+        var schemas = captureFiles(store.dsl(), files, directory, graphName, jooq, false, classpath,
+            LocalDateTime.now(), configuration);
+        return new CapturedStore(store, graphName, directory, files.getLast(), registry, schemas);
+    }
+
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
                                                 CatalogInput jooq, List<ClasspathEntry> classpath) {
         return openAndCapture(directory, graphName, sdl, jooq, classpath, SubjectConfig.none());
@@ -511,6 +530,18 @@ public final class CapturedStore implements AutoCloseable {
                                             SubjectConfig configuration) {
         Path other = write(directory, otherGraph, sdl);
         captureFiles(store.dsl(), List.of(other), directory, otherGraph, jooq, false, classpath,
+            LocalDateTime.now(), configuration);
+        return this;
+    }
+
+    /**
+     * {@link #ofCatalogFilesWith}'s reading as a further graph in this store: several files the
+     * caller has written and dated, under a configuration the caller states.
+     */
+    public CapturedStore andCatalogGraphFilesWith(String otherGraph, List<Path> files,
+                                                 CatalogInput jooq, List<ClasspathEntry> classpath,
+                                                 SubjectConfig configuration) {
+        captureFiles(store.dsl(), files, directory, otherGraph, jooq, false, classpath,
             LocalDateTime.now(), configuration);
         return this;
     }

@@ -64,32 +64,32 @@ type Subscription @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
 extend schema @expectEquals(relation: "graphitron_claim",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId', 'FactAnchor')", rows: """
   coordinate          , kind      , claimer                   , source_line
-  Failure             , ERROR_TYPE, Failure                   , 90
-  Failure             , TABLE_TYPE, Failure                   , 90
-  Film                , TABLE_TYPE, Film                      , 79
-  Film.claimed        , EXPRESSION, Film.claimed              , 83
-  Film.claimed        , NODE_ID   , Film.claimed              , 84
-  Film.claimed        , SERVICE   , Film.claimed              , 82
-  Mutation            , ERROR_TYPE, Mutation                  , 115
-  Mutation            , TABLE_TYPE, Mutation                  , 115
-  Mutation.claimed    , EXPRESSION, Mutation.claimed          , 118
-  Mutation.claimed    , NODE_ID   , Mutation.claimed          , 119
-  Mutation.claimed    , SERVICE   , Mutation.claimed          , 117
-  Mutation.mutation   , INSERT    , Mutation.mutation         , 121
-  Mutation.routine    , ROUTINE   , Mutation.routine          , 120
-  Query               , ERROR_TYPE, Query                     , 96
-  Query               , TABLE_TYPE, Query                     , 96
-  Query.claimed       , EXPRESSION, Query.claimed             , 99
-  Query.claimed       , NODE_ID   , Query.claimed             , 100
-  Query.claimed       , SERVICE   , Query.claimed             , 98
-  Query.marked        , LOOKUP    , Query.marked(id:)         , 103
-  Query.markedTwice   , LOOKUP    , Query.markedTwice(first:) , 108
-  Query.markedTwice   , LOOKUP    , Query.markedTwice(second:), 109
-  Query.repeated      , ROUTINE   , Query.repeated            , 105
-  Query.routine       , ROUTINE   , Query.routine             , 101
-  Subscription        , ERROR_TYPE, Subscription              , 125
-  Subscription        , TABLE_TYPE, Subscription              , 125
-  Subscription.claimed, EXPRESSION, Subscription.claimed      , 128
-  Subscription.claimed, NODE_ID   , Subscription.claimed      , 129
-  Subscription.claimed, SERVICE   , Subscription.claimed      , 127
+  Failure             , ERROR_TYPE, Failure                   , 19
+  Failure             , TABLE_TYPE, Failure                   , 19
+  Film                , TABLE_TYPE, Film                      , 8
+  Film.claimed        , EXPRESSION, Film.claimed              , 12
+  Film.claimed        , NODE_ID   , Film.claimed              , 13
+  Film.claimed        , SERVICE   , Film.claimed              , 11
+  Mutation            , ERROR_TYPE, Mutation                  , 44
+  Mutation            , TABLE_TYPE, Mutation                  , 44
+  Mutation.claimed    , EXPRESSION, Mutation.claimed          , 47
+  Mutation.claimed    , NODE_ID   , Mutation.claimed          , 48
+  Mutation.claimed    , SERVICE   , Mutation.claimed          , 46
+  Mutation.mutation   , INSERT    , Mutation.mutation         , 50
+  Mutation.routine    , ROUTINE   , Mutation.routine          , 49
+  Query               , ERROR_TYPE, Query                     , 25
+  Query               , TABLE_TYPE, Query                     , 25
+  Query.claimed       , EXPRESSION, Query.claimed             , 28
+  Query.claimed       , NODE_ID   , Query.claimed             , 29
+  Query.claimed       , SERVICE   , Query.claimed             , 27
+  Query.marked        , LOOKUP    , Query.marked(id:)         , 32
+  Query.markedTwice   , LOOKUP    , Query.markedTwice(first:) , 37
+  Query.markedTwice   , LOOKUP    , Query.markedTwice(second:), 38
+  Query.repeated      , ROUTINE   , Query.repeated            , 34
+  Query.routine       , ROUTINE   , Query.routine             , 30
+  Subscription        , ERROR_TYPE, Subscription              , 54
+  Subscription        , TABLE_TYPE, Subscription              , 54
+  Subscription.claimed, EXPRESSION, Subscription.claimed      , 57
+  Subscription.claimed, NODE_ID   , Subscription.claimed      , 58
+  Subscription.claimed, SERVICE   , Subscription.claimed      , 56
   """)

@@ -25,8 +25,8 @@ type Mutation {
 
 extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
   stage,    error_class,                    source_line
-  ASSEMBLY, DirectiveIllegalLocationError,  81
-  ASSEMBLY, DirectiveIllegalLocationError,  85
+  ASSEMBLY, DirectiveIllegalLocationError,  10
+  ASSEMBLY, DirectiveIllegalLocationError,  14
   """)
 
 extend schema @expectEquals(relation: "graphql_directive_application", where: "directive_name = 'lookupKey'", rows: """

@@ -28,8 +28,7 @@ type Mutation {
   addFilm(input: FilmInput): Film @mutation(typeName: INSERT)
 }
 
-# The columns only: a document is read behind a shared prelude, so its lines are not its own. Each
-# LOOKUP is where its argument's @lookupKey was written.
+# Each LOOKUP is where its argument's @lookupKey was written.
 extend schema @expectEquals(relation: "graphitron_producer_claim", rows: """
   coordinate,        kind,    claimer,                       source_column
   Query.node,        SERVICE, Query.node,                    5

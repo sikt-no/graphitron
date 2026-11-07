@@ -64,7 +64,7 @@ class FactExpectationTest {
     static Path tmp;
 
     /** The name a stepped graph's prelude is written under, which no file of the pattern can take. */
-    private static final String PRELUDE_FILE = "_prelude";
+    private static final String PRELUDE_FILE = FactDocuments.PRELUDE_FILE;
 
     private static CapturedStore captured;
     private static List<Block> blocks;

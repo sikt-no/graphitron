@@ -15,7 +15,12 @@ import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,11 +37,18 @@ import java.util.regex.Pattern;
  * facts the documents check.
  *
  * <p>A document's folder is a claim about its graph ({@link Claim}). The prelude sits above all
- * four folders and is captured as part of every plain document.
+ * four folders and is a file of every graph: a plain document's graph is two files, the prelude and
+ * the document, so a claim's source lines are the document's own.
  */
 public final class FactDocuments {
 
     private FactDocuments() {}
+
+    /**
+     * The name the prelude's file takes within a graph, after the graph's own name: a file of the
+     * graph like any other, which no document name can take since none starts with an underscore.
+     */
+    public static final String PRELUDE_FILE = "_prelude";
 
     /** The fact folder, which holds the prelude and the four folders of documents. */
     static final CorpusDocuments.Folder FACTS = new CorpusDocuments.Folder("facts", 0);
@@ -123,9 +135,31 @@ public final class FactDocuments {
         return CorpusDocuments.prelude(FACTS);
     }
 
-    /** The prelude and the document, which is what a plain document's graph is captured over. */
-    public static String captured(CorpusDocuments.Document document) {
-        return prelude() + "\n" + document.sdl();
+    /**
+     * A plain document's graph written into {@code directory} as the files it is read over, in the
+     * order they are read: the prelude, as {@code <id>._prelude.graphqls}, then the document, as
+     * {@code <id>.graphqls}. Every reading of a plain document reads these files, so what
+     * {@code FactExpectationTest} checks is what {@code GenerateTestSchemas} generates from.
+     *
+     * <p>The prelude is dated a second before the document. Reading order is modification time,
+     * name breaking a tie, and two files written in one breath may land either side of a clock tick;
+     * stating the order keeps the prelude the incumbent of every coordinate it declares, which is
+     * what a document extending its {@code Query} expects.
+     */
+    public static List<Path> write(Path directory, CorpusDocuments.Document document) {
+        var prelude = directory.resolve(document.id() + "." + PRELUDE_FILE + ".graphqls");
+        var file = directory.resolve(document.id() + ".graphqls");
+        var now = Instant.now();
+        try {
+            Files.createDirectories(directory);
+            Files.writeString(prelude, prelude());
+            Files.writeString(file, document.sdl());
+            Files.setLastModifiedTime(prelude, FileTime.from(now.minusSeconds(1)));
+            Files.setLastModifiedTime(file, FileTime.from(now));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return List.of(prelude, file);
     }
 
     /** Whether the document states the configuration its graph is captured under. */
@@ -146,11 +180,12 @@ public final class FactDocuments {
         var texts = List.of(document.sdl());
         var configuration = StatedConfiguration.of(texts);
         var catalog = StatedConfiguration.catalog(texts, fixture);
+        var files = write(directory, document);
         if (store == null) {
-            return CapturedStore.ofCatalogWith(directory, document.id(), captured(document),
-                catalog, classpath, configuration);
+            return CapturedStore.ofCatalogFilesWith(directory, document.id(), files, catalog,
+                classpath, configuration);
         }
-        return store.andCatalogGraphWith(document.id(), captured(document), catalog, classpath,
+        return store.andCatalogGraphFilesWith(document.id(), files, catalog, classpath,
             configuration);
     }
 
