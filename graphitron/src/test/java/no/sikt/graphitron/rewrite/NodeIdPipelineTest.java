@@ -840,6 +840,39 @@ class NodeIdPipelineTest {
                 assertThat(((CallSiteCompaction.NodeIdEncodeKeys) f.compaction()).encodeMethod().methodName()).isEqualTo("encodeFoo");
             }),
 
+        NESTING_TYPE_ID(
+            "output `id: ID!` on a nesting type under a node parent → the nesting type's own column, "
+                + "not the parent's identity, so with no `id` column the parent's field is refused",
+            """
+            type Foo implements Node @table(name: "bar") @node { id: ID! details: FooDetails }
+            type FooDetails { id: ID! }
+            type Query { foo: Foo }
+            """,
+            schema -> {
+                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
+                assertThat(schema.field("Foo", "details"))
+                    .isInstanceOfSatisfying(GraphitronField.UnclassifiedField.class, f ->
+                        assertThat(f.rejection().message())
+                            .contains("nested type 'FooDetails' field 'id'")
+                            .contains("column 'id' could not be resolved"));
+            }),
+
+        NESTING_NODE_TYPE_ID(
+            "output `id: ID!` on a nesting type that implements Node, under a node parent → the "
+                + "parent's identity, the nesting type publishing the Relay contract itself",
+            """
+            type Foo implements Node @table(name: "bar") @node { id: ID! details: FooDetails }
+            type FooDetails implements Node { id: ID! }
+            type Query { foo: Foo }
+            """,
+            schema -> {
+                var details = (ChildField.NestingField) schema.field("Foo", "details");
+                var id = (ChildField.ColumnBackedField) details.nestedFields().getFirst();
+                assertThat(id.name()).isEqualTo("id");
+                assertThat(((CallSiteCompaction.NodeIdEncodeKeys) id.compaction()).encodeMethod().methodName())
+                    .isEqualTo("encodeFoo");
+            }),
+
         ACCESSOR_MISSING(
             "column absent AND no metadata → UnclassifiedField, parent stays TableType",
             """

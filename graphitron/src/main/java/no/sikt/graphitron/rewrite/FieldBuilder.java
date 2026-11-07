@@ -9116,8 +9116,12 @@ class FieldBuilder {
         // This arm is deliberately pinned to `Node.id` rather than to any bare `ID` field on a node
         // type. The wider predicate is what the retired synthesis arm used, and applying it here
         // would reroute every such field, `externalId: ID` included, from its column to a nodeId
-        // encode.
+        // encode. It is pinned to the node type's own field, or a nesting type's that implements
+        // `Node`: a nesting type's fields are classified against its parent's table, and its `id`
+        // is the parent's identity only where it publishes the Relay contract itself; otherwise it
+        // is a column like any other, as the store binds it.
         if (tableType instanceof NodeType nodeType
+                && (nodeType.name().equals(parentTypeName) || implementsNode(parentTypeName))
                 && NODE_INTERFACE_ID_FIELD.equals(name)
                 && isScalarId
                 && !hasFieldDirective) {
@@ -9896,4 +9900,9 @@ class FieldBuilder {
         return out;
     }
 
+    /** Whether the object type named {@code typeName} declares that it implements {@code Node}. */
+    private boolean implementsNode(String typeName) {
+        return ctx.schema.getType(typeName) instanceof GraphQLObjectType type
+            && type.getInterfaces().stream().anyMatch(i -> "Node".equals(i.getName()));
+    }
 }

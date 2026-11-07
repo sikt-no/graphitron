@@ -106,7 +106,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
   `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
 * A routine write's carrier refusals in `intent_mutation_routine_seat` and in the walk's routine
   classification. Ends at "A defect is written by the gatherer whose facts it judges, marked and swept by its owner".
-* An `id: ID` without `@nodeId`, a node id to the generator and a column to the store. Ends at "The generator reads an `id: ID` without `@nodeId` as a column".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
 * The walk's own schema beside the emitted one capture builds. Ends at "The generator builds no schema".
@@ -185,7 +184,7 @@ shown an error on a schema that generates, and validate can then fail on them.
   as the generator calls it.
 * **The sakila example draws no error-severity entry defect** `blocked`, on "A condition method over untyped tables resolves". A build check
   over the reactor's own example holds it.
-* **sis draws no entry defect the generator accepts** `open`. On sis the store refuses 24 positions generate builds, 19 `NODE_ID_TYPE_NAME_NOT_NODE` where `@nodeId(typeName:)` names a `@table` type that is no node and 5 `OUTCOME_FIELD_NON_NULL` on a non-null payload data field, and per code either sis's schema or the rule changes. The 8 `COLUMN_UNRESOLVED` on a nesting type's `id: ID!` are settled by "The generator reads an `id: ID` without `@nodeId` as a column".
+* **sis draws no entry defect the generator accepts** `open`. On sis the store refuses 24 positions generate builds, 19 `NODE_ID_TYPE_NAME_NOT_NODE` where `@nodeId(typeName:)` names a `@table` type that is no node and 5 `OUTCOME_FIELD_NON_NULL` on a non-null payload data field, and per code either sis's schema or the rule changes. The 8 `COLUMN_UNRESOLVED` on a nesting type's `id: ID!`, deprecated keys a legacy split query needed, the generator now refuses too, and sis removes them.
 * **Entry defects fail validate** `blocked`, on "The sakila example draws no error-severity entry defect" and "sis draws no entry defect the generator accepts". Every error code in `graphitron_entry_defect` stops a build, not only the editor.
 
 ### The path replaces the walk it was built to retire `open`
@@ -797,10 +796,7 @@ before `generate` does.
     once.
   * **A scalar constant says why it has no input type** `open`. `code_scalar_constant` tells an
     erased coercing apart from the other silences, so the erased-coercing rule reads the store.
-* **The generator reads an `id: ID` without `@nodeId` as a column** `open`. The generator refuses
-  such a field where no column matches, as the store does, instead of reading it as the node's id,
-  unless its own type implements `Node`, where it is the node's identity, nesting types included.
-* **`validate` reads its verdict from the store** `blocked`, on "Each rule the walk enforces is a located defect", "The generator reads an `id: ID` without `@nodeId` as a column" and "Entry defects fail validate". Node-id decode coverage is restated over store facts or goes, and
+* **`validate` reads its verdict from the store** `blocked`, on "Each rule the walk enforces is a located defect" and "Entry defects fail validate". Node-id decode coverage is restated over store facts or goes, and
   `GraphQLRewriteGenerator.validate` and the `VALIDATE` projection go.
 
 ### `generate` is a function of the store and the emitted schema `open`
