@@ -8,12 +8,10 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
@@ -88,7 +86,6 @@ public final class GraphitronAnchor {
         deprecatedDirectiveArguments(dsl, graph, touchedAt);
         deprecatedInputFields(dsl, graph, touchedAt);
         routines(dsl, graph, touchedAt);
-        outboxes(dsl, graph, touchedAt);
         // Last, and children before parents within it, for the reason every delete here has that
         // order: a sweep that took a parent first would meet its own child's foreign key.
         sweep(dsl, graph, touchedAt);
@@ -96,7 +93,7 @@ public final class GraphitronAnchor {
 
     /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
     private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_OUTBOX_ENTRY);
+        List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_ROUTINE_ENTRY);
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather
@@ -329,40 +326,6 @@ public final class GraphitronAnchor {
             .set(t.ROUTINE_REF, excluded(t.ROUTINE_REF))
             .set(t.ROUTINE_REF_NAMESPACE_PART, excluded(t.ROUTINE_REF_NAMESPACE_PART))
             .set(t.ROUTINE_REF_NAME_PART, excluded(t.ROUTINE_REF_NAME_PART))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * Every {@code @outbox} a field carries, numbered in the order they were written. Every
-     * application is a row and the rank is the ordinal, as for {@link #routines}; nothing is
-     * claimed, because a repeated directive is a message each. The decode is joined after the
-     * numbering so an application that wrote nothing still consumes its ordinal.
-     */
-    private static void outboxes(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var e = GRAPHITRON_AST_OUTBOX_ENTRY;
-        var t = GRAPHITRON_OUTBOX_ENTRY;
-        var applications = applicationsOf(dsl, graph, "outbox");
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.SOURCE_NAME,
-                t.SOURCE_LINE, t.SOURCE_COLUMN, t.EVENT_REF, t.ARGMAPPING, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), applications.field(TYPE_NAME),
-                    applications.field(FIELD_NAME), applications.field(WRITTEN_AT),
-                    applications.field(SITE_NAME), applications.field(SITE_LINE),
-                    applications.field(SITE_COLUMN), e.EVENT_REF, e.ARGMAPPING,
-                    val(touchedAt, t.TOUCHED_AT))
-                .from(applications)
-                .join(e).on(e.GRAPH_NAME.eq(graph),
-                    e.SOURCE_NAME.eq(applications.field(SITE_NAME)),
-                    e.SOURCE_LINE.eq(applications.field(SITE_LINE)),
-                    e.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN))))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.EVENT_REF, excluded(t.EVENT_REF))
             .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();

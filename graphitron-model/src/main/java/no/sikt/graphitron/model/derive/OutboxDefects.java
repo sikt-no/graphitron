@@ -11,7 +11,8 @@ import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 
 /**
  * The build errors for {@code @outbox}: every {@code OUTBOX_*} defect the store holds, each at the
@@ -30,7 +31,7 @@ public final class OutboxDefects {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS =
-        Set.of(GRAPHITRON_ENTRY_DEFECT, GRAPHITRON_DEFECT_TYPE, GRAPHITRON_OUTBOX_ENTRY);
+        Set.of(GRAPHITRON_ENTRY_DEFECT, GRAPHITRON_DEFECT_TYPE, GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_FIELD_ELEMENT);
 
     /** One defect of one {@code @outbox}, with what its message needs. */
     public record Row(String typeName, String fieldName, int ordinal, String code,
@@ -66,14 +67,18 @@ public final class OutboxDefects {
     public static Detection detect(org.jooq.DSLContext dsl, String graphName) {
         var d = GRAPHITRON_ENTRY_DEFECT;
         var t = GRAPHITRON_DEFECT_TYPE;
-        var o = GRAPHITRON_OUTBOX_ENTRY;
+        // The @outbox application the defect stands at, and the field it is on.
+        var o = GRAPHQL_DIRECTIVE_APPLICATION;
+        var f = GRAPHQL_FIELD_ELEMENT;
         var rows = dsl
-            .select(o.TYPE_NAME, o.FIELD_NAME, o.ORDINAL, d.CODE, t.STATEMENT, d.DETAIL,
+            .select(f.TYPE_NAME, f.FIELD_NAME, o.ORDINAL, d.CODE, t.STATEMENT, d.DETAIL,
                 d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
             .from(d)
             .join(t).on(t.CODE.eq(d.CODE))
             .join(o).on(o.GRAPH_NAME.eq(d.GRAPH_NAME), o.SOURCE_NAME.eq(d.SOURCE_NAME),
-                o.SOURCE_LINE.eq(d.SOURCE_LINE), o.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
+                o.SOURCE_LINE.eq(d.SOURCE_LINE), o.SOURCE_COLUMN.eq(d.SOURCE_COLUMN),
+                o.DIRECTIVE_NAME.eq("outbox"))
+            .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.COORDINATE))
             .where(d.GRAPH_NAME.eq(graphName), d.CODE.like("OUTBOX\\_%"))
             .fetch(r -> new Row(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(),
                 r.value6(), location(r.value7(), r.value8(), r.value9())));

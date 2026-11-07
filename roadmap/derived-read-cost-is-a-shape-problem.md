@@ -575,9 +575,9 @@ pass and no stratum that clears and recomputes.
   `graphql_directive_application` by the application's position, ordinal zero standing for the one
   application a coordinate-keyed copy kept, as the `@error` hover and the `@orderBy` and
   `@lookupKey` readers now read.
-  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies two
-    `graphitron_ast_` entries onto a coordinate key, `graphitron_routine_entry` and
-    `graphitron_outbox_entry`, each read by rules of `graphitron_entry_defect_rule` or main code.
+  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies one
+    `graphitron_ast_` entry onto a coordinate key, `graphitron_routine_entry`, which goes with
+    "`graphitron_routine_entry` is gone".
   * **The per-site pairs collapse onto a coordinate** `open`. `graphitron_field_node_id_entry` and
     `graphitron_argument_node_id_entry`, `graphitron_reference_for_entry` and
     `graphitron_argument_reference_for_entry`: their twins `graphitron_ast_node_id_entry` and
@@ -2623,6 +2623,13 @@ the `graphitron_ast_` entry at its position; the `@mutation` spelling claim is k
 application to `graphitron_ast_table_entry` or `graphitron_ast_scalar_type_entry`, a bare `@table`
 resolving against the type's own name; the `@table` spelling claim is keyed on
 `graphitron_spelled_reference_entry`, and `meta_family_headline` names `graphitron_ast_table_entry`.
+
+**The `@outbox` copy** (2026-11-07). `graphitron_outbox_entry`, the grain `field-directive-application` and `GraphitronAnchor.outboxes`. A
+message is what was written, so its readers (`graphitron_outbox_result_step`,
+`graphitron_outbox_leaf`, the `OUTBOX_` rules of `graphitron_entry_defect_rule`, `OutboxDefects`
+and `OutboxQuery`) read the field's `@outbox` applications in `graphql_directive_application`,
+numbered there in written order, joined to `graphitron_ast_outbox_entry`; an event left out is the
+field's coordinate, stated in each reader's own query.
 
 **The argument-site marker decodes** (2026-11-07). `graphitron_order_by_entry` and
 `graphitron_argument_lookup_key_entry`: their readers, two rules of `graphitron_entry_defect_rule`,

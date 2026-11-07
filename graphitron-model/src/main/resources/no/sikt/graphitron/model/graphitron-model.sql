@@ -3569,35 +3569,6 @@ COMMENT ON COLUMN graphitron_routine_entry.routine_ref_name_part_upper IS 'the u
 COMMENT ON COLUMN graphitron_routine_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
 COMMENT ON COLUMN graphitron_routine_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a field that still stands; a field the author removed takes its rows with it through the element reference above';
 
-CREATE TABLE graphitron_outbox_entry (
-  graph_name     VARCHAR NOT NULL,
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  event_ref      VARCHAR,
-  argmapping     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
-  event          VARCHAR GENERATED ALWAYS AS (COALESCE(event_ref, type_name || '.' || field_name)),
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_outbox_entry IS 'One message of a field: its @outbox application, at its place among the field''s applications in written order. For example @outbox(event: "FilmCreated") followed by @outbox(argMapping: "filmId: $result.id") on Mutation.createFilm gives two rows, at ordinals 0 and 1, the second with the event Mutation.createFilm.';
-COMMENT ON COLUMN graphitron_outbox_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_outbox_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_outbox_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_outbox_entry.ordinal IS 'the application''s place among the field''s @outbox applications in written order, from zero, which is the order the messages are written in';
-COMMENT ON COLUMN graphitron_outbox_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_outbox_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_outbox_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_outbox_entry.event_ref IS 'the event argument as written, or NULL where the author left it out';
-COMMENT ON COLUMN graphitron_outbox_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
-COMMENT ON COLUMN graphitron_outbox_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a field that still stands; a field the author removed takes its rows with it through the element reference above';
-COMMENT ON COLUMN graphitron_outbox_entry.event IS 'the event the message carries: the one written, else the field''s own coordinate, which is unique in the schema. Generated, so nothing writes it and nothing can; two rows of a graph sharing a value here is the duplicated-event defect';
-
 -- @experimental_constructType has no relation, and unlike every other name in this stratum it
 -- is not a graphitron directive: its declaration in directives.graphqls is a bug (the census
 -- found no consumer anywhere; the declaration's only effect is that emission strips
@@ -10083,7 +10054,14 @@ step_of (graph_name, type_name, field_name, step, class_name, slot_source_name, 
 start (graph_name, type_name, field_name, ordinal, key_name, path, start_type_name) AS (
   SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, p.param_name, SUBSTRING(p.bound_to, 9),
          ft.target_type_name
-    FROM graphitron_outbox_entry o
+    FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
     JOIN graphitron_argmapping_site s
       ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
      AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
@@ -11171,7 +11149,14 @@ CREATE VIEW graphitron_outbox_leaf
 WITH written (graph_name, type_name, field_name, ordinal, key_name, origin, position, bound_to) AS (
   SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, p.param_name, 'MESSAGE', p.position,
          p.bound_to
-    FROM graphitron_outbox_entry o
+    FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
     JOIN graphitron_argmapping_site s
       ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
      AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
@@ -11181,7 +11166,14 @@ WITH written (graph_name, type_name, field_name, ordinal, key_name, origin, posi
   UNION ALL
   SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, c.key_name, 'COMMON', c.position,
          c.bound_to
-    FROM graphitron_outbox_entry o
+    FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
     JOIN store_graph_outbox_payload_entry c ON c.graph_name = o.graph_name
 ),
 ranked (graph_name, type_name, field_name, ordinal, key_name, origin, position, bound_to, rn) AS (
@@ -11380,7 +11372,7 @@ COMMENT ON VIEW graphitron_outbox_leaf IS 'One key of one @outbox message''s pay
 -- COMMENT ON COLUMN graphitron_outbox_leaf.graph_name IS 'the owning graph''s partition, carried from the message';
 -- COMMENT ON COLUMN graphitron_outbox_leaf.type_name IS 'the mutation type declaring the field, carried from the message';
 -- COMMENT ON COLUMN graphitron_outbox_leaf.field_name IS 'the field carrying the @outbox, carried from the message';
--- COMMENT ON COLUMN graphitron_outbox_leaf.ordinal IS 'the message''s place among the field''s @outbox applications, carried from graphitron_outbox_entry';
+-- COMMENT ON COLUMN graphitron_outbox_leaf.ordinal IS 'the message''s place among the field''s @outbox applications, carried from the application';
 -- COMMENT ON COLUMN graphitron_outbox_leaf.key_name IS 'the JSON key, the left side of the entry as written; one row per key of a message, a message''s own entry winning over a common one of the same name, and the first of two written entries winning over the second, whose pair is the key-conflict defect';
 -- COMMENT ON COLUMN graphitron_outbox_leaf.origin IS 'MESSAGE where the entry is the directive''s own mapping, COMMON where it is the configured common payload''s';
 -- COMMENT ON COLUMN graphitron_outbox_leaf.position IS 'the entry''s 0-based position in the mapping it was written in';
@@ -13243,7 +13235,14 @@ UNION ALL
 -- An @outbox that is not on a field writing a table with @mutation: no write, no message.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_NOT_A_WRITE',
        CAST(NULL AS VARCHAR)
-  FROM graphitron_outbox_entry o
+  FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
  WHERE o.source_line IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_write w
                     WHERE w.graph_name = o.graph_name AND w.type_name = o.type_name
@@ -13253,7 +13252,14 @@ UNION ALL
 -- the fault is reported at every @outbox it leaves without one.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_NO_TARGET',
        CAST(NULL AS VARCHAR)
-  FROM graphitron_outbox_entry o
+  FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
  WHERE o.source_line IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM store_graph_outbox b
                     WHERE b.graph_name = o.graph_name
@@ -13269,7 +13275,14 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_TARG
                    || ' or text) or an aggregatetype or aggregateid, text'
             ELSE '<table> ' || b.table_name || ' is not one table of the jOOQ catalog with a type column'
                  || ' and a payload column that is JSON, JSONB or text' END
-  FROM graphitron_outbox_entry o
+  FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
   JOIN store_graph_outbox b ON b.graph_name = o.graph_name
  WHERE o.source_line IS NOT NULL
    AND (b.table_name IS NOT NULL OR b.function_name IS NOT NULL)
@@ -13283,9 +13296,23 @@ UNION ALL
 -- Two @outbox with one event, at each of the two.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_DUPLICATE_EVENT',
        o.event
-  FROM graphitron_outbox_entry o
+  FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
  WHERE o.source_line IS NOT NULL
-   AND EXISTS (SELECT 1 FROM graphitron_outbox_entry o2
+   AND EXISTS (SELECT 1 FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o2
                 WHERE o2.graph_name = o.graph_name AND o2.event = o.event
                   AND (o2.type_name <> o.type_name OR o2.field_name <> o.field_name
                        OR o2.ordinal <> o.ordinal))
@@ -13297,7 +13324,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_
   FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, p.param_name AS key_name,
                ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
                                                o.source_column ORDER BY p.position) AS rn
-          FROM graphitron_outbox_entry o
+          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
           JOIN graphitron_argmapping_site s
             ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
            AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
@@ -13320,7 +13354,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_SOUR
                p.bound_to,
                ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
                                                o.source_column ORDER BY p.position) AS rn
-          FROM graphitron_outbox_entry o
+          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
           JOIN graphitron_argmapping_site s
             ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
            AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
@@ -13355,7 +13396,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                p.bound_to, COALESCE(cs.slot_type, rs.class_name) AS type_name,
                ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
                                                o.source_column ORDER BY p.position) AS rn
-          FROM graphitron_outbox_entry o
+          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
           JOIN graphitron_argmapping_site s
             ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
            AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
@@ -13390,7 +13438,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                  WHERE m.graph_name = o.graph_name AND m.member_name = SUBSTRING(p.bound_to, 10)) AS slot_type,
                ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
                                                o.source_column ORDER BY p.position) AS rn
-          FROM graphitron_outbox_entry o
+          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
           JOIN graphitron_argmapping_site s
             ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
            AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
@@ -13415,7 +13470,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYL
                c.bound_to,
                ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
                                                o.source_column ORDER BY c.position) AS rn
-          FROM graphitron_outbox_entry o
+          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
+                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            JOIN graphitron_ast_outbox_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'outbox') o
           JOIN store_graph_outbox_payload_entry c ON c.graph_name = o.graph_name
          WHERE o.source_line IS NOT NULL
            AND (EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c2
@@ -17561,9 +17623,6 @@ INSERT INTO meta_grain VALUES
   ('graphitron-entry-defect',
    'one defect one written graphitron directive carries, in one graph',
    'graph_name, source_name, source_line, source_column, code', 'sdl'),
-  ('field-directive-application',
-   'one application of one repeatable directive on one field, in one graph',
-   'graph_name, type_name, field_name, ordinal', 'sdl'),
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -18717,10 +18776,6 @@ INSERT INTO meta_relation VALUES
    'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
    'A view and not columns on the defect, the element being a fact of the position: a declaration is its own element, a directive application''s is its parent, and a value''s is reached through the node holding it, the climb graphitron_code_reference_site already takes. Every hop is a key the transcription declares, so the view states no decision of its own and a reader that wants the element joins it rather than the rule restating it per arm.'),
-  ('graphitron_outbox_entry', 'field-directive-application', 'graphitron',
-   'One message of a field: its @outbox application, at its place among the field''s applications in written order.',
-   'For example @outbox(event: "FilmCreated") followed by @outbox(argMapping: "filmId: $result.id") on Mutation.createFilm gives two rows, at ordinals 0 and 1, the second with the event Mutation.createFilm.',
-   'Derived from the entry beside it and anchored on the field the application was written on. Every application is kept, because a repeated directive is a message each; there is no collision rule to choose, and the ordinal is the written order within the field, which is the order the messages are written in. The effective event is a generated column, so the default is stated once and a reader never recomputes it.'),
   ('graphitron_outbox_result_step', 'outbox-message-key-segment', 'graphitron',
    'One step a @outbox $result path takes over a @service field''s returned value, read as the field''s own facts say.',
    'For example $result.holder.blurb.description over a payload whose holder is the service''s object itself gives three rows: holder PASSES_THROUGH, blurb MEMBER, description MEMBER.',

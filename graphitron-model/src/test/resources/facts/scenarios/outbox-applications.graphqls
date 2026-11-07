@@ -1,6 +1,6 @@
 # An @outbox is a message each. A field's applications are kept in the order they were written, at
 # ordinals from zero, whatever their events are; an event the author left out is the field's own
-# coordinate, which the anchor states once so no reader recomputes it. The mapping of each is read
+# coordinate. The mapping of each is read
 # by the generic argMapping writer into pairs, placed at the application it was written on, and
 # each entry becomes a leaf by the source it reads: an argument path, the node id of the result, a
 # column of the written type, or a member of the field's scope. The configured common payload adds
@@ -30,11 +30,11 @@ type Mutation {
     @outbox
 }
 
-extend schema @expectEquals(relation: "graphitron_outbox_entry", rows: """
-  type_name, field_name,      ordinal, event_ref,   event,                 argmapping
-  Mutation,  createFilm,      0,       FilmCreated, FilmCreated,           "filmId: $result.id, title: in.title, name: $result.title"
-  Mutation,  createFilm,      1,       ,            Mutation.createFilm,   "all: in, place: $scope.alias"
-  Mutation,  createFilmAgain, 0,       ,            Mutation.createFilmAgain,
+extend schema @expectEquals(relation: "graphitron_ast_outbox_entry", rows: """
+  event_ref,   argmapping
+  FilmCreated, "filmId: $result.id, title: in.title, name: $result.title"
+  ,            "all: in, place: $scope.alias"
+  ,
   """)
 
 extend schema @expectEquals(relation: "graphitron_outbox_leaf", rows: """

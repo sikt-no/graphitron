@@ -25,10 +25,10 @@ type Mutation {
             argMapping: "filmId: $result.id, releaseYear: in.releaseYear")
 }
 
-extend schema @expectEquals(relation: "graphitron_outbox_entry", rows: """
-  type_name, field_name, ordinal, event_ref,      event
-  Mutation,  createFilm, 0,       FilmCreated,    FilmCreated
-  Mutation,  createFilm, 1,       FilmCatalogued, FilmCatalogued
+extend schema @expectEquals(relation: "graphitron_ast_outbox_entry", rows: """
+  event_ref
+  FilmCreated
+  FilmCatalogued
   """)
 
 extend schema @expectEquals(relation: "graphitron_outbox_leaf", rows: """

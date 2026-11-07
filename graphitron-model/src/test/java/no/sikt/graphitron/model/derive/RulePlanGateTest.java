@@ -61,7 +61,6 @@ class RulePlanGateTest {
         "GRAPHQL_ROOT_OPERATION", "at most one row per root operation, three a graph",
         "FEDERATION_WRITTEN_VERSION", "one row per federation library",
         "GRAPHITRON_FEDERATION_LINK_IMPORT", "the names one link imports, a handful",
-        "GRAPHITRON_OUTBOX_ENTRY", "one row per @outbox application, a few on a mutation field",
         "STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY", "one row per entry of the configured common payload, a handful");
 
     /** Partition reads on trunk when this gate landed, each to be indexed or exempted. */
