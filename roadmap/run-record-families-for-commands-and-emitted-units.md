@@ -173,7 +173,7 @@ once the command record exists.
 ## Provenance
 
 The emitted-code half was first listed as the "generated code catalog" dimension in
-`roadmap/knowledge-base-programme.md` (R117), whose own fact-base note reconciles that the model
+the knowledge-base programme (R117, since discarded), whose own fact-base note reconciles that the model
 store, not the DuckDB projection, is where such a dimension lands. The command half was surfaced by
 the ordering-invariant enforcement question (R677) during the spec discussion of the seam item
 (R682, `roadmap/planners-read-facts-emitters-read-commands.md`), which deliberately keeps both
