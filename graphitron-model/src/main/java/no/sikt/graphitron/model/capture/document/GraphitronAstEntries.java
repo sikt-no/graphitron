@@ -12,6 +12,7 @@ import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 
@@ -21,7 +22,10 @@ import java.util.List;
 import java.util.Set;
 
 import static graphql.language.AstPrinter.printAstCompact;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.or;
 
 /**
  * Writes what a graphitron directive application meant, beside the row saying it was applied.
@@ -132,6 +136,45 @@ public final class GraphitronAstEntries {
                 .execute();
         }
     }
+
+    /**
+     * Deletes {@code graph}'s rows of {@code source} in {@code table} that an incoming element
+     * displaces: one at the index of the same application, written somewhere else. Such a row is
+     * stale, the sweep would take it at the end, but an index is unique within its application, so
+     * it has to go before the element now at its index can be written; an upsert matching on that
+     * key would otherwise update the stale row in place and never write the new one. Rewriting a
+     * path from {@code {table: X}} to {@code [{table: X}, ...]} moves its first element one column
+     * on, onto the same application and index. The rows keyed under a displaced element are its
+     * own decodes, which the same writer writes again, and go with it by cascade.
+     *
+     * <p>For a relation keyed by an element's position and unique on its application's position
+     * and the element's index, as {@code graphitron_ast_reference_element_entry} is.
+     */
+    static void clearDisplaced(DSLContext dsl, Table<?> table, String graph, String source,
+                               List<Listed> incoming) {
+        var named = GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
+        var displaced = new ArrayList<Condition>();
+        for (Listed element : incoming) {
+            displaced.add(table.field(named.APPLICATION_LINE)
+                .eq(GraphQLAstEntries.sourceLine(element.application()))
+                .and(table.field(named.APPLICATION_COLUMN)
+                    .eq(GraphQLAstEntries.sourceColumn(element.application())))
+                .and(table.field(named.POSITION).eq(element.position()))
+                .and(not(table.field(named.SOURCE_LINE).eq(GraphQLAstEntries.sourceLine(element.node()))
+                    .and(table.field(named.SOURCE_COLUMN)
+                        .eq(GraphQLAstEntries.sourceColumn(element.node()))))));
+        }
+        for (int from = 0; from < displaced.size(); from += DISPLACED_PER_STATEMENT) {
+            dsl.deleteFrom(table)
+                .where(table.field(named.GRAPH_NAME).eq(graph))
+                .and(table.field(named.SOURCE_NAME).eq(source))
+                .and(or(displaced.subList(from, Math.min(from + DISPLACED_PER_STATEMENT, displaced.size()))))
+                .execute();
+        }
+    }
+
+    /** How many elements one delete names, so a large document is not one statement. */
+    private static final int DISPLACED_PER_STATEMENT = 200;
 
     // ------------------------------------------------------------------- reading an application
 

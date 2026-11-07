@@ -988,10 +988,6 @@ today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`
   sweeps once, at `store_class_file`, and reads `byte_size` and `mtime` to skip an unchanged class.
-* **An edited `@reference` path re-captures into a warm store** `open`. Rewriting `path: {table: X}` as `path: [{table: X}, {key: ...}]` and capturing into the store the old text left fails on the foreign key from `graphitron_ast_reference_table_step_entry` to `graphitron_ast_reference_element_entry` at the element's new position, while a fresh store takes the same schema. sis's `StudentStudieprogramISemesterFilterInput.terminer` reproduces it, and "A warm store is refreshed in a test" is where a case pins it.
-* **A warm store is refreshed in a test** `open`. `WarmStartRefreshTest` gains a case capturing a
-  different schema on the second capture and asserting the store states the second, so sweeping
-  and re-anchoring are exercised somewhere other than against an empty store.
 
 ### A signature's type is a fact about the position that writes it `open`
 

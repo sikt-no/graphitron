@@ -204,6 +204,51 @@ class WarmStartRefreshTest {
     }
 
     /**
+     * A path rewritten from its object form to a list moves its element one column right, and the
+     * entry keyed at the old position, at the same application and index, has to give way to the new
+     * one in one capture; an error handler list rewritten the same way is the same shape. Compared
+     * with a cold capture of the edited schema, which is what the warm store has to end holding.
+     */
+    @Test
+    @DisplayName("a path edited from object to list form re-captures into a warm store")
+    void anEditedPathRecapturesIntoAWarmStore(@TempDir Path tmp) {
+        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        Path directory = tmp.resolve("graphitron-model");
+        String before = """
+            type Query { films: [Film!]! }
+            type Film @table(name: "film") {
+              title: String
+              language: Language @reference(path: {key: "film_language_id_fkey"})
+            }
+            type Language @table(name: "language") { name: String }
+            type DbErr @error(handlers: {handler: DATABASE}) { path: [String!]! message: String! }
+            """;
+        String after = before
+            .replace("path: {key: \"film_language_id_fkey\"}",
+                "path: [{key: \"film_language_id_fkey\"}, {table: \"language\"}]")
+            .replace("handlers: {handler: DATABASE}", "handlers: [{handler: DATABASE}]");
+
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            captureSdl(store.dsl(), tmp, jooq, before);
+        }
+        Map<String, Integer> warm;
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            assertThatCode(() -> captureSdl(store.dsl(), tmp, jooq, after))
+                .as("the edited path captured into the store the old text left")
+                .doesNotThrowAnyException();
+            warm = census(store.dsl());
+        }
+        Map<String, Integer> cold;
+        try (var store = GraphitronModelStore.open()) {
+            captureSdl(store.dsl(), tmp, jooq, after);
+            cold = census(store.dsl());
+        }
+        assertThat(warm)
+            .as("relations whose row count after the edit differs from a cold capture of it")
+            .isEqualTo(cold);
+    }
+
+    /**
      * The recovery the stratum's analysing cadence leans on, and the one shape of stopped run this
      * family did not already cover. A capture into a store none of whose stratum tables holds a row
      * commits its facts and then runs the derivation stratum one committed step at a time, because
@@ -678,7 +723,12 @@ class WarmStartRefreshTest {
      * names the silence.
      */
     private static void captureBound(DSLContext dsl, Path scratch, CatalogInput jooq) {
-        CapturedStore.writeSource(scratch, TABLE_BOUND_SDL);
+        captureSdl(dsl, scratch, jooq, TABLE_BOUND_SDL);
+    }
+
+    /** {@code sdl} captured over the real catalog, as {@link #captureBound} does its fixture. */
+    private static void captureSdl(DSLContext dsl, Path scratch, CatalogInput jooq, String sdl) {
+        CapturedStore.writeSource(scratch, sdl);
         ModelCapture.capture(dsl, graph(scratch),
             CapturedStore.withCatalog(CapturedStore.corpusOf(scratch), jooq), List.of(),
             CapturedStore.loaderOf(jooq), now());

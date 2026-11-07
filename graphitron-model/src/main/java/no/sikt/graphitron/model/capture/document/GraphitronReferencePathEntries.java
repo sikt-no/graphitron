@@ -68,7 +68,10 @@ final class GraphitronReferencePathEntries {
         var carryingPaths = new ArrayList<Directive>(applied(applications, "reference"));
         carryingPaths.addAll(applied(applications, "referenceFor"));
         references(dsl, graph, touchedAt, carryingPaths);
-        elements(dsl, graph, touchedAt, listedIn(carryingPaths, "path"));
+        var elements = listedIn(carryingPaths, "path");
+        GraphitronAstEntries.clearDisplaced(dsl, GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY, graph, source,
+            elements);
+        elements(dsl, graph, touchedAt, elements);
         var referenceFor = wrote(applied(applications, "referenceFor"), "type");
         var steps = steps(carryingPaths);
         tableSteps(dsl, graph, touchedAt, tabled(steps));

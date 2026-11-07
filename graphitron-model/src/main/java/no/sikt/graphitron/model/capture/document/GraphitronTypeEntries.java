@@ -81,8 +81,10 @@ final class GraphitronTypeEntries {
         enums(dsl, graph, touchedAt, naming(applied(applications, "enum"), "enumReference"));
         var errors = applied(applications, "error");
         errors(dsl, graph, touchedAt, errors);
-        handlers(dsl, graph, touchedAt, listedIn(errors, "handlers").stream()
-            .filter(handler -> handler.node() instanceof ObjectValue).toList());
+        var listed = listedIn(errors, "handlers").stream()
+            .filter(handler -> handler.node() instanceof ObjectValue).toList();
+        GraphitronAstEntries.clearDisplaced(dsl, GRAPHITRON_AST_ERROR_HANDLER_ENTRY, graph, source, listed);
+        handlers(dsl, graph, touchedAt, listed);
         var handlers = elementsOf(errors, "handlers");
         genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC"));
         databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
