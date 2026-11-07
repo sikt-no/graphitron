@@ -35,10 +35,10 @@ extend type Query {
     @reference(path: [{table: "film"}, {table: "film_translation"}])
 }
 
-extend schema @expectEquals(relation: "graphitron_field_path_landing", rows: """
-  type_name, field_name,         start_table,                                  kind,    position, table_name
-  Film,      language,           film,                                         RESULT,  0,        language
-  Query,     tilganger,          tilganger_for_feidebruker_med_fs_fiktivt_fnr, ROUTINE, ,         tilganger_for_feidebruker_med_fs_fiktivt_fnr
-  Query,     recentFilms,        films_for_actor,                              ROUTINE, 1,        film
-  Query,     recentTranslations, films_for_actor,                              ROUTINE, 2,        film_translation
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,               target_type,     target_table
+  Film.language,            Language,        language
+  Query.tilganger,          Tilgang,         tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  Query.recentFilms,        Film,            film
+  Query.recentTranslations, FilmTranslation, film_translation
   """)

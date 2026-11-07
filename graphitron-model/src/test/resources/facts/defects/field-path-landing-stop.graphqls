@@ -23,10 +23,14 @@ extend type Query {
     @reference(path: [{table: "actor"}])
 }
 
-extend schema @expectEquals(relation: "graphitron_field_path_stop", rows: """
-  type_name, field_name, start_table,     position, moves
-  Film,      spokenIn,   film,            0,        2
-  Query,     castOf,     films_for_actor, 1,        0
+extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
+  coordinate,    target_type, position, element_place, moves
+  Film.spokenIn, Language,    0,        0,             2
+  Query.castOf,  Actor,       0,        1,             0
   """)
 
-extend schema @assertEmpty(relation: "graphitron_field_path_landing")
+extend schema @assertAbsent(relation: "graphitron_join_path", rows: """
+  coordinate
+  Film.spokenIn
+  Query.castOf
+  """)

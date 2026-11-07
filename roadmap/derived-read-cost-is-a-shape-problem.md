@@ -92,12 +92,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `graphitron_routine_entry`, written by the anchor and by the registry decode. Ends at
   "`graphitron_routine_entry` is gone".
 * `graphitron_path_element_*` beside the step hops. Ends at "Nothing resolves a path but the walk".
-* A routine-ended field's function in `graphitron_routine_result` and in
-  `graphitron_field_path_landing`'s row with no place. Ends at "A routine's result is an object of its function's record class".
 * Argument and input-field paths from `graphitron_field_scope_table` beside the path relations. Ends at
   "The readers read the paths, and the old path relations go".
-* An output field's walk in `graphitron_field_path*` and in `graphitron_join_path_step*`, both every
-  capture, the defects the new one's alone. Ends at "The old walk's readers read the join path, and the old family goes".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
 * The walk's unknown-method rejections beside the stored code-reference defects. Ends at "The walk's unknown-method rejections go".
@@ -244,7 +240,7 @@ resolutions and links built beside it are gone.
   Applications compose in written order, a path the walk stops on has no column and only the path's
   defect, and an object field's directives resolve against `graphitron_field_target_table`.
   `graphitron_field_column_scope` is gone.
-* **Nothing resolves a path but the walk** `blocked`, on "Arguments and input fields have paths from their field's path". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
+* **Nothing resolves a path but the walk** `open`. The step hops and `graphitron_condition_method_route` go last, and the `@reference`
   page says a path is read from source to target only.
 * **Every field has a path, the written one or the one discovery implies** `open`. Where nothing is written the one key between source and target
   is stated as path rows, so no reader falls back to discovery for itself, and the editor's
@@ -300,13 +296,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_field_path_method_candidate` goes with the old family.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
-  * **The old walk's readers read the join path, and the old family goes** `open`, F's.
-    The editor, MCP, the fanout lint and `RoutineWriteQuery` read the join path, and
-    `intent_field_column_table`, `intent_mutation_routine_seat` and the field table relations are
-    gone. Left: the output-field arm of `graphitron_node_id_instruction_rule` reads
-    `graphitron_join_path`'s target, and `FieldPaths` and every `graphitron_field_path*` relation go,
-    with the gate tests and fact documents.
-* **`scenarios/path-rules` runs** `blocked`, on "Arguments and input fields have paths from their field's path".
+* **`scenarios/path-rules` runs** `open`.
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.
 * **The readers read the paths, and the old path relations go** `blocked`, on "`scenarios/path-rules` runs".
@@ -338,7 +328,7 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `BuildContext` and `FieldBuilder`. Two cases are settled by fact documents on the way: a
   polymorphic id at a parameter bound through `argMapping`, which only the store may check, and the
   participant set's single-table message at the argument site, which has no test.
-* **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `blocked`, on "Arguments and input fields have paths from their field's path".
+* **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `open`.
   The landing and participant arms read the walk from the using field's target, and the occurrence,
   scope, resolving, step-target and decode relations go, with `graphitron_node_id_instruction` once
   "Encode and decode read the target type, and the old node-id relations go" lands. Neither side
@@ -1977,7 +1967,7 @@ columns matched by name, is its own subtype, `graphitron_join_path_step_matched_
 inferred routine result, a written `{table:}` element from a function and the step after a path
 ending on a `@routine`; `_primary_key` stays the `{key:}` self-join. `NODE_ID_LANDS_ON_TABLE` is a
 bare `@nodeId` whose walked landing table has no single `@node` type, or a named node whose table
-differs from the landing. The old walk runs beside the new one until "The old walk's readers read the join path, and the old family goes" moves its readers.
+differs from the landing. The old walk ran beside the new one until its readers read the join path.
 The claim a need follows is picked by `graphitron_join_path_claimed_rule`, one row per output-field
 need a claim covers and walks to: the field's own `@referenceFor` naming the type, then its own
 claim where it walks to the type, then exactly one inherited, and it is the rule for
@@ -2507,6 +2497,17 @@ grains `reference-step-hop`, `reference-step-keyed-hop`, `reference-step-keyless
 `input-field-reference-step-keyed-target`, `input-field-reference-step-keyless-target` and
 `condition-method-route` went with them, and so did `ReferenceStepRecombinationTest`. Every reader
 reads `graphitron_join_path_step` and its subtypes at the occurrence.
+
+**The old walk** (2026-11-07). `FieldPaths` with `graphitron_field_path`, `graphitron_field_path_rule`,
+`graphitron_field_path_start`, `graphitron_field_path_start_rule`, `graphitron_field_path_start_routine`,
+`graphitron_field_path_column`, `graphitron_field_path_key`, `graphitron_field_path_primary_key`,
+`graphitron_field_path_method`, `graphitron_field_path_method_candidate`, `graphitron_field_path_routine`,
+`graphitron_field_path_parameter`, `graphitron_field_path_parameter_rule`,
+`graphitron_field_path_parameter_binding`, `graphitron_field_path_stop` and
+`graphitron_field_path_landing`, and the grains `field-path`, `field-path-start`, `field-path-column`,
+`field-path-key`, `field-path-method`, `field-path-method-candidate`, `field-path-routine`,
+`field-path-parameter` and `field-path-stop`. A field's path is `graphitron_join_path_step` and its
+subtypes at the occurrence, its start `graphitron_path_need`, its landing `graphitron_join_path`.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

@@ -173,16 +173,10 @@ class SupertypeSignatureGateTest {
         // the way the pair above did, when a conversion took both out of the register and made them
         // tables this gate's scan reaches.
         Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table"),
-        // A path's start, whose payload is its kind alone; the routine start is not here because it
-        // is keyed by its producer alone. graphitron_occurrence_source joins it on a payload of its
-        // kind alone, keyed by the occurrence: the successor of the start, which starts every
-        // occurrence with a source rather than only the fields that wrote a path. Successor and
-        // incumbent, not siblings; the set goes to one member when the start does.
-        // graphitron_occurrence_binding shares the payload of a kind alone for the same reason a
-        // supertype does: what each kind takes is its subtype's, so a binding and a source are two
-        // supertypes of the occurrence, not one fact under two keys.
-        Set.of("graphitron_field_path_start", "graphitron_occurrence_binding",
-               "graphitron_occurrence_source"),
+        // An occurrence's source and its binding, whose payload is their kind alone: what each kind
+        // takes is its subtype's, so a binding and a source are two supertypes of the occurrence, not
+        // one fact under two keys.
+        Set.of("graphitron_occurrence_binding", "graphitron_occurrence_source"),
         // How a join path's step joins, by which key it rode: a written foreign key and an inferred
         // one, and a table's own primary key ridden as a self-join and one matched by name from a
         // function's derived table. Siblings by decision, not a supertype owed: which relation holds

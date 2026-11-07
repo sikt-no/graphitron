@@ -31,24 +31,24 @@ extend type Query {
   films: [Film]
 }
 
-extend schema @expectEquals(relation: "graphitron_field_path", rows: """
-  type_name, field_name,      start_table, position, from_table,      to_table
-  Actor,     films,           actor,       0,        actor,           films_for_actor
-  Film,      castRecentFilms, film,        0,        film,            film_actor
-  Film,      castRecentFilms, film,        1,        film_actor,      films_for_actor
-  Film,      castRecentFilms, film,        2,        films_for_actor, film
+extend schema @expectEquals(relation: "graphitron_join_path_step", rows: """
+  coordinate,           target_type, position, from_table,      to_table
+  Actor.films,          ActorFilm,   0,        actor,           films_for_actor
+  Film.castRecentFilms, Film,        0,        film,            film_actor
+  Film.castRecentFilms, Film,        1,        film_actor,      films_for_actor
+  Film.castRecentFilms, Film,        2,        films_for_actor, film
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_path_routine", rows: """
-  type_name, field_name,      position, routine_name
-  Actor,     films,           0,        films_for_actor
-  Film,      castRecentFilms, 1,        films_for_actor
+extend schema @expectEquals(relation: "graphitron_join_path_step_routine", rows: """
+  coordinate,           position, routine_name
+  Actor.films,          0,        films_for_actor
+  Film.castRecentFilms, 1,        films_for_actor
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_path_parameter", rows: """
-  type_name, field_name,      position, parameter_name, from_table, from_column, argument
-  Actor,     films,           0,        pActorId,       actor,      actor_id,
-  Actor,     films,           0,        pMinLength,     ,           ,            minLength
-  Film,      castRecentFilms, 1,        pActorId,       film_actor, actor_id,
-  Film,      castRecentFilms, 1,        pMinLength,     ,           ,            minLength
+extend schema @expectEquals(relation: "graphitron_join_path_step_parameter", rows: """
+  coordinate,           position, parameter_name, from_table, from_column, argument
+  Actor.films,          0,        pActorId,       actor,      actor_id,
+  Actor.films,          0,        pMinLength,     ,           ,            minLength
+  Film.castRecentFilms, 1,        pActorId,       film_actor, actor_id,
+  Film.castRecentFilms, 1,        pMinLength,     ,           ,            minLength
   """)

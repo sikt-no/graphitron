@@ -14,10 +14,10 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -77,25 +77,23 @@ class PrimaryKeySelfJoinPathTest {
             }
             type Query { films: [Film] filmActors: [FilmActor] }
             """, dsl -> {
-            var p = GRAPHITRON_FIELD_PATH;
-            assertThat(dsl.select(p.FIELD_NAME, p.FROM_TABLE, p.TO_TABLE).from(p)
+            var p = GRAPHITRON_JOIN_PATH_STEP;
+            assertThat(dsl.select(p.COORDINATE, p.FROM_TABLE, p.TO_TABLE).from(p)
                 .where(p.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                .orderBy(p.FIELD_NAME)
                 .fetch(r -> r.value1() + ":" + lower(r.value2()) + "->" + lower(r.value3())))
-                .containsExactly("row:film_actor->film_actor", "self:film->film");
-            var k = GRAPHITRON_FIELD_PATH_PRIMARY_KEY;
-            assertThat(dsl.select(k.FIELD_NAME, k.TABLE_NAME).from(k)
+                .containsExactlyInAnyOrder("FilmActor.row:film_actor->film_actor",
+                    "Film.self:film->film");
+            var k = GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
+            assertThat(dsl.select(k.COORDINATE, k.TABLE_NAME).from(k)
                 .where(k.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                .orderBy(k.FIELD_NAME)
                 .fetch(r -> r.value1() + ":" + lower(r.value2())))
-                .containsExactly("row:film_actor", "self:film");
-            var c = GRAPHITRON_FIELD_PATH_COLUMN;
-            assertThat(dsl.select(c.FIELD_NAME, c.FROM_COLUMN, c.TO_COLUMN).from(c)
+                .containsExactlyInAnyOrder("FilmActor.row:film_actor", "Film.self:film");
+            var c = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+            assertThat(dsl.select(c.COORDINATE, c.FROM_COLUMN, c.TO_COLUMN).from(c)
                 .where(c.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                .orderBy(c.FIELD_NAME, c.ORDINAL)
                 .fetch(r -> r.value1() + ":" + lower(r.value2()) + "=" + lower(r.value3())))
-                .containsExactly("row:actor_id=actor_id", "row:film_id=film_id",
-                    "self:film_id=film_id");
+                .containsExactlyInAnyOrder("FilmActor.row:actor_id=actor_id",
+                    "FilmActor.row:film_id=film_id", "Film.self:film_id=film_id");
             assertNoForeignKeyRows(dsl);
             assertThat(defects(dsl)).isEmpty();
         });
@@ -149,11 +147,11 @@ class PrimaryKeySelfJoinPathTest {
             }
             type Query { films: [Film] }
             """, dsl -> {
-            var k = GRAPHITRON_FIELD_PATH_KEY;
+            var k = GRAPHITRON_JOIN_PATH_STEP_KEY;
             assertThat(dsl.select(k.CONSTRAINT_NAME).from(k)
                 .where(k.GRAPH_NAME.eq(CapturedStore.GRAPH)).fetch(r -> lower(r.value1())))
                 .containsExactly("film_language_id_fkey");
-            assertThat(dsl.fetchCount(GRAPHITRON_FIELD_PATH_PRIMARY_KEY)).isZero();
+            assertThat(dsl.fetchCount(GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY)).isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY)).isZero();
             assertThat(defects(dsl)).isEmpty();
         });
@@ -167,14 +165,14 @@ class PrimaryKeySelfJoinPathTest {
     }
 
     private static void assertNoForeignKeyRows(DSLContext dsl) {
-        assertThat(dsl.fetchCount(GRAPHITRON_FIELD_PATH_KEY))
+        assertThat(dsl.fetchCount(GRAPHITRON_JOIN_PATH_STEP_KEY))
             .as("a primary-key step rides no foreign key")
             .isZero();
     }
 
     private static void assertNoForeignKeyRows(DSLContext dsl, String field, int position) {
-        var k = GRAPHITRON_FIELD_PATH_KEY;
-        assertThat(dsl.fetchCount(k, k.FIELD_NAME.eq(field).and(k.POSITION.eq(position))))
+        var k = GRAPHITRON_JOIN_PATH_STEP_KEY;
+        assertThat(dsl.fetchCount(k, k.COORDINATE.eq("Film." + field).and(k.POSITION.eq(position))))
             .as("no foreign-key row for the primary-key element's position")
             .isZero();
     }

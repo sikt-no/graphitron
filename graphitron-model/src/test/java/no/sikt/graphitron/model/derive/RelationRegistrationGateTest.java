@@ -327,26 +327,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_type_federation", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_site", Arm.DERIVED);
         registrations.put("graphitron_code_reference", Arm.DERIVED);
-        registrations.put("graphitron_field_path_start", Arm.DERIVED);
-        registrations.put("graphitron_field_path_start_routine", Arm.DERIVED);
-        registrations.put("graphitron_field_path_start_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_path", Arm.DERIVED);
-        registrations.put("graphitron_field_path_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_path_column", Arm.DERIVED);
-        registrations.put("graphitron_field_path_key", Arm.DERIVED);
-        registrations.put("graphitron_field_path_primary_key", Arm.DERIVED);
-        registrations.put("graphitron_field_path_method", Arm.DERIVED);
-        registrations.put("graphitron_field_path_method_candidate", Arm.DERIVED);
-        registrations.put("graphitron_field_path_routine", Arm.DERIVED);
-        registrations.put("graphitron_field_path_parameter", Arm.DERIVED);
-        registrations.put("graphitron_field_path_parameter_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_path_parameter_binding", Arm.DERIVED);
         registrations.put("graphitron_field_key_row", Arm.DERIVED);
         registrations.put("graphitron_field_key_row_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_path_stop", Arm.DERIVED);
-        registrations.put("graphitron_field_path_landing", Arm.DERIVED);
-        // The paths keyed per need, derived from the entries and the catalog like the field paths
-        // above; what pins them is the schema's own keys and checks.
+        // The paths keyed per need, derived from the entries and the catalog; what pins them is the
+        // schema's own keys and checks.
         registrations.put("graphitron_join_path_claim", Arm.DERIVED);
         registrations.put("graphitron_path_need", Arm.DERIVED);
         registrations.put("graphitron_path", Arm.DERIVED);

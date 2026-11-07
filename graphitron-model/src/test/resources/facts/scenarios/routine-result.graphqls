@@ -67,9 +67,9 @@ extend schema @assertContains(relation: "graphitron_occurrence_column", rows: ""
   Query.tilganger.rollekode,  public.tilganger_for_feidebruker_med_fs_fiktivt_fnr, rollekode
   """)
 
-extend schema @assertContains(relation: "graphitron_field_path", rows: """
-  type_name, field_name, start_table,     position, from_table,      to_table
-  ActorFilm, film,       films_for_actor, 0,        films_for_actor, film
+extend schema @assertContains(relation: "graphitron_join_path_step", rows: """
+  coordinate,        target_type, position, from_table,      to_table
+  Actor.films.film,  Film,        0,        films_for_actor, film
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_source_table",

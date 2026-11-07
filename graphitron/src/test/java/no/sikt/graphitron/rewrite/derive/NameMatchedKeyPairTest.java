@@ -15,7 +15,10 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_LANDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
@@ -265,18 +268,26 @@ class NameMatchedKeyPairTest {
      * names. Asserted whole so a payload that should name no hop cannot hide behind a filter.
      */
     private static List<String> carrierHops(DSLContext dsl) {
-        var l = GRAPHITRON_FIELD_PATH_LANDING;
+        var j = GRAPHITRON_JOIN_PATH;
+        var o = GRAPHITRON_OCCURRENCE;
+        var f = GRAPHITRON_FIELD;
+        var pr = GRAPHITRON_PRODUCER;
         var t = GRAPHITRON_FIELD_TARGET;
         var k = GRAPHITRON_FIELD_KEY_ROW;
-        return dsl.select(l.TYPE_NAME, l.FIELD_NAME, k.TYPE_NAME, k.FIELD_NAME, l.TABLE_NAME,
+        return dsl.select(f.TYPE_NAME, f.FIELD_NAME, k.TYPE_NAME, k.FIELD_NAME, j.TARGET_TABLE,
                 k.TABLE_NAME)
-            .from(l)
-            .join(t).on(t.GRAPH_NAME.eq(l.GRAPH_NAME), t.TYPE_NAME.eq(l.TYPE_NAME),
-                t.FIELD_NAME.eq(l.FIELD_NAME))
+            .from(j)
+            .join(o).on(o.GRAPH_NAME.eq(j.GRAPH_NAME), o.COORDINATE.eq(j.COORDINATE),
+                o.KIND.eq("FIELD"))
+            .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .join(pr).on(pr.GRAPH_NAME.eq(f.GRAPH_NAME), pr.TYPE_NAME.eq(f.TYPE_NAME),
+                pr.FIELD_NAME.eq(f.FIELD_NAME), pr.KIND.eq("ROUTINE"))
+            .join(t).on(t.GRAPH_NAME.eq(f.GRAPH_NAME), t.TYPE_NAME.eq(f.TYPE_NAME),
+                t.FIELD_NAME.eq(f.FIELD_NAME))
             .join(k).on(k.GRAPH_NAME.eq(t.GRAPH_NAME), k.TYPE_NAME.eq(t.TARGET_TYPE_NAME),
                 k.KIND.eq("COLUMNS"))
-            .where(l.GRAPH_NAME.eq(CapturedStore.GRAPH), l.KIND.eq("ROUTINE"))
-            .orderBy(l.TYPE_NAME, l.FIELD_NAME)
+            .where(j.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(f.TYPE_NAME, f.FIELD_NAME)
             .fetch()
             .map(row -> row.value1() + "." + row.value2() + " " + row.value3() + "." + row.value4()
                 + " " + lower(row.value5()) + "->" + lower(row.value6()));

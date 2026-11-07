@@ -78,12 +78,8 @@ graphitron_field_minted graphql_field
 
 # Adjudicated and kept: a walk starts from a field's anchored declaration.
 #
-# graphitron_field_path_start_rule and graphitron_field_path_rule find where a field's walk starts
-# and the element it takes next through the declaration graphql_field anchored, by its source
-# position, so a field declared twice is walked once. Which declaration was anchored is a
-# declaration site, which only the transcription states, and a field the macro minted wrote no path.
-# graphitron_routine_result_rule reads where a field's path ends the same way, to name the function whose
-# result the rows of the type it returns are.
-graphitron_field_path_rule graphql_field
-graphitron_field_path_start_rule graphql_field
+# graphitron_routine_result_rule reads where a field's path ends through the declaration
+# graphql_field anchored, by its source position, to name the function whose result the rows of the
+# type it returns are. Which declaration was anchored is a declaration site, which only the
+# transcription states, and a field the macro minted wrote no path.
 graphitron_routine_result_rule graphql_field

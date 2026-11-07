@@ -16,8 +16,8 @@ import static org.jooq.impl.DSL.val;
  * it is the member the field's bound name finds on the parent's class, read where it is asked.
  *
  * <p>Reads the producers and results {@link Fetchers} writes and what the path elements name, so it
- * runs after both and before {@link FieldPaths}. Marked and swept: upserted on the reading's
- * instant, then the rows this reading did not find are deleted.
+ * runs after both and before the per-depth loop's sources, which read it. Marked and swept:
+ * upserted on the reading's instant, then the rows this reading did not find are deleted.
  */
 public final class FieldKeyRows {
 

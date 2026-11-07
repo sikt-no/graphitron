@@ -25,14 +25,14 @@ extend type Query {
   stores: [Store]
 }
 
-extend schema @expectEquals(relation: "graphitron_field_path_start", rows: """
-  type_name, field_name, start_table, kind
-  Film,      language,   film,        BINDING
-  Store,     address,    store,       RESULT
+extend schema @assertContains(relation: "graphitron_path_need", rows: """
+  coordinate,    target_type, start_table
+  Film.language, Language,    film
+  Store.address, Address,     store
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_path_landing", rows: """
-  type_name, field_name, kind,    position, table_name
-  Film,      language,   BINDING, 0,        language
-  Store,     address,    RESULT,  0,        address
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,    target_type, target_table
+  Film.language, Language,    language
+  Store.address, Address,     address
   """)

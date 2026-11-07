@@ -27,12 +27,12 @@ extend schema @expectEquals(relation: "intent_foreign_key_column_pair",
   2,        fk_a,        pk_a
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_path_column",
-    where: "type_name = 'ReorderedChild'", rows: """
-  field_name, ordinal, from_column, to_column
-  parent,     0,       fk_b,        pk_b
-  parent,     1,       fk_c,        pk_c
-  parent,     2,       fk_a,        pk_a
+extend schema @expectEquals(relation: "graphitron_join_path_step_column",
+    where: "coordinate = 'ReorderedChild.parent'", rows: """
+  coordinate,            ordinal, from_column, to_column
+  ReorderedChild.parent, 0,       fk_b,        pk_b
+  ReorderedChild.parent, 1,       fk_c,        pk_c
+  ReorderedChild.parent, 2,       fk_a,        pk_a
   """)
 
 extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """

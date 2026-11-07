@@ -28,13 +28,13 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
 
 # A field under an object that wrote a path starts it on the key row it lifts the object onto: the
 # columns of the table record the object is.
-extend schema @assertContains(relation: "graphitron_field_path_start", rows: """
-  type_name,          field_name, start_table, kind
-  FilmDetailsCarrier, language,   film,        LIFTED
+extend schema @assertContains(relation: "graphitron_path_need", rows: """
+  coordinate,                      target_type, start_table
+  Query.filmDetailsBatch.language, Language,    film
   """)
 
 # And the path lands where it goes from there.
-extend schema @assertContains(relation: "graphitron_field_path_landing", rows: """
-  type_name,          field_name, start_table, table_name
-  FilmDetailsCarrier, language,   film,        language
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,                      target_type, target_table
+  Query.filmDetailsBatch.language, Language,    language
   """)

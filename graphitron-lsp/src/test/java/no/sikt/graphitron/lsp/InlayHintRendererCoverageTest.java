@@ -23,7 +23,7 @@ class InlayHintRendererCoverageTest {
     /**
      * Entries whose omitted argument no stored relation answers yet, so a renderer for them would
      * have to read a view. {@code @reference(path:)} waits on the path discovery implies being a
-     * row of {@code graphitron_field_path}. A renderer landing for one fails the second check, so
+     * row of {@code graphitron_join_path_step}. A renderer landing for one fails the second check, so
      * the entry leaves this set with it.
      */
     private static final Set<String> AWAITING_A_STORED_FACT = Set.of("reference");

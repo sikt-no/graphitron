@@ -33,15 +33,15 @@ extend schema @assertContains(relation: "graphitron_result_table", rows: """
   """)
 
 # Both of the interface's path fields are walked from its table.
-extend schema @assertContains(relation: "graphitron_field_path_start", rows: """
-  type_name, field_name, start_table, kind
-  MediaItem, language,   film,        RESULT
-  MediaItem, stores,     film,        RESULT
+extend schema @assertContains(relation: "graphitron_path_need", rows: """
+  coordinate,         target_type, start_table
+  MediaItem.language, Language,    film
+  MediaItem.stores,   Store,       film
   """)
 
-extend schema @assertContains(relation: "graphitron_field_path", rows: """
-  type_name, field_name, position, from_table, to_table
-  MediaItem, language,   0,        film,       language
+extend schema @assertContains(relation: "graphitron_join_path_step", rows: """
+  coordinate,         position, from_table, to_table
+  MediaItem.language, 0,        film,       language
   """)
 
 # The key that departs from inventory cannot be taken from film: a chain break at that element.

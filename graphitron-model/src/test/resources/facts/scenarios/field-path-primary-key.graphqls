@@ -35,28 +35,28 @@ extend schema @expectEquals(relation: "graphitron_path_element_primary_key", row
   39,            film_actor, SQL_NAME
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_path", rows: """
-  type_name, field_name,     start_table, position, from_table, to_table
-  Film,      self,           film,        0,        film,       film
-  Film,      selfByConstant, film,        0,        film,       film
-  FilmActor, row,            film_actor,  0,        film_actor, film_actor
+extend schema @expectEquals(relation: "graphitron_join_path_step", rows: """
+  coordinate,          target_type,  position, from_table, to_table
+  Film.self,           FilmSelf,     0,        film,       film
+  Film.selfByConstant, FilmSelf,     0,        film,       film
+  FilmActor.row,       FilmActorRow, 0,        film_actor, film_actor
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_path_primary_key", rows: """
-  type_name, field_name,     position, table_name
-  Film,      self,           0,        film
-  Film,      selfByConstant, 0,        film
-  FilmActor, row,            0,        film_actor
+extend schema @expectEquals(relation: "graphitron_join_path_step_primary_key", rows: """
+  coordinate,          position, table_name
+  Film.self,           0,        film
+  Film.selfByConstant, 0,        film
+  FilmActor.row,       0,        film_actor
   """)
 
-extend schema @expectEquals(relation: "graphitron_field_path_column", rows: """
-  type_name, field_name,     position, ordinal, from_table, from_column, to_table,   to_column
-  Film,      self,           0,        0,       film,       film_id,     film,       film_id
-  Film,      selfByConstant, 0,        0,       film,       film_id,     film,       film_id
-  FilmActor, row,            0,        0,       film_actor, actor_id,    film_actor, actor_id
-  FilmActor, row,            0,        1,       film_actor, film_id,     film_actor, film_id
+extend schema @expectEquals(relation: "graphitron_join_path_step_column", rows: """
+  coordinate,          position, ordinal, from_table, from_column, to_table,   to_column
+  Film.self,           0,        0,       film,       film_id,     film,       film_id
+  Film.selfByConstant, 0,        0,       film,       film_id,     film,       film_id
+  FilmActor.row,       0,        0,       film_actor, actor_id,    film_actor, actor_id
+  FilmActor.row,       0,        1,       film_actor, film_id,     film_actor, film_id
   """)
 
-extend schema @assertEmpty(relation: "graphitron_field_path_key")
+extend schema @assertEmpty(relation: "graphitron_join_path_step_key")
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect")
