@@ -6366,6 +6366,10 @@ CREATE TABLE code_scalar_constant (
   FOREIGN KEY (source_name, class_name)
     REFERENCES code_class (source_name, class_name) ON DELETE CASCADE
 );
+-- What a @scalarType reference names, the class and the field, read without the classpath entry
+-- the reference does not carry.
+CREATE INDEX code_scalar_constant_ref_ix
+  ON code_scalar_constant (class_name, field_name);
 COMMENT ON TABLE code_scalar_constant IS 'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to. For example a DATE_TIME field coercing to java.time.OffsetDateTime.';
 COMMENT ON COLUMN code_scalar_constant.source_name IS 'the classpath entry the owning class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to scope by the graph''s own source set, or by how the graph''s build reached the entry on store_graph_dependency';
 COMMENT ON COLUMN code_scalar_constant.class_name IS 'the owning class''s binary name, the left part of the reference an author writes';
@@ -11568,8 +11572,11 @@ CREATE VIEW graphitron_occurrence_call_parameter_candidate
 -- the call no pair has taken and no parameter is named after, where the two agree on type: the
 -- same list-ness, and an element the argument's value can arrive as. An input object arrives as a
 -- class the input is built into, which nothing in the schema names, so any class outside the JDK
--- qualifies; an enum as a class or a String; a scalar as its Java type. A primitive erases to no
--- class, so its element is the declared type, int for int.
+-- qualifies; an enum as a class or a String; a scalar as its Java type, a built-in's by graphql-java
+-- and any other's by the constant its @scalarType names. A primitive erases to no class, so its
+-- element is the declared type, int for int. Where one named parameter and one argument are all
+-- that is left of the call, they pair whenever their list-ness agrees and type cannot tell them
+-- apart: an input object, or a scalar no Java type is known for.
 WITH open_parameter (graph_name, coordinate, position, parameter_name, element, many) AS (
   SELECT s.graph_name, s.coordinate, p.position, p.parameter_name,
          COALESCE(p.element_class, p.erased_class, p.parameter_type), COALESCE(p.delivery, '') = 'MANY'
@@ -11618,7 +11625,7 @@ SELECT p.graph_name, p.coordinate, p.position, p.parameter_name, a.coordinate
   FROM open_parameter p
   JOIN open_argument a ON a.graph_name = p.graph_name AND a.call_coordinate = p.coordinate
  WHERE a.is_list = p.many
-   AND CASE a.kind
+   AND (CASE a.kind
          WHEN 'INPUT_OBJECT' THEN POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%'
          WHEN 'ENUM' THEN (POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%')
                           OR p.element = 'java.lang.String'
@@ -11629,8 +11636,42 @@ SELECT p.graph_name, p.coordinate, p.position, p.parameter_name, a.coordinate
                                  ('Boolean', 'java.lang.Boolean'), ('Boolean', 'boolean'))
                          b (scalar, java_class)
             WHERE b.scalar = a.named_type AND b.java_class = p.element)
-         ELSE FALSE END;
-COMMENT ON VIEW graphitron_occurrence_call_parameter_candidate IS 'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree. For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two.';
+           OR EXISTS (SELECT 1 FROM graphql_directive_application da
+                        JOIN graphitron_ast_scalar_type_entry e
+                          ON e.graph_name = da.graph_name AND e.source_name = da.source_name
+                         AND e.source_line = da.source_line AND e.source_column = da.source_column
+                        JOIN code_scalar_constant k
+                          ON k.class_name = e.scalar_ref_class_part
+                         AND k.field_name = e.scalar_ref_field_part
+                       WHERE da.graph_name = a.graph_name AND da.coordinate = a.named_type
+                         AND da.directive_name = 'scalarType' AND da.ordinal = 0
+                         AND k.input_type = p.element)
+         ELSE FALSE END
+        OR (p.parameter_name IS NOT NULL
+            AND (a.kind = 'INPUT_OBJECT'
+                 OR (a.kind = 'SCALAR'
+                     AND a.named_type NOT IN ('ID', 'String', 'Int', 'Float', 'Boolean')
+                     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
+                                       JOIN graphitron_ast_scalar_type_entry e
+                                         ON e.graph_name = da.graph_name
+                                        AND e.source_name = da.source_name
+                                        AND e.source_line = da.source_line
+                                        AND e.source_column = da.source_column
+                                       JOIN code_scalar_constant k
+                                         ON k.class_name = e.scalar_ref_class_part
+                                        AND k.field_name = e.scalar_ref_field_part
+                                      WHERE da.graph_name = a.graph_name
+                                        AND da.coordinate = a.named_type
+                                        AND da.directive_name = 'scalarType'
+                                        AND da.ordinal = 0)))
+            AND NOT EXISTS (SELECT 1 FROM open_parameter p2
+                             WHERE p2.graph_name = p.graph_name AND p2.coordinate = p.coordinate
+                               AND p2.position <> p.position AND p2.parameter_name IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM open_argument a2
+                             WHERE a2.graph_name = a.graph_name
+                               AND a2.call_coordinate = a.call_coordinate
+                               AND a2.coordinate <> a.coordinate)));
+COMMENT ON VIEW graphitron_occurrence_call_parameter_candidate IS 'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree, or that are the call''s last open parameter and argument where type cannot tell them apart. For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two, and a child call whose source fills its Set of records pairs its one Date argument with its one LocalDate parameter, whatever the two are named.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.coordinate IS 'the producer occurrence making the call';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.position IS 'the open parameter''s position';
@@ -13031,13 +13072,20 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST
     ON d.graph_name = x.graph_name AND d.name = x.coordinate AND NOT d.is_extension
 UNION ALL
 -- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
--- rule, and every field of the type would be fetched both ways.
+-- rule, and every field of the type would be fetched both ways. A row beside an object of classes
+-- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
+-- handed; an object of a table's own record, or of no class, is not.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR)
   FROM (SELECT graph_name, type_name FROM graphitron_result
          GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
   JOIN graphql_ast_type_declaration_entry d
     ON d.graph_name = r.graph_name AND d.name = r.type_name
+ WHERE NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
+                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                              JOIN sql_table st ON st.record_class_fqn = rc.class_name
+                             WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name))
 UNION ALL
 -- A field whose union or interface lists an @error type but which is no errors field, at its
 -- declaration, by the first rule it breaks: every member @error, a list, and a list that may be null.
@@ -13081,7 +13129,8 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                     HAVING COUNT(*) > 1)
 UNION ALL
 -- A field of an outcome other than its errors field that may not be null, at its declaration: on
--- failure the value is absent, and graphql-java would drop the errors with it.
+-- failure the value is absent, and graphql-java would drop the errors with it. A non-null list is
+-- not one, answering an empty list when nothing was produced.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR)
   FROM (SELECT DISTINCT graph_name, outcome_type_name, errors_field_name
@@ -13091,7 +13140,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
    AND f.field_name <> o.errors_field_name
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE f.non_null
+ WHERE f.non_null AND NOT f.is_list
 UNION ALL
 -- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
 -- is an exception a producer caught, and a row of a statement holds none.
@@ -14496,6 +14545,21 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
     LEFT JOIN graphitron_routine_result re
       ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
   UNION ALL
+  -- A producer @asConnection wraps hands its element what the field would hand it unwrapped, the
+  -- carrier only paging it.
+  SELECT f.graph_name, f.type_name, f.field_name, f.coordinate, ft.target_type_name, FALSE,
+         CASE WHEN re.table_name IS NOT NULL THEN 'ROW' END,
+         re.table_source_name, re.table_schema, re.table_name,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), p.kind
+    FROM graphitron_producer p
+    JOIN graphitron_field f
+      ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+     AND ft.wrapper_type_name IS NOT NULL
+    LEFT JOIN graphitron_routine_result re
+      ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
+  UNION ALL
   -- An @externalField hands down what its method's Field evaluates to, a value of the class the
   -- Field carries and never the parent's row.
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate, ft.target_type_name, FALSE,
@@ -14523,6 +14587,16 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON xf.graph_name = f.graph_name AND xf.coordinate = f.coordinate
      AND xf.directive_name = 'externalField'
    WHERE p.field_name IS NULL
+     -- The element of a carrier @asConnection wraps is handed by the producer above, so neither the
+     -- carrier's nodes nor its edge's node hands it the carrier's object.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target w
+                      WHERE w.graph_name = pa.graph_name AND w.target_type_name = ft.target_type_name
+                        AND w.wrapper_type_name = pa.type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target w
+                       JOIN graphitron_field_target et
+                         ON et.graph_name = w.graph_name AND et.type_name = w.wrapper_type_name
+                        AND et.target_type_name = pa.type_name
+                      WHERE w.graph_name = pa.graph_name AND w.target_type_name = ft.target_type_name)
 ),
 -- Each field hands an object type itself, or each object member of a union or interface, and a
 -- table-bound interface itself too, which is a row of its table as a table-bound object type is;
@@ -17976,7 +18050,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
    '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.', 'graphitron'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
-   'A type is reached both as a row of a statement and as an object in memory, so its fields would be fetched two ways; give each its own type.', 'graphitron'),
+   'A type is reached both as a row of a statement and as an object in memory that is not a class graphitron reads by accessor, so its fields would be fetched two ways; give each its own type.', 'graphitron'),
   ('FIELD_WITHOUT_FETCHER', 'error', 'GRAPHITRON', 'GRAPHITRON_FIELD_WITHOUT_FETCHER',
    'A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with.', 'graphitron'),
   ('ERRORS_FIELD_MIXED_MEMBERS', 'error', 'GRAPHITRON', 'graphitron.error-channel.mixed-members',
@@ -17988,7 +18062,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('MULTIPLE_ERRORS_FIELDS', 'error', 'GRAPHITRON', 'graphitron.error-channel.multiple-errors-fields',
    'A type has more than one list of errors, and what a producer catches arrives at one: keep one.', 'graphitron'),
   ('OUTCOME_FIELD_NON_NULL', 'error', 'GRAPHITRON', 'graphitron.error-channel.non-nullable-success-field',
-   'A field of a type a service, write or routine hands back with its errors may not be null, and when the producer fails there is no value to read it from, so graphql-java would drop the errors with it: make the field nullable.', 'graphitron'),
+   'A field of a type a service, write or routine hands back with its errors may not be null unless it is a list, which answers an empty list, and when the producer fails there is no value to read it from, so graphql-java would drop the errors with it: make the field nullable.', 'graphitron'),
   ('ERRORS_IN_A_ROW', 'error', 'GRAPHITRON', 'GRAPHITRON_ERRORS_IN_A_ROW',
    'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.', 'graphitron'),
   ('SESSION_BINDING_WITHOUT_IDENTITY', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_BINDING_WITHOUT_IDENTITY',
@@ -18028,8 +18102,8 @@ INSERT INTO meta_relation VALUES
    'For example argMapping: "ids: input.ids" on @service at Query.filmsByPath draws an ARGUMENT row landing on Query.filmsByPath(input.ids:).',
    'A view because both the rule and the defect read it: the rule takes a parameter''s one written fill, and two written fills are the defect''s, so the written fills are stated once beneath both.'),
   ('graphitron_occurrence_call_parameter_candidate', 'graph-occurrence-call-parameter-candidate', 'graphitron',
-   'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree.',
-   'For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two.',
+   'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree, or that are the call''s last open parameter and argument where type cannot tell them apart.',
+   'For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two, and a child call whose source fills its Set of records pairs its one Date argument with its one LocalDate parameter, whatever the two are named.',
    'A view because both the rule and the defect read it: a pair that is each other''s only candidate binds, and a parameter whose candidates do not pair off is ambiguous.'),
   ('graphitron_occurrence_participant_rule', 'graph-occurrence-participant', 'graphitron',
    'One row the participant rule computes, in the shape graphitron_occurrence_participant stores: the rule itself, evaluated on demand rather than read off disk.',

@@ -25,8 +25,8 @@ type NestedPayload { note: String, errors: [FilmFailure] }
 "An outcome of a write: the re-read beside the errors."
 type AddFilmOutcome { film: Film, errors: [FilmFailure] }
 
-"An outcome whose value field may not be null, which a failure cannot honour."
-type StrictValueOutcome { title: String!, errors: [FilmFailure] }
+"An outcome whose value field may not be null, which a failure cannot honour, beside a non-null list it can: an empty list."
+type StrictValueOutcome { title: String!, titles: [String!]!, errors: [FilmFailure] }
 
 type ReviewPayload { text: String, errors: [FilmFailure] }
 

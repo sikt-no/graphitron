@@ -1,6 +1,8 @@
 # A service call's parameter that nothing fills, that more than one argument could fill by type, or
 # that two written fills reach, and the edges around them. unfilledFilms takes a method whose ids
-# parameter, a List<Integer>, has no argument of its name, no pair and no argument of its type.
+# parameter, a List<Integer>, has no argument of its name, no pair and no argument of its type: its
+# one argument other is a list of String, so the two are the last parameter and argument left, but
+# both have a Java type and they disagree, and a call pairing them would not compile.
 # ambiguousFilms offers two lists of Int to that one parameter, so type cannot choose. greetedTwice names userId in argMapping and in contextArguments both, so nothing says which
 # fills it. namelessList calls a class compiled without -parameters, whose parameters carry no name
 # for an argument to match; the one Int argument still fills the one int parameter by type. unlandedFilms
@@ -41,6 +43,12 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defe
   Query.unlandedFilms
   Query.contextPair
   Query.namelessList
+  """)
+
+# The mismatched last pair is no candidate either, so nothing calls it ambiguous instead.
+extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_candidate", rows: """
+  coordinate,          position
+  Query.unfilledFilms, 1
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter", rows: """

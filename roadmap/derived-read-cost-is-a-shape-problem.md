@@ -170,10 +170,12 @@ built-in directive means what graphql-java executes.
   a reader that ordered by it orders by the extension. A capture twice over one configuration
   writes the same rows.
 
-### The classpath family affords what its readers ask `done`
+### The classpath family affords what its readers ask `open`
 
 `code_` holds every fact its readers ask for, read from the classpath it is allowed to read, and the
 census it replaced is gone.
+
+* **A class's supertypes are one code fact** `open`. Every type a class is, transitively, is one `code_` relation over every class the reading reads, and `code_throwable_supertype` and `sql_table_record_supertype` dissolve into it; the readers are `@error` handler matching, the node-id slot's supertype checks and `RESULT_SHAPES_CONFLICT`, which asks whether an object is an `org.jooq.Record` and today only recognises a table's own record class.
 
 ### A resolution keeps what a diagnostic needs `open`
 
@@ -182,10 +184,9 @@ shown an error on a schema that generates, and validate can then fail on them.
 
 * **A condition method over untyped tables resolves** `open`. A condition-only element whose method takes `Table<?>` steps from where the walk stands,
   as the generator calls it.
-* **The sakila example draws no error-severity entry defect** `blocked`, on "A condition method over untyped tables resolves". A build check
-  over the reactor's own example holds it.
-* **sis draws no entry defect the generator accepts** `open`. On sis the store refuses 24 positions generate builds, 19 `NODE_ID_TYPE_NAME_NOT_NODE` where `@nodeId(typeName:)` names a `@table` type that is no node and 5 `OUTCOME_FIELD_NON_NULL` on a non-null payload data field, and per code either sis's schema or the rule changes. The 8 `COLUMN_UNRESOLVED` on a nesting type's `id: ID!`, deprecated keys a legacy split query needed, the generator now refuses too, and sis removes them.
-* **Entry defects fail validate** `blocked`, on "The sakila example draws no error-severity entry defect" and "sis draws no entry defect the generator accepts". Every error code in `graphitron_entry_defect` stops a build, not only the editor.
+* **The sakila example draws no error-severity entry defect** `open`. Its outcome and result-shape refusals are fixed, and its last 3, `NODE_ID_TYPE_NAME_NOT_NODE` naming the federation stub `StudyLevel`, go when that stub is written `@node(resolvable: false)` (Alf, 2026-11-07); the failing build of "Entry defects fail validate" is the check that holds it, so the two land together.
+* **sis draws no entry defect the generator accepts** `open`. Of the 34 sis drew, the 5 `OUTCOME_FIELD_NON_NULL` were ours and are fixed; the 19 `NODE_ID_TYPE_NAME_NOT_NODE` name federation stubs sis writes `@node(resolvable: false)` once graphitron reads it, the 8 `COLUMN_UNRESOLVED` on a nesting type's deprecated `id: ID!`, keys a legacy split query needed, stay refused, the generator now refusing them too, and are sis's to fix by dropping the fields (fs-plattform MR 6639), and the 2 `NODE_ID_LANDS_ON_TABLE` are fs-plattform MR 6636 (Alf, 2026-11-07).
+* **Entry defects fail validate** `open`. Every error code in `graphitron_entry_defect` stops a build, not only the editor.
 
 ### The path replaces the walk it was built to retire `open`
 

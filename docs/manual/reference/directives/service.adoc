@@ -88,8 +88,14 @@ Each parameter of the method is filled once, by the first of these that reaches 
 . *Its type.* A parameter still open takes an argument still open when each is the other's only
   match by type: the same list-ness, and an element the argument's value arrives as. An input object
   arrives as the class it is built into, which any class outside the JDK can be; an enum as a class
-  or a `String`; a scalar as its Java type, boxed or not. A sole `[EndreInput!]!` argument therefore
+  or a `String`; a scalar as its Java type, boxed or not, which for a scalar bound with
+  xref:scalarType.adoc[`@scalarType`] is the type its constant coerces to: `ExtendedScalars.Date`
+  arrives as a `LocalDate`. A sole `[EndreInput!]!` argument therefore
   fills a sole `List<EndreInputRecord>` parameter whatever the two are called.
+. *What is left.* Where one named parameter and one argument are all that is still open, they pair
+  when their list-ness agrees and type cannot tell them apart: an input object, or a scalar with no
+  `@scalarType` and so no known Java type. A last pair whose types are both known and disagree, a
+  list of `String` against a `List<Integer>`, stays unfilled, since the call could not compile.
 
 A parameter an `argMapping` entry names is that entry's, even where the entry's path lands nowhere;
 the entry's own error reports it, and nothing else stands in. Three refusals name the parameter at

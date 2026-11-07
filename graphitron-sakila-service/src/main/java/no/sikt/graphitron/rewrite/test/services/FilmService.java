@@ -11,6 +11,7 @@ import org.jooq.Record1;
 import org.jooq.Row1;
 import org.jooq.impl.DSL;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -150,6 +151,32 @@ public final class FilmService {
         for (FilmRecord film : films) {
             String title = titleById.get(film.getFilmId());
             result.put(film, title == null ? null : toTitleCase(title));
+        }
+        return result;
+    }
+
+    /**
+     * A child service whose one argument shares neither name nor a known scalar with its parameter:
+     * the source fills the set of films, and the field's lone argument, a custom {@code Date}
+     * scalar under another name, pairs with the lone {@code LocalDate} because nothing else is left.
+     */
+    public static Map<FilmRecord, String> titlesSince(Set<FilmRecord> films, LocalDate since) {
+        Map<FilmRecord, String> result = new LinkedHashMap<>();
+        for (FilmRecord film : films) {
+            result.put(film, film.getFilmId() + " since " + since);
+        }
+        return result;
+    }
+
+    /**
+     * A child service whose two arguments are named after neither parameter: each pairs with the
+     * parameter of its type, the date by the Java type its scalar's {@code @scalarType} coerces to.
+     */
+    public static Map<FilmRecord, String> titlesLabelledSince(Set<FilmRecord> films, LocalDate since,
+                                                              String label) {
+        Map<FilmRecord, String> result = new LinkedHashMap<>();
+        for (FilmRecord film : films) {
+            result.put(film, label + " " + film.getFilmId() + " since " + since);
         }
         return result;
     }

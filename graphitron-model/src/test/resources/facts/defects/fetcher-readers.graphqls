@@ -12,8 +12,10 @@ type Film @table(name: "film") {
   translations: Translations
     @reference(path: [{table: "film_translation"}])
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
-  "Nested here, and handed back as an object by a service below: two shapes on one type."
+  "Nested here, and handed back by a service below as an object of its own class: two shapes on one type, each field dispatching on which it was handed."
   texts: Texts
+  "Nested here, and handed back by a service below as film's own record: two shapes graphitron does not serve."
+  recordTexts: RecordTexts
 }
 
 type FilmDetails {
@@ -47,6 +49,11 @@ type Blurb { description: String }
 
 type Texts { en: String }
 
+type RecordTexts { title: String }
+
+"The element of a connection over a routine: a row of the function's result, the carrier only paging it."
+type ActorFilm { title: String }
+
 "Its @table names nothing the catalog holds: that is its own defect, and the field returning it still selects."
 type Unresolved @table(name: "no_such_table") { label: String }
 
@@ -67,6 +74,10 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
   texts: Texts
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PivotTextsService", method: "translatedTexts"})
+  actorFilms(actorId: Int, minLength: Int): [ActorFilm!]! @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+  recordTexts(id: Int): RecordTexts
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
   unresolved: Unresolved
 }
 
@@ -95,11 +106,20 @@ extend schema @assertContains(relation: "graphitron_result", rows: """
   QueryPagedMediaConnectionEdge,  OBJECT
   """)
 
-# Texts is reached both ways, which is the defect below.
-extend schema @expectEquals(relation: "graphitron_result", where: "type_name IN ('Texts', 'Orphan')", rows: """
+# A routine connection's element holds the function's row and no object of its carrier.
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'ActorFilm'", rows: """
   type_name, shape
-  Texts,     OBJECT
-  Texts,     ROW
+  ActorFilm, ROW
+  """)
+
+# Texts and RecordTexts are reached both ways; only RecordTexts, an object of film's record, is the
+# defect below.
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name IN ('Texts', 'RecordTexts', 'Orphan')", rows: """
+  type_name,   shape
+  RecordTexts, OBJECT
+  RecordTexts, ROW
+  Texts,       OBJECT
+  Texts,       ROW
   """)
 
 extend schema @assertContains(relation: "graphitron_result_table", rows: """
@@ -156,7 +176,7 @@ extend schema @assertEmpty(relation: "graphitron_fetcher", where: "type_name = '
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   coordinate,       code
   Mutation.nothing, FIELD_WITHOUT_FETCHER
-  Texts,            RESULT_SHAPES_CONFLICT
+  RecordTexts,      RESULT_SHAPES_CONFLICT
   """)
 
 extend schema @assertContains(relation: "graphitron_producer", rows: """
@@ -168,6 +188,7 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   coordinate,   code
   Query.unresolved, FIELD_WITHOUT_FETCHER
   CarrierError, RESULT_SHAPES_CONFLICT
+  Texts,        RESULT_SHAPES_CONFLICT
   Orphan.label, FIELD_WITHOUT_FETCHER
   Texts.en,     FIELD_WITHOUT_FETCHER
   """)

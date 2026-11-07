@@ -5,7 +5,10 @@
 # with a source takes what the source hands it, in each shape a batched child service signs. Last, a
 # parameter and an argument that are each other's only match by type bind whatever their names: a
 # list of an input object and a List of the record class it is built into, a list of Int and a
-# List<Integer>. A call
+# List<Integer>; and where one named parameter and one argument are all that is left and type cannot
+# tell them apart, they pair too, as Film.titlesSince's Date argument takes its LocalDate. A scalar
+# a @scalarType binds has the Java type its constant coerces to, so Film.titlesLabelledSince's Day
+# argument takes its LocalDate by type beside a String that takes the String. A call
 # under a type with no table of its own is made once per parent and filled under each. An argument a
 # call takes is bound to the parameter that takes it, seen from the argument.
 
@@ -14,8 +17,17 @@ extend schema @withConfiguration(
   sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary"
 )
 
+scalar Date
+scalar Day @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
+
 type Film @table(name: "film") {
   title: String
+  titlesSince(on: Date): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "titlesSince"})
+  titlesLabelledSince(on: Day, tag: String): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "titlesLabelledSince"})
   titleUppercase: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmService",
       method: "titleUppercase"})
@@ -97,6 +109,10 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Film.sessionLabel,            0,        films,          SOURCE,         ,                              ,
   Film.sessionLabel,            1,        dsl,            DSL_CONTEXT,    ,                              ,
   Film.sessionLabel,            2,        label,          SESSION_MEMBER, ,                              ,            label
+  Film.titlesSince,             0,        films,          SOURCE,         ,                              ,
+  Film.titlesSince,             1,        since,          ARGUMENT,       Film.titlesSince(on:),         ,
+  Film.titlesLabelledSince,     1,        since,          ARGUMENT,       Film.titlesLabelledSince(on:), ,
+  Film.titlesLabelledSince,     2,        label,          ARGUMENT,       Film.titlesLabelledSince(tag:), ,
   """)
 
 extend schema @assertContains(relation: "graphitron_occurrence_parameter", rows: """
@@ -107,6 +123,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_parameter", rows:
   Query.holderOne(filmId:),          Query.holderOne,        0
   Query.callFilmsByType(wanted:),    Query.callFilmsByType,  1
   Query.countDrafts(in:),            Query.countDrafts,      0
+  Film.titlesSince(on:),             Film.titlesSince,       1
   """)
 
 # Nothing in this document is unfilled or filled twice.
