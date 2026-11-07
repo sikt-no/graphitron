@@ -570,16 +570,16 @@ store keeps one shape of each fact. That means no coordinate-keyed entries, no s
 pass and no stratum that clears and recomputes.
 
 * **No `graphitron_*_entry` survives, an entry being the transcription's alone** `blocked`, on the
-  three below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
+  two below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
   the others goes. A reader moves onto the `graphitron_ast_` entry joined to
   `graphql_directive_application` by the application's position, ordinal zero standing for the one
   application a coordinate-keyed copy kept, as the `@error` hover and the `@orderBy` and
   `@lookupKey` readers now read.
-  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies one
-    `graphitron_ast_` entry onto a coordinate key, `graphitron_routine_entry`, which goes with
-    "`graphitron_routine_entry` is gone".
-  * **`graphitron_routine_entry` is gone** `open`. The registry decode stops writing it, and its
-    readers move to `graphitron_ast_routine_entry`, the path and the applications.
+  * **`graphitron_routine_entry` is gone** `open`. `@routine` is what is left: `GraphitronAnchor`
+    copies `graphitron_ast_routine_entry` onto it, the registry decode writes its spelling, and its
+    readers (`RoutineWriteQuery`, the language server's declaration and field facts, four sites of
+    `graphitron_entry_defect_rule` and `intent_argmapping_bound_parameter_type`) wait on the call and
+    its parameters being stated per occurrence and emitted from the store, as `@service`'s are.
   * **The untwinned entries get an ast entry first** `open`. Each entry with no `graphitron_ast_`
     twin gets one, its readers move, and the old one goes. Left: `graphitron_spelled_reference_entry`,
     a spelling being a column of several `graphitron_ast_` entries and no relation of its own, and
