@@ -88,10 +88,12 @@ directives went next (2026-11-07): `graphitron_node_entry`, `graphitron_node_key
 `graphitron_field_binding_entry`, `graphitron_facet_entry`, `graphitron_connection_entry`,
 `graphitron_default_order_entry`, `graphitron_service_entry` and `graphitron_mutation_entry`. Their
 readers read the coordinate's first application off `graphql_directive_application` joined to the
-`graphitron_ast_` entry at its position, which gives each of those entries a reader. Left of the
-decode entries: `graphitron_routine_entry`, `graphitron_outbox_entry`, the per-site `@nodeId` and
-`@referenceFor` pairs, `graphitron_field_reference_entry`, `graphitron_method_reference_entry`,
-`graphitron_spelled_reference_entry` and `graphitron_undecoded_argument_entry`.
+`graphitron_ast_` entry at its position, which gives each of those entries a reader. Then
+`graphitron_outbox_entry`, the per-site `@nodeId` and `@referenceFor` pairs with
+`intent_reference_for_application`, `graphitron_method_reference_entry` and
+`graphitron_undecoded_argument_entry`. Left of the decode entries, all waiting on `@routine`:
+`graphitron_routine_entry`, `graphitron_field_reference_entry` and
+`graphitron_spelled_reference_entry`.
 
 ### 3. New-model relations written ahead of their readers
 
