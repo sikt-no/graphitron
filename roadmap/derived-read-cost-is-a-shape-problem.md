@@ -289,6 +289,9 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * **Each relation written ahead of its reader names it** `open`. The audit's third group, among
     them `graphitron_occurrence_source_object`, `graphitron_occurrence_parameter` and
     `graphitron_fetcher`: the owner names the reader in the graph, or the relation goes.
+    `graphitron_fetcher` is read: `graphitron_producer` and `graphitron_reader` key into it as its
+    subtypes and `graphitron_entry_defect_rule` reads it, a reach a census of Java readers does not
+    see; it goes with them under "The producer's readers read the occurrence producer, and the field-keyed family goes".
   * **Settings and catalog facts nothing reads go** `open`, F's. The audit's fourth group, among
     them the `store_graph_` settings and `sql_table_record_supertype`, each checked against the
     generator's configuration first.
