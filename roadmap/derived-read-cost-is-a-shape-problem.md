@@ -388,8 +388,7 @@ classpath and catalog, and every reader reads that resolution rather than a view
   `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same, and at a path step it refuses on
   axes the generated call never reaches, as for `agreeingOnBoth`.
 * **The per-site copies and coordinate-keyed entries go** `blocked`, on "The code-reference subject converts". The twins lose their
-  class, method and argMapping columns, and `graphitron_service_entry` and
-  `graphitron_external_field_entry` go with their writers.
+  class, method and argMapping columns, and `graphitron_service_entry` goes with its writer.
 * **The walk's unknown-method rejections go** `blocked`, on "Entry defects fail validate".
   `Rejection.unknownServiceMethod` and `unknownLifterMethod` give way to the stored defects.
 * **`sql_name_matched_key_column` is gone** `blocked`, on the child below. With `NameMatchedKeys`,
@@ -578,8 +577,6 @@ pass and no stratum that clears and recomputes.
     did, so one collapse retires several relations.
   * **`graphitron_routine_entry` is gone** `open`. The registry decode stops writing it, and its
     readers move to `graphitron_ast_routine_entry`, the path and the applications.
-  * **The reference-step entries are gone** `blocked`, on "Nothing resolves a path but the walk".
-    Whether a coordinate writes a path is read off its applications, and nothing else reads them.
   * **The untwinned entries get an ast entry first** `open`. Each entry with no `graphitron_ast_`
     twin gets one, its readers move, and the old one goes.
 * **The supertype roster becomes shrink-only** `open`. The roster of duplicated entries is a
@@ -2599,6 +2596,17 @@ subtypes at the occurrence, its start `graphitron_path_need`, its landing `graph
 
 **Relations nobody reads, first group** (2026-11-07). `intent_node_container_member`,
 `intent_record_slot_assignable` and `sql_constraint_hop`, with the `constraint-hop` grain.
+
+**Decode entries nobody read** (2026-11-07). `graphitron_split_query_entry`,
+`graphitron_tenant_fan_out_entry` and `graphitron_multitable_reference_entry`, presence being
+`graphql_directive_application`'s; `graphitron_argument_binding_entry`, served by
+`graphitron_ast_binding_entry`; `graphitron_argument_reference_entry`, served by
+`graphitron_ast_reference_entry`; `graphitron_pivot_entry`, `graphitron_external_field_entry` and
+`graphitron_default_order_field_entry` with the grain `field-order-position`, their `graphitron_ast_`
+twins staying; and `graphitron_ast_field_condition_context_arg_entry`,
+`graphitron_ast_input_value_condition_context_arg_entry` and
+`graphitron_ast_service_context_arg_entry`, a context key being `graphitron_call_context_key_written`'s.
+`GraphitronFactCapture`'s marker writer and `FactWrites.graphitronArgumentBinding` went with them.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

@@ -72,10 +72,10 @@ extend type Query {
     films: [Film!]! @defaultOrder(primaryKey: true)
 }
 
-extend schema @assertContains(relation: "graphitron_split_query_entry", rows: """
-  type_name, field_name
-  Film,      actorsConnection
-  Film,      actorsOrderedConnection
+extend schema @assertContains(relation: "graphql_directive_application", rows: """
+  coordinate,                   directive_name
+  Film.actorsConnection,        splitQuery
+  Film.actorsOrderedConnection, splitQuery
   """)
 
 extend schema @expectEquals(relation: "graphitron_ast_connection_entry", rows: """

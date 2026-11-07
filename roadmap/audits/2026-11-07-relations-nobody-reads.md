@@ -64,6 +64,14 @@ No main code, view or subtype reads these:
 
 Each family needs a named reader or goes, checked that nothing else carries its fact.
 
+Went (2026-11-07): the eight decode copies in the last item, and the three context-argument
+entries, `graphitron_call_context_key_written` reading a context key off the generic
+`graphql_ast_` entries. The argument-site `@reference` decode's claim, which decided whether a path
+step's method reference is written, is keyed on `graphitron_method_reference_entry` now, as the
+`@service` one is. Stayed, as the store's only copy of what they capture: `graphitron_ast_pivot_entry`,
+`graphitron_ast_external_field_entry` and `graphitron_ast_default_order_field_entry`, the twins of
+the copies that went, read by nothing yet.
+
 ### 3. New-model relations written ahead of their readers
 
 `graphitron_occurrence_parameter`, `graphitron_occurrence_source_object`,

@@ -9,7 +9,6 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
@@ -17,7 +16,6 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.boo
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -56,9 +54,7 @@ final class GraphitronInputValueEntries {
      */
     static void write(DSLContext dsl, String graph, String source,
                       List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
-        var conditions = naming(applied(applications, "condition"), "condition");
-        conditions(dsl, graph, touchedAt, conditions);
-        conditionContextArguments(dsl, graph, touchedAt, conditions);
+        conditions(dsl, graph, touchedAt, naming(applied(applications, "condition"), "condition"));
 
         deprecations(dsl, graph, touchedAt, applied(applications, "deprecated"));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
@@ -70,8 +66,7 @@ final class GraphitronInputValueEntries {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY,
-        GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY,
-        GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY);
+        GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY);
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<Directive> applications) {
@@ -97,28 +92,6 @@ final class GraphitronInputValueEntries {
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
                 .set(t.OVERRIDE, excluded(t.OVERRIDE)));
     }
-
-    private static void conditionContextArguments(DSLContext dsl, String graph,
-                                                  LocalDateTime touchedAt,
-                                                  List<Directive> applications) {
-        var t = GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY;
-        var rows = writtenIn(applications, "contextArguments").stream().collect(Rows.toRowList(
-            written -> val(graph, t.GRAPH_NAME),
-            written -> GraphQLAstEntries.sourceName(written.node()),
-            written -> GraphQLAstEntries.sourceLine(written.node()),
-            written -> GraphQLAstEntries.sourceColumn(written.node()),
-            written -> val(touchedAt, t.TOUCHED_AT),
-            written -> val(written.value(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.NAME, excluded(t.NAME)));
-    }
-
-
 
     // ------------------------------------------- one step, as many rows as the author made claims
 

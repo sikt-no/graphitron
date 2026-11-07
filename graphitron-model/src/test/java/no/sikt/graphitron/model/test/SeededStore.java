@@ -222,11 +222,17 @@ public final class SeededStore {
               FROM graphitron_service_entry
              WHERE class_name IS NOT NULL AND method IS NOT NULL
             UNION ALL
-            SELECT graph_name, 'EXTERNAL_FIELD', type_name || '.' || field_name,
-                   type_name, field_name, NULL, NULL, NULL,
-                   class_name, method, source_name, source_line, source_column
-              FROM graphitron_external_field_entry
-             WHERE class_name IS NOT NULL AND method IS NOT NULL
+            SELECT a.graph_name, 'EXTERNAL_FIELD', f.coordinate,
+                   f.type_name, f.field_name, NULL, NULL, NULL,
+                   e.class_name, e.method, e.source_name, e.source_line, e.source_column
+              FROM graphql_directive_application a
+              JOIN graphitron_ast_external_field_entry e
+                ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+               AND e.source_line = a.source_line AND e.source_column = a.source_column
+              JOIN graphql_field_element f
+                ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+             WHERE a.directive_name = 'externalField' AND a.ordinal = 0
+               AND e.class_name IS NOT NULL AND e.method IS NOT NULL
             """);
     }
 

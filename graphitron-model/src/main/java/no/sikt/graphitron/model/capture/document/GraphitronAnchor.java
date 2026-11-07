@@ -25,21 +25,15 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
@@ -124,10 +118,8 @@ public final class GraphitronAnchor {
         tables(dsl, graph, touchedAt);
         scalarTypes(dsl, graph, touchedAt);
         connections(dsl, graph, touchedAt);
-        pivots(dsl, graph, touchedAt);
         mutations(dsl, graph, touchedAt);
         services(dsl, graph, touchedAt);
-        externalFields(dsl, graph, touchedAt);
         // The node before its key columns, which reference it.
         nodes(dsl, graph, touchedAt);
         nodeKeyColumns(dsl, graph, touchedAt, "keyColumns", GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY,
@@ -136,9 +128,7 @@ public final class GraphitronAnchor {
             GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY, GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY);
         routines(dsl, graph, touchedAt);
         outboxes(dsl, graph, touchedAt);
-        // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
-        defaultOrderFields(dsl, graph, touchedAt);
         // The bound name in both habitats it can be written in. One relation rather than two,
         // because what a reader asks is which name a slot binds and not which kind of slot it is.
         fieldBindings(dsl, graph, touchedAt);
@@ -153,9 +143,8 @@ public final class GraphitronAnchor {
     private static final List<Table<?>> TABLES_TO_SWEEP =
         List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_TABLE_ENTRY,
             GRAPHITRON_SCALAR_TYPE_ENTRY,
-            GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
-            GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_EXTERNAL_FIELD_ENTRY,
-            GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
+            GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_MUTATION_ENTRY,
+            GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
             GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY,
             GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_OUTBOX_ENTRY,
@@ -853,38 +842,6 @@ public final class GraphitronAnchor {
     }
 
     /**
-     * The column a field pivots on and the column its value comes from. An inner join: both are
-     * NOT NULL here and the walk this replaces returned without writing when either was unwritten,
-     * so an application that named neither has no fact to state.
-     */
-    private static void pivots(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "pivot");
-        var e = GRAPHITRON_AST_PIVOT_ENTRY;
-        var t = GRAPHITRON_PIVOT_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.ON_COLUMN, t.VALUE_COLUMN, t.VOCABULARY_REF, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.ON_COLUMN, e.VALUE_COLUMN, e.VOCABULARY_REF, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .join(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.ON_COLUMN, excluded(t.ON_COLUMN))
-            .set(t.VALUE_COLUMN, excluded(t.VALUE_COLUMN))
-            .set(t.VOCABULARY_REF, excluded(t.VOCABULARY_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
      * What a field mutates and how. An inner join, the operation being NOT NULL and the whole of
      * what the application asserts; the table spelling beside it is optional and stays with the
      * row. That spelling is also a row of {@code graphitron_spelled_reference_entry}, which is
@@ -960,41 +917,6 @@ public final class GraphitronAnchor {
     }
 
     /**
-     * The Java call that produces a field the database does not hold, on {@code services}' terms
-     * and for its reasons: the application is the row, the decode is the payload, and a left join
-     * keeps a coordinate whose application named no class.
-     *
-     * <p>Single-site, unlike the bindings and the conditions beside it. {@code @externalField} is
-     * declared on {@code FIELD_DEFINITION} alone, so one entry relation answers for it and this
-     * needs no union.
-     */
-    private static void externalFields(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "externalField");
-        var e = GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY;
-        var t = GRAPHITRON_EXTERNAL_FIELD_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.CLASS_NAME, t.METHOD, t.ARGMAPPING, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.CLASS_NAME, e.METHOD, e.ARGMAPPING, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.METHOD, excluded(t.METHOD))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
      * The ordering a field sorts by when the client asks for none. An outer join: an application
      * may state its basis as an index, as the primary key, or as the field list below, so every
      * payload column here is optional and the row is the application.
@@ -1021,70 +943,6 @@ public final class GraphitronAnchor {
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.INDEX_REF, excluded(t.INDEX_REF))
             .set(t.PRIMARY_KEY, excluded(t.PRIMARY_KEY))
-            .set(t.DIRECTION, excluded(t.DIRECTION))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * The fields that ordering sorts by, in order, with the order copied rather than recomputed.
-     *
-     * <p>It used to be ranked again here. The entry numbers an element by where it was written, and
-     * an element the decode could not use took its index and contributed no row, so the anchor
-     * renumbered densely from zero to close the gap, which is what the walk this replaces did by
-     * counting as it wrote. Under the rule that an entry holds what the directive definition
-     * admits, that gap cannot open: an element of the wrong shape is not a {@code FieldSort}, so
-     * its whole application is refused and the elements of an admitted one are the elements the
-     * author wrote, numbered from zero without a hole. An element without a name is still a
-     * {@code FieldSort} (it sorts by a method), and it is copied with its {@code NULL} name.
-     *
-     * <p>So the two strata agree about this number as they agree about the rows, and the statement
-     * says so by selecting the index instead of ranking over it. The index is the element's own,
-     * read off {@code graphql_ast_value_entry}: a decode states what an element meant and not where
-     * it sat, that being a fact the element already carries.
-     *
-     * <p>Reaching the element from the application is one join and not a walk down the value tree.
-     * {@code graphql_ast_value_entry} repeats the holder on every node of an expression, so every
-     * element of the list names the applied argument directly, and the decode is found from the
-     * element by the key it now carries.
-     *
-     * <p>An element with no index of its own is the one the author wrote without a list around it.
-     * GraphQL coerces a lone value to the list of one, so the argument's whole expression is that
-     * element, and a value at the root of an expression has no enclosing list to hold a position in.
-     * Index zero is what the coercion says it is, and stating it here is cheaper than a second
-     * relation for the one-element spelling.
-     */
-    private static void defaultOrderFields(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "defaultOrder");
-        var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
-        var v = GRAPHQL_AST_VALUE_ENTRY;
-        var a = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-        var t = GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.NAME_REF, t.COLLATE,
-                t.DIRECTION, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    coalesce(v.POSITION, inline(0)), e.NAME_REF, e.COLLATE, e.DIRECTION, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .join(a).on(a.GRAPH_NAME.eq(graph))
-                    .and(a.SOURCE_NAME.eq(c.field(SITE_NAME)))
-                    .and(a.PARENT_LINE.eq(c.field(SITE_LINE)))
-                    .and(a.PARENT_COLUMN.eq(c.field(SITE_COLUMN)))
-                    .and(a.NAME.eq("fields"))
-                .join(v).on(v.GRAPH_NAME.eq(graph))
-                    .and(v.SOURCE_NAME.eq(a.SOURCE_NAME))
-                    .and(v.HOLDER_LINE.eq(a.SOURCE_LINE))
-                    .and(v.HOLDER_COLUMN.eq(a.SOURCE_COLUMN))
-                .join(e).on(e.GRAPH_NAME.eq(graph))
-                    .and(e.SOURCE_NAME.eq(v.SOURCE_NAME))
-                    .and(e.SOURCE_LINE.eq(v.SOURCE_LINE))
-                    .and(e.SOURCE_COLUMN.eq(v.SOURCE_COLUMN))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.NAME_REF, excluded(t.NAME_REF))
-            .set(t.COLLATE, excluded(t.COLLATE))
             .set(t.DIRECTION, excluded(t.DIRECTION))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();

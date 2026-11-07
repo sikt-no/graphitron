@@ -15,13 +15,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
@@ -33,7 +31,6 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.str
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.token;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -70,13 +67,8 @@ final class GraphitronFieldEntries {
      */
     static void write(DSLContext dsl, String graph, String source,
                       List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
-        var conditions = naming(applied(applications, "condition"), "condition");
-        conditions(dsl, graph, touchedAt, conditions);
-        conditionContextArguments(dsl, graph, touchedAt, conditions);
-
-        var services = naming(applied(applications, "service"), "service");
-        services(dsl, graph, touchedAt, services);
-        serviceContextArguments(dsl, graph, touchedAt, services);
+        conditions(dsl, graph, touchedAt, naming(applied(applications, "condition"), "condition"));
+        services(dsl, graph, touchedAt, naming(applied(applications, "service"), "service"));
 
         externalFields(dsl, graph, touchedAt, naming(applied(applications, "externalField"), "reference"));
         connections(dsl, graph, touchedAt, applied(applications, "asConnection"));
@@ -99,9 +91,7 @@ final class GraphitronFieldEntries {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_FIELD_CONDITION_ENTRY,
-        GRAPHITRON_AST_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
-        GRAPHITRON_AST_SERVICE_ENTRY,
-        GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY, GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY,
+        GRAPHITRON_AST_SERVICE_ENTRY, GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY,
         GRAPHITRON_AST_CONNECTION_ENTRY,
         GRAPHITRON_AST_MUTATION_ENTRY,
         GRAPHITRON_AST_PIVOT_ENTRY, GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
@@ -133,33 +123,6 @@ final class GraphitronFieldEntries {
                 .set(t.OVERRIDE, excluded(t.OVERRIDE)));
     }
 
-    private static void conditionContextArguments(DSLContext dsl, String graph,
-                                                  LocalDateTime touchedAt,
-                                                  List<Directive> applications) {
-        var t = GRAPHITRON_AST_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
-        var rows = writtenIn(applications, "contextArguments").stream().collect(Rows.toRowList(
-            written -> val(graph, t.GRAPH_NAME),
-            written -> GraphQLAstEntries.sourceName(written.node()),
-            written -> GraphQLAstEntries.sourceLine(written.node()),
-            written -> GraphQLAstEntries.sourceColumn(written.node()),
-            written -> val(touchedAt, t.TOUCHED_AT),
-            written -> val(written.value(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.NAME, excluded(t.NAME)));
-    }
-
-
-
-
-
-
-
-
     private static void services(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                  List<Directive> applications) {
         var t = GRAPHITRON_AST_SERVICE_ENTRY;
@@ -181,26 +144,6 @@ final class GraphitronFieldEntries {
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
                 .set(t.METHOD, excluded(t.METHOD))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
-    }
-
-    private static void serviceContextArguments(DSLContext dsl, String graph,
-                                                LocalDateTime touchedAt,
-                                                List<Directive> applications) {
-        var t = GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
-        var rows = writtenIn(applications, "contextArguments").stream().collect(Rows.toRowList(
-            written -> val(graph, t.GRAPH_NAME),
-            written -> GraphQLAstEntries.sourceName(written.node()),
-            written -> GraphQLAstEntries.sourceLine(written.node()),
-            written -> GraphQLAstEntries.sourceColumn(written.node()),
-            written -> val(touchedAt, t.TOUCHED_AT),
-            written -> val(written.value(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.NAME, excluded(t.NAME)));
     }
 
     private static void externalFields(DSLContext dsl, String graph, LocalDateTime touchedAt,

@@ -25,7 +25,6 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
@@ -310,63 +309,16 @@ class GraphitronInputValueEntriesTest {
                 .extracting(row -> row.value1(), row -> row.value2())
                 .as("null where the author wrote nothing, and what they wrote where they did")
                 .containsExactly(tuple("inScope", null), tuple(null, true));
-            assertThat(dsl.select(writtenAt(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY),
-                        GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY.NAME)
-                    .from(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY)
-                    .orderBy(writtenAt(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
-                    .fetch())
-                .extracting(row -> row.value1(), row -> row.value2())
-                .as("the list argument keeps the order the author wrote")
-                .containsExactly(tuple(0, "tenantId"), tuple(1, "userId"));
-        });
-    }
-
-    /**
-     * Two levels of cascade, which is this site's own shape: a context argument hangs off the
-     * condition decode, which hangs off the application row. Both references have to cascade, and
-     * the failure if the second does not is louder than a stale row: the entry sweep's delete of the
-     * application is refused outright, the context argument still standing on the decode the cascade
-     * is trying to take. Verified by removing that cascade and watching the reading throw.
-     */
-    @Test
-    @DisplayName("an application the author deleted takes its decode and the decode's children")
-    void aDeletedApplicationTakesTwoLevels(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Query {
-              films(scope: ID @condition(
-                condition: {className: "no.example.Conditions"}
-                contextArguments: ["tenantId", "userId"]
-              )): [Film!]
-            }
-            type Film { title: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
-                .as("before the edit").isEqualTo(2);
-
-            write(tmp, "film.graphqls", """
-                type Query { films(scope: ID): [Film!] }
-                type Film { title: String }
-                """);
-            read(dsl, tmp);
-
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY))
-                .as("the application is gone, so what it meant is not a fact any more").isZero();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
-                .as("and neither is what stood inside it, two references down")
-                .isZero();
         });
     }
 
     /**
      * The case the cascade cannot reach: the position survives because another directive now
      * occupies it, so the application row is updated rather than deleted and only this writer's own
-     * sweep can find what it left behind. Its children go with it, by their own cascade.
+     * sweep can find what it left behind.
      */
     @Test
-    @DisplayName("a decode whose position another directive now occupies is swept, children too")
+    @DisplayName("a decode whose position another directive now occupies is swept")
     void aDecodeReplacedInPlaceIsSwept(@TempDir Path tmp) {
         write(tmp, "film.graphqls", """
             type Query {
@@ -380,7 +332,7 @@ class GraphitronInputValueEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY))
                 .as("before the edit").isEqualTo(1);
 
             write(tmp, "film.graphqls", """
@@ -394,8 +346,6 @@ class GraphitronInputValueEntriesTest {
                 .as("one application in this file, at the position the other one had").hasSize(1);
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY))
                 .as("and the condition it replaced is not a fact any more").isZero();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
-                .as("nor its context arguments, which went with the decode they hung on").isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY))
                 .as("what the author wrote instead is there").isEqualTo(1);
         });

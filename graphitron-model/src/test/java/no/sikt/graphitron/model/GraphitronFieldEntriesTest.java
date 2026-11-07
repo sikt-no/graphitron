@@ -34,7 +34,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_E
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
@@ -354,54 +353,6 @@ class GraphitronFieldEntriesTest {
                 .as("and no decode relation holds a row from this document, there being nothing in "
                     + "it to decode")
                 .isEmpty();
-        });
-    }
-
-    /**
-     * A list argument that hangs off the decode rather than off the application, which is the
-     * second of the two parent shapes this site uses. Shrinking the list has to delete the row the
-     * author dropped, and the cascade from the application cannot see that edit: the application
-     * survives it.
-     */
-    @Test
-    @DisplayName("an element the author dropped from a list argument is gone after the next reading")
-    void aDroppedListElementIsGone(@TempDir Path tmp) {
-        write(tmp, "mutation.graphqls", """
-            type Mutation {
-              importFilms: Boolean
-                @service(
-                  service: {className: "no.example.S", method: "importFilms"}
-                  contextArguments: ["tenantId", "localeId"]
-                )
-            }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var arg = GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
-            assertThat(dsl.select(writtenAt(arg), arg.NAME).from(arg).fetch())
-                .as("both elements, at the indices the author wrote them at")
-                .extracting(r -> r.value1(), r -> r.value2())
-                .containsExactlyInAnyOrder(tuple(0, "tenantId"), tuple(1, "localeId"));
-
-            write(tmp, "mutation.graphqls", """
-                type Mutation {
-                  importFilms: Boolean
-                    @service(
-                      service: {className: "no.example.S", method: "importFilms"}
-                      contextArguments: ["tenantId"]
-                    )
-                }
-                """);
-            read(dsl, tmp);
-
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_SERVICE_ENTRY))
-                .as("the application is still there, so nothing cascaded").isEqualTo(1);
-            assertThat(dsl.select(writtenAt(arg), arg.NAME).from(arg).fetch())
-                .as("and the element the author dropped is not a fact any more, which only this "
-                    + "writer's own sweep could have found")
-                .extracting(r -> r.value1(), r -> r.value2())
-                .containsExactly(tuple(0, "tenantId"));
         });
     }
 

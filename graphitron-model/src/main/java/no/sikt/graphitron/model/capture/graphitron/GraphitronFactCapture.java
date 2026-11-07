@@ -29,10 +29,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
@@ -41,15 +39,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
 import static org.jooq.impl.DSL.coalesce;
@@ -254,9 +249,6 @@ public final class GraphitronFactCapture {
                     type, field, null, null, null,
                     reference.className(), reference.method(), directive);
             }
-            case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY_ENTRY, type, field, directive);
-            case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT_ENTRY, type, field, directive);
-            case "multitableReference" -> marker(GRAPHITRON_MULTITABLE_REFERENCE_ENTRY, type, field, directive);
             case "nodeId" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_NODE_ID_ENTRY, type, field)) return;
                 var record = sink.dsl().newRecord(GRAPHITRON_FIELD_NODE_ID_ENTRY);
@@ -295,21 +287,6 @@ public final class GraphitronFactCapture {
     public void captureArgumentDirective(String type, String field, String argument,
                                   Directive directive, int ordinal) {
         switch (directive.getName()) {
-            // @field is decoded here and on enum values, and anchored in its other two habitats:
-            // GraphitronAnchor writes the output-field and input-field halves out of the AST
-            // binding entries. One directive, two mechanisms, split by where it was written.
-            case "field" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_BINDING_ENTRY, type, field, argument)) return;
-                String name = string(directive, "name");
-                if (name == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_BINDING_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                record.setArgumentName(argument);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setNameRef(name);
-                sink.add(record);
-            }
             case "condition" -> {
                 if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "ARGUMENT_CONDITION", type, field,
                         argument)) return;
@@ -319,14 +296,10 @@ public final class GraphitronFactCapture {
                     reference.className(), reference.method(), directive);
             }
             case "reference" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY, type, field, argument, ordinal)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                record.setArgumentName(argument);
-                record.setOrdinal(ordinal);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                sink.add(record);
+                // The application is graphitron_ast_reference_entry's; the claim reads each one
+                // once for its steps' method references and spellings.
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "ARGUMENT_REFERENCE_STEP", type, field,
+                        argument, ordinal)) return;
                 int position = 0;
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
@@ -394,23 +367,6 @@ public final class GraphitronFactCapture {
     }
 
     // ---------------------------------------------------------------- shared decoding
-
-    /** A marker relation: the coordinate, the application's position, nothing else. */
-    private <R extends org.jooq.TableRecord<R>> void marker(
-        org.jooq.Table<R> table, String type, String field, Directive directive
-    ) {
-        if (!sink.claim(table, type, field)) return;
-        R record = sink.dsl().newRecord(table);
-        record.set(table.field("TYPE_NAME", String.class), type);
-        record.set(table.field("FIELD_NAME", String.class), field);
-        SourceLocation location = directive.getSourceLocation();
-        if (location != null && location.getSourceName() != null) {
-            record.set(table.field("SOURCE_NAME", String.class), location.getSourceName());
-            record.set(table.field("SOURCE_LINE", Integer.class), location.getLine());
-            record.set(table.field("SOURCE_COLUMN", Integer.class), location.getColumn());
-        }
-        sink.add(record);
-    }
 
     /** The flattened {@code ExternalCodeReference}: three columns, all as written. */
     private record CodeReference(String className, String method, String argMapping) {}
@@ -682,22 +638,17 @@ public final class GraphitronFactCapture {
      * corpus never declared the directive.
      */
     private static final List<Table<?>> DECODED = List.of(
-        GRAPHITRON_ARGUMENT_BINDING_ENTRY,
         GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY,
         GRAPHITRON_ARGUMENT_NODE_ID_ENTRY,
-        GRAPHITRON_ARGUMENT_REFERENCE_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY,
         GRAPHITRON_ERROR_ENTRY,
         GRAPHITRON_ERROR_HANDLER_ENTRY,
         GRAPHITRON_FIELD_NODE_ID_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
         GRAPHITRON_METHOD_REFERENCE_ENTRY,
-        GRAPHITRON_MULTITABLE_REFERENCE_ENTRY,
         GRAPHITRON_ORDER_BY_ENTRY,
         GRAPHITRON_REFERENCE_FOR_ENTRY,
         GRAPHITRON_SPELLED_REFERENCE_ENTRY,
-        GRAPHITRON_SPLIT_QUERY_ENTRY,
-        GRAPHITRON_TENANT_FAN_OUT_ENTRY,
         GRAPHITRON_UNDECODED_ARGUMENT_ENTRY);
 
     /** {@code DECODED} ordered so every relation follows the ones whose keys point at it. */

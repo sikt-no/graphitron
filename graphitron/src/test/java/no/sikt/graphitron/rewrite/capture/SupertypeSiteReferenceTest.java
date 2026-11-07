@@ -94,8 +94,9 @@ class SupertypeSiteReferenceTest {
         "graphitron_service_entry d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name"
             + " AND d.field_name = s.field_name",
         "EXTERNAL_FIELD",
-        "graphitron_external_field_entry d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'externalField'"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name",
         "FIELD_CONDITION",
         "graphql_directive_application d WHERE d.graph_name = s.graph_name"
             + " AND d.directive_name = 'condition'"

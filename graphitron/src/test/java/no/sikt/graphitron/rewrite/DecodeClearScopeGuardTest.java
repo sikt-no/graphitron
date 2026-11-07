@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * spelled by hand cannot say which of the two it is; this guard re-derives it and compares.
  *
  * <p>Source text rather than reflection, because the question is about which call sites exist.
- * A write is {@code newRecord} or {@code marker}; {@link no.sikt.graphitron.model.sink.FactSink}'s
+ * A write is {@code newRecord}; {@link no.sikt.graphitron.model.sink.FactSink}'s
  * {@code claim} is neither, gating a coordinate without writing a row. Nothing here counts
  * entries: what keeps the list honest is that it equals what the class does.
  */
@@ -44,7 +44,7 @@ class DecodeClearScopeGuardTest {
         + "/model/capture/document/GraphitronAnchor.java");
 
     /** A floor against a scan that matched nothing and would then agree with any list at all. */
-    private static final int MIN_WRITTEN_RELATIONS = 17;
+    private static final int MIN_WRITTEN_RELATIONS = 12;
 
     @Test
     @DisplayName("the decode's clear names exactly the relations the decode writes")
@@ -55,7 +55,7 @@ class DecodeClearScopeGuardTest {
         Set<String> written = new LinkedHashSet<>();
         for (String table : namesOf("import static no\\.sikt\\.graphitron\\.model\\.Tables\\.(\\w+);",
                 decode)) {
-            if (Pattern.compile("newRecord\\(" + table + "\\)|marker\\(" + table + "\\b")
+            if (Pattern.compile("newRecord\\(" + table + "\\)")
                     .matcher(body).find()) {
                 written.add(table);
             }

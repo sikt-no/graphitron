@@ -215,7 +215,6 @@ class SupertypeSignatureGateTest {
         // corpora stating one kind of value, and graphitron_node is where the two are resolved, by
         // precedence, so a supertype over them would be that resolution stated a second time.
         Set.of("graphitron_ast_node_entry", "sql_node_metadata"),
-        Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
         Set.of("graphitron_element", "graphql_element"),
 
         // The rest of this roster is the decode migration, and it reads as one thing rather than
@@ -228,12 +227,8 @@ class SupertypeSignatureGateTest {
         // resolved member of each pair goes with it, and the row comes off this roster. Until then
         // the roster is the ledger of what that commit has to delete, which is why the pairs are
         // spelled out here rather than exempted by a rule over the name.
-        Set.of("graphitron_ast_field_condition_context_arg_entry",
-               "graphitron_ast_input_value_condition_context_arg_entry",
-               "graphitron_ast_service_context_arg_entry",
-               "graphql_ast_directive_application_entry"),
         Set.of("graphitron_ast_field_condition_entry", "graphitron_ast_input_value_condition_entry"),
-        // Nine, and they arrived by being stamped: an @enum application records a class, a method
+        // Five, and they arrived by being stamped: an @enum application records a class, a method
         // and an argMapping, which is what a service and an external field record too, at either
         // stratum. One of them is a path's method-call segment, at every site and under either
         // directive: it is written the way every method call is, and its own relation is what says
@@ -242,10 +237,8 @@ class SupertypeSignatureGateTest {
         // of this set outlives the migration and this row does not.
         Set.of("graphitron_ast_enum_entry", "graphitron_ast_external_field_entry",
                "graphitron_ast_reference_condition_step_entry",
-               "graphitron_ast_service_entry", "graphitron_external_field_entry",
-               "graphitron_service_entry"),
-        Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry",
-               "graphitron_default_order_field_entry"),
+               "graphitron_ast_service_entry", "graphitron_service_entry"),
+        Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_ast_node_id_entry",
                "graphitron_field_node_id_entry"),
         Set.of("graphitron_argument_reference_for_entry", "graphitron_ast_reference_for_entry",
@@ -258,7 +251,6 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_reference_table_step_entry", "graphitron_ast_table_entry"),
         Set.of("graphitron_ast_connection_entry", "graphitron_connection_entry"),
         Set.of("graphitron_ast_default_order_entry", "graphitron_default_order_entry"),
-        Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"),
         // A link's imports as written and the federated graph's imports, the second derived from the
         // first for the one link that opts the graph in, plus what graphitron applies itself. Decided:
         // the entry is per application, and the anchor per graph.

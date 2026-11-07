@@ -79,16 +79,14 @@ class RelationRegistrationGateTest {
             // keyed one fact five ways; both producers now write the coordinate instead.
             "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_table_entry", "graphitron_field_binding_entry",
-            "graphitron_argument_binding_entry", "graphitron_scalar_type_entry",
-            "graphitron_field_reference_entry", "graphitron_argument_reference_entry",
+            "graphitron_scalar_type_entry",
+            "graphitron_field_reference_entry",
             "graphitron_reference_for_entry", "graphitron_argument_reference_for_entry",
-            "graphitron_service_entry", "graphitron_external_field_entry", "graphitron_connection_entry", "graphitron_facet_entry",
-            "graphitron_order_by_entry", "graphitron_default_order_entry", "graphitron_default_order_field_entry", "graphitron_mutation_entry",
+            "graphitron_service_entry", "graphitron_connection_entry", "graphitron_facet_entry",
+            "graphitron_order_by_entry", "graphitron_default_order_entry", "graphitron_mutation_entry",
             "graphitron_error_entry", "graphitron_error_handler_entry", "graphitron_node_entry", "graphitron_node_keycolumn_entry",
             "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry", "graphitron_argument_lookup_key_entry",
-            "graphitron_split_query_entry", "graphitron_tenant_fan_out_entry",
-            "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_outbox_entry",
-            "graphitron_multitable_reference_entry",
+            "graphitron_routine_entry", "graphitron_outbox_entry",
             "graphitron_undecoded_argument_entry",
             // The two supertypes ride the arm of the sites that spell them. Both are written in the
             // same walk as the per-site row they sit beside, so a coordinate the walk claims
@@ -166,8 +164,7 @@ class RelationRegistrationGateTest {
             // the @ token, so an application repeated on one field is repeated rows here where
             // GraphitronSchema holds one binding per field under an ordinal it assigned.
             "graphitron_ast_field_condition_entry",
-            "graphitron_ast_field_condition_context_arg_entry",
-            "graphitron_ast_service_entry", "graphitron_ast_service_context_arg_entry",
+            "graphitron_ast_service_entry",
             "graphitron_ast_external_field_entry",
             "graphitron_ast_connection_entry",
             "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
@@ -212,7 +209,6 @@ class RelationRegistrationGateTest {
             // compare. GraphitronInputValueEntriesTest pins them, over a corpus writing both parents
             // a consumer schema writes and repeating a repeatable directive on one input value.
             "graphitron_ast_input_value_condition_entry",
-            "graphitron_ast_input_value_condition_context_arg_entry",
             // And of an enum-value application, the sorting vocabulary read where it was written.
             // Keyed by the position of the @ token like every entry above it, where GraphitronSchema
             // holds one sort specification per enum value, so a value carrying two applications is

@@ -27,8 +27,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,20 +50,14 @@ class GraphitronFieldAnchorsTest {
     private static final String GRAPH = "field-anchors";
 
     /**
-     * The ordering, which is a value the two strata have to agree about rather than a row one of
-     * them declines. An element's position is the index the author wrote it at, and the anchor
-     * states the same index, so a reader sorting by it sorts the way the schema reads.
-     *
-     * <p>It used to be more than that. The entry admitted an element naming no field, the anchor
-     * dropped it, and the anchor renumbered what was left so the gap closed. Under the rule that an
-     * entry holds what the directive definition admits, a nameless element is not an element of a
-     * {@code FieldSort} list and its whole application is not transcribed, so no gap can open and
-     * the anchor copies the index rather than recomputing it. {@code EntryLegalityTest} holds the
-     * case this one used to.
+     * The ordering. An element's position is the index the author wrote it at, so a reader sorting
+     * by it sorts the way the schema reads. A nameless element is not an element of a
+     * {@code FieldSort} list and its whole application is not transcribed, so no gap can open;
+     * {@code EntryLegalityTest} holds that case.
      */
     @Test
-    @DisplayName("the anchor states the index the author wrote each order element at")
-    void theAnchorKeepsTheWrittenPositions(@TempDir Path tmp) {
+    @DisplayName("the entry states the index the author wrote each order element at")
+    void theEntryKeepsTheWrittenPositions(@TempDir Path tmp) {
         write(tmp, "corpus.graphqls", """
             type Query {
               films: [Film!]
@@ -85,21 +78,12 @@ class GraphitronFieldAnchorsTest {
                 .as("the entry keeps every element where the author wrote it")
                 .containsExactly(List.of(0, "title"), List.of(1, "released"),
                     List.of(2, "rating"));
-
-            var t = GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
-            assertThat(dsl.select(t.POSITION, t.NAME_REF).from(t).where(t.GRAPH_NAME.eq(GRAPH))
-                    .orderBy(t.POSITION).fetch().map(Record::intoList))
-                .as("and the anchor states the same indices, the two strata agreeing about the "
-                    + "order as they agree about the rows")
-                .containsExactly(List.of(0, "title"), List.of(1, "released"),
-                    List.of(2, "rating"));
         });
     }
 
     /**
      * The polarity at a site whose payload is the fact. Both of {@code @pivot}'s columns are NOT
-     * NULL, so an application naming neither asserts nothing and draws no row, where the walk said
-     * the same thing by returning before it wrote.
+     * NULL, so an application naming neither asserts nothing and draws no row.
      */
     @Test
     @DisplayName("a pivot naming neither column writes no row")
@@ -114,12 +98,12 @@ class GraphitronFieldAnchorsTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_PIVOT_ENTRY;
-            assertThat(dsl.select(t.FIELD_NAME, t.ON_COLUMN, t.VALUE_COLUMN).from(t)
+            var t = GRAPHITRON_AST_PIVOT_ENTRY;
+            assertThat(dsl.select(t.ON_COLUMN, t.VALUE_COLUMN).from(t)
                     .where(t.GRAPH_NAME.eq(GRAPH)).fetch().map(Record::intoList))
                 .as("the application that named its columns is a row; the one that named none is "
                     + "not, the grain having nothing to hold for it")
-                .containsExactly(List.of("spread", "category", "total"));
+                .containsExactly(List.of("category", "total"));
         });
     }
 
