@@ -324,19 +324,18 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_field_path_method_candidate` goes with the old family.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
-  * **A key row names its accessor** `open`, E's.
-    A field under a parent holding an object whose keys come through an accessor states which member
-    hands them over: `graphitron_field_key_row_accessor`, the `ACCESSOR` subtype of
-    `graphitron_field_key_row` its rule's comment already names, references the member's
-    `code_read_slot` row by its key (source, class, method, descriptor) rather than copying it, the
-    rule's accessor arm carrying it out. The frame reads the key off the parent either way, the
-    record's columns for `COLUMNS`, the member's call for `ACCESSOR`, so a service under an object
-    parent gets its frame; on Alf's `@service`-first path (2026-11-07).
-  * **A value object is reached by its accessor path** `open`, F's, after "A key row names its accessor".
+  * **A nested service with no key is refused at its `@service`** `open`, E's, on Alf's `@service`-first path.
+    A `@service` under a parent holding an object takes its batch as records of the table its source
+    parameter collects, keyed off the parent or the one member of its class returning such a record
+    (its key row). Where none is stated the store raises what the classifier refuses today, at the
+    application: no source parameter, a source of rows or records of no table, a key table with no
+    primary key, no member returning the record, two such members, or one returning a collection; the
+    reference page states each, and a fact document pins them.
+  * **A value object is reached by its accessor path** `open`, F's.
     Beside the join path, from object to object: `graphitron_accessor_path`, the path is accessor
     calls with its target class, written by field names and `@field(name:)`, and its steps
     (`graphitron_accessor_path_step`, one member call each), built when value objects are bound,
-    each step a `code_read_slot` row as the key row's one accessor is.
+    each step a `code_read_slot` row as a key row's accessor is (`graphitron_field_key_row_accessor`).
 * **`scenarios/path-rules` runs** `open`.
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.
