@@ -11,7 +11,6 @@ import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.Presence.NullContract;
 import no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,8 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @table} types on one table are a join, so the author states it: naming the table's own
  * primary key in {@code @reference} joins each row to itself and reads the parent's own row, an
  * ordinary {@link ChildField.TableField} over an {@link On.Keying.PrimaryKey} hop. With no
- * {@code @reference} and nothing narrowing it the field is rejected; narrowed by its own filters
- * or lookup it keeps its read of the table, the same rows under every parent.
+ * {@code @reference} the field takes the table's one self-referencing key, forward from a
+ * single-valued field and in reverse from a list; on a table with none it is rejected, whatever
+ * its arguments filter.
  */
 @PipelineTier
 class SameTableInlineChildPipelineTest {
@@ -365,7 +365,7 @@ class SameTableInlineChildPipelineTest {
 
             assertThat(errorsAt(schema, "Film.firstFilm")).singleElement()
                 .satisfies(m -> assertThat(m)
-                    .contains("arguments filter nothing")
+                    .contains("pair none of them with the parent")
                     .contains("film_pkey")
                     .doesNotContain("@lookupKey"));
         }
@@ -374,16 +374,18 @@ class SameTableInlineChildPipelineTest {
     @Nested
     class Narrowed {
 
-        private static void assertStandaloneTableField(GraphitronSchema schema, String fieldName) {
+        private static void assertRejected(GraphitronSchema schema, String fieldName) {
             assertThat(schema.field("Film", fieldName))
-                .isInstanceOfSatisfying(ChildField.TableField.class, f -> {
-                    assertThat(f.joinPath()).isEmpty();
-                    assertThat(f.parentCorrelation()).isNull();
-                });
+                .isInstanceOfSatisfying(UnclassifiedField.class, f ->
+                    assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class));
+            assertThat(errorsAt(schema, "Film." + fieldName)).singleElement()
+                .satisfies(m -> assertThat(m)
+                    .contains("'FilmSameRow' is bound to the same table as 'Film' ('film')")
+                    .contains("two @table types on one table are a join"));
         }
 
         @Test
-        void singleWithFieldLevelCondition_keepsTheTableRead() {
+        void singleWithFieldLevelCondition_rejected() {
             var schema = TestSchemaHelper.buildSchema(SAME_ROW + """
                 type Film @table(name: "film") {
                     title: String
@@ -393,11 +395,28 @@ class SameTableInlineChildPipelineTest {
                 type Query { films: [Film!]! }
                 """);
 
-            assertStandaloneTableField(schema, "picked");
+            assertRejected(schema, "picked");
         }
 
         @Test
-        void listWithArgumentFilter_keepsTheTableRead() {
+        void singleWithAnArgumentFilter_rejectedWithThePrimaryKey() {
+            var schema = TestSchemaHelper.buildSchema(SAME_ROW + """
+                type Film @table(name: "film") {
+                    title: String
+                    byTitle(title: String): FilmSameRow
+                }
+                type Query { films: [Film!]! }
+                """);
+
+            assertRejected(schema, "byTitle");
+            assertThat(errorsAt(schema, "Film.byTitle")).singleElement()
+                .satisfies(m -> assertThat(m)
+                    .contains("pair none of them with the parent")
+                    .contains("@reference(path: [{key: \"film_pkey\"}])"));
+        }
+
+        @Test
+        void listWithArgumentFilter_rejected() {
             var schema = TestSchemaHelper.buildSchema(SAME_ROW + """
                 type Film @table(name: "film") {
                     title: String
@@ -406,12 +425,11 @@ class SameTableInlineChildPipelineTest {
                 type Query { films: [Film!]! }
                 """);
 
-            assertStandaloneTableField(schema, "related");
-            assertThat(((ChildField.TableField) schema.field("Film", "related")).filters()).isNotEmpty();
+            assertRejected(schema, "related");
         }
 
         @Test
-        void listLookupKey_keepsTheTableRead() {
+        void listLookupKey_rejected() {
             var schema = TestSchemaHelper.buildSchema(SAME_ROW + """
                 type Film @table(name: "film") {
                     title: String
@@ -420,9 +438,98 @@ class SameTableInlineChildPipelineTest {
                 type Query { films: [Film!]! }
                 """);
 
-            assertStandaloneTableField(schema, "byId");
-            assertThat(((ChildField.TableField) schema.field("Film", "byId")).lookup())
-                .isNotInstanceOf(LookupResolution.None.class);
+            assertRejected(schema, "byId");
+        }
+    }
+
+    @Nested
+    class SelfReferencingKeyInferred {
+
+        private static final String CATEGORY = """
+            type Category @table(name: "category") {
+                name: String
+                parent: Category
+                children: [Category!]!
+                parentNamed(name: String): Category
+            }
+            type Query { categories: [Category!]! }
+            """;
+
+        private static void assertSelfKeyHop(ChildField.TableField f, String sourceColumn, String targetColumn) {
+            assertThat(f.joinPath()).singleElement().isInstanceOfSatisfying(JoinStep.Hop.class, hop ->
+                assertThat(hop.on()).isInstanceOfSatisfying(On.ColumnPairs.class, cp -> {
+                    assertThat(cp.keying()).isInstanceOfSatisfying(On.Keying.ForeignKey.class, k ->
+                        assertThat(k.fk().sqlName()).isEqualTo("category_parent_category_id_fkey"));
+                    assertThat(cp.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly(sourceColumn);
+                    assertThat(cp.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly(targetColumn);
+                }));
+            assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnFkSlots.class);
+        }
+
+        @Test
+        void single_followsTheKeyForwardToTheRowItPointsAt() {
+            var schema = TestSchemaHelper.buildSchema(CATEGORY);
+
+            assertThat(schema.field("Category", "parent"))
+                .isInstanceOfSatisfying(ChildField.TableField.class, f ->
+                    assertSelfKeyHop(f, "parent_category_id", "category_id"));
+            assertThat(errorsAt(schema, "Category.parent")).isEmpty();
+        }
+
+        @Test
+        void list_followsTheKeyInReverseToTheRowsPointingHere() {
+            var schema = TestSchemaHelper.buildSchema(CATEGORY);
+
+            assertThat(schema.field("Category", "children"))
+                .isInstanceOfSatisfying(ChildField.TableField.class, f ->
+                    assertSelfKeyHop(f, "category_id", "parent_category_id"));
+            assertThat(errorsAt(schema, "Category.children")).isEmpty();
+        }
+
+        @Test
+        void inferredHop_isTheHopTheWrittenKeyResolvesTo() {
+            var inferred = TestSchemaHelper.buildSchema(CATEGORY);
+            var written = TestSchemaHelper.buildSchema("""
+                type Category @table(name: "category") {
+                    name: String
+                    parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])
+                    children: [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}])
+                }
+                type Query { categories: [Category!]! }
+                """);
+
+            for (var field : List.of("parent", "children")) {
+                assertThat(((ChildField.TableField) inferred.field("Category", field)).joinPath())
+                    .isEqualTo(((ChildField.TableField) written.field("Category", field)).joinPath());
+            }
+        }
+
+        @Test
+        void narrowedSingle_stillCorrelatesOverTheKey() {
+            var schema = TestSchemaHelper.buildSchema(CATEGORY);
+
+            assertThat(schema.field("Category", "parentNamed"))
+                .isInstanceOfSatisfying(ChildField.TableField.class, f -> {
+                    assertSelfKeyHop(f, "parent_category_id", "category_id");
+                    assertThat(f.filters()).isNotEmpty();
+                });
+        }
+
+        @Test
+        void splitList_batchesOnTheParentsKey() {
+            var schema = TestSchemaHelper.buildSchema("""
+                type Category @table(name: "category") {
+                    name: String
+                    children: [Category!]! @splitQuery
+                }
+                type Query { categories: [Category!]! }
+                """);
+
+            assertThat(schema.field("Category", "children"))
+                .isInstanceOfSatisfying(ChildField.BatchedTableField.class, f ->
+                    assertThat(f.sourceKey().columns()).extracting(c -> c.sqlName())
+                        .containsExactly("category_id"));
+            assertThat(errorsAt(schema, "Category.children")).isEmpty();
         }
     }
 

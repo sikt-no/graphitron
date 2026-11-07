@@ -433,7 +433,8 @@ public final class Steps {
     /**
      * The one step of each {@code INFERRED} path this reading's {@link Paths} wrote for an occurrence
      * at {@code depth}: from the need's start to its landing over the one foreign key between them,
-     * or, from a routine's derived table, by the landing's primary key matched by name.
+     * a table's one self-referencing key included, or, from a routine's derived table, by the
+     * landing's primary key matched by name.
      */
     private static void inferred(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         var p = GRAPHITRON_PATH.as("p");
@@ -478,7 +479,8 @@ public final class Steps {
             .execute();
 
         // The one foreign key between two tables, in whichever direction it is declared for an
-        // output field, and the one the start declares for an argument or input field.
+        // output field, and the one the start declares for an argument or input field. A
+        // self-referencing key meets both sides once; its columns orient by cardinality.
         var rc = SQL_REFERENTIAL_CONSTRAINT.as("rc");
         var ko = GRAPHITRON_OCCURRENCE.as("ko");
         var ik = GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;

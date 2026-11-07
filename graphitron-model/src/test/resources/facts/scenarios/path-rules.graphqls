@@ -1,12 +1,14 @@
 # The path rules for output fields, one field per rule, over the sakila catalog. customer and staff
 # each have one key to address; customer has one key to store, staff two (staff.store_id, and
-# store.manager_staff_id back to it); film has two keys to language.
+# store.manager_staff_id back to it); film has two keys to language; category has one key to itself.
 #
 # A need a claim covers follows the claim: the field's own @referenceFor naming the type first, then
 # its own @reference, then the one claim inherited from an interface's same-named field. Its path is
 # walked one written element at a time and is WRITTEN or INHERITED once the walk reaches the target,
 # its target table the last step's. A need nothing covers is INFERRED over the one key joining its
-# two tables, and its one step rides that key. The defects these rules raise are
+# two tables, and its one step rides that key; on one table the key is its one self-referencing key,
+# ridden forward from a single-valued field and in reverse from a list or connection. The defects
+# these rules raise are
 # defects/path-rule-defects.
 #
 # An argument's or input field's need starts where its field lands for the type, one need per type
@@ -66,7 +68,15 @@ type Language @table(name: "language") {
   media: [MediaItem!]! @reference(path: [{key: "film_language_id_fkey"}])
 }
 
+type Category @table(name: "category") {
+  "Inferred over category's one self-referencing key, to the row it points at."
+  parent: Category
+  "A connection over the same key, in reverse: the rows pointing here."
+  childPage: [Category!]! @asConnection @splitQuery
+}
+
 extend type Query {
+  categories: [Category!]!
   people(
     "Per member of Person, to the node's table: Customer inferred, Staff stated."
     storeId: ID @nodeId(typeName: "Store") @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
@@ -81,6 +91,8 @@ extend type Query {
 # of a single-table interface its own row.
 extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPTY'", rows: """
   coordinate,                target_type, kind, origin
+  Category.childPage,        Category,    JOIN, INFERRED
+  Category.parent,           Category,    JOIN, INFERRED
   Customer.address,          Address,     JOIN, INFERRED
   Customer.city,             String,      JOIN, WRITTEN
   Customer.homeAddress,      Address,     JOIN, INHERITED
@@ -148,8 +160,19 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_key",
   """)
 
 extend schema @assertContains(relation: "graphitron_join_path_step_inferred_key", rows: """
-  coordinate,    target_type, position, constraint_name
-  Store.people,  Customer,    0,        customer_store_id_fkey
+  coordinate,          target_type, position, constraint_name
+  Category.childPage,  Category,    0,        category_parent_category_id_fkey
+  Category.parent,     Category,    0,        category_parent_category_id_fkey
+  Store.people,        Customer,    0,        customer_store_id_fkey
+  """)
+
+# A self-referencing key's one step, from category to category: the single field departs the
+# declaring row, the connection arrives at it.
+extend schema @expectEquals(relation: "graphitron_join_path_step_column",
+    where: "coordinate IN ('Category.parent', 'Category.childPage')", rows: """
+  coordinate,          target_type, position, ordinal, from_table, from_column,        to_table, to_column
+  Category.childPage,  Category,    0,        0,       category,   category_id,        category, parent_category_id
+  Category.parent,     Category,    0,        0,       category,   parent_category_id, category, category_id
   """)
 
 # A key ridden from its declaring table joins its own column to the one it references, store's

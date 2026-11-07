@@ -1,8 +1,9 @@
 # An output field no claim covers between two table-bound types takes the one foreign key joining
-# their tables, in either direction. Where none does it is NO_ROUTE_TO_TARGET, which includes a field
-# on its parent's own table, narrowed by an argument or not, a self-referencing key never being
-# inferred; where several do it is ROUTE_AMBIGUOUS. Each sits at the field's declaration, naming the
-# two tables, and the keys to choose between.
+# their tables, in either direction. A field on its parent's own table takes the table's one
+# self-referencing key, forward from a single-valued field and in reverse from a list. Where no key
+# does it is NO_ROUTE_TO_TARGET, which includes a field on a table with no self-referencing key,
+# narrowed by an argument or not; where several do it is ROUTE_AMBIGUOUS. Each sits at the field's
+# declaration, naming the two tables, and the keys to choose between.
 #
 # A routine's derived table has no foreign key: a field starting on it reaches its target by the
 # target's primary key, every column of it matched by name among the routine's result columns, and
@@ -22,6 +23,15 @@ type Film @table(name: "film") {
   sameTableById(filmId: Int @field(name: "film_id")): [Film!]!
   # film_language_id_fkey and film_original_language_id_fkey both join film and language.
   language: Language
+}
+
+# category_parent_category_id_fkey is category's one self-referencing key.
+type Category @table(name: "category") {
+  name: String
+  # Single-valued: forward, to the row the key points at.
+  parent: Category
+  # A list: in reverse, to the rows pointing here.
+  children(name: String): [Category!]!
 }
 
 type City @table(name: "city") { cityId: Int @field(name: "city_id") }
@@ -79,6 +89,7 @@ type Store implements Staffed @table(name: "store") {
 }
 
 extend type Query {
+  categories: [Category!]!
   films: [Film!]!
   customers: [Customer!]!
   staff: [Staff!]!
@@ -95,13 +106,18 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   INHERITED_PATH_AMBIGUOUS, Staff.address,       Addressed and Located
   """)
 
-# The defective needs have no path; the needs nothing covers that one key joins are inferred, and the
-# narrowed field's argument starts and lands on film, an empty path. A covered need's path is its
-# claim's, walked: an inherited claim INHERITED, the one Derived overrides Base with included, and the
-# field's own WRITTEN, the root routine's on the derived table it returns.
+# The defective needs have no path; the needs nothing covers that one key joins are inferred, the
+# self-referencing key's included, and the narrowed field's argument starts and lands on film, an
+# empty path, as does the argument of the list over category's key, an argument never inferring a
+# self-referencing key. A covered need's path is its claim's, walked: an inherited claim INHERITED,
+# the one Derived overrides Base with included, and the field's own WRITTEN, the root routine's on
+# the derived table it returns.
 extend schema @expectEquals(relation: "graphitron_path",
-    where: "origin <> 'EMPTY' OR coordinate = 'Film.sameTableById(filmId:)'", rows: """
+    where: "origin <> 'EMPTY' OR coordinate IN ('Film.sameTableById(filmId:)', 'Category.children(name:)')", rows: """
   coordinate,                    target_type,     kind, origin
+  Category.children,             Category,        JOIN, INFERRED
+  Category.children(name:),      Category,        JOIN, EMPTY
+  Category.parent,               Category,        JOIN, INFERRED
   Customer.address,              Address,         JOIN, INHERITED
   Customer.home,                 Address,         JOIN, INHERITED
   Film.sameTableById(filmId:),   Film,            JOIN, EMPTY
@@ -119,6 +135,22 @@ extend schema @expectEquals(relation: "graphitron_join_path_claimed",
   coordinate,        target_type, claim_coordinate,  claim_target_type
   Customer.address,  Address,     Addressed.address, Address
   Customer.home,     Address,     Derived.home,      Address
+  """)
+
+# Each rides category's one key, the single field from the declaring row to the one it points at, the
+# list from the parent's key to the rows declaring it.
+extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key",
+    where: "coordinate LIKE 'Category.%'", rows: """
+  coordinate,         target_type, position, constraint_name
+  Category.children,  Category,    0,        category_parent_category_id_fkey
+  Category.parent,    Category,    0,        category_parent_category_id_fkey
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_column",
+    where: "coordinate LIKE 'Category.%'", rows: """
+  coordinate,         target_type, position, ordinal, from_table, from_column,        to_table, to_column
+  Category.children,  Category,    0,        0,       category,   category_id,        category, parent_category_id
+  Category.parent,    Category,    0,        0,       category,   parent_category_id, category, category_id
   """)
 
 extend schema @assertAbsent(relation: "graphitron_path", rows: """

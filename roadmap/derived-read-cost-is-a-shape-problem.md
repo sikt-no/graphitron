@@ -318,8 +318,9 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   own claim beats the inherited one, an interface extending another overrides the claim it
   redeclares, `@referenceFor` is inherited member by member, and two interfaces neither extending
   the other that both claim the field are `INHERITED_PATH_AMBIGUOUS`. The walk's refusals give way
-  to these rows, and with them the generator's own acceptance of a same-table field narrowed by an
-  argument, which the inference node left in place. A condition step's overload
+  to these rows. The generator's own acceptance of a same-table field narrowed by an argument, which
+  the inference node left in place, is gone: the generator refuses a same-table field with no path
+  whatever its arguments, and infers the one self-referencing key as the store does (2026-11-07). A condition step's overload
   is chosen by its two tables on `graphitron_join_path_step_method`, where `CONDITION_NO_OVERLOAD_FOR_PAIR`,
   `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
   `graphitron_field_path_method_candidate` goes with the old family.
@@ -1943,8 +1944,9 @@ whether nothing was written or a written element names only a table, a need whos
 alike giving one row that names them. Where nothing is written, covered by no claim of its own or
 inherited, an output field between two table-bound types draws them at its declaration, one row per
 field naming the two tables and, for `ROUTE_AMBIGUOUS`, the keys; a field on its parent's own table
-is always `NO_ROUTE_TO_TARGET`, narrowed by an argument or not, its detail naming the primary-key
-self-join or a self-referencing key as the path to write. An implementation's field writing nothing
+takes the table's one self-referencing key, and with none is `NO_ROUTE_TO_TARGET`, narrowed by an
+argument or not, its detail naming the primary-key self-join or a self-referencing key as the path
+to write, and with several `ROUTE_AMBIGUOUS`. An implementation's field writing nothing
 whose type implements two interfaces, neither extending the other, that both claim the field for
 one member is `INHERITED_PATH_AMBIGUOUS` at its declaration, naming the two. A written step that resolves to no move or several, which is
 the same pair; no overload for a step's pair
@@ -2058,6 +2060,16 @@ whose table the field's path lands on. An argument's or input field's own writte
 its field lands for each type, `as:` waiting; it follows its own `@referenceFor` naming the need's
 type, else its own `@reference`, and nothing is inherited at an argument. Every input field under an
 argument starts where the argument starts, a `@reference` on one moving none of its children.
+
+**Decided** (Alf, 2026-11-07). A same-table field whose arguments narrow the read, with no path, is
+never accepted: "This is crazy wrong and we should never allow this. It makes no sense and is just a
+bug waiting to happen." It is the same defect as a field between two types bound to one table:
+exactly one key infers, otherwise the author writes the key, or the primary key for the same row.
+For output fields, exactly one self-referencing key infers, its direction taken from the field's
+cardinality: a single-valued field follows the key forward, to the one row it points at; a list or
+connection follows it in reverse, to the rows pointing here; none is `NO_ROUTE_TO_TARGET`, several
+`ROUTE_AMBIGUOUS`. At arguments and input fields a self-referencing key is never inferred ("I don't
+think the logic works on arguments").
 
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
@@ -2211,8 +2223,16 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 * **Breaking: a same-table `@table` field narrowed by an argument needs its path** ("inference is
   written into the store, and a need nothing covers is a defect"). A field returning a `@table` type
   on its parent's own table, narrowed by an argument and with no `@reference`, was read uncorrelated,
-  the same rows under every parent; it is now `NO_ROUTE_TO_TARGET` until it writes its path. The
-  example schema's `Film.sameTableById`, which exercised the uncorrelated read, is removed.
+  the same rows under every parent; it is now `NO_ROUTE_TO_TARGET` until it writes its path, and the
+  generator refuses it too, whatever its arguments filter. The example schema's
+  `Film.sameTableById`, which exercised the uncorrelated read, is removed.
+
+* **New: a same-table field infers its table's one self-referencing key** ("a same-table output
+  field rides its table's one self-referencing key by cardinality, and without one is refused
+  however narrowed"). An output field on its parent's
+  own table with nothing written follows the table's one self-referencing key, forward from a
+  single-valued field and in reverse from a list or connection, as `@reference(path: [{key: ...}])`
+  naming it would; several such keys are `ROUTE_AMBIGUOUS`. Arguments and input fields never infer one.
 
 * **Breaking: jOOQ 3.20 is the minimum** ("generation refuses a jOOQ below 3.20"). The generated
   `NodeIdEncoder` calls `Record.touched(Field)`, which jOOQ added in 3.20, so a build on 3.19 failed

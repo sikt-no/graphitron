@@ -1595,7 +1595,7 @@ class BuildContext {
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
             String startSqlTableName, String targetSqlTableName, TableRef returnTableRef, boolean isList) {
         return parsePath(container, fieldName, startSqlTableName, targetSqlTableName, returnTableRef, isList,
-            /*admitPrimaryKey=*/false);
+            /*admitPrimaryKey=*/false, /*inferSelfKey=*/false);
     }
 
     /**
@@ -1606,10 +1606,15 @@ class BuildContext {
      * caller passing {@code true}. Every other site parses with it off, so the element is a
      * rejection there; within an opted-in site {@link #parsePathElement} further requires the
      * element to be the whole path, the field single-valued and the return table the start table.
+     *
+     * <p>{@code inferSelfKey} lets an element-less path between a table and itself take the
+     * table's one self-referencing key, ridden by cardinality: a single-valued field to the row
+     * the key points at, a list to the rows pointing here. Only an output field opts in; with
+     * several self keys the path is an error naming them, with none it stays empty.
      */
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
             String startSqlTableName, String targetSqlTableName, TableRef returnTableRef, boolean isList,
-            boolean admitPrimaryKey) {
+            boolean admitPrimaryKey, boolean inferSelfKey) {
         // @reference is repeatable, and repeated field-level applications compose one
         // chain — their path elements concatenate in authored order over a single running
         // source, so a multi-application chain is just a longer path to every downstream
@@ -1643,10 +1648,35 @@ class BuildContext {
         if (!errors.isEmpty()) {
             return new ParsedPath(List.of(), String.join("; ", errors), new TerminalTargetVerdict.NotApplicable());
         }
+        boolean sameTable = startSqlTableName != null && targetSqlTableName != null
+            && startSqlTableName.equalsIgnoreCase(targetSqlTableName);
+        if (resolvedElements.isEmpty() && sameTable && inferSelfKey) {
+            var selfKeys = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
+            if (selfKeys.size() > 1) {
+                return new ParsedPath(List.of(),
+                    fkCountMessage(startSqlTableName, targetSqlTableName, selfKeys, /*directiveAbsent=*/true),
+                    new TerminalTargetVerdict.NotApplicable());
+            }
+            if (selfKeys.size() == 1) {
+                switch (synthesizeFkJoin(selfKeys.get(0), startSqlTableName, fieldName, 0, null, /*selfRefFkOnSource=*/!isList)) {
+                    case FkJoinResolution.Resolved r -> resolvedElements.add(r.hop());
+                    case FkJoinResolution.UnknownTable u -> {
+                        return new ParsedPath(List.of(),
+                            unknownTableRejection(u.failure(), u.requestedName()).message(),
+                            new TerminalTargetVerdict.NotApplicable());
+                    }
+                    case FkJoinResolution.UnknownForeignKey uf -> {
+                        return new ParsedPath(List.of(),
+                            unknownForeignKeyRejection(uf.fkName()).message(),
+                            new TerminalTargetVerdict.NotApplicable());
+                    }
+                }
+            }
+        }
         if (resolvedElements.isEmpty()
                 && startSqlTableName != null
                 && targetSqlTableName != null
-                && !startSqlTableName.equalsIgnoreCase(targetSqlTableName)) {
+                && !sameTable) {
             // The same catalog gate the {table:} element branch applies, hoisted onto the
             // element-less arm: a routine result declares no foreign keys, so the FK inference
             // below can only ever fail on one, and it fails with advice (an intermediate table,

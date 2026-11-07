@@ -12013,13 +12013,13 @@ UNION ALL
 -- An output field's need for a table-bound type that no claim covers, neither one at the field nor
 -- one at the same-named field of an interface its type implements, between two tables the paths
 -- cannot infer a join for, at the field's declaration. The tables share no foreign key, or they are
--- one table, a self-referencing key never being inferred, which is NO_ROUTE_TO_TARGET; or more than
--- one joins them, in either direction, which is ROUTE_AMBIGUOUS, naming the keys to choose between:
+-- one table with no self-referencing key, which is NO_ROUTE_TO_TARGET; or more than one joins them,
+-- in either direction or as self-referencing keys, which is ROUTE_AMBIGUOUS, naming the keys to choose between:
 -- both where there are two, else how many, the first and last by name. A routine's derived table
 -- reaches its landing by the landing's primary key, its columns matched by name, so one missing a
 -- primary-key column is NO_ROUTE_TO_TARGET naming the first missing, and none is ambiguous. A need
 -- starting where it lands is no defect where a producer lifted it onto that table, its own @service
--- or its parent's service or write, which is an empty path. The paths of the needs one route joins
+-- or its parent's service or write, which is an empty path, however many self-referencing keys. The paths of the needs one route joins
 -- are written by the path stage. One
 -- row per field and code, naming a pair of tables, the first by name where the field is reached
 -- from several.
@@ -12110,12 +12110,20 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                                             AND fn.table_name = n.start_table
                                             AND fn.table_type = 'FUNCTION') THEN 1 ELSE 0 END
                          AS start_function,
-                       -- how many routes join the two tables: none where they are one; from a
+                       -- how many routes join the two tables: where they are one its
+                       -- self-referencing keys, the one pair of the table with itself; from a
                        -- routine's derived table one where every primary-key column of the landing
                        -- is among its columns by name, else none; otherwise the foreign keys
                        CASE WHEN n.start_source_name = n.landing_source_name
                                  AND n.start_schema = n.landing_schema
-                                 AND n.start_table = n.landing_table THEN 0
+                                 AND n.start_table = n.landing_table
+                            THEN COALESCE((SELECT r.constraints FROM sql_table_reference r
+                                            WHERE r.source_name = n.start_source_name
+                                              AND r.table_schema = n.start_schema
+                                              AND r.table_name = n.start_table
+                                              AND r.referenced_source_name = n.start_source_name
+                                              AND r.referenced_schema = n.start_schema
+                                              AND r.referenced_table = n.start_table), 0)
                             WHEN EXISTS (SELECT 1 FROM sql_table fn
                                           WHERE fn.source_name = n.start_source_name
                                             AND fn.table_schema = n.start_schema
@@ -12182,7 +12190,7 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                                       AND (jc.claim_kind <> 'REFERENCE_FOR'
                                            OR jc.target_type = n.target_type))) x
          WHERE x.routes <> 1
-           AND NOT (x.routes = 0 AND x.start_source_name = x.landing_source_name
+           AND NOT (x.start_source_name = x.landing_source_name
                     AND x.start_schema = x.landing_schema AND x.start_table = x.landing_table
                     AND (EXISTS (SELECT 1 FROM graphitron_field sf
                                    JOIN graphitron_producer sp

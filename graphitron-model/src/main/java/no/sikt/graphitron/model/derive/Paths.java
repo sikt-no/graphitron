@@ -53,7 +53,9 @@ import static org.jooq.impl.DSL.when;
  * parent's service or write. Where an output field starts and lands on two different tables joined
  * by exactly one route it is {@code INFERRED}, its target its landing: one foreign key in either
  * direction, or, from the derived table a routine returns, the landing's primary key, every column
- * of it matched by name among the routine's result columns. An argument or input field carrying
+ * of it matched by name among the routine's result columns. An output field starting and landing on
+ * one table whose one self-referencing key joins it to itself is {@code INFERRED} over that key,
+ * which {@link Steps} rides by the field's cardinality. An argument or input field carrying
  * {@code @nodeId}, whose node is its {@code typeName} or else the type the need reaches, is
  * {@code INFERRED} where its start declares exactly one foreign key to the node's table, its target
  * that table; one starting on the node's table, or declaring no key or several, stays {@code EMPTY},
@@ -62,8 +64,8 @@ import static org.jooq.impl.DSL.when;
  * {@code graphitron_entry_defect_rule} raises.
  *
  * <p>The foreign keys are counted off {@code sql_table_reference}, which holds the count per ordered
- * pair of tables, both orders summed; a self-referencing key never counts, a field starting where
- * it lands never being inferred.
+ * pair of tables: both orders summed between two tables, the one pair of a table with itself for its
+ * self-referencing keys. An argument or input field never infers a self-referencing key.
  *
  * <p>A step of the assembly's per-depth loop: reads the claims {@link PathClaims} writes before the
  * loop and the needs {@link PathNeeds} writes for the same depth, a depth at a time; {@link #sweep}
@@ -158,6 +160,10 @@ public final class Paths {
         Condition inferred = o.KIND.eq("FIELD").andNot(sameTable)
             .and(startsOnFunction(n).and(primaryKeyMatched(n))
                 .or(startsOnFunction(n).not().and(foreignKeys(n).eq(1))));
+        // An output field on its own table, to a table type and not lifted onto it, over the one
+        // self-referencing key.
+        Condition selfInferred = o.KIND.eq("FIELD").and(sameTable).andNot(empty)
+            .and(selfKeys(n).eq(1));
         // The node an argument's or input field's @nodeId names, its typeName or else the type the
         // need reaches, and that node's table. A bare one whose need reaches no node takes the one
         // node over where its path lands, which with nothing written is its start: nothing to infer.
@@ -170,7 +176,7 @@ public final class Paths {
             .and(declaredKeys(n, nt).eq(1));
         return select(n.GRAPH_NAME.as("graph_name"), n.COORDINATE.as("coordinate"),
                 n.TARGET_TYPE.as("target_type"),
-                when(nodeInferred, inline(INFERRED)).when(sameTable, inline(EMPTY))
+                when(nodeInferred, inline(INFERRED)).when(empty, inline(EMPTY))
                     .otherwise(inline(INFERRED)).as("origin"),
                 when(nodeInferred, nt.TABLE_SOURCE_NAME).otherwise(n.LANDING_SOURCE_NAME)
                     .as("target_source_name"),
@@ -186,7 +192,7 @@ public final class Paths {
             .leftJoin(nt).on(nt.GRAPH_NAME.eq(gn.GRAPH_NAME), nt.TYPE_NAME.eq(gn.TYPE_NAME))
             .where(n.GRAPH_NAME.eq(graph), n.TOUCHED_AT.eq(touchedAt), n.LANDING_TABLE.isNotNull())
             .andNot(covered(o, n))
-            .and(empty.or(inferred));
+            .and(empty.or(inferred).or(selfInferred));
     }
 
     /**
@@ -279,6 +285,15 @@ public final class Paths {
             .where(f.SOURCE_NAME.eq(n.START_SOURCE_NAME), f.TABLE_SCHEMA.eq(n.START_SCHEMA),
                 f.TABLE_NAME.eq(n.START_TABLE), f.REFERENCED_SOURCE_NAME.eq(nt.TABLE_SOURCE_NAME),
                 f.REFERENCED_SCHEMA.eq(nt.TABLE_SCHEMA), f.REFERENCED_TABLE.eq(nt.TABLE_NAME))), 0);
+    }
+
+    /** How many self-referencing keys the need's start, which is its landing, declares. */
+    private static org.jooq.Field<Integer> selfKeys(GraphitronPathNeed n) {
+        var f = SQL_TABLE_REFERENCE.as("sk_f");
+        return coalesce(field(select(f.CONSTRAINTS).from(f)
+            .where(f.SOURCE_NAME.eq(n.START_SOURCE_NAME), f.TABLE_SCHEMA.eq(n.START_SCHEMA),
+                f.TABLE_NAME.eq(n.START_TABLE), f.REFERENCED_SOURCE_NAME.eq(n.START_SOURCE_NAME),
+                f.REFERENCED_SCHEMA.eq(n.START_SCHEMA), f.REFERENCED_TABLE.eq(n.START_TABLE))), 0);
     }
 
     /** How many foreign keys join the need's start and landing, in either direction. */

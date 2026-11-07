@@ -26,9 +26,9 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
  * glue call and carry no decode machinery, so the inline and the {@code @splitQuery} shape share
  * one helper on one class.
  *
- * <p>Part B: a condition-only filter input (no {@code @nodeId}/key fields) must also generate,
- * including the degenerate empty-join-path (same-table) reference that previously crashed with an
- * {@code Index -1 out of bounds} on an empty alias list.
+ * <p>Part B: a condition-only filter input (no {@code @nodeId}/key fields) must also generate. A
+ * same-table field with no path, which once reached the renderer as an empty join path, is now
+ * refused at classification, its filter notwithstanding.
  *
  * <p>Uses the {@code nodeidfixture} jOOQ catalog so the composite-key {@code Bar} NodeType
  * (PK {@code (id_1, id_2)}, FK {@code bar_id_1_fkey} → {@code baz}) is reachable from SDL.
@@ -123,11 +123,9 @@ class NodeIdReferenceFilterPipelineTest {
     }
 
     @Test
-    void inlineReferenceField_conditionOnlyFilter_emptyJoinPath_standaloneSubquery() {
-        // Part B: a same-table reference (start table == target table) yields an empty joinPath
-        // (standalone-lookup shape, parentCorrelation == null). A condition-only filter on it must
-        // emit a conditions-only subquery with no key projection rather than crashing with
-        // Index -1 on the empty alias list.
+    void inlineReferenceField_conditionOnlyFilter_sameTableWithoutPath_refused() {
+        // bar has no self-referencing key, so a same-table list with nothing written has no path
+        // to the parent; its condition-only filter narrows the rows read but correlates none.
         var schema = TestSchemaHelper.buildSchema(CONDITION_ONLY_INPUT + """
             type Bar implements Node @table(name: "bar") @node {
                 id: ID! name: String
@@ -136,7 +134,7 @@ class NodeIdReferenceFilterPipelineTest {
             type Query { bar: Bar }
             """, FIXTURE_CTX);
 
-        assertThatCode(() -> ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE))
-            .doesNotThrowAnyException();
+        assertThat(schema.field("Bar", "related"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
     }
 }

@@ -1557,7 +1557,7 @@ class FieldBuilder {
             // the cast would crash. The collision still hard-fails the build at the validation pass.
             var returnType = new ReturnTypeRef.TableBoundReturnType(elementTypeName, tbt.table(), wrapper);
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName(), returnType.table(), wrapper.isList(),
-                /*admitPrimaryKey=*/true);
+                /*admitPrimaryKey=*/true, /*inferSelfKey=*/true);
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(referencePath.errorMessage()));
             }
@@ -1586,9 +1586,9 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(e.message()));
             }
             var tbtParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) tbtPcResolution).correlation();
-            // A same-table field with no @reference has an empty path and so no correlation: the
-            // batch a split anchor keys on each parent's correlation to the child has nothing to
-            // key on. Rejected ahead of the lookup gate so the plain and lookup reads share one
+            // A same-table field with no @reference and no one self-referencing key to infer has an
+            // empty path and so no correlation: the batch a split anchor keys on each parent's
+            // correlation to the child has nothing to key on. Rejected ahead of the lookup gate so the plain and lookup reads share one
             // diagnostic, and so the batched leaf never sees a null correlation.
             if (hasSplitQuery && tbtParentCorrelation == null) {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
@@ -1623,24 +1623,19 @@ class FieldBuilder {
                     List.of("asConnection"),
                     "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics"));
             }
-            // A same-table field with no @reference: the path is empty (parsePath infers a key
-            // only between two different tables), so the inline read has no correlation to the
-            // parent. Narrowed by its own filters or lookup, it reads the table independent of
-            // the parent, the same rows under every parent. Unnarrowed, two @table types on one
-            // table are a join the author has not stated, so it is rejected; the parent's own row
-            // is the primary-key @reference, which classifies as an ordinary TableField above.
+            // A same-table field with no @reference whose table has no self-referencing key: the
+            // path is empty, so the read has no correlation to the parent. Two @table types on one
+            // table are a join the author has not stated, so it is rejected whatever its arguments
+            // filter, which narrows the rows read but pairs none with the parent; the parent's own
+            // row is the primary-key @reference, which classifies as an ordinary TableField above.
             if (referencePath.elements().isEmpty() && tbtParentCorrelation == null) {
-                boolean narrowed = !tfc.filters().isEmpty()
-                    || !(tfc.lookup() instanceof LookupResolution.None);
-                if (!narrowed) {
-                    boolean argumentFree = fieldDef.getArguments().isEmpty()
-                        && tfc.orderBy() instanceof OrderBySpec.None
-                        && tfc.pagination() == null;
-                    return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-                        unnarrowedSameTableMessage(parentTypeName, elementTypeName,
-                            returnType.table().tableName(), isList, argumentFree,
-                            ctx.catalog.primaryKeyName(returnType.table().tableName(), false))));
-                }
+                boolean argumentFree = fieldDef.getArguments().isEmpty()
+                    && tfc.orderBy() instanceof OrderBySpec.None
+                    && tfc.pagination() == null;
+                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
+                    uncorrelatedSameTableMessage(parentTypeName, elementTypeName,
+                        returnType.table().tableName(), isList, argumentFree,
+                        ctx.catalog.primaryKeyName(returnType.table().tableName(), false))));
             }
             return new TableField(parentTypeName, name, location,
                 returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
@@ -7342,17 +7337,18 @@ class FieldBuilder {
 
     /**
      * The author error for an inline field whose return type is bound to its parent's table,
-     * with no {@code @reference} and nothing narrowing the read. Putting {@code @table} on the
-     * return type says its row is reached by a join, and two {@code @table} types on one table
-     * describe a self-join with no default, so the author states it. Covers the three shapes:
-     * single and argument-free, a list, and a single field with arguments that filter nothing.
+     * with no {@code @reference} and no one self-referencing key to infer. Putting {@code @table}
+     * on the return type says its row is reached by a join, and two {@code @table} types on one
+     * table describe a self-join with no default, so the author states it; arguments narrow the
+     * rows read but pair none with the parent. Covers the three shapes: single and argument-free,
+     * a list, and a single field with arguments.
      * The single-valued shapes are offered dropping {@code @table} (a plain nested object reads
      * the parent's own row) and the table's primary key in {@code @reference}, or a
      * {@code condition:} where the table has none; a list is offered a self-referencing key or a
      * {@code condition:}. The sibling of {@link #uncorrelatedSameTableSplitMessage}; the validator
      * prefixes the field coordinate.
      */
-    private static String unnarrowedSameTableMessage(String parentTypeName, String returnTypeName,
+    private static String uncorrelatedSameTableMessage(String parentTypeName, String returnTypeName,
             String tableName, boolean isList, boolean argumentFree, Optional<String> primaryKey) {
         String head = "'" + returnTypeName + "' is bound to the same table as '" + parentTypeName
             + "' ('" + tableName + "') and the field has no @reference: two @table types on one"
@@ -7362,8 +7358,8 @@ class FieldBuilder {
                 + " self-referencing key with @reference(path: [{key: ...}]), or the correlation"
                 + " with @reference(path: [{condition: ...}]).";
         }
-        String shape = argumentFree ? "" : " The field's arguments filter nothing, so they do not"
-            + " narrow it either.";
+        String shape = argumentFree ? "" : " The field's arguments may narrow the rows it reads,"
+            + " but pair none of them with the parent.";
         String join = primaryKey
             .map(pk -> "name the table's primary key with @reference(path: [{key: \"" + pk + "\"}])")
             .orElse("state the correlation with @reference(path: [{condition: ...}])");

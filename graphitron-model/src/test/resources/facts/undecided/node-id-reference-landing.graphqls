@@ -39,6 +39,8 @@ extend type Query {
   titled(id: ID! @nodeId): Titled
   store(id: ID! @nodeId): Store
   named(id: ID! @nodeId(typeName: "Film")): Credit
+  # Its {table: "film"} step from film is a defect, film having no self-referencing key; only the
+  # node it would land on is read here.
   referenced(id: ID! @nodeId @reference(path: [{table: "film"}])): Credit
   inventories: [Inventory]
 }
