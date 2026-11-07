@@ -38,8 +38,8 @@ import static org.jooq.impl.DSL.selectOne;
  *
  * <p>A field is emitted here when the store states every part of it and none of what is not yet
  * emitted from the store applies; otherwise it stays with the classified model's emitters, and
- * {@link #census} says why. Today that is a root service whose answer is a record, a scalar or the
- * records of its target's table, in a build with no tenant column, whose outcome claims no
+ * {@link #census} says why. Today that is a service, at a root or under an object whose field has one
+ * occurrence, whose answer is a record, a scalar or the records of its target's table, in a build with no tenant column, whose outcome claims no
  * validation, whose arguments decode no node id, build no jOOQ record and reach no input field
  * deeper than the argument itself, and whose target is neither a discriminated interface nor a
  * connection. A field whose call uses no jOOQ context takes none, so it opens no connection.
@@ -190,7 +190,7 @@ public final class ServiceEmission {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
         if (excluded.containsKey(coordinate)) return excluded.get(coordinate);
-        if (!frame.root()) return "UNDER_AN_OBJECT";
+        if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
         if (polymorphic.contains(coordinate)) return "POLYMORPHIC";
         var call = calls.get(coordinate);
         if (call == null) return "NO_CALL";
@@ -233,10 +233,14 @@ public final class ServiceEmission {
      * The fetcher of the field at {@code coordinate} named {@code fieldName}, or empty where it is not
      * emitted here, {@link #verdict} saying why.
      */
-    public Optional<Emitted> emit(String coordinate, String fieldName, Runtime runtime) {
-        if (!EMITTED.equals(verdict(coordinate))) {
+    public Optional<Emitted> emit(String fieldCoordinate, String fieldName, Runtime runtime) {
+        var occurrences = occurrencesOf(fieldCoordinate);
+        if (occurrences.size() != 1 || !EMITTED.equals(verdict(occurrences.getFirst()))) {
             return Optional.empty();
         }
+        String coordinate = occurrences.getFirst();
+        var frameRow = frames.get(coordinate);
+        Optional<CallEmitter.FrameKey> frameKey = frameRow.parent().map(ServiceEmission::frameKey);
         var call = calls.get(coordinate);
         var lift = Optional.ofNullable(lifts.get(coordinate));
         var methods = new ArrayList<MethodSpec>();
@@ -254,7 +258,7 @@ public final class ServiceEmission {
             liftRef = Optional.of(new CallEmitter.Lift(runtime.fetchersClass(), liftName, row.list()));
         }
         var body = CallEmitter.body(call, fills.get(coordinate), builds.getOrDefault(coordinate, Map.of()),
-            runtime.fill(), bodyName, Optional.empty(), liftRef);
+            runtime.fill(), bodyName, frameKey, liftRef);
         if (!(body instanceof CallEmitter.Result.Emitted emitted)) {
             return Optional.empty();
         }
@@ -262,8 +266,8 @@ public final class ServiceEmission {
             ? (liftRef.get().list()
                 ? ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get("org.jooq", "Record"))
                 : ClassName.get("org.jooq", "Record"))
-            : SessionIdentityRows.typeOf(call.resultType()).box();
-        var frame = FrameEmitter.render(frames.get(coordinate), fieldName, valueType, runtime.fetchersClass(),
+            : answered(SessionIdentityRows.typeOf(call.resultType()).box(), frameKey.isPresent());
+        var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
             bodyName, runtime.frame(), needsContext(call, fills.get(coordinate), lift.isPresent()));
         var all = new ArrayList<MethodSpec>();
         all.add(frame);
@@ -271,6 +275,37 @@ public final class ServiceEmission {
         all.addAll(emitted.helpers());
         all.addAll(methods);
         return Optional.of(new Emitted(all, nested));
+    }
+
+    /** The occurrences of the field at {@code fieldCoordinate} the store states a frame for. */
+    private List<String> occurrencesOf(String fieldCoordinate) {
+        return frames.values().stream().filter(f -> elementOf(f).equals(fieldCoordinate))
+            .map(FrameQuery.Row::coordinate).sorted().toList();
+    }
+
+    /** The field an occurrence is of: its declaring type and the coordinate's last name. */
+    private static String elementOf(FrameQuery.Row frame) {
+        var coordinate = frame.coordinate();
+        return frame.declaringType() + coordinate.substring(coordinate.lastIndexOf('.'));
+    }
+
+    /** The batch's keys as the frame hands them over: records of the parent's key, off its table. */
+    private static CallEmitter.FrameKey frameKey(FrameQuery.ParentTable parent) {
+        TypeName[] keyTypes = parent.key().stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.bindingType())).toArray(TypeName[]::new);
+        return new CallEmitter.FrameKey(ParameterizedTypeName.get(ClassName.get("org.jooq", "Record" + keyTypes.length),
+            keyTypes), ClassName.bestGuess(parent.constantsClassName()), parent.javaFieldName());
+    }
+
+    /**
+     * What the body answers for one occurrence: the call's answer at a root, and under an object what
+     * it answers per parent, a map's value or a list's element.
+     */
+    private static TypeName answered(TypeName answer, boolean batched) {
+        if (!batched || !(answer instanceof ParameterizedTypeName p)) {
+            return answer;
+        }
+        return p.rawType().simpleName().equals("Map") ? p.typeArguments().get(1) : p.typeArguments().getFirst();
     }
 
     /**

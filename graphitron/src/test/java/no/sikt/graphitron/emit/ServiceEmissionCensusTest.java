@@ -41,17 +41,13 @@ class ServiceEmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(77);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(89);
         // Each line goes as its shape is emitted from the store; a service moving between lines is
         // a change to look at, not to re-pin.
-        assertThat(byVerdict).containsEntry("UNDER_AN_OBJECT", List.of("City.cityLowercase", "City.cityUppercase",
-                "Film.castMembers", "Film.durabilityError", "Film.languageByService", "Film.modifiedLanguage",
-                "Film.sharedTranslations", "Film.titleCheck", "Film.titleLowercase", "Film.titleTitlecase",
-                "Film.titleUppercase", "Query.filmDetailsBatch.titleTitlecase", "Query.filmKeySummaries.keyCensus"))
-            .containsEntry("NODE_ID_DECODE", List.of("Mutation.assignFilmActorRecord", "Mutation.assignFilmRecord",
+        assertThat(byVerdict).containsEntry("NODE_ID_DECODE", List.of("Mutation.assignFilmActorRecord", "Mutation.assignFilmRecord",
                 "Mutation.assignInventoryRecord", "Mutation.assignLanguagePair", "Mutation.assignOccupantByArgument",
                 "Query.filmActorsByIds", "Query.filmsByNodeIdService"))
-            .containsEntry("RECORD_BUILD", List.of("Mutation.agreeStorageBin", "Mutation.describeEmailReply",
+            .containsEntry("RECORD_BUILD", List.of("Film.modifiedLanguage", "Mutation.agreeStorageBin", "Mutation.describeEmailReply",
                 "Mutation.describeEndorsement", "Mutation.endorseFilm", "Mutation.modifyFilmActorRecord",
                 "Mutation.modifyFilmRecord", "Mutation.modifyFilmRecords", "Mutation.staffAliasUpsert",
                 "Mutation.upsertAddress"))
@@ -64,7 +60,7 @@ class ServiceEmissionCensusTest {
                 "Query.contentSearchOne"))
             .containsEntry("POLYMORPHIC", List.of("Mutation.searchManyMutation", "Query.searchManyService",
                 "Query.searchOneService"))
-            .containsOnlyKeys(ServiceEmission.EMITTED, "UNDER_AN_OBJECT", "NODE_ID_DECODE", "RECORD_BUILD",
+            .containsOnlyKeys(ServiceEmission.EMITTED, "NODE_ID_DECODE", "RECORD_BUILD",
                 "VALIDATION", "ARGUMENT_PATH", "DISCRIMINATED", "POLYMORPHIC");
     }
 

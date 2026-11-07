@@ -721,6 +721,8 @@ public class TypeFetcherGenerator {
                         }
                     }
                 }
+                case ChildField.ServiceTableField stf when emitFromStore(ctx, builder, stf, outputPackage) -> { }
+                case ChildField.ServiceRecordField srf when emitFromStore(ctx, builder, srf, outputPackage) -> { }
                 case ChildField.ServiceTableField stf -> {
                     // Lift-back projection. The loader value is the projected Record (carrying
                     // the multiset @reference columns), not the developer-returned XRecord; the lift
