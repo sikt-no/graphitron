@@ -448,6 +448,14 @@ static method needs no holder.
   payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
   takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
   at a time", where the per-field `rowsX`, `loadX` and decode copies go.
+* **A polymorphic service's list keeps a null where a record finds no row** `open`, E's, off the critical path.
+  The old generator's multitable service re-read drops from a list every record whose class matches
+  no participant and every key whose row is gone, so the list a service hands back comes out shorter
+  and its positions no longer line up with what was asked for, which breaks lookup semantics (Alf,
+  2026-11-07). The store-fed re-read mimics the drop first, as every flip keeps functionality
+  identical, and this node then keeps a null in the slot instead, as the table-bound lift already
+  does: a breaking change for an author relying on the shorter list, so the manual's polymorphic
+  page and the changelog say so, with an execution test pinning the slot.
 * **A split carries the target's key where the source states it** `open`, E's, off the critical path.
   At a split, the frame's key is read off the path's first step rather than always the parent table's
   primary key: where the source states the target's key, as foreign-key columns on its row or an
