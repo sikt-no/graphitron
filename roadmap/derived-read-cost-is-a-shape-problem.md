@@ -2522,6 +2522,9 @@ reads `graphitron_join_path_step` and its subtypes at the occurrence.
 `field-path-parameter` and `field-path-stop`. A field's path is `graphitron_join_path_step` and its
 subtypes at the occurrence, its start `graphitron_path_need`, its landing `graphitron_join_path`.
 
+**Relations nobody reads, first group** (2026-11-07). `intent_node_container_member`,
+`intent_record_slot_assignable` and `sql_constraint_hop`, with the `constraint-hop` grain.
+
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading
 it. The column is gone and that view reads neither relation now. A dated note says so in its body;

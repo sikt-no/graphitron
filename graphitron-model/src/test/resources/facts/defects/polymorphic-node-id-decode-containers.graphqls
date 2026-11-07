@@ -131,23 +131,6 @@ extend schema @expectEquals(relation: "graphitron_node_id_slot", where: """
   Query.occupant(occupant:), occupant,       TRUE
   """)
 
-# Every member's record is assignable to the UpdatableRecord slot.
-extend schema @assertContains(relation: "intent_record_slot_assignable", rows: """
-  node_type_name, record_class,                                                     slot_type_name
-  Customer,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord, org.jooq.UpdatableRecord
-  Staff,          no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.StaffRecord,    org.jooq.UpdatableRecord
-  """)
-
-# Every member of every container, both predicates as columns.
-extend schema @expectEquals(relation: "intent_node_container_member", where: "container_name IN ('MixedOccupant', 'Anything')", rows: """
-  container_name, container_kind, member_type_name, is_table_bound, is_node_type
-  Anything,       UNION,          Ghost,            FALSE,          FALSE
-  MixedOccupant,  UNION,          Customer,         TRUE,           TRUE
-  MixedOccupant,  UNION,          Ghost,            FALSE,          FALSE
-  MixedOccupant,  UNION,          Rental,           TRUE,           FALSE
-  MixedOccupant,  UNION,          Staff,            TRUE,           TRUE
-  """)
-
 # A container binding a table itself draws no endpoint row, at an argument, at an input field or
 # under a written path, while a node type at the same coordinates does. graphitron_tabletype holds
 # MediaItem, so the endpoint's own kind predicate is what keeps it out.

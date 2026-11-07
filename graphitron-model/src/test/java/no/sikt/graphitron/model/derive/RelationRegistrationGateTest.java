@@ -399,15 +399,12 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_input_field_resolving_table", Arm.DERIVED);
         registrations.put("graphitron_input_field_resolving_table_rule", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
-        registrations.put("sql_constraint_hop", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop_column", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_column", Arm.DERIVED);
-        registrations.put("intent_record_slot_assignable", Arm.DERIVED);
-        registrations.put("intent_node_container_member", Arm.DERIVED);
         registrations.put("intent_reference_for_application", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("graphitron_argument_scope_table_rule", Arm.DERIVED);
