@@ -40,7 +40,7 @@ import static org.jooq.impl.DSL.selectOne;
  * emitted from the store applies; otherwise it stays with the classified model's emitters, and
  * {@link #census} says why. Today that is a service, at a root or under an object whose field has one
  * occurrence, whose answer is a record, a scalar or the records of its target's table, in a build with no tenant column, whose outcome claims no
- * validation, whose arguments decode no node id, build no jOOQ record and reach no input field
+ * validation, whose arguments build no jOOQ record and reach no input field
  * deeper than the argument itself, and whose target is neither a discriminated interface nor a
  * connection. A field whose call uses no jOOQ context takes none, so it opens no connection.
  */
@@ -196,37 +196,12 @@ public final class ServiceEmission {
         if (call == null) return "NO_CALL";
         var filled = fills.get(coordinate);
         if (filled == null || !filled.complete()) return "FILLS_INCOMPLETE";
-        if (decodesNodeIds(coordinate, filled)) return "NODE_ID_DECODE";
         if (builds.getOrDefault(coordinate, Map.of()).values().stream()
                 .anyMatch(r -> r instanceof BuildQuery.Result.Columns)) return "RECORD_BUILD";
         if (filled.fills().stream().anyMatch(f -> f.landing().map(l -> l.path().size() > 1).orElse(false))) {
             return "ARGUMENT_PATH";
         }
         return EMITTED;
-    }
-
-    /**
-     * Whether an argument of the call decodes a node id: the decode's failure message is not yet the
-     * one the classified emitters raise, so such a call stays with them.
-     */
-    private boolean decodesNodeIds(String coordinate, FillQuery.Row filled) {
-        if (filled.fills().stream().anyMatch(f -> f.landing().map(FillQuery.Landing::nodeId).orElse(false))) {
-            return true;
-        }
-        return builds.getOrDefault(coordinate, Map.of()).values().stream().anyMatch(ServiceEmission::decodes);
-    }
-
-    private static boolean decodes(BuildQuery.Result result) {
-        return switch (result) {
-            case BuildQuery.Result.Decoded d -> true;
-            case BuildQuery.Result.Built b -> decodes(b.build());
-            default -> false;
-        };
-    }
-
-    private static boolean decodes(BuildQuery.Build build) {
-        return build.members().stream()
-            .anyMatch(m -> m.decode().isPresent() || m.nested().map(ServiceEmission::decodes).orElse(false));
     }
 
     /**
