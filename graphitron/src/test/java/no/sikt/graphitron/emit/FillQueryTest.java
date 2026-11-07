@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -37,6 +38,8 @@ class FillQueryTest {
         }
         input FilmIdsInput { ids: [Int!] }
         input FilmDraftIn { title: String }
+        input FilmIdItem { id: Int! }
+        input FilmIdsByItemInput { items: [FilmIdItem!]! }
         type FilmDraftsCountedPayload { count: Int }
         type Query {
           films: [Film!]!
@@ -45,6 +48,9 @@ class FillQueryTest {
           callFilmsByPath(input: FilmIdsInput): [Film]
             @service(service: {className: "%1$sSampleQueryService", method: "filmsByPath",
                                argMapping: "filmIds: input.ids"})
+          callFilmsByListPath(input: FilmIdsByItemInput!): [Film]
+            @service(service: {className: "%1$sSampleQueryService", method: "filmsByListPath",
+                               argMapping: "filmIds: input.items.id"})
           callGreeting: String @service(service: {className: "%1$sUserGreetingService",
                                                   method: "greet"}, contextArguments: ["userId"])
           countDrafts(in: [FilmDraftIn!]!): FilmDraftsCountedPayload
@@ -77,19 +83,25 @@ class FillQueryTest {
                 org.assertj.core.groups.Tuple.tuple(0, "DSL_CONTEXT", "org.jooq.DSLContext"),
                 org.assertj.core.groups.Tuple.tuple(1, "ARGUMENT", "java.util.List<java.lang.Integer>"));
         assertThat(row.fills().get(1).landing())
-            .contains(new FillQuery.Landing(List.of("ids"), "SCALAR", false));
+            .contains(new FillQuery.Landing(List.of("ids"), Set.of(0), "SCALAR", false));
     }
 
     @Test
     void anInputFieldsLandingIsThePathFromItsArgument() {
         assertThat(rows.get("Query.callFilmsByPath").fills().get(1).landing())
-            .contains(new FillQuery.Landing(List.of("input", "ids"), "SCALAR", false));
+            .contains(new FillQuery.Landing(List.of("input", "ids"), Set.of(1), "SCALAR", false));
+    }
+
+    @Test
+    void aLandingSaysWhichStepsAreLists() {
+        assertThat(rows.get("Query.callFilmsByListPath").fills().get(1).landing())
+            .contains(new FillQuery.Landing(List.of("input", "items", "id"), Set.of(1), "SCALAR", false));
     }
 
     @Test
     void anInputObjectsLandingSaysSoForBuildingToTake() {
         assertThat(rows.get("Query.countDrafts").fills().getFirst().landing())
-            .contains(new FillQuery.Landing(List.of("in"), "INPUT_OBJECT", false));
+            .contains(new FillQuery.Landing(List.of("in"), Set.of(0), "INPUT_OBJECT", false));
     }
 
     @Test

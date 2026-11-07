@@ -41,7 +41,7 @@ class ServiceEmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(89);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(92);
         // Each line goes as its shape is emitted from the store; a service moving between lines is
         // a change to look at, not to re-pin.
         assertThat(byVerdict).containsEntry("RECORD_BUILD", List.of("Film.modifiedLanguage", "Mutation.agreeStorageBin", "Mutation.describeEmailReply",
@@ -54,14 +54,12 @@ class ServiceEmissionCensusTest {
             .containsEntry("VALIDATION", List.of("Mutation.countFilmBundleDraft", "Mutation.countFilmDrafts",
                 "Mutation.countFilmRecordDraft", "Mutation.countFilmRecordDrafts", "Query.filmLookupRefused",
                 "Query.filmLookupValidated"))
-            .containsEntry("ARGUMENT_PATH", List.of("Query.filmsByListPath", "Query.filmsByNestedListPath",
-                "Query.filmsByPath"))
             .containsEntry("DISCRIMINATED", List.of("Mutation.contentSearchManyMutation", "Query.contentSearchMany",
                 "Query.contentSearchOne"))
             .containsEntry("POLYMORPHIC", List.of("Mutation.searchManyMutation", "Query.searchManyService",
                 "Query.searchOneService"))
             .containsOnlyKeys(ServiceEmission.EMITTED, "RECORD_BUILD", "BUILD_REFUSED",
-                "VALIDATION", "ARGUMENT_PATH", "DISCRIMINATED", "POLYMORPHIC");
+                "VALIDATION", "DISCRIMINATED", "POLYMORPHIC");
     }
 
     /**

@@ -98,6 +98,14 @@ class FillEmitterTest {
             enumAt("moods"))),
         true);
 
+    /** A root call taking scalars read through one list and through two. */
+    private static final FillQuery.Row LISTED = new FillQuery.Row("Query.listed", "Query.listed", List.of(
+        fill(0, "ids", "java.util.List<java.lang.Integer>", "java.util.List", "ARGUMENT", null, null,
+            new FillQuery.Landing(List.of("input", "items", "id"), Set.of(1), "SCALAR", false)),
+        fill(1, "groups", "java.util.List<java.util.List<java.lang.Integer>>", "java.util.List", "ARGUMENT", null,
+            null, new FillQuery.Landing(List.of("input", "groups", "items", "id"), Set.of(1, 2), "SCALAR", false))),
+        true);
+
     /** A root call taking the jOOQ context as a Configuration. */
     private static final FillQuery.Row CONFIGURED = new FillQuery.Row("Query.configured", "Query.configured",
         List.of(fill(0, "configuration", "org.jooq.Configuration", "org.jooq.Configuration", "DSL_CONTEXT",
@@ -117,6 +125,7 @@ class FillEmitterTest {
             .addMethod(probe("root", ROOT, Optional.empty()))
             .addMethod(probe("configured", CONFIGURED, Optional.empty()))
             .addMethod(probe("enums", ENUMS, Optional.empty()))
+            .addMethod(probe("listed", LISTED, Optional.empty()))
             .addMethod(probe("child", CHILD, Optional.of(KEYS)))
             .build();
         var dir = Files.createTempDirectory("fill");
@@ -189,6 +198,41 @@ class FillEmitterTest {
     void anAbsentEnumIsNull() throws Exception {
         var values = (Object[]) probes.get("enums").invoke(null, env(Map.of()), DSL.using(SQLDialect.POSTGRES));
         assertThat(values).containsOnlyNulls();
+    }
+
+    @Test
+    void aScalarReadThroughListsIsOneListDeeperForEach() throws Exception {
+        var arguments = Map.<String, Object>of("input", Map.of(
+            "items", List.of(Map.of("id", 1), Map.of("id", 3)),
+            "groups", List.of(Map.of("items", List.of(Map.of("id", 1), Map.of("id", 2))),
+                Map.of("items", List.of(Map.of("id", 4))))));
+        var values = (Object[]) probes.get("listed").invoke(null, env(arguments), DSL.using(SQLDialect.POSTGRES));
+        assertThat(values[0]).isEqualTo(List.of(1, 3));
+        assertThat(values[1]).isEqualTo(List.of(List.of(1, 2), List.of(4)));
+    }
+
+    @Test
+    void anAbsentLevelThroughAListIsNullAtItsDepth() throws Exception {
+        var items = new java.util.ArrayList<Object>();
+        items.add(Map.of("id", 1));
+        items.add(null);
+        var groups = new java.util.ArrayList<Object>();
+        groups.add(Map.of());
+        var values = (Object[]) probes.get("listed").invoke(null,
+            env(Map.of("input", Map.of("items", items, "groups", groups))), DSL.using(SQLDialect.POSTGRES));
+        assertThat(values[0]).isEqualTo(java.util.Arrays.asList(1, null));
+        assertThat(values[1]).isEqualTo(java.util.Collections.singletonList(null));
+        var absent = (Object[]) probes.get("listed").invoke(null, env(Map.of()), DSL.using(SQLDialect.POSTGRES));
+        assertThat(absent).containsOnlyNulls();
+    }
+
+    @Test
+    void anEnumReadThroughAListIsLeftToBuilding() {
+        var row = new FillQuery.Row("Query.moods", "Query.moods", List.of(fill(0, "moods",
+            "java.util.List<java.lang.String>", "java.util.List", "ARGUMENT", null, null,
+            new FillQuery.Landing(List.of("input", "items", "mood"), Set.of(1), "ENUM", false))), true);
+        assertThat(FillEmitter.emit(row, Optional.empty(), RUNTIME))
+            .isInstanceOf(FillEmitter.Result.NeedsBuilding.class);
     }
 
     @Test

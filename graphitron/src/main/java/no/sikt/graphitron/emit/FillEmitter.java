@@ -141,6 +141,10 @@ public final class FillEmitter {
                 }
                 case "ARGUMENT" -> {
                     var landing = fill.landing().orElseThrow();
+                    if (unreadThroughList(landing)) {
+                        return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
+                            String.join(".", landing.path()) + " is read through a list, which only a scalar is here");
+                    }
                     if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Decoded decoded) {
                         var helper = "decode" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
                         helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decoded.decode(), decoded.shape(),
@@ -181,7 +185,10 @@ public final class FillEmitter {
                     if ("ENUM".equals(landing.typeKind()) && !STRING.equals(elementOf(type))) {
                         statements.addAll(enumValue(type, local, landing.path()));
                     } else {
-                        statements.add(argument(type, local, landing.path()));
+                        statements.add(liftsThroughList(landing)
+                            ? declare(type, local, lifted(elementsOf(type, landing), landing, 0,
+                                CodeBlock.of("env.getArgument($S)", landing.path().getFirst()), new int[]{0}))
+                            : argument(type, local, landing.path()));
                     }
                     arguments.add(CodeBlock.of("$L", local));
                 }
@@ -190,6 +197,69 @@ public final class FillEmitter {
             }
         }
         return new Result.Emitted(statements, arguments, helpers);
+    }
+
+    /**
+     * Whether {@code landing} is read through a list: a step above the last whose value is a list,
+     * each element of which the rest of the path is read from.
+     */
+    private static boolean liftsThroughList(FillQuery.Landing landing) {
+        return landing.lists().stream().anyMatch(i -> i < landing.path().size() - 1);
+    }
+
+    /**
+     * Whether {@code landing} is read through a list to something other than a scalar, which is not
+     * read here: a node id, an enum or an input object under a list above the last step.
+     */
+    public static boolean unreadThroughList(FillQuery.Landing landing) {
+        return liftsThroughList(landing) && (landing.nodeId() || !"SCALAR".equals(landing.typeKind()));
+    }
+
+    /**
+     * The value at step {@code at} of a path read through lists, given as {@code value}: each list
+     * above the last step streams its elements into the rest of the path, one more list deep, and an
+     * input object steps into its field; {@code null} wherever a level is absent, at that depth.
+     *
+     * <pre>{@code
+     * env.getArgument("input") instanceof Map<?, ?> map1
+     *     ? (map1.get("items") instanceof List<?> list2
+     *         ? list2.stream().map(elem3 -> elem3 instanceof Map<?, ?> map4 ? (Integer) map4.get("id") : null).toList()
+     *         : null)
+     *     : null
+     * }</pre>
+     */
+    private static CodeBlock lifted(TypeName leaf, FillQuery.Landing landing, int at, CodeBlock value, int[] names) {
+        var path = landing.path();
+        if (at == path.size() - 1) {
+            return CodeBlock.of("($T) $L", leaf, value);
+        }
+        if (landing.lists().contains(at)) {
+            String list = "list" + ++names[0];
+            String element = "elem" + ++names[0];
+            return CodeBlock.of("($L instanceof $T<?> $L ? $L.stream().map($L -> $L).toList() : null)",
+                value, LIST, list, list, element, step(leaf, landing, at, CodeBlock.of("$L", element), names));
+        }
+        return step(leaf, landing, at, value, names);
+    }
+
+    /** The input object {@code value} at step {@code at} into its field on the next step. */
+    private static CodeBlock step(TypeName leaf, FillQuery.Landing landing, int at, CodeBlock value, int[] names) {
+        String map = "map" + ++names[0];
+        return CodeBlock.of("($L instanceof $T<?, ?> $L ? $L : null)", value, MAP, map,
+            lifted(leaf, landing, at + 1, CodeBlock.of("$L.get($S)", map, landing.path().get(at + 1)), names));
+    }
+
+    /**
+     * What the last step of a path read through lists casts to: the parameter's type with one list
+     * taken off for each list above the last step, boxed.
+     */
+    private static TypeName elementsOf(TypeName type, FillQuery.Landing landing) {
+        var leaf = type;
+        long lifts = landing.lists().stream().filter(i -> i < landing.path().size() - 1).count();
+        for (long i = 0; i < lifts; i++) {
+            leaf = elementOf(leaf);
+        }
+        return leaf.box();
     }
 
     /**

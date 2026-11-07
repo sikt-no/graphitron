@@ -5,10 +5,12 @@ import org.jooq.Records;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
@@ -40,13 +42,25 @@ public final class FillQuery {
 
     private FillQuery() {}
 
-    /** Where an argument fill lands: the path of names from the argument, and what is there. */
-    public record Landing(List<String> path, String typeKind, boolean nodeId) {
+    /**
+     * Where an argument fill lands: the path of names from the argument, the positions on it whose
+     * value is a list, and what is there.
+     */
+    public record Landing(List<String> path, Set<Integer> lists, String typeKind, boolean nodeId) {
         public Landing {
             path = List.copyOf(path);
+            lists = Set.copyOf(lists);
             Objects.requireNonNull(typeKind, "typeKind");
         }
+
+        /** A landing no step of which is a list. */
+        public Landing(List<String> path, String typeKind, boolean nodeId) {
+            this(path, Set.of(), typeKind, nodeId);
+        }
     }
+
+    /** An argument or input field occurrence's path of names, and the positions on it that are lists. */
+    private record Path(List<String> names, Set<Integer> lists) {}
 
     /**
      * One parameter and what fills it: the parameter's position, name and type as the store spells
@@ -122,7 +136,8 @@ public final class FillQuery {
                     raw.parameterType(), raw.erasedClass(), raw.fill(), raw.contextKey(),
                     raw.sessionMember(),
                     Optional.ofNullable(raw.landingCoordinate()).map(landing -> new Landing(
-                        paths.get(landing), raw.typeKind(), raw.nodeId()))))
+                        paths.get(landing).names(), paths.get(landing).lists(), raw.typeKind(),
+                        raw.nodeId()))))
                     .toList(),
                 rec.value3().size() == rec.value4()));
     }
@@ -130,23 +145,32 @@ public final class FillQuery {
     /**
      * Each argument and input-field occurrence's path of names, from its argument down, read off
      * the parent links: an argument's path is its own name, an input field's its parent's and its own.
+     * A step is a list where its argument or input field is declared one.
      */
-    private static Map<String, List<String>> paths(StoreHandle store) {
+    private static Map<String, Path> paths(StoreHandle store) {
         var o = GRAPHITRON_OCCURRENCE;
-        record Step(String parent, String name, boolean argument) {}
+        var a = GRAPHITRON_ARGUMENT;
+        var f = GRAPHITRON_FIELD;
+        record Step(String parent, String name, boolean argument, boolean list) {}
         var steps = new HashMap<String, Step>();
-        store.dsl().select(o.COORDINATE, o.PARENT_COORDINATE, o.NAME, o.KIND)
+        store.dsl().select(o.COORDINATE, o.PARENT_COORDINATE, o.NAME, o.KIND, coalesce(a.IS_LIST, f.IS_LIST))
             .from(o)
+            .leftJoin(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME), a.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .leftJoin(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"))
             .forEach(r -> steps.put(r.value1(), new Step(r.value2(), r.value3(),
-                "FIELD_ARGUMENT".equals(r.value4()))));
-        var out = new HashMap<String, List<String>>();
+                "FIELD_ARGUMENT".equals(r.value4()), Boolean.TRUE.equals(r.value5()))));
+        var out = new HashMap<String, Path>();
         steps.forEach((coordinate, step) -> {
-            var names = new ArrayList<String>();
+            var chain = new ArrayList<Step>();
             for (var at = step; at != null; at = at.argument() ? null : steps.get(at.parent())) {
-                names.addFirst(at.name());
+                chain.addFirst(at);
             }
-            out.put(coordinate, List.copyOf(names));
+            var lists = new HashSet<Integer>();
+            for (int i = 0; i < chain.size(); i++) {
+                if (chain.get(i).list()) lists.add(i);
+            }
+            out.put(coordinate, new Path(chain.stream().map(Step::name).toList(), lists));
         });
         return out;
     }

@@ -209,7 +209,7 @@ public final class ServiceEmission {
         var built = builds.getOrDefault(coordinate, Map.of()).values();
         if (built.stream().anyMatch(r -> r instanceof BuildQuery.Result.Refused)) return "BUILD_REFUSED";
         if (built.stream().anyMatch(r -> r instanceof BuildQuery.Result.Columns)) return "RECORD_BUILD";
-        if (filled.fills().stream().anyMatch(f -> f.landing().map(l -> l.path().size() > 1).orElse(false))) {
+        if (filled.fills().stream().anyMatch(f -> f.landing().map(FillEmitter::unreadThroughList).orElse(false))) {
             return "ARGUMENT_PATH";
         }
         var lift = Optional.ofNullable(lifts.get(coordinate))
