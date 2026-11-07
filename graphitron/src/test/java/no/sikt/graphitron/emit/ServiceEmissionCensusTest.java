@@ -41,13 +41,16 @@ class ServiceEmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(96);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(89);
         // Each line goes as its shape is emitted from the store; a service moving between lines is
         // a change to look at, not to re-pin.
         assertThat(byVerdict).containsEntry("RECORD_BUILD", List.of("Film.modifiedLanguage", "Mutation.agreeStorageBin", "Mutation.describeEmailReply",
                 "Mutation.describeEndorsement", "Mutation.endorseFilm", "Mutation.modifyFilmActorRecord",
                 "Mutation.modifyFilmRecord", "Mutation.modifyFilmRecords", "Mutation.staffAliasUpsert",
                 "Mutation.upsertAddress"))
+            .containsEntry("BUILD_REFUSED", List.of("Mutation.assignFilmActorRecordList",
+                "Mutation.assignFilmRecordList", "Mutation.assignOccupantByArgument", "Mutation.assignOccupantRecord",
+                "Mutation.assignOccupantRecordList", "Mutation.customerUpsert", "Query.filmsByNodeIdService"))
             .containsEntry("VALIDATION", List.of("Mutation.countFilmBundleDraft", "Mutation.countFilmDrafts",
                 "Mutation.countFilmRecordDraft", "Mutation.countFilmRecordDrafts", "Query.filmLookupRefused",
                 "Query.filmLookupValidated"))
@@ -57,8 +60,32 @@ class ServiceEmissionCensusTest {
                 "Query.contentSearchOne"))
             .containsEntry("POLYMORPHIC", List.of("Mutation.searchManyMutation", "Query.searchManyService",
                 "Query.searchOneService"))
-            .containsOnlyKeys(ServiceEmission.EMITTED, "RECORD_BUILD",
+            .containsOnlyKeys(ServiceEmission.EMITTED, "RECORD_BUILD", "BUILD_REFUSED",
                 "VALIDATION", "ARGUMENT_PATH", "DISCRIMINATED", "POLYMORPHIC");
+    }
+
+    /**
+     * A refusal the call emitter makes on its own, past every exclusion the census reads off the
+     * store, is censused as one: a service under an object taking no keys is not emitted here, and
+     * the generator leaves it to the classified model rather than failing on it.
+     */
+    @Test
+    void aBodyTheCallEmitterRefusesIsCensusedAsRefused() throws Exception {
+        String sdl = """
+            type Film @table(name: "film") {
+              title: String
+              greeting: String @service(service: {
+                className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"},
+                contextArguments: ["userId"])
+            }
+            type Query { films: [Film!]! }
+            """;
+        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
+                CatalogInput.of(testContext()), sakilaClasspath())) {
+            var services = ServiceEmission.read(new StoreHandle(store.dsl(), CapturedStore.GRAPH));
+            assertThat(services.census()).containsEntry("Film.greeting", "CALL_REFUSED");
+            assertThat(services.emits("Film.greeting")).isFalse();
+        }
     }
 
     /** The sakila service and catalog modules read as the sakila example reads them. */

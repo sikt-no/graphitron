@@ -1,6 +1,7 @@
 package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
@@ -74,6 +75,15 @@ public final class ServiceEmission {
             nestedTypes = List.copyOf(nestedTypes);
         }
     }
+
+    /**
+     * The names the census renders a body with: it asks the call emitter whether it emits a body,
+     * so the census and {@link #emit} decide by the one emitter, and the body itself is dropped.
+     */
+    private static final ClassName CENSUS_HOST = ClassName.get("census", "Census");
+    private static final FillEmitter.Runtime CENSUS_FILL = new FillEmitter.Runtime(
+        key -> CodeBlock.of("null"), coordinate -> CodeBlock.of("null"), (member, coordinate) -> CodeBlock.of("null"),
+        new NodeIdDecodeEmitter.Runtime(CENSUS_HOST, "census"));
 
     private final Map<String, FrameQuery.Row> frames;
     private final Map<String, CallQuery.Row> calls;
@@ -196,10 +206,17 @@ public final class ServiceEmission {
         if (call == null) return "NO_CALL";
         var filled = fills.get(coordinate);
         if (filled == null || !filled.complete()) return "FILLS_INCOMPLETE";
-        if (builds.getOrDefault(coordinate, Map.of()).values().stream()
-                .anyMatch(r -> r instanceof BuildQuery.Result.Columns)) return "RECORD_BUILD";
+        var built = builds.getOrDefault(coordinate, Map.of()).values();
+        if (built.stream().anyMatch(r -> r instanceof BuildQuery.Result.Refused)) return "BUILD_REFUSED";
+        if (built.stream().anyMatch(r -> r instanceof BuildQuery.Result.Columns)) return "RECORD_BUILD";
         if (filled.fills().stream().anyMatch(f -> f.landing().map(l -> l.path().size() > 1).orElse(false))) {
             return "ARGUMENT_PATH";
+        }
+        var lift = Optional.ofNullable(lifts.get(coordinate))
+            .map(row -> new CallEmitter.Lift(CENSUS_HOST, "lift", row.list()));
+        if (CallEmitter.body(call, filled, builds.getOrDefault(coordinate, Map.of()), CENSUS_FILL, "census",
+                frame.parent().map(ServiceEmission::frameKey), lift) instanceof CallEmitter.Result.NeedsBuilding) {
+            return "CALL_REFUSED";
         }
         return EMITTED;
     }
@@ -209,10 +226,10 @@ public final class ServiceEmission {
      * emitted here, {@link #verdict} saying why.
      */
     public Optional<Emitted> emit(String fieldCoordinate, String fieldName, Runtime runtime) {
-        var occurrences = occurrencesOf(fieldCoordinate);
-        if (occurrences.size() != 1 || !EMITTED.equals(verdict(occurrences.getFirst()))) {
+        if (!emits(fieldCoordinate)) {
             return Optional.empty();
         }
+        var occurrences = occurrencesOf(fieldCoordinate);
         String coordinate = occurrences.getFirst();
         var frameRow = frames.get(coordinate);
         Optional<CallEmitter.FrameKey> frameKey = frameRow.parent().map(ServiceEmission::frameKey);
@@ -235,7 +252,9 @@ public final class ServiceEmission {
         var body = CallEmitter.body(call, fills.get(coordinate), builds.getOrDefault(coordinate, Map.of()),
             runtime.fill(), bodyName, frameKey, liftRef);
         if (!(body instanceof CallEmitter.Result.Emitted emitted)) {
-            return Optional.empty();
+            throw new IllegalStateException(coordinate + " is censused as emitted but its body is not, "
+                + "though the census asks the same emitter: "
+                + ((CallEmitter.Result.NeedsBuilding) body).reason());
         }
         TypeName valueType = liftRef.isPresent()
             ? (liftRef.get().list()
@@ -250,6 +269,15 @@ public final class ServiceEmission {
         all.addAll(emitted.helpers());
         all.addAll(methods);
         return Optional.of(new Emitted(all, nested));
+    }
+
+    /**
+     * Whether the fetcher of the field at {@code fieldCoordinate} is emitted here: the field has
+     * one occurrence with a frame, and its verdict is {@link #EMITTED}.
+     */
+    public boolean emits(String fieldCoordinate) {
+        var occurrences = occurrencesOf(fieldCoordinate);
+        return occurrences.size() == 1 && EMITTED.equals(verdict(occurrences.getFirst()));
     }
 
     /** The occurrences of the field at {@code fieldCoordinate} the store states a frame for. */
