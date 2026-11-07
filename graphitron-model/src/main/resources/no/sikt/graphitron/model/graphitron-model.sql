@@ -3226,45 +3226,67 @@ COMMENT ON COLUMN graphitron_ast_node_entry.touched_at IS 'when the reading that
 COMMENT ON COLUMN graphitron_ast_node_entry.type_id IS 'the typeId argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string. NULL is the fact that the author left it out, which the directive documents as meaning the type''s own name; substituting the name here would lose which of the two they wrote';
 
 CREATE TABLE graphitron_ast_node_keycolumn_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  column_ref    VARCHAR NOT NULL,
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  application_line   INT     NOT NULL,
+  application_column INT     NOT NULL,
+  position           INT     NOT NULL,
+  column_ref         VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  UNIQUE (graph_name, source_name, application_line, application_column, position),
+  CHECK (position >= 0),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, application_line, application_column)
+    REFERENCES graphitron_ast_node_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_ast_node_keycolumn_entry IS 'One keyColumns element of a @node application, as written. For example keyColumns: ["film_id"] gives one row, keyed where film_id was written.';
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_name IS 'the file the application was written in';
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_line IS 'source line the element was written at, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_column IS 'source column of the same. The four key columns are the element''s own position, so this row is the decode of exactly one row of graphql_ast_value_entry; which application holds it, and where in the list it sits, are that row''s to say';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_column IS 'source column of the same. The four key columns are the element''s own position, so this row is the decode of exactly one row of graphql_ast_value_entry';
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.application_line IS 'source line of the @node application holding the list, the parent key into graphitron_ast_node_entry together with the column beside it';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.application_column IS 'source column of the same';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.position IS 'the index the element was written at in its list, from 0, which is the place the column takes inside an id. A list written as one string rather than a list is a list of that one string, at 0';
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.column_ref IS 'the column the element names, as the author spelled it. Whether the database has a column of that name, and whether the columns together are a key, are questions for a resolution and not for this row';
 
 CREATE TABLE graphitron_ast_node_legacykeycolumn_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  column_ref    VARCHAR NOT NULL,
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  application_line   INT     NOT NULL,
+  application_column INT     NOT NULL,
+  position           INT     NOT NULL,
+  column_ref         VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  UNIQUE (graph_name, source_name, application_line, application_column, position),
+  CHECK (position >= 0),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, application_line, application_column)
+    REFERENCES graphitron_ast_node_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_ast_node_legacykeycolumn_entry IS 'One legacyKeyColumns element of a @node application, as written. For example legacyKeyColumns: ["customer_id", "rental_id", "rental_date"] gives three rows, each keyed where its column was written.';
 COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.source_name IS 'the file the application was written in';
 COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.source_line IS 'source line the element was written at, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.source_column IS 'source column of the same. The four key columns are the element''s own position, so this row is the decode of exactly one row of graphql_ast_value_entry; which application holds it, and where in the list it sits, are that row''s to say';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.source_column IS 'source column of the same. The four key columns are the element''s own position, so this row is the decode of exactly one row of graphql_ast_value_entry';
 COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.application_line IS 'source line of the @node application holding the list, the parent key into graphitron_ast_node_entry together with the column beside it';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.application_column IS 'source column of the same';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.position IS 'the index the element was written at in its list, from 0, which is the place the column takes inside an id. A list written as one string rather than a list is a list of that one string, at 0';
 COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.column_ref IS 'the column the element names, as the author spelled it. Whether the database has a column of that name, and whether the list covers the current key, are questions for a resolution and not for this row';
 
 CREATE TABLE graphitron_ast_discriminate_entry (

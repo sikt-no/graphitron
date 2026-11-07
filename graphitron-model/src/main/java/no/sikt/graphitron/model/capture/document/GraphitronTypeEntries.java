@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
 import graphql.language.ObjectValue;
+import graphql.language.StringValue;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.grammar.FieldSetGrammar;
 import no.sikt.graphitron.model.sink.BindBatch;
@@ -38,7 +39,6 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.lis
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.ofKind;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.tokenOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
@@ -91,8 +91,9 @@ final class GraphitronTypeEntries {
 
         var nodes = applied(applications, "node");
         nodes(dsl, graph, touchedAt, nodes);
-        nodeKeyColumns(dsl, graph, touchedAt, nodes, "keyColumns", GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY);
-        nodeKeyColumns(dsl, graph, touchedAt, nodes, "legacyKeyColumns",
+        nodeKeyColumns(dsl, graph, source, touchedAt, nodes, "keyColumns",
+            GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY);
+        nodeKeyColumns(dsl, graph, source, touchedAt, nodes, "legacyKeyColumns",
             GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY);
 
         discriminates(dsl, graph, touchedAt, wrote(applied(applications, "discriminate"), "on"));
@@ -318,35 +319,53 @@ final class GraphitronTypeEntries {
     }
 
     /**
-     * The key columns, which are a list of bare strings rather than of object literals, so they are
-     * read through {@link GraphitronAstEntries#writtenIn}. Each row names the element it decodes. The
-     * order is part of what the directive says, being the order the columns take inside an id, and
-     * that is why it is not restated here: the element's own row carries the index already.
+     * The key columns, which are a list of bare strings rather than of object literals. Each row
+     * names the element it decodes, the application holding it and the index it was written at,
+     * that index being the place the column takes inside an id; a reader asking for a type's key
+     * reads it here rather than joining the element's row for it.
      *
      * <p>Both list arguments of {@code @node} decode this way, the current key and the legacy one,
      * into twin relations of one shape: {@code table} is the argument's relation, its columns read
      * off by name ({@link Table#field(org.jooq.Field)}) since the twins are distinct generated types.
      */
-    private static void nodeKeyColumns(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<Directive> applications, String argument,
-                                       Table<?> table) {
+    private static void nodeKeyColumns(DSLContext dsl, String graph, String source,
+                                       LocalDateTime touchedAt, List<Directive> applications,
+                                       String argument, Table<?> table) {
         var k = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
         var graphName = table.field(k.GRAPH_NAME);
         var touched = table.field(k.TOUCHED_AT);
+        var applicationLine = table.field(k.APPLICATION_LINE);
+        var applicationColumn = table.field(k.APPLICATION_COLUMN);
+        var position = table.field(k.POSITION);
         var columnRef = table.field(k.COLUMN_REF);
-        var rows = writtenIn(applications, argument).stream().collect(Rows.toRowList(
+        var listed = listedIn(applications, argument).stream()
+            .filter(column -> column.node() instanceof StringValue).toList();
+        GraphitronAstEntries.clearDisplaced(dsl, table, graph, source, listed);
+        var rows = listed.stream().collect(Rows.toRowList(
             column -> val(graph, graphName),
             column -> GraphQLAstEntries.sourceName(column.node()),
             column -> GraphQLAstEntries.sourceLine(column.node()),
             column -> GraphQLAstEntries.sourceColumn(column.node()),
             column -> val(touchedAt, touched),
-            column -> val(column.value(), columnRef)));
+            column -> GraphQLAstEntries.sourceLine(column.application()),
+            column -> GraphQLAstEntries.sourceColumn(column.application()),
+            column -> val(column.position(), position),
+            column -> val(((StringValue) column.node()).getValue(), columnRef)));
+        var sourceName = table.field(k.SOURCE_NAME);
+        var sourceLine = table.field(k.SOURCE_LINE);
+        var sourceColumn = table.field(k.SOURCE_COLUMN);
+        // On the element's key alone: the index unique within its application is cleared of a
+        // displaced row above, so an upsert matching it too would only scan every graph's rows.
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(table, graphName, table.field(k.SOURCE_NAME), table.field(k.SOURCE_LINE),
-                    table.field(k.SOURCE_COLUMN), touched, columnRef)
+            dsl.insertInto(table, graphName, sourceName, sourceLine, sourceColumn, touched,
+                    applicationLine, applicationColumn, position, columnRef)
                 .values(markers)
-                .onDuplicateKeyUpdate()
+                .onConflict(graphName, sourceName, sourceLine, sourceColumn)
+                .doUpdate()
                 .set(touched, excluded(touched))
+                .set(applicationLine, excluded(applicationLine))
+                .set(applicationColumn, excluded(applicationColumn))
+                .set(position, excluded(position))
                 .set(columnRef, excluded(columnRef)));
     }
 

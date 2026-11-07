@@ -263,14 +263,10 @@ class SupertypeSignatureGateTest {
         // The enum-value site's two sorting pairs, on the terms every pair above is on: an
         // as-written relation beside the resolved one it will be derived into, both coming off this
         // roster together on the day that derivation lands.
-        // @node's key columns, which pair the same way. Only the child does: the anchor above it
-        // carries the declaration site the application was written on as four columns of its own,
-        // where the entry carries that by being keyed at the position, so the two share no payload
-        // and this tranche has one row for @node rather than two.
-        // @node's legacy key columns are the second list argument of the directive, decoded and
-        // anchored as twins of the current key's, so they join the set rather than pair beside it.
-        Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_ast_node_legacykeycolumn_entry",
-               "graphitron_node_keycolumn_entry", "graphitron_node_legacykeycolumn_entry"),
+        // @node's two list arguments, the current key and the legacy one, decoded as twins.
+        Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_ast_node_legacykeycolumn_entry"),
+        // Their coordinate-keyed copies, twins on the same terms.
+        Set.of("graphitron_node_keycolumn_entry", "graphitron_node_legacykeycolumn_entry"),
         // One decode and one resolution of it, and the payload is one column because a deprecation
         // carries one thing: the replacement hint. The three anchors this used to name were one
         // relation each for a directive, an argument of one, and a field of an input object, and

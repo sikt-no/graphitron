@@ -306,6 +306,15 @@ class GraphitronTypeEntriesTest {
                 .extracting(row -> row.value1(), row -> row.value2())
                 .containsExactly(tuple(0, "film_id"), tuple(1, "language_id"));
 
+            var n = GRAPHITRON_AST_NODE_ENTRY;
+            assertThat(dsl.select(t.POSITION, t.COLUMN_REF, n.TYPE_ID).from(t)
+                    .join(n).on(n.GRAPH_NAME.eq(t.GRAPH_NAME), n.SOURCE_NAME.eq(t.SOURCE_NAME),
+                        n.SOURCE_LINE.eq(t.APPLICATION_LINE), n.SOURCE_COLUMN.eq(t.APPLICATION_COLUMN))
+                    .orderBy(t.POSITION).fetch())
+                .as("each row says which application holds it and where in the list, without the element's row")
+                .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
+                .containsExactly(tuple(0, "film_id", "F"), tuple(1, "language_id", "F"));
+
             assertThat(dsl.fetchCount(GRAPHITRON_AST_NODE_ENTRY))
                 .as("and both applications are rows, the second naming no columns at all")
                 .isEqualTo(2);
