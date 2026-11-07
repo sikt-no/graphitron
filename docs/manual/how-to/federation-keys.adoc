@@ -116,6 +116,8 @@ Two distinct uses:
 
 `resolvable: false` is also legal on `@node` types via the synthesised path: `@node @key(fields: "id", resolvable: false)` declares the type as a reference-only entity even though `@node` would normally make it resolvable.
 
+A stub this subgraph only decodes ids of goes further: xref:../reference/directives/node.adoc#federation-stubs[`@node(resolvable: false)`] makes it a node for its id, so xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`] can name it, while it implements no `Node`, `Query.node` does not dispatch it, and no `@key(fields: "id")` is synthesised for it.
+
 == Keys without the tenant column
 
 In a database-per-tenant build (`<tenantColumn>`), `_entities` reads each representation's tenant out of its key, so a resolvable `@key` on a tenant-scoped type must include the tenant column. When the key cannot carry it, mark the type xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`] to resolve its representations on the request's entity default tenant instead, which is the default tenant unless the request names one separately.

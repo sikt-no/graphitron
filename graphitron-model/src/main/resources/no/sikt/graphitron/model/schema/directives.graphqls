@@ -545,6 +545,13 @@ directive @node(
   Must contain every keyColumns column plus at least one more, each once.
   """
   legacyKeyColumns: [String!]
+
+  """
+  Whether this subgraph fetches the type by its id, as with @key(resolvable:). Set it to false on a stub of an entity
+  another subgraph owns: its ids still encode and decode, so @nodeId(typeName:) can name it, but Query.node and nodes
+  do not resolve it, and the type neither implements Node nor gets a synthesised federation key.
+  """
+  resolvable: Boolean = true
 ) on OBJECT
 
 """

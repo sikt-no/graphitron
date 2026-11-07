@@ -1095,23 +1095,6 @@ branch is G's (Alf, 2026-11-05).
   decode census `NodeIdDecodeCoverageFacts` reads `graphitron_occurrence_node_id`; the encode for
   output fields is an emitter of its own, written when the store emits output selections. Then
   `graphitron_node_id_instruction` and the `graphitron_node_id_decode_*` relations go.
-* **A `@nodeId` naming a federation stub binds against its table's node metadata** `open`, G's.
-  The manual lets `@nodeId(typeName:)` name a `@table` type that is no node over a table whose class
-  publishes node metadata, the id decoding against that metadata's type id and key, and
-  `NODE_ID_TYPE_NAME_NOT_NODE` accepts it; sis's upgrade branch writes 19 such positions. But
-  `graphitron_occurrence_node_id` binds only a named `graphitron_node`, its key columns keyed into
-  `graphitron_node_keycolumn`, so a stub's id binds nothing: the landing defects never judge it and
-  `NodeIdDecodeQuery` refuses it, which matters once the emitters replace the walk. The stub's key,
-  from `sql_node_key_column` and `sql_node_metadata`, is stated under a relation of its own rather
-  than loosening the binding's key to the node's (C, 2026-11-07), and the binding reads it.
-
-### A polymorphic id resolves per member, to the overload that accepts it `open`
-
-A union's members are unrelated results, so the decode switches on the id's type and hands each
-member's record to the overload that accepts it, `assign(CustomerRecord)` beside
-`assign(StaffRecord)`. The store stops modelling this as general subtyping over captured record
-supertypes, which only an unsupported jOOQ option would make meaningful.
-
 * **An overload accepts a member by two spellings** `open`. Its parameter is the member's own
   record or one of `Object`, `Record`, `TableRecord<?>` and `UpdatableRecord<?>`, most specific
   first.

@@ -72,4 +72,5 @@ The following directives have argument-shape changes between legacy and rewrite.
 ==== `@node`
 
 * + legacyKeyColumns: [String!]  (rewrite only)
+* + resolvable: Boolean = true  (rewrite only)
 

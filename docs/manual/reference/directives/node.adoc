@@ -20,7 +20,8 @@ A node type gets a synthesised opaque ID encoding `(typeId, keyColumns)`; xref:n
 directive @node(
     typeId: String,
     keyColumns: [String!],
-    legacyKeyColumns: [String!]
+    legacyKeyColumns: [String!],
+    resolvable: Boolean = true
 ) on OBJECT
 ----
 
@@ -32,6 +33,7 @@ directive @node(
 | `typeId` | `String` | type's GraphQL name | The discriminator embedded in the ID that tells `Query.node` which type (and table) to dispatch to. Defaults to the GraphQL type name. Set explicitly when you want shorter IDs, or stable IDs that survive a GraphQL type rename.
 | `keyColumns` | `[String!]` | primary-key columns | Ordered column list embedded in the ID. Must correspond to a primary key or another unique key on the bound table. Defaults to the primary key in declaration order. Set explicitly to decouple the ID from primary-key changes.
 | `legacyKeyColumns` | `[String!]` | none | The column list ids of this type were encoded from before `keyColumns` was narrowed. An id in this shape is still accepted everywhere an id of the type is read, and is read as the id of the row its `keyColumns` values name; its other values are checked to be valid values of their columns and otherwise ignored. Ids Graphitron emits always use `keyColumns`. Must contain every `keyColumns` column plus at least one more, each once. Its order is the order the old ids were written in. See <<narrowing-the-key>>.
+| `resolvable` | `Boolean` | `true` | Whether this subgraph fetches the type by its id. Set it to `false` on a stub of an entity another subgraph owns: its ids encode and decode, so xref:nodeId.adoc[`@nodeId(typeName:)`] can name it, but `Query.node` and `Query.nodes` do not dispatch it. See <<federation-stubs>>.
 |===
 
 == Canonical example
@@ -171,15 +173,31 @@ metadata, so 'id' is ambiguous. Add `@nodeId` to publish the global ID, or `@fie
 to expose the raw column.
 ----
 
+[#federation-stubs]
+=== Federation stubs
+
+A subgraph often refers to an entity another subgraph owns, by an id it receives and has to decode against the owner's key. Declare that type a stub:
+
+[source,graphql]
+----
+type StudyLevel @table(name: "study_level") @node(resolvable: false) {
+    code: String!
+}
+----
+
+A stub is a node for its id: its `typeId` and key columns resolve exactly as a node's do, from `@node`, else from the table class's published metadata, else from the type's name and primary key, and its `typeId` counts towards the uniqueness rule below. It is not a node this subgraph serves: it implements no `Node` interface, `Query.node` and `Query.nodes` do not dispatch it, and a federated graph gets no `@key(fields: "id")` synthesised for it. The owning subgraph does those.
+
+The build refuses a stub that implements `Node`, since the interface promises the fetch the stub withholds, and a xref:nodeId.adoc[`@nodeId(typeName:)`] naming a `@table` type over a table that publishes node metadata without declaring it a stub.
+
 == Constraints
 
 * The decorated type must also carry xref:table.adoc[`@table`]; the bound table supplies the columns to embed.
-* The type must implement the `Node` interface (`type X implements Node ...`). Without the interface, `Query.node(id:)` cannot return the type, and `@node` alone is rejected.
+* The type must implement the `Node` interface (`type X implements Node ...`). Without the interface, `Query.node(id:)` cannot return the type, and `@node` alone is rejected. A stub, `@node(resolvable: false)`, is the reverse: it must not implement `Node`; see <<federation-stubs>>.
 * `@node` itself is *optional* when the bound jOOQ class publishes node metadata. `implements Node @table(name: "x")` is then a complete node declaration and takes both values from the catalog; see <<Inferring the identity parameters>>. Write `@node` when the generator has published nothing, or to override either value.
 * The node's own `id: ID!` field does not need xref:nodeId.adoc[`@nodeId`]. The `id` field satisfying the `Node` interface on a node type is a node ID by construction. Elsewhere an `ID` slot needs the directive, except an input field or argument named for the target's own `id`, which reads as that node's ID; see the constraints of xref:nodeId.adoc[`@nodeId`]. The one exception is a bound table that also has a column named `id`: there the field is ambiguous and the build fails until you write `@nodeId` or `@field`; see <<When the table has its own `id` column>>.
 * `keyColumns` must form a primary key or another unique key on the bound table. The build fails if the columns don't form a unique constraint.
 * `keyColumns` ordering matters and is part of the ID's wire format; reordering breaks already-issued IDs.
-* `typeId` collisions across types are rejected at build time, whether the `typeId` is written, defaulted, or taken from catalog metadata. If two types share a `typeId`, `Query.node(id:)` cannot dispatch unambiguously.
+* `typeId` collisions across types are rejected at build time, whether the `typeId` is written, defaulted, or taken from catalog metadata, and whether the types are stubs or not. If two types share a `typeId`, an id carrying it names either.
 
 == Editor support
 

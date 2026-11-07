@@ -13,6 +13,7 @@ import static org.jooq.impl.DSL.denseRank;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
@@ -33,6 +34,9 @@ import static org.jooq.impl.DSL.val;
  * author declared, what the backing class publishes, and the type's own name. The last always
  * answers, so the column is never null and no reader needs a fallback. Which tier answered rides
  * along, because a diagnostic about colliding ids has to say where each came from.
+ *
+ * <p>A {@code @node(resolvable: false)} stub is a node like any other here, its id resolved on the
+ * same tiers, and carries {@code resolvable} false so the readers that fetch by id pass it by.
  *
  * <p>The id and the key columns are independent axes and are resolved separately for that reason.
  * An author may declare the id and leave the columns to the catalog, or the reverse, so a single
@@ -104,12 +108,19 @@ public final class Nodes {
             .from(arms)
             .asTable("ranked");
 
+        // A node is resolvable unless its first @node says otherwise, the published arm included.
+        var stub = exists(selectOne().from(a)
+            .join(n).on(n.GRAPH_NAME.eq(a.GRAPH_NAME), n.SOURCE_NAME.eq(a.SOURCE_NAME),
+                n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(ranked.field(g)), a.COORDINATE.eq(ranked.field(t)),
+                a.DIRECTIVE_NAME.eq("node"), a.ORDINAL.eq(0), n.RESOLVABLE.isFalse()));
+
         dsl.insertInto(GRAPHITRON_NODE)
             .columns(GRAPHITRON_NODE.GRAPH_NAME, GRAPHITRON_NODE.TYPE_NAME,
-                GRAPHITRON_NODE.TYPE_ID, GRAPHITRON_NODE.TYPE_ID_ORIGIN)
+                GRAPHITRON_NODE.TYPE_ID, GRAPHITRON_NODE.TYPE_ID_ORIGIN, GRAPHITRON_NODE.RESOLVABLE)
             .select(dsl
                 .select(ranked.field(g), ranked.field(t), ranked.field(n.TYPE_ID),
-                    ranked.field("origin", String.class))
+                    ranked.field("origin", String.class), field(not(stub)))
                 .from(ranked)
                 .where(field(name("ranked", "tier"), Integer.class).eq(1)))
             .execute();

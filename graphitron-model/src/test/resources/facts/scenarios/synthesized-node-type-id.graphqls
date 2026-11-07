@@ -15,7 +15,11 @@ type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeI
 
 type Customer implements Node @table(name: "customer") @node { id: ID! @nodeId }
 
+# A stub publishes no id: the subgraph owning the entity does.
+type Level @table(name: "study_level") @node(resolvable: false) { code: String }
+
 extend type Query {
+  level: Level
   film: Film
   filmActor: FilmActor
   customer: Customer

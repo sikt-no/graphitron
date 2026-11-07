@@ -17,8 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A {@code @nodeId(typeName: T)} leaf on a DML input, a filter input or a filter argument, where
- * {@code T} is a {@code @table} type without {@code implements Node} over a table carrying catalog
- * node metadata. The leaf decodes against that metadata, through a {@code decode<T>} helper the
+ * {@code T} is a federation stub, {@code @node(resolvable: false)} over a table carrying catalog
+ * node metadata. The leaf decodes against the stub's id, through a {@code decode<T>} helper the
  * walk mints under the type's own name and {@code NodeIdEncoder} emits; no {@code encode<T>} is
  * emitted, because nothing encodes such a type's id.
  *
@@ -30,7 +30,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableOnlyNodeIdLeafPipelineTest {
 
     private static final String STUDIEPROGRAM = """
-        type Studieprogram @table(name: "studieprogram") { kode: String @field(name: "studieprogram_id") }
+        type Studieprogram @table(name: "studieprogram") @node(resolvable: false) {
+            kode: String @field(name: "studieprogram_id")
+        }
         type Studierett @table(name: "studierett") { studierettId: Int @field(name: "studierett_id") }
         """;
 
@@ -70,7 +72,9 @@ class TableOnlyNodeIdLeafPipelineTest {
         // studierett's two foreign keys make discovery ambiguous; reordered_fk_child has one, to a
         // composite key it declares in a different column order than the metadata's key.
         var schema = TestSchemaHelper.buildSchema("""
-            type ReorderedPkParent @table(name: "reordered_pk_parent") { pkB: String @field(name: "pk_b") }
+            type ReorderedPkParent @table(name: "reordered_pk_parent") @node(resolvable: false) {
+                pkB: String @field(name: "pk_b")
+            }
             type ReorderedChild @table(name: "reordered_fk_child") { childId: String! @field(name: "child_id") }
             input UpdateReorderedChildInput {
                 childId: String! @field(name: "child_id")
@@ -127,6 +131,34 @@ class TableOnlyNodeIdLeafPipelineTest {
 
         assertClassifies(schema, "Query", "studieretter");
         assertDecodeOnly(schema, "Studieprogram");
+    }
+
+    @Test
+    void aStubPinningItsTypeIdDecodesAgainstThatId() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Studieprogram @table(name: "studieprogram") @node(typeId: "SP", resolvable: false) {
+                kode: String @field(name: "studieprogram_id")
+            }
+            type Studierett @table(name: "studierett") { studierettId: Int @field(name: "studierett_id") }
+            input StudierettFilter { studieprogram: ID @nodeId(typeName: "Studieprogram")
+                @reference(path: [{key: "studierett_studieprogram_id_fkey"}]) }
+            type Query { studieretter(filter: StudierettFilter): [Studierett!]! }
+            """);
+
+        assertClassifies(schema, "Query", "studieretter");
+        assertThat(schema.catalogNodeDecodes())
+            .singleElement()
+            .satisfies(decode -> assertThat(decode.typeId()).isEqualTo("SP"));
+    }
+
+    @Test
+    void aStubIsNoNodeQueryNodeDispatches() {
+        var schema = TestSchemaHelper.buildSchema(STUDIEPROGRAM + """
+            type Query { studieprogrammer: [Studieprogram!]! }
+            """);
+
+        assertThat(schema.type("Studieprogram"))
+            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class);
     }
 
     @Test

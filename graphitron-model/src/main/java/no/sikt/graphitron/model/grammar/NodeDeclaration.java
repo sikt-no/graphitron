@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.grammar;
 
+import graphql.language.BooleanValue;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.StringValue;
 import graphql.schema.GraphQLNamedType;
@@ -46,6 +47,10 @@ import static no.sikt.graphitron.model.grammar.DirectiveArgs.argString;
  * synthesised federation key. But widening this predicate does not on its own widen what classifies
  * as a node, nor the reverse; a change to the rule belongs in both places.
  *
+ * <p>A stub, {@code @node(resolvable: false)}, is no node here: every consumer asks whether this
+ * subgraph fetches the type, and a stub is another subgraph's to fetch. It classifies as the
+ * {@code @table} type it is, and its id decodes against what its {@code @node} declares.
+ *
  * <h3>Malformed metadata</h3>
  * A table whose {@code __NODE_*} constants are present but fail validation reads as
  * <em>not</em> carrying metadata here, because {@link JooqCatalog#nodeIdMetadata(String)} is empty
@@ -63,6 +68,9 @@ public final class NodeDeclaration {
 
     /** The {@code name} argument, as {@code @table(name:)} spells it. */
     public static final String ARG_NAME = "name";
+
+    /** The {@code resolvable} argument, as {@code @node(resolvable:)} spells it. */
+    public static final String ARG_RESOLVABLE = "resolvable";
 
 
     private final JooqCatalog catalog;
@@ -84,7 +92,7 @@ public final class NodeDeclaration {
      */
     public boolean isNodeType(GraphQLObjectType obj) {
         if (obj.hasAppliedDirective(DIR_NODE)) {
-            return true;
+            return !isStub(obj);
         }
         return obj.hasAppliedDirective(DIR_TABLE)
             && implementsNode(obj)
@@ -98,11 +106,33 @@ public final class NodeDeclaration {
      */
     public boolean isNodeType(ObjectTypeDefinition obj) {
         if (hasDirective(obj, DIR_NODE)) {
-            return true;
+            return !isStub(obj);
         }
         return hasDirective(obj, DIR_TABLE)
             && implementsNode(obj)
             && hasNodeIdMetadata(boundTableName(obj));
+    }
+
+    /**
+     * Whether {@code obj} is a stub, {@code @node(resolvable: false)}: a node for its id that this
+     * subgraph does not fetch by it. Not a node type for {@link #isNodeType(GraphQLObjectType)},
+     * whose consumers all ask about fetching, and classified as the {@code @table} type it is.
+     */
+    public static boolean isStub(GraphQLObjectType obj) {
+        var dir = obj.getAppliedDirective(DIR_NODE);
+        var argument = dir == null ? null : dir.getArgument(ARG_RESOLVABLE);
+        return argument != null && (argument.getValue() instanceof BooleanValue b ? !b.isValue()
+            : Boolean.FALSE.equals(argument.getValue()));
+    }
+
+    /** Raw-registry sibling of {@link #isStub(GraphQLObjectType)}. */
+    public static boolean isStub(ObjectTypeDefinition obj) {
+        return obj.getDirectives().stream()
+            .filter(d -> DIR_NODE.equals(d.getName()))
+            .findFirst()
+            .map(d -> d.getArgument(ARG_RESOLVABLE))
+            .filter(a -> a.getValue() instanceof BooleanValue b && !b.isValue())
+            .isPresent();
     }
 
     /**

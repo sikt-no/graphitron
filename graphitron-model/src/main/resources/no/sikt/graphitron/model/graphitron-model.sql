@@ -3211,6 +3211,7 @@ CREATE TABLE graphitron_ast_node_entry (
   source_column INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
   type_id       VARCHAR,
+  resolvable    BOOLEAN,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -3224,6 +3225,7 @@ COMMENT ON COLUMN graphitron_ast_node_entry.source_line IS 'source line of the a
 COMMENT ON COLUMN graphitron_ast_node_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
 COMMENT ON COLUMN graphitron_ast_node_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_node_entry.type_id IS 'the typeId argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string. NULL is the fact that the author left it out, which the directive documents as meaning the type''s own name; substituting the name here would lose which of the two they wrote';
+COMMENT ON COLUMN graphitron_ast_node_entry.resolvable IS 'the resolvable argument as the author wrote it, or NULL where they wrote none or wrote something that is not a Boolean. NULL is the directive''s default, true, which graphitron_node reads it as; false is a stub of an entity another subgraph owns, a node for its id that this subgraph does not fetch by it';
 
 CREATE TABLE graphitron_ast_node_keycolumn_entry (
   graph_name         VARCHAR NOT NULL,
@@ -5892,6 +5894,7 @@ CREATE TABLE graphitron_node (
   type_name      VARCHAR NOT NULL,
   type_id        VARCHAR NOT NULL,
   type_id_origin VARCHAR NOT NULL,
+  resolvable     BOOLEAN NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_tabletype (graph_name, type_name)
     ON DELETE CASCADE,
@@ -5902,6 +5905,7 @@ COMMENT ON COLUMN graphitron_node.graph_name IS 'the owning graph''s partition, 
 COMMENT ON COLUMN graphitron_node.type_name IS 'the type that is a node. The foreign key is into graphitron_tabletype rather than into the type coordinate, and that is the relation''s central claim: @node only takes effect on a type that also carries @table, so a node is a table-bound type before it is anything else and one that is not table bound cannot be a row here. A @node written on a type with no binding is a @node application in graphql_directive_application and no row here, and the anti-join between the two is where an author is told so. Cascading on delete, the dependency being existential rather than merely referential: a type that stops resolving to a table stops being a node, and the two are rewritten in one pass by the same gatherer';
 COMMENT ON COLUMN graphitron_node.type_id IS 'the wire type id this node answers to, resolved rather than as written: what the author declared where they declared one, what the backing class publishes where they did not, and the type''s own name where neither says. Never null, the last of those three always answering, so a reader encoding an id needs no fallback of its own';
 COMMENT ON COLUMN graphitron_node.type_id_origin IS 'which of the three answered, in the order they are tried: SDL_DECLARED from @node(typeId:), JOOQ_METADATA from the backing class''s __NODE_TYPE_ID, TYPE_NAME from the type itself. Carried because a diagnostic that says an id collides has to say where each came from, and because the tiers are a precedence a reader must not re-derive. The key columns'' own origin is a separate column on a separate relation, the two axes being independent: an author may declare the id and leave the columns to the catalog, or the reverse';
+COMMENT ON COLUMN graphitron_node.resolvable IS 'whether this subgraph fetches the node by its id: false where the type''s first @node says resolvable: false, true otherwise, a node the backing class publishes included. A node that is not resolvable is a stub of an entity another subgraph owns: its id binds, encodes and decodes like any node''s and its type id counts towards the graph''s uniqueness, but Query.node and nodes do not dispatch it, it implements no Node interface and federation gets no key minted for it';
 
 CREATE VIEW graphitron_node_type (graph_name, type_name) AS
 SELECT graph_name, coordinate FROM graphql_directive_application WHERE directive_name = 'node'
@@ -7444,10 +7448,11 @@ CREATE VIEW graphitron_synthesized_node_type_id
   (graph_name, type_name, type_id) AS
 SELECT n.graph_name, n.type_name, n.type_id
   FROM graphitron_node n
- WHERE EXISTS (SELECT 1 FROM graphitron_ast_compose_directive_entry c
+ WHERE n.resolvable
+   AND EXISTS (SELECT 1 FROM graphitron_ast_compose_directive_entry c
                 WHERE c.graph_name = n.graph_name
                   AND c.directive_name = '@nodeType');
-COMMENT ON VIEW graphitron_synthesized_node_type_id IS 'Which node types publish their wire type id in the emitted schema as @nodeType, because the graph composes that directive. For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name.';
+COMMENT ON VIEW graphitron_synthesized_node_type_id IS 'Which node types publish their wire type id in the emitted schema as @nodeType, because the graph composes that directive. For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name. A stub, @node(resolvable: false), gets none: the subgraph owning the entity publishes its id.';
 -- COMMENT ON COLUMN graphitron_synthesized_node_type_id.graph_name IS 'the owning graph''s partition, carried from the node relation';
 -- COMMENT ON COLUMN graphitron_synthesized_node_type_id.type_name IS 'the node type the application is synthesized for; keyed with the graph, one row per node type that gets one';
 -- COMMENT ON COLUMN graphitron_synthesized_node_type_id.type_id IS 'the wire type id the application carries, as graphitron_node resolved it: what the author declared, else what the backing class publishes, else the type''s own name. Never null, graphitron_node''s last tier always answering';
@@ -7645,7 +7650,8 @@ CREATE VIEW graphitron_directive_application_minted
 -- Federation's entity rule: a node of a federated graph gets @key(fields: "id") unless an authored
 -- key already states that contract, federation needing the entity declaration in the emitted SDL and
 -- a node carrying a globally unique id by definition. A node is graphitron_node's, explicit or
--- inferred from the table's node metadata alike, and a graph is federated however it opted in.
+-- inferred from the table's node metadata alike, and a graph is federated however it opted in. A
+-- stub, @node(resolvable: false), is another subgraph's to resolve and has no id field to key on.
 SELECT n.graph_name, n.type_name, 'key',
        CAST((SELECT COUNT(*) FROM graphql_directive_application d
               WHERE d.graph_name = n.graph_name AND d.coordinate = n.type_name
@@ -7653,7 +7659,8 @@ SELECT n.graph_name, n.type_name, 'key',
        'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
   FROM graphitron_node n
   JOIN graphitron_element e ON e.graph_name = n.graph_name AND e.coordinate = n.type_name
- WHERE EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
+ WHERE n.resolvable
+   AND EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
    -- An authored key states the id contract when it selects one path and that path is id. The
    -- decode is reached through the application the corpus honours, at the at sign both share.
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
@@ -12596,7 +12603,8 @@ UNION ALL
 -- A @node on a type that does not implement Node. The interface is the contract @node publishes to
 -- clients, so a type cannot be promoted to a node without it. Reported at the @node, which is where
 -- an author decides between adding the interface and dropping the directive. A root operation type
--- is a root before it is anything else.
+-- is a root before it is anything else, and a stub, @node(resolvable: false), publishes no such
+-- contract here: the subgraph owning the entity does.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
   FROM graphql_directive_application n
@@ -12606,6 +12614,24 @@ SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
                       AND i.interface_name = 'Node')
    AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
                     WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_entry e
+                    WHERE e.graph_name = n.graph_name AND e.source_name = n.source_name
+                      AND e.source_line = n.source_line AND e.source_column = n.source_column
+                      AND e.resolvable = FALSE)
+UNION ALL
+-- A stub that implements Node. The interface promises Query.node fetches the type by its id, and a
+-- stub is the one node this subgraph does not fetch. Reported at the @node, where the author either
+-- drops the interface or the resolvable: false.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_STUB_WITH_NODE_INTERFACE', CAST(NULL AS VARCHAR)
+  FROM graphql_directive_application n
+  JOIN graphitron_ast_node_entry e
+    ON e.graph_name = n.graph_name AND e.source_name = n.source_name
+   AND e.source_line = n.source_line AND e.source_column = n.source_column
+ WHERE n.directive_name = 'node' AND n.ordinal = 0 AND e.resolvable = FALSE
+   AND EXISTS (SELECT 1 FROM graphql_implements_interface i
+                WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
+                  AND i.interface_name = 'Node')
 UNION ALL
 -- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
 -- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
@@ -13494,8 +13520,8 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
 UNION ALL
 -- A typeName: naming a type that is neither a node nor an interface or union, which the decode of
 -- a polymorphic id reads per member: there is no key to encode or decode. A type carrying @node
--- that did not resolve is left to its own defects. Reported at the @nodeId, the detail the name as
--- written.
+-- that did not resolve is left to its own defects, and a stub left undeclared to the arm below.
+-- Reported at the @nodeId, the detail the name as written.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
        'NODE_ID_TYPE_NAME_NOT_NODE', cl.named
   FROM graphitron_binding_claim cl
@@ -13511,6 +13537,31 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_type c
                     WHERE c.graph_name = cl.graph_name AND c.type_name = cl.named
                       AND c.kind IN ('INTERFACE', 'UNION'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
+                     JOIN sql_node_metadata m
+                       ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                      AND m.table_name = b.table_name
+                    WHERE b.graph_name = cl.graph_name AND b.type_name = cl.named)
+UNION ALL
+-- The same name on a @table type over a table whose class publishes node metadata: another
+-- subgraph's entity, which a @node(resolvable: false) makes a node for its id. Reported at the
+-- @nodeId, the detail the name as written.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_TYPE_NAME_UNDECLARED_STUB', cl.named
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_tabletype b ON b.graph_name = cl.graph_name AND b.type_name = cl.named
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
+                    WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application nd
+                    WHERE nd.graph_name = cl.graph_name AND nd.coordinate = cl.named
+                      AND nd.directive_name = 'node')
+   AND EXISTS (SELECT 1 FROM sql_node_metadata m
+                WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                  AND m.table_name = b.table_name)
 UNION ALL
 -- A typeName: on a node type's own id: ID, which is that node's identity by construction, so the
 -- argument names what the type already answers. Reported at the @nodeId.
@@ -17945,6 +17996,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.', 'graphitron'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',
    'A @nodeId(typeName:) names a type that is neither a node nor an interface or union over nodes, so there is no key to encode or decode the id against.', 'graphitron'),
+  ('NODE_ID_TYPE_NAME_UNDECLARED_STUB', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_UNDECLARED_STUB',
+   'A @nodeId(typeName:) names a @table type that is no node, over a table whose class publishes node metadata, the shape of an entity another subgraph owns: declare it @node(resolvable: false), which makes it a node for its id that this subgraph does not fetch.', 'graphitron'),
   ('NODE_ID_TYPE_NAME_ON_OWN_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_ON_OWN_ID',
    'A @nodeId(typeName:) sits on a node type''s own id field, which is that node''s identity by construction, so the argument names what the type already answers: remove it.', 'graphitron'),
   ('NODE_ID_TARGET_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TARGET_UNRESOLVED',
@@ -17976,7 +18029,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_NOT_ID_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_NOT_ID_TYPE',
    'A @nodeId sits on a slot whose type is not ID, and every encode and decode is an ID''s, so the directive would bind the wire value undecoded: change the type to ID or remove the directive.', 'graphitron'),
   ('NODE_WITHOUT_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_NODE_INTERFACE',
-   'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node.', 'graphitron'),
+   'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node: add implements Node, or write @node(resolvable: false) where another subgraph owns the entity.', 'graphitron'),
+  ('NODE_STUB_WITH_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_STUB_WITH_NODE_INTERFACE',
+   'A type carries @node(resolvable: false) and implements the Relay Node interface, which promises that Query.node fetches it by its id, where a stub is a node this subgraph does not fetch: drop the interface, or the resolvable: false.', 'graphitron'),
   ('NODE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_TABLE',
    'A type carries @node and no @table. A node is a row of a table, its id encoding that row''s key, so a type bound to no table has nothing to be a node of.', 'graphitron'),
   ('NODE_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_KEY_COLUMN_UNRESOLVED',
@@ -18869,7 +18924,7 @@ INSERT INTO meta_relation VALUES
    'A view because nothing in the model derives from it. A consumer''s query reads it and that is all it is for, so it carries the rule and no table carries the rows. The moment another derivation builds on it, it is an anchor and owes a table: an anchor is what other derivations stand on, and a table is what holds a key, a foreign key and a check so an illegal state is unwritable rather than merely unexpected. That is the condition to test when adding the second reader, and it is not a question of how many consumers ask: a hundred queries reading it directly leave it a view, and one derivation standing on it does not. Stated over the emitted family rather than the transcription, because a macro mints arguments and an input reached only through a minted one is reachable in the schema the generator emits and absent from the one the author wrote. The recursion carries a path and unions all, rather than unioning distinct, because an input type may declare a field of its own type and the cycle has to be stopped as it is walked; the path is what the recursion consumes and the grain reports neither it nor how many ways a type was reached. What is deliberately not here is any bound by classification: the Java fold this replaces closed through classified input types and stopped where classification had yielded none, which narrowed it on schemas that were failing for other reasons, and nothing states that bound as intended.'),
   ('graphitron_synthesized_node_type_id', 'synthesized-node-type-id', 'graphitron',
    'Which node types publish their wire type id in the emitted schema as @nodeType, because the graph composes that directive.',
-   'For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name.',
+   'For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name. A stub, @node(resolvable: false), gets none: the subgraph owning the entity publishes its id.',
    'A derivation and not a capture, on the minted key''s terms: a node subgraph resolving Query.node(id) has to learn which type an id belongs to, and the supergraph can only carry that if the owning subgraph publishes it, so the emitted schema gains a directive no author wrote. The type id is graphitron_node.type_id as resolved, so nothing here restates the three-tier rule or the node population, which is that relation''s, table-bound by its key. The condition is the author''s own composition of the directive, read from graphitron_ast_compose_directive_entry: composing it is the opt-in, so no setting exists and a graph that does not compose it publishes what it published before. This relation is its own provenance, which is what lets the synthesized application stay out of the transcription families entirely.'),
 
   ('graphitron_element_authored', 'expanded-element', 'graphitron',

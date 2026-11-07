@@ -295,9 +295,10 @@ final class GraphitronTypeEntries {
     }
 
     /**
-     * A row for every application and not only for those that wrote an argument. Both arguments are
-     * optional, an author writing a bare {@code @node} is asking for the type's own name and the
-     * database's own key, and the key-column list is the child relation its elements hang off.
+     * A row for every application and not only for those that wrote an argument. Every argument is
+     * optional, an author writing a bare {@code @node} is asking for the type's own name, the
+     * database's own key and a node this subgraph resolves, and the key-column list is the child
+     * relation its elements hang off.
      */
     private static void nodes(DSLContext dsl, String graph, LocalDateTime touchedAt,
                               List<Directive> applications) {
@@ -308,14 +309,16 @@ final class GraphitronTypeEntries {
             application -> GraphQLAstEntries.sourceLine(application),
             application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "typeId"), t.TYPE_ID)));
+            application -> val(string(application, "typeId"), t.TYPE_ID),
+            application -> val(bool(application, "resolvable"), t.RESOLVABLE)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.TYPE_ID)
+                    t.TOUCHED_AT, t.TYPE_ID, t.RESOLVABLE)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.TYPE_ID, excluded(t.TYPE_ID)));
+                .set(t.TYPE_ID, excluded(t.TYPE_ID))
+                .set(t.RESOLVABLE, excluded(t.RESOLVABLE)));
     }
 
     /**

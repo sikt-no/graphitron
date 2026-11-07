@@ -1542,7 +1542,12 @@ class TypeBuilder {
         // NodeDeclaration is the shared predicate; keeping the gate on it is what stops the
         // reachability seeds, the federation entity set and the LSP node view from disagreeing with
         // this verdict. `@table` + metadata *without* `implements Node` stays a TableType: nesting
-        // projections over a node-bearing table must not become second nodes.
+        // projections over a node-bearing table must not become second nodes. A stub,
+        // @node(resolvable: false), stays one too: it is another subgraph's to fetch, and its id
+        // decodes through BuildContext.resolveTargetKeys.
+        if (NodeDeclaration.isStub(objType)) {
+            return new TableType(name, location, tableRef);
+        }
         boolean hasNode = objType.hasAppliedDirective(DIR_NODE);
         if (!hasNode) {
             if (NodeDeclaration.implementsNode(objType) && metadata.isPresent()) {

@@ -3679,9 +3679,43 @@ class BuildContext {
         if (ntOpt.isPresent()) {
             return new TargetKeys.OfNode(ntOpt.get());
         }
+        var meta = catalog.nodeIdMetadata(targetTableName);
+        // A stub, @node(resolvable: false), is a @table type with an id of its own: each axis is
+        // what its @node declares, else what the table publishes, else the type's name and the
+        // primary key, the tiers graphitron_node resolves on. Its helper is minted like a catalog
+        // one, under its own name.
+        if (NodeDeclaration.isStub(targetObj)) {
+            String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID)
+                .or(() -> meta.map(JooqCatalog.NodeIdMetadata::typeId))
+                .orElse(refTypeName);
+            var declared = argStringList(targetObj, DIR_NODE, ARG_KEY_COLUMNS);
+            List<ColumnRef> keyColumns;
+            if (!declared.isEmpty()) {
+                keyColumns = declared.stream()
+                    .map(c -> catalog.findColumn(targetTableName, c)
+                        .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType())))
+                    .flatMap(Optional::stream)
+                    .toList();
+                if (keyColumns.size() != declared.size()) {
+                    return new TargetKeys.Rejected("@node(keyColumns:) on stub '" + refTypeName
+                        + "' names a column table '" + targetTableName + "' does not have");
+                }
+            } else if (meta.isPresent()) {
+                keyColumns = List.copyOf(meta.get().keyColumns());
+            } else {
+                keyColumns = catalog.findPkColumns(targetTableName).stream()
+                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()))
+                    .toList();
+            }
+            if (keyColumns.isEmpty()) {
+                return new TargetKeys.Rejected("@nodeId(typeName: '" + refTypeName + "') targets stub '"
+                    + refTypeName + "' over table '" + targetTableName + "', which has no key columns"
+                    + " (no @node(keyColumns:), no catalog metadata, no primary key)");
+            }
+            return new TargetKeys.OfCatalog(typeId, keyColumns);
+        }
         // No NodeType under that name: the target is a @table-only type (or failed classification)
         // over a metadata-carrying table. The table fact is the only source left.
-        var meta = catalog.nodeIdMetadata(targetTableName);
         if (meta.isPresent()) {
             return new TargetKeys.OfCatalog(meta.get().typeId(), meta.get().keyColumns());
         }

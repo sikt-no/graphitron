@@ -18,9 +18,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Execution-tier coverage for a {@code @nodeId} leaf naming a {@code @table} type that is not a node
- * type. {@code StudyLevel} has no {@code implements Node}, the shape of a federation stub owned by
- * another subgraph, but its table {@code study_level} carries catalog node metadata (type id
+ * Execution-tier coverage for a {@code @nodeId} leaf naming a federation stub, a type another
+ * subgraph owns. {@code StudyLevel} is {@code @node(resolvable: false)} with no
+ * {@code implements Node}, and its table {@code study_level} carries catalog node metadata (type id
  * {@code StudyLevel}, key {@code code}), so the id decodes against that metadata through the
  * generated {@code NodeIdEncoder.decodeStudyLevel}.
  *

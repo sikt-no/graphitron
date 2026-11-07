@@ -63,7 +63,14 @@ type Store @table(name: "store") @node @key(fields: "id") @key(fields: "id") {
   id: ID
 }
 
+# A stub of another subgraph's entity: a node for its id that this one does not resolve, and has no
+# id field to key on, so it gets nothing.
+type Level @table(name: "study_level") @node(resolvable: false) {
+  code: String
+}
+
 extend type Query {
+  levels: [Level!]!
   films: [Film!]!
   languages: [Language!]!
   actors: [Actor!]!
