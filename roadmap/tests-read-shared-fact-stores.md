@@ -18,6 +18,8 @@ Every schema a test captures into a fact store is a fact document, and the react
 
 When this lands, a contributor or an agent adding a test starts from the example: they find the document that states the subject, or add one where the placement guideline below says it belongs, and pin what the store holds for it as claims. A test whose subject sits above the store (generated code, an editor answer, an MCP tool) reads that document's graph from a store captured once per test JVM, through a connection that can only select, and states its expectations beside the document without editing it. Documents compose into larger graphs, worlds, where their subjects share a configuration, so the examples exercise each other the way a real schema does and the generator produces one package per world that execution tests and the manual both use. The contributor guide, the agent-facing skills and CLAUDE.md teach this, and per-module ceilings that only fall hold the reactor to it.
 
+The job is also deduplication. The reactor has accumulated tests that pin the same behaviour several times over, in several documents, at several levels and in several modules, and a behaviour covered twice is a maintenance cost and a source of disagreement, not extra safety. When this lands, each behaviour is pinned once, at the place it is decided, and a consumer above it asserts only what it adds; a test that repeats what another already pins is deleted rather than migrated.
+
 What a document looks like today, and stays, is `scenarios/field-key-row.graphqls`: a prose header saying what it pins, the types the subject needs, and the rows it claims.
 
 ```graphql
@@ -59,6 +61,7 @@ The documents themselves:
 * **219 graphs from 246 files** (78 scenarios, 81 defects, 19 stepped graphs in 46 files, 41 undecided), 13,073 lines, 719 claim blocks, 37% of the lines claim text. 201 of the store's 424 relations are claimed by some document; 223, mostly derived `*_rule` views and the `graphitron_ast_*_entry` tables, by none.
 * **Above the store, one consumer.** Only `ChildOutcomeExecutionTest` reads a document's generated code, out of the 67 scenario packages `GenerateTestSchemas` generates; the 11 scenarios that state `@withConfiguration` are not generated. The manual reads 13 documents through `@factDocument(path:)`, as text. The emit tests written alongside their scenarios restate them inline: `FrameQueryTest` against `field-key-row`, `CallPolymorphicExecutionTest` against `multitable-interface`, `FillQueryTest` against `occurrence-call-parameter`.
 * **One graph per document, heavily overlapping.** `Film` is declared in 141 graphs with 58 distinct field sets, and 187 of the 219 graphs share a type name with another. 88 pairs of documents differ by three type or field names or fewer.
+* **The same behaviour is pinned at several levels.** Default page size above the maximum is claimed as rows in `defects/default-page-size-above-maximum`, asserted again as a rendered message in `DefaultPageSizeDefectsTest` and again as a failed build plus a diagnostic row in `DefaultPageSizeRejectionPipelineTest`. Type backing is asserted in five modules (`TypeBackingClassTest` in graphitron and in graphitron-lsp, `TypeBackingPartitionTest`, `R157PipelineTest`, the MCP `schema` tool). Claim conflicts, argmapping projection, unlowerable orderings, node-id decode and unresolved columns follow the same pattern, and the lint case for `original_language_id` is stated with identical SDL in four tests.
 * **Defects are already facts.** 69 defect documents claim `graphitron_entry_defect_site` rows. The prose a defect renders to is built in Java from those rows, and that prose is what most Java defect tests assert.
 
 ## Design
@@ -125,6 +128,19 @@ A class in graphitron-model's test harness, published in the test-jar that graph
 * **Handed out in a transaction.** A test declares `@RegisterExtension static final FactGraphs.Reader FACTS = FactGraphs.reader();`, the shape `FactStores.perClass()` and graphitron-mcp's `StoreFixture.held()` already have, and reads with `FACTS.read("worlds/default/field-key-row", graph -> ...)`. The body gets a `FactGraph`: the `StoreHandle` scoped to the graph and the `CapturedSchema` the capture built, which a generating run needs beside the store. There is no parameter resolver handing out a bare handle: `StoreReader` makes its transaction the only way onto a reader, so an answer built from several queries sees one commit, and production readers take the same shape (`CatalogQueries`, `CatalogCorpus`).
 * **`FactExpectationTest` reads its plain graphs and worlds from the population**, warming it with one thread per shard, so in graphitron-model the graphs it checks and the graphs other tests read are captured once between them. Stepped graphs keep their own capture: it checks each instant as that instant is read, an intermediate state the population does not keep.
 
+### One behaviour, pinned once
+
+Every behaviour has one home, and the home is where the behaviour is decided:
+
+* **a store fact** (a captured or derived relation) is a claim in the document that states the example;
+* **a defect** is rows of its defect relations in a defect document, as a minimal pair, and its prose is pinned once per defect type by the rendering gate;
+* **a translation above the store**, the way the editor turns a defect row into a diagnostic or the MCP server turns a type's rows into a `schema` answer, is pinned once per shape of translation, not once per defect or type it carries. A diagnostic test for every defect type restates the defect relations through the editor;
+* **generated behaviour** is pinned by executing the generated package of the world that states it.
+
+A test whose assertions are all pinned elsewhere is deleted, naming the assertion that already covers each one. A test that pins something nobody else does keeps that and loses the rest. Documents follow the same rule: two documents stating the same example merge into one, and a document's near-twin either states a different subject in its header or merges.
+
+Two gates hold it, both of the kind that only fall. `FactExpectationTest` refuses two documents whose text is equal once comments, whitespace and claim blocks are removed. And it counts pairs of documents whose type-and-field names overlap by nine tenths or more (21 pairs today) under a ceiling, so that near-twins are merged or told apart rather than added to. Duplication between Java tests has no mechanical detector, since equal assertions are spelled differently; it is found by the pipeline's triage, which clusters capture sites by the behaviour they pin before it rules on any one of them, and checked by its coverage review.
+
 ### What keeps a store of its own
 
 A test that writes after capture (a recapture, a second graph, hand DML, a fact writer, DDL), reads an intermediate state no claim states, has a file-backed store or warm start as its subject, exercises a capture's failure path, counts or times captures, statements or boots, or tests one capture stage in isolation. It still takes its schema from a document, captured into a store it owns through `FactDocuments`. So does a test of the same document under a configuration or classpath its world does not have (lint configuration, page size, `TypeBackingPartitionTest`'s four classpaths). Examples from the inventory: `WarmStartRefreshTest`, `PersistentStoreTest`, `CaptureCommitsAsItGoesTest`, `WriteTimesTest`, `CoordinateSpellingGateTest`, `DiagnosticFactsTest`, `BrokenSourceStillCapturesPipelineTest`, `StoreBootCountTest`, the `*StatementCountTest` and `StoreOutOfBudgetTest` classes, and the stage-capture tests over `ThreadConfinedStore.run`. The ceilings are set with these counted.
@@ -138,6 +154,8 @@ The classification walk's tests, `GraphitronSchemaBuilderTest`'s truth tables an
 The first client of the design: this is the section `testing.adoc` gains, drafted here so that if it does not read simply, the design changes before implementation.
 
 > **Where an example goes.** The folder states what the store does with it: a world or a plain scenario generates and stores no defect, a defect document stores one, an incremental capture is read in steps, and `undecided` only shrinks. Within the claim, choose by configuration: a scenario joins the world whose configuration it needs, and a new world is made only for a configuration no world has. Within the world, choose by subject: a document pins one store fact, defect type or behaviour, is named for it (`field-key-row`, `node-id-decode-unresolved-type`), and opens with a header saying what it pins and why each type is there.
+>
+> **Look before you add.** If a document or a test already pins the behaviour, extend that document or rely on that test; a second test of the same behaviour is a defect in the suite. A consumer above the store asserts only what its own translation adds.
 >
 > **Extend or add.** Add to an existing document when the case is the same subject and agrees with its claim; add a document when the subject differs. In a world, extend the base types and name what you add for your subject; a redeclared type fails the world. A defect document is a minimal pair: the rows it draws, and a near miss that draws nothing.
 >
@@ -171,11 +189,12 @@ Four phases, each landing on its own and keeping the build green. Phase 1 stands
 
 The migration runs as a pipeline of agents, carried by one skill (`fact-documents`, in `.claude/skills/`, where agent procedure already lives) that also holds the placement guideline. Per batch of test classes, each stage a different agent:
 
-1. **Triage**, read-only and parallel: one row per capture site with its verdict (claims in a document, an assertion file, a Java test reading the population, a store of its own, or inline because its defect is not yet stored) and its target document. The session rules on the table before anything changes.
-2. **Author**: documents and assertion files, grouped by target document so no two agents edit one file, each checked with `FactExpectationTest -Dfacts=<prefix>`.
-3. **Convert**: test classes moved onto the population; Java assertions that became claims deleted; every new claim negative-tested by breaking it, seeing it fail and restoring it.
-4. **Coverage review**: a different agent compares each deleted assertion with what replaced it. This is review, not a gate: each new claim's two-way check and its negative test are enforced, the completeness of the replacement is judged.
-5. **Verify**: one build-running agent at a time, per the `delegate-to-subagents` skill; the module's ceiling drops when the batch lands.
+1. **Cluster**, read-only: the module's capture sites, and the documents and tests in other modules that pin the same behaviours, grouped by behaviour, so a duplicate is seen as one before any site is ruled on.
+2. **Triage**, read-only and parallel: one row per capture site with its verdict (claims in a document, an assertion file, a Java test reading the population, a store of its own, inline because its defect is not yet stored, or deleted as a duplicate with the assertion that already covers it, by `file:line`) and its target document. The session rules on the table before anything changes.
+3. **Author**: documents and assertion files, grouped by target document so no two agents edit one file, each checked with `FactExpectationTest -Dfacts=<prefix>`.
+4. **Convert**: test classes moved onto the population; Java assertions that became claims deleted; every new claim negative-tested by breaking it, seeing it fail and restoring it.
+5. **Coverage review**: a different agent compares each deleted assertion with what replaced it or with the cover triage named for it. This is review, not a gate: each new claim's two-way check and its negative test are enforced, the completeness of the replacement is judged.
+6. **Verify**: one build-running agent at a time, per the `delegate-to-subagents` skill; the module's ceiling drops when the batch lands.
 
 ### Surfaces this rewrite touches
 
@@ -198,7 +217,7 @@ The migration runs as a pipeline of agents, carried by one skill (`fact-document
 * **R983** rewrites `fact-model.adoc`'s "Enforced by" paragraph; whichever lands second rebases on the other's wording.
 * **R1131** step 7 would move suites into separate test modules and update `testing.adoc`. Where both are open, this item owns `testing.adoc`'s structure and step 7 restates module locations into it.
 * **R764** settles which `junit-platform.properties` each module sees. `FactGraphs` reads nothing from it, so the two are independent.
-* **R112** (an operation-driven test corpus) and **R115** (the capability catalog) rest on directives and a catalog that do not exist. This item does not use capability as an axis; whether R112's goal survives it is that item's question.
+* **R115** (the capability catalog) rests on directives that do not exist and were to ship with an item now discarded. This item does not use capability as an axis.
 * **R851** retires the corpus's verdict directives and is affected by the corpus retiring, not by this item.
 
 ## Tests
@@ -211,13 +230,14 @@ The migration runs as a pipeline of agents, carried by one skill (`fact-document
   - readers close in `afterAll` and shards at the end of the run.
 * `FactExpectationTest` over the population, with: the assertion-file floor; refusal of `@expectEquals` and `@assertEmpty` in an assertion file; refusal of those modes without `where:` inside a world; per-source folder claims; a member redeclaring a base type failing with the member named.
 * The world measurement's two-order comparison, recorded in the phase 2 commit.
+* The duplicate-document refusal and the near-twin ceiling in `FactExpectationTest`, each with a negative case.
 * The defect-type rendering gate: every row of `graphitron_defect_type` renders from a document that draws it.
 * Each module's assertion runner, with one negative case per kind.
 * The five `InlineCaptureGateTest`s. The item is complete when every remaining inline capture is a schema whose defect the store does not yet record, named beside its ceiling, and every test listed under "What keeps a store of its own" captures a document.
 
 ## Evidence
 
-Each phase and module step reports in its commit message the affected test phases before and after, in interleaved pairs measured the way the `build-profile` skill describes, and `FactStores.captures()` at the end of each module's run. Phase 2 also reports `generate-test-schemas` before and after.
+Each phase and module step reports in its commit message the affected test phases before and after, in interleaved pairs measured the way the `build-profile` skill describes, and `FactStores.captures()` at the end of each module's run, and counts the tests deleted as duplicates and the documents merged. Phase 2 also reports `generate-test-schemas` before and after.
 
 ## Retired vocabulary
 
@@ -234,4 +254,6 @@ Listed as the migration empties them, for the sweep at Done: the `CapturedStore`
 * **One store for every document, or one store per document.** Rejected: the first serializes every capture on one writing connection; the second costs about 30 MB per long-lived store for a few hundred stores in one JVM.
 * **Generalising `CorpusStore`.** Rejected: it retires with the classification corpus, and its unwritten-store check compares a census taken once, which a lazily filled population does not keep.
 * **A saved workflow script for the migration pipeline.** Rejected: agent procedure lives in skills, and two homes drift.
+* **Migrating every test and deduplicating afterwards.** Rejected: a duplicate migrated is paid for twice and becomes harder to see once both copies read the same document. Triage clusters first.
+* **A mechanical detector for duplicate Java tests.** Rejected: equal assertions are spelled in too many ways for a gate to see them without flagging honest neighbours. Documents can be compared mechanically, and are.
 * **Capability as the placement axis.** Rejected: the directives and catalog it needs do not exist. Directive cannot partition either, since 184 documents use `@table`; it stays a cross-index the manual already uses.
