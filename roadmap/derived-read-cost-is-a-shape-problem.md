@@ -450,6 +450,15 @@ static method needs no holder.
   payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
   takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
   at a time", where the per-field `rowsX`, `loadX` and decode copies go.
+* **The projection units are rendered from the store** `open`.
+  The store-fed lift selects through `<Type>.$project`, the projection unit `ProjectionUnitRenderer`
+  renders from `ProjectionCommand` rows, which `ProjectionCommands` derives from the classified
+  model; so a producer whose body the store emits still projects through units the walk decides,
+  and the classified model cannot go while it does. The units are read off the store instead, the
+  type's fields, their columns and their nested reaches at the occurrence, each unit's query its
+  own, with the generated selection adapters (`SelectionOccurrences`, the per-member `restrictTo`
+  a polymorphic lift calls) unchanged, the unit tests pinning what each unit selects for a given
+  selection before and after (Alf, 2026-11-07).
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
   container's table and column beside it; the re-read reads it through the join from the base, a
