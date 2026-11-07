@@ -162,7 +162,7 @@ public final class SeededStore {
     }
 
     /**
-     * Fills the three relations capture writes beside a site rather than instead of it, from the site
+     * Fills the relations capture writes beside a site rather than instead of it, from the site
      * rows a case seeded. Stands in for capture's second write, and lives here rather than in the
      * seed helpers for a reason about when it can run: capture knows a spelling is authored at the
      * moment it reads the directive, and a fixture only knows which sites exist once the case has
@@ -170,12 +170,6 @@ public final class SeededStore {
      * already calls at exactly that moment.
      *
      * <p>Beside rather than instead of is the whole of what selects a relation into this method.
-     *
-     * <p>The method reference is the mixed case and shows both halves at once. Some of its sites
-     * keep relations of their own and are transcribed from them below; the others, a path step's
-     * condition and the source row among them, carry nothing beyond the shared fact, so they have no
-     * relation to transcribe from and a case meaning one writes
-     * {@code graphitron_method_reference_entry} itself.
      *
      * <p>Modelling capture rather than deriving anything, which is why it is named apart from the
      * refresh below it and why the refresh keeps the property of being an entry point production
@@ -218,35 +212,6 @@ public final class SeededStore {
             SELECT graph_name, type_name, field_name, target_type_name, wrapper_type_name,
                    CURRENT_TIMESTAMP
               FROM graphitron_field_target_rule
-            """);
-        dsl.execute("DELETE FROM graphitron_method_reference_entry");
-        dsl.execute("""
-            INSERT INTO graphitron_method_reference_entry
-              (graph_name, site, use_site, type_name, field_name, argument_name, ordinal,
-               step_position, class_name, method, source_name, source_line, source_column)
-            SELECT a.graph_name, 'SERVICE', f.coordinate,
-                   f.type_name, f.field_name, NULL, NULL, NULL,
-                   e.class_name, e.method, a.source_name, a.source_line, a.source_column
-              FROM graphql_directive_application a
-              JOIN graphitron_ast_service_entry e
-                ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-               AND e.source_line = a.source_line AND e.source_column = a.source_column
-              JOIN graphql_field_element f
-                ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-             WHERE a.directive_name = 'service' AND a.ordinal = 0
-               AND e.class_name IS NOT NULL AND e.method IS NOT NULL
-            UNION ALL
-            SELECT a.graph_name, 'EXTERNAL_FIELD', f.coordinate,
-                   f.type_name, f.field_name, NULL, NULL, NULL,
-                   e.class_name, e.method, e.source_name, e.source_line, e.source_column
-              FROM graphql_directive_application a
-              JOIN graphitron_ast_external_field_entry e
-                ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-               AND e.source_line = a.source_line AND e.source_column = a.source_column
-              JOIN graphql_field_element f
-                ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-             WHERE a.directive_name = 'externalField' AND a.ordinal = 0
-               AND e.class_name IS NOT NULL AND e.method IS NOT NULL
             """);
     }
 

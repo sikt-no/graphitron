@@ -3752,8 +3752,7 @@ COMMENT ON COLUMN graphitron_minted_conflict.variants IS 'how many distinct payl
 -- rows are the shared half and nothing more does not: it becomes rows of the supertype, told apart
 -- by the discriminator column, and its table goes. The two are visible together in this section.
 -- graphitron_spelled_reference_entry is the first kind, the sites that spell a reference each carrying
--- their own directive's payload; graphitron_method_reference_entry is the second, having absorbed
--- relations that were each exactly a site key, a class and a method.
+-- their own directive's payload.
 --
 -- The collapsing case gives up the foreign key each site had into the directive that owned its
 -- rows, because a foreign key cannot span the parents a column chooses between. That is a real loss and
@@ -4413,7 +4412,7 @@ CREATE TABLE graphitron_spelled_reference_entry (
 );
 CREATE INDEX graphitron_spelled_reference_entry_name_ix
   ON graphitron_spelled_reference_entry (graph_name, name_part_upper);
-COMMENT ON TABLE graphitron_spelled_reference_entry IS 'Every table or routine name this graph authors anywhere, once per distinct spelling: the fact underneath @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:). Seven relations carry a spelling of this shape and none of them is the spelling; each is a site that wrote one, keyed by where it was written. Keyed by the spelling itself and by nothing else, on the terms graphitron_spelled_table already argues: the resolution does not vary by site, so a spelling written at five coordinates is one fact and one row here, and a reader asking what a name resolves to never has to say which directive wrote it. That is why this relation carries no site discriminator where graphitron_method_reference_entry carries one; the difference between them is whether the shared question has a per-site answer, and here it does not. Arrives already split, capture writing the namespace half and the name half beside the value, so a reader matches on stored folded columns rather than on a fold computed per candidate row. The namespace half is null on an unqualified spelling, which matches on its name half alone. Written by capture at the moment each site is read, deduplicated there rather than by a reader: the same spelling authored twice is one row, and the primary key is what says so. graphitron_routine_entry spells its own site''s column routine_ref where the other six spell theirs table_ref; the two are the same fact and this relation is where that is settled, a name having only one spelling once there is a relation to hold it. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
+COMMENT ON TABLE graphitron_spelled_reference_entry IS 'Every table or routine name this graph authors anywhere, once per distinct spelling: the fact underneath @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:). Seven relations carry a spelling of this shape and none of them is the spelling; each is a site that wrote one, keyed by where it was written. Keyed by the spelling itself and by nothing else, on the terms graphitron_spelled_table already argues: the resolution does not vary by site, so a spelling written at five coordinates is one fact and one row here, and a reader asking what a name resolves to never has to say which directive wrote it. That is why this relation carries no site discriminator: the shared question has no per-site answer. Arrives already split, capture writing the namespace half and the name half beside the value, so a reader matches on stored folded columns rather than on a fold computed per candidate row. The namespace half is null on an unqualified spelling, which matches on its name half alone. Written by capture at the moment each site is read, deduplicated there rather than by a reader: the same spelling authored twice is one row, and the primary key is what says so. graphitron_routine_entry spells its own site''s column routine_ref where the other six spell theirs table_ref; the two are the same fact and this relation is where that is settled, a name having only one spelling once there is a relation to hold it. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.spelling IS 'the name exactly as the author wrote it, qualifier and all; with the graph the whole key, one row per distinct spelling however many sites wrote it';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.namespace_part IS 'the qualifier half of the spelling as written, null on an unqualified name; a null here is the author having written no qualifier and never a qualifier withheld';
@@ -5135,45 +5134,6 @@ COMMENT ON VIEW graphitron_type_claim_rule IS 'One type claim the rule computes,
 -- COMMENT ON COLUMN graphitron_type_claim_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_type_claim_rule.element_graph_ref IS 'the graph, as the element reference';
 -- COMMENT ON COLUMN graphitron_type_claim_rule.element_coordinate_ref IS 'the type, as the element reference';
-
-CREATE TABLE graphitron_method_reference_entry (
-  graph_name    VARCHAR NOT NULL,
-  site          VARCHAR NOT NULL,
-  use_site      VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR,
-  argument_name VARCHAR,
-  ordinal       INT,
-  step_position INT,
-  class_name    VARCHAR NOT NULL,
-  method        VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (graph_name, site, use_site),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (site IN ('ENUM', 'SERVICE', 'EXTERNAL_FIELD',
-                  'FIELD_CONDITION', 'INPUT_FIELD_CONDITION', 'ARGUMENT_CONDITION',
-                  'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP',
-                  'REFERENCE_FOR_STEP', 'ARGUMENT_REFERENCE_FOR_STEP'))
-);
-CREATE INDEX graphitron_method_reference_entry_method_ix
-  ON graphitron_method_reference_entry (graph_name, class_name, method);
-COMMENT ON TABLE graphitron_method_reference_entry IS 'A Java method named by a directive: the class and the method as the author spelled them, at the site that spelled them. Ten kinds of site can name one and every one of them states the same two facts, so this is those two facts with a uniform key over them, which is what lets a reader asking what methods a graph names scan one relation instead of unioning ten and synthesising a key in each. Three readers were doing exactly that, at six arms, five and five, and each of the three had written the union out by hand. Keyed on the site and its own spelling. That is the whole of what the six-arm reconstruction was. A pair at the ROUTINE site names a database routine and no Java method, so it has no row here and an inner join drops it; the absence of a row is what used to be six site literals. Nine of the ten relations that spell a method keep their own tables, on the rule the section above states: each carries data this relation cannot hold, an override flag at the two condition sites, a table or key reference at the four step sites, a declaration coordinate at the enum, an authored argMapping string at three. What this relation does not claim is that the method exists: it records what an author wrote, and whether the classpath census has a matching signature is a resolution the intent layer states, which is why nothing here joins code_method and why a name that resolves to nothing is a row rather than a silence. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_method_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_method_reference_entry.site IS 'which kind of site named the method, in a closed vocabulary of eleven, one per directive spelling that can carry a class and a method. The whole of what says how to read type_name, field_name, argument_name, ordinal and step_position beside it. A reader that means one kind filters on it and owns having chosen; a reader that means the condition family filters on the six condition spellings, which is the filter three intent views spell';
-COMMENT ON COLUMN graphitron_method_reference_entry.use_site IS 'the site spelled as one string, in the site''s own grammar: Type.field, Type.field(argument), Type.field#ordinal, or those with the step position appended in brackets. The enum site is the one form that relation has no counterpart for, its coordinate being a type, so its spelling is the bare type name. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot';
-COMMENT ON COLUMN graphitron_method_reference_entry.type_name IS 'the type owning the coordinate the site sits on; the whole coordinate at the ENUM site, whose directive sits on a type rather than within one';
-COMMENT ON COLUMN graphitron_method_reference_entry.field_name IS 'the field owning the coordinate the site sits on; NULL exactly at the ENUM site, determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
-COMMENT ON COLUMN graphitron_method_reference_entry.argument_name IS 'the argument the site sits on, at the two argument-grain sites; NULL at the other nine, whose sites sit on a field or a type. Determined by site';
-COMMENT ON COLUMN graphitron_method_reference_entry.ordinal IS 'the owning application''s ordinal, at the four step sites whose directive is repeatable; NULL elsewhere. Determined by site';
-COMMENT ON COLUMN graphitron_method_reference_entry.step_position IS 'the owning step''s 0-based position within its application''s path, at the four step sites; NULL elsewhere. Determined by site';
-COMMENT ON COLUMN graphitron_method_reference_entry.class_name IS 'the class as the author wrote it, fully qualified, verbatim and unresolved; the spelling code_method_parameter.class_name carries';
-COMMENT ON COLUMN graphitron_method_reference_entry.method IS 'the method name as the author wrote it. A name and not a signature: an overload is told apart by the descriptor the classpath census keys on, which is a fact about the classpath rather than about what was written here, so resolving a name to one signature is the intent layer''s and never this relation''s';
-COMMENT ON COLUMN graphitron_method_reference_entry.source_name IS 'the SDL file the owning directive application was captured from; NULL where the application carries no position, on graphitron_routine_entry.source_name''s terms';
-COMMENT ON COLUMN graphitron_method_reference_entry.source_line IS 'the owning application''s line, 1-based per the graphql-java convention; NULL exactly where source_name is';
-COMMENT ON COLUMN graphitron_method_reference_entry.source_column IS 'the owning application''s column, 1-based per the graphql-java convention; NULL exactly where source_name is';
-COMMENT ON INDEX graphitron_method_reference_entry_method_ix IS 'Serves the method-keyed departure the condition family makes: the two five-arm reconstructions this relation replaced both project distinct class and method over the six condition sites and then join the classpath census on that pair, so the pair is what they group and probe by. The site key has the primary key and needs nothing else.';
 
 -- ==== SQL catalog facts ===========================================================
 -- What the consumer's database declares, in SQL's vocabulary. jOOQ's generated model is the

@@ -32,7 +32,6 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
@@ -138,13 +137,6 @@ public final class GraphitronFactCapture {
     public void captureFieldDirective(String type, String field, Directive directive, int ordinal,
                                boolean inputField) {
         switch (directive.getName()) {
-            case "condition" -> {
-                String site = inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION";
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, site, type, field)) return;
-                var reference = codeReference(directive, "condition");
-                methodReference(site, useSite(type, field, null, null, null), type, field, null, null,
-                    null, reference.className(), reference.method(), directive);
-            }
             case "reference" -> {
                 if (!sink.claim(GRAPHITRON_FIELD_REFERENCE_ENTRY, type, field, ordinal)) return;
                 var record = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_ENTRY);
@@ -158,16 +150,13 @@ public final class GraphitronFactCapture {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
                     spelling(step.table());
-                    methodReference("FIELD_REFERENCE_STEP", useSite(type, field, null, ordinal, position), type, field, null,
-                        ordinal, position,
-                        step.className(), step.method(), directive);
                     position++;
                 }
             }
             case "referenceFor" -> {
                 // The application is graphitron_ast_reference_for_entry's; the claim reads each one
-                // once for its steps' method references and spellings.
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "REFERENCE_FOR_STEP", type, field,
+                // once for its steps' spellings.
+                if (!sink.claim(GRAPHITRON_SPELLED_REFERENCE_ENTRY, "REFERENCE_FOR_STEP", type, field,
                         ordinal)) return;
                 if (string(directive, "type") == null) return;
                 int position = 0;
@@ -175,31 +164,8 @@ public final class GraphitronFactCapture {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
                     spelling(step.table());
-                    methodReference("REFERENCE_FOR_STEP", useSite(type, field, null, ordinal, position), type, field, null,
-                        ordinal, position,
-                        step.className(), step.method(), directive);
                     position++;
                 }
-            }
-            case "service" -> {
-                // The coordinate relation is the anchor's now, derived from the entry stratum and
-                // swept there. What is left here writes rows keyed by site and use site, which the
-                // anchor does not yet hold, and the claim dedupes those rather than the relation
-                // it used to reserve.
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "SERVICE", type, field)) return;
-                var reference = codeReference(directive, "service");
-                methodReference("SERVICE", useSite(type, field, null, null, null),
-                    type, field, null, null, null,
-                    reference.className(), reference.method(), directive);
-            }
-            case "externalField" -> {
-                // The coordinate relation is the anchor's, as @service's is; the claim dedupes
-                // the method reference this still writes.
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "EXTERNAL_FIELD", type, field)) return;
-                var reference = codeReference(directive, "reference");
-                methodReference("EXTERNAL_FIELD", useSite(type, field, null, null, null),
-                    type, field, null, null, null,
-                    reference.className(), reference.method(), directive);
             }
             case "mutation" -> {
                 // What is left is the spelling, for the reason @table's arm carries:
@@ -230,33 +196,22 @@ public final class GraphitronFactCapture {
     public void captureArgumentDirective(String type, String field, String argument,
                                   Directive directive, int ordinal) {
         switch (directive.getName()) {
-            case "condition" -> {
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "ARGUMENT_CONDITION", type, field,
-                        argument)) return;
-                var reference = codeReference(directive, "condition");
-                methodReference("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
-                    type, field, argument, null, null,
-                    reference.className(), reference.method(), directive);
-            }
             case "reference" -> {
                 // The application is graphitron_ast_reference_entry's; the claim reads each one
-                // once for its steps' method references and spellings.
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "ARGUMENT_REFERENCE_STEP", type, field,
+                // once for its steps' spellings.
+                if (!sink.claim(GRAPHITRON_SPELLED_REFERENCE_ENTRY, "ARGUMENT_REFERENCE_STEP", type, field,
                         argument, ordinal)) return;
                 int position = 0;
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
                     spelling(step.table());
-                    methodReference("ARGUMENT_REFERENCE_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
-                        ordinal, position,
-                        step.className(), step.method(), directive);
                     position++;
                 }
             }
             case "referenceFor" -> {
                 // On the field site's terms.
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "ARGUMENT_REFERENCE_FOR_STEP", type,
+                if (!sink.claim(GRAPHITRON_SPELLED_REFERENCE_ENTRY, "ARGUMENT_REFERENCE_FOR_STEP", type,
                         field, argument, ordinal)) return;
                 if (string(directive, "type") == null) return;
                 int position = 0;
@@ -264,9 +219,6 @@ public final class GraphitronFactCapture {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
                     spelling(step.table());
-                    methodReference("ARGUMENT_REFERENCE_FOR_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
-                        ordinal, position,
-                        step.className(), step.method(), directive);
                     position++;
                 }
             }
@@ -275,23 +227,6 @@ public final class GraphitronFactCapture {
     }
 
     // ---------------------------------------------------------------- shared decoding
-
-    /** The flattened {@code ExternalCodeReference}: three columns, all as written. */
-    private record CodeReference(String className, String method, String argMapping) {}
-
-    private CodeReference codeReference(Directive directive, String argumentName) {
-        Value<?> value = argument(directive, argumentName);
-        if (value == null) {
-            return new CodeReference(null, null, null);
-        }
-        if (!(value instanceof ObjectValue object)) {
-            return new CodeReference(null, null, null);
-        }
-        return new CodeReference(
-            stringOf(field(object, "className"), directive, argumentName),
-            stringOf(field(object, "method"), directive, argumentName),
-            stringOf(field(object, "argMapping"), directive, argumentName));
-    }
 
     /** The flattened {@code ReferenceElement}, its step condition inlined. */
     private record Step(String table, String key, String className, String method, String argMapping) {}
@@ -411,59 +346,6 @@ public final class GraphitronFactCapture {
     }
 
     /**
-     * The site spelled in its own grammar, which is what keys the shared relation: the coordinate,
-     * then the argument in parentheses where the site sits on one, then the directive application
-     * after a hash where the directive repeats, then the path element's position in brackets where
-     * the site is one. Every site's spelling is some prefix of that, so one builder produces all
-     * nine and no site can spell its own key differently from the rest.
-     */
-    private static String useSite(String type, String field, String argument,
-                                  Integer ordinal, Integer stepPosition) {
-        var spelling = new StringBuilder(type).append('.').append(field);
-        if (argument != null) {
-            spelling.append('(').append(argument).append(')');
-        }
-        if (ordinal != null) {
-            spelling.append('#').append(ordinal);
-        }
-        if (stepPosition != null) {
-            spelling.append('[').append(stepPosition).append(']');
-        }
-        return spelling.toString();
-    }
-
-    /**
-     * One Java method a directive named, written to the only relation that holds one. The site is a
-     * column rather than a relation, so what three intent views were assembling by hand, a union
-     * over ten tables projecting the class and the method out of each, is a scan here.
-     *
-     * <p>A site whose class or method the author left unwritten draws no row: the columns are not
-     * nullable, and the readers this replaces all filtered those out before doing anything else, so
-     * an absent row states what their {@code IS NOT NULL} did.
-     *
-     * @param site the discriminator, one of the eleven {@code GRAPHITRON_METHOD_REFERENCE_ENTRY} admits
-     */
-    private void methodReference(String site, String useSite, String type, String field,
-                                 String argument, Integer ordinal, Integer stepPosition,
-                                 String className, String method, Directive directive) {
-        if (className == null || method == null) {
-            return;
-        }
-        var row = sink.dsl().newRecord(GRAPHITRON_METHOD_REFERENCE_ENTRY);
-        row.setSite(site);
-        row.setUseSite(useSite);
-        row.setTypeName(type);
-        row.setFieldName(field);
-        row.setArgumentName(argument);
-        row.setOrdinal(ordinal);
-        row.setStepPosition(stepPosition);
-        row.setClassName(className);
-        row.setMethod(method);
-        position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
-        sink.add(row);
-    }
-
-    /**
      * Empties this graph's decoded rows before the decode refills them.
      *
      * <p>Cleared rather than swept: these relations carry no instant, so there is nothing to tell
@@ -498,7 +380,6 @@ public final class GraphitronFactCapture {
      */
     private static final List<Table<?>> DECODED = List.of(
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
-        GRAPHITRON_METHOD_REFERENCE_ENTRY,
         GRAPHITRON_SPELLED_REFERENCE_ENTRY);
 
     /** {@code DECODED} ordered so every relation follows the ones whose keys point at it. */

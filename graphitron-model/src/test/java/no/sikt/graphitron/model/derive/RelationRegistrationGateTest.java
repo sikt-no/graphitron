@@ -80,12 +80,9 @@ class RelationRegistrationGateTest {
             "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_field_reference_entry",
             "graphitron_routine_entry",
-            // The two supertypes ride the arm of the sites that spell them. Both are written in the
-            // same walk as the per-site row they sit beside, so a coordinate the walk claims
-            // contributes to both; the method reference has no per-site row at the source-row site,
-            // and is written in that same walk regardless.
+            // The spelling rides the arm of the sites that spell it, written in the same walk as
+            // the per-site row it sits beside, so a coordinate the walk claims contributes to it.
             "graphitron_spelled_reference_entry",
-            "graphitron_method_reference_entry",
             // Written beside the field row in the same walk, so the field coordinate's claim
             // covers it exactly as it covers the field's own attributes.
             "graphitron_field_target")) {

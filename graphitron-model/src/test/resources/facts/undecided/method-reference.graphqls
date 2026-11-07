@@ -1,10 +1,6 @@
-# Every Java method the graph's directives name, once per site that names it. Eleven kinds of site
-# can name one and every one states the same two facts, the class and the method, so this relation
-# is those two facts under one key rather than ten relations a reader has to union. Three views and
-# one Java reader were each writing that union out by hand before it existed.
+# Every Java method the graph's directives name, once per site that names it: the class and the
+# method each code reference states, at the application that wrote it.
 
-# The two condition sites are told apart by the owning type's kind, not by the relation they live
-# in: both are written on a field coordinate, and site is what splits them.
 type Film @table(name: "film") {
   title: String
 }
@@ -23,8 +19,7 @@ type Language @table(name: "language") {
 }
 
 # A path element of a @reference names a method too, and it is as much a naming of that class as a
-# @service is. The use_site carries the application's ordinal and the step's position, which is what
-# lets two steps of one path be two rows.
+# @service is.
 type City @table(name: "city") {
   name: String
   films: [Film!]! @reference(path: [
@@ -40,10 +35,10 @@ extend type Query {
   cities: [City!]!
 }
 
-extend schema @assertContains(relation: "graphitron_method_reference_entry", rows: """
-  site,                  use_site,          type_name, field_name, ordinal, step_position, class_name,                                              method
-  SERVICE,               Query.languages,   Query,     languages,  ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   getFilms
-  FIELD_CONDITION,       Language.films,    Language,  films,      ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   fieldCondition
-  INPUT_FIELD_CONDITION, FilmFilter.title,  FilmFilter, title,     ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   inputFieldCondition
-  FIELD_REFERENCE_STEP,  City.films#0[0],   City,      films,      0,       0,             no.sikt.graphitron.rewrite.generators.TestFilmService,   stepCondition
+extend schema @assertContains(relation: "graphitron_code_reference_site", rows: """
+  directive_name, coordinate,       kind,         class_name,                                            method_name
+  service,        Query.languages,  ROOT,         no.sikt.graphitron.rewrite.generators.TestFilmService, getFilms
+  condition,      Language.films,   ROOT,         no.sikt.graphitron.rewrite.generators.TestFilmService, fieldCondition
+  condition,      FilmFilter.title, ROOT,         no.sikt.graphitron.rewrite.generators.TestFilmService, inputFieldCondition
+  reference,      City.films,       PATH_ELEMENT, no.sikt.graphitron.rewrite.generators.TestFilmService, stepCondition
   """)

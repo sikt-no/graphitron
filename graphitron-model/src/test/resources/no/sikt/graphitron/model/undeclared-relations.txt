@@ -2,7 +2,6 @@ build_warning_no_rule
 diagnostic
 graphitron_argmapping_match
 graphitron_field_reference_entry
-graphitron_method_reference_entry
 graphitron_node_type
 graphitron_routine_entry
 graphitron_spelled_reference_entry

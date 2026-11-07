@@ -13,7 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
@@ -161,28 +162,28 @@ public final class BindingUsages {
     }
 
     /**
-     * Every site that names a class, as one scan. It used to be the nine class-naming relations
-     * unioned by hand, three of the arms joining back to the owning application only to reach its
-     * source position; the store now writes that fact once, positioned, so this is a scan of
-     * {@code graphitron_method_reference_entry} with the class predicate on it.
-     *
-     * <p>The population widened slightly in the move and in the direction of correctness. The
-     * hand-written union had nine arms against eleven sites, and the two it omitted were the
-     * argument-site {@code @referenceFor} step, which the validator rejects today so no store has
-     * one, and nothing else: the two condition sites share a relation, so both were always covered.
-     * A class named inside a {@code @reference} path is as much a use of it as one named by
-     * {@code @service}, which is why every site counts here and why the definition surface routes
-     * those through its service half.
+     * Every site that names a class and a method, positioned at the application that wrote it: the
+     * code references {@code graphitron_code_reference_site} holds under a {@code @service},
+     * {@code @externalField}, {@code @condition}, or a {@code @reference} or {@code @referenceFor}
+     * path. A class named inside a path is as much a use of it as one named by {@code @service},
+     * which is why every one of those sites counts here and why the definition surface routes those
+     * through its service half.
      */
     private static Result<Record3<String, Integer, Integer>> classSites(
         StoreHandle store, String fqn, String method
     ) {
-        var m = GRAPHITRON_METHOD_REFERENCE_ENTRY;
+        var c = GRAPHITRON_CODE_REFERENCE_SITE;
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
         return store.dsl()
-            .select(m.SOURCE_NAME, m.SOURCE_LINE, m.SOURCE_COLUMN)
-            .from(m)
-            .where(m.GRAPH_NAME.eq(store.graphName()))
-            .and(named(m.CLASS_NAME, m.METHOD, fqn, method))
+            .select(a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN)
+            .from(c)
+            .join(a).on(a.GRAPH_NAME.eq(c.GRAPH_NAME), a.COORDINATE.eq(c.COORDINATE),
+                a.DIRECTIVE_NAME.eq(c.DIRECTIVE_NAME), a.ORDINAL.eq(c.ORDINAL))
+            .where(c.GRAPH_NAME.eq(store.graphName()))
+            .and(c.DIRECTIVE_NAME.in("service", "externalField", "condition", "reference",
+                "referenceFor"))
+            .and(c.METHOD_NAME.isNotNull())
+            .and(named(c.CLASS_NAME, c.METHOD_NAME, fqn, method))
             .fetch();
     }
 
