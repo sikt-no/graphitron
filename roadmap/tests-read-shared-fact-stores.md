@@ -1,7 +1,7 @@
 ---
 id: R1160
 title: "Every schema a test captures is a fact document, and the test strategy is rebuilt on them"
-status: Spec
+status: Ready
 bucket: dx
 priority: 5
 theme: testing
