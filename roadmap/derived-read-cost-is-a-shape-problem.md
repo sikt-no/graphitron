@@ -736,9 +736,15 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-* **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
-  `TypeMemberScope` read `graphitron_tabletype` or `graphitron_result_table` instead of
-  `intent_bound_table`, and `EditorReadsNoViewTest` takes another control.
+* **The editor and MCP read a type's table from what the store states** `open`, B's. The binding
+  readers read `graphitron_tabletype` and the `@table`'s position off its `TABLE_TYPE` claim, the
+  scope readers the occurrences' source tables, column diagnostics the column defects, and an
+  ambiguous `@table` its `TABLE_AMBIGUOUS` defect with each candidate a row of
+  `graphitron_entry_defect_table` under it; `intent_bound_table` goes.
+* **`graphitron_spelled_table` is reconsidered** `open`. A written table name resolves there per
+  spelling, shared by the `@table` defects and the field scope, routine element, write producer and
+  code-reference rules, where each site could resolve its own as `graphitron_path_element_table`
+  does, the resolution rule stated once.
 
 ### Validate is a query over the store, and runs against the model alone `open`
 
