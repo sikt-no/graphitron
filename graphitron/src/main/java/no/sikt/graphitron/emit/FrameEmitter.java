@@ -149,7 +149,7 @@ public final class FrameEmitter {
             .add("}));\n")
             .unindent()
             .build();
-        return MethodSpec.methodBuilder(methodName)
+        var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(FUTURE, resultType))
             .addParameter(ENV, "env")
@@ -157,8 +157,22 @@ public final class FrameEmitter {
             // A throw reading the key fails the same future a throw in the body does, so both are
             // routed by the one handler below.
             .addStatement("$T<$T> loaded", FUTURE, valueType)
-            .beginControlFlow("try")
-            .addStatement("loaded = loader.load((($T) env.getSource()).into($L), env)", RECORD, keyColumns)
+            .beginControlFlow("try");
+        if (row.accessor().isPresent()) {
+            // The key is the record the parent's member hands back; a parent handing back none has
+            // no key, and its field is null.
+            var accessor = row.accessor().get();
+            var recordClass = ClassName.bestGuess(accessor.recordClassName());
+            method.addStatement("$T keyRecord = (($T) env.getSource()).$L()", recordClass,
+                    ClassName.bestGuess(accessor.parentClassName()), accessor.methodName())
+                .beginControlFlow("if (keyRecord == null)")
+                .addStatement("return $T.completedFuture(null)", FUTURE)
+                .endControlFlow()
+                .addStatement("loaded = loader.load(keyRecord.into($L), env)", keyColumns);
+        } else {
+            method.addStatement("loaded = loader.load((($T) env.getSource()).into($L), env)", RECORD, keyColumns);
+        }
+        return method
             .nextControlFlow("catch ($T thrown)", Exception.class)
             .addStatement("loaded = $T.failedFuture(thrown)", FUTURE)
             .endControlFlow()

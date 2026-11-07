@@ -17,6 +17,7 @@ import no.sikt.graphitron.emit.stub.Outcome;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.services.FilmKeySummary;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.dataloader.DataLoaderRegistry;
 import org.junit.jupiter.api.AfterAll;
@@ -35,8 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * {@link FrameEmitter}'s fetchers, compiled and run: at a root the frame hands back what the body
  * answers and routes what it throws, into the outcome's error list where the outcome claims it;
- * under an object the frame reads each parent's key off its row and runs the body once for the
- * batch, each parent getting its own key's value.
+ * under an object the frame reads each parent's key off its row, or off the record the parent's member
+ * hands back where the parent holds a plain object, and runs the body once for the batch, each parent
+ * getting its own key's value and a parent whose member hands back nothing a null.
  *
  * <p>The body, the jOOQ context and the error runtime are the stubs in
  * {@link no.sikt.graphitron.emit.stub}, standing in for the generated ones; the batching runs through
@@ -67,12 +69,17 @@ class FrameEmitterTest {
         var outcome = new FrameQuery.Row("Query.lookup", "Query",
             Optional.of(new FrameQuery.Outcome("Payload", "errors")), Optional.empty());
         var child = new FrameQuery.Row("Film.upper", "Film", Optional.empty(), Optional.of(FILM));
+        var throughAccessor = new FrameQuery.Row("FilmKeySummary.upper", "FilmKeySummary", Optional.empty(),
+            Optional.of(FILM), Optional.of(new FrameQuery.Accessor(FilmKeySummary.class.getName(), "film",
+                FilmRecord.class.getName())));
         var host = TypeSpec.classBuilder("Fetchers").addModifiers(Modifier.PUBLIC)
             .addMethod(FrameEmitter.render(plain, "count", TypeName.get(Integer.class), BODY, "count", RUNTIME))
             .addMethod(FrameEmitter.render(plain, "failing", TypeName.get(Integer.class), BODY, "fail", RUNTIME))
             .addMethod(FrameEmitter.render(outcome, "lookup", TypeName.get(String.class), BODY, "lookup", RUNTIME))
             .addMethod(FrameEmitter.render(outcome, "refused", TypeName.get(String.class), BODY, "refuse", RUNTIME))
             .addMethod(FrameEmitter.render(child, "upper", TypeName.get(String.class), BODY, "upper", RUNTIME))
+            .addMethod(FrameEmitter.render(throughAccessor, "summaryUpper", TypeName.get(String.class), BODY, "upper",
+                RUNTIME))
             .build();
         var dir = java.nio.file.Files.createTempDirectory("frame");
         harness = EmittedCodeHarness.compileFilesStrictly(
@@ -125,6 +132,7 @@ class FrameEmitterTest {
     @SuppressWarnings("unchecked")
     void underAnObjectTheBodyRunsOnceForTheBatchAndEachParentGetsItsValue() throws Exception {
         var registry = new DataLoaderRegistry();
+        Body.batches = 0;
         var futures = new java.util.ArrayList<CompletableFuture<DataFetcherResult<String>>>();
         for (int id : new int[] {3, 1, 2}) {
             var film = new FilmRecord();
@@ -134,6 +142,30 @@ class FrameEmitterTest {
         }
         registry.dispatchAll();
         assertThat(futures).extracting(f -> f.get().getData()).containsExactly("film 3", "film 1", "film 2");
+        assertThat(Body.batches).isEqualTo(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void underAPlainObjectTheKeyIsReadOffWhatItsMemberHandsBack() throws Exception {
+        var registry = new DataLoaderRegistry();
+        var futures = new java.util.ArrayList<CompletableFuture<DataFetcherResult<String>>>();
+        Body.batches = 0;
+        Integer[] ids = {3, null, 1};
+        for (int i = 0; i < ids.length; i++) {
+            Integer id = ids[i];
+            FilmRecord film = null;
+            if (id != null) {
+                film = new FilmRecord();
+                film.set(Tables.FILM.FILM_ID, id);
+            }
+            futures.add((CompletableFuture<DataFetcherResult<String>>) fetchers.get("summaryUpper")
+                .invoke(null, env(new FilmKeySummary(film, "label"), registry, "/summaries[" + i + "]/upper")));
+        }
+        registry.dispatchAll();
+        assertThat(futures.get(0).get().getData()).isEqualTo("film 3");
+        assertThat(futures.get(1).get()).isNull();
+        assertThat(futures.get(2).get().getData()).isEqualTo("film 1");
         assertThat(Body.batches).isEqualTo(1);
     }
 }

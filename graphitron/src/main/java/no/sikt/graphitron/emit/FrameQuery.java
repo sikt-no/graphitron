@@ -9,6 +9,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
@@ -18,6 +20,7 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 
@@ -29,9 +32,10 @@ import static org.jooq.impl.DSL.select;
  * key, in key order. The parent's table is the declaring type's and not the occurrence's source: a
  * service under an object reads off its own result, and its parent is what it was reached from.
  *
- * <p>Service producers only, and under an object only those whose declaring type binds a table. A
- * parent holding a plain object hands its key over through an accessor the store does not state for
- * a service yet, so such a producer has no frame here.
+ * <p>Service producers only. Under an object whose declaring type binds no table the parent holds an
+ * object, and the key is its key row's: the records of the table the call's source parameter
+ * collects, read off the parent where it is such a record, or off what the one member of its class
+ * returning one hands back. A producer with no key row has no frame here.
  */
 public final class FrameQuery {
 
@@ -55,6 +59,18 @@ public final class FrameQuery {
         }
     }
 
+    /**
+     * The member of the parent's class whose record the key is read off, where the parent is no such
+     * record itself: the parent's class, the member's method and the record class it returns.
+     */
+    public record Accessor(String parentClassName, String methodName, String recordClassName) {
+        public Accessor {
+            Objects.requireNonNull(parentClassName, "parentClassName");
+            Objects.requireNonNull(methodName, "methodName");
+            Objects.requireNonNull(recordClassName, "recordClassName");
+        }
+    }
+
     /** The outcome a producer's errors are claimed into: its type, and the field they arrive at. */
     public record Outcome(String typeName, String errorsFieldName) {
         public Outcome {
@@ -68,12 +84,18 @@ public final class FrameQuery {
      * under an object the parent's table it takes its key off; at a root there is none.
      */
     public record Row(String coordinate, String declaringType, Optional<Outcome> outcome,
-                      Optional<ParentTable> parent) {
+                      Optional<ParentTable> parent, Optional<Accessor> accessor) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(declaringType, "declaringType");
             Objects.requireNonNull(outcome, "outcome");
             Objects.requireNonNull(parent, "parent");
+            Objects.requireNonNull(accessor, "accessor");
+        }
+
+        /** A frame read off a parent row of a table, or off a parent that is that table's record. */
+        public Row(String coordinate, String declaringType, Optional<Outcome> outcome, Optional<ParentTable> parent) {
+            this(coordinate, declaringType, outcome, parent, Optional.empty());
         }
 
         public boolean root() {
@@ -88,12 +110,15 @@ public final class FrameQuery {
         var f = GRAPHITRON_FIELD;
         var po = GRAPHITRON_PRODUCER_OUTCOME;
         var tt = GRAPHITRON_TABLETYPE;
+        var kr = GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
+        var ka = GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
         return store.dsl()
             .select(p.COORDINATE, f.TYPE_NAME, p.START, po.OUTCOME_TYPE_NAME, po.ERRORS_FIELD_NAME,
                 t.TABLE_NAME, s.TABLES_CLASS_FQN, t.JOOQ_NAME,
-                key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME))
+                key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME),
+                ka.SLOT_CLASS_NAME, ka.SLOT_METHOD_NAME, t.RECORD_CLASS_FQN)
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
@@ -102,17 +127,24 @@ public final class FrameQuery {
             // Under an object, the parent is a row of the table the declaring type binds.
             .leftJoin(tt).on(tt.GRAPH_NAME.eq(f.GRAPH_NAME), tt.TYPE_NAME.eq(f.TYPE_NAME),
                 p.START.eq("CHILD"))
-            .leftJoin(t).on(t.SOURCE_NAME.eq(tt.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(tt.TABLE_SCHEMA),
-                t.TABLE_NAME.eq(tt.TABLE_NAME))
+            // Under an object holding a plain object, the key row's table, and its member where the
+            // key is read through one.
+            .leftJoin(kr).on(kr.GRAPH_NAME.eq(p.GRAPH_NAME), kr.COORDINATE.eq(p.COORDINATE), tt.TYPE_NAME.isNull())
+            .leftJoin(ka).on(ka.GRAPH_NAME.eq(f.GRAPH_NAME), ka.TYPE_NAME.eq(f.TYPE_NAME),
+                ka.FIELD_NAME.eq(f.FIELD_NAME), kr.KEY_KIND.eq("ACCESSOR"))
+            .leftJoin(t).on(t.SOURCE_NAME.eq(coalesce(tt.TABLE_SOURCE_NAME, kr.TABLE_SOURCE_NAME)),
+                t.TABLE_SCHEMA.eq(coalesce(tt.TABLE_SCHEMA, kr.TABLE_SCHEMA)),
+                t.TABLE_NAME.eq(coalesce(tt.TABLE_NAME, kr.TABLE_NAME)))
             .leftJoin(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
             .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"),
-                p.START.eq("ROOT").or(tt.TABLE_NAME.isNotNull()))
+                p.START.eq("ROOT").or(t.TABLE_NAME.isNotNull()))
             .orderBy(p.COORDINATE)
             .fetch(rec -> new Row(rec.value1(), rec.value2(),
                 Optional.ofNullable(rec.value4()).map(type -> new Outcome(type, rec.value5())),
                 "ROOT".equals(rec.value3())
                     ? Optional.empty()
-                    : Optional.of(new ParentTable(rec.value6(), rec.value7(), rec.value8(), rec.value9()))));
+                    : Optional.of(new ParentTable(rec.value6(), rec.value7(), rec.value8(), rec.value9())),
+                Optional.ofNullable(rec.value10()).map(cls -> new Accessor(cls, rec.value11(), rec.value12()))));
     }
 
     /** The table's primary key, in key order. */
