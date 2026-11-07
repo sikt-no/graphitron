@@ -25,7 +25,6 @@ class ScaledSchemaFixtureTest {
         "rejection_validation_error",
         "rejection_validation_error_directive",
         "intent_argmapping_projection_defect",
-        "intent_node_id_decode_landing_defect",
         "intent_type_backing_conflict");
 
     @TempDir

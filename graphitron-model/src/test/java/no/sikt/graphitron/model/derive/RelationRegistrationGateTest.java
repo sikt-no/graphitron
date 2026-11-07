@@ -408,7 +408,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_node_id_decode_column", Arm.DERIVED);
         registrations.put("intent_record_slot_assignable", Arm.DERIVED);
         registrations.put("intent_node_container_member", Arm.DERIVED);
-        registrations.put("intent_node_id_decode_landing_defect", Arm.DERIVED);
         registrations.put("intent_reference_for_application", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("graphitron_argument_scope_table_rule", Arm.DERIVED);

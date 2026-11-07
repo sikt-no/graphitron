@@ -1,7 +1,7 @@
 # Where a @nodeId decode lands its key, judged: a written path that stops short of the node type's
 # table, and a landed key column whose Java type disagrees with the column it lands on. One fault
-# draws one row, a chain that stalled or a key only partly landed draws none, and a branch a
-# per-participant route applies at is not judged while its sibling still is.
+# draws one row, a chain that stalled or a key only partly landed draws none, and each branch is
+# judged on its own route, written or discovered.
 #
 # converter_org.org_code carries a converter and binds as String; diverged_ref_child,
 # diverged_ref_sibling and diverged_term_ref spell their copy as a plain bigint, Long, and
@@ -80,13 +80,19 @@ extend schema @expectEquals(relation: "intent_reference_for_application", rows: 
   INPUT_FIELD, HolderFilter, ofOrg,      ,              0,       Query,               filteredHolders,      DivergedRefChild,      diverged_ref_child
   """)
 
-extend schema @expectEquals(relation: "intent_node_id_decode_landing_defect", rows: """
-  use_site,                         origin_table,         node_type_name,      verdict,                   terminal_table,     target_table,          position, key_column_name, key_binding_type, local_column_name, local_binding_type
-  Query.divergedChildren(ofOrg),    diverged_ref_child,   ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
-  Query.labels(ofOrg),              diverged_child_label, ConverterOrg,        PATH_STOPS_SHORT,          diverged_ref_child, converter_org,         ,         ,                ,                 ,
-  Query.shortOfCategory(inCategory), film,                Category,            PATH_STOPS_SHORT,          film_category,      category,              ,         ,                ,                 ,
-  Query.termRefs(ofTerm),           diverged_term_ref,    ConverterCampusTerm, LANDING_TYPE_DISAGREEMENT, ,                   converter_campus_term, 0,        org_code,        java.lang.String, org_code,          java.lang.Long
-  Query.holders(ofOrg),             diverged_ref_sibling, ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
-  Query.unrouted(ofOrg),            diverged_ref_child,   ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
-  Query.unrouted(ofOrg),            diverged_ref_sibling, ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
+# One row per @nodeId: a path ending elsewhere is NODE_ID_LANDS_ON_TABLE, a landed key column of
+# another Java type NODE_ID_LANDING_TYPE_DISAGREES. A @referenceFor route is its own branch's written
+# path, so holders' sibling and sameTable's other participant, whose routes are discovered, are
+# judged; unrouted's two branches are one @nodeId and one row.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code LIKE 'NODE_ID_%'
+  """, rows: """
+  coordinate,                         code,                           detail
+  Query.divergedChildren(ofOrg:),     NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  Query.holders(ofOrg:),              NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  Query.labels(ofOrg:),               NODE_ID_LANDS_ON_TABLE,         public.diverged_ref_child
+  Query.sameTable(ofOrg:),            NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  Query.shortOfCategory(inCategory:), NODE_ID_LANDS_ON_TABLE,         public.film_category
+  Query.termRefs(ofTerm:),            NODE_ID_LANDING_TYPE_DISAGREES, org_code
+  Query.unrouted(ofOrg:),             NODE_ID_LANDING_TYPE_DISAGREES, org_code
   """)

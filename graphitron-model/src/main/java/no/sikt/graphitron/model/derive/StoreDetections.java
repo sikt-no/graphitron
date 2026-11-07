@@ -37,13 +37,6 @@ import java.util.Set;
  * It is also the one {@code @nodeId} family that reports at every site, its first verdict being that
  * the coordinate is not one the polymorphic rule reaches at all.
  *
- * <p>{@link #nodeIdLandings} is the {@code @nodeId} family whose question is
- * about a predicate rather than about a signature: whether the key a decode yields lands on the
- * columns the author's path says it does. It is separate from {@link #nodeIdDecodes} because the
- * two judge different operands at different grains, a producer parameter against a key's shape and
- * a per-position landing against a catalog column, and a coordinate can fail either without the
- * other having anything to say.
- *
  * <p>{@link #referenceForParticipants} is the family whose question no single coordinate can ask:
  * a {@code @referenceFor} on a {@code @nodeId} filter input field names a participant of the
  * <em>consuming</em> query's return type, and one input type may be consumed by several queries with
@@ -88,7 +81,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
                               ArgmappingProjectionDefects.Detection argmappingProjections,
                               NodeIdDecodeDefects.Detection nodeIdDecodes,
                               NodeIdPolymorphicDecodeDefects.Detection nodeIdPolymorphicDecodes,
-                              NodeIdLandingDefects.Detection nodeIdLandings,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               UnlowerableOrderings.Detection unlowerableOrderings,
                               DefaultPageSizeDefects.Detection defaultPageSizes,
@@ -120,7 +112,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
         roster.put("ArgmappingProjectionDefects", ArgmappingProjectionDefects.READS);
         roster.put("NodeIdDecodeDefects", NodeIdDecodeDefects.READS);
         roster.put("NodeIdPolymorphicDecodeDefects", NodeIdPolymorphicDecodeDefects.READS);
-        roster.put("NodeIdLandingDefects", NodeIdLandingDefects.READS);
         roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
         roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
         roster.put("DefaultPageSizeDefects", DefaultPageSizeDefects.READS);
@@ -149,7 +140,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
                     ArgmappingProjectionDefects.detect(dsl, graphName),
                     NodeIdDecodeDefects.detect(dsl, graphName),
                     NodeIdPolymorphicDecodeDefects.detect(dsl, graphName),
-                    NodeIdLandingDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     UnlowerableOrderings.detect(dsl, graphName),
                     DefaultPageSizeDefects.detect(dsl, graphName),
@@ -170,7 +160,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
             ArgmappingProjectionDefects.Detection.empty(),
             NodeIdDecodeDefects.Detection.empty(),
             NodeIdPolymorphicDecodeDefects.Detection.empty(),
-            NodeIdLandingDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
             UnlowerableOrderings.Detection.empty(),
             DefaultPageSizeDefects.Detection.empty(),
@@ -189,7 +178,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
         out.addAll(argmappingProjections.violations());
         out.addAll(nodeIdDecodes.violations());
         out.addAll(nodeIdPolymorphicDecodes.violations());
-        out.addAll(nodeIdLandings.violations());
         out.addAll(referenceForParticipants.violations());
         out.addAll(unlowerableOrderings.violations());
         out.addAll(defaultPageSizes.violations());

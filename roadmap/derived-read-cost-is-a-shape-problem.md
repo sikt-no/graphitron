@@ -314,15 +314,15 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
 * **Each node-id rule is an entry defect** `open`. The store's checks on `@nodeId` and
   `@referenceFor` become codes in `graphitron_defect_type` and arms of `graphitron_entry_defect_rule`,
   each row at the application's written position, so the editor shows them beside the build:
-  * the landing: `PATH_STOPS_SHORT`, `LANDING_TYPE_DISAGREEMENT`;
   * the participant set: a name no consumer's participants carry, and a consumer returning a single
     table, at the input-field and the argument site;
   * a `@referenceFor` on a slot without `@nodeId`, which only the walk refuses today.
 
   The slot and container rules are already entry defects, the `NODE_ID_` codes over
   `graphitron_node_id_slot`, with the members a container defect names in
-  `graphitron_entry_defect_member`. The view `intent_node_id_decode_landing_defect` goes, and
-  `NodeIdLandingDefects` and `ReferenceForParticipantDefects` read the rows. The walk's copies of the same refusals go with
+  `graphitron_entry_defect_member`, and the landing's are `NODE_ID_LANDS_ON_TABLE` and
+  `NODE_ID_LANDING_TYPE_DISAGREES`, each branch judged on its own route. `ReferenceForParticipantDefects`
+  reads the rows. The walk's copies of the same refusals go with
   them, so an author meets one error rather than two: the four container refusals in
   `BuildContext` and `NodeIdLeafResolver`, and the refusal of `@referenceFor` without `@nodeId` in
   `BuildContext` and `FieldBuilder`. Two cases are settled by fact documents on the way: a

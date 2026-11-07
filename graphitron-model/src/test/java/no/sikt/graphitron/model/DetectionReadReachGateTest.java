@@ -111,12 +111,6 @@ class DetectionReadReachGateTest {
         // and binding. It is the union intent_poly_member was over the same two tables, and the
         // reference-for application that reaches it answers no slower than it did through the
         // participant view on the sakila and sis stores.
-        REACH.put("NodeIdLandingDefects", Set.of(
-            "graphql_poly_member",
-            "intent_node_id_decode_endpoint",
-            "intent_node_id_decode_landing_defect",
-            "intent_reference_for_application"));
-
         REACH.put("ReferenceForParticipantDefects", Set.of(
             "graphql_poly_member",
             "intent_reference_for_application"));
@@ -191,7 +185,7 @@ class DetectionReadReachGateTest {
             // would satisfy an equality against sets nobody had filled in.
             assertThat(observed.values().stream().mapToInt(Set::size).sum())
                 .as("view bodies the detection pass expands, across every component")
-                .isGreaterThan(30);
+                .isGreaterThan(20);
             assertThat(observed)
                 .as("what the detection pass evaluates on every read, per component. A relation "
                     + "arriving here is a rule a dev round re-expands at boot and after every "

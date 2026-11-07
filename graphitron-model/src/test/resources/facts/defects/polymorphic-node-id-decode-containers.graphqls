@@ -159,10 +159,14 @@ extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", where: "
   Query.mediaItems(filter.filmId:),    Film,           SAME_TABLE,     film,       film
   """)
 
-# So the path that stops short is judged for the node type and not for the container.
-extend schema @expectEquals(relation: "intent_node_id_decode_landing_defect", where: "use_site LIKE 'Query.inventories%'", rows: """
-  use_site,                origin_table, node_type_name, verdict,          terminal_table, target_table
-  Query.inventories(film), inventory,    Film,           PATH_STOPS_SHORT, store,          film
+# So the path that stops short is judged for the node type, and the container beside it is refused as
+# no slot.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  coordinate LIKE 'Query.inventories%' AND code LIKE 'NODE_ID_%'
+  """, rows: """
+  coordinate,               code,                             detail
+  Query.inventories(film:), NODE_ID_LANDS_ON_TABLE,           public.store
+  Query.inventories(item:), NODE_ID_CONTAINER_NOT_AT_A_SLOT, MediaItem
   """)
 
 
