@@ -186,7 +186,8 @@ shown an error on a schema that generates, and validate can then fail on them.
   as the generator calls it.
 * **The sakila example draws no error-severity entry defect** `blocked`, on "A condition method over untyped tables resolves". A build check
   over the reactor's own example holds it.
-* **Entry defects fail validate** `blocked`, on "The sakila example draws no error-severity entry defect". Every error code in `graphitron_entry_defect` stops a build, not only the editor.
+* **sis draws no entry defect the generator accepts** `open`. On sis the store refuses 24 positions generate builds, 19 `NODE_ID_TYPE_NAME_NOT_NODE` where `@nodeId(typeName:)` names a `@table` type that is no node and 5 `OUTCOME_FIELD_NON_NULL` on a non-null payload data field, and per code either sis's schema or the rule changes. The 8 `COLUMN_UNRESOLVED` on a nesting type's `id: ID!` are settled by "The generator reads an `id: ID` without `@nodeId` as a column".
+* **Entry defects fail validate** `blocked`, on "The sakila example draws no error-severity entry defect" and "sis draws no entry defect the generator accepts". Every error code in `graphitron_entry_defect` stops a build, not only the editor.
 
 ### The path replaces the walk it was built to retire `open`
 
@@ -961,6 +962,7 @@ today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`
   sweeps once, at `store_class_file`, and reads `byte_size` and `mtime` to skip an unchanged class.
+* **An edited `@reference` path re-captures into a warm store** `open`. Rewriting `path: {table: X}` as `path: [{table: X}, {key: ...}]` and capturing into the store the old text left fails on the foreign key from `graphitron_ast_reference_table_step_entry` to `graphitron_ast_reference_element_entry` at the element's new position, while a fresh store takes the same schema. sis's `StudentStudieprogramISemesterFilterInput.terminer` reproduces it, and "A warm store is refreshed in a test" is where a case pins it.
 * **A warm store is refreshed in a test** `open`. `WarmStartRefreshTest` gains a case capturing a
   different schema on the second capture and asserting the store states the second, so sweeping
   and re-anchoring are exercised somewhere other than against an empty store.
