@@ -8381,6 +8381,35 @@ COMMENT ON COLUMN graphitron_field_key_row.table_name IS 'the table whose column
 COMMENT ON COLUMN graphitron_field_key_row.arity IS 'ONE where one parent object yields one key, MANY where it yields several: a list of produced records, or an accessor returning a collection';
 COMMENT ON COLUMN graphitron_field_key_row.touched_at IS 'when the reading that derived this row ran; the stage sweeps the graph''s rows carrying another instant';
 
+CREATE TABLE graphitron_field_key_row_accessor (
+  graph_name       VARCHAR   NOT NULL,
+  type_name        VARCHAR   NOT NULL,
+  field_name       VARCHAR   NOT NULL,
+  kind             VARCHAR   NOT NULL,
+  slot_source_name VARCHAR   NOT NULL,
+  slot_class_name  VARCHAR   NOT NULL,
+  slot_method_name VARCHAR   NOT NULL,
+  slot_descriptor  VARCHAR   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  -- The key row it details, pinned to the kind that takes its keys through a member.
+  FOREIGN KEY (graph_name, type_name, field_name, kind)
+    REFERENCES graphitron_field_key_row (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (slot_source_name, slot_class_name, slot_method_name, slot_descriptor)
+    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (kind = 'ACCESSOR')
+);
+COMMENT ON TABLE graphitron_field_key_row_accessor IS 'The member an ACCESSOR key row takes its keys through: one row per such key row, naming the member''s code_read_slot row. For example CreateFilmsPayload.films takes its film keys from the records CreateFilmsPayload.films() returns.';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.graph_name IS 'the owning graph''s partition, carried from the key row';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.type_name IS 'the type owning the field, as on the key row';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.field_name IS 'the field; with the two columns before it, the key row''s key and this row''s';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.kind IS 'ACCESSOR, carried so the reference into the key row can name the kind and a member cannot hang off a COLUMNS row';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_source_name IS 'the entry the parent''s class was read from, the slot key''s leading column';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_class_name IS 'the class offering the member, the parent''s class';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_method_name IS 'the method that reads the member, which the generated code calls on the parent';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_descriptor IS 'that method''s descriptor, completing the slot''s key';
+COMMENT ON COLUMN graphitron_field_key_row_accessor.touched_at IS 'when the reading that derived this row ran; the stage sweeps the graph''s rows carrying another instant';
+
 CREATE INDEX graphql_ast_field_definition_entry_coordinate_ix
   ON graphql_ast_field_definition_entry (graph_name, type_name, name);
 COMMENT ON INDEX graphql_ast_field_definition_entry_coordinate_ix IS 'The coordinate side''s probe: graphitron_field_key_row_rule reaches a producing field''s definition site from its type and name, where the primary key leads with the site.';
@@ -14818,7 +14847,8 @@ COMMENT ON VIEW intent_type_backing_conflict IS 'Deprecated with the whole inten
 -- COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; distinct, so a class both arms name counts once, and the arity a rejection stands on, on graphitron_spelled_table.candidates'' terms';
 
 CREATE VIEW graphitron_field_key_row_rule
-  (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name, arity) AS
+  (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name, arity,
+   slot_source_name, slot_class_name, slot_method_name, slot_descriptor) AS
 -- The fields that fetch their own rows under a parent holding an OBJECT, with what the parent holds
 -- and what the field reads. A parent holding several classes takes no part: which one arrives is the
 -- producer's, so no one key is the field's.
@@ -14904,7 +14934,8 @@ accessor (graph_name, type_name, field_name, source_name, class_name, method_nam
 -- A re-fetch: the parent is the payload a write hands back, or a record of the target's own table
 -- a service produced, so the target's key is read straight off it.
 SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.table_schema,
-       t.table_name, CASE WHEN fa.many THEN 'MANY' ELSE 'ONE' END
+       t.table_name, CASE WHEN fa.many THEN 'MANY' ELSE 'ONE' END,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM field_at fa
   JOIN target t
     ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
@@ -14915,7 +14946,8 @@ SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.t
 UNION ALL
 -- A table record the path departs from, by its first key or, to several tables, by its own key.
 SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', fa.record_source_name,
-       fa.record_schema, fa.record_table, 'ONE'
+       fa.record_schema, fa.record_table, 'ONE',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM field_at fa
  WHERE fa.record_table IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM target t WHERE t.graph_name = fa.graph_name
@@ -14925,9 +14957,10 @@ SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', fa.record_source_n
    AND (fa.polymorphic OR EXISTS (SELECT 1 FROM first_key fk WHERE fk.graph_name = fa.graph_name
                                     AND fk.type_name = fa.type_name AND fk.field_name = fa.field_name))
 UNION ALL
--- An accessor of the parent's class, where nothing above took the keys and exactly one matches.
+-- An accessor of the parent's class, where nothing above took the keys and exactly one matches,
+-- with the member that hands the keys over.
 SELECT a.graph_name, a.type_name, a.field_name, 'ACCESSOR', a.table_source_name, a.table_schema,
-       a.table_name, a.arity
+       a.table_name, a.arity, a.source_name, a.class_name, a.method_name, a.descriptor
   FROM accessor a
  WHERE (SELECT COUNT(*) FROM accessor a2 WHERE a2.graph_name = a.graph_name
           AND a2.type_name = a.type_name AND a2.field_name = a.field_name) = 1;
@@ -18962,6 +18995,10 @@ INSERT INTO meta_relation VALUES
    'How a field takes the keys its rows are fetched by off the object its parent holds: one row per field whose parent holds an OBJECT and that fetches its own rows.',
    'For example FilmDetailsCarrier.language, under a FilmRecord, takes film''s columns off the record, and CreateFilmsPayload.films takes the film records its films() accessor returns.',
    'A field under a held object fetches its rows by keys only that object can give, so how the keys are taken is a fact about the field and its parent''s class, stated once here, not worked out again by the generator from the class at build time. The kind names the generator''s key lift and the table says whose columns the keys are, so the walk can depart from it.'),
+  ('graphitron_field_key_row_accessor', 'graph-field', 'graphitron',
+   'The member an ACCESSOR key row takes its keys through: one row per such key row, naming the member''s code_read_slot row.',
+   'For example CreateFilmsPayload.films takes its film keys from the records CreateFilmsPayload.films() returns.',
+   'The frame of a field under a held object reads its keys off the parent, and through an accessor it has to call that member: the rule finds it when it decides ACCESSOR, so it is stated here as a reference to the slot rather than found again, and goes with the slot or the key row.'),
   ('graphitron_field_key_row_rule', 'graph-field', 'graphitron',
    'One row the key-row rule computes, in the shape graphitron_field_key_row and its method subtype store together: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture writes this view''s rows for one graph into the two relations, which are the names every reader spells.',

@@ -51,3 +51,11 @@ extend schema @expectEquals(relation: "graphitron_field_key_row", rows: """
   OccupantsBatchPayload, occupants,  ACCESSOR, address,    MANY
   """)
 
+
+# An ACCESSOR key row names the member it takes its keys through: the record component the
+# payload's class offers, by its method and descriptor, so the frame calls that member on the parent.
+extend schema @expectEquals(relation: "graphitron_field_key_row_accessor", rows: """
+  type_name,             field_name, slot_class_name,                                                slot_method_name, slot_descriptor
+  CreateFilmsPayload,    films,      no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,    films,            ()Ljava/util/List;
+  OccupantsBatchPayload, occupants,  no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload, addresses,        ()Ljava/util/List;
+  """)
