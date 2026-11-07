@@ -3440,55 +3440,6 @@ COMMENT ON COLUMN graphitron_field_reference_entry.source_name IS 'the SDL file 
 COMMENT ON COLUMN graphitron_field_reference_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_field_reference_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 
-CREATE TABLE graphitron_reference_for_entry (
-  graph_name           VARCHAR NOT NULL,
-  type_name            VARCHAR NOT NULL,
-  field_name           VARCHAR NOT NULL,
-  ordinal              INT     NOT NULL,
-  source_name          VARCHAR,
-  source_line          INT,
-  source_column        INT,
-  participant_type_ref VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_reference_for_entry IS '@referenceFor at a field coordinate: an explicit join path for one participant of a multi-table interface or union. Two populations share the relation, and they share it because graphql_field spans both: an output field, where the path runs from the parent''s table to the participant''s, and a @nodeId filter input field, where it runs from the participant''s own table to the decoded target''s. Which of the two a row is about is a fact of the owning coordinate''s type kind and is not restated as a column here, on graphql_field''s own terms: the join decides. Keyed by ordinal per the repeatable rule; the consumption-side keying by participant makes a repeated participant a detection, never a collision. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_reference_for_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_reference_for_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_reference_for_entry.ordinal IS 'capture-assigned position in document order';
-COMMENT ON COLUMN graphitron_reference_for_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_reference_for_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_reference_for_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_reference_for_entry.participant_type_ref IS 'the type argument as written; author-spelled, no FK. It names a participant of the polymorphic type the consuming field returns, and which field that is differs by coordinate: an output field consumes its own named type, while an input field is consumed by every field whose argument surface reaches it, possibly several with different participant sets. That is why a spelling matching no participant is a whole-schema detection over the input field''s occurrences rather than a check one row can carry, and why no FK could stand here even if the participant set were a relation: at an input coordinate there is no single consumer for it to point at.';
-
-CREATE TABLE graphitron_argument_reference_for_entry (
-  graph_name           VARCHAR NOT NULL,
-  type_name            VARCHAR NOT NULL,
-  field_name           VARCHAR NOT NULL,
-  argument_name        VARCHAR NOT NULL,
-  ordinal              INT     NOT NULL,
-  source_name          VARCHAR,
-  source_line          INT,
-  source_column        INT,
-  participant_type_ref VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_argument_reference_for_entry IS '@referenceFor on an argument: the same family over the four-part coordinate. A sibling relation rather than an argument_name column on graphitron_reference_for_entry, on the discipline the argument-site @reference family already keeps: the two coordinates are different lengths, so one relation over both would carry a column NULL by kind on half its rows and every reader would have to say which kind it meant. The participant set this row''s spelling is checked against is the consuming field''s own, which at this coordinate is the field the argument sits on rather than a set reached through the occurrence paths, so the whole-schema detection the input-field population needs is a local join here. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.ordinal IS 'capture-assigned position in document order';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_argument_reference_for_entry.participant_type_ref IS 'the type argument as written; author-spelled, no FK. Names a participant of the polymorphic type the owning field returns';
-
 CREATE TABLE graphitron_routine_entry (
   graph_name     VARCHAR NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -16477,62 +16428,6 @@ COMMENT ON COLUMN graphitron_node_id_decode_column.local_column_name IS 'the col
 
 
 
-CREATE VIEW intent_reference_for_application
-  (graph_name, site, type_name, field_name, argument_name, ordinal,
-   consuming_type_name, consuming_field_name, participant_type_name,
-   table_source_name, table_schema, table_name) AS
-SELECT DISTINCT r.graph_name, 'INPUT_FIELD', r.type_name, r.field_name,
-       CAST(NULL AS VARCHAR), r.ordinal,
-       cf.type_name, cf.field_name, m.member_type_name,
-       bt.table_source_name, bt.table_schema, bt.table_name
-  FROM graphitron_reference_for_entry r
-  -- Every place the application's input field is reached, and the field it is reached under.
-  JOIN graphitron_occurrence o
-    ON o.graph_name = r.graph_name AND o.element_coordinate = r.type_name || '.' || r.field_name
-   AND o.kind = 'INPUT_FIELD'
-  JOIN graphitron_occurrence fo
-    ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
-  JOIN graphitron_field cf
-    ON cf.graph_name = fo.graph_name AND cf.coordinate = fo.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = cf.graph_name AND ft.type_name = cf.type_name
-   AND ft.field_name = cf.field_name
-  JOIN graphql_poly_member m
-    ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-   AND m.member_type_name = r.participant_type_ref
-  JOIN graphitron_tabletype bt
-    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
-                    WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name)
- UNION ALL
-SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, a.ordinal,
-       a.type_name, a.field_name, m.member_type_name,
-       bt.table_source_name, bt.table_schema, bt.table_name
-  FROM graphitron_argument_reference_for_entry a
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = a.graph_name AND ft.type_name = a.type_name
-   AND ft.field_name = a.field_name
-  JOIN graphql_poly_member m
-    ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-   AND m.member_type_name = a.participant_type_ref
-  JOIN graphitron_tabletype bt
-    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
-                    WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name);
-COMMENT ON VIEW intent_reference_for_application IS 'One @referenceFor application paired with a consuming coordinate that offers the participant it names: one row per application and consumer whose participant set holds the spelling. For example an application naming Film under an input type two queries consume draws a row for the query whose union holds Film and none for the query whose does not.';
--- COMMENT ON COLUMN intent_reference_for_application.graph_name IS 'the owning graph''s partition, carried from the application';
--- COMMENT ON COLUMN intent_reference_for_application.site IS 'which SDL site carries the application, in the decode family''s vocabulary: INPUT_FIELD for graphitron_reference_for_entry on an input object''s field, ARGUMENT for graphitron_argument_reference_for_entry. The OUTPUT_FIELD site is absent structurally, the arm reading the INPUT_FIELD occurrences of the application''s own field, so an application on an object field matches none and never enters the population';
--- COMMENT ON COLUMN intent_reference_for_application.type_name IS 'the type owning the application''s coordinate: the input object type on INPUT_FIELD, the argument''s owning type on ARGUMENT';
--- COMMENT ON COLUMN intent_reference_for_application.field_name IS 'the application''s field name, or on ARGUMENT the field the argument sits on';
--- COMMENT ON COLUMN intent_reference_for_application.argument_name IS 'the argument carrying the application on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the captured relations this reads';
--- COMMENT ON COLUMN intent_reference_for_application.ordinal IS 'the application''s position in document order, carried from the captured relation; with the four columns above, the application''s own key';
--- COMMENT ON COLUMN intent_reference_for_application.consuming_type_name IS 'the type owning the field whose participant set this row matched against: the type of the field an occurrence of the input field is reached under on INPUT_FIELD, the argument''s own type on ARGUMENT. One application has one row per consumer that offers the participant, which is the whole reason the consumer is part of the grain: an input type consumed by two queries with different participant sets applies at one and is inert at the other';
--- COMMENT ON COLUMN intent_reference_for_application.consuming_field_name IS 'the consuming field''s name, on the same terms as the type beside it; equal to field_name on ARGUMENT, where an argument''s consumer is the field it sits on';
--- COMMENT ON COLUMN intent_reference_for_application.participant_type_name IS 'the table-bound participant the application''s participant_type_ref matched at this consumer: a member of the consumer''s target, as graphql_poly_member spells it. The resolved name rather than the authored spelling, so a reader holding this row needs no second match';
--- COMMENT ON COLUMN intent_reference_for_application.table_source_name IS 'the catalog partition of the table the matched participant binds, carried from the participant relation. With the two columns below it, what says which branch of a polymorphic consumer this application applies to';
--- COMMENT ON COLUMN intent_reference_for_application.table_schema IS 'the participant table''s SQL schema';
--- COMMENT ON COLUMN intent_reference_for_application.table_name IS 'the participant table''s SQL name; the branch, and what a reader over a per-branch relation joins on. Two participants of one consumer binding one table are two rows here, the grain being the participant, so a reader keyed on the table alone sees the table and not which of the two';
-
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -17787,9 +17682,6 @@ INSERT INTO meta_grain VALUES
   ('directive-argument-name',
    'one formal argument of one directive definition in one graph',
    'graph_name, directive_name, argument_name', 'sdl'),
-  ('reference-for-application',
-   'one @referenceFor application at one coordinate that consumes it, in one graph',
-   'graph_name, site, type_name, field_name, argument_name, ordinal, consuming_type_name, consuming_field_name', 'sdl'),
   ('path-element-key-candidate',
    'one key a path element names, in one graph',
    'graph_name, source_name, source_line, source_column, constraint_source_name, constraint_schema, constraint_table, constraint_name', 'catalog'),
@@ -19655,9 +19547,5 @@ INSERT INTO meta_relation VALUES
   ('javac_diagnostic', 'compile-diagnostic', 'compile',
    'One javac diagnostic from the latest compile round over a graph''s emitted sources.',
    'For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.',
-   'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.'),
-  ('intent_reference_for_application', 'reference-for-application', 'graphitron',
-   'One @referenceFor application paired with a consuming coordinate that offers the participant it names: one row per application and consumer whose participant set holds the spelling.',
-   'For example an application naming Film under an input type two queries consume draws a row for the query whose union holds Film and none for the query whose does not.',
-   'Whether a per-participant route applies at a coordinate is a resolution two readers now ask, and a resolution living in one reader''s WHERE clause is one the next reader re-spells. ReferenceForParticipantDefects asks it negatively, an application matching nowhere being a typo, and the @nodeId landing verdicts ask it positively, a branch a participant route reaches being one whose stated navigation the store computed for a different route. The grain is the application and the consumer together because validity is two-layered: one input type may be consumed by two queries whose participant sets differ, so an application applies at one and is inert at the other, and that inertness is the classifier''s own rule rather than a scoping convenience. An application naming a participant no consumer offers has no row at all, which is the inertness rule as a population. Filed intent_ because it crosses graphitron_ capture and two intent_ resolutions.');
+   'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.');
 

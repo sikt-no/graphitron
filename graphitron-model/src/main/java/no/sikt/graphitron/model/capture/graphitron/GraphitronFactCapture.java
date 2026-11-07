@@ -29,12 +29,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
@@ -170,16 +168,11 @@ public final class GraphitronFactCapture {
                 }
             }
             case "referenceFor" -> {
-                if (!sink.claim(GRAPHITRON_REFERENCE_FOR_ENTRY, type, field, ordinal)) return;
-                String participant = string(directive, "type");
-                if (participant == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                record.setOrdinal(ordinal);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setParticipantTypeRef(participant);
-                sink.add(record);
+                // The application is graphitron_ast_reference_for_entry's; the claim reads each one
+                // once for its steps' method references and spellings.
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "REFERENCE_FOR_STEP", type, field,
+                        ordinal)) return;
+                if (string(directive, "type") == null) return;
                 int position = 0;
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
@@ -265,17 +258,10 @@ public final class GraphitronFactCapture {
                 }
             }
             case "referenceFor" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY, type, field, argument, ordinal)) return;
-                String participant = string(directive, "type");
-                if (participant == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                record.setArgumentName(argument);
-                record.setOrdinal(ordinal);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setParticipantTypeRef(participant);
-                sink.add(record);
+                // On the field site's terms.
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "ARGUMENT_REFERENCE_FOR_STEP", type,
+                        field, argument, ordinal)) return;
+                if (string(directive, "type") == null) return;
                 int position = 0;
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
@@ -550,10 +536,8 @@ public final class GraphitronFactCapture {
      * corpus never declared the directive.
      */
     private static final List<Table<?>> DECODED = List.of(
-        GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
         GRAPHITRON_METHOD_REFERENCE_ENTRY,
-        GRAPHITRON_REFERENCE_FOR_ENTRY,
         GRAPHITRON_SPELLED_REFERENCE_ENTRY,
         GRAPHITRON_UNDECODED_ARGUMENT_ENTRY);
 

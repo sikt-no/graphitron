@@ -79,7 +79,6 @@ class RelationRegistrationGateTest {
             // keyed one fact five ways; both producers now write the coordinate instead.
             "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_field_reference_entry",
-            "graphitron_reference_for_entry", "graphitron_argument_reference_for_entry",
             "graphitron_routine_entry",
             "graphitron_undecoded_argument_entry",
             // The two supertypes ride the arm of the sites that spell them. Both are written in the
@@ -393,7 +392,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_node_id_decode_hop", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop_column", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_column", Arm.DERIVED);
-        registrations.put("intent_reference_for_application", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("graphitron_argument_scope_table_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop_rule", Arm.DERIVED);

@@ -570,7 +570,7 @@ store keeps one shape of each fact. That means no coordinate-keyed entries, no s
 pass and no stratum that clears and recomputes.
 
 * **No `graphitron_*_entry` survives, an entry being the transcription's alone** `blocked`, on the
-  four below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
+  three below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
   the others goes. A reader moves onto the `graphitron_ast_` entry joined to
   `graphql_directive_application` by the application's position, ordinal zero standing for the one
   application a coordinate-keyed copy kept, as the `@error` hover and the `@orderBy` and
@@ -578,10 +578,6 @@ pass and no stratum that clears and recomputes.
   * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies one
     `graphitron_ast_` entry onto a coordinate key, `graphitron_routine_entry`, which goes with
     "`graphitron_routine_entry` is gone".
-  * **The per-site pairs collapse onto a coordinate** `open`. `graphitron_reference_for_entry` and
-    `graphitron_argument_reference_for_entry`: their twin `graphitron_ast_reference_for_entry` is
-    already one relation over every site, so `intent_reference_for_application` and
-    `ReferenceForParticipantDefects` move and both halves go.
   * **`graphitron_routine_entry` is gone** `open`. The registry decode stops writing it, and its
     readers move to `graphitron_ast_routine_entry`, the path and the applications.
   * **The untwinned entries get an ast entry first** `open`. Each entry with no `graphitron_ast_`
@@ -2634,6 +2630,13 @@ field's coordinate, stated in each reader's own query.
 written at a coordinate, and with which `typeName:`, is what was written, so
 `graphitron_node_id_instruction_rule` and `graphitron_argmapping_match` read the coordinate's first
 `@nodeId` application joined to `graphitron_ast_node_id_entry`.
+
+**The `@referenceFor` per-site pair** (2026-11-07). `graphitron_reference_for_entry` and
+`graphitron_argument_reference_for_entry`, and `intent_reference_for_application` with its grain
+`reference-for-application`, dissolved into its one reader: `ReferenceForParticipantDefects` reads
+the written participant off the `@referenceFor` applications and `graphitron_ast_reference_for_entry`
+and anti-joins the consumers offering it off the occurrences and the field targets. The decode's
+step method-reference claims are keyed on `graphitron_method_reference_entry`.
 
 **The argument-site marker decodes** (2026-11-07). `graphitron_order_by_entry` and
 `graphitron_argument_lookup_key_entry`: their readers, two rules of `graphitron_entry_defect_rule`,

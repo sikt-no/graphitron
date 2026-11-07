@@ -111,9 +111,7 @@ class DetectionReadReachGateTest {
         // and binding. It is the union intent_poly_member was over the same two tables, and the
         // reference-for application that reaches it answers no slower than it did through the
         // participant view on the sakila and sis stores.
-        REACH.put("ReferenceForParticipantDefects", Set.of(
-            "graphql_poly_member",
-            "intent_reference_for_application"));
+        REACH.put("ReferenceForParticipantDefects", Set.of("graphql_poly_member"));
 
         // Eleven relations while this component evaluated the unlowerable-ordering view; it reads
         // the stored ORDERING_ACROSS_PARTICIPANTS defects now, and only the container's members are

@@ -71,15 +71,6 @@ extend type Query {
   sited(filter: HolderFilter): [Sited!]!
 }
 
-# The applications the exclusion reads, per consumer: the misspelled one and the input field under
-# sited, whose consumer offers no DivergedRefChild, have no row.
-extend schema @expectEquals(relation: "intent_reference_for_application", rows: """
-  site,        type_name,    field_name, argument_name, ordinal, consuming_type_name, consuming_field_name, participant_type_name, table_name
-  ARGUMENT,    Query,        holders,    ofOrg,         0,       Query,               holders,              DivergedRefChild,      diverged_ref_child
-  ARGUMENT,    Query,        sameTable,  ofOrg,         0,       Query,               sameTable,            DivergedRefChildRead,  diverged_ref_child
-  INPUT_FIELD, HolderFilter, ofOrg,      ,              0,       Query,               filteredHolders,      DivergedRefChild,      diverged_ref_child
-  """)
-
 # One row per @nodeId: a path ending elsewhere is NODE_ID_LANDS_ON_TABLE, a landed key column of
 # another Java type NODE_ID_LANDING_TYPE_DISAGREES. A @referenceFor route is its own branch's written
 # path, so holders' sibling and sameTable's other participant, whose routes are discovered, are

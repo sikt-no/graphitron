@@ -10,14 +10,15 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
@@ -62,28 +63,20 @@ import static org.jooq.impl.DSL.selectOne;
  * {@code INPUT_FIELD} occurrences of the application's own field, so an application on an object or
  * interface field matches none and never enters the population.
  *
- * <p>Both arms are anti-joins against {@code intent_reference_for_application}, which is the
- * resolution "does this application apply at this consumer, and to which participant" as a relation
- * rather than as a join this reader spells twice. The predicate is the same one it always was: an
- * application has a row there for each consumer offering the participant it names, so no row
- * anywhere is exactly the name that matched nothing anywhere. What changed is that a second reader
- * asks the same question, the {@code @nodeId} landing verdicts needing to know which branches a
- * per-participant route reaches, and a derivation two readers ask for is a relation. The two
- * population gates below stay here, being this reader's own question rather than that relation's.
+ * <p>Both arms read the applications as written, off {@code graphql_directive_application} and
+ * {@code graphitron_ast_reference_for_entry}, and anti-join the consumers that offer the named
+ * participant: an application no consumer anywhere offers its participant to is the name that
+ * matched nothing anywhere. The two population gates stay with each arm.
  */
 public final class ReferenceForParticipantDefects {
 
     private ReferenceForParticipantDefects() {}
 
-    /**
-     * Every relation this component's statements name. {@code intent_reference_for_application} is
-     * the driving read; {@code consumersOf} then runs once per application row and
-     * {@code participantsOf} once per consumer of one, reading the consumer's target and its
-     * table-bound members.
-     */
+    /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_FIELD_TARGET, GRAPHITRON_FIELD,
-        GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, GRAPHITRON_OCCURRENCE, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
-        GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY, GRAPHITRON_REFERENCE_FOR_ENTRY);
+        GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, GRAPHITRON_OCCURRENCE, INTENT_TYPE_DOMAIN,
+        GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_FIELD_ELEMENT, GRAPHQL_ARGUMENT_ELEMENT,
+        GRAPHITRON_AST_REFERENCE_FOR_ENTRY);
 
     /**
      * The detection pass's typed product: one entry per application whose participant spelling
@@ -130,57 +123,94 @@ public final class ReferenceForParticipantDefects {
 
     /**
      * The input-field arm: the application's input field is reached somewhere, and no consumer of it
-     * has a participant by that name.
+     * offers a table-bound participant by that name.
      */
     private static List<Defect> inputFieldDefects(DSLContext dsl, String graphName) {
-        var r = GRAPHITRON_REFERENCE_FOR_ENTRY;
+        var ap = GRAPHQL_DIRECTIVE_APPLICATION;
+        var f = GRAPHQL_FIELD_ELEMENT;
+        var r = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
         var o = GRAPHITRON_OCCURRENCE;
-        var a = INTENT_REFERENCE_FOR_APPLICATION;
-        return dsl.selectFrom(r)
-            .where(r.GRAPH_NAME.eq(graphName),
+        var reached = GRAPHITRON_OCCURRENCE.as("reached");
+        var consumer = GRAPHITRON_OCCURRENCE.as("consumer");
+        var cf = GRAPHITRON_FIELD;
+        var ft = GRAPHITRON_FIELD_TARGET;
+        var m = GRAPHQL_POLY_MEMBER;
+        var bt = GRAPHITRON_TABLETYPE;
+        var cb = GRAPHITRON_TABLETYPE.as("container_binding");
+        return dsl.select(f.TYPE_NAME, f.FIELD_NAME, r.PARTICIPANT_TYPE_REF, ap.SOURCE_NAME,
+                ap.SOURCE_LINE, ap.SOURCE_COLUMN)
+            .from(ap)
+            .join(f).on(f.GRAPH_NAME.eq(ap.GRAPH_NAME), f.COORDINATE.eq(ap.COORDINATE))
+            .join(r).on(r.GRAPH_NAME.eq(ap.GRAPH_NAME), r.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                r.SOURCE_LINE.eq(ap.SOURCE_LINE), r.SOURCE_COLUMN.eq(ap.SOURCE_COLUMN))
+            .where(ap.GRAPH_NAME.eq(graphName), ap.DIRECTIVE_NAME.eq("referenceFor"),
                 // Reached somewhere: an input field nothing reaches is outside what the build classifies.
                 exists(selectOne().from(o)
                     .where(o.GRAPH_NAME.eq(graphName), o.KIND.eq(inline("INPUT_FIELD")),
-                        o.ELEMENT_COORDINATE.eq(r.TYPE_NAME.concat(inline("."), r.FIELD_NAME)))),
-                // And the application applies at no consumer of it.
-                notExists(selectOne().from(a)
-                    .where(a.GRAPH_NAME.eq(graphName), a.SITE.eq("INPUT_FIELD"),
-                        a.TYPE_NAME.eq(r.TYPE_NAME), a.FIELD_NAME.eq(r.FIELD_NAME),
-                        a.ORDINAL.eq(r.ORDINAL))))
-            .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.ORDINAL)
+                        o.ELEMENT_COORDINATE.eq(ap.COORDINATE))),
+                // And no consumer of it offers the participant it names.
+                notExists(selectOne().from(reached)
+                    .join(consumer).on(consumer.GRAPH_NAME.eq(reached.GRAPH_NAME),
+                        consumer.COORDINATE.eq(reached.FIELD_COORDINATE))
+                    .join(cf).on(cf.GRAPH_NAME.eq(consumer.GRAPH_NAME),
+                        cf.COORDINATE.eq(consumer.ELEMENT_COORDINATE))
+                    .join(ft).on(ft.GRAPH_NAME.eq(cf.GRAPH_NAME), ft.TYPE_NAME.eq(cf.TYPE_NAME),
+                        ft.FIELD_NAME.eq(cf.FIELD_NAME))
+                    .join(m).on(m.GRAPH_NAME.eq(ft.GRAPH_NAME), m.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME),
+                        m.MEMBER_TYPE_NAME.eq(r.PARTICIPANT_TYPE_REF))
+                    .join(bt).on(bt.GRAPH_NAME.eq(m.GRAPH_NAME), bt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME))
+                    .where(reached.GRAPH_NAME.eq(graphName), reached.KIND.eq(inline("INPUT_FIELD")),
+                        reached.ELEMENT_COORDINATE.eq(ap.COORDINATE))
+                    .andNotExists(selectOne().from(cb)
+                        .where(cb.GRAPH_NAME.eq(ft.GRAPH_NAME), cb.TYPE_NAME.eq(ft.TARGET_TYPE_NAME)))))
+            .orderBy(f.TYPE_NAME, f.FIELD_NAME, ap.ORDINAL)
             .fetch(row -> {
-                String coordinate = row.getTypeName() + "." + row.getFieldName();
-                var consumers = consumersOf(dsl, graphName, row.getTypeName(), row.getFieldName());
-                return new Defect(coordinate, row.getParticipantTypeRef(),
-                    inputFieldRejection(row.getParticipantTypeRef(), consumers),
-                    location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
+                String coordinate = row.value1() + "." + row.value2();
+                var consumers = consumersOf(dsl, graphName, row.value1(), row.value2());
+                return new Defect(coordinate, row.value3(),
+                    inputFieldRejection(row.value3(), consumers),
+                    location(row.value4(), row.value5(), row.value6()));
             });
     }
 
     /**
-     * The argument arm: the argument's own field returns no polymorphic type with a participant by
-     * this name. Narrowed to the classification domain the way the sibling {@code @nodeId} families
-     * are, the refused coordinate's owning type carrying the field.
+     * The argument arm: the argument's own field returns no polymorphic type with a table-bound
+     * participant by this name. Narrowed to the classification domain the way the sibling
+     * {@code @nodeId} families are, the refused coordinate's owning type carrying the field.
      */
     private static List<Defect> argumentDefects(DSLContext dsl, String graphName) {
-        var a = GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
-        var ra = INTENT_REFERENCE_FOR_APPLICATION;
+        var ap = GRAPHQL_DIRECTIVE_APPLICATION;
+        var g = GRAPHQL_ARGUMENT_ELEMENT;
+        var r = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
         var d = INTENT_TYPE_DOMAIN;
-        return dsl.selectFrom(a)
-            .where(a.GRAPH_NAME.eq(graphName),
+        var ft = GRAPHITRON_FIELD_TARGET;
+        var m = GRAPHQL_POLY_MEMBER;
+        var bt = GRAPHITRON_TABLETYPE;
+        var cb = GRAPHITRON_TABLETYPE.as("container_binding");
+        return dsl.select(g.TYPE_NAME, g.FIELD_NAME, g.ARGUMENT_NAME, r.PARTICIPANT_TYPE_REF,
+                ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
+            .from(ap)
+            .join(g).on(g.GRAPH_NAME.eq(ap.GRAPH_NAME), g.COORDINATE.eq(ap.COORDINATE))
+            .join(r).on(r.GRAPH_NAME.eq(ap.GRAPH_NAME), r.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                r.SOURCE_LINE.eq(ap.SOURCE_LINE), r.SOURCE_COLUMN.eq(ap.SOURCE_COLUMN))
+            .where(ap.GRAPH_NAME.eq(graphName), ap.DIRECTIVE_NAME.eq("referenceFor"),
                 exists(selectOne().from(d)
-                    .where(d.GRAPH_NAME.eq(graphName), d.TYPE_NAME.eq(a.TYPE_NAME))),
-                notExists(selectOne().from(ra)
-                    .where(ra.GRAPH_NAME.eq(graphName), ra.SITE.eq("ARGUMENT"),
-                        ra.TYPE_NAME.eq(a.TYPE_NAME), ra.FIELD_NAME.eq(a.FIELD_NAME),
-                        ra.ARGUMENT_NAME.eq(a.ARGUMENT_NAME), ra.ORDINAL.eq(a.ORDINAL))))
-            .orderBy(a.TYPE_NAME, a.FIELD_NAME, a.ARGUMENT_NAME, a.ORDINAL)
+                    .where(d.GRAPH_NAME.eq(graphName), d.TYPE_NAME.eq(g.TYPE_NAME))),
+                notExists(selectOne().from(ft)
+                    .join(m).on(m.GRAPH_NAME.eq(ft.GRAPH_NAME), m.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME),
+                        m.MEMBER_TYPE_NAME.eq(r.PARTICIPANT_TYPE_REF))
+                    .join(bt).on(bt.GRAPH_NAME.eq(m.GRAPH_NAME), bt.TYPE_NAME.eq(m.MEMBER_TYPE_NAME))
+                    .where(ft.GRAPH_NAME.eq(graphName), ft.TYPE_NAME.eq(g.TYPE_NAME),
+                        ft.FIELD_NAME.eq(g.FIELD_NAME))
+                    .andNotExists(selectOne().from(cb)
+                        .where(cb.GRAPH_NAME.eq(ft.GRAPH_NAME), cb.TYPE_NAME.eq(ft.TARGET_TYPE_NAME)))))
+            .orderBy(g.TYPE_NAME, g.FIELD_NAME, g.ARGUMENT_NAME, ap.ORDINAL)
             .fetch(row -> {
-                String coordinate = row.getTypeName() + "." + row.getFieldName();
-                var participants = participantsOf(dsl, graphName, row.getTypeName(), row.getFieldName());
-                return new Defect(coordinate, row.getParticipantTypeRef(),
-                    argumentRejection(row.getArgumentName(), row.getParticipantTypeRef(), participants),
-                    location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
+                String coordinate = row.value1() + "." + row.value2();
+                var participants = participantsOf(dsl, graphName, row.value1(), row.value2());
+                return new Defect(coordinate, row.value4(),
+                    argumentRejection(row.value3(), row.value4(), participants),
+                    location(row.value5(), row.value6(), row.value7()));
             });
     }
 

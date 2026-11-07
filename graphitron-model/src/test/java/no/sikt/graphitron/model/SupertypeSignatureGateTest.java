@@ -235,8 +235,6 @@ class SupertypeSignatureGateTest {
                "graphitron_ast_reference_condition_step_entry",
                "graphitron_ast_service_entry"),
         Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry"),
-        Set.of("graphitron_argument_reference_for_entry", "graphitron_ast_reference_for_entry",
-               "graphitron_reference_for_entry"),
         // What the step split leaves in place of the two wide relations, one per arm now that both
         // directives and every site write the same arm to one relation. The table arm sits with
         // @table, because naming a table is one fact wherever it is written, and the condition arm
@@ -278,14 +276,6 @@ class SupertypeSignatureGateTest {
      * {@code view|member,member}. Each is a supertype this schema owes, and the shape is the same
      * in all of them: an argument-site relation unioned with its field-site twin, because the
      * author may write the same directive at either coordinate and no relation says so once.
-     *
-     * <p>{@code intent_reference_for_application} is the newest row and the one worth reading as an
-     * improvement rather than as a regression. Its two arms were previously spelled inside one
-     * reader's {@code WHERE} clause, twice, so the reconstruction existed and this gate could not
-     * see it; naming the resolution as a relation is what made it visible here, and what a second
-     * reader now joins instead of respelling. The supertype it owes is the same one every other row
-     * owes: {@code @referenceFor} written at an argument and at a field is one fact at two
-     * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
         "graphql_poly_member|graphql_implements_interface,graphql_union_member",
@@ -297,8 +287,8 @@ class SupertypeSignatureGateTest {
         // The carriers' tags, authored or configured: the union graphitron_directive_application_arg
         // makes for every coordinate, made here for carriers alone, and stored for the reason the
         // set above gives.
-        "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg",
-        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry");
+        "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg");
+
 
 
     @Test
