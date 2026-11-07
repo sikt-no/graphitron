@@ -25,6 +25,14 @@ type CreateFilmsPayload {
 # Backed by FilmRecord, the target's own record: the field refetches it.
 type FilmServicePayload {
   film: Film
+  census: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
+}
+
+# A record whose film() component returns the FilmRecord a service under it batches on: the service
+# takes its keys through that member, found by what it returns.
+type FilmKeySummary {
+  label: String
+  keyCensus: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
 }
 
 # A plain class whose addresses() returns AddressRecords, the table the union's members hang off.
@@ -39,6 +47,8 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService", method: "recentlyCreatedFilmsBatched"})
   serviceFilmById(id: Int!): FilmServicePayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  filmKeySummaries: [FilmKeySummary!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
   occupantsBatch: [OccupantsBatchPayload!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayloadService", method: "occupantsBatch"})
 }
@@ -48,6 +58,8 @@ extend schema @expectEquals(relation: "graphitron_field_key_row", rows: """
   FilmDetailsCarrier,    language,   COLUMNS,  film,       ONE
   CreateFilmsPayload,    films,      ACCESSOR, film,       MANY
   FilmServicePayload,    film,       COLUMNS,  film,       ONE
+  FilmServicePayload,    census,     COLUMNS,  film,       ONE
+  FilmKeySummary,        keyCensus,  ACCESSOR, film,       ONE
   OccupantsBatchPayload, occupants,  ACCESSOR, address,    MANY
   """)
 
@@ -58,4 +70,5 @@ extend schema @expectEquals(relation: "graphitron_field_key_row_accessor", rows:
   type_name,             field_name, slot_class_name,                                                slot_method_name, slot_descriptor
   CreateFilmsPayload,    films,      no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,    films,            ()Ljava/util/List;
   OccupantsBatchPayload, occupants,  no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload, addresses,        ()Ljava/util/List;
+  FilmKeySummary,        keyCensus,  no.sikt.graphitron.rewrite.test.services.FilmKeySummary,        film,             ()Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/records/FilmRecord;
   """)

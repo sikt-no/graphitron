@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceShape;
@@ -20,9 +21,7 @@ import java.util.TreeMap;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
-import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -61,19 +60,13 @@ class FieldKeyRowPinTest {
                 CatalogInput.of(testContext()), sakilaClasspath())) {
             var dsl = store.dsl();
             var k = GRAPHITRON_FIELD_KEY_ROW;
-            var f = GRAPHITRON_FIELD;
-            var rc = GRAPHITRON_RESULT_CLASS;
-            var slot = CODE_READ_SLOT;
+            var a = GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
             var stored = new TreeMap<String, String>();
-            // An accessor key reads the member the field's bound name finds on the class its
-            // parent's result holds; nothing stores which, so the pin reads it as the join.
-            dsl.select(k.TYPE_NAME, k.FIELD_NAME, k.KIND, k.ARITY, slot.METHOD_NAME)
+            // An accessor key names the member it reads, its code_read_slot row.
+            dsl.select(k.TYPE_NAME, k.FIELD_NAME, k.KIND, k.ARITY, a.SLOT_METHOD_NAME)
                 .from(k)
-                .join(f).on(f.GRAPH_NAME.eq(k.GRAPH_NAME), f.TYPE_NAME.eq(k.TYPE_NAME),
-                    f.FIELD_NAME.eq(k.FIELD_NAME))
-                .leftJoin(rc).on(rc.GRAPH_NAME.eq(k.GRAPH_NAME), rc.TYPE_NAME.eq(k.TYPE_NAME),
-                    k.KIND.eq("ACCESSOR"))
-                .leftJoin(slot).on(slot.CLASS_NAME.eq(rc.CLASS_NAME), slot.SLOT_NAME.eq(f.BOUND_NAME))
+                .leftJoin(a).on(a.GRAPH_NAME.eq(k.GRAPH_NAME), a.TYPE_NAME.eq(k.TYPE_NAME),
+                    a.FIELD_NAME.eq(k.FIELD_NAME))
                 .fetch()
                 .forEach(r -> stored.put(r.value1() + "." + r.value2(),
                     r.value3() + " " + r.value4() + (r.value5() == null ? "" : " " + r.value5())));
@@ -111,6 +104,22 @@ class FieldKeyRowPinTest {
         for (var f : schema.fields().values()) {
             if (!(f instanceof ChildField cf)
                 || !(schema.types().get(cf.parentTypeName()) instanceof GraphitronType.ResultType)) {
+                continue;
+            }
+            // A service under a held object keys its batch by records of the table its source
+            // parameter collects, off the parent itself or through the one member returning one.
+            var serviceKey = switch (cf) {
+                case ChildField.ServiceTableField s -> s.keySource();
+                case ChildField.ServiceRecordField s -> s.keySource();
+                default -> null;
+            };
+            if (serviceKey != null) {
+                switch (serviceKey) {
+                    case ServiceKeySource.FromHeldRecord x -> out.put(cf.parentTypeName() + "." + cf.name(), "COLUMNS ONE");
+                    case ServiceKeySource.FromAccessor x -> out.put(cf.parentTypeName() + "." + cf.name(),
+                        "ACCESSOR ONE " + x.accessor().methodName());
+                    case ServiceKeySource.FromTableRow x -> { }
+                }
                 continue;
             }
             KeyLift lift = switch (cf) {

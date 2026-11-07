@@ -14931,6 +14931,33 @@ accessor (graph_name, type_name, field_name, source_name, class_name, method_nam
                              AND et.table_name = t.table_name))
      AND ((s.delivery = 'MANY') = fa.many)
 )
+,
+-- A service under a parent holding an OBJECT, and the table whose records its one source parameter
+-- collects, the key's table: the batch is keyed by that table's records, read off the parent.
+service_at (graph_name, type_name, field_name, class_name, record_source_name, record_schema,
+            record_table, key_source_name, key_schema, key_table, key_record_class) AS (
+  SELECT ps.graph_name, ps.type_name, ps.field_name, rc.class_name, rt.source_name, rt.table_schema,
+         rt.table_name, kt.source_name, kt.table_schema, kt.table_name, kt.record_class_fqn
+    FROM graphitron_producer_service ps
+    JOIN graphitron_result r
+      ON r.graph_name = ps.graph_name AND r.type_name = ps.type_name AND r.shape = 'OBJECT'
+    LEFT JOIN graphitron_result_class rc
+      ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
+    LEFT JOIN sql_table rt
+      ON rt.record_class_fqn = rc.class_name
+    JOIN code_method_parameter mp
+      ON mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+     AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor AND mp.delivery = 'MANY'
+    JOIN sql_table kt
+      ON kt.record_class_fqn = mp.element_class
+   WHERE (SELECT COUNT(*) FROM graphitron_result_class c2
+           WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) <= 1
+     AND (SELECT COUNT(*) FROM code_method_parameter mp2
+            JOIN sql_table kt2 ON kt2.record_class_fqn = mp2.element_class
+           WHERE mp2.source_name = mp.source_name AND mp2.class_name = mp.class_name
+             AND mp2.method_name = mp.method_name AND mp2.descriptor = mp.descriptor
+             AND mp2.delivery = 'MANY') = 1
+)
 -- A re-fetch: the parent is the payload a write hands back, or a record of the target's own table
 -- a service produced, so the target's key is read straight off it.
 SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.table_schema,
@@ -14963,7 +14990,27 @@ SELECT a.graph_name, a.type_name, a.field_name, 'ACCESSOR', a.table_source_name,
        a.table_name, a.arity, a.source_name, a.class_name, a.method_name, a.descriptor
   FROM accessor a
  WHERE (SELECT COUNT(*) FROM accessor a2 WHERE a2.graph_name = a.graph_name
-          AND a2.type_name = a.type_name AND a2.field_name = a.field_name) = 1;
+          AND a2.type_name = a.type_name AND a2.field_name = a.field_name) = 1
+UNION ALL
+-- A service whose parent is the key's table's record reads the key off the parent itself.
+SELECT sa.graph_name, sa.type_name, sa.field_name, 'COLUMNS', sa.key_source_name, sa.key_schema,
+       sa.key_table, 'ONE',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM service_at sa
+ WHERE sa.record_source_name = sa.key_source_name AND sa.record_schema = sa.key_schema
+   AND sa.record_table = sa.key_table
+UNION ALL
+-- Otherwise through the one member of the parent's class returning one such record, found by what it
+-- returns rather than by its name.
+SELECT sa.graph_name, sa.type_name, sa.field_name, 'ACCESSOR', sa.key_source_name, sa.key_schema,
+       sa.key_table, 'ONE', s.source_name, s.class_name, s.method_name, s.descriptor
+  FROM service_at sa
+  JOIN code_read_slot s
+    ON s.class_name = sa.class_name AND s.element_class = sa.key_record_class AND s.delivery = 'DIRECT'
+ WHERE sa.record_table IS DISTINCT FROM sa.key_table
+   AND (SELECT COUNT(*) FROM code_read_slot s2
+         WHERE s2.class_name = sa.class_name AND s2.element_class = sa.key_record_class
+           AND s2.delivery = 'DIRECT') = 1;
 COMMENT ON VIEW graphitron_field_key_row_rule IS 'One row the key-row rule computes, in the shape graphitron_field_key_row and its method subtype store together: the rule itself, evaluated on demand rather than read off disk. For example a capture writes this view''s rows for one graph into the two relations, which are the names every reader spells.';
 
 CREATE TABLE graphitron_field_scope_table (
