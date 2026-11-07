@@ -297,8 +297,9 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     batch key, "A split carries the target's key where the source states it", an `ACCESSOR` key
     row handing the target's key where `COLUMNS` hands the parent's; `graphitron_occurrence_producer_write`
     by "A `@mutation(table:)` that disagrees with its return's table is a defect" and by the write
-    producer's readers under "The producer's readers read the occurrence producer, and the
-    field-keyed family goes"; `graphitron_fetcher` goes under that same node, the fetcher being
+    producer's readers under
+    "The producer's readers read the occurrence producer, and the field-keyed family goes";
+    `graphitron_fetcher` goes under that same node, the fetcher being
     derived off `graphitron_occurrence_producer`, which the frame's query reads already.
     `graphitron_occurrence_source_object` is F's, the source being F's.
     * **`graphitron_occurrence_parameter` goes** `open`, E's. The `ARGUMENT` fill's
