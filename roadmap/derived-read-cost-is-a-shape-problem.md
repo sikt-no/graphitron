@@ -548,7 +548,8 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
     argument or input field matching no column at its path's end is `COLUMN_UNRESOLVED` only where
     no call parameter consumes it.
 * **The generator emits from an argument only when no call consumes it** `blocked`, on "An argument's consumer is stated".
-  `override:` is no longer read. What goes: the `enclosingOverride` cascade in `ClassifyContext`,
+  `override:` is no longer read, and `graphitron_ast_field_condition_entry`, the store's only typed copy
+  of a written `override:` on a field, has its reader or goes. What goes: the `enclosingOverride` cascade in `ClassifyContext`,
   `InputFieldResolver` and `FieldBuilder`, `suppressedByFieldOverride` on `ArgumentRef`,
   the `override` axis of `ConditionFactVisitor` and `ArgConditionRef`, and the walk's refusals that
   turn on it (the `override: false` column miss in `BuildContext`, the mutation-input and `@nodeId`
@@ -572,13 +573,32 @@ pass and no stratum that clears and recomputes.
 
 * **No `graphitron_*_entry` survives, an entry being the transcription's alone** `blocked`, on the
   four below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
-  the others goes.
-  * **The per-site triples collapse onto a coordinate** `open`. As `graphql_directive_application`
-    did, so one collapse retires several relations.
+  the others goes. A reader moves onto the `graphitron_ast_` entry joined to
+  `graphql_directive_application` by the application's position, ordinal zero standing for the one
+  application a coordinate-keyed copy kept, as the `@error` hover and the `@orderBy` and
+  `@lookupKey` readers now read.
+  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies thirteen
+    `graphitron_ast_` entries onto a coordinate key: `graphitron_table_entry`,
+    `graphitron_scalar_type_entry`, `graphitron_connection_entry`, `graphitron_mutation_entry`,
+    `graphitron_service_entry`, `graphitron_default_order_entry`, `graphitron_node_entry`,
+    `graphitron_node_keycolumn_entry`, `graphitron_node_legacykeycolumn_entry`,
+    `graphitron_routine_entry`, `graphitron_outbox_entry`, `graphitron_field_binding_entry` and
+    `graphitron_facet_entry`, each read by rules of `graphitron_entry_defect_rule`, `intent_` views
+    or main code.
+  * **The per-site pairs collapse onto a coordinate** `open`. `graphitron_field_node_id_entry` and
+    `graphitron_argument_node_id_entry`, `graphitron_reference_for_entry` and
+    `graphitron_argument_reference_for_entry`: their twins `graphitron_ast_node_id_entry` and
+    `graphitron_ast_reference_for_entry` are already one relation over every site, so the readers
+    (`graphitron_node_id_instruction_rule`, `graphitron_argmapping_match`,
+    `intent_reference_for_application`, `ReferenceForParticipantDefects`) move and both halves go.
   * **`graphitron_routine_entry` is gone** `open`. The registry decode stops writing it, and its
     readers move to `graphitron_ast_routine_entry`, the path and the applications.
   * **The untwinned entries get an ast entry first** `open`. Each entry with no `graphitron_ast_`
-    twin gets one, its readers move, and the old one goes.
+    twin gets one, its readers move, and the old one goes. Left: `graphitron_spelled_reference_entry`,
+    a spelling being a column of several `graphitron_ast_` entries and no relation of its own, and
+    `graphitron_undecoded_argument_entry`, read only by `meta_family_headline`. The decode's
+    `graphitron_field_reference_entry` and `graphitron_method_reference_entry` have twins,
+    `graphitron_ast_reference_entry` and `graphitron_ast_code_reference_entry`.
 * **The supertype roster becomes shrink-only** `open`. The roster of duplicated entries is a
   ratchet that can only lose rows.
 * **`GraphitronAssemblyCapture` is gone, its steps the anchor's own lines** `blocked`, on the child
@@ -892,9 +912,14 @@ output package they are written to are settled.
   `GraphitronFacadeGenerator`, `GraphitronDevExecutorGenerator`, `FetcherRegistrationsEmitter` and
   `GraphitronSchemaClassGenerator` take roots, nodes, scalars, error types and entities from the
   emitted schema and the store, once the facts below exist.
-  * **An enum's runtime value is stated by coordinate** `open`.
+  * **An enum's runtime value is stated by coordinate** `open`. It reads `graphitron_ast_enum_entry`,
+    the store's only typed copy of an enum's `@enum` reference.
   * **A scalar's resolution is stated** `open`.
-  * **A discriminated interface's type resolver is stated** `open`.
+  * **A discriminated interface's type resolver is stated** `open`. It reads
+    `graphitron_ast_discriminate_entry` and `graphitron_ast_discriminator_entry`.
+  * **An enum value's ordering is read from the store** `open`. The generator reads an enum value's
+    `@order` and `@index` off the schema; `graphitron_ast_order_entry`,
+    `graphitron_ast_order_field_entry` and `graphitron_ast_index_entry` are the store's only typed copy.
   * **The `@error` handlers are stated** `open`.
   * **Entity resolution is stated** `open`.
   * **Each field's wiring is stated** `open`. The cases `FetcherEmitter.bind` switches on, read with

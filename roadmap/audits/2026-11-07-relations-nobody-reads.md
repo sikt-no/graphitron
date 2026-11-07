@@ -72,6 +72,12 @@ step's method reference is written, is keyed on `graphitron_method_reference_ent
 `graphitron_ast_external_field_entry` and `graphitron_ast_default_order_field_entry`, the twins of
 the copies that went, read by nothing yet.
 
+Stayed, with the reader each waits for named in the graph: `graphitron_ast_discriminate_entry` and
+`graphitron_ast_discriminator_entry`, `graphitron_ast_enum_entry`, `graphitron_ast_order_entry`,
+`graphitron_ast_order_field_entry`, `graphitron_ast_index_entry` and
+`graphitron_ast_field_condition_entry`, each the store's only typed copy of what the generator still reads
+off the schema.
+
 The `@error` decode went too, `graphitron_error_entry` and `graphitron_error_handler_entry`: the
 language server's type hover read the handler rows, and reads `graphitron_ast_error_handler_entry`
 and `graphitron_ast_error_generic_handler_entry` instead, which gives the `@error` capture its reader.
@@ -95,7 +101,8 @@ is checked before it goes.
 The DDL check moved these out of the lists the censuses gave:
 
 - read by `graphitron_entry_defect_rule`: `graphitron_service_entry`, `graphitron_scalar_type_entry`,
-  `graphitron_argument_lookup_key_entry`, `graphitron_ast_input_value_condition_entry`,
+  `graphitron_argument_lookup_key_entry` (gone 2026-11-07, its rule reading the applications),
+  `graphitron_ast_input_value_condition_entry`,
   `sql_node_metadata_unreadable`, `code_method_exception`;
 - supertypes whose subtypes are read: `graphitron_ast_reference_entry`, `graphitron_ast_link_entry`,
   `graphql_ast_schema_definition_entry`, `graphql_directive_argument_element`,
