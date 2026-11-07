@@ -279,6 +279,19 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
     producer's source and argument values, its statement counted, and runs only when queried.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
+* **Relations nobody reads go** `open`, F's.
+  A census of every relation's readers, static over the main sources and at runtime over a full
+  build (`roadmap/audits/2026-11-07-relations-nobody-reads.md`), found 56 that no main code reads.
+  Each is checked by hand before it goes, since the census holds false leads.
+  * **Capture written twice and read by neither copy goes** `open`, F's. The `graphitron_ast_*`
+    entries and the decode copies beside them that the audit's second group lists, a family at a
+    time, each family's fact shown to reach its readers another way or its reader named.
+  * **Each relation written ahead of its reader names it** `open`. The audit's third group, among
+    them `graphitron_occurrence_source_object`, `graphitron_occurrence_parameter` and
+    `graphitron_fetcher`: the owner names the reader in the graph, or the relation goes.
+  * **Settings and catalog facts nothing reads go** `open`, F's. The audit's fourth group, among
+    them the `store_graph_` settings and `sql_table_record_supertype`, each checked against the
+    generator's configuration first.
 * **A path is keyed per pair of tables** `open`.
   Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
   to `graphitron_path`, their readers with them, with a sis timing before and after. A claim's path, walked and
