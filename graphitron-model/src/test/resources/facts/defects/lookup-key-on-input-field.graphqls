@@ -1,6 +1,6 @@
 # @lookupKey is declared on arguments only, so assembly refuses it on an input field, on the query
-# side and the mutation side alike, at the application's own line. Nothing is decoded from either:
-# the lookup key relation holds the argument that carries the directive and nothing else.
+# side and the mutation side alike, at the application's own line. Each is an application at its
+# input field's coordinate all the same, beside the argument's.
 
 type Film @table(name: "film") {
   title: String
@@ -29,7 +29,9 @@ extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
   ASSEMBLY, DirectiveIllegalLocationError,  85
   """)
 
-extend schema @expectEquals(relation: "graphitron_argument_lookup_key_entry", rows: """
-  type_name, field_name,   argument_name
-  Query,     filmsByTitle, title
+extend schema @expectEquals(relation: "graphql_directive_application", where: "directive_name = 'lookupKey'", rows: """
+  coordinate
+  FilmKey.title
+  FilmInput.title
+  Query.filmsByTitle(title:)
   """)

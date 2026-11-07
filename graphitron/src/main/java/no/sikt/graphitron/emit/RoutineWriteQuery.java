@@ -38,7 +38,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -463,7 +462,6 @@ public final class RoutineWriteQuery {
         var fc = GRAPHQL_FIELD_ELEMENT;
         var ac = GRAPHQL_ARGUMENT_ELEMENT;
         var dc = GRAPHQL_DIRECTIVE_APPLICATION;
-        var ob = GRAPHITRON_ORDER_BY_ENTRY;
         var te = GRAPHITRON_TABLE_ENTRY;
         var tt = GRAPHITRON_TABLETYPE;
         var cf = GRAPHITRON_FIELD;
@@ -493,8 +491,10 @@ public final class RoutineWriteQuery {
                             dc.COORDINATE.eq(ac.COORDINATE), dc.DIRECTIVE_NAME.eq("condition"))
                         .where(ac.GRAPH_NAME.eq(r.GRAPH_NAME), ac.TYPE_NAME.eq(r.TYPE_NAME),
                             ac.FIELD_NAME.eq(r.FIELD_NAME))))
-                    .or(exists(selectOne().from(ob).where(ob.GRAPH_NAME.eq(r.GRAPH_NAME),
-                        ob.TYPE_NAME.eq(r.TYPE_NAME), ob.FIELD_NAME.eq(r.FIELD_NAME))))),
+                    .or(exists(selectOne().from(ac).join(dc).on(dc.GRAPH_NAME.eq(ac.GRAPH_NAME),
+                            dc.COORDINATE.eq(ac.COORDINATE), dc.DIRECTIVE_NAME.eq("orderBy"))
+                        .where(ac.GRAPH_NAME.eq(r.GRAPH_NAME), ac.TYPE_NAME.eq(r.TYPE_NAME),
+                            ac.FIELD_NAME.eq(r.FIELD_NAME))))),
                 ft.TARGET_TYPE_NAME,
                 field(exists(selectOne().from(te).where(te.GRAPH_NAME.eq(ft.GRAPH_NAME),
                     te.TYPE_NAME.eq(ft.TARGET_TYPE_NAME)))),

@@ -168,9 +168,7 @@ class MutationRoutineSeatTest {
 
     /**
      * An ordering is a read surface on the same terms as a filter, and {@code @orderBy} has only
-     * the argument site to sit on, so the verdict reads
-     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ORDER_BY_ENTRY}. This is the arm that used to
-     * ride the same name list as the argument condition and now has a relation of its own.
+     * the argument site to sit on, so the verdict reads its applications at the field's arguments.
      */
     @Test
     void anOrderByOnAWriteArgumentIsAReadSurfaceToo() {

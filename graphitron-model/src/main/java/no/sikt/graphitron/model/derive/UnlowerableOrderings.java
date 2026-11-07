@@ -17,8 +17,9 @@ import java.util.Set;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -48,7 +49,8 @@ public final class UnlowerableOrderings {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_DEFAULT_ORDER_ENTRY, GRAPHITRON_ORDER_BY_ENTRY, GRAPHITRON_FIELD_TARGET,
+        GRAPHITRON_DEFAULT_ORDER_ENTRY, GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_ARGUMENT_ELEMENT,
+        GRAPHITRON_FIELD_TARGET,
         GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, INTENT_TYPE_DOMAIN, GRAPHQL_TYPE);
 
     /** Which directive declared the ordering. */
@@ -109,7 +111,8 @@ public final class UnlowerableOrderings {
 
     private static List<Unlowered> read(DSLContext dsl, String graphName, boolean inDomain) {
         var d = GRAPHITRON_DEFAULT_ORDER_ENTRY;
-        var ob = GRAPHITRON_ORDER_BY_ENTRY;
+        var ob = GRAPHQL_DIRECTIVE_APPLICATION;
+        var ae = GRAPHQL_ARGUMENT_ELEMENT;
         var declared = new ArrayList<Declared>();
         dsl.select(d.TYPE_NAME, d.FIELD_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
             .from(d)
@@ -118,12 +121,13 @@ public final class UnlowerableOrderings {
                 domain(graphName, d.TYPE_NAME, inDomain))
             .forEach(r -> declared.add(new Declared(r.value1(), r.value2(),
                 AvailableVia.DEFAULT_ORDER, null, location(r.value3(), r.value4(), r.value5()))));
-        dsl.select(ob.TYPE_NAME, ob.FIELD_NAME, ob.ARGUMENT_NAME, ob.SOURCE_NAME, ob.SOURCE_LINE,
+        dsl.select(ae.TYPE_NAME, ae.FIELD_NAME, ae.ARGUMENT_NAME, ob.SOURCE_NAME, ob.SOURCE_LINE,
                 ob.SOURCE_COLUMN)
             .from(ob)
-            .where(ob.GRAPH_NAME.eq(graphName),
+            .join(ae).on(ae.GRAPH_NAME.eq(ob.GRAPH_NAME), ae.COORDINATE.eq(ob.COORDINATE))
+            .where(ob.GRAPH_NAME.eq(graphName), ob.DIRECTIVE_NAME.eq("orderBy"), ob.ORDINAL.eq(0),
                 defectAt(ob.GRAPH_NAME, ob.SOURCE_NAME, ob.SOURCE_LINE, ob.SOURCE_COLUMN),
-                domain(graphName, ob.TYPE_NAME, inDomain))
+                domain(graphName, ae.TYPE_NAME, inDomain))
             .forEach(r -> declared.add(new Declared(r.value1(), r.value2(),
                 AvailableVia.ORDER_BY_ARGUMENT, r.value3(),
                 location(r.value4(), r.value5(), r.value6()))));

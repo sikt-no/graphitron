@@ -3633,28 +3633,6 @@ COMMENT ON COLUMN graphitron_facet_entry.source_name IS 'the SDL file the row wa
 COMMENT ON COLUMN graphitron_facet_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_facet_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 
-CREATE TABLE graphitron_order_by_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_order_by_entry IS '@orderBy on an argument: a marker; the input shape rules are detections. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_order_by_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_order_by_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_order_by_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_order_by_entry.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_order_by_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_order_by_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_order_by_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-
 CREATE TABLE graphitron_default_order_entry (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -3825,28 +3803,6 @@ COMMENT ON COLUMN graphitron_argument_node_id_entry.source_name IS 'the SDL file
 COMMENT ON COLUMN graphitron_argument_node_id_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_node_id_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_node_id_entry.node_type_ref IS 'the typeName argument as written; author-spelled, no FK';
-
-CREATE TABLE graphitron_argument_lookup_key_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_argument_lookup_key_entry IS '@lookupKey on an argument: the live site, a marker. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_argument_lookup_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_lookup_key_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_lookup_key_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_lookup_key_entry.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_lookup_key_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_argument_lookup_key_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_argument_lookup_key_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 
 CREATE TABLE graphitron_routine_entry (
   graph_name     VARCHAR NOT NULL,
@@ -12356,10 +12312,12 @@ SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
 UNION ALL
 SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
        'READ_SURFACE_ON_WRITE', 'orderBy'
-  FROM graphitron_order_by_entry ob
+  FROM graphql_directive_application ob
+  JOIN graphql_argument_element ae
+    ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
   JOIN head h
-    ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
- WHERE ob.source_name IS NOT NULL
+    ON h.graph_name = ae.graph_name AND h.type_name = ae.type_name AND h.field_name = ae.field_name
+ WHERE ob.directive_name = 'orderBy' AND ob.ordinal = 0
 UNION ALL
 -- An output field's need for a table-bound type that no claim covers, neither one at the field nor
 -- one at the same-named field of an interface its type implements, between two tables the paths
@@ -13139,9 +13097,12 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
                d.source_name, d.source_line, d.source_column, 'defaultOrder' AS detail
           FROM graphitron_default_order_entry d
         UNION ALL
-        SELECT ob.graph_name, ob.type_name, ob.field_name,
+        SELECT ob.graph_name, ae.type_name, ae.field_name,
                ob.source_name, ob.source_line, ob.source_column, 'orderBy'
-          FROM graphitron_order_by_entry ob) o
+          FROM graphql_directive_application ob
+          JOIN graphql_argument_element ae
+            ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
+         WHERE ob.directive_name = 'orderBy' AND ob.ordinal = 0) o
  WHERE o.source_name IS NOT NULL
    -- Read once per participant: the target binds no table of its own and has a table-bound
    -- member, and no @mutation(table:) names where the statement is rooted instead.
@@ -13175,9 +13136,11 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
             AND NOT EXISTS (SELECT 1 FROM graphitron_service_entry se
                              WHERE se.graph_name = o.graph_name AND se.type_name = o.type_name
                                AND se.field_name = o.field_name)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_argument_lookup_key_entry lk
-                             WHERE lk.graph_name = o.graph_name AND lk.type_name = o.type_name
-                               AND lk.field_name = o.field_name)
+            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application lk
+                              JOIN graphql_argument_element ae
+                                ON ae.graph_name = lk.graph_name AND ae.coordinate = lk.coordinate
+                             WHERE lk.graph_name = o.graph_name AND lk.directive_name = 'lookupKey'
+                               AND ae.type_name = o.type_name AND ae.field_name = o.field_name)
             AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry re
                              WHERE re.graph_name = o.graph_name AND re.type_name = o.type_name
                                AND re.field_name = o.field_name))

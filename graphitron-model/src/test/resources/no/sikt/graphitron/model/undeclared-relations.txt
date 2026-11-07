@@ -1,7 +1,6 @@
 build_warning_no_rule
 diagnostic
 graphitron_argmapping_match
-graphitron_argument_lookup_key_entry
 graphitron_argument_node_id_entry
 graphitron_argument_reference_for_entry
 graphitron_facet_entry
@@ -12,7 +11,6 @@ graphitron_method_reference_entry
 graphitron_node_entry
 graphitron_node_keycolumn_entry
 graphitron_node_type
-graphitron_order_by_entry
 graphitron_reference_for_entry
 graphitron_routine_entry
 graphitron_service_entry

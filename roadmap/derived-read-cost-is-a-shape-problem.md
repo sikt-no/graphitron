@@ -2612,6 +2612,11 @@ twins staying; and `graphitron_ast_field_condition_context_arg_entry`,
 the language server's type hover reads an `@error` type's handlers off `graphitron_ast_error_entry`'s
 family through `graphql_directive_application`.
 
+**The argument-site marker decodes** (2026-11-07). `graphitron_order_by_entry` and
+`graphitron_argument_lookup_key_entry`: their readers, two rules of `graphitron_entry_defect_rule`,
+`UnlowerableOrderings` and `RoutineWriteQuery`, read the applications at the field's arguments off
+`graphql_directive_application` and `graphql_argument_element`.
+
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading
 it. The column is gone and that view reads neither relation now. A dated note says so in its body;
