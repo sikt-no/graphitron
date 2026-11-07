@@ -29,7 +29,7 @@ import java.util.Locale;
  * source's rows has to be shown deleting one source's rows, which needs a relation holding rows from
  * two sources at once so that what survives is visible. Several relations are therefore written from
  * both documents deliberately, {@code graphitron_table_entry},
- * {@code graphitron_field_binding_entry} and {@code graphitron_field_reference_entry} among them,
+ * {@code graphitron_ast_binding_entry} and {@code graphitron_field_reference_entry} among them,
  * and the coverage gate holds that overlap rather than leaving it to whoever edits the SDL next.
  *
  * <p>The schema is not meant to be a schema anybody would write. It names tables and columns that

@@ -96,7 +96,7 @@ CREATE TABLE store_graph (
   last_captured    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name)
 );
-COMMENT ON TABLE store_graph IS 'A graph the store holds: the anchor of the graph_name partition dimension, one row per module ever captured into this store. Two discriminators keep the DDL''s FK conventions readable against this relation. First, why the SDL roots carry an FK here while the SDL-to-store_source FK was declined: the graph is ambient before the walk begins and NOT NULL on every row, while the source rows are a summary collected last and nullable at schema-level sites, so the FK doctrine admits one and not the other. Second: any derivation joining an SDL fact to a catalog or classpath fact (graphitron_service_entry''s class name against code_class, graphitron_table_entry''s table reference against sql_table) is underdetermined in a shared store until a membership relation says which sources are the joining graph''s; store_graph_source below is that relation, landed with its first consumer (the inferred claim view), and such a join scopes its catalog side through it.';
+COMMENT ON TABLE store_graph IS 'A graph the store holds: the anchor of the graph_name partition dimension, one row per module ever captured into this store. Two discriminators keep the DDL''s FK conventions readable against this relation. First, why the SDL roots carry an FK here while the SDL-to-store_source FK was declined: the graph is ambient before the walk begins and NOT NULL on every row, while the source rows are a summary collected last and nullable at schema-level sites, so the FK doctrine admits one and not the other. Second: any derivation joining an SDL fact to a catalog or classpath fact (graphitron_ast_service_entry''s class name against code_class, graphitron_ast_table_entry''s table reference against sql_table) is underdetermined in a shared store until a membership relation says which sources are the joining graph''s; store_graph_source below is that relation, landed with its first consumer (the inferred claim view), and such a join scopes its catalog side through it.';
 COMMENT ON COLUMN store_graph.graph_name IS 'the graph''s configured name (the Maven <graphName> parameter, defaulting to the module''s artifactId); the value every partitioned key leads with';
 COMMENT ON COLUMN store_graph.base_dir IS 'the capturing run''s base directory, absolute and normalized. NOT NULL and deliberately not grouped with the nullable build-identity pair: every run has a directory (RunContext requires basedir of every caller) even when it has no build file, and this column is what the ownership check reads when a run''s graph_name is already recorded against a different directory';
 COMMENT ON COLUMN store_graph.build_file_path IS 'the module''s build file (its pom), absolute and normalized; NULL on a programmatic run with no build file';
@@ -3455,31 +3455,6 @@ COMMENT ON COLUMN graphitron_table_entry.table_ref_namespace_part_upper IS 'the 
 COMMENT ON COLUMN graphitron_table_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_table_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
-CREATE TABLE graphitron_field_binding_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  name_ref      VARCHAR NOT NULL,
-  name_ref_upper VARCHAR GENERATED ALWAYS AS (UPPER(name_ref)),
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_field_binding_entry IS '@field on an output or input-object field: the slot''s bound name. A column, a Java accessor, or a Java member depending on the backing, which is classification''s business; the $source / $errors sigil forms are stored as written, their recognition being a prefix test SQL can express. Anchored from the two AST binding entries, one per habitat, so the fact is available to everything the document gatherer derives rather than only to what runs after the decode.';
-COMMENT ON COLUMN graphitron_field_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_binding_entry.touched_at IS 'the reading that last wrote this row; what the anchor''s sweep compares against to delete the applications the corpus no longer makes';
-COMMENT ON COLUMN graphitron_field_binding_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_binding_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_binding_entry.source_name IS 'the application''s own position, here and below';
-COMMENT ON COLUMN graphitron_field_binding_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_binding_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_binding_entry.name_ref IS 'the name argument as written';
-COMMENT ON COLUMN graphitron_field_binding_entry.name_ref_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
 CREATE TABLE graphitron_scalar_type_entry (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
@@ -3581,143 +3556,6 @@ COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_name IS 'the SD
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.participant_type_ref IS 'the type argument as written; author-spelled, no FK. Names a participant of the polymorphic type the owning field returns';
-
-CREATE TABLE graphitron_service_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  class_name    VARCHAR,
-  method        VARCHAR,
-  argmapping   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_service_entry IS '@service on a field: the external service reference. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_service_entry is the replacement, written by the graphitron gatherer from the document the application sits in.';
-COMMENT ON COLUMN graphitron_service_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_service_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_service_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_service_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_service_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_service_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_service_entry.class_name IS 'the fully-qualified Java class name as written';
-COMMENT ON COLUMN graphitron_service_entry.method IS 'the Java method name as written';
-COMMENT ON COLUMN graphitron_service_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
-COMMENT ON COLUMN graphitron_service_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
-
-CREATE TABLE graphitron_connection_entry (
-  graph_name          VARCHAR NOT NULL,
-  type_name           VARCHAR NOT NULL,
-  field_name          VARCHAR NOT NULL,
-  source_name         VARCHAR,
-  source_line         INT,
-  source_column       INT,
-  default_first_value INT,
-  connection_name     VARCHAR,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_connection_entry IS 'The connection an @asConnection application asks the macro to expand a field into, as one row per field however many applications the corpus wrote on it. For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row carrying that page size and no name, the type name being derived where the author wrote none.';
-COMMENT ON COLUMN graphitron_connection_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_connection_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_connection_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_connection_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_connection_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_connection_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_connection_entry.default_first_value IS 'as written; NULL when omitted';
-COMMENT ON COLUMN graphitron_connection_entry.connection_name IS 'the deprecated shared-type override, as written; honoured by the expansion, deprecation is a lint detection';
-COMMENT ON COLUMN graphitron_connection_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
-
-CREATE TABLE graphitron_facet_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_facet_entry IS '@asFacet on an input field: a marker; the bound column comes from graphitron_field_binding_entry, and every misuse arm is a detection. Anchored beside the @asConnection it is a sibling of, the expansion that reads both being one step of the gatherer that decodes the documents they are written in.';
-COMMENT ON COLUMN graphitron_facet_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_facet_entry.touched_at IS 'the reading that last wrote this row; what the anchor''s sweep compares against to delete the applications the corpus no longer makes';
-COMMENT ON COLUMN graphitron_facet_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_facet_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_facet_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_facet_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_facet_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-
-CREATE TABLE graphitron_default_order_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  index_ref     VARCHAR,
-  primary_key   BOOLEAN,
-  direction     VARCHAR,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_default_order_entry IS 'The ordering a field sorts by when the client asks for none, as one row per field however many @defaultOrder applications the corpus wrote on it. For example @defaultOrder(primaryKey: true, direction: DESC) gives one row stating the basis and the fallback direction, with the field list beside it.';
-COMMENT ON COLUMN graphitron_default_order_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_default_order_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_default_order_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_default_order_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_default_order_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_default_order_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_default_order_entry.index_ref IS 'the database index name as written';
-COMMENT ON COLUMN graphitron_default_order_entry.primary_key IS 'as written; NULL when omitted';
-COMMENT ON COLUMN graphitron_default_order_entry.direction IS 'as written; open column, the ASC default is a derivation';
-COMMENT ON COLUMN graphitron_default_order_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
-
-CREATE TABLE graphitron_mutation_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  operation     VARCHAR NOT NULL,
-  multi_row     BOOLEAN,
-  fail_on_missing BOOLEAN,
-  table_ref     VARCHAR,
-  table_ref_namespace_part VARCHAR,
-  table_ref_name_part      VARCHAR,
-  touched_at       TIMESTAMP NOT NULL,
-  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
-  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_mutation_entry IS 'The statement a @mutation application makes a field perform, as one row per field however many applications the corpus wrote on it. For example @mutation(typeName: INSERT, table: "film") gives one row reading INSERT against the spelling film.';
-COMMENT ON COLUMN graphitron_mutation_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_mutation_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_mutation_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_mutation_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_mutation_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_mutation_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_mutation_entry.operation IS 'the typeName argument as written (INSERT / UPDATE / DELETE / UPSERT); open column per the enum-literal rule';
-COMMENT ON COLUMN graphitron_mutation_entry.multi_row IS 'as written; NULL when omitted';
-COMMENT ON COLUMN graphitron_mutation_entry.fail_on_missing IS 'as written; NULL when omitted';
-COMMENT ON COLUMN graphitron_mutation_entry.table_ref IS 'the table argument as written (may carry a schema qualifier); it names the write target of a DELETE, INSERT or UPDATE, the three verbs the resolver accepts it for, and resolves through the same qualified-name route a @table binding takes';
-COMMENT ON COLUMN graphitron_mutation_entry.table_ref_namespace_part IS 'left of table_ref''s first period, NULL when no period appeared and the empty string when one appeared with nothing before it; for a table name this namespace is the SQL schema in every dialect jOOQ models. Written by capture, because splitting on a period is a decode and decodes happen there';
-COMMENT ON COLUMN graphitron_mutation_entry.table_ref_name_part IS 'right of table_ref''s first period, or the whole value when none; the empty string when a period was written with nothing after it, which joins nothing and is meant to';
-COMMENT ON COLUMN graphitron_mutation_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-COMMENT ON COLUMN graphitron_mutation_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-COMMENT ON COLUMN graphitron_mutation_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_field_node_id_entry (
   graph_name    VARCHAR NOT NULL,
@@ -3963,7 +3801,7 @@ COMMENT ON COLUMN graphitron_field.is_list IS 'whether the expression is a list'
 COMMENT ON COLUMN graphitron_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_field.default_value_sdl IS 'the default literal where the coordinate is an input field with one; display material, never a dimension';
 COMMENT ON COLUMN graphitron_field.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it, or macro-written; display material, never a dimension';
-COMMENT ON COLUMN graphitron_field.bound_name IS 'the name the field reads by: its @field(name:) where graphitron_field_binding_entry holds one, else the field''s own name. Stated once here so that no reader joins the binding and falls back to the field name itself; what a name finds, a column or a member of a class, is the reader''s question';
+COMMENT ON COLUMN graphitron_field.bound_name IS 'the name the field reads by: its @field(name:) where the field''s first @field application wrote one, else the field''s own name. Stated once here so that no reader joins the binding and falls back to the field name itself; what a name finds, a column or a member of a class, is the reader''s question';
 COMMENT ON COLUMN graphitron_field.bound_name_upper IS 'the upper-cased form of bound_name, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper. Generated, so nothing writes it';
 
 CREATE TABLE graphitron_enum_value (
@@ -4159,28 +3997,34 @@ SELECT b.graph_name, b.type_name, b.field_name, b.coordinate, b.connection_name,
        b.connection_name || 'Edge', b.element_type, b.item_sdl, b.item_non_null, b.non_null, b.ordinal,
        b.description, b.default_first_value, b.argument_count,
        b.source_name, b.source_line, b.source_column
-  FROM (SELECT c.graph_name, c.type_name, c.field_name,
-               c.type_name || '.' || c.field_name AS coordinate,
+  FROM (SELECT ca.graph_name, fe.type_name, fe.field_name, ca.coordinate,
                COALESCE(NULLIF(c.connection_name, ''),
-                        c.type_name || UPPER(SUBSTRING(c.field_name FROM 1 FOR 1))
-                                    || SUBSTRING(c.field_name FROM 2) || 'Connection')
+                        fe.type_name || UPPER(SUBSTRING(fe.field_name FROM 1 FOR 1))
+                                     || SUBSTRING(fe.field_name FROM 2) || 'Connection')
                  AS connection_name,
                f.named_type AS element_type,
                f.named_type || CASE WHEN f.item_non_null THEN '!' ELSE '' END AS item_sdl,
                COALESCE(f.item_non_null, FALSE) AS item_non_null,
                f.non_null, f.ordinal, f.description, c.default_first_value,
                CAST((SELECT COUNT(*) FROM graphql_argument g
-                      WHERE g.graph_name = c.graph_name AND g.type_name = c.type_name
-                        AND g.field_name = c.field_name) AS INT) AS argument_count,
-               c.source_name, c.source_line, c.source_column
-          FROM graphitron_connection_entry c
+                      WHERE g.graph_name = ca.graph_name AND g.type_name = fe.type_name
+                        AND g.field_name = fe.field_name) AS INT) AS argument_count,
+               ca.source_name, ca.source_line, ca.source_column
+          -- The field's first @asConnection, what it wrote joined on where it wrote anything.
+          FROM graphql_directive_application ca
+          JOIN graphql_field_element fe
+            ON fe.graph_name = ca.graph_name AND fe.coordinate = ca.coordinate
+          LEFT JOIN graphitron_ast_connection_entry c
+            ON c.graph_name = ca.graph_name AND c.source_name = ca.source_name
+           AND c.source_line = ca.source_line AND c.source_column = ca.source_column
           JOIN graphql_field f
-            ON f.graph_name = c.graph_name
-           AND f.type_name = c.type_name
-           AND f.field_name = c.field_name
+            ON f.graph_name = fe.graph_name
+           AND f.type_name = fe.type_name
+           AND f.field_name = fe.field_name
          -- A bare list of a named type and nothing deeper. list_depth answers this; the expansion
          -- used to read it off type_sdl by hand because the anchor did not carry the column.
-         WHERE f.is_list AND f.list_depth = 1) b;
+         WHERE ca.directive_name = 'asConnection' AND ca.ordinal = 0
+           AND f.is_list AND f.list_depth = 1) b;
 COMMENT ON VIEW graphitron_connection_carrier IS 'A field @asConnection expands, with the names and wrapping its expansion needs: one row per carrier. For example films: [Film!]! @asConnection on Query is one row naming QueryFilmsConnection, QueryFilmsConnectionEdge and the element Film!, where the same directive on a films: Film field is no row at all.';
 -- COMMENT ON COLUMN graphitron_connection_carrier.graph_name IS 'the owning graph''s partition, carried from the application';
 -- COMMENT ON COLUMN graphitron_connection_carrier.type_name IS 'the type declaring the carrier';
@@ -4243,17 +4087,24 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
        f.named_type,
        CASE WHEN f.is_list THEN NOT f.item_non_null ELSE TRUE END,
        fc.source_name, fc.source_line, fc.source_column
-  FROM graphitron_facet_entry fc
+  -- The field's first @asFacet, and the name its first @field binds.
+  FROM graphql_directive_application fc
+  JOIN graphql_field_element fe
+    ON fe.graph_name = fc.graph_name AND fe.coordinate = fc.coordinate
   JOIN graphql_field f
-    ON f.graph_name = fc.graph_name AND f.type_name = fc.type_name
-   AND f.field_name = fc.field_name
+    ON f.graph_name = fe.graph_name AND f.type_name = fe.type_name
+   AND f.field_name = fe.field_name
   JOIN graphql_type owner
     ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
    AND owner.kind = 'INPUT_OBJECT'
-  JOIN graphitron_field_binding_entry fb
-    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name
-   AND fb.field_name = f.field_name
- WHERE NOT f.non_null
+  JOIN graphql_directive_application fa
+    ON fa.graph_name = fc.graph_name AND fa.coordinate = fc.coordinate
+   AND fa.directive_name = 'field' AND fa.ordinal = 0
+  JOIN graphitron_ast_binding_entry fb
+    ON fb.graph_name = fa.graph_name AND fb.source_name = fa.source_name
+   AND fb.source_line = fa.source_line AND fb.source_column = fa.source_column
+ WHERE fc.directive_name = 'asFacet' AND fc.ordinal = 0
+   AND NOT f.non_null
    AND f.named_type <> 'ID'
    AND NOT EXISTS (SELECT 1 FROM graphql_type leaf
                     WHERE leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
@@ -4288,7 +4139,7 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
                       AND mark.source_column = fc.source_column
                       AND d.name IN ('condition', 'nodeId'));
 COMMENT ON VIEW graphitron_facet_binding IS 'What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null. For example @asFacet on FilmFilter.rating is one row naming the rating column and the type its values carry.';
--- COMMENT ON COLUMN graphitron_facet_binding.graph_name IS 'the owning graph''s partition, carried from graphitron_facet_entry';
+-- COMMENT ON COLUMN graphitron_facet_binding.graph_name IS 'the owning graph''s partition, carried from the @asFacet application';
 -- COMMENT ON COLUMN graphitron_facet_binding.type_name IS 'the input object type the facet field is declared on';
 -- COMMENT ON COLUMN graphitron_facet_binding.field_name IS 'the facet field''s name within that input type; with the two columns above, the grain';
 -- COMMENT ON COLUMN graphitron_facet_binding.ordinal IS 'the field''s declaration order within its input type, carried from graphql_field; the inner half of the order one carrier''s facets surface in';
@@ -13094,9 +12945,12 @@ UNION ALL
 -- of that read owes a clause here.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
        'ORDERING_ACROSS_PARTICIPANTS', o.detail
-  FROM (SELECT d.graph_name, d.type_name, d.field_name,
+  FROM (SELECT d.graph_name, fe.type_name, fe.field_name,
                d.source_name, d.source_line, d.source_column, 'defaultOrder' AS detail
-          FROM graphitron_default_order_entry d
+          FROM graphql_directive_application d
+          JOIN graphql_field_element fe
+            ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
+         WHERE d.directive_name = 'defaultOrder' AND d.ordinal = 0
         UNION ALL
         SELECT ob.graph_name, ae.type_name, ae.field_name,
                ob.source_name, ob.source_line, ob.source_column, 'orderBy'
@@ -13117,12 +12971,16 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
                   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
                                    WHERE cb.graph_name = ft.graph_name
                                      AND cb.type_name = ft.target_type_name))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry mu
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application mu
+                     JOIN graphitron_ast_mutation_entry me
+                       ON me.graph_name = mu.graph_name AND me.source_name = mu.source_name
+                      AND me.source_line = mu.source_line AND me.source_column = mu.source_column
                      JOIN graphitron_spelled_table sp
-                       ON sp.graph_name = mu.graph_name AND sp.spelling = mu.table_ref
+                       ON sp.graph_name = me.graph_name AND sp.spelling = me.table_ref
                       AND sp.candidates = 1
-                    WHERE mu.graph_name = o.graph_name AND mu.type_name = o.type_name
-                      AND mu.field_name = o.field_name)
+                    WHERE mu.graph_name = o.graph_name
+                      AND mu.coordinate = o.type_name || '.' || o.field_name
+                      AND mu.directive_name = 'mutation' AND mu.ordinal = 0)
    AND NOT (EXISTS (SELECT 1 FROM graphql_root_operation ro
                      WHERE ro.graph_name = o.graph_name AND ro.operation = 'QUERY'
                        AND ro.type_name = o.type_name)
@@ -13134,9 +12992,10 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
                            AND f.field_name = o.field_name
                            AND (f.is_list OR ft.wrapper_type_name IS NOT NULL)
                            AND f.named_type <> 'Node')
-            AND NOT EXISTS (SELECT 1 FROM graphitron_service_entry se
-                             WHERE se.graph_name = o.graph_name AND se.type_name = o.type_name
-                               AND se.field_name = o.field_name)
+            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application se
+                             WHERE se.graph_name = o.graph_name
+                               AND se.coordinate = o.type_name || '.' || o.field_name
+                               AND se.directive_name = 'service')
             AND NOT EXISTS (SELECT 1 FROM graphql_directive_application lk
                               JOIN graphql_argument_element ae
                                 ON ae.graph_name = lk.graph_name AND ae.coordinate = lk.coordinate
@@ -15178,13 +15037,19 @@ SELECT graph_name, type_name, field_name, basis,
                                                          AND e.type_name = d2.type_name
                                                          AND e.field_name = d2.field_name))
                 UNION ALL
-                SELECT m.graph_name, m.type_name, m.field_name,
+                SELECT m.graph_name, fe.type_name, fe.field_name,
                        'MUTATION_TABLE', sp.table_source_name, sp.table_schema,
                        sp.table_name, 2
-                  FROM graphitron_mutation_entry m
+                  FROM graphql_directive_application m
+                  JOIN graphql_field_element fe
+                    ON fe.graph_name = m.graph_name AND fe.coordinate = m.coordinate
+                  JOIN graphitron_ast_mutation_entry me
+                    ON me.graph_name = m.graph_name AND me.source_name = m.source_name
+                   AND me.source_line = m.source_line AND me.source_column = m.source_column
                   JOIN graphitron_spelled_table sp
-                    ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
-                   AND sp.candidates = 1) arms) picked
+                    ON sp.graph_name = me.graph_name AND sp.spelling = me.table_ref
+                   AND sp.candidates = 1
+                 WHERE m.directive_name = 'mutation' AND m.ordinal = 0) arms) picked
  WHERE rung = 1
  UNION ALL
 -- A target with no table of its own is read once per table-bound participant. A @mutation(table:)
@@ -15198,12 +15063,16 @@ SELECT DISTINCT ft.graph_name, ft.type_name, ft.field_name, 'PARTICIPANT_TABLE',
     ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
                     WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry mu
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application mu
+                    JOIN graphitron_ast_mutation_entry me
+                      ON me.graph_name = mu.graph_name AND me.source_name = mu.source_name
+                     AND me.source_line = mu.source_line AND me.source_column = mu.source_column
                     JOIN graphitron_spelled_table sp
-                      ON sp.graph_name = mu.graph_name AND sp.spelling = mu.table_ref
+                      ON sp.graph_name = me.graph_name AND sp.spelling = me.table_ref
                      AND sp.candidates = 1
-                    WHERE mu.graph_name = ft.graph_name AND mu.type_name = ft.type_name
-                      AND mu.field_name = ft.field_name);
+                    WHERE mu.graph_name = ft.graph_name
+                      AND mu.coordinate = ft.type_name || '.' || ft.field_name
+                      AND mu.directive_name = 'mutation' AND mu.ordinal = 0);
 COMMENT ON VIEW graphitron_field_scope_table_rule IS 'One row the field-site scope rule computes, in the shape graphitron_field_scope_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_scope_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_field_scope_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.graph_name, whose comment carries what the value means';
 -- COMMENT ON COLUMN graphitron_field_scope_table_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.type_name, whose comment carries what the value means';
@@ -15213,7 +15082,7 @@ COMMENT ON VIEW graphitron_field_scope_table_rule IS 'One row the field-site sco
 -- COMMENT ON COLUMN graphitron_field_scope_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage inserts into graphitron_field_scope_table.table_schema, whose comment carries what the value means';
 -- COMMENT ON COLUMN graphitron_field_scope_table_rule.table_name IS 'the table_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.table_name, whose comment carries what the value means';
 COMMENT ON TABLE graphitron_field_scope_table IS 'Which table a field''s own generated SQL binds against: the table the field selects from, the table a predicate built at this coordinate correlates on, and the table a @nodeId or @reference path written here departs from, one row per table where several answer. For example Mutation.deleteFilm over @mutation(typeName: DELETE, table: "film") draws one row naming film, and a field returning a multi-table container draws one row per branch table it is rooted in.';
-COMMENT ON COLUMN graphitron_field_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field on the upper rung and the participant arm and from graphitron_mutation_entry on the two mutation rungs';
+COMMENT ON COLUMN graphitron_field_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field on the upper rung and the participant arm and from the @mutation application on the two mutation rungs';
 COMMENT ON COLUMN graphitron_field_scope_table.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_scope_table.field_name IS 'the field whose scope this row states; with the two columns above and the table below, the grain';
 COMMENT ON COLUMN graphitron_field_scope_table.basis IS 'which rule answered, in a closed vocabulary of four: NAMED_TYPE_TABLE from the field''s named type''s own binding, PAYLOAD_TABLE from the single data channel of a DML write''s carrier payload where the payload itself binds nothing, MUTATION_TABLE from the @mutation(table:) spelling where neither of those answers, PARTICIPANT_TABLE from one branch of a named type that is a polymorphic container binding no table of its own. The first three are ranked rungs and the fourth is disjoint from all of them; which of them a row carries is therefore not only provenance but the fork a consumer takes, PARTICIPANT_TABLE being exactly where the coordinate is several statements rather than one. What lets a test pin which rule fired rather than only that a table came out; a reader wanting one of them filters on it and owns having chosen';
@@ -18694,10 +18563,6 @@ INSERT INTO meta_relation VALUES
    'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
    'A view and not columns on the defect, the element being a fact of the position: a declaration is its own element, a directive application''s is its parent, and a value''s is reached through the node holding it, the climb graphitron_code_reference_site already takes. Every hop is a key the transcription declares, so the view states no decision of its own and a reader that wants the element joins it rather than the rule restating it per arm.'),
-  ('graphitron_connection_entry', 'graph-field', 'graphitron',
-   'The connection an @asConnection application asks the macro to expand a field into, as one row per field however many applications the corpus wrote on it.',
-   'For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row carrying that page size and no name, the type name being derived where the author wrote none.',
-   'Derived from the entry beside it by the rank the type-site bindings take, one hop further out: a field''s coordinate is its type and its name, so the merge order deciding between two applications is the order of the declarations their fields were written in. Both payload columns arrive by an outer join and both are optional, the directive defaulting the page size and deriving the type name, so what the row asserts is that the author asked for a connection here and what they wrote about it is whatever they wrote. The expansion this feeds reads no other relation, which is why the macro''s whole specification is these two columns and a coordinate.'),
   ('graphitron_outbox_entry', 'field-directive-application', 'graphitron',
    'One message of a field: its @outbox application, at its place among the field''s applications in written order.',
    'For example @outbox(event: "FilmCreated") followed by @outbox(argMapping: "filmId: $result.id") on Mutation.createFilm gives two rows, at ordinals 0 and 1, the second with the event Mutation.createFilm.',
@@ -18718,14 +18583,6 @@ INSERT INTO meta_relation VALUES
    'The outbox routine of one graph, resolved: the procedure or function the configuration names and the parameter each role lands in.',
    'For example <outbox><function>outbox_emit</function></outbox> over a routine taking type, aggregatetype, aggregateid and payload gives one row naming it and the four positions; a configuration that resolves to no one such routine has no row and is a defect at each @outbox.',
    'Derived from the configuration and the catalog, as the table target is, and beside it: a graph configures one or the other. The routine resolves through the graph''s own sources and must be one the catalog has no table for, since it is called through its Configuration-first method; an unqualified name must be unambiguous. A role answers to the parameter whose name, underscores and case aside, the configuration binds it to, else to the role''s own name, and every parameter must answer to a role.'),
-  ('graphitron_mutation_entry', 'graph-field', 'graphitron',
-   'The statement a @mutation application makes a field perform, as one row per field however many applications the corpus wrote on it.',
-   'For example @mutation(typeName: INSERT, table: "film") gives one row reading INSERT against the spelling film.',
-   'Derived from the entry beside it, joined inwards because the operation is the fact: it is NOT NULL and an application that named none asserts nothing. The table spelling is optional and rides with the row, the directive deducing it from the field''s own return type where the author left it out. That spelling is also a row of graphitron_spelled_reference_entry, which is keyed by the value rather than by a site and written from every site that can name a table or a routine, so it is the one thing this decode''s arm still writes: a relation keyed by a value moves when the last of its writers does rather than when the first does.'),
-  ('graphitron_default_order_entry', 'graph-field', 'graphitron',
-   'The ordering a field sorts by when the client asks for none, as one row per field however many @defaultOrder applications the corpus wrote on it.',
-   'For example @defaultOrder(primaryKey: true, direction: DESC) gives one row stating the basis and the fallback direction, with the field list beside it.',
-   'Derived from the entry beside it, joined outwards because every payload column is optional by construction: an application states its basis as an index, as the primary key or as the field list in the child relation, and which of the three it chose is read by asking which column is filled. That the three are exclusive is a rule about the directive that no constraint over these columns states, and settling it is owed with the enum-value site, whose @order is declared with the identical three-way shape and should not be decided twice.'),
   ('graphitron_ast_error_entry', 'sdl-declaration-site', 'graphitron',
    'One @error application, at its @ token.',
    'For example type FilmNotFound @error(handlers: [{handler: VALIDATION}]) gives one row, and its one handler is a row of graphitron_ast_error_handler_entry hanging off it.',

@@ -21,16 +21,9 @@ type DeletedFilmsPayload { deletedIds: [ID!] }
 input FilmInput { title: String }
 input FilmKeyInput { filmId: Int! @field(name: "film_id") }
 
-extend schema @expectEquals(relation: "graphitron_service_entry", rows: """
-  type_name, field_name, class_name,                                                 method
-  Query,     produced,   no.sikt.graphitron.rewrite.test.services.FilmCarrierService, filmById
-  """)
-
-extend schema @expectEquals(relation: "graphitron_mutation_entry", rows: """
-  type_name, field_name,  operation, fail_on_missing
-  Mutation,  createFilm,  INSERT,
-  Mutation,  deleteFilm,  DELETE,
-  Mutation,  deleteFilms, DELETE,    TRUE
+extend schema @expectEquals(relation: "graphitron_ast_service_entry", rows: """
+  class_name,                                                 method
+  no.sikt.graphitron.rewrite.test.services.FilmCarrierService, filmById
   """)
 
 extend schema @expectEquals(relation: "graphitron_ast_mutation_entry", rows: """

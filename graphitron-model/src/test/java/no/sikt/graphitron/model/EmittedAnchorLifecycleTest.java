@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -74,7 +74,8 @@ class EmittedAnchorLifecycleTest {
             // The applications go, which is a corpus that stopped asking for the expansion. There
             // are no minted rows to remove beside them: what a carrier mints is derived from the
             // application, so removing the application is the whole of it.
-            store.dsl().deleteFrom(GRAPHITRON_CONNECTION_ENTRY).execute();
+            store.dsl().deleteFrom(GRAPHQL_DIRECTIVE_APPLICATION)
+                .where(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("asConnection")).execute();
 
             EmittedAnchor.derive(store.dsl(), CapturedStore.GRAPH,
                 LocalDateTime.of(2030, 1, 1, 0, 0));

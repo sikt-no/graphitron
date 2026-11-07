@@ -26,7 +26,8 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -127,9 +128,15 @@ class GraphitronFieldAnchorsTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_CONNECTION_ENTRY;
-            assertThat(dsl.select(t.FIELD_NAME, t.DEFAULT_FIRST_VALUE).from(t)
-                    .where(t.GRAPH_NAME.eq(GRAPH)).orderBy(t.FIELD_NAME).fetch()
+            var a = GRAPHQL_DIRECTIVE_APPLICATION;
+            var f = GRAPHQL_FIELD_ELEMENT;
+            var e = GRAPHITRON_AST_CONNECTION_ENTRY;
+            assertThat(dsl.select(f.FIELD_NAME, e.DEFAULT_FIRST_VALUE).from(a)
+                    .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME), f.COORDINATE.eq(a.COORDINATE))
+                    .leftJoin(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
+                        e.SOURCE_LINE.eq(a.SOURCE_LINE), e.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                    .where(a.GRAPH_NAME.eq(GRAPH), a.DIRECTIVE_NAME.eq("asConnection"))
+                    .orderBy(f.FIELD_NAME).fetch()
                     .map(Record::intoList))
                 .as("both applications are rows and the bare one carries no page size; the field "
                     + "that applied nothing has no row, which is what tells the two apart")
@@ -162,10 +169,14 @@ class GraphitronFieldAnchorsTest {
                 .as("both declarations reached capture and both applications are entries; without "
                     + "this the case below could hold because the registry kept only one")
                 .containsExactlyInAnyOrder(25, 99);
-            var t = GRAPHITRON_CONNECTION_ENTRY;
-            assertThat(dsl.select(t.DEFAULT_FIRST_VALUE).from(t).where(t.GRAPH_NAME.eq(GRAPH))
-                    .fetch(t.DEFAULT_FIRST_VALUE))
-                .as("one row, and it is the base declaration's, however the file is laid out")
+            var a = GRAPHQL_DIRECTIVE_APPLICATION;
+            assertThat(dsl.select(e.DEFAULT_FIRST_VALUE).from(a)
+                    .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
+                        e.SOURCE_LINE.eq(a.SOURCE_LINE), e.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                    .where(a.GRAPH_NAME.eq(GRAPH), a.DIRECTIVE_NAME.eq("asConnection"),
+                        a.ORDINAL.eq(0))
+                    .fetch(e.DEFAULT_FIRST_VALUE))
+                .as("the first application is the base declaration's, however the file is laid out")
                 .containsExactly(25);
         });
     }

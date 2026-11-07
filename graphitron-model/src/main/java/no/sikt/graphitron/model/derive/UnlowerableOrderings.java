@@ -14,7 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -49,7 +49,7 @@ public final class UnlowerableOrderings {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_DEFAULT_ORDER_ENTRY, GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_ARGUMENT_ELEMENT,
+        GRAPHQL_FIELD_ELEMENT, GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_ARGUMENT_ELEMENT,
         GRAPHITRON_FIELD_TARGET,
         GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, INTENT_TYPE_DOMAIN, GRAPHQL_TYPE);
 
@@ -110,15 +110,17 @@ public final class UnlowerableOrderings {
     }
 
     private static List<Unlowered> read(DSLContext dsl, String graphName, boolean inDomain) {
-        var d = GRAPHITRON_DEFAULT_ORDER_ENTRY;
+        var d = GRAPHQL_DIRECTIVE_APPLICATION.as("default_order");
+        var fe = GRAPHQL_FIELD_ELEMENT;
         var ob = GRAPHQL_DIRECTIVE_APPLICATION;
         var ae = GRAPHQL_ARGUMENT_ELEMENT;
         var declared = new ArrayList<Declared>();
-        dsl.select(d.TYPE_NAME, d.FIELD_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
+        dsl.select(fe.TYPE_NAME, fe.FIELD_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
             .from(d)
-            .where(d.GRAPH_NAME.eq(graphName),
+            .join(fe).on(fe.GRAPH_NAME.eq(d.GRAPH_NAME), fe.COORDINATE.eq(d.COORDINATE))
+            .where(d.GRAPH_NAME.eq(graphName), d.DIRECTIVE_NAME.eq("defaultOrder"), d.ORDINAL.eq(0),
                 defectAt(d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN),
-                domain(graphName, d.TYPE_NAME, inDomain))
+                domain(graphName, fe.TYPE_NAME, inDomain))
             .forEach(r -> declared.add(new Declared(r.value1(), r.value2(),
                 AvailableVia.DEFAULT_ORDER, null, location(r.value3(), r.value4(), r.value5()))));
         dsl.select(ae.TYPE_NAME, ae.FIELD_NAME, ae.ARGUMENT_NAME, ob.SOURCE_NAME, ob.SOURCE_LINE,

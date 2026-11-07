@@ -91,8 +91,9 @@ class SupertypeSiteReferenceTest {
      */
     private static final Map<String, String> METHOD_OWNERS = new LinkedHashMap<>(Map.of(
         "SERVICE",
-        "graphitron_service_entry d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name"
-            + " AND d.field_name = s.field_name",
+        "graphql_directive_application d WHERE d.graph_name = s.graph_name"
+            + " AND d.directive_name = 'service'"
+            + " AND d.coordinate = s.type_name || '.' || s.field_name",
         "EXTERNAL_FIELD",
         "graphql_directive_application d WHERE d.graph_name = s.graph_name"
             + " AND d.directive_name = 'externalField'"

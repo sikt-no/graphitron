@@ -197,8 +197,12 @@ public final class SeededStore {
                      COALESCE(table_ref_name_part, type_name) AS name_part
                 FROM graphitron_table_entry
               UNION
-              SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_mutation_entry WHERE table_ref IS NOT NULL
+              SELECT a.graph_name, e.table_ref, e.table_ref_namespace_part, e.table_ref_name_part
+                FROM graphql_directive_application a
+                JOIN graphitron_ast_mutation_entry e
+                  ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+                 AND e.source_line = a.source_line AND e.source_column = a.source_column
+               WHERE a.directive_name = 'mutation' AND a.ordinal = 0 AND e.table_ref IS NOT NULL
               UNION
               SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
                 FROM graphitron_routine_entry) spellings
@@ -216,11 +220,17 @@ public final class SeededStore {
             INSERT INTO graphitron_method_reference_entry
               (graph_name, site, use_site, type_name, field_name, argument_name, ordinal,
                step_position, class_name, method, source_name, source_line, source_column)
-            SELECT graph_name, 'SERVICE', type_name || '.' || field_name,
-                   type_name, field_name, NULL, NULL, NULL,
-                   class_name, method, source_name, source_line, source_column
-              FROM graphitron_service_entry
-             WHERE class_name IS NOT NULL AND method IS NOT NULL
+            SELECT a.graph_name, 'SERVICE', f.coordinate,
+                   f.type_name, f.field_name, NULL, NULL, NULL,
+                   e.class_name, e.method, a.source_name, a.source_line, a.source_column
+              FROM graphql_directive_application a
+              JOIN graphitron_ast_service_entry e
+                ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+               AND e.source_line = a.source_line AND e.source_column = a.source_column
+              JOIN graphql_field_element f
+                ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+             WHERE a.directive_name = 'service' AND a.ordinal = 0
+               AND e.class_name IS NOT NULL AND e.method IS NOT NULL
             UNION ALL
             SELECT a.graph_name, 'EXTERNAL_FIELD', f.coordinate,
                    f.type_name, f.field_name, NULL, NULL, NULL,

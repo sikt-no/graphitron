@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.vocabulary.EntryKind;
-import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
@@ -17,30 +16,18 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.condition;
@@ -109,17 +96,8 @@ public final class GraphitronAnchor {
         deprecatedInputFields(dsl, graph, touchedAt);
         tables(dsl, graph, touchedAt);
         scalarTypes(dsl, graph, touchedAt);
-        connections(dsl, graph, touchedAt);
-        mutations(dsl, graph, touchedAt);
-        services(dsl, graph, touchedAt);
         routines(dsl, graph, touchedAt);
         outboxes(dsl, graph, touchedAt);
-        defaultOrders(dsl, graph, touchedAt);
-        // The bound name in both habitats it can be written in. One relation rather than two,
-        // because what a reader asks is which name a slot binds and not which kind of slot it is.
-        fieldBindings(dsl, graph, touchedAt);
-        inputFieldBindings(dsl, graph, touchedAt);
-        facets(dsl, graph, touchedAt);
         // Last, and children before parents within it, for the reason every delete here has that
         // order: a sweep that took a parent first would meet its own child's foreign key.
         sweep(dsl, graph, touchedAt);
@@ -129,10 +107,7 @@ public final class GraphitronAnchor {
     private static final List<Table<?>> TABLES_TO_SWEEP =
         List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_TABLE_ENTRY,
             GRAPHITRON_SCALAR_TYPE_ENTRY,
-            GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_MUTATION_ENTRY,
-            GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
-            GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_OUTBOX_ENTRY,
-            GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
+            GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_OUTBOX_ENTRY);
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather
@@ -551,310 +526,4 @@ public final class GraphitronAnchor {
 
     /** The position a list element was written at, carried up out of the ranking. */
     private static final Field<Integer> WRITTEN_AT = field(name("written_at"), Integer.class);
-
-    /**
-     * The applications of {@code directive} on input-object fields, one row per coordinate.
-     *
-     * <p>{@link #claimedOnField}'s counterpart for the other habitat a field directive can be
-     * written in, and the same precedence: where several documents declare one input type, the
-     * declaration the corpus honours is the one whose application wins, and the rank settles it
-     * rather than leaving two rows for a consumer to choose between.
-     */
-    private static Table<?> claimedOnInputField(DSLContext dsl, String graph, String directive) {
-        var a = GRAPHQL_AST_ENTRY;
-        var an = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-        var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
-        var m = GRAPHQL_TYPE_DECLARATION;
-        return dsl
-            .select(f.TYPE_NAME.as(TYPE_NAME), f.NAME.as(FIELD_NAME),
-                a.SOURCE_NAME.as(SITE_NAME), a.SOURCE_LINE.as(SITE_LINE),
-                a.SOURCE_COLUMN.as(SITE_COLUMN),
-                rowNumber().over(partitionBy(f.TYPE_NAME, f.NAME).orderBy(
-                    m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK))
-            .from(a)
-            .join(an).on(an.GRAPH_NAME.eq(a.GRAPH_NAME), an.SOURCE_NAME.eq(a.SOURCE_NAME),
-                an.SOURCE_LINE.eq(a.SOURCE_LINE), an.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-            .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME))
-                .and(f.SOURCE_NAME.eq(a.SOURCE_NAME))
-                .and(f.SOURCE_LINE.eq(a.PARENT_LINE))
-                .and(f.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
-            .join(m).on(m.GRAPH_NAME.eq(graph))
-                .and(m.TYPE_NAME.eq(f.TYPE_NAME))
-                .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
-                .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
-                .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
-            // On the application entry, so its (graph, name) index finds the few applications
-            // of this directive; on the position, H2 reads every position in the graph first.
-            .where(an.GRAPH_NAME.eq(graph))
-            .and(an.NAME.eq(directive))
-            .asTable("claimed_input_field");
-    }
-
-    /**
-     * What an {@code @field} on an output field binds. An inner join: the name is the whole of what
-     * the application says, so one written without it has no fact to state.
-     */
-    private static void fieldBindings(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "field");
-        var e = GRAPHITRON_AST_BINDING_ENTRY;
-        writeBinding(dsl, graph, touchedAt, c, e.NAME_REF,
-            onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, graph, c), e);
-    }
-
-    /** The same application in the other habitat, on an input-object field. */
-    private static void inputFieldBindings(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var c = claimedOnInputField(dsl, graph, "field");
-        var e = GRAPHITRON_AST_BINDING_ENTRY;
-        writeBinding(dsl, graph, touchedAt, c, e.NAME_REF,
-            onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, graph, c), e);
-    }
-
-    /**
-     * The shared insert both habitats make, which differ in how the application is found and in
-     * nothing else.
-     */
-    private static void writeBinding(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                     Table<?> claimed, Field<String> nameRef,
-                                     Condition onSite, Table<?> payload) {
-        var t = GRAPHITRON_FIELD_BINDING_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.NAME_REF, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), claimed.field(TYPE_NAME), claimed.field(FIELD_NAME),
-                    claimed.field(SITE_NAME), claimed.field(SITE_LINE), claimed.field(SITE_COLUMN),
-                    nameRef, val(touchedAt, t.TOUCHED_AT))
-                .from(claimed)
-                .join(payload).on(onSite)
-                .where(claimed.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.NAME_REF, excluded(t.NAME_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * Where an {@code @asFacet} was written. A marker: the application says nothing beyond its own
-     * presence, so there is no payload relation to join and the row is the position it sits at.
-     */
-    private static void facets(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var c = claimedOnInputField(dsl, graph, "asFacet");
-        var t = GRAPHITRON_FACET_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * {@link #claimed} at the field site: every application of one field-site directive, ranked so
-     * that rank one is the application a coordinate-keyed anchor states.
-     *
-     * <p>The same choice one hop further out. A field's coordinate is its type and its name, and a
-     * type is declared by a base declaration and any number of extensions, so the merge order that
-     * decides between two applications is the order of the declarations the fields were written in.
-     * That is two joins rather than one: the application to the field definition it sits on, and
-     * the field definition to the declaration it was written inside.
-     *
-     * <p>Only the four directives the specification admits at {@code FIELD_DEFINITION} alone go
-     * through this. A directive also legal on an input object's field has its applications split
-     * across two parent kinds, an input object's field being an input value rather than a field
-     * in the entry stratum, and an anchor for one of those is a union with a parent-kind test
-     * rather than this select.
-     */
-    private static Table<?> claimedOnField(DSLContext dsl, String graph, String directive) {
-        var a = GRAPHQL_AST_ENTRY;
-        var an = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-        var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-        var m = GRAPHQL_TYPE_DECLARATION;
-        return dsl
-            .select(f.TYPE_NAME.as(TYPE_NAME), f.NAME.as(FIELD_NAME),
-                a.SOURCE_NAME.as(SITE_NAME), a.SOURCE_LINE.as(SITE_LINE),
-                a.SOURCE_COLUMN.as(SITE_COLUMN),
-                rowNumber().over(partitionBy(f.TYPE_NAME, f.NAME).orderBy(
-                    m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK))
-            .from(a)
-            .join(an).on(an.GRAPH_NAME.eq(a.GRAPH_NAME), an.SOURCE_NAME.eq(a.SOURCE_NAME),
-                an.SOURCE_LINE.eq(a.SOURCE_LINE), an.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-            .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME))
-                .and(f.SOURCE_NAME.eq(a.SOURCE_NAME))
-                .and(f.SOURCE_LINE.eq(a.PARENT_LINE))
-                .and(f.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
-            .join(m).on(m.GRAPH_NAME.eq(graph))
-                .and(m.TYPE_NAME.eq(f.TYPE_NAME))
-                .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
-                .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
-                .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
-            // On the application entry, so its (graph, name) index finds the few applications
-            // of this directive; on the position, H2 reads every position in the graph first.
-            .where(an.GRAPH_NAME.eq(graph))
-            .and(an.NAME.eq(directive))
-            .asTable("claimed_field");
-    }
-
-    /**
-     * What an {@code @asConnection} application asked for. Both columns are optional, the directive
-     * defaulting the page size and deriving the type name, so the row is the application and the
-     * payload is whatever was written; an outer join for the reason {@link #tables} takes one.
-     */
-    private static void connections(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "asConnection");
-        var e = GRAPHITRON_AST_CONNECTION_ENTRY;
-        var t = GRAPHITRON_CONNECTION_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.DEFAULT_FIRST_VALUE, t.CONNECTION_NAME, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.DEFAULT_FIRST_VALUE, e.CONNECTION_NAME, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.DEFAULT_FIRST_VALUE, excluded(t.DEFAULT_FIRST_VALUE))
-            .set(t.CONNECTION_NAME, excluded(t.CONNECTION_NAME))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * What a field mutates and how. An inner join, the operation being NOT NULL and the whole of
-     * what the application asserts; the table spelling beside it is optional and stays with the
-     * row. That spelling is also a row of {@code graphitron_spelled_reference_entry}, which is
-     * keyed by the value across every site that writes one and so moves with the last of them.
-     */
-    private static void mutations(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "mutation");
-        var e = GRAPHITRON_AST_MUTATION_ENTRY;
-        var t = GRAPHITRON_MUTATION_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.OPERATION, t.MULTI_ROW, t.FAIL_ON_MISSING, t.TABLE_REF,
-                t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.OPERATION, e.MULTI_ROW, e.FAIL_ON_MISSING, e.TABLE_REF,
-                    e.TABLE_REF_NAMESPACE_PART,
-                    e.TABLE_REF_NAME_PART, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .join(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.OPERATION, excluded(t.OPERATION))
-            .set(t.MULTI_ROW, excluded(t.MULTI_ROW))
-            .set(t.FAIL_ON_MISSING, excluded(t.FAIL_ON_MISSING))
-            .set(t.TABLE_REF, excluded(t.TABLE_REF))
-            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * The Java call a field is served by. A left join, on {@code tables}' terms rather than
-     * {@code mutations}': the entry requires a class name and an application that named none
-     * writes no entry row, where the application is still the author saying this field is served
-     * elsewhere. So the application is the row and the decode is its payload.
-     *
-     * <p>The method reference and the argMapping entries this application also produces stay with
-     * the walk for now. They are rows of relations keyed by site and use site rather than by the
-     * coordinate, so they move when their own relations do and not when this one does.
-     */
-    private static void services(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "service");
-        var e = GRAPHITRON_AST_SERVICE_ENTRY;
-        var t = GRAPHITRON_SERVICE_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.CLASS_NAME, t.METHOD, t.ARGMAPPING, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.CLASS_NAME, e.METHOD, e.ARGMAPPING, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.METHOD, excluded(t.METHOD))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * The ordering a field sorts by when the client asks for none. An outer join: an application
-     * may state its basis as an index, as the primary key, or as the field list below, so every
-     * payload column here is optional and the row is the application.
-     */
-    private static void defaultOrders(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimedOnField(dsl, graph, "defaultOrder");
-        var e = GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
-        var t = GRAPHITRON_DEFAULT_ORDER_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.INDEX_REF, t.PRIMARY_KEY, t.DIRECTION, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.INDEX_REF, e.PRIMARY_KEY, e.DIRECTION, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.INDEX_REF, excluded(t.INDEX_REF))
-            .set(t.PRIMARY_KEY, excluded(t.PRIMARY_KEY))
-            .set(t.DIRECTION, excluded(t.DIRECTION))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * The join from a ranked application to the decode of that same application, which is four
-     * columns every site spells identically: the graph, and the position the application was
-     * written at.
-     */
-    private static Condition onSite(Field<String> entryGraph, Field<String> entrySource,
-                                    Field<Integer> entryLine, Field<Integer> entryColumn,
-                                    String graph, Table<?> claimed) {
-        return entryGraph.eq(graph)
-            .and(entrySource.eq(claimed.field(SITE_NAME)))
-            .and(entryLine.eq(claimed.field(SITE_LINE)))
-            .and(entryColumn.eq(claimed.field(SITE_COLUMN)));
-    }
 }

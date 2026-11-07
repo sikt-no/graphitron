@@ -78,12 +78,10 @@ class RelationRegistrationGateTest {
             // One pair where there were ten. The five sites and their five argument relations
             // keyed one fact five ways; both producers now write the coordinate instead.
             "graphql_directive_application", "graphql_directive_application_arg",
-            "graphitron_table_entry", "graphitron_field_binding_entry",
+            "graphitron_table_entry",
             "graphitron_scalar_type_entry",
             "graphitron_field_reference_entry",
             "graphitron_reference_for_entry", "graphitron_argument_reference_for_entry",
-            "graphitron_service_entry", "graphitron_connection_entry", "graphitron_facet_entry",
-            "graphitron_default_order_entry", "graphitron_mutation_entry",
             "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry",
             "graphitron_routine_entry", "graphitron_outbox_entry",
             "graphitron_undecoded_argument_entry",

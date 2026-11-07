@@ -14,7 +14,9 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -46,7 +48,8 @@ public final class DefaultPageSizeDefects {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_CONNECTION_ENTRY, GRAPHQL_AST_ELEMENT_ENTRY, GRAPHITRON_ARGUMENT,
+        GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_FIELD_ELEMENT, GRAPHITRON_AST_CONNECTION_ENTRY,
+        GRAPHQL_AST_ELEMENT_ENTRY, GRAPHITRON_ARGUMENT,
         STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE, INTENT_TYPE_DOMAIN);
 
     /** Where the oversized default was written. */
@@ -107,13 +110,20 @@ public final class DefaultPageSizeDefects {
         }
         var out = new ArrayList<Oversized>();
 
-        var c = GRAPHITRON_CONNECTION_ENTRY;
-        dsl.select(c.TYPE_NAME, c.FIELD_NAME, c.DEFAULT_FIRST_VALUE, c.SOURCE_NAME, c.SOURCE_LINE,
-                c.SOURCE_COLUMN)
-            .from(c)
-            .where(c.GRAPH_NAME.eq(graphName),
-                defectAt(c.GRAPH_NAME, c.SOURCE_NAME, c.SOURCE_LINE, c.SOURCE_COLUMN),
-                domain(graphName, c.TYPE_NAME, inDomain))
+        // The field's first @asConnection, with the page size it wrote where it wrote one.
+        var ca = GRAPHQL_DIRECTIVE_APPLICATION;
+        var fe = GRAPHQL_FIELD_ELEMENT;
+        var c = GRAPHITRON_AST_CONNECTION_ENTRY;
+        dsl.select(fe.TYPE_NAME, fe.FIELD_NAME, c.DEFAULT_FIRST_VALUE, ca.SOURCE_NAME, ca.SOURCE_LINE,
+                ca.SOURCE_COLUMN)
+            .from(ca)
+            .join(fe).on(fe.GRAPH_NAME.eq(ca.GRAPH_NAME), fe.COORDINATE.eq(ca.COORDINATE))
+            .leftJoin(c).on(c.GRAPH_NAME.eq(ca.GRAPH_NAME), c.SOURCE_NAME.eq(ca.SOURCE_NAME),
+                c.SOURCE_LINE.eq(ca.SOURCE_LINE), c.SOURCE_COLUMN.eq(ca.SOURCE_COLUMN))
+            .where(ca.GRAPH_NAME.eq(graphName), ca.DIRECTIVE_NAME.eq("asConnection"),
+                ca.ORDINAL.eq(0),
+                defectAt(ca.GRAPH_NAME, ca.SOURCE_NAME, ca.SOURCE_LINE, ca.SOURCE_COLUMN),
+                domain(graphName, fe.TYPE_NAME, inDomain))
             .forEach(r -> out.add(new Oversized(r.value1(), r.value2(),
                 WrittenAt.DEFAULT_FIRST_VALUE, String.valueOf(r.value3()), maximum,
                 location(r.value4(), r.value5(), r.value6()))));

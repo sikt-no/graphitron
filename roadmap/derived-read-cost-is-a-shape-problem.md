@@ -388,7 +388,7 @@ classpath and catalog, and every reader reads that resolution rather than a view
   `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same, and at a path step it refuses on
   axes the generated call never reaches, as for `agreeingOnBoth`.
 * **The per-site copies and coordinate-keyed entries go** `blocked`, on "The code-reference subject converts". The twins lose their
-  class, method and argMapping columns, and `graphitron_service_entry` goes with its writer.
+  class, method and argMapping columns.
 * **The walk's unknown-method rejections go** `blocked`, on "Entry defects fail validate".
   `Rejection.unknownServiceMethod` and `unknownLifterMethod` give way to the stored defects.
 * **`sql_name_matched_key_column` is gone** `blocked`, on the child below. With `NameMatchedKeys`,
@@ -577,13 +577,10 @@ pass and no stratum that clears and recomputes.
   `graphql_directive_application` by the application's position, ordinal zero standing for the one
   application a coordinate-keyed copy kept, as the `@error` hover and the `@orderBy` and
   `@lookupKey` readers now read.
-  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies ten
+  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies four
     `graphitron_ast_` entries onto a coordinate key: `graphitron_table_entry`,
-    `graphitron_scalar_type_entry`, `graphitron_connection_entry`, `graphitron_mutation_entry`,
-    `graphitron_service_entry`, `graphitron_default_order_entry`,
-    `graphitron_routine_entry`, `graphitron_outbox_entry`, `graphitron_field_binding_entry` and
-    `graphitron_facet_entry`, each read by rules of `graphitron_entry_defect_rule`, `intent_` views
-    or main code.
+    `graphitron_scalar_type_entry`, `graphitron_routine_entry` and `graphitron_outbox_entry`, each
+    read by rules of `graphitron_entry_defect_rule`, `intent_` views or main code.
   * **The per-site pairs collapse onto a coordinate** `open`. `graphitron_field_node_id_entry` and
     `graphitron_argument_node_id_entry`, `graphitron_reference_for_entry` and
     `graphitron_argument_reference_for_entry`: their twins `graphitron_ast_node_id_entry` and
@@ -2634,6 +2631,14 @@ family through `graphql_directive_application`.
 readers read the type's first `@node` application off `graphql_directive_application`, its type id
 off `graphitron_ast_node_entry` and its key columns off the two `graphitron_ast_` key-column entries,
 which carry the application and the index each element was written at.
+
+**The anchor's field-site copies** (2026-11-07). `graphitron_field_binding_entry`,
+`graphitron_facet_entry`, `graphitron_connection_entry`, `graphitron_default_order_entry`,
+`graphitron_service_entry` and `graphitron_mutation_entry`, with `GraphitronAnchor`'s
+`claimedOnField` and `claimedOnInputField` and `FactWrites.graphitronMutation`. Their readers join
+the field's first application in `graphql_directive_application` to `graphql_field_element` and to
+the `graphitron_ast_` entry at its position; the `@mutation` spelling claim is keyed on
+`graphitron_spelled_reference_entry`.
 
 **The argument-site marker decodes** (2026-11-07). `graphitron_order_by_entry` and
 `graphitron_argument_lookup_key_entry`: their readers, two rules of `graphitron_entry_defect_rule`,

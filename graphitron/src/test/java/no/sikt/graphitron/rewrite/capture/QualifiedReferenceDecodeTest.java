@@ -14,7 +14,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -159,9 +159,9 @@ class QualifiedReferenceDecodeTest {
                 .from(GRAPHITRON_ROUTINE_ENTRY).fetchOne()))
                 .containsExactly("public", "films_for_actor");
             assertThat(halves(store.dsl()
-                .select(GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAMESPACE_PART,
-                        GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAME_PART)
-                .from(GRAPHITRON_MUTATION_ENTRY).fetchOne()))
+                .select(GRAPHITRON_AST_MUTATION_ENTRY.TABLE_REF_NAMESPACE_PART,
+                        GRAPHITRON_AST_MUTATION_ENTRY.TABLE_REF_NAME_PART)
+                .from(GRAPHITRON_AST_MUTATION_ENTRY).fetchOne()))
                 .containsExactly("public", "film");
         }
     }

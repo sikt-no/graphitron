@@ -36,7 +36,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
@@ -227,12 +226,12 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "mutation" -> {
-                // The relation is derived now, by GraphitronAnchor. What is left is the spelling,
-                // for the reason @table's arm carries: graphitron_spelled_reference_entry is keyed
-                // by the value across the several sites that write one, so it moves when the last of
-                // them does. The claim stays with it, first-wins per coordinate being what decides
-                // whose spelling the corpus records where a field carries more than one application.
-                if (!sink.claim(GRAPHITRON_MUTATION_ENTRY, type, field)) return;
+                // What is left is the spelling, for the reason @table's arm carries:
+                // graphitron_spelled_reference_entry is keyed by the value across the several sites
+                // that write one, so it moves when the last of them does. The claim stays with it,
+                // first-wins per coordinate being what decides whose spelling the corpus records
+                // where a field carries more than one application.
+                if (!sink.claim(GRAPHITRON_SPELLED_REFERENCE_ENTRY, "MUTATION", type, field)) return;
                 if (tokenOf(argument(directive, "typeName")) == null) return;
                 spelling(string(directive, "table"));
             }

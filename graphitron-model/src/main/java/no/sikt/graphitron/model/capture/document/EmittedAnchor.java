@@ -35,7 +35,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_AUTHORED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE;
@@ -447,9 +449,22 @@ public final class EmittedAnchor {
     private static void fields(DSLContext dsl, String graphName) {
         var authored = GRAPHITRON_FIELD_AUTHORED;
         var minted = GRAPHITRON_FIELD_MINTED;
-        // The name a field reads by: the @field(name:) the binding anchor holds for it, else its own
-        // name. Joined in each arm, on the binding's key, rather than read per row.
-        var b = GRAPHITRON_FIELD_BINDING_ENTRY;
+        // The name a field reads by: what its first @field application wrote, else its own name.
+        // Joined in each arm, on the field's key, rather than read per row.
+        var fa = GRAPHQL_DIRECTIVE_APPLICATION;
+        var fe = GRAPHQL_FIELD_ELEMENT;
+        var be = GRAPHITRON_AST_BINDING_ENTRY;
+        var b = dsl.select(fe.GRAPH_NAME, fe.TYPE_NAME, fe.FIELD_NAME, be.NAME_REF)
+            .from(fa)
+            .join(fe).on(fe.GRAPH_NAME.eq(fa.GRAPH_NAME), fe.COORDINATE.eq(fa.COORDINATE))
+            .join(be).on(be.GRAPH_NAME.eq(fa.GRAPH_NAME), be.SOURCE_NAME.eq(fa.SOURCE_NAME),
+                be.SOURCE_LINE.eq(fa.SOURCE_LINE), be.SOURCE_COLUMN.eq(fa.SOURCE_COLUMN))
+            .where(fa.GRAPH_NAME.eq(graphName), fa.DIRECTIVE_NAME.eq("field"), fa.ORDINAL.eq(0))
+            .asTable("binding");
+        var bGraph = b.field(fe.GRAPH_NAME);
+        var bType = b.field(fe.TYPE_NAME);
+        var bField = b.field(fe.FIELD_NAME);
+        var bName = b.field(be.NAME_REF);
         dsl.insertInto(GRAPHITRON_FIELD)
             .columns(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
                 GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.COORDINATE, GRAPHITRON_FIELD.ORDINAL,
@@ -462,20 +477,20 @@ public final class EmittedAnchor {
                     authored.COORDINATE, authored.ORDINAL, authored.TYPE_SDL, authored.NAMED_TYPE,
                     authored.NON_NULL, authored.IS_LIST, authored.ITEM_NON_NULL,
                     authored.DEFAULT_VALUE_SDL, mintedDescription(authored.DESCRIPTION, authored.NOTE),
-                    coalesce(b.NAME_REF, authored.FIELD_NAME))
+                    coalesce(bName, authored.FIELD_NAME))
                 .from(authored)
-                .leftJoin(b).on(b.GRAPH_NAME.eq(authored.GRAPH_NAME),
-                    b.TYPE_NAME.eq(authored.TYPE_NAME), b.FIELD_NAME.eq(authored.FIELD_NAME))
+                .leftJoin(b).on(bGraph.eq(authored.GRAPH_NAME),
+                    bType.eq(authored.TYPE_NAME), bField.eq(authored.FIELD_NAME))
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.FIELD_NAME,
                         minted.COORDINATE, minted.ORDINAL, minted.TYPE_SDL, minted.NAMED_TYPE,
                         minted.NON_NULL, minted.IS_LIST, minted.ITEM_NON_NULL,
                         minted.DEFAULT_VALUE_SDL, mintedDescription(minted.DESCRIPTION, minted.NOTE),
-                        coalesce(b.NAME_REF, minted.FIELD_NAME))
+                        coalesce(bName, minted.FIELD_NAME))
                     .from(minted)
-                    .leftJoin(b).on(b.GRAPH_NAME.eq(minted.GRAPH_NAME),
-                        b.TYPE_NAME.eq(minted.TYPE_NAME), b.FIELD_NAME.eq(minted.FIELD_NAME))
+                    .leftJoin(b).on(bGraph.eq(minted.GRAPH_NAME),
+                        bType.eq(minted.TYPE_NAME), bField.eq(minted.FIELD_NAME))
                     .where(minted.GRAPH_NAME.eq(graphName))))
             // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
             // renders H2's MERGE ON as key-or-coordinate, which no index serves. The CHECK that

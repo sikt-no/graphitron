@@ -237,7 +237,7 @@ class SupertypeSignatureGateTest {
         // of this set outlives the migration and this row does not.
         Set.of("graphitron_ast_enum_entry", "graphitron_ast_external_field_entry",
                "graphitron_ast_reference_condition_step_entry",
-               "graphitron_ast_service_entry", "graphitron_service_entry"),
+               "graphitron_ast_service_entry"),
         Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_ast_node_id_entry",
                "graphitron_field_node_id_entry"),
@@ -249,8 +249,6 @@ class SupertypeSignatureGateTest {
         // with the external-code-reference set above; the key arm shares its payload with nothing
         // and is no set at all.
         Set.of("graphitron_ast_reference_table_step_entry", "graphitron_ast_table_entry"),
-        Set.of("graphitron_ast_connection_entry", "graphitron_connection_entry"),
-        Set.of("graphitron_ast_default_order_entry", "graphitron_default_order_entry"),
         // A link's imports as written and the federated graph's imports, the second derived from the
         // first for the one link that opts the graph in, plus what graphitron applies itself. Decided:
         // the entry is per application, and the anchor per graph.
