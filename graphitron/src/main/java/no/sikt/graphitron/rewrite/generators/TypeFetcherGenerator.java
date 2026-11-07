@@ -126,27 +126,10 @@ public class TypeFetcherGenerator {
      * its producer catches into. {@code outboxes} is the store's {@code @outbox} rows, which the DML
      * sites that write a table read to write a message beside their write. {@code recordAccessors}
      * is the store's record getters, from which a VALIDATION pre-step learns the columns of a jOOQ
-     * record parameter it can check.
-     * The overloads above default the walk-derived relations to ones produced from the same schema and
-     * the projections to empty, there being no store behind a schema-only caller.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
-            String outputPackage,
-            no.sikt.graphitron.plan.LauncherRelation launchers,
-            List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
-            List<no.sikt.graphitron.command.TypeUnitCommand.ErrorFetchersUnit> errorRows,
-            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
-            no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
-            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
-            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
-            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
-        return generate(schema, assembled, outputPackage, launchers, rows, errorRows, routineWrites, keyProjections,
-            errorChannels, outboxes, recordAccessors, no.sikt.graphitron.emit.ServiceEmission.none());
-    }
-
-    /**
-     * {@link #generate}, the {@code @service} fetchers {@code services} emits from the store taking the
-     * place of the classified model's; a field it does not emit keeps its classified fetcher.
+     * record parameter it can check. {@code services} is the {@code @service} fetchers the store
+     * emits, which take the place of the classified model's; a field it does not emit keeps its
+     * classified fetcher, and a caller with no store passes
+     * {@link no.sikt.graphitron.emit.ServiceEmission#none()}.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
             String outputPackage,
@@ -673,6 +656,11 @@ public class TypeFetcherGenerator {
         // filter's decode of the same node type share one lifted body.
         ctx.setNodeIdDecodeHelpers(registry);
         for (var field : fields) {
+            // A @service fetcher the store emits takes the place of the classified one; the store
+            // says which, so no variant is named here.
+            if (emitFromStore(ctx, builder, field, outputPackage)) {
+                continue;
+            }
             switch (field) {
                 case ChildField.ColumnBackedField cf -> {
                     if (parentTable == null) {
@@ -721,8 +709,6 @@ public class TypeFetcherGenerator {
                         }
                     }
                 }
-                case ChildField.ServiceTableField stf when emitFromStore(ctx, builder, stf, outputPackage) -> { }
-                case ChildField.ServiceRecordField srf when emitFromStore(ctx, builder, srf, outputPackage) -> { }
                 case ChildField.ServiceTableField stf -> {
                     // Lift-back projection. The loader value is the projected Record (carrying
                     // the multiset @reference columns), not the developer-returned XRecord; the lift
@@ -804,8 +790,6 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
-                case QueryField.QueryServiceTableField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
-                case QueryField.QueryServiceRecordField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(
                     buildQueryServiceTableFetcher(ctx, f,
                         serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
@@ -871,8 +855,6 @@ public class TypeFetcherGenerator {
                     builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
                 case MutationField.MutationRoutineWriteRecordField f ->
                     builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
-                case MutationField.MutationServiceTableField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
-                case MutationField.MutationServiceRecordField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
                 case MutationField.MutationServiceTableField f -> builder.addMethod(
                     buildMutationServiceTableFetcher(ctx, f,
                         serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
