@@ -2071,6 +2071,15 @@ connection follows it in reverse, to the rows pointing here; none is `NO_ROUTE_T
 `ROUTE_AMBIGUOUS`. At arguments and input fields a self-referencing key is never inferred ("I don't
 think the logic works on arguments").
 
+**Decided** (Alf, 2026-11-07). "The @nodeId(typeName:) follows the exact same inference rules as
+field: TypeName." An argument's or input field's path to the node's table rides the one foreign key
+in either direction, as an output field's does; none or several is `NODE_ID_LANDS_ON_TABLE`. Over a
+key the node's table declares, the node's key lands on no column of the slot's table, so the decode
+is a correlated `EXISTS` and `NODE_ID_LANDING_TYPE_DISAGREES` has no pair to judge. The generator's
+`@nodeId` filter reads its route from the store rather than the walk: "We're currently moving the
+generator from the walk to the store, a potential solution is to move the @nodeId handling to the
+store early."
+
 **Open.** A lifted field's start (a `TableRecord` matching its table, or a key or routine type
 matching the next step's primary key column by column) is not yet in `scenarios/path-rules`. How a
 value object lifts to a derived table is out of scope. An emitter may collapse a join whose key already sits on the row, the

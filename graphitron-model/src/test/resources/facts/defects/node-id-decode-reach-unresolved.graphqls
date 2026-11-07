@@ -1,7 +1,8 @@
 # Decodes whose reach resolves short of the node type's table, each with its navigation beside the
 # hops it did get, since an empty hop set means a stopped chain here and not identity. Two keys from
-# film to language are two predicates, so discovery answers nothing; a key film_actor declares toward
-# film is not one film departs, so it is not discovered either. An authored chain carries the hops it
+# film to language are two predicates, so discovery answers nothing; the one key film_actor declares
+# toward film is discovered against its direction, a hop that departs film's referenced column and so
+# lands no key position on film. An authored chain carries the hops it
 # reached and no more, an input field's own path walked from its use site's table. A node type whose
 # table name two schemas hold has no arrival at all.
 
@@ -53,7 +54,8 @@ extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", rows: ""
   """)
 
 extend schema @expectEquals(relation: "graphitron_node_id_decode_hop", rows: """
-  use_site,                           position, via, from_table, to_table,      constraint_name,            fk_on_from
-  Query.films(inCategory),            0,        KEY, film,       film_category, film_category_film_id_fkey, FALSE
-  Mutation.updateFilm(in.inCategory:), 0,        KEY, film,       film_category, film_category_film_id_fkey, FALSE
+  use_site,                           position, via,        from_table, to_table,      constraint_name,            fk_on_from
+  Query.films(castEntryId),           0,        DISCOVERED, film,       film_actor,    film_actor_film_id_fkey,    FALSE
+  Query.films(inCategory),            0,        KEY,        film,       film_category, film_category_film_id_fkey, FALSE
+  Mutation.updateFilm(in.inCategory:), 0,        KEY,        film,       film_category, film_category_film_id_fkey, FALSE
   """)

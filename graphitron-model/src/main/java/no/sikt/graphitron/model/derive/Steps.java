@@ -478,11 +478,9 @@ public final class Steps {
             .set(s.TO_TABLE_REF, excluded(s.TO_TABLE_REF))
             .execute();
 
-        // The one foreign key between two tables, in whichever direction it is declared for an
-        // output field, and the one the start declares for an argument or input field. A
+        // The one foreign key between two tables, in whichever direction it is declared. A
         // self-referencing key meets both sides once; its columns orient by cardinality.
         var rc = SQL_REFERENTIAL_CONSTRAINT.as("rc");
-        var ko = GRAPHITRON_OCCURRENCE.as("ko");
         var ik = GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
         dsl.insertInto(ik)
             .columns(ik.GRAPH_NAME, ik.COORDINATE, ik.TARGET_TYPE, ik.POSITION,
@@ -497,13 +495,12 @@ public final class Steps {
                     j.TARGET_TYPE.eq(p.TARGET_TYPE))
                 .join(n).on(n.GRAPH_NAME.eq(p.GRAPH_NAME), n.COORDINATE.eq(p.COORDINATE),
                     n.TARGET_TYPE.eq(p.TARGET_TYPE))
-                .join(ko).on(ko.GRAPH_NAME.eq(p.GRAPH_NAME), ko.COORDINATE.eq(p.COORDINATE))
                 .join(rc).on(rc.SOURCE_NAME.eq(n.START_SOURCE_NAME).and(rc.TABLE_SCHEMA.eq(n.START_SCHEMA))
                         .and(rc.TABLE_NAME.eq(n.START_TABLE))
                         .and(rc.REFERENCED_SOURCE_NAME.eq(j.TARGET_SOURCE_NAME))
                         .and(rc.REFERENCED_SCHEMA.eq(j.TARGET_SCHEMA))
                         .and(rc.REFERENCED_TABLE.eq(j.TARGET_TABLE))
-                    .or(ko.KIND.eq("FIELD").and(rc.SOURCE_NAME.eq(j.TARGET_SOURCE_NAME))
+                    .or(rc.SOURCE_NAME.eq(j.TARGET_SOURCE_NAME)
                         .and(rc.TABLE_SCHEMA.eq(j.TARGET_SCHEMA))
                         .and(rc.TABLE_NAME.eq(j.TARGET_TABLE))
                         .and(rc.REFERENCED_SOURCE_NAME.eq(n.START_SOURCE_NAME))

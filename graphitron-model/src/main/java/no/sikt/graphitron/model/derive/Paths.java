@@ -57,9 +57,9 @@ import static org.jooq.impl.DSL.when;
  * one table whose one self-referencing key joins it to itself is {@code INFERRED} over that key,
  * which {@link Steps} rides by the field's cardinality. An argument or input field carrying
  * {@code @nodeId}, whose node is its {@code typeName} or else the type the need reaches, is
- * {@code INFERRED} where its start declares exactly one foreign key to the node's table, its target
- * that table; one starting on the node's table, or declaring no key or several, stays {@code EMPTY},
- * which {@code graphitron_entry_defect_rule} judges. The one step it takes is {@link Steps}'s to
+ * {@code INFERRED} where exactly one foreign key joins its start and the node's table, in either
+ * direction, its target that table; one starting on the node's table, or joined to it by no key or
+ * several, stays {@code EMPTY}, which {@code graphitron_entry_defect_rule} judges. The one step it takes is {@link Steps}'s to
  * write. Any other uncovered field between two tables, the same table included, is a defect, which
  * {@code graphitron_entry_defect_rule} raises.
  *
@@ -173,7 +173,7 @@ public final class Paths {
         Condition nodeInferred = sameTable.and(nt.TABLE_NAME.isNotNull())
             .andNot(nt.TABLE_SOURCE_NAME.eq(n.START_SOURCE_NAME).and(nt.TABLE_SCHEMA.eq(n.START_SCHEMA))
                 .and(nt.TABLE_NAME.eq(n.START_TABLE)))
-            .and(declaredKeys(n, nt).eq(1));
+            .and(nodeKeys(n, nt).eq(1));
         return select(n.GRAPH_NAME.as("graph_name"), n.COORDINATE.as("coordinate"),
                 n.TARGET_TYPE.as("target_type"),
                 when(nodeInferred, inline(INFERRED)).when(empty, inline(EMPTY))
@@ -277,14 +277,23 @@ public final class Paths {
                         fc.TABLE_NAME.eq(n.START_TABLE), fc.COLUMN_NAME.eq(cc.COLUMN_NAME))));
     }
 
-    /** How many foreign keys the need's start declares to the node's table {@code nt}. */
-    private static org.jooq.Field<Integer> declaredKeys(GraphitronPathNeed n,
-                                                        no.sikt.graphitron.model.tables.GraphitronTabletype nt) {
+    /**
+     * How many foreign keys join the need's start and the node's table {@code nt}, in either
+     * direction; never the start's self-referencing keys, the node's table being another table.
+     */
+    private static org.jooq.Field<Integer> nodeKeys(GraphitronPathNeed n,
+                                                    no.sikt.graphitron.model.tables.GraphitronTabletype nt) {
         var f = SQL_TABLE_REFERENCE.as("nk_f");
-        return coalesce(field(select(f.CONSTRAINTS).from(f)
+        var b = SQL_TABLE_REFERENCE.as("nk_b");
+        org.jooq.Field<Integer> forward = field(select(f.CONSTRAINTS).from(f)
             .where(f.SOURCE_NAME.eq(n.START_SOURCE_NAME), f.TABLE_SCHEMA.eq(n.START_SCHEMA),
                 f.TABLE_NAME.eq(n.START_TABLE), f.REFERENCED_SOURCE_NAME.eq(nt.TABLE_SOURCE_NAME),
-                f.REFERENCED_SCHEMA.eq(nt.TABLE_SCHEMA), f.REFERENCED_TABLE.eq(nt.TABLE_NAME))), 0);
+                f.REFERENCED_SCHEMA.eq(nt.TABLE_SCHEMA), f.REFERENCED_TABLE.eq(nt.TABLE_NAME)));
+        org.jooq.Field<Integer> backward = field(select(b.CONSTRAINTS).from(b)
+            .where(b.SOURCE_NAME.eq(nt.TABLE_SOURCE_NAME), b.TABLE_SCHEMA.eq(nt.TABLE_SCHEMA),
+                b.TABLE_NAME.eq(nt.TABLE_NAME), b.REFERENCED_SOURCE_NAME.eq(n.START_SOURCE_NAME),
+                b.REFERENCED_SCHEMA.eq(n.START_SCHEMA), b.REFERENCED_TABLE.eq(n.START_TABLE)));
+        return coalesce(forward, 0).plus(coalesce(backward, 0));
     }
 
     /** How many self-referencing keys the need's start, which is its landing, declares. */

@@ -1,12 +1,13 @@
 # Where a named node id's path ends, against the node's table. A written path must end there. With
-# none, the slot's own table must be the node's or reach it by exactly one foreign key: on an output
-# field in either direction, at an argument or input field one the slot's table declares. film
-# declares two keys to language, inventory one to film, and nothing joins film to actor directly.
+# none, the slot's own table must be the node's or reach it by exactly one foreign key, in either
+# direction. film declares two keys to language, inventory one to film, and nothing joins film to
+# actor directly; category's one key is to itself.
 # An id handed to a call by argMapping or under a @service binds no predicate and owes no route.
 # An argument's or input field's own written path is judged as an output field's, so filmsByActor,
 # ending on language for a node on actor, lands on the wrong table. With no path written, the one key
-# the slot's table declares to the node's infers the path there; none or several leaves it empty,
-# which the rule judges.
+# joining the slot's table and the node's infers the path there, whichever table declares it; none or
+# several leaves it empty, which the rule judges. A self-referencing key is never inferred at an
+# argument: a node on the slot's own table is its own rows.
 
 interface Node { id: ID! }
 
@@ -26,10 +27,13 @@ type Language implements Node @table(name: "language") @node { id: ID! }
 
 type Actor implements Node @table(name: "actor") @node { id: ID! }
 
-type Inventory @table(name: "inventory") {
+type Inventory implements Node @table(name: "inventory") @node {
+  id: ID!
   "One key to film."
   filmId: ID @nodeId(typeName: "Film")
 }
+
+type Category implements Node @table(name: "category") @node { id: ID! }
 
 input FilmFilter {
   "Two keys to language."
@@ -51,6 +55,10 @@ extend type Query {
                  @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
   "No key between film and actor."
   filmsByActorId(actorId: ID @nodeId(typeName: "Actor")): [Film!]!
+  "One key, inventory's to film, declared on the node's table."
+  filmsByInventoryId(inventoryId: ID @nodeId(typeName: "Inventory")): [Film!]!
+  "A node on category's own table, which has one key to itself."
+  categoriesById(id: ID @nodeId(typeName: "Category")): [Category!]!
   filmsWhere(where: FilmFilter): [Film!]!
   inventories(filmId: ID @nodeId(typeName: "Film")): [Inventory!]!
   inventoriesWhere(where: InventoryFilter): [Inventory!]!
@@ -81,12 +89,15 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
 extend schema @expectEquals(relation: "graphitron_join_path", where: """
   coordinate IN ('Query.films(languageId:)', 'Query.filmsByActorId(actorId:)',
                  'Query.filmsByActor(actorId:)', 'Query.inventories(filmId:)',
-                 'Query.filmsWhere(where.languageId:)', 'Query.inventoriesWhere(where.filmId:)')
+                 'Query.filmsWhere(where.languageId:)', 'Query.inventoriesWhere(where.filmId:)',
+                 'Query.filmsByInventoryId(inventoryId:)', 'Query.categoriesById(id:)')
   """, rows: """
   coordinate,                            target_type, target_table
+  Query.categoriesById(id:),             Category,    category
   Query.films(languageId:),              Film,        film
   Query.filmsByActorId(actorId:),        Film,        film
   Query.filmsByActor(actorId:),          Film,        language
+  Query.filmsByInventoryId(inventoryId:), Film,       inventory
   Query.inventories(filmId:),            Inventory,   film
   Query.filmsWhere(where.languageId:),   Film,        film
   Query.inventoriesWhere(where.filmId:), Inventory,   film
@@ -95,21 +106,26 @@ extend schema @expectEquals(relation: "graphitron_join_path", where: """
 extend schema @expectEquals(relation: "graphitron_path", where: """
   coordinate IN ('Query.films(languageId:)', 'Query.filmsByActorId(actorId:)',
                  'Query.filmsByActor(actorId:)', 'Query.inventories(filmId:)',
-                 'Query.filmsWhere(where.languageId:)', 'Query.inventoriesWhere(where.filmId:)')
+                 'Query.filmsWhere(where.languageId:)', 'Query.inventoriesWhere(where.filmId:)',
+                 'Query.filmsByInventoryId(inventoryId:)', 'Query.categoriesById(id:)')
   """, rows: """
   coordinate,                            target_type, origin
+  Query.categoriesById(id:),             Category,    EMPTY
   Query.films(languageId:),              Film,        EMPTY
   Query.filmsByActorId(actorId:),        Film,        EMPTY
   Query.filmsByActor(actorId:),          Film,        WRITTEN
+  Query.filmsByInventoryId(inventoryId:), Film,       INFERRED
   Query.inventories(filmId:),            Inventory,   INFERRED
   Query.filmsWhere(where.languageId:),   Film,        EMPTY
   Query.inventoriesWhere(where.filmId:), Inventory,   INFERRED
   """)
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key", where: """
-  coordinate IN ('Query.inventories(filmId:)', 'Query.inventoriesWhere(where.filmId:)')
+  coordinate IN ('Query.inventories(filmId:)', 'Query.inventoriesWhere(where.filmId:)',
+                 'Query.filmsByInventoryId(inventoryId:)', 'Query.categoriesById(id:)')
   """, rows: """
   coordinate,                            target_type, position, constraint_name
+  Query.filmsByInventoryId(inventoryId:), Film,       0,        inventory_film_id_fkey
   Query.inventories(filmId:),            Inventory,   0,        inventory_film_id_fkey
   Query.inventoriesWhere(where.filmId:), Inventory,   0,        inventory_film_id_fkey
   """)

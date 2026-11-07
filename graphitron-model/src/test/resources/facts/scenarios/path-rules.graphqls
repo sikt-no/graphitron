@@ -14,8 +14,9 @@
 # An argument's or input field's need starts where its field lands for the type, one need per type
 # its field reaches. One writing a path follows its own @referenceFor naming the type, else its own
 # @reference, whatever type the need reaches; nothing is inherited at an argument. One carrying
-# @nodeId and writing nothing for the need is INFERRED over the one key its start declares to the
-# node's table, and that table is where its path lands.
+# @nodeId and writing nothing for the need is INFERRED over the one key joining its start and the
+# node's table, whichever of the two declares it, and that table is where its path lands. store
+# declares the one key between address and store.
 
 interface Node { id: ID! }
 
@@ -82,6 +83,8 @@ extend type Query {
     storeId: ID @nodeId(typeName: "Store") @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
   ): [Person!]!
   customers: [Customer!]!
+  "To the node's table over the key it declares back to address."
+  addresses(storeId: ID @nodeId(typeName: "Store")): [Address!]!
   staff: [Staff!]!
   stores: [Store!]!
   languages: [Language!]!
@@ -97,6 +100,7 @@ extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPT
   Customer.city,             String,      JOIN, WRITTEN
   Customer.homeAddress,      Address,     JOIN, INHERITED
   Customer.store,            Store,       JOIN, INFERRED
+  Query.addresses(storeId:), Address,     JOIN, INFERRED
   Query.people(storeId:),    Customer,    JOIN, INFERRED
   Query.people(storeId:),    Staff,       JOIN, WRITTEN
   Language.media,            FilmItem,    JOIN, WRITTEN
@@ -226,4 +230,27 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_column", where:
   coordinate,              target_type, position, ordinal, from_table, from_column, to_table, to_column
   Query.people(storeId:),  Customer,    0,        0,       customer,   store_id,    store,    store_id
   Query.people(storeId:),  Staff,       0,        0,       staff,      store_id,    store,    store_id
+  """)
+
+# An argument's inferred path over a key the node's table declares: one step from address to store
+# over store's key, address's referenced column paired with store's referencing one, so the node's
+# key lands on no column of address.
+extend schema @expectEquals(relation: "graphitron_join_path", where: "coordinate = 'Query.addresses(storeId:)'", rows: """
+  coordinate,                 target_type, target_table
+  Query.addresses(storeId:),  Address,     store
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step", where: "coordinate = 'Query.addresses(storeId:)'", rows: """
+  coordinate,                 target_type, position, element_place, from_table, to_table
+  Query.addresses(storeId:),  Address,     0,        ,              address,    store
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key", where: "coordinate = 'Query.addresses(storeId:)'", rows: """
+  coordinate,                 target_type, position, constraint_table, constraint_name
+  Query.addresses(storeId:),  Address,     0,        store,            store_address_id_fkey
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_column", where: "coordinate = 'Query.addresses(storeId:)'", rows: """
+  coordinate,                 target_type, position, ordinal, from_table, from_column, to_table, to_column
+  Query.addresses(storeId:),  Address,     0,        0,       address,    address_id,  store,    address_id
   """)

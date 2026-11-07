@@ -13702,9 +13702,8 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
 -- A named node id with no route written, at a slot on a table other than the node's, where no one
--- foreign key joins the two, a branch a @referenceFor names having its own written path and the
--- others none: on an output field one either table declares, at an argument or input
--- field one the slot's table declares, as the generator discovers them. An id that binds no table
+-- foreign key joins the two, in either direction, a branch a @referenceFor names having its own
+-- written path and the others none. An id that binds no table
 -- predicate owes no route: one an argMapping entry hands to a call, itself, the input value holding
 -- it or its whole argument; one under a @service, whose arguments all go to the method; and one
 -- whose own @condition(override: true) takes the predicate on itself. Reported once per @nodeId,
@@ -13753,111 +13752,22 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                     AND tr.referenced_source_name = nt.table_source_name
                     AND tr.referenced_schema = nt.table_schema
                     AND tr.referenced_table = nt.table_name), 0)
-       + CASE WHEN o.kind = 'FIELD'
-              THEN COALESCE((SELECT tr.constraints FROM sql_table_reference tr
-                              WHERE tr.source_name = nt.table_source_name
-                                AND tr.table_schema = nt.table_schema
-                                AND tr.table_name = nt.table_name
-                                AND tr.referenced_source_name = jp.target_source_name
-                                AND tr.referenced_schema = jp.target_schema
-                                AND tr.referenced_table = jp.target_table), 0)
-              ELSE 0 END <> 1
+       + COALESCE((SELECT tr.constraints FROM sql_table_reference tr
+                    WHERE tr.source_name = nt.table_source_name
+                      AND tr.table_schema = nt.table_schema
+                      AND tr.table_name = nt.table_name
+                      AND tr.referenced_source_name = jp.target_source_name
+                      AND tr.referenced_schema = jp.target_schema
+                      AND tr.referenced_table = jp.target_table), 0) <> 1
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
--- A named node id at an argument or input field with no route written and its path empty, whose
--- slot's table reaches the node's by its one foreign key and lands every key column on a column of
--- its own, where a landed
--- pair disagrees on the Java type jOOQ binds them as: no predicate compares the decoded value with
--- the column it binds. A key landing only in part is decoded against the node's own table, where no
+-- A named node id at an argument or input field with no route written, whose path to the node's
+-- table is inferred over its one foreign key and lands every key column on a column of the slot's
+-- table, the column its step pairs it with, where a landed pair disagrees on the Java type jOOQ binds
+-- them as: no predicate compares the decoded value with the column it binds. A key landing only in
+-- part, as over a key the node's table declares, is decoded against the node's own table, where no
 -- landed column is compared. The exclusions are the no-route rule's. Reported once per @nodeId, the
 -- detail the key column.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDING_TYPE_DISAGREES', MIN(k.column_name)
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  JOIN graphitron_occurrence o
-    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
-   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
-  JOIN graphitron_path p
-    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'EMPTY'
-  JOIN graphitron_join_path jp
-    ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
-   AND jp.target_type = p.target_type
-  JOIN graphitron_occurrence_node_id k
-    ON k.graph_name = o.graph_name AND k.coordinate = o.coordinate
-  -- The one key the slot's table declares to the node's.
-  JOIN sql_table_reference tr
-    ON tr.source_name = jp.target_source_name AND tr.table_schema = jp.target_schema
-   AND tr.table_name = jp.target_table
-   AND tr.referenced_source_name = k.table_source_name AND tr.referenced_schema = k.table_schema
-   AND tr.referenced_table = k.table_name AND tr.constraints = 1
-  JOIN sql_referential_constraint rc
-    ON rc.source_name = tr.source_name AND rc.table_schema = tr.table_schema
-   AND rc.table_name = tr.table_name
-   AND rc.referenced_source_name = tr.referenced_source_name
-   AND rc.referenced_schema = tr.referenced_schema AND rc.referenced_table = tr.referenced_table
-  -- The position of that key referencing this key column, and the column it lands on.
-  JOIN sql_referential_constraint_column rcc
-    ON rcc.source_name = rc.source_name AND rcc.table_schema = rc.table_schema
-   AND rcc.table_name = rc.table_name AND rcc.constraint_name = rc.constraint_name
-  JOIN sql_constraint_column kc
-    ON kc.source_name = k.table_source_name AND kc.table_schema = k.table_schema
-   AND kc.table_name = k.table_name AND kc.constraint_name = rcc.referenced_constraint_name
-   AND kc.position = rcc.referenced_position AND kc.column_name = k.column_name
-  JOIN sql_constraint_column fc
-    ON fc.source_name = rc.source_name AND fc.table_schema = rc.table_schema
-   AND fc.table_name = rc.table_name AND fc.constraint_name = rc.constraint_name
-   AND fc.position = rcc.position
-  JOIN sql_column lc
-    ON lc.source_name = fc.source_name AND lc.table_schema = fc.table_schema
-   AND lc.table_name = fc.table_name AND lc.column_name = fc.column_name
-  JOIN sql_column nc
-    ON nc.source_name = k.table_source_name AND nc.table_schema = k.table_schema
-   AND nc.table_name = k.table_name AND nc.column_name = k.column_name
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
-   AND lc.binding_type <> nc.binding_type
-   AND NOT (jp.target_source_name = k.table_source_name AND jp.target_schema = k.table_schema
-            AND jp.target_table = k.table_name)
-   -- Every key position lands: none without a column of the key referencing it.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
-                    WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
-                      AND k2.bound = k.bound
-                      AND NOT EXISTS (SELECT 1 FROM sql_referential_constraint_column r2
-                                        JOIN sql_constraint_column c2
-                                          ON c2.source_name = k2.table_source_name
-                                         AND c2.table_schema = k2.table_schema
-                                         AND c2.table_name = k2.table_name
-                                         AND c2.constraint_name = r2.referenced_constraint_name
-                                         AND c2.position = r2.referenced_position
-                                         AND c2.column_name = k2.column_name
-                                       WHERE r2.source_name = rc.source_name
-                                         AND r2.table_schema = rc.table_schema
-                                         AND r2.table_name = rc.table_name
-                                         AND r2.constraint_name = rc.constraint_name))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application dc
-                     JOIN graphitron_ast_input_value_condition_entry ce
-                       ON ce.graph_name = dc.graph_name AND ce.source_name = dc.source_name
-                      AND ce.source_line = dc.source_line AND ce.source_column = dc.source_column
-                    WHERE dc.graph_name = cl.graph_name AND dc.coordinate = cl.coordinate
-                      AND dc.directive_name = 'condition' AND ce.override)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.parent_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.argument_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence fo
-                     JOIN graphitron_producer_claim pc
-                       ON pc.graph_name = fo.graph_name AND pc.coordinate = fo.element_coordinate
-                      AND pc.kind = 'SERVICE'
-                    WHERE fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate)
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
-UNION ALL
--- The same where the slot's path to the node's table is inferred over that one key: each key column
--- lands on the column its step pairs it with, every position landing. The exclusions are the
--- no-route rule's.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
        'NODE_ID_LANDING_TYPE_DISAGREES', MIN(k.column_name)
   FROM graphitron_binding_claim cl
