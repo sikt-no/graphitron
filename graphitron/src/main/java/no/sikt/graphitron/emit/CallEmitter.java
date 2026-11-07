@@ -36,6 +36,11 @@ import java.util.Optional;
  * records of the parent's table, in a set or in a list in the batch's order; it answers a map from
  * the keys it was handed, or a list in their order, and the body reads each parent's value back off
  * it by its own key. The body throws what the method throws; the frame routes it.
+ *
+ * <p>Where the call hands back records of the table its target binds, the body lifts them: the
+ * records go to the producer's lift, {@link LiftEmitter#lift}, which reads the target's rows for
+ * them, and the body answers those rows. Under an object every parent's records are gathered in the
+ * batch's order first, so one statement lifts the whole batch.
  */
 public final class CallEmitter {
 
@@ -54,6 +59,14 @@ public final class CallEmitter {
      */
     public record FrameKey(TypeName keyType, ClassName tablesClass, String tableField) {}
 
+    /**
+     * The producer's lift: the class and name of the method {@link LiftEmitter#lift} rendered for
+     * it, and whether it lifts a list of records, per parent under an object, or one.
+     */
+    public record Lift(ClassName host, String method, boolean list) {}
+
+    private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
+
     /** What the emitter makes of a call: its body and the helpers its fills need, or why it cannot. */
     public sealed interface Result {
         record Emitted(MethodSpec body, List<MethodSpec> helpers) implements Result {
@@ -67,10 +80,12 @@ public final class CallEmitter {
 
     /**
      * The body of {@code call}, named {@code name}, its parameters filled by {@code fills} as
-     * {@code builds} says; {@code frameKey} is present under an object.
+     * {@code builds} says; {@code frameKey} is present under an object, {@code lift} where the
+     * call's records are lifted onto its target's table.
      */
     public static Result body(CallQuery.Row call, FillQuery.Row fills, Map<Integer, BuildQuery.Result> builds,
-                              FillEmitter.Runtime runtime, String name, Optional<FrameKey> frameKey) {
+                              FillEmitter.Runtime runtime, String name, Optional<FrameKey> frameKey,
+                              Optional<Lift> lift) {
         var answer = SessionIdentityRows.typeOf(call.resultType());
         var method = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -101,12 +116,23 @@ public final class CallEmitter {
         emitted.statements().forEach(method::addStatement);
         var target = target(call, method);
         var invocation = CodeBlock.of("$L.$L($L)", target, call.methodName(), CodeBlock.join(emitted.arguments(), ", "));
-        if (batch == null) {
+        if (batch == null && lift.isEmpty()) {
             method.returns(answer).addStatement("return $L", invocation);
-        } else {
+        } else if (batch == null) {
+            method.returns(lifted(lift.get()))
+                .addStatement("$T answered = $L", answer, invocation)
+                .addStatement("return $T.$L(env, dsl, answered)", lift.get().host(), lift.get().method());
+        } else if (lift.isEmpty()) {
             batch.readBack(method, frameKey.get(), answer, invocation);
+        } else {
+            batch.liftBack(method, frameKey.get(), answer, invocation, lift.get());
         }
         return new Result.Emitted(method.build(), emitted.helpers());
+    }
+
+    /** What a lift answers for one record, or for one list of them: a row, or a list of rows. */
+    private static TypeName lifted(Lift lift) {
+        return lift.list() ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
     }
 
     /** The class a static method is called on, or the object an instance method runs on, made here. */
@@ -151,6 +177,33 @@ public final class CallEmitter {
                 method.addStatement("out.put(ordered.get(i), answered == null || i >= answered.size() ? null : answered.get(i))");
             }
             method.endControlFlow().addStatement("return out");
+        }
+
+        /**
+         * As {@link #readBack}, but every parent's records are gathered in the batch's order and
+         * lifted in one call before each parent's rows are handed back under its key.
+         */
+        void liftBack(MethodSpec.Builder method, FrameKey frame, TypeName answer, CodeBlock invocation, Lift lift) {
+            var row = lifted(lift);
+            var out = ParameterizedTypeName.get(MAP, frame.keyType(), row);
+            method.returns(out)
+                .addStatement("$T answered = $L", answer, invocation)
+                .addStatement("$T inOrder = new $T<>(ordered.size())", ParameterizedTypeName.get(LIST, value),
+                    ClassName.get("java.util", "ArrayList"))
+                .beginControlFlow("for (int i = 0; i < ordered.size(); i++)");
+            if (byKey) {
+                method.addStatement("inOrder.add(answered == null ? null : answered.get(converted.get(i)))");
+            } else {
+                method.addStatement("inOrder.add(answered == null || i >= answered.size() ? null : answered.get(i))");
+            }
+            method.endControlFlow()
+                .addStatement("$T rows = $T.$L(env, dsl, inOrder)", ParameterizedTypeName.get(LIST, row), lift.host(),
+                    lift.method())
+                .addStatement("$T out = new $T<>()", out, ClassName.get("java.util", "HashMap"))
+                .beginControlFlow("for (int i = 0; i < ordered.size(); i++)")
+                .addStatement("out.put(ordered.get(i), rows.get(i))")
+                .endControlFlow()
+                .addStatement("return out");
         }
     }
 

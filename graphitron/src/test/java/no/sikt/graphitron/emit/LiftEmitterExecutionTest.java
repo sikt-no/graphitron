@@ -48,7 +48,7 @@ class LiftEmitterExecutionTest {
     private static final String SERVICES = "no.sikt.graphitron.rewrite.test.services.";
     private static final String PACKAGE = "liftrun";
 
-    private static final String SDL = """
+    static final String SDL = """
         type Film @table(name: "film") {
           title: String
           languageByService: Language

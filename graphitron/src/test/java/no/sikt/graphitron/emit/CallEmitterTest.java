@@ -108,7 +108,7 @@ class CallEmitterTest {
         for (var c : CASES) {
             var fills = new FillQuery.Row(c.call().coordinate(), c.call().coordinate(), c.fills(), true);
             var result = CallEmitter.body(c.call(), fills, Map.of(), RUNTIME, c.name(),
-                c.batched() ? Optional.of(FRAME_KEY) : Optional.empty());
+                c.batched() ? Optional.of(FRAME_KEY) : Optional.empty(), Optional.empty());
             assertThat(result).as(c.name()).isInstanceOf(CallEmitter.Result.Emitted.class);
             var emitted = (CallEmitter.Result.Emitted) result;
             host.addMethod(emitted.body());
