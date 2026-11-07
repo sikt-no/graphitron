@@ -38,11 +38,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
+| `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | Spec | 2026-11-07 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
-| `R1160` | Tests read pre-captured fact documents from a shared store | Spec | 2026-11-07 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
@@ -825,7 +825,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R98-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing, blocked by [multi-source-input-validation](multi-source-input-validation.md)
 - `R737` [**roadmap-tool stands a fact store up outside the harness, in a module the guard does not walk**](roadmap-tool-store-site-and-guard-scope.md) — Backlog, cleanup
-- `R1160` [**Tests read pre-captured fact documents from a shared store**](tests-read-shared-fact-stores.md) — Spec, dx
+- `R1160` [**Every schema a test captures is a fact document, and the test strategy is rebuilt on them**](tests-read-shared-fact-stores.md) — Spec, dx
 - `R1149` [**Tests that set the JVM default time zone race the test classes running beside them**](test-default-time-zone-mutation-races-parallel-classes.md) — Backlog, tech-debt
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog
