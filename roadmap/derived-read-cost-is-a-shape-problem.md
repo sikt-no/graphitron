@@ -582,8 +582,7 @@ pass and no stratum that clears and recomputes.
     readers move to `graphitron_ast_routine_entry`, the path and the applications.
   * **The untwinned entries get an ast entry first** `open`. Each entry with no `graphitron_ast_`
     twin gets one, its readers move, and the old one goes. Left: `graphitron_spelled_reference_entry`,
-    a spelling being a column of several `graphitron_ast_` entries and no relation of its own, and
-    `graphitron_undecoded_argument_entry`, read only by `meta_family_headline`. The decode's
+    a spelling being a column of several `graphitron_ast_` entries and no relation of its own. The decode's
     `graphitron_field_reference_entry` and `graphitron_method_reference_entry` have twins,
     `graphitron_ast_reference_entry` and `graphitron_ast_code_reference_entry`.
 * **The supertype roster becomes shrink-only** `open`. The roster of duplicated entries is a
@@ -2637,6 +2636,10 @@ written at a coordinate, and with which `typeName:`, is what was written, so
 the written participant off the `@referenceFor` applications and `graphitron_ast_reference_for_entry`
 and anti-joins the consumers offering it off the occurrences and the field targets. The decode's
 step method-reference claims are keyed on `graphitron_method_reference_entry`.
+
+**The undecoded-argument quarantine** (2026-11-07). `graphitron_undecoded_argument_entry`, read
+only by `meta_family_headline`, which drops it, and the decode's `undecoded` writer: an authored
+literal is `graphql_directive_application_arg.value_sdl` and `graphql_ast_value_entry`'s.
 
 **The argument-site marker decodes** (2026-11-07). `graphitron_order_by_entry` and
 `graphitron_argument_lookup_key_entry`: their readers, two rules of `graphitron_entry_defect_rule`,

@@ -198,8 +198,7 @@ class SupertypeSignatureGateTest {
         // it, so they carry the payload of what they are read from rather than being siblings of
         // it, and a supertype would fold a cache back into its source.
         Set.of("graphitron_carrier_directive", "graphitron_configured_tag",
-               "graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
-               "graphql_directive_application_arg"),
+               "graphitron_directive_application_arg", "graphql_directive_application_arg"),
         // What a key: spelling names, under the two kinds of key it can name: a foreign key, keyed by
         // the constraint, and a table's own primary key, keyed by the table. The shared payload is
         // only which namespace the spelling matched in. No supertype is owed: each relation's

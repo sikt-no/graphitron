@@ -59,10 +59,8 @@ import java.util.Locale;
  *
  * <p>Two applications are deliberately malformed. {@code Mutation.brokenMapping} carries an
  * {@code argMapping} the grammar rejects, which writes no pair. {@code Mutation.brokenRoutineName}
- * names its routine with a number where the definition takes a string, because quarantining a
- * value it cannot decode is one of the things the decode does: a fixture that only ever hands it
- * decodable values leaves {@code graphitron_undecoded_argument_entry} empty and says nothing about
- * the path that writes it.
+ * names its routine with a number where the definition takes a string, a value the decode
+ * cannot decode and so leaves undecoded.
  */
 public final class EntryFamilyFixture {
 

@@ -35,7 +35,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.val;
@@ -63,9 +62,7 @@ import static org.jooq.impl.DSL.when;
  * and effective-value defaulting are not.
  *
  * <p>The decode never rejects. A literal that does not fit its declared shape leaves its typed
- * column NULL and quarantines raw in {@code graphitron_undecoded_argument_entry} with its
- * location, so the authored text survives and the malformed-literal detection has its row. Those paths stay
- * dormant while schema assembly still runs upstream and rejects such schemas first.
+ * column NULL; the authored text is {@code graphql_directive_application_arg}'s.
  *
  * <p>Only what the author wrote is stored: an omitted argument is a NULL column or an absent row,
  * never a default-filled one. Effective values are derivation views, and for the graphitron
@@ -288,7 +285,6 @@ public final class GraphitronFactCapture {
             return new CodeReference(null, null, null);
         }
         if (!(value instanceof ObjectValue object)) {
-            undecoded(directive, argumentName, value);
             return new CodeReference(null, null, null);
         }
         return new CodeReference(
@@ -302,7 +298,6 @@ public final class GraphitronFactCapture {
 
     private Step referenceElement(Value<?> value, Directive directive) {
         if (!(value instanceof ObjectValue object)) {
-            undecoded(directive, "path", value);
             return null;
         }
         Value<?> condition = field(object, "condition");
@@ -313,8 +308,6 @@ public final class GraphitronFactCapture {
             className = stringOf(field(conditionObject, "className"), directive, "path");
             method = stringOf(field(conditionObject, "method"), directive, "path");
             argMapping = stringOf(field(conditionObject, "argMapping"), directive, "path");
-        } else if (condition != null) {
-            undecoded(directive, "path", condition);
         }
         return new Step(
             stringOf(field(object, "table"), directive, "path"),
@@ -347,7 +340,6 @@ public final class GraphitronFactCapture {
         if (value instanceof StringValue string) {
             return string.getValue();
         }
-        undecoded(directive, argumentName, value);
         return null;
     }
 
@@ -359,7 +351,6 @@ public final class GraphitronFactCapture {
         if (value instanceof IntValue number) {
             return number.getValue().intValue();
         }
-        undecoded(directive, name, value);
         return null;
     }
 
@@ -375,7 +366,6 @@ public final class GraphitronFactCapture {
             }
             return List.copyOf(values);
         }
-        undecoded(directive, name, value);
         return List.of();
     }
 
@@ -474,35 +464,6 @@ public final class GraphitronFactCapture {
     }
 
     /**
-     * Quarantines a literal that does not fit its declared shape, rendered and located, so the
-     * authored value survives a decode that produced nothing. Dormant while assembly runs
-     * upstream and rejects such schemas first.
-     *
-     * <p>One overload rather than the two this had. The second quarantined a stored literal that
-     * would not parse back, which was a failure mode of reading the applications out of the store
-     * and went with it: the decode is handed the value the parser built, so there is no reading
-     * back to fail. What is left is the only kind of undecodable value there ever really was, one
-     * the author wrote in a shape the directive does not admit.
-     */
-    private void undecoded(Directive directive, String argumentName, Value<?> value) {
-        SourceLocation location = directive.getSourceLocation();
-        if (location == null || location.getSourceName() == null) {
-            return;
-        }
-        if (!sink.claim(GRAPHITRON_UNDECODED_ARGUMENT_ENTRY, location.getSourceName(), location.getLine(),
-                location.getColumn(), directive.getName(), argumentName)) {
-            return;
-        }
-        var record = sink.dsl().newRecord(GRAPHITRON_UNDECODED_ARGUMENT_ENTRY);
-        record.setSourceName(location.getSourceName());
-        record.setSourceLine(location.getLine());
-        record.setSourceColumn(location.getColumn());
-        record.setDirectiveName(directive.getName());
-        record.setDirectiveArgumentName(argumentName);
-        record.setValueSdl(AstPrinter.printAstCompact(value));
-        sink.add(record);
-    }
-    /**
      * Empties this graph's decoded rows before the decode refills them.
      *
      * <p>Cleared rather than swept: these relations carry no instant, so there is nothing to tell
@@ -538,8 +499,7 @@ public final class GraphitronFactCapture {
     private static final List<Table<?>> DECODED = List.of(
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
         GRAPHITRON_METHOD_REFERENCE_ENTRY,
-        GRAPHITRON_SPELLED_REFERENCE_ENTRY,
-        GRAPHITRON_UNDECODED_ARGUMENT_ENTRY);
+        GRAPHITRON_SPELLED_REFERENCE_ENTRY);
 
     /** {@code DECODED} ordered so every relation follows the ones whose keys point at it. */
     private static List<Table<?>> childrenFirst(List<Table<?>> tables) {

@@ -3493,26 +3493,6 @@ COMMENT ON COLUMN graphitron_routine_entry.touched_at IS 'when the reading that 
 -- directive name in the graphql_ rows; whether to keep steering on a name graphitron does not
 -- own is a directive-lifecycle question outside this spec.
 
-CREATE TABLE graphitron_undecoded_argument_entry (
-  graph_name              VARCHAR NOT NULL,
-  source_name             VARCHAR NOT NULL,
-  source_line             INT     NOT NULL,
-  source_column           INT     NOT NULL,
-  directive_name          VARCHAR NOT NULL,
-  directive_argument_name VARCHAR NOT NULL,
-  value_sdl               VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, directive_name, directive_argument_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphitron_undecoded_argument_entry IS 'The tolerant-decode overflow: a graphitron application argument whose literal does not fit the declared shape decodes to NULL in its typed column and quarantines its raw text here, so the authored value is never lost and the malformed-literal detection has its row. Empty while assembly runs upstream. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_undecoded_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_undecoded_argument_entry.source_name IS 'the application''s position identifies the row; authored applications always have one';
-COMMENT ON COLUMN graphitron_undecoded_argument_entry.source_line IS 'line of the application carrying the undecodable literal';
-COMMENT ON COLUMN graphitron_undecoded_argument_entry.source_column IS 'column of the application carrying the undecodable literal';
-COMMENT ON COLUMN graphitron_undecoded_argument_entry.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphitron_undecoded_argument_entry.directive_argument_name IS 'the definition''s formal argument this value binds';
-COMMENT ON COLUMN graphitron_undecoded_argument_entry.value_sdl IS 'the literal as written, rendered from the AST';
-
 -- ==== The element family the generator emits ======================================
 -- Every schema element the generator works with, the author's and the ones macro expansion minted,
 -- at one key and at the grain each kind is asked about. graphitron_element is the supertype over
@@ -17033,8 +17013,8 @@ COMMENT ON VIEW meta_family IS 'The family roster: one row per relation-name pre
 CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('store_graph', 0), ('store_graph_source', 1), ('store_stamp', 2),
   ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_directive_application', 2),
-  ('graphitron_ast_table_entry', 0), ('graphitron_field_reference_entry', 1), ('graphitron_undecoded_argument_entry', 2),
-  ('graphitron_node_type', 3),
+  ('graphitron_ast_table_entry', 0), ('graphitron_field_reference_entry', 1), 
+  ('graphitron_node_type', 2),
   ('sql_table', 0), ('sql_column', 1), ('sql_referential_constraint', 2),
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
   ('javac_diagnostic', 0),
