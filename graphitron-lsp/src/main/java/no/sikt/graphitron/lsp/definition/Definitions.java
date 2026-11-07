@@ -1,6 +1,5 @@
 package no.sikt.graphitron.lsp.definition;
 
-import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
@@ -26,6 +25,13 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
+
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
+import static org.jooq.impl.DSL.selectDistinct;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 
 /**
  * Resolves cursor positions on known directive arguments to source
@@ -305,7 +311,7 @@ public final class Definitions {
         }
         // The parent's own binding answers. A class-backed parent's members are a jump the SDL
         // declaration name already offers through DeclarationDefinitions; this arm is the table half.
-        for (var table : BoundTables.of(store, typeName.get())) {
+        for (var table : fieldSourceTables(store, typeName.get())) {
             var located = columnDefinition(store, table, columnName);
             if (located.isPresent()) return located;
         }
@@ -346,4 +352,33 @@ public final class Definitions {
         return Optional.empty();
     }
 
+    /**
+     * The tables {@code typeName}'s fields read, at every place the type is reached: the source
+     * tables of their occurrences, in schema then table order. A type whose {@code @table} is
+     * ambiguous reads no table, so its candidates stand in, the tables its defect names.
+     */
+    private static List<CatalogTable> fieldSourceTables(StoreHandle store, String typeName) {
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var s = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var c = GRAPHITRON_ENTRY_DEFECT_TABLE;
+        return store.dsl()
+            .selectDistinct(s.TABLE_SOURCE_NAME, s.TABLE_SCHEMA, s.TABLE_NAME)
+            .from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE))
+            .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.eq(typeName))
+            .union(selectDistinct(c.TABLE_SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME)
+                .from(a)
+                .join(c).on(c.GRAPH_NAME.eq(a.GRAPH_NAME), c.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    c.SOURCE_LINE.eq(a.SOURCE_LINE), c.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq(typeName),
+                    a.DIRECTIVE_NAME.eq("table")))
+            .fetch(row -> new CatalogTable(row.value1(), row.value2(), row.value3()))
+            .stream()
+            .sorted(java.util.Comparator.comparing(CatalogTable::schema)
+                .thenComparing(CatalogTable::tableName))
+            .toList();
+    }
 }

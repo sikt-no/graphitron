@@ -5,8 +5,3 @@ type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalA
   message: String! @classified(source: OnlyChild, operations: [], target: Single, targetShape: Field, sourceShape: Record)
 }
 extend type Query { err: MyError }
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  """)

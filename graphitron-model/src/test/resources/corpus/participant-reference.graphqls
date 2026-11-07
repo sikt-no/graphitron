@@ -12,14 +12,6 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
 }
 extend type Query { content: Content }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  Content,      content
-  CorpusAnchor, category
-  FilmContent,  content
-  ShortContent, content
-  """)
-
 {
   content {
     contentId

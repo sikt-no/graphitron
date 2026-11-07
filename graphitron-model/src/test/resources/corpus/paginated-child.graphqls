@@ -14,13 +14,6 @@ extend type Query {
 
 }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  City,         city
-  CorpusAnchor, category
-  Country,      country
-  """)
-
 {
   country {
     cities(first: 2) {

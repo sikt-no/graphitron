@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
+import no.sikt.graphitron.lsp.facts.SdlTypeUsages;
 import no.sikt.graphitron.lsp.hover.DeclarationHovers;
 import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
@@ -119,15 +120,14 @@ class EditorReadsNoViewTest {
 
     @Test
     void theCheckSeesAViewWhereOneIsRead() {
-        // The control: go-to-definition still resolves through intent_bound_table, so the same
-        // check run over its statement has to find it, or the one above passes by matching nothing.
+        // The control: find-references on a type still reads graphql_poly_member, a view, so the
+        // same check run over its statements has to find it, or the ones above pass by matching
+        // nothing.
         var views = store.handle().dsl()
             .fetch("SELECT table_name FROM information_schema.views WHERE table_schema = 'PUBLIC'")
             .getValues(0, String.class);
         var statements = new ArrayList<String>();
-        DeclarationDefinitions.compute(
-            WorkspaceFileTestSupport.snapshot("type Film @table(name: \"film\") {\n    title: String\n}\n"),
-            recording(statements), new Point(0, "type Fi".length()));
+        SdlTypeUsages.of(recording(statements), "Film", false);
         assertThat(statements).isNotEmpty();
         assertThat(viewsNamed(views, statements)).isNotEmpty();
     }

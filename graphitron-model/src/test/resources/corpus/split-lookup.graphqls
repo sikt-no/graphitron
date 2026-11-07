@@ -6,11 +6,4 @@ type Store @table(name: "store") {
 }
 extend type Query { store: Store }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  Customer,     customer
-  Store,        store
-  """)
-
 { store { customers(customer_id: "1") { firstName } } }

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
 import io.github.treesitter.jtreesitter.Node;
-import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.parsing.Behavior;
@@ -26,6 +25,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
+import static org.jooq.impl.DSL.selectDistinct;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+
 /**
  * Foreign-key completions for any coordinate the {@link LspVocabulary}
  * overlay declares as a {@link Behavior.CatalogFkBinding}. Today's
@@ -34,7 +41,7 @@ import java.util.Set;
  *
  * <p>Candidates are the foreign keys touching the enclosing GraphQL type's table, in either
  * direction: the keys the table declares and the keys other tables declare against it. Both halves
- * are store reads now, the binding through {@link BoundTables} and the census through
+ * are store reads now, the table the field's occurrences read and the census through
  * {@link CatalogKeys}, which is the arm's whole answer coming out of one transaction. Path-step
  * refinement (narrowing later steps by where the previous step landed) is not implemented; every
  * step suggests the same set. The table's own primary key joins the set only on a single-valued
@@ -76,7 +83,7 @@ public final class ReferenceCompletions {
         if (typeDecl.isEmpty()) return List.of();
         var typeName = TypeContext.declaredNameOf(typeDecl.get(), source);
         if (typeName.isEmpty()) return List.of();
-        var tables = BoundTables.of(store, typeName.get());
+        var tables = fieldSourceTables(store, typeName.get());
         var candidates = keyCandidates(store, tables);
         candidates.addAll(primaryKeyCandidates(store, tables, directive, source));
         return items(candidates, context);
@@ -101,7 +108,7 @@ public final class ReferenceCompletions {
         Node named = firstOfKind(type, "named_type");
         if (named == null) return List.of();
         String returnTypeName = Nodes.text(named, source).trim();
-        var returnTables = BoundTables.of(store, returnTypeName);
+        var returnTables = boundTable(store, returnTypeName);
         var out = new ArrayList<Candidate>();
         for (CatalogTable table : tables) {
             if (!returnTables.contains(table)) continue;
@@ -210,5 +217,45 @@ public final class ReferenceCompletions {
 
     private static String join(List<String> values) {
         return String.join(", ", values.stream().distinct().toList());
+    }
+
+    /**
+     * The tables {@code typeName}'s fields read, at every place the type is reached: the source
+     * tables of their occurrences, in schema then table order. A type whose {@code @table} is
+     * ambiguous reads no table, so its candidates stand in, the tables its defect names.
+     */
+    private static List<CatalogTable> fieldSourceTables(StoreHandle store, String typeName) {
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var s = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var c = GRAPHITRON_ENTRY_DEFECT_TABLE;
+        return store.dsl()
+            .selectDistinct(s.TABLE_SOURCE_NAME, s.TABLE_SCHEMA, s.TABLE_NAME)
+            .from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE))
+            .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.eq(typeName))
+            .union(selectDistinct(c.TABLE_SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME)
+                .from(a)
+                .join(c).on(c.GRAPH_NAME.eq(a.GRAPH_NAME), c.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    c.SOURCE_LINE.eq(a.SOURCE_LINE), c.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq(typeName),
+                    a.DIRECTIVE_NAME.eq("table")))
+            .fetch(row -> new CatalogTable(row.value1(), row.value2(), row.value3()))
+            .stream()
+            .sorted(java.util.Comparator.comparing(CatalogTable::schema)
+                .thenComparing(CatalogTable::tableName))
+            .toList();
+    }
+
+    /** The one table {@code typeName}'s {@code @table} binds it to, or none where it binds none. */
+    private static List<CatalogTable> boundTable(StoreHandle store, String typeName) {
+        var t = GRAPHITRON_TABLETYPE;
+        return store.dsl()
+            .select(t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME)
+            .from(t)
+            .where(t.GRAPH_NAME.eq(store.graphName()), t.TYPE_NAME.eq(typeName))
+            .fetch(row -> new CatalogTable(row.value1(), row.value2(), row.value3()));
     }
 }

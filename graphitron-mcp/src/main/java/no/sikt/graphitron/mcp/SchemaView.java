@@ -147,7 +147,6 @@ final class SchemaView {
     private static Map<String, Object> mapTable(SchemaQueries.TableBinding table) {
         var map = new LinkedHashMap<String, Object>();
         map.put("table", table.table());
-        map.put("candidates", table.candidates());
         return map;
     }
 

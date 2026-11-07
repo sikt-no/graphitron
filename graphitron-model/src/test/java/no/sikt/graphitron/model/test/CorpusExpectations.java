@@ -270,7 +270,7 @@ public final class CorpusExpectations {
      * located, a graphql-java parse here against the transcribed directive rows there.
      *
      * <p>What a declaration read this way is worth is not this method's claim to make. A block
-     * says a relation holds these rows, and only {@code CorpusExpectationTest} checks that, in
+     * says a relation holds these rows, and only {@code FactExpectationTest} checks that, in
      * both directions, against a real capture. A reader deriving coverage from these rows is
      * leaning on that check having run, which it has: the two are gates in the same build.
      *

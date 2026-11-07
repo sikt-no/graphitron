@@ -11,11 +11,6 @@ extend type Query {
 
 }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  """)
-
 # Tilgang's rows are the routine's result, which binds no table.
 {
   tilganger(env: "test", serviceId: "svc", feideId: "user@example.org") {

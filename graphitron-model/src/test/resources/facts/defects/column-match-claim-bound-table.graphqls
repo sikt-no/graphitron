@@ -54,18 +54,6 @@ extend type Query @table(name: "film") {
   holders: [Holder!]!
 }
 
-extend schema @expectEquals(relation: "intent_bound_table", where: "type_name <> 'FactAnchor'", rows: """
-  type_name, table_schema,  table_name,   candidates
-  Film,      public,        film,         1
-  Unbound,   public,        film,         1
-  Language,  public,        language,     1
-  Served,    public,        film,         1
-  Dup,       multischema_a, note,         2
-  Dup,       multischema_b, note,         2
-  Qualified, multischema_a, note,         1
-  Holder,    public,        array_holder, 1
-  """)
-
 extend schema @expectEquals(relation: "graphitron_occurrence_column",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate      , table_schema , table_name, column_name , matched_by

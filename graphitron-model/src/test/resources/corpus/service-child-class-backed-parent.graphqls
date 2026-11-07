@@ -17,12 +17,6 @@ extend type Query {
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
 }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  Film,         film
-  """)
-
 {
   aggregated {
     rank

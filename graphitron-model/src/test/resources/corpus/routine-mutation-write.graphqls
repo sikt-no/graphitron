@@ -9,9 +9,3 @@ type Mutation {
     @reference(path: [{table: "rental"}])
     @classified(source: Mutation, operations: [RoutineWrite], target: List, targetShape: Table)
 }
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  Rental,       rental
-  """)

@@ -780,11 +780,6 @@ classified records have no reader left and can go with the walk.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
-* **The editor and MCP read a type's table from what the store states** `open`, B's. The binding
-  readers read `graphitron_tabletype` and the `@table`'s position off its `TABLE_TYPE` claim, the
-  scope readers the occurrences' source tables, column diagnostics the column defects, and an
-  ambiguous `@table` its `TABLE_AMBIGUOUS` defect with each candidate a row of
-  `graphitron_entry_defect_table` under it; `intent_bound_table` goes.
 * **`graphitron_spelled_table` is reconsidered** `open`. A written table name resolves there per
   spelling, shared by the `@table` defects and the field scope, routine element, write producer and
   code-reference rules, where each site could resolve its own as `graphitron_path_element_table`
@@ -2631,6 +2626,12 @@ family through `graphql_directive_application`.
 `graphitron_argument_lookup_key_entry`: their readers, two rules of `graphitron_entry_defect_rule`,
 `UnlowerableOrderings` and `RoutineWriteQuery`, read the applications at the field's arguments off
 `graphql_directive_application` and `graphql_argument_element`.
+
+**The type binding view.** `intent_bound_table`, with the language server's `BoundTables`, the MCP
+tables slot's `candidates` count and `TableBinding.candidates`: a type's table is
+`graphitron_tabletype`'s, the tables its fields read the occurrences' source tables, and an
+ambiguous `@table`'s candidates rows of `graphitron_entry_defect_table` under its defect. With the
+corpus left asserting nothing about the store, `CorpusExpectationTest` went too.
 
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading

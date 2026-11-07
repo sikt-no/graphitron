@@ -31,6 +31,9 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
@@ -44,7 +47,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STOP;
@@ -330,7 +332,7 @@ final class DiagnosticFacts {
         String tableName, Boolean walked, Boolean stopped, String columnName, String jooqName
     ) {}
 
-    /** A table the site's parent is bound to, and one of its columns. */
+    /** A table the site's parent reads, and one of its columns. */
     record ParentRow(
         String typeName, String tableSourceName, String tableSchema, String tableName,
         String columnName, String jooqName
@@ -1093,25 +1095,44 @@ final class DiagnosticFacts {
     }
 
     /**
-     * Every column of every table the document's types are bound to, in the schema then table order
-     * {@code BoundTables} answers in, so a message naming the first candidate names the one it would
-     * have named. Left-joined for the reason the arm above is.
+     * Every column of every table the document's types' fields read, at every place each type is
+     * reached, and for a type whose {@code @table} is ambiguous the candidates its defect names, in
+     * schema then table order, so a message naming the first candidate names the one it would have
+     * named. Left-joined for the reason the arm above is.
      */
     private static Field<List<ParentRow>> parentArm(
         StoreHandle store, Collection<String> typeNames
     ) {
-        return multiset(select(INTENT_BOUND_TABLE.TYPE_NAME, INTENT_BOUND_TABLE.TABLE_SOURCE_NAME,
-                INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME,
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var st = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var c = GRAPHITRON_ENTRY_DEFECT_TABLE;
+        var tables = selectDistinct(f.TYPE_NAME.as("type_name"), st.TABLE_SOURCE_NAME.as("table_source_name"),
+                st.TABLE_SCHEMA.as("table_schema"), st.TABLE_NAME.as("table_name"))
+            .from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE))
+            .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
+            .union(selectDistinct(a.COORDINATE, c.TABLE_SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME)
+                .from(a)
+                .join(c).on(c.GRAPH_NAME.eq(a.GRAPH_NAME), c.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    c.SOURCE_LINE.eq(a.SOURCE_LINE), c.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.in(typeNames),
+                    a.DIRECTIVE_NAME.eq("table")))
+            .asTable("parent_table");
+        Field<String> typeName = tables.field("type_name", String.class);
+        Field<String> sourceName = tables.field("table_source_name", String.class);
+        Field<String> schema = tables.field("table_schema", String.class);
+        Field<String> tableName = tables.field("table_name", String.class);
+        return multiset(select(typeName, sourceName, schema, tableName,
                 SQL_COLUMN.COLUMN_NAME, SQL_COLUMN.JOOQ_NAME)
-            .from(INTENT_BOUND_TABLE)
+            .from(tables)
             .leftJoin(SQL_COLUMN)
-            .on(SQL_COLUMN.SOURCE_NAME.eq(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME))
-            .and(SQL_COLUMN.TABLE_SCHEMA.eq(INTENT_BOUND_TABLE.TABLE_SCHEMA))
-            .and(SQL_COLUMN.TABLE_NAME.eq(INTENT_BOUND_TABLE.TABLE_NAME))
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_BOUND_TABLE.TYPE_NAME.in(typeNames))
-            .orderBy(INTENT_BOUND_TABLE.TYPE_NAME, INTENT_BOUND_TABLE.TABLE_SCHEMA,
-                INTENT_BOUND_TABLE.TABLE_NAME, SQL_COLUMN.ORDINAL))
+            .on(SQL_COLUMN.SOURCE_NAME.eq(sourceName))
+            .and(SQL_COLUMN.TABLE_SCHEMA.eq(schema))
+            .and(SQL_COLUMN.TABLE_NAME.eq(tableName))
+            .orderBy(typeName, schema, tableName, SQL_COLUMN.ORDINAL))
             .convertFrom(rows -> rows.map(Records.mapping(ParentRow::new)));
     }
 

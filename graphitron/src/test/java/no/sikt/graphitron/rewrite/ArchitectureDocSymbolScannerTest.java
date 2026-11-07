@@ -34,7 +34,7 @@ class ArchitectureDocSymbolScannerTest {
         "PAGE_CANDIDATES",        // a constant, not a type
         "SQL",                    // a bare acronym
         "@table",                 // a directive
-        "intent_bound_table",     // a store relation
+        "graphitron_tabletype",   // a store relation
         "--mode=migration",       // a command-line flag
     })
     void notATypeCitation(String span) {

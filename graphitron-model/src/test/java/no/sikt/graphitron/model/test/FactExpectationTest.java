@@ -32,11 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * graphs read in steps; {@code undecided} makes no claim and only shrinks. The prelude sits above
  * all four.
  *
- * <p>A neighbour of {@link CorpusExpectationTest} sharing its whole mechanism, and separate from it
- * for what the two folders are about rather than for anything mechanical. A corpus document carries
- * a classification verdict and renders into an author-facing page; a document here is about the
- * shape of the store, which is a contributor's concern. Folding them together would put store
- * plumbing on that page and make a fact example read as a claim about generated code.
+ * <p>The corpus beside it carries classification verdicts for the walk and asserts nothing about
+ * the store; a document here is about the shape of the store, and is where a store fact is pinned.
  *
  * <p>What this class does not carry is the corpus's other obligations, and the absence is the point:
  * no projection operation, no documentation fragment, no verdict, no launcher-command apparatus. A

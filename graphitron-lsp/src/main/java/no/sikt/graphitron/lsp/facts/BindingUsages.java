@@ -16,15 +16,13 @@ import java.util.Locale;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 
 /**
  * Every SDL coordinate that binds a given target: the population behind find-references when the
@@ -40,7 +38,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
  *
  * <p>Three matching rules appear here and the differences between them are deliberate, because a
  * reader deserves to know which of their answers is resolution-exact and which is name-exact.
- * Where a resolution exists ({@code intent_bound_table} for a table binding,
+ * Where a resolution exists ({@code graphitron_tabletype} for a table binding,
  * {@code graphitron_occurrence_column} for a column) the match is on the resolved target, so
  * {@code @table(name: "film")} and {@code @table(name: "public.film")} find each other and neither
  * finds a same-named table in another schema. A reference path's hop has no resolution view, so it
@@ -86,7 +84,7 @@ public final class BindingUsages {
      * there, and the {@code @reference} path hops that navigate to it.
      *
      * <p>The two halves match differently, per the class note above. A type binding goes through
-     * {@code intent_bound_table}, which has already resolved the author's spelling, so the match is
+     * {@code graphitron_tabletype}, which has already resolved the author's spelling, so the match is
      * exact. A path hop carries only what was written, so it matches on the table's name
      * case-insensitively and, where the hop named a namespace, on that too; an unqualified hop
      * against a name two schemas share is ambiguous in the same way the generator finds it
@@ -198,44 +196,26 @@ public final class BindingUsages {
     }
 
     /**
-     * The types whose {@code @table} binding resolves to this table, positioned by their site.
-     *
-     * <p>Two relations at two keys, joined rather than conflated. Which types resolved to the table
-     * is a coordinate fact and {@code intent_bound_table} states it; where the binding was written
-     * is a position, and the entry is keyed there. The coordinate is not a column of the entry and
-     * is not meant to be: a transcription says what stands at a position and references the
-     * {@code graphql_} entry it decorates, so the type name is reached through that reference, to
-     * the application's entry holding its declaration's position in {@code parent_line} and
-     * {@code parent_column}, and from there to the declaration carrying the name. The reading this
-     * replaces took the type name off the binding row itself, which is why that row had to resolve
-     * while the document was still being read.
-     *
-     * <p>One row per site and not per type, which is the keying showing through: a type extended
-     * across two sources and annotated on both has two sites and is two rows here.
+     * The types whose {@code @table} binds them to this table, positioned at each {@code @table}
+     * written for them. Which type a table binds is {@code graphitron_tabletype}'s; where the binding
+     * was written is the type's {@code @table} applications, one row per site rather than per type,
+     * so a type extended across two sources and annotated on both has two. An application nobody
+     * wrote has no position and is no site.
      */
     private static Result<Record3<String, Integer, Integer>> boundTypeSites(
         StoreHandle store, CatalogTable table
     ) {
-        var e = GRAPHITRON_AST_TABLE_ENTRY;
-        var d = GRAPHQL_AST_ENTRY;
-        var m = GRAPHQL_TYPE_DECLARATION;
+        var t = GRAPHITRON_TABLETYPE;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION;
         return store.dsl()
-            .select(e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN)
-            .from(INTENT_BOUND_TABLE)
-            .join(m).on(m.GRAPH_NAME.eq(INTENT_BOUND_TABLE.GRAPH_NAME))
-                .and(m.TYPE_NAME.eq(INTENT_BOUND_TABLE.TYPE_NAME))
-            .join(d).on(d.GRAPH_NAME.eq(m.GRAPH_NAME))
-                .and(d.SOURCE_NAME.eq(m.SOURCE_NAME))
-                .and(d.PARENT_LINE.eq(m.SOURCE_LINE))
-                .and(d.PARENT_COLUMN.eq(m.SOURCE_COLUMN))
-            .join(e).on(e.GRAPH_NAME.eq(d.GRAPH_NAME))
-                .and(e.SOURCE_NAME.eq(d.SOURCE_NAME))
-                .and(e.SOURCE_LINE.eq(d.SOURCE_LINE))
-                .and(e.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME.eq(table.sourceName()))
-            .and(INTENT_BOUND_TABLE.TABLE_SCHEMA.eq(table.schema()))
-            .and(INTENT_BOUND_TABLE.TABLE_NAME.eq(table.tableName()))
+            .select(a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN)
+            .from(t)
+            .join(a).on(a.GRAPH_NAME.eq(t.GRAPH_NAME), a.COORDINATE.eq(t.TYPE_NAME),
+                a.DIRECTIVE_NAME.eq("table"), a.SOURCE_LINE.isNotNull())
+            .where(t.GRAPH_NAME.eq(store.graphName()))
+            .and(t.TABLE_SOURCE_NAME.eq(table.sourceName()))
+            .and(t.TABLE_SCHEMA.eq(table.schema()))
+            .and(t.TABLE_NAME.eq(table.tableName()))
             .fetch();
     }
 

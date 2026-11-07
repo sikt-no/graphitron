@@ -379,7 +379,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_carrier_directive_rule", Arm.DERIVED);
         registrations.put("graphitron_inherited_directive", Arm.DERIVED);
         registrations.put("graphitron_minted_conflict", Arm.DERIVED);
-        registrations.put("intent_bound_table", Arm.DERIVED);
         registrations.put("graphitron_spelled_table", Arm.DERIVED);
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
         registrations.put("sql_table_reference", Arm.DERIVED);

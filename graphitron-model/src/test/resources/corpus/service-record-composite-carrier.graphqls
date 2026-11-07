@@ -30,10 +30,3 @@ type Mutation {
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
     @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)
 }
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  Actor,        actor
-  CorpusAnchor, category
-  Film,         film
-  """)

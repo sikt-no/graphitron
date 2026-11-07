@@ -12,12 +12,4 @@ extend type Query {
   search: FilmOrActor @classified(source: Query, operations: [Select], target: Single, targetShape: Union)
 }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  Actor,        actor
-  CorpusAnchor, category
-  Film,         film
-  FilmActor,    film_actor
-  """)
-
 { filmActor { related { ... on Film { title } ... on Actor { firstName } } } }

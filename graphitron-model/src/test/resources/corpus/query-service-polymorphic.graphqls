@@ -7,10 +7,3 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
     @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)
 }
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  Actor,        actor
-  CorpusAnchor, category
-  Film,         film
-  """)

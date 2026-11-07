@@ -1096,9 +1096,9 @@ class GraphitronMcpServerTest {
             .containsEntry("trigger", "@table")
             .doesNotContainKey("decoded"));
 
-        // The binding carries the table's full key and the arity of the reference that reached it.
+        // The binding carries the one table the @table bound, by its full key.
         assertThat((List<Map<String, Object>>) film.get("tables"))
-            .containsExactly(Map.of("table", "public.film", "candidates", 1));
+            .containsExactly(Map.of("table", "public.film"));
 
         // The @table arm of the coalescing backing view: the table's own generated record. Its
         // members are empty because the classpath census deliberately never scans generated jOOQ

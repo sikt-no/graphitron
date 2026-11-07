@@ -22,8 +22,3 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column",
   coordinate , table_source_name                             , table_schema, table_name , column_name
   Parent.name, no.sikt.graphitron.rewrite.singleschemafixture, singleschema, solo_parent, name
   """)
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name, table_source_name,                               table_name
-  Parent,    no.sikt.graphitron.rewrite.singleschemafixture, solo_parent
-  """)

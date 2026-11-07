@@ -21,10 +21,4 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
 }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  Film,         film
-  """)
-
 { film { title details { stats { count } } } }

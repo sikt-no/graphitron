@@ -21,11 +21,3 @@ extend type Query {
   filmActor: FilmActor
   customer: Customer
 }
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  Customer,     customer
-  Film,         film
-  FilmActor,    film_actor
-  """)

@@ -21,8 +21,11 @@ import java.util.Optional;
 import java.util.SequencedMap;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
-import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
@@ -409,20 +412,18 @@ public final class DeclarationFacts {
     // ===== The arms =====
 
     /**
-     * The tables the type's {@code @table} binding resolves to, in {@link BoundTables}'s schema then
-     * table order, joined to the census row that names their generated class. The join is what
-     * {@code CatalogTables.of} performs per key, composed here rather than run per candidate.
+     * The one table the type's {@code @table} binds it to, joined to the census row that names its
+     * generated class. An ambiguous or unresolved {@code @table} binds none, and its defect says why.
      */
     private static Field<List<TableRow>> boundTableArm(StoreHandle store, Coord coord) {
-        return multiset(select(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME, INTENT_BOUND_TABLE.TABLE_SCHEMA,
-                INTENT_BOUND_TABLE.TABLE_NAME, SQL_TABLE.CLASS_FQN, SQL_TABLE.DESCRIPTION)
-            .from(INTENT_BOUND_TABLE)
-            .join(SQL_TABLE).on(tableKeyOf(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME,
-                INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME))
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_BOUND_TABLE.TYPE_NAME.eq(coord.typeName()))
-            .and(store.reads(SQL_TABLE.SOURCE_NAME))
-            .orderBy(INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME))
+        var t = GRAPHITRON_TABLETYPE;
+        return multiset(select(t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME,
+                SQL_TABLE.CLASS_FQN, SQL_TABLE.DESCRIPTION)
+            .from(t)
+            .join(SQL_TABLE).on(tableKeyOf(t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME))
+            .where(t.GRAPH_NAME.eq(store.graphName()))
+            .and(t.TYPE_NAME.eq(coord.typeName()))
+            .and(store.reads(SQL_TABLE.SOURCE_NAME)))
             .convertFrom(rows -> rows.map(row -> new TableRow(
                 new CatalogTable(row.value1(), row.value2(), row.value3()),
                 row.value4(), text(row.value5()))));
@@ -668,12 +669,13 @@ public final class DeclarationFacts {
      * and not about the relation that nominated it.
      */
     private static Select<Record1<String>> candidateClasses(StoreHandle store, Coord coord) {
+        var bound = GRAPHITRON_TABLETYPE;
         var classes = select(SQL_TABLE.CLASS_FQN)
-            .from(INTENT_BOUND_TABLE)
-            .join(SQL_TABLE).on(tableKeyOf(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME,
-                INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME))
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_BOUND_TABLE.TYPE_NAME.eq(coord.typeName()))
+            .from(bound)
+            .join(SQL_TABLE).on(tableKeyOf(bound.TABLE_SOURCE_NAME, bound.TABLE_SCHEMA,
+                bound.TABLE_NAME))
+            .where(bound.GRAPH_NAME.eq(store.graphName()))
+            .and(bound.TYPE_NAME.eq(coord.typeName()))
             .and(store.reads(SQL_TABLE.SOURCE_NAME))
             .union(select(SQL_TABLE.CLASS_FQN)
                 .from(GRAPHITRON_TYPE_BACKING)
@@ -729,17 +731,23 @@ public final class DeclarationFacts {
 
     /**
      * Whether a census column belongs to a table the type's scope could reach, which is either of the
-     * two scope arms. A disjunction of existence rather than a join, so a column is admitted once
+     * two scope arms: a table the type's fields read at one of their occurrences, or the table whose
+     * record the type is backed by. A disjunction of existence rather than a join, so a column is admitted once
      * however many candidates name its table.
      */
     private static Condition inScope(StoreHandle store, Coord coord) {
-        var bound = exists(select(INTENT_BOUND_TABLE.TYPE_NAME)
-            .from(INTENT_BOUND_TABLE)
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_BOUND_TABLE.TYPE_NAME.eq(coord.typeName()))
-            .and(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME.eq(SQL_COLUMN.SOURCE_NAME))
-            .and(INTENT_BOUND_TABLE.TABLE_SCHEMA.eq(SQL_COLUMN.TABLE_SCHEMA))
-            .and(INTENT_BOUND_TABLE.TABLE_NAME.eq(SQL_COLUMN.TABLE_NAME)));
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var st = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var bound = exists(select(st.COORDINATE)
+            .from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE))
+            .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()))
+            .and(f.TYPE_NAME.eq(coord.typeName()))
+            .and(st.TABLE_SOURCE_NAME.eq(SQL_COLUMN.SOURCE_NAME))
+            .and(st.TABLE_SCHEMA.eq(SQL_COLUMN.TABLE_SCHEMA))
+            .and(st.TABLE_NAME.eq(SQL_COLUMN.TABLE_NAME)));
         var record = SQL_TABLE.as("scope_table");
         var redirected = exists(select(GRAPHITRON_TYPE_BACKING.TYPE_NAME)
             .from(GRAPHITRON_TYPE_BACKING)

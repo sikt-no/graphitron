@@ -2,7 +2,6 @@ package no.sikt.graphitron.lsp.references;
 
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.BindingUsages;
-import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
@@ -22,6 +21,13 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.Location;
 
 import java.util.List;
+
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
+import static org.jooq.impl.DSL.selectDistinct;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 
 /**
  * Find-references for a directive argument: the cursor sits on a name a directive binds, and the
@@ -159,7 +165,7 @@ public final class BindingReferences {
         // The field's own scope says nothing, so the enclosing type's binding answers. This is the
         // arm the jump falls back to as well, and a field that names its column through @field
         // without navigating anywhere lands here.
-        for (var table : BoundTables.of(store, typeName.get())) {
+        for (var table : fieldSourceTables(store, typeName.get())) {
             var uses = columnUses(store, table, spelling);
             if (!uses.isEmpty()) return uses;
         }
@@ -186,5 +192,35 @@ public final class BindingReferences {
     ) {
         String spelling = Nodes.unquote(Nodes.text(location.leafNode(), source));
         return BindingUsages.ofKey(store, CatalogKeys.named(store, spelling));
+    }
+
+    /**
+     * The tables {@code typeName}'s fields read, at every place the type is reached: the source
+     * tables of their occurrences, in schema then table order. A type whose {@code @table} is
+     * ambiguous reads no table, so its candidates stand in, the tables its defect names.
+     */
+    private static List<CatalogTable> fieldSourceTables(StoreHandle store, String typeName) {
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var s = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var c = GRAPHITRON_ENTRY_DEFECT_TABLE;
+        return store.dsl()
+            .selectDistinct(s.TABLE_SOURCE_NAME, s.TABLE_SCHEMA, s.TABLE_NAME)
+            .from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE))
+            .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.eq(typeName))
+            .union(selectDistinct(c.TABLE_SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME)
+                .from(a)
+                .join(c).on(c.GRAPH_NAME.eq(a.GRAPH_NAME), c.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    c.SOURCE_LINE.eq(a.SOURCE_LINE), c.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq(typeName),
+                    a.DIRECTIVE_NAME.eq("table")))
+            .fetch(row -> new CatalogTable(row.value1(), row.value2(), row.value3()))
+            .stream()
+            .sorted(java.util.Comparator.comparing(CatalogTable::schema)
+                .thenComparing(CatalogTable::tableName))
+            .toList();
     }
 }

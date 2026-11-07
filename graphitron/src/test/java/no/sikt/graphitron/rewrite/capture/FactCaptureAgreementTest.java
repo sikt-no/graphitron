@@ -90,7 +90,7 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       position mask and its ordinal collapse over SDL captured against the sakila catalog in the
  *       module whose DDL declares them;
  *       the {@code column-match-claim} fact documents bind the column a field binds, and the table
- *       resolution it stands on ({@code intent_bound_table}) through the claim's own table witness,
+ *       resolution it stands on ({@code graphitron_tabletype}) through the claim's own table witness,
  *       over captured SDL in the module whose DDL declares them: bare, qualified and ambiguous
  *       bindings, a graph resolving through its own catalog and no other, and the bindings a
  *       column claim cannot speak for;

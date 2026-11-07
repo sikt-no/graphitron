@@ -7,6 +7,13 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
+import static org.jooq.impl.DSL.selectDistinct;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+
 /**
  * What a member name written inside an SDL type resolves against: the columns of the tables the
  * type is bound to, or the member slots of the class that stands for it. The type grain of the
@@ -31,8 +38,8 @@ import java.util.function.Supplier;
  * generated record, and a table jOOQ generated no record class for reports the census sentinel
  * instead. Routing the table arm through the class would therefore leave every table-bound type
  * unscoped in any workspace whose catalog was generated without record classes, which is a
- * configuration and not a mistake. So the table arm reads {@link BoundTables} directly, the two
- * arms stay two relations, and the ordering between them is stated here.
+ * configuration and not a mistake. So the table arm reads the tables the type's fields read
+ * directly, the two arms stay two relations, and the ordering between them is stated here.
  *
  * <h2>A class that is a table's record is a table</h2>
  *
@@ -65,7 +72,7 @@ public final class TypeMemberScope {
 
         /**
          * The type's fields resolve against these tables' columns; never empty, and longer than one
-         * only where the binding itself is ambiguous.
+         * where the type is reached under several tables.
          */
         record Tables(List<CatalogTable> candidates) implements Scope {}
 
@@ -80,7 +87,7 @@ public final class TypeMemberScope {
      */
     public static Optional<Scope> of(StoreHandle store, String typeName) {
         return resolve(
-            BoundTables.of(store, typeName),
+            fieldSourceTables(store, typeName),
             () -> TypeBackingClass.of(store, typeName),
             className -> CatalogTables.ofRecordClass(store, className).stream()
                 .map(CatalogTables.Table::key).toList());
@@ -112,5 +119,35 @@ public final class TypeMemberScope {
                 ? new Scope.Members(className)
                 : new Scope.Tables(tables);
         });
+    }
+
+    /**
+     * The tables {@code typeName}'s fields read, at every place the type is reached: the source
+     * tables of their occurrences, in schema then table order. A type whose {@code @table} is
+     * ambiguous reads no table, so its candidates stand in, the tables its defect names.
+     */
+    private static List<CatalogTable> fieldSourceTables(StoreHandle store, String typeName) {
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var s = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var a = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var c = GRAPHITRON_ENTRY_DEFECT_TABLE;
+        return store.dsl()
+            .selectDistinct(s.TABLE_SOURCE_NAME, s.TABLE_SCHEMA, s.TABLE_NAME)
+            .from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE))
+            .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.eq(typeName))
+            .union(selectDistinct(c.TABLE_SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME)
+                .from(a)
+                .join(c).on(c.GRAPH_NAME.eq(a.GRAPH_NAME), c.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    c.SOURCE_LINE.eq(a.SOURCE_LINE), c.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq(typeName),
+                    a.DIRECTIVE_NAME.eq("table")))
+            .fetch(row -> new CatalogTable(row.value1(), row.value2(), row.value3()))
+            .stream()
+            .sorted(java.util.Comparator.comparing(CatalogTable::schema)
+                .thenComparing(CatalogTable::tableName))
+            .toList();
     }
 }

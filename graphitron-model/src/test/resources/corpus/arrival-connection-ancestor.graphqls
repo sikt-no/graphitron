@@ -11,9 +11,3 @@ type PageInfo {
   hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
 }
 extend type Query { films: FilmsConnection }
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  CorpusAnchor, category
-  Film,         film
-  """)

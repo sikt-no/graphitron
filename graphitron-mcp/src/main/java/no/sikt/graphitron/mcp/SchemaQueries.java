@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
@@ -36,7 +37,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
-import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
@@ -190,13 +190,12 @@ final class SchemaQueries {
     record Conflict(String verdict, String message, Optional<McpWire.Position> position) {}
 
     /**
-     * One catalog table a type's {@code @table} binding resolves to.
+     * The one catalog table a type's {@code @table} binds it to. An ambiguous or unresolved
+     * {@code @table} binds none, and its defect says why.
      *
      * @param table the table's schema-qualified SQL name, which is the table id every tool hands back
-     * @param candidates how many tables the reference reached, this row being one of them; above one
-     *     the binding is ambiguous and the store declines to pick
      */
-    record TableBinding(String table, int candidates) {}
+    record TableBinding(String table) {}
 
     /**
      * One class the store says stands for a type, with the member names it offers an author.
@@ -506,11 +505,9 @@ final class SchemaQueries {
      */
     private static Field<List<TableBinding>> tables() {
         return multiset(
-            select(qualified(INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME),
-                INTENT_BOUND_TABLE.CANDIDATES)
-                .from(INTENT_BOUND_TABLE)
-                .where(ofType(INTENT_BOUND_TABLE.GRAPH_NAME, INTENT_BOUND_TABLE.TYPE_NAME))
-                .orderBy(INTENT_BOUND_TABLE.TABLE_SCHEMA.asc(), INTENT_BOUND_TABLE.TABLE_NAME.asc()))
+            select(qualified(GRAPHITRON_TABLETYPE.TABLE_SCHEMA, GRAPHITRON_TABLETYPE.TABLE_NAME))
+                .from(GRAPHITRON_TABLETYPE)
+                .where(ofType(GRAPHITRON_TABLETYPE.GRAPH_NAME, GRAPHITRON_TABLETYPE.TYPE_NAME)))
             .convertFrom(r -> r.map(Records.mapping(TableBinding::new)));
     }
 

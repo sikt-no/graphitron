@@ -17,11 +17,3 @@ extend type Query {
   allParties: [Party!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
 
 }
-
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  Company,      party_company
-  CorpusAnchor, category
-  Individual,   party_individual
-  Party,        party
-  """)

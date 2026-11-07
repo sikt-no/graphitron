@@ -12,14 +12,6 @@ extend type Query {
 
 }
 
-extend schema @expectEquals(relation: "intent_bound_table", rows: """
-  type_name,    table_name
-  Actor,        actor
-  CorpusAnchor, category
-  Film,         film
-  FilmActor,    film_actor
-  """)
-
 {
   filmById(film_id: ["1", "2"]) {
     filmId

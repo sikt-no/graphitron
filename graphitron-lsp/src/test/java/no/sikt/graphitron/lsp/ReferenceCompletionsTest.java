@@ -21,8 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Coverage for {@code @reference(path: [{key: "..."}, {table: "..."}])}. The candidates are the
  * {@code sql_referential_constraint} rows touching the enclosing type's table, in either direction,
- * and both halves of that are store reads: the enclosing type's binding resolves through
- * {@code intent_bound_table} and the keys through the catalog census.
+ * and both halves of that are store reads: the tables the enclosing type's fields read, or an
+ * ambiguous {@code @table}'s candidates under its defect, and the keys through the catalog census.
  *
  * <p>Both halves are captured, so the binding is one a build would produce. The incumbent's fixtures
  * paired a real census with a hand-built type classification, which is how they came to assert an
