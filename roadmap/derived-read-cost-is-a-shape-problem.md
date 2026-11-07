@@ -326,6 +326,19 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_field_path_method_candidate` goes with the old family.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
+  * **A key row names its accessor** `open`, E's.
+    A field under a parent holding an object whose keys come through an accessor states which member
+    hands them over: `graphitron_field_key_row_accessor`, the `ACCESSOR` subtype of
+    `graphitron_field_key_row` its rule's comment already names, references the member's
+    `code_read_slot` row by its key (source, class, method, descriptor) rather than copying it, the
+    rule's accessor arm carrying it out. The frame reads the key off the parent either way, the
+    record's columns for `COLUMNS`, the member's call for `ACCESSOR`, so a service under an object
+    parent gets its frame; on Alf's `@service`-first path (2026-11-07).
+  * **A value object is reached by its accessor path** `open`, F's, after "A key row names its accessor".
+    Beside the join path, from object to object: `graphitron_accessor_path`, the path is accessor
+    calls with its target class, written by field names and `@field(name:)`, and its steps
+    (`graphitron_accessor_path_step`, one member call each), built when value objects are bound,
+    each step a `code_read_slot` row as the key row's one accessor is.
 * **`scenarios/path-rules` runs** `open`.
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.
@@ -458,7 +471,11 @@ static method needs no holder.
   type's fields, their columns and their nested reaches at the occurrence, each unit's query its
   own, with the generated selection adapters (`SelectionOccurrences`, the per-member `restrictTo`
   a polymorphic lift calls) unchanged, the unit tests pinning what each unit selects for a given
-  selection before and after (Alf, 2026-11-07).
+  selection before and after (Alf, 2026-11-07). A unit restricts itself to its own type's occurrences
+  of the selection, taking the shared-alias field names where it is merged into a discriminated
+  select, so the four call sites that restrict before calling it today (`SelectMethodBody`,
+  `MultiTablePolymorphicEmitter`, `DiscriminatedTableFragments` and the store-fed `LiftEmitter`)
+  stop doing so; after the `@service` flip, which keeps the call-site restriction.
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
   container's table and column beside it; the re-read reads it through the join from the base, a
@@ -1721,8 +1738,7 @@ hands back. A *join path* goes from table to table by joins, the SQL path `@refe
 and an *accessor path* from object to object by accessors, the Java path field names and
 `@field(name:)` write. A *lift* is where the two worlds cross, an object made rows of a table; it is
 the producer's, stated by the producer that makes it and not by the source.
-Today's writers build the table side; the accessor path is named here and built when value objects
-are bound.
+Today's writers build the table side; the accessor path is "A value object is reached by its accessor path".
 
 * *Source*: what its values come from, stated on the occurrence itself rather than as a pointer to
   another: rows of one or more tables, or an instance of a class. The writer derives it by rules no
@@ -1891,9 +1907,7 @@ entry.
      of a check's reach; an
      inherited one is a row per implementation, its claim possibly in another file, so no reader joins
      through implementations. An `INFERRED` one is claimed by nothing: its one step's key is inferred.
-  ** `graphitron_accessor_path`: the path is accessor calls, with its target class, written by field
-     names and `@field(name:)`; named here, its steps (`graphitron_accessor_path_step`, one member call
-     each) built when value objects are bound.
+  ** `graphitron_accessor_path`: the object side's path, under "A value object is reached by its accessor path".
 * `graphitron_join_path_step`: one step a join path takes, keyed by the need's key and the
   position with a cascading foreign key to the need, with its from and
   to table, the place of the element it resolved in its claim's written list (none where inferred,
