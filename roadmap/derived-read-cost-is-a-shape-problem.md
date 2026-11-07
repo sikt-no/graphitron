@@ -282,13 +282,14 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
 * **Relations nobody reads go** `open`, F's.
   A census of every relation's readers, static over the main sources and at runtime over a full
   build (`roadmap/audits/2026-11-07-relations-nobody-reads.md`), found 56 that no main code reads.
-  Each is checked by hand before it goes, since the census holds false leads.
+  Each is checked by hand before it goes, its readers in the DDL included (a subtype's foreign key,
+  a view or rule view naming it), since the census holds false leads.
   * **Capture written twice and read by neither copy goes** `open`, F's. The `graphitron_ast_*`
     entries and the decode copies beside them that the audit's second group lists, a family at a
     time, each family's fact shown to reach its readers another way or its reader named.
   * **Each relation written ahead of its reader names it** `open`. The audit's third group, among
     them `graphitron_occurrence_source_object`, `graphitron_occurrence_parameter` and
-    `graphitron_fetcher`: the owner names the reader in the graph, or the relation goes.
+    `graphitron_entry_defect_method`: the owner names the reader in the graph, or the relation goes.
     `graphitron_fetcher` is read: `graphitron_producer` and `graphitron_reader` key into it as its
     subtypes and `graphitron_entry_defect_rule` reads it, a reach a census of Java readers does not
     see; it goes with them under "The producer's readers read the occurrence producer, and the field-keyed family goes".
