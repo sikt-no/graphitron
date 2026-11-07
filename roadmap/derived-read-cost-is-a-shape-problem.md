@@ -1005,6 +1005,14 @@ today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`
   sweeps once, at `store_class_file`, and reads `byte_size` and `mtime` to skip an unchanged class.
+* **A corrupt store is set aside and captured cold** `open`. When `generate`, `validate` or `dev`
+  opens or commits to a warm store and H2 reports corruption (`MVStoreException`, "Unable to read
+  the page"), the goal renames the store aside, keeping it as evidence, captures cold and warns with
+  the moved file's name; today the goal fails and the author must know to delete
+  `target/graphitron-model/`. Only H2's corruption codes count: a store locked by another process,
+  or failing for any other reason, still fails the goal. A test truncates a store mid-page and
+  shows the next capture succeeds with the old file beside it. Seen 2026-11-07, when sakila-example's
+  warm store from before a machine restart failed a build every other module of which was green.
 
 ### A signature's type is a fact about the position that writes it `open`
 
