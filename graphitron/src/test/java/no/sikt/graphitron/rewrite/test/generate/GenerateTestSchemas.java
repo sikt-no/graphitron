@@ -66,8 +66,9 @@ public final class GenerateTestSchemas {
                 if (FactDocuments.statesConfiguration(scenario)) {
                     continue;
                 }
-                var files = FactDocuments.write(directory.resolve(scenario.id()), scenario);
-                generate(files, scenario.id(), packagePrefix + "." + scenario.id().replace('-', '_'),
+                var path = FactDocuments.path(FactDocuments.Claim.SCENARIO, scenario);
+                var files = FactDocuments.write(directory, path, scenario);
+                generate(files, path, packagePrefix + "." + scenario.id().replace('-', '_'),
                     outputDirectory);
             }
         } finally {

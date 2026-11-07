@@ -96,8 +96,9 @@ public final class FactDocuments {
     }
 
     /**
-     * Every fact document with its folder's claim, in folder then name order. Refuses an id in two
-     * folders, since a graph's name is its document's id.
+     * Every fact document with its folder's claim, in folder then name order. Refuses a name in two
+     * folders, so a document's name alone still tells it apart wherever a path is too long to spell,
+     * a generated package among them.
      */
     public static Map<CorpusDocuments.Document, Claim> claimed() {
         var claimed = new LinkedHashMap<CorpusDocuments.Document, Claim>();
@@ -130,6 +131,24 @@ public final class FactDocuments {
         return documents;
     }
 
+    /**
+     * A document's path, which is its identity: its folder under {@code facts} and its name, as
+     * {@code scenarios/field-key-row}. A plain document's graph is named by it, and
+     * {@code @factDocument(path:)}, {@code -Dfacts} and every other reference to a document spell
+     * it.
+     */
+    public static String path(Claim claim, CorpusDocuments.Document document) {
+        return claim.folder().name().substring(FACTS.name().length() + 1) + "/" + document.id();
+    }
+
+    /** The document a path names, if one does. */
+    public static Optional<CorpusDocuments.Document> at(String path) {
+        return claimed().entrySet().stream()
+            .filter(entry -> path(entry.getValue(), entry.getKey()).equals(path))
+            .map(Map.Entry::getKey)
+            .findFirst();
+    }
+
     /** The prelude's text. */
     public static String prelude() {
         return CorpusDocuments.prelude(FACTS);
@@ -137,8 +156,8 @@ public final class FactDocuments {
 
     /**
      * A plain document's graph written into {@code directory} as the files it is read over, in the
-     * order they are read: the prelude, as {@code <id>._prelude.graphqls}, then the document, as
-     * {@code <id>.graphqls}. Every reading of a plain document reads these files, so what
+     * order they are read: the prelude, as {@code <path>._prelude.graphqls}, then the document, as
+     * {@code <path>.graphqls}, {@code path} being the document's {@link #path}. Every reading of a plain document reads these files, so what
      * {@code FactExpectationTest} checks is what {@code GenerateTestSchemas} generates from.
      *
      * <p>The prelude is dated a second before the document. Reading order is modification time,
@@ -146,12 +165,12 @@ public final class FactDocuments {
      * stating the order keeps the prelude the incumbent of every coordinate it declares, which is
      * what a document extending its {@code Query} expects.
      */
-    public static List<Path> write(Path directory, CorpusDocuments.Document document) {
-        var prelude = directory.resolve(document.id() + "." + PRELUDE_FILE + ".graphqls");
-        var file = directory.resolve(document.id() + ".graphqls");
+    public static List<Path> write(Path directory, String path, CorpusDocuments.Document document) {
+        var prelude = directory.resolve(path + "." + PRELUDE_FILE + ".graphqls");
+        var file = directory.resolve(path + ".graphqls");
         var now = Instant.now();
         try {
-            Files.createDirectories(directory);
+            Files.createDirectories(file.getParent());
             Files.writeString(prelude, prelude());
             Files.writeString(file, document.sdl());
             Files.setLastModifiedTime(prelude, FileTime.from(now.minusSeconds(1)));
@@ -168,25 +187,24 @@ public final class FactDocuments {
     }
 
     /**
-     * A plain document's graph, captured under its own id into {@code store}, or into a store this
+     * A plain document's graph, captured under its {@link #path} into {@code store}, or into a store this
      * opens in {@code directory} where {@code store} is null: against the catalog its configuration
      * names, else {@code fixture}, over {@code classpath}, under the configuration it states.
      *
      * @return the store the graph is in
      */
-    public static CapturedStore capture(CapturedStore store, Path directory,
+    public static CapturedStore capture(CapturedStore store, Path directory, String path,
                                         CorpusDocuments.Document document, CatalogInput fixture,
                                         List<ClasspathEntry> classpath) {
         var texts = List.of(document.sdl());
         var configuration = StatedConfiguration.of(texts);
         var catalog = StatedConfiguration.catalog(texts, fixture);
-        var files = write(directory, document);
+        var files = write(directory, path, document);
         if (store == null) {
-            return CapturedStore.ofCatalogFilesWith(directory, document.id(), files, catalog,
-                classpath, configuration);
+            return CapturedStore.ofCatalogFilesWith(directory, path, files, catalog, classpath,
+                configuration);
         }
-        return store.andCatalogGraphFilesWith(document.id(), files, catalog, classpath,
-            configuration);
+        return store.andCatalogGraphFilesWith(path, files, catalog, classpath, configuration);
     }
 
     /**

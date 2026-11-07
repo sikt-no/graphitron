@@ -152,10 +152,7 @@ final class ManualExamples {
      * {@code scenarios/result-external-field}.
      */
     static Optional<Document> factDocument(String path) {
-        return FactDocuments.claimed().entrySet().stream()
-            .filter(e -> (e.getValue().folder().name() + "/" + e.getKey().id()).equals("facts/" + path))
-            .map(java.util.Map.Entry::getKey)
-            .findFirst();
+        return FactDocuments.at(path);
     }
 
     /** What the query file renders to, its header and one region per example: the committed text. */

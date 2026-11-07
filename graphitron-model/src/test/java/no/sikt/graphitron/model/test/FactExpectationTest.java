@@ -57,7 +57,7 @@ class FactExpectationTest {
     /** The undecided folder's size, lowered as documents leave it and never raised. */
     private static final int UNDECIDED_CEILING = 41;
 
-    /** Each document's claim, by its id, which is also its graph's name or its stepped graph's. */
+    /** Each graph's claim, by its name: a plain document's path, or a stepped graph's stem. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();
 
     @TempDir
@@ -71,17 +71,19 @@ class FactExpectationTest {
     private static List<String> divergences;
 
     /**
-     * The documents read once, by graph, and the stepped ones: by graph, then by file, then by the
-     * instant each version of the file is read at. A plain document beside a stepped graph of the
-     * same name is a folder that does not say which it means.
+     * The documents read once, by graph, which is the document's path, and the stepped ones: by
+     * graph, then by file, then by the instant each version of the file is read at. A plain document
+     * beside a stepped graph of the same name is a folder that does not say which it means.
      */
     private record Graphs(Map<String, CorpusDocuments.Document> plain,
                           Map<String, Map<String, TreeMap<Long, CorpusDocuments.Document>>> stepped) {
 
-        static Graphs of(List<CorpusDocuments.Document> documents) {
+        static Graphs of(Map<CorpusDocuments.Document, FactDocuments.Claim> documents) {
             var plain = new LinkedHashMap<String, CorpusDocuments.Document>();
             var stepped = new LinkedHashMap<String, Map<String, TreeMap<Long, CorpusDocuments.Document>>>();
-            for (var document : documents) {
+            var names = new LinkedHashSet<String>();
+            for (var entry : documents.entrySet()) {
+                var document = entry.getKey();
                 var step = FactDocuments.STEP.matcher(document.id() + CorpusDocuments.SUFFIX);
                 if (step.matches()) {
                     stepped.computeIfAbsent(step.group(1), ignored -> new TreeMap<>())
@@ -93,11 +95,12 @@ class FactExpectationTest {
                         + "<graph>.<file>.<epoch>" + CorpusDocuments.SUFFIX + " with a lower-case "
                         + "file and a ten-digit epoch");
                 } else {
-                    plain.put(document.id(), document);
+                    plain.put(FactDocuments.path(entry.getValue(), document), document);
+                    names.add(document.id());
                 }
             }
             for (String graph : stepped.keySet()) {
-                if (plain.containsKey(graph)) {
+                if (names.contains(graph)) {
                     throw new AssertionError(graph + " is both a document and a graph read in "
                         + "steps; name it one way");
                 }
@@ -120,15 +123,17 @@ class FactExpectationTest {
         var ctx = TestRunContext.of();
         var jooq = CatalogInput.of(ctx);
         var claimed = FactDocuments.claimed();
-        // -Dfacts=<prefix>[,<prefix>...] reads only the documents named by one, for iterating on a
-        // document without capturing the rest. A build sets nothing and reads them all.
+        // -Dfacts=<prefix>[,<prefix>...] reads only the documents whose path starts with one, as
+        // -Dfacts=defects/entry-defect or -Dfacts=scenarios/, for iterating on a document without
+        // capturing the rest. A build sets nothing and reads them all.
         var only = System.getProperty("facts");
         if (only != null) {
             var prefixes = List.of(only.split(","));
-            claimed.keySet().removeIf(document -> prefixes.stream().noneMatch(document.id()::startsWith));
+            claimed.entrySet().removeIf(entry -> prefixes.stream()
+                .noneMatch(FactDocuments.path(entry.getValue(), entry.getKey())::startsWith));
         }
-        claimed.forEach((document, claim) -> claims.put(document.id(), claim));
-        var graphs = Graphs.of(List.copyOf(claimed.keySet()));
+        claimed.forEach((document, claim) -> claims.put(FactDocuments.path(claim, document), claim));
+        var graphs = Graphs.of(claimed);
         // The classpath corpus beside the catalog, so a document can state what a reading finds in
         // Java as well as what it finds in SDL. The model and the capture are one subject: a
         // document asserting a derived relation without the facts under it tests half of what it
@@ -141,8 +146,9 @@ class FactExpectationTest {
         var allBlocks = new ArrayList<Block>();
         var allDivergences = new ArrayList<String>();
 
-        for (var document : graphs.plain().values()) {
-            captured = FactDocuments.capture(captured, tmp, document, jooq, corpus);
+        for (var graph : graphs.plain().entrySet()) {
+            captured = FactDocuments.capture(captured, tmp, graph.getKey(), graph.getValue(), jooq,
+                corpus);
         }
         var plainBlocks = CorpusExpectations.blocks(captured.dsl()).stream()
             .filter(block -> graphs.plain().containsKey(block.graph()))
@@ -262,7 +268,7 @@ class FactExpectationTest {
                 .forEach(r -> held.add(r.value1() + " " + r.value2() + " (line " + r.value4()
                     + "): " + r.value3()));
             if ((claim == FactDocuments.Claim.SCENARIO) != held.isEmpty()) {
-                misplaced.add(claim.folder().name() + "/" + graph + " stores " + held.size()
+                misplaced.add(graph + " stores " + held.size()
                     + " defects and schema problems" + (held.isEmpty() ? "" : ": " + held));
             }
         });
