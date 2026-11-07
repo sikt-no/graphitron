@@ -80,7 +80,6 @@ class RelationRegistrationGateTest {
             "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_field_reference_entry",
             "graphitron_reference_for_entry", "graphitron_argument_reference_for_entry",
-            "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry",
             "graphitron_routine_entry",
             "graphitron_undecoded_argument_entry",
             // The two supertypes ride the arm of the sites that spell them. Both are written in the

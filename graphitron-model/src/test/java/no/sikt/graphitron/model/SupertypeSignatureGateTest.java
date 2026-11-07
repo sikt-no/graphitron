@@ -235,8 +235,6 @@ class SupertypeSignatureGateTest {
                "graphitron_ast_reference_condition_step_entry",
                "graphitron_ast_service_entry"),
         Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry"),
-        Set.of("graphitron_argument_node_id_entry", "graphitron_ast_node_id_entry",
-               "graphitron_field_node_id_entry"),
         Set.of("graphitron_argument_reference_for_entry", "graphitron_ast_reference_for_entry",
                "graphitron_reference_for_entry"),
         // What the step split leaves in place of the two wide relations, one per arm now that both
@@ -300,7 +298,6 @@ class SupertypeSignatureGateTest {
         // makes for every coordinate, made here for carriers alone, and stored for the reason the
         // set above gives.
         "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg",
-        "graphitron_node_id_instruction_rule|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
         "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry");
 
 

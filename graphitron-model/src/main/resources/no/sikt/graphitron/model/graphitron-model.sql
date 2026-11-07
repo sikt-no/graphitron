@@ -3489,51 +3489,6 @@ COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_line IS 'source
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_argument_reference_for_entry.participant_type_ref IS 'the type argument as written; author-spelled, no FK. Names a participant of the polymorphic type the owning field returns';
 
-CREATE TABLE graphitron_field_node_id_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  node_type_ref VARCHAR,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_node_id_entry is the replacement, written by the graphitron gatherer from the document the application sits in.';
-COMMENT ON COLUMN graphitron_field_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_node_id_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_node_id_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_node_id_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_field_node_id_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_node_id_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_node_id_entry.node_type_ref IS 'typeName as written; author-spelled type reference, no FK, inference when NULL is a derivation';
-
-CREATE TABLE graphitron_argument_node_id_entry (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR NOT NULL,
-  source_name   VARCHAR,
-  source_line   INT,
-  source_column INT,
-  node_type_ref VARCHAR,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name),
-  FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_argument_node_id_entry IS '@nodeId on an argument. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_argument_node_id_entry.node_type_ref IS 'the typeName argument as written; author-spelled, no FK';
-
 CREATE TABLE graphitron_routine_entry (
   graph_name     VARCHAR NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -15523,13 +15478,27 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
    AND ch.path = p.head_path
   JOIN graphql_element_field cf
     ON cf.graph_name = p.graph_name AND cf.coordinate = s.coordinate
-  LEFT JOIN graphitron_argument_node_id_entry an
+  LEFT JOIN (SELECT a.graph_name, g.type_name, g.field_name, g.argument_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_argument_element g ON g.graph_name = a.graph_name AND g.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) an
     ON COALESCE(ce.element_kind, ch.element_kind) = 'ARGUMENT'
    AND an.graph_name = p.graph_name
    AND an.type_name = cf.type_name
    AND an.field_name = cf.field_name
    AND an.argument_name = COALESCE(ce.name, ch.name)
-  LEFT JOIN graphitron_field_node_id_entry fn
+  LEFT JOIN (SELECT a.graph_name, f.type_name, f.field_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) fn
     ON COALESCE(ce.element_kind, ch.element_kind) = 'INPUT_FIELD'
    AND fn.graph_name = p.graph_name
    AND fn.type_name = COALESCE(ce.container_type_name, ch.container_type_name)
@@ -15833,7 +15802,14 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
                               AND c.claim_kind <> 'REFERENCE_FOR')
               THEN TRUE ELSE FALSE END,
          n.source_name, n.source_line, n.source_column
-    FROM graphitron_field_node_id_entry n
+    FROM (SELECT a.graph_name, f.type_name, f.field_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) n
     JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
      AND t.kind = 'OBJECT'
    UNION ALL
@@ -15846,7 +15822,14 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
                               AND c.claim_kind <> 'REFERENCE_FOR')
               THEN TRUE ELSE FALSE END,
          n.source_name, n.source_line, n.source_column
-    FROM graphitron_field_node_id_entry n
+    FROM (SELECT a.graph_name, f.type_name, f.field_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) n
     JOIN graphitron_occurrence o
       ON o.graph_name = n.graph_name AND o.element_coordinate = n.type_name || '.' || n.field_name
      AND o.kind = 'INPUT_FIELD'
@@ -15861,7 +15844,14 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
                               AND c.claim_kind <> 'REFERENCE_FOR')
               THEN TRUE ELSE FALSE END,
          n.source_name, n.source_line, n.source_column
-    FROM graphitron_argument_node_id_entry n
+    FROM (SELECT a.graph_name, g.type_name, g.field_name, g.argument_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_argument_element g ON g.graph_name = a.graph_name AND g.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) n
 ),
 slot_table (graph_name, site, type_name, field_name, argument_name, path,
             table_source_name, table_schema, table_name) AS (
@@ -15870,7 +15860,14 @@ slot_table (graph_name, site, type_name, field_name, argument_name, path,
   -- again for every step it pairs with.
   SELECT n.graph_name, 'OUTPUT_FIELD', n.type_name, n.field_name, CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), jp.target_source_name, jp.target_schema, jp.target_table
-    FROM graphitron_field_node_id_entry n
+    FROM (SELECT a.graph_name, f.type_name, f.field_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) n
     JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
      AND t.kind = 'OBJECT'
     JOIN graphitron_occurrence o
@@ -15995,7 +15992,14 @@ SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
   JOIN graphitron_node_type nt
     ON nt.graph_name = f.graph_name AND nt.type_name = f.type_name
  WHERE f.field_name = 'id' AND f.named_type = 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id_entry n
+   AND NOT EXISTS (SELECT 1 FROM (SELECT a.graph_name, f.type_name, f.field_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) n
                     WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
                       AND n.field_name = f.field_name)
  UNION ALL
@@ -16016,7 +16020,14 @@ SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NUL
   JOIN graphitron_node_type nt
     ON nt.graph_name = a.graph_name AND nt.type_name = f.named_type
  WHERE a.argument_name = 'id' AND a.named_type = 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argument_node_id_entry n
+   AND NOT EXISTS (SELECT 1 FROM (SELECT a.graph_name, g.type_name, g.field_name, g.argument_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_argument_element g ON g.graph_name = a.graph_name AND g.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) n
                     WHERE n.graph_name = a.graph_name AND n.type_name = a.type_name
                       AND n.field_name = a.field_name AND n.argument_name = a.argument_name)
  UNION ALL
@@ -16043,7 +16054,14 @@ SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, o.coordinat
     ON tn.graph_name = u.graph_name AND tn.table_source_name = u.table_source_name
    AND tn.table_schema = u.table_schema AND tn.table_name = u.table_name
  WHERE f.field_name = 'id' AND f.named_type = 'ID' AND tn.candidates = 1
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id_entry n
+   AND NOT EXISTS (SELECT 1 FROM (SELECT a.graph_name, f.type_name, f.field_name, e.node_type_ref,
+                 a.source_name, a.source_line, a.source_column
+            FROM graphql_directive_application a
+            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
+            LEFT JOIN graphitron_ast_node_id_entry e
+              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+             AND e.source_line = a.source_line AND e.source_column = a.source_column
+           WHERE a.directive_name = 'nodeId' AND a.ordinal = 0) n
                     WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name
                       AND n.field_name = f.field_name);
 COMMENT ON VIEW graphitron_node_id_instruction_rule IS 'One row the @nodeId instruction rule computes, in the shape graphitron_node_id_instruction stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_node_id_instruction, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';

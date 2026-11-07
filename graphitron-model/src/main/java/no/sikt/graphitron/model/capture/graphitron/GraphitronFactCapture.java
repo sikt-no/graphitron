@@ -29,11 +29,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
@@ -213,15 +211,6 @@ public final class GraphitronFactCapture {
                     type, field, null, null, null,
                     reference.className(), reference.method(), directive);
             }
-            case "nodeId" -> {
-                if (!sink.claim(GRAPHITRON_FIELD_NODE_ID_ENTRY, type, field)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_NODE_ID_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setNodeTypeRef(string(directive, "typeName"));
-                sink.add(record);
-            }
             case "mutation" -> {
                 // What is left is the spelling, for the reason @table's arm carries:
                 // graphitron_spelled_reference_entry is keyed by the value across the several sites
@@ -297,16 +286,6 @@ public final class GraphitronFactCapture {
                         step.className(), step.method(), directive);
                     position++;
                 }
-            }
-            case "nodeId" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY, type, field, argument)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                record.setArgumentName(argument);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setNodeTypeRef(string(directive, "typeName"));
-                sink.add(record);
             }
             default -> { /* no decoded relation */ }
         }
@@ -571,9 +550,7 @@ public final class GraphitronFactCapture {
      * corpus never declared the directive.
      */
     private static final List<Table<?>> DECODED = List.of(
-        GRAPHITRON_ARGUMENT_NODE_ID_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY,
-        GRAPHITRON_FIELD_NODE_ID_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
         GRAPHITRON_METHOD_REFERENCE_ENTRY,
         GRAPHITRON_REFERENCE_FOR_ENTRY,
