@@ -448,7 +448,7 @@ static method needs no holder.
   payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
   takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
   at a time", where the per-field `rowsX`, `loadX` and decode copies go.
-* **A polymorphic occurrence states its participants** `blocked`, E's, on the 1 below.
+* **A polymorphic occurrence states its participants** `open`, E's.
   `graphitron_occurrence_participant`: one row per occurrence whose target is polymorphic and per
   participant type its rows may be, with how a row is told apart, `TABLE` by its table (the record
   class, a multitable interface) or `DISCRIMINATOR` by a column of the shared table and the value
@@ -463,9 +463,6 @@ static method needs no holder.
   classifier makes is lost; the reference pages state each rule. A participant on a detail table
   joined to the base states its own table, its re-read refused until its join is stated (Alf,
   2026-11-07).
-  * **A bound enum's database literals are captured** `open`, E's. The catalog reading records the
-    literals of each class `sql_enum_binding` names, as the database spells them, which the domain
-    check compares a written value against.
 * **A joined participant's re-read reads its join from the base** `blocked`, E's, on "A polymorphic occurrence states its participants".
   A participant on a detail table is read through the join from the interface's base table, a path
   fact on F's join paths; until it is stated the re-read and the resolver refuse it, naming it.

@@ -27,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING_LITERAL;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
@@ -1079,6 +1080,48 @@ public final class JooqFactCapture {
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        enumLiterals(dsl, keys.stream().map(key -> new EnumAt(byClass.get(key).source(), fieldByClass.get(key).getType()))
+            .toList(), touchedAt);
+    }
+
+    /** A bound enum class and the source it was reached through. */
+    private record EnumAt(String source, Class<?> enumClass) {}
+
+    /** One constant of a bound enum: its class, its name, the value the database stores, its position. */
+    private record Literal(String source, String classFqn, String constantName, String literal, int ordinal) {}
+
+    /**
+     * Each bound enum's constants, with the value the database stores for each: the literal of a
+     * jOOQ-generated {@link EnumType}, the name of a converter-bound Java enum.
+     */
+    private static void enumLiterals(DSLContext dsl, List<EnumAt> enums, LocalDateTime touchedAt) {
+        var t = SQL_ENUM_BINDING_LITERAL;
+        var literals = new ArrayList<Literal>();
+        for (EnumAt at : enums) {
+            for (Object constant : at.enumClass().getEnumConstants()) {
+                var e = (Enum<?>) constant;
+                literals.add(new Literal(at.source(), at.enumClass().getName(), e.name(),
+                    constant instanceof EnumType type ? type.getLiteral() : e.name(), e.ordinal()));
+            }
+        }
+        if (literals.isEmpty()) {
+            return;
+        }
+        var rows = literals.stream().collect(Rows.toRowList(
+            l -> val(l.source(), t.SOURCE_NAME),
+            l -> val(l.classFqn(), t.CLASS_FQN),
+            l -> val(l.constantName(), t.CONSTANT_NAME),
+            l -> val(l.literal(), t.LITERAL),
+            l -> val(l.ordinal(), t.ORDINAL),
+            l -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_FQN, t.CONSTANT_NAME, t.LITERAL, t.ORDINAL, t.TOUCHED_AT)
+                .values(markers)
+                .onConflict(t.SOURCE_NAME, t.CLASS_FQN, t.CONSTANT_NAME)
+                .doUpdate()
+                .set(t.LITERAL, excluded(t.LITERAL))
+                .set(t.ORDINAL, excluded(t.ORDINAL))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     // ------------------------------------------------------------------------------ mark and sweep
@@ -1092,7 +1135,7 @@ public final class JooqFactCapture {
         SQL_REFERENTIAL_CONSTRAINT, SQL_REFERENTIAL_CONSTRAINT_COLUMN, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
         SQL_NODE_METADATA,
         SQL_NODE_KEY_COLUMN, SQL_NODE_LEGACY_KEY_COLUMN, SQL_NODE_METADATA_UNREADABLE,
-        SQL_NODE_LEGACY_KEY_UNREADABLE, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING);
+        SQL_NODE_LEGACY_KEY_UNREADABLE, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING, SQL_ENUM_BINDING_LITERAL);
 
     /**
      * Deletes the rows of the sources this reading walked that it did not touch, which are the

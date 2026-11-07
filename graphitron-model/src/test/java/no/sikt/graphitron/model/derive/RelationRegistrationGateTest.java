@@ -102,7 +102,7 @@ class RelationRegistrationGateTest {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(
-            "sql_schema", "sql_table", "sql_column", "sql_enum_binding",
+            "sql_schema", "sql_table", "sql_column", "sql_enum_binding", "sql_enum_binding_literal",
             "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_referential_constraint_column",
             "sql_index",

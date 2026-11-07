@@ -28,3 +28,15 @@ extend schema @assertAbsent(relation: "sql_column", rows: """
   table_schema, table_name, ordinal
   public,       language,   3
   """)
+
+# A bound enum's constants carry the value the database stores, which is what a @discriminator
+# value is compared against: jOOQ names the constant PG_13 for the literal PG-13, so the two
+# spellings differ exactly where the literal is not a Java identifier.
+extend schema @assertContains(relation: "sql_enum_binding_literal", rows: """
+  class_fqn,                                                    constant_name, literal, ordinal
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, G,             G,       0
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, PG,            PG,      1
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, PG_13,         PG-13,   2
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, R,             R,       3
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, NC_17,         NC-17,   4
+  """)

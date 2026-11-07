@@ -6055,6 +6055,26 @@ COMMENT ON COLUMN sql_enum_binding.table_schema IS 'the SQL schema declaring the
 COMMENT ON COLUMN sql_enum_binding.type_name IS 'the database enum type''s own name, as the generated class reports it; NULL where the class names no catalog type, which is the wider of the two silences beside it. Carried so a reader can name the type an author would see in their database rather than only the class jOOQ generated from it';
 COMMENT ON COLUMN sql_enum_binding.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
+CREATE TABLE sql_enum_binding_literal (
+  source_name   VARCHAR NOT NULL,
+  class_fqn     VARCHAR NOT NULL,
+  constant_name VARCHAR NOT NULL,
+  literal       VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  touched_at    TIMESTAMP,
+  PRIMARY KEY (source_name, class_fqn, constant_name),
+  -- Two constants spelling one database value would make the value name no constant in particular.
+  UNIQUE (source_name, class_fqn, literal),
+  FOREIGN KEY (source_name, class_fqn) REFERENCES sql_enum_binding (source_name, class_fqn) ON DELETE CASCADE
+);
+COMMENT ON TABLE sql_enum_binding_literal IS 'One constant of one bound enum class, with the value the database stores for it. For example the constant PG_13 of the class generated for mpaa_rating, whose literal is PG-13.';
+COMMENT ON COLUMN sql_enum_binding_literal.source_name IS 'the owning partition''s generated-package source, as on sql_enum_binding';
+COMMENT ON COLUMN sql_enum_binding_literal.class_fqn IS 'the bound enum class, as on sql_enum_binding';
+COMMENT ON COLUMN sql_enum_binding_literal.constant_name IS 'the constant''s Java name, Enum.name(); with the class, the key';
+COMMENT ON COLUMN sql_enum_binding_literal.literal IS 'the value the database stores for the constant: EnumType.getLiteral() on a jOOQ-generated enum, where it differs from the name whenever the literal is not a Java identifier (PG-13 against PG_13), and the name itself on a converter-bound Java enum, which has no literal of its own and whose converter is what the column stores';
+COMMENT ON COLUMN sql_enum_binding_literal.ordinal IS 'the constant''s declaration position, Enum.ordinal(), so a reader lists the literals in the order the type declares them';
+COMMENT ON COLUMN sql_enum_binding_literal.touched_at IS 'when the reading that produced this row ran, swept with sql_enum_binding''s rows by the same reading';
+
 CREATE TABLE sql_constraint (
   source_name     VARCHAR NOT NULL,
   table_schema    VARCHAR NOT NULL,
@@ -17901,6 +17921,9 @@ INSERT INTO meta_grain VALUES
   ('bound-enum-class',
    'one Java enum class some column of one catalog source binds to',
    'source_name, class_fqn', 'catalog'),
+  ('bound-enum-literal',
+   'one constant of one bound enum class, with the value the database stores for it',
+   'source_name, class_fqn, constant_name', 'catalog'),
   ('table-constraint',
    'one named constraint of one table',
    'source_name, table_schema, table_name, constraint_name', 'catalog'),
@@ -19502,6 +19525,10 @@ INSERT INTO meta_relation VALUES
    'One Java enum class some column of one catalog source binds to.',
    'For example the class generated for the mpaa_rating database type, which film.rating binds to, and equally a hand-written enum a configured converter binds a column to.',
    'The one relation that can answer whether a class is an enum for the classes code_class does not hold, the reading excluding the generated jOOQ package by design and a generated enum living in exactly that package. The population follows the question the generator actually asks, Class.isEnum() and nothing else, so it is every enum a column binds to rather than every database enum type: a converter-bound Java enum names no catalog type and would otherwise answer no, in the direction that changes emitted code. Reached through the column walk, so an enum no column binds to is absent rather than denied.'),
+  ('sql_enum_binding_literal', 'bound-enum-literal', 'jooq',
+   'One constant of one bound enum class, with the value the database stores for it.',
+   'For example the constant PG_13 of the class generated for mpaa_rating, whose literal is PG-13.',
+   'A @discriminator(value:) names what the discriminating column stores, so where that column binds an enum the value has to be one of the enum''s literals, or the typed comparison binds null and matches no row. The literal is jOOQ''s EnumType.getLiteral(), which only the codegen classpath answers; read here, during the catalog walk that already holds the class, a rule compares a written value against it with no class loaded.'),
   ('sql_constraint', 'table-constraint', 'jooq',
    'One named constraint of one table.',
    'For example film_pkey on public.film, of type PRIMARY KEY, at its position in the table''s uniqueness enumeration.',
