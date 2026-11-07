@@ -482,7 +482,9 @@ public class GraphQLRewriteGenerator {
             plan.keyProjections(),
             plan.errorChannels(),
             plan.outboxes(),
-            recordAccessors);
+            recordAccessors,
+            // The @service fetchers the store emits, read once, which take the classified ones' place.
+            no.sikt.graphitron.emit.ServiceEmission.read(store));
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());

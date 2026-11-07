@@ -140,6 +140,25 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
             no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
+        return generate(schema, assembled, outputPackage, launchers, rows, errorRows, routineWrites, keyProjections,
+            errorChannels, outboxes, recordAccessors, no.sikt.graphitron.emit.ServiceEmission.none());
+    }
+
+    /**
+     * {@link #generate}, the {@code @service} fetchers {@code services} emits from the store taking the
+     * place of the classified model's; a field it does not emit keeps its classified fetcher.
+     */
+    public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
+            String outputPackage,
+            no.sikt.graphitron.plan.LauncherRelation launchers,
+            List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
+            List<no.sikt.graphitron.command.TypeUnitCommand.ErrorFetchersUnit> errorRows,
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
+            no.sikt.graphitron.emit.ServiceEmission services) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -162,7 +181,7 @@ public class TypeFetcherGenerator {
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
                     nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections,
-                    errorChannels, outboxes, recordAccessors));
+                    errorChannels, outboxes, recordAccessors, services));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
                 if (wiring == null) {
@@ -188,7 +207,8 @@ public class TypeFetcherGenerator {
                     keyProjections,
                     errorChannels,
                     outboxes,
-                    recordAccessors));
+                    recordAccessors,
+                    services));
             }
         }
         for (var row : errorRows) {
@@ -279,7 +299,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
-            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
+            no.sikt.graphitron.emit.ServiceEmission services) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -288,7 +309,7 @@ public class TypeFetcherGenerator {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
-            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes, recordAccessors);
+            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes, recordAccessors, services);
     }
 
     /**
@@ -533,7 +554,8 @@ public class TypeFetcherGenerator {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage,
             graphitronSchema, dualWiring, launchers, routineWrites, keyProjections, errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows.empty(),
-            no.sikt.graphitron.emit.RecordAccessorQuery.Rows.empty());
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows.empty(),
+            no.sikt.graphitron.emit.ServiceEmission.none());
     }
 
     /**
@@ -554,7 +576,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
-            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
+            no.sikt.graphitron.emit.ServiceEmission services) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
@@ -573,6 +596,7 @@ public class TypeFetcherGenerator {
         ctx.setErrorChannels(errorChannels);
         ctx.setOutboxes(outboxes);
         ctx.setRecordAccessors(recordAccessors);
+        ctx.setServices(services);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
@@ -778,6 +802,8 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
+                case QueryField.QueryServiceTableField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
+                case QueryField.QueryServiceRecordField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(
                     buildQueryServiceTableFetcher(ctx, f,
                         serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
@@ -843,6 +869,8 @@ public class TypeFetcherGenerator {
                     builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
                 case MutationField.MutationRoutineWriteRecordField f ->
                     builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
+                case MutationField.MutationServiceTableField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
+                case MutationField.MutationServiceRecordField f when emitFromStore(ctx, builder, f, outputPackage) -> { }
                 case MutationField.MutationServiceTableField f -> builder.addMethod(
                     buildMutationServiceTableFetcher(ctx, f,
                         serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
@@ -1633,6 +1661,54 @@ public class TypeFetcherGenerator {
                 "Graphitron generator bug (root service table dispatch): coordinate '"
                 + field.qualifiedName() + "' has no launcher row;"
                 + " the producer's membership and this dispatch have drifted"));
+    }
+
+    /**
+     * Adds {@code field}'s fetcher as the store emits it, where it does, and says whether it did: the
+     * frame under the field's name, its body and fill helpers, its lift, and the lifted table's derived
+     * source table nested once per class.
+     */
+    private static boolean emitFromStore(TypeFetcherEmissionContext ctx, TypeSpec.Builder builder,
+                                         GraphitronField field, String outputPackage) {
+        var emitted = ctx.services().emit(field.qualifiedName(), field.name(), storeRuntime(ctx, outputPackage));
+        if (emitted.isEmpty()) {
+            return false;
+        }
+        emitted.get().methods().forEach(builder::addMethod);
+        for (var nested : emitted.get().nestedTypes()) {
+            if (ctx.claimNestedType(nested.name())) {
+                builder.addType(nested);
+            }
+        }
+        return true;
+    }
+
+    /** The generated classes a store-emitted fetcher in this type's fetchers class calls into. */
+    private static no.sikt.graphitron.emit.ServiceEmission.Runtime storeRuntime(TypeFetcherEmissionContext ctx,
+                                                                                String outputPackage) {
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var tenantConnections = TenantDslEmitter.tenantConnectionsClass(outputPackage);
+        var frame = new no.sikt.graphitron.emit.FrameEmitter.Runtime(
+            className(units.errorRouter()), className(units.outcome()), className(units.errorMappings()),
+            no.sikt.graphitron.plan.GeneratedUnits::mappingsConstant,
+            // The batched frame reads the context off the batch's first environment, so the seam is
+            // registered here and spelled with the variable the frame hands in.
+            env -> {
+                ctx.graphitronContextCall();
+                return CodeBlock.of("graphitronContext($L).getDslContext($L)", env, env);
+            });
+        var fill = new no.sikt.graphitron.emit.FillEmitter.Runtime(
+            key -> CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), key),
+            coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", tenantConnections, coordinate),
+            (member, coordinate) -> CodeBlock.of("$T.$L(dsl, $S)", tenantConnections,
+                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.sessionMemberMethod(member),
+                coordinate),
+            new no.sikt.graphitron.emit.NodeIdDecodeEmitter.Runtime(
+                no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage), outputPackage));
+        return new no.sikt.graphitron.emit.ServiceEmission.Runtime(frame, fill,
+            className(units.fetchers(ctx.parentTypeName())),
+            no.sikt.graphitron.render.ProjectionCall.selectionOccurrencesClass(outputPackage),
+            typeName -> className(units.typeClass(typeName)));
     }
 
     /**

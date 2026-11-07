@@ -88,21 +88,36 @@ public final class FrameEmitter {
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
                                     ClassName bodyClass, String body, Runtime runtime) {
+        return render(row, methodName, valueType, bodyClass, body, runtime, true);
+    }
+
+    /**
+     * {@link #render}, where at a root {@code needsContext} says whether the body uses the jOOQ
+     * context: a body that does not is handed none, so a field that touches no database takes no
+     * connection.
+     */
+    public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
+                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext) {
         return row.root()
-            ? root(row, methodName, valueType, bodyClass, body, runtime)
+            ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext)
             : child(row, methodName, valueType, bodyClass, body, runtime);
     }
 
     private static MethodSpec root(FrameQuery.Row row, String methodName, TypeName valueType,
-                                   ClassName bodyClass, String body, Runtime runtime) {
+                                   ClassName bodyClass, String body, Runtime runtime, boolean needsContext) {
         var declared = declared(row, valueType, runtime);
-        return MethodSpec.methodBuilder(methodName)
+        var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(RESULT, declared))
             .addParameter(ENV, "env")
-            .beginControlFlow("try")
-            .addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("env"))
-            .addStatement("$T value = $T.$L(env, dsl)", valueType, bodyClass, body)
+            .beginControlFlow("try");
+        if (needsContext) {
+            method.addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("env"))
+                .addStatement("$T value = $T.$L(env, dsl)", valueType, bodyClass, body);
+        } else {
+            method.addStatement("$T value = $T.$L(env, null)", valueType, bodyClass, body);
+        }
+        return method
             .addStatement("return $L", success(row, declared, CodeBlock.of("value"), runtime))
             .nextControlFlow("catch ($T thrown)", Exception.class)
             .addCode(failure(row, declared, runtime))

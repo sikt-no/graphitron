@@ -259,6 +259,14 @@ public record SessionIdentityRows(boolean supplied, Optional<Handle> handle) {
         }
 
         private static ClassName className(String qualified) {
+            // A nested class arrives by its binary name, Outer$Inner, which source spells Outer.Inner.
+            int nested = qualified.indexOf('$');
+            if (nested > 0) {
+                int dot = qualified.lastIndexOf('.', nested);
+                String pkg = dot < 0 ? "" : qualified.substring(0, dot);
+                String[] names = qualified.substring(dot + 1).split("\\$");
+                return ClassName.get(pkg, names[0], java.util.Arrays.copyOfRange(names, 1, names.length));
+            }
             try {
                 return ClassName.bestGuess(qualified);
             } catch (IllegalArgumentException lowerCaseClass) {

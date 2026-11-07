@@ -165,6 +165,27 @@ final class TypeFetcherEmissionContext {
     }
 
     /** Installs the store's record accessors for this class's emission. */
+    private no.sikt.graphitron.emit.ServiceEmission services = no.sikt.graphitron.emit.ServiceEmission.none();
+
+    private final java.util.Set<String> nestedTypeNames = new java.util.HashSet<>();
+
+    /**
+     * Whether {@code name} is a class this fetchers class has not nested yet, claiming it if so: two
+     * fields lifting onto one table share its derived source table.
+     */
+    boolean claimNestedType(String name) {
+        return nestedTypeNames.add(name);
+    }
+
+    /** The {@code @service} fetchers the store emits, which take the place of the classified model's. */
+    void setServices(no.sikt.graphitron.emit.ServiceEmission services) {
+        this.services = services;
+    }
+
+    no.sikt.graphitron.emit.ServiceEmission services() {
+        return services;
+    }
+
     void setRecordAccessors(no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         this.recordAccessors = recordAccessors;
     }

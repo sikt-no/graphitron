@@ -151,8 +151,15 @@ public final class CallEmitter {
             method.returns(answer).addStatement("return $L", invocation);
         } else if (batch == null) {
             method.returns(lifted(lift.get()))
-                .addStatement("$T answered = $L", answer, invocation)
-                .addStatement("return $T.$L(env, dsl, answered)", lift.get().host(), lift.get().method());
+                .addStatement("$T answered = $L", answer, invocation);
+            if (lift.get().list()) {
+                // A record the call handed back as null, or whose row is gone, leaves the list, as
+                // the classified emitters leave it.
+                method.addStatement("return $T.$L(env, dsl, answered).stream().filter($T::nonNull).toList()",
+                    lift.get().host(), lift.get().method(), ClassName.get("java.util", "Objects"));
+            } else {
+                method.addStatement("return $T.$L(env, dsl, answered)", lift.get().host(), lift.get().method());
+            }
         } else if (lift.isEmpty()) {
             batch.readBack(method, frameKey.get(), answer, invocation);
         } else {
