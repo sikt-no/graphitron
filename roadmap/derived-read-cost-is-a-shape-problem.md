@@ -855,7 +855,7 @@ generated Java or SQL as text.
 * **`emit` imports no `render` class** `open`. The shared one-spelling helpers move into `emit`, the
   old renderers import them from there, and the import rule's exception list is empty.
 * **The error-mapping constant is named by its outcome type, and the dedup goes** `done`.
-* **Routine writes read only the store** `blocked`, on "The tenant column and the session hook signature are captured". The write's tenancy is read from the tenant table that node captures, not decided a second
+* **Routine writes read only the store** `blocked`, E's, on "The tenant column and the session hook signature are captured". The write's tenancy is read from the tenant table that node captures, not decided a second
   way, so `RoutineWriteEmitter` takes nothing from `GraphitronSchema`, and its inherited and
   argument-bound routings, which a rejected tenant-scoped write never reaches, go.
 * **Operation members and delivery are read from their relations alone** `open`. The readers of
