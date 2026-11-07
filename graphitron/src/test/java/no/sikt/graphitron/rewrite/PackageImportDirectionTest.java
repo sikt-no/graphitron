@@ -289,7 +289,9 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.render.TenantHandDown",
             "the success envelope takes a hand-down so only tenant code fills localContext; a routine write hands none",
         "no.sikt.graphitron.render.ProjectionCall",
-            "the $project call has one spelling");
+            "the $project call has one spelling",
+        "no.sikt.graphitron.render.NodeIdDecodeFailure",
+            "a refused node id fails with one client error whichever emitter decoded it");
 
     /** The allowance {@code ref} falls under, or null. A nested or static member counts as its class. */
     private static String emitAllowanceFor(String ref) {

@@ -1,11 +1,11 @@
 package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.emit.stub.Stock;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
@@ -38,8 +38,7 @@ class NodeIdBuildEmitterTest {
     private static final String TABLES = "no.sikt.graphitron.rewrite.test.jooq.public_.Tables";
     private static final String RECORDS = "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.";
     private static final ClassName ENCODER = ClassName.get(PACKAGE + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
-    private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(ENCODER,
-        label -> CodeBlock.of("throw new $T($S)", IllegalArgumentException.class, "invalid id for " + label));
+    private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(ENCODER, PACKAGE);
 
     private static EmittedCodeHarness harness;
     private static Method build;
@@ -49,7 +48,7 @@ class NodeIdBuildEmitterTest {
                                               String tableField, String column, String field) {
         var slot = new BuildQuery.Slot("<init>", "()V", position, slotName, recordClass, recordClass, null);
         return new BuildQuery.Member(slot, List.of(field), "SCALAR", false, Optional.empty(),
-            Optional.of(new NodeIdDecodeQuery.Decode(typeId, TABLES, tableField, recordClass, List.of(column))));
+            Optional.of(new NodeIdDecodeQuery.Decode(typeId, typeId, TABLES, tableField, recordClass, List.of(column))));
     }
 
     @BeforeAll
@@ -74,6 +73,9 @@ class NodeIdBuildEmitterTest {
         units.put(PACKAGE + ".Probes", host.build());
         for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(schema, PACKAGE, List.of())) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
+            units.put(PACKAGE + ".schema." + spec.name(), spec);
         }
         for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
@@ -125,9 +127,10 @@ class NodeIdBuildEmitterTest {
     }
 
     @Test
-    void anInvalidIdIsRefusedForItsField() {
+    void anInvalidIdIsRefusedAsAClientErrorNamingWhatItDecodesTo() {
         assertThatThrownBy(() -> run(Map.of("filmId", id("Actor", 7))))
-            .hasMessage("invalid id for filmId");
+            .satisfies(e -> assertThat(e.getClass().getSimpleName()).isEqualTo("GraphitronClientException"))
+            .hasMessageEndingWith("decodes to type \"Actor\", expected a Film id");
     }
 
     @Test

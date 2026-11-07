@@ -8,6 +8,7 @@ import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import no.sikt.graphitron.emit.stub.FillRuntime;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
@@ -41,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@link FillEmitter}'s node id arguments, compiled strictly with the generated {@code NodeIdEncoder}
  * and run: an id decoded into the parameter's own record, into another table's record through its
  * foreign key, into the node's key as a {@code Record1} and a {@code Row1}, and a list and a set of
- * ids decoded one by one, a null element staying null and an invalid id refused for the argument.
+ * ids decoded one by one, a null element staying null and an invalid id refused as a client error.
  */
 @UnitTier
 class NodeIdFillEmitterTest {
@@ -54,12 +55,11 @@ class NodeIdFillEmitterTest {
         key -> CodeBlock.of("$T.contextArgument(env, $S)", FillRuntime.class, key),
         coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", FillRuntime.class, coordinate),
         (member, coordinate) -> CodeBlock.of("$T.sessionMember_$L(dsl, $S)", FillRuntime.class, member, coordinate),
-        new NodeIdDecodeEmitter.Runtime(ENCODER,
-            label -> CodeBlock.of("throw new $T($S)", IllegalArgumentException.class, "invalid id for " + label)));
+        new NodeIdDecodeEmitter.Runtime(ENCODER, PACKAGE));
 
-    private static final NodeIdDecodeQuery.Decode FILM = new NodeIdDecodeQuery.Decode("Film", TABLES, "FILM", FILM_RECORD,
+    private static final NodeIdDecodeQuery.Decode FILM = new NodeIdDecodeQuery.Decode("Film", "Film", TABLES, "FILM", FILM_RECORD,
         List.of("FILM_ID"));
-    private static final NodeIdDecodeQuery.Decode INVENTORY_FILM = new NodeIdDecodeQuery.Decode("Film", TABLES, "INVENTORY",
+    private static final NodeIdDecodeQuery.Decode INVENTORY_FILM = new NodeIdDecodeQuery.Decode("Film", "Film", TABLES, "INVENTORY",
         InventoryRecord.class.getName(), List.of("FILM_ID"));
 
     private static EmittedCodeHarness harness;
@@ -99,6 +99,9 @@ class NodeIdFillEmitterTest {
         units.put(PACKAGE + ".Probes", host.build());
         for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(schema, PACKAGE, List.of())) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
+            units.put(PACKAGE + ".schema." + spec.name(), spec);
         }
         for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
@@ -164,6 +167,8 @@ class NodeIdFillEmitterTest {
     @Test
     void anAbsentIdIsNullAndAnInvalidOneRefused() throws Throwable {
         assertThat(run("film", null)).isNull();
-        assertThatThrownBy(() -> run("film", id("Actor", 7))).hasMessage("invalid id for id");
+        assertThatThrownBy(() -> run("film", id("Actor", 7)))
+            .satisfies(e -> assertThat(e.getClass().getSimpleName()).isEqualTo("GraphitronClientException"))
+            .hasMessageEndingWith("decodes to type \"Actor\", expected a Film id");
     }
 }

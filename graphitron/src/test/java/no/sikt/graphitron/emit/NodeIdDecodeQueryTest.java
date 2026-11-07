@@ -29,7 +29,7 @@ class NodeIdDecodeQueryTest {
 
     private static final String SDL = """
         interface Node { id: ID! }
-        type Film implements Node @table(name: "film") @node { id: ID! }
+        type Film implements Node @table(name: "film") @node(typeId: "F") { id: ID! }
         type Language implements Node @table(name: "language") @node { id: ID! }
         type Actor implements Node @table(name: "actor") @node { id: ID! }
         type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
@@ -61,7 +61,7 @@ class NodeIdDecodeQueryTest {
     void aRecordOfTheNodesTableLoadsItsKey() {
         assertThat(query.resolve("Query.inventories(filmId:)", FilmRecord.class.getName()))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Resolved(new NodeIdDecodeQuery.Decode(
-                "Film", TABLES, "FILM", FilmRecord.class.getName(), List.of("FILM_ID"))));
+                "Film", "F", TABLES, "FILM", FilmRecord.class.getName(), List.of("FILM_ID"))));
         assertThat(query.resolveOwn("Query.inventories(filmId:)"))
             .isEqualTo(query.resolve("Query.inventories(filmId:)", FilmRecord.class.getName()));
     }
@@ -70,7 +70,7 @@ class NodeIdDecodeQueryTest {
     void aRecordReferencingTheNodeLoadsItsForeignKey() {
         assertThat(query.resolve("Query.inventories(filmId:)", InventoryRecord.class.getName()))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Resolved(new NodeIdDecodeQuery.Decode(
-                "Film", TABLES, "INVENTORY", InventoryRecord.class.getName(), List.of("FILM_ID"))));
+                "Film", "F", TABLES, "INVENTORY", InventoryRecord.class.getName(), List.of("FILM_ID"))));
     }
 
     @Test

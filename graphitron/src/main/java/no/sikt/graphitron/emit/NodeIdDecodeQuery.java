@@ -34,12 +34,12 @@ import static org.jooq.impl.DSL.coalesce;
 public final class NodeIdDecodeQuery {
 
     /**
-     * A node id decoded into a jOOQ record: the type id the id must carry, the table the record is a
-     * row of as the generated code names it, and the record's columns the key values load into, in
-     * key order.
+     * A node id decoded into a jOOQ record: the node type as a refused id's message names it, the type
+     * id the id must carry, the table the record is a row of as the generated code names it, and the
+     * record's columns the key values load into, in key order.
      */
-    public record Decode(String typeId, String tablesClass, String tableField, String recordClass,
-                         List<String> columnJavaNames) {
+    public record Decode(String nodeTypeName, String typeId, String tablesClass, String tableField,
+                         String recordClass, List<String> columnJavaNames) {
         public Decode {
             columnJavaNames = List.copyOf(columnJavaNames);
         }
@@ -54,8 +54,9 @@ public final class NodeIdDecodeQuery {
     /** A table as the generated code names it. */
     private record Table(String source, String schema, String name, String tablesClass, String tableField) {}
 
-    /** One node id binding: the node's table, the type id and the key columns in key order. */
-    private record Binding(String source, String schema, String table, String typeId, List<String> columns) {}
+    /** One node id binding: the node's table, its type and type id, and the key columns in key order. */
+    private record Binding(String source, String schema, String table, String nodeTypeName, String typeId,
+                           List<String> columns) {}
 
     /** One column's generated name, and whether a converter sits on it. */
     private record Column(String javaName, boolean converted) {}
@@ -79,14 +80,14 @@ public final class NodeIdDecodeQuery {
         var gn = GRAPHITRON_NODE;
         var bindingRows = new LinkedHashMap<String, LinkedHashMap<String, Binding>>();
         store.dsl().select(n.COORDINATE, n.TABLE_SOURCE_NAME, n.TABLE_SCHEMA, n.TABLE_NAME,
-                coalesce(gn.TYPE_ID, n.NODE_TYPE_NAME), n.COLUMN_NAME)
+                coalesce(gn.TYPE_ID, n.NODE_TYPE_NAME), n.COLUMN_NAME, n.NODE_TYPE_NAME)
             .from(n)
             .leftJoin(gn).on(gn.GRAPH_NAME.eq(n.GRAPH_NAME), gn.TYPE_NAME.eq(n.NODE_TYPE_NAME))
             .where(n.GRAPH_NAME.eq(store.graphName()))
             .orderBy(n.COORDINATE, n.TABLE_SCHEMA, n.TABLE_NAME, n.POSITION)
             .forEach(r -> bindingRows.computeIfAbsent(r.value1(), k -> new LinkedHashMap<>())
                 .computeIfAbsent(key(r.value2(), r.value3(), r.value4()),
-                    k -> new Binding(r.value2(), r.value3(), r.value4(), r.value5(), new ArrayList<>()))
+                    k -> new Binding(r.value2(), r.value3(), r.value4(), r.value7(), r.value5(), new ArrayList<>()))
                 .columns().add(r.value6()));
         var bindings = new HashMap<String, List<Binding>>();
         bindingRows.forEach((coordinate, byTable) -> bindings.put(coordinate, List.copyOf(byTable.values())));
@@ -200,7 +201,8 @@ public final class NodeIdDecodeQuery {
             javaNames.add(known.javaName());
         }
         return new Resolution.Resolved(
-            new Decode(binding.typeId(), target.tablesClass(), target.tableField(), recordClass, javaNames));
+            new Decode(binding.nodeTypeName(), binding.typeId(), target.tablesClass(), target.tableField(),
+                recordClass, javaNames));
     }
 
     private static Resolution.Refused refusedFor(List<Binding> bound) {

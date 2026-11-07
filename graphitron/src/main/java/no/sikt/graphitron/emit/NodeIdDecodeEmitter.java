@@ -6,8 +6,9 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 
+import no.sikt.graphitron.render.NodeIdDecodeFailure;
+
 import javax.lang.model.element.Modifier;
-import java.util.function.Function;
 
 /**
  * Emits a node id's decode from one of {@link NodeIdDecodeQuery}'s decodes: the id loaded into a jOOQ
@@ -16,7 +17,8 @@ import java.util.function.Function;
  *
  * <pre>{@code
  * if (NodeIdEncoder.decodeInto(out, "Film", id1, "filmId", null, Tables.INVENTORY.FILM_ID) == null) {
- *     throw invalidId("filmId");
+ *     String peeked = NodeIdEncoder.peekTypeId(id1);
+ *     throw new GraphitronClientException(...);
  * }
  * }</pre>
  *
@@ -35,9 +37,19 @@ public final class NodeIdDecodeEmitter {
 
     /**
      * The generated runtime a node id is decoded through: the encoder whose {@code decodeInto} loads
-     * a record, and the statement that refuses an id it answers null for, given the input's name.
+     * a record, and the run's output package, which reaches the client error an id it answers null
+     * for is refused with.
      */
-    public record Runtime(ClassName nodeIdEncoder, Function<String, CodeBlock> invalidId) {}
+    public record Runtime(ClassName nodeIdEncoder, String outputPackage) {}
+
+    /**
+     * The refusal of the {@code String} local {@code id}, the one {@link NodeIdDecodeFailure} words
+     * for every decode, so a client reads the same message whichever host decoded the id.
+     */
+    private static CodeBlock refuse(NodeIdDecodeQuery.Decode d, String id, Runtime runtime) {
+        return NodeIdDecodeFailure.throwStatement(runtime.outputPackage(), runtime.nodeIdEncoder(),
+            d.typeId(), d.nodeTypeName(), id, id);
+    }
 
     /** The record's columns the key loads into, as the generated tables class names them. */
     private static CodeBlock columns(NodeIdDecodeQuery.Decode d) {
@@ -54,7 +66,7 @@ public final class NodeIdDecodeEmitter {
                             String label, Runtime runtime) {
         method.beginControlFlow("if ($T.decodeInto($L, $S, $L, $S, null, $L) == null)",
                 runtime.nodeIdEncoder(), target, d.typeId(), id, label, columns(d))
-            .addStatement(runtime.invalidId().apply(label))
+            .addCode(refuse(d, id, runtime))
             .endControlFlow();
     }
 
@@ -68,7 +80,7 @@ public final class NodeIdDecodeEmitter {
         method.addStatement("$T decoded = $T.decodeInto(new $T(), $S, $L, $S, null, $L)",
                 record, runtime.nodeIdEncoder(), record, d.typeId(), id, label, columns(d))
             .beginControlFlow("if (decoded == null)")
-            .addStatement(runtime.invalidId().apply(label))
+            .addCode(refuse(d, id, runtime))
             .endControlFlow();
     }
 
