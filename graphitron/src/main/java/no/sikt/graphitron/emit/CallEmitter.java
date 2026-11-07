@@ -65,6 +65,20 @@ public final class CallEmitter {
      */
     public record Lift(ClassName host, String method, boolean list) {}
 
+    /**
+     * The polymorphic lift of a call whose records may be rows of several members' tables: whether
+     * it answers a list or one record, and per member the record class telling its records apart and
+     * the method {@link LiftEmitter#lift} rendered for it, with the member's type name.
+     */
+    public record Polymorphic(boolean list, List<Member> members) {
+        public Polymorphic {
+            members = List.copyOf(members);
+        }
+
+        /** One member: the record class its records are, and the class and name of its lift. */
+        public record Member(String typeName, ClassName recordClass, ClassName host, String method) {}
+    }
+
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
 
     /** What the emitter makes of a call: its body and the helpers its fills need, or why it cannot. */
@@ -86,6 +100,21 @@ public final class CallEmitter {
     public static Result body(CallQuery.Row call, FillQuery.Row fills, Map<Integer, BuildQuery.Result> builds,
                               FillEmitter.Runtime runtime, String name, Optional<FrameKey> frameKey,
                               Optional<Lift> lift) {
+        return body(call, fills, builds, runtime, name, frameKey, lift, Optional.empty());
+    }
+
+    /**
+     * {@link #body}, where {@code polymorphic} is present at a root call whose records may be rows of
+     * several members' tables: each record is lifted onto its own table's row, told apart by its
+     * class, and the rows come back in the call's order, a record no member's class matches or whose
+     * row is gone left out of a list.
+     */
+    public static Result body(CallQuery.Row call, FillQuery.Row fills, Map<Integer, BuildQuery.Result> builds,
+                              FillEmitter.Runtime runtime, String name, Optional<FrameKey> frameKey,
+                              Optional<Lift> lift, Optional<Polymorphic> polymorphic) {
+        if (polymorphic.isPresent() && (frameKey.isPresent() || lift.isPresent())) {
+            return new Result.NeedsBuilding(call.coordinate() + " lifts polymorphically, which only a root call does");
+        }
         var answer = SessionIdentityRows.typeOf(call.resultType());
         var method = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -116,7 +145,9 @@ public final class CallEmitter {
         emitted.statements().forEach(method::addStatement);
         var target = target(call, method);
         var invocation = CodeBlock.of("$L.$L($L)", target, call.methodName(), CodeBlock.join(emitted.arguments(), ", "));
-        if (batch == null && lift.isEmpty()) {
+        if (polymorphic.isPresent()) {
+            liftPolymorphic(method, answer, invocation, polymorphic.get());
+        } else if (batch == null && lift.isEmpty()) {
             method.returns(answer).addStatement("return $L", invocation);
         } else if (batch == null) {
             method.returns(lifted(lift.get()))
@@ -128,6 +159,58 @@ public final class CallEmitter {
             batch.liftBack(method, frameKey.get(), answer, invocation, lift.get());
         }
         return new Result.Emitted(method.build(), emitted.helpers());
+    }
+
+    /**
+     * The polymorphic read-back: the call's records in its order, each placed by its class into its
+     * member's batch with its position, every member's batch lifted in one call, and each row put
+     * back at its record's position.
+     */
+    private static void liftPolymorphic(MethodSpec.Builder method, TypeName answer, CodeBlock invocation,
+                                        Polymorphic polymorphic) {
+        var recordList = ParameterizedTypeName.get(LIST, RECORD);
+        var arrayList = ClassName.get("java.util", "ArrayList");
+        method.addStatement("$T answered = $L", answer, invocation);
+        if (polymorphic.list()) {
+            method.addStatement("$T records = answered == null ? $T.of() : new $T<>(answered)", recordList, LIST, arrayList);
+        } else {
+            method.addStatement("$T records = answered == null ? $T.of() : $T.of(answered)", recordList, LIST, LIST);
+        }
+        method.addStatement("$T[] placed = new $T[records.size()]", RECORD, RECORD);
+        var members = polymorphic.members();
+        for (int m = 0; m < members.size(); m++) {
+            method.addStatement("$T in$L = new $T<>()", recordList, m, arrayList)
+                .addStatement("$T at$L = new $T<>()", ParameterizedTypeName.get(LIST, ClassName.get(Integer.class)), m,
+                    arrayList);
+        }
+        method.beginControlFlow("for (int i = 0; i < records.size(); i++)")
+            .addStatement("$T rec = records.get(i)", RECORD);
+        for (int m = 0; m < members.size(); m++) {
+            if (m == 0) {
+                method.beginControlFlow("if (rec instanceof $T)", members.get(m).recordClass());
+            } else {
+                method.nextControlFlow("else if (rec instanceof $T)", members.get(m).recordClass());
+            }
+            method.addStatement("in$L.add(rec)", m).addStatement("at$L.add(i)", m);
+        }
+        if (!members.isEmpty()) {
+            method.endControlFlow();
+        }
+        method.endControlFlow();
+        for (int m = 0; m < members.size(); m++) {
+            var member = members.get(m);
+            method.addStatement("$T rows$L = $T.$L(env, dsl, in$L)", recordList, m, member.host(), member.method(), m)
+                .beginControlFlow("for (int j = 0; j < rows$L.size(); j++)", m)
+                .addStatement("placed[at$L.get(j)] = rows$L.get(j)", m, m)
+                .endControlFlow();
+        }
+        if (polymorphic.list()) {
+            method.returns(recordList)
+                .addStatement("return $T.stream(placed).filter($T::nonNull).toList()",
+                    ClassName.get("java.util", "Arrays"), ClassName.get("java.util", "Objects"));
+        } else {
+            method.returns(RECORD).addStatement("return placed.length == 0 ? null : placed[0]");
+        }
     }
 
     /** What a lift answers for one record, or for one list of them: a row, or a list of rows. */

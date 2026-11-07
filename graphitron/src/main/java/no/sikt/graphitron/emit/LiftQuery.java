@@ -112,7 +112,7 @@ public final class LiftQuery {
     }
 
     /** The table's primary key, in key order. */
-    private static Field<List<KeyColumn>> key(Field<String> source, Field<String> schema,
+    static Field<List<KeyColumn>> key(Field<String> source, Field<String> schema,
                                               Field<String> table) {
         var k = SQL_CONSTRAINT;
         var kc = SQL_CONSTRAINT_COLUMN;

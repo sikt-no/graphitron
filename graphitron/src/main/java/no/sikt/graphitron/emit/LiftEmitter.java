@@ -62,6 +62,8 @@ public final class LiftEmitter {
     /** The label the lifted table's first key column is read back under, null where no row joined. */
     private static final String FOUND_LABEL = "__found";
     private static final String TARGET = "target";
+    /** The column a polymorphic row's type name is read back under. */
+    static final String TYPENAME = "__typename";
 
     /**
      * The derived source table over {@code table}'s key, as the class {@code name}: the position,
@@ -176,16 +178,34 @@ public final class LiftEmitter {
      */
     public static MethodSpec lift(LiftQuery.Row row, String methodName, ClassName source,
                                   ClassName projection, ClassName selectionOccurrences) {
+        return lift(row, methodName, source, projection, selectionOccurrences, java.util.Optional.empty());
+    }
+
+    /**
+     * {@link #lift}, each lifted row also carrying {@code typeName} as the constant column
+     * {@code __typename}, which the generated type resolver reads to tell a polymorphic row's type,
+     * and projecting only the occurrences of the fetched field's selection that are {@code typeName}'s.
+     */
+    public static MethodSpec lift(LiftQuery.Row row, String methodName, ClassName source,
+                                  ClassName projection, ClassName selectionOccurrences,
+                                  java.util.Optional<String> typeName) {
         requireKey(row.table(), row.key());
         var table = row.table();
-        var project = CodeBlock.of("$T.$$project($T.ownFields(env.getSelectionSet()), $L, env)",
-            projection, selectionOccurrences, TARGET);
+        // A polymorphic row projects only its own type's occurrences, so a field another member's
+        // fragment selects under the same key never reaches this member's projection.
+        var selection = typeName
+            .map(name -> CodeBlock.of("$T.restrictTo($T.ownFields(env.getSelectionSet()), $S)",
+                selectionOccurrences, selectionOccurrences, name))
+            .orElse(CodeBlock.of("$T.ownFields(env.getSelectionSet())", selectionOccurrences));
+        var project = CodeBlock.of("$T.$$project($L, $L, env)", projection, selection, TARGET);
         var on = new ArrayList<CodeBlock>();
         for (var column : row.key()) {
             on.add(CodeBlock.of("$L.$L.eq($T.$L)", TARGET, column.javaName(), source, column.javaName()));
         }
-        var found = CodeBlock.of(".select($L.$L.as($T.FOUND))", TARGET, row.key().getFirst().javaName(),
-            source);
+        var found = typeName
+            .map(name -> CodeBlock.of(".select($L.$L.as($T.FOUND))\n.select($T.inline($S).as($S))", TARGET,
+                row.key().getFirst().javaName(), source, DSL, name, TYPENAME))
+            .orElse(CodeBlock.of(".select($L.$L.as($T.FOUND))", TARGET, row.key().getFirst().javaName(), source));
         var joined = CodeBlock.of(".leftJoin($L).on($L)", TARGET, chained(on));
         var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
