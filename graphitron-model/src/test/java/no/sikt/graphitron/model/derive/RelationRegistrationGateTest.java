@@ -519,6 +519,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_entry_defect_claim", Arm.UNSHADOWED);
         registrations.put("graphitron_entry_defect_member", Arm.UNSHADOWED);
         registrations.put("graphitron_entry_defect_member_rule", Arm.UNSHADOWED);
+        registrations.put("graphitron_entry_defect_table", Arm.UNSHADOWED);
+        registrations.put("graphitron_entry_defect_table_rule", Arm.UNSHADOWED);
         registrations.put("graphitron_node_id_slot", Arm.UNSHADOWED);
         registrations.put("graphitron_entry_defect_path_step", Arm.UNSHADOWED);
         registrations.put("graphitron_argmapping_pair_defect_rule", Arm.DERIVED);

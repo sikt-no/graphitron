@@ -1,0 +1,31 @@
+# A @table whose spelling several catalog tables answer is one TABLE_AMBIGUOUS defect at the @table,
+# with each table it could mean a row under it: note in two schemas, ledger in three. Qualifying the
+# spelling with its schema names one table, so that type draws neither defect nor rows. No other
+# defect names tables.
+
+type Note @table(name: "note") { body: String }
+
+type Ledger @table(name: "ledger") { entry: String }
+
+type QualifiedNote @table(name: "multischema_a.note") { body: String }
+
+extend type Query {
+  notes: [Note!]!
+  ledgers: [Ledger!]!
+  qualifiedNotes: [QualifiedNote!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'TABLE_%'", rows: """
+  code,            type_name, source_line, detail
+  TABLE_AMBIGUOUS, Ledger,    79,          ledger
+  TABLE_AMBIGUOUS, Note,      77,          note
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_table", rows: """
+  code,            source_line, table_schema,  table_name
+  TABLE_AMBIGUOUS, 77,          multischema_a, note
+  TABLE_AMBIGUOUS, 77,          multischema_b, note
+  TABLE_AMBIGUOUS, 79,          multischema_a, ledger
+  TABLE_AMBIGUOUS, 79,          multischema_b, ledger
+  TABLE_AMBIGUOUS, 79,          public,        ledger
+  """)

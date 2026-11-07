@@ -8235,6 +8235,38 @@ COMMENT ON COLUMN graphitron_entry_defect_member.code IS 'the defect''s code, NO
 COMMENT ON COLUMN graphitron_entry_defect_member.member_type_name IS 'the member the defect names';
 COMMENT ON COLUMN graphitron_entry_defect_member.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
+CREATE TABLE graphitron_entry_defect_table (
+  graph_name        VARCHAR   NOT NULL,
+  source_name       VARCHAR   NOT NULL,
+  source_line       INT       NOT NULL,
+  source_column     INT       NOT NULL,
+  code              VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code,
+               table_source_name, table_schema, table_name),
+  -- The defect it details, so a swept defect takes its tables with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE,
+  -- The table, so a table the catalog no longer has is named by nothing.
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_entry_defect_table IS 'One table a defect names: one row per defect and candidate table. For example @table(name: "note") where multischema_a and multischema_b both declare note draws a TABLE_AMBIGUOUS defect with a row for each.';
+COMMENT ON COLUMN graphitron_entry_defect_table.graph_name IS 'the owning graph''s partition, carried from the defect';
+COMMENT ON COLUMN graphitron_entry_defect_table.source_name IS 'the defect''s file';
+COMMENT ON COLUMN graphitron_entry_defect_table.source_line IS 'the defect''s line, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_table.source_column IS 'the defect''s column, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_table.code IS 'the defect''s code, TABLE_AMBIGUOUS';
+COMMENT ON COLUMN graphitron_entry_defect_table.table_source_name IS 'the catalog source of a table the defect names';
+COMMENT ON COLUMN graphitron_entry_defect_table.table_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_entry_defect_table.table_name IS 'that table''s name';
+COMMENT ON COLUMN graphitron_entry_defect_table.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
+
 -- The @routine a field's written path steps through, under a claim defect it is in: a path step and
 -- no claim, so it has a detail of its own.
 CREATE TABLE graphitron_entry_defect_path_step (
@@ -12172,6 +12204,28 @@ COMMENT ON VIEW graphitron_entry_defect_member_rule IS 'One member a polymorphic
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.code IS 'NODE_ID_MEMBER_NOT_NODE_TYPE or NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER';
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.member_type_name IS 'the member the defect names';
+
+-- A TABLE_AMBIGUOUS defect's detail is the spelling its rule matched against graphitron_spelled_table,
+-- so its candidates are that spelling's rows and agree with the defect by construction. This reads
+-- the detail as the spelling: a change to what that rule writes there changes what this names.
+CREATE VIEW graphitron_entry_defect_table_rule
+  (graph_name, source_name, source_line, source_column, code,
+   table_source_name, table_schema, table_name) AS
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.code,
+       sp.table_source_name, sp.table_schema, sp.table_name
+  FROM graphitron_entry_defect d
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = d.graph_name AND sp.spelling = d.detail
+ WHERE d.code = 'TABLE_AMBIGUOUS';
+COMMENT ON VIEW graphitron_entry_defect_table_rule IS 'One table a defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk. For example a TABLE_AMBIGUOUS defect whose spelling two schemas answer draws a row for each schema''s table.';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_name IS 'the @table''s file';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.code IS 'TABLE_AMBIGUOUS';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_source_name IS 'the catalog source of a candidate table';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_schema IS 'its schema';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_name IS 'its name';
 
 -- After the occurrence producers and the call parameters, the latest relations its arms read.
 CREATE VIEW graphitron_entry_defect_rule
@@ -17518,6 +17572,9 @@ INSERT INTO meta_grain VALUES
   ('entry-defect-member',
    'one member one defect names, in one graph',
    'graph_name, source_name, source_line, source_column, code, member_type_name', 'sdl'),
+  ('entry-defect-table',
+   'one table one defect names, in one graph',
+   'graph_name, source_name, source_line, source_column, code, table_source_name, table_schema, table_name', 'sdl'),
   ('entry-defect-path-step',
    'one path step one defect is about, in one graph',
    'graph_name, source_name, source_line, source_column, code, step_source_name, step_source_line, step_source_column', 'sdl'),
@@ -18673,6 +18730,14 @@ INSERT INTO meta_relation VALUES
    'One member a polymorphic @nodeId''s defect names, in the shape graphitron_entry_defect_member stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a union of two node types whose @nodeId lands on a parameter taking one of their records draws a NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER row for the other.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the two per-member codes, so one statement says which members a defect names.'),
+  ('graphitron_entry_defect_table', 'entry-defect-table', 'graphitron',
+   'One table a defect names: one row per defect and candidate table.',
+   'For example @table(name: "note") where multischema_a and multischema_b both declare note draws a TABLE_AMBIGUOUS defect with a row for each.',
+   'One defect per ambiguous @table, its candidates a relation beneath it: the author edits one @table, and the tables its spelling could mean are a set. Keyed by the defect and the table, with a foreign key to the defect, so a swept defect takes the rows with it, and one to sql_table, so a table the catalog loses is named by nothing.'),
+  ('graphitron_entry_defect_table_rule', 'entry-defect-table', 'graphitron',
+   'One table a defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a TABLE_AMBIGUOUS defect whose spelling two schemas answer draws a row for each schema''s table.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the defect''s own detail is the spelling it matched, so the candidates are read from the defect rather than resolved a second time.'),
   ('graphitron_node_id_slot', 'graph-occurrence', 'graphitron',
    'One Java parameter a @nodeId''s decoded value lands in: one row per id occurrence and the parameter its root argument fills.',
    'For example Query.greetings(userId: ID @nodeId(typeName: "Film")) on a @service whose method takes String userId is one row, by name, landing on java.lang.String in the SINGLE shape.',

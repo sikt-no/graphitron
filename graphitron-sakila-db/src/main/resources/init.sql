@@ -1972,6 +1972,23 @@ CREATE TABLE multischema_b.note (
     CONSTRAINT note_event_fk FOREIGN KEY (event_id) REFERENCES multischema_b.event(event_id)
 );
 
+-- One table name three schemas declare, public among them, so an unqualified @table(name: "ledger")
+-- has three candidate tables and is ambiguous, where a qualified one names one.
+CREATE TABLE ledger (
+    ledger_id serial      PRIMARY KEY,
+    entry     varchar(50) NOT NULL
+);
+
+CREATE TABLE multischema_a.ledger (
+    ledger_id serial      PRIMARY KEY,
+    entry     varchar(50) NOT NULL
+);
+
+CREATE TABLE multischema_b.ledger (
+    ledger_id serial      PRIMARY KEY,
+    entry     varchar(50) NOT NULL
+);
+
 -- Same-named indexes across the two schemas (index names are schema-scoped), for the union-ordering
 -- agreement rule. event_order_idx covers one column in A and two in B, an unequal arity the rule
 -- rejects. note_order_idx covers event_id in A and note_id in B, so an order over it agrees with a
