@@ -988,6 +988,16 @@ today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`
   sweeps once, at `store_class_file`, and reads `byte_size` and `mtime` to skip an unchanged class.
+* **No upsert matches a stale row by a second key** `open`, G's. jOOQ's `onDuplicateKeyUpdate` on H2
+  is a `MERGE` matching every unique key, so where a table's second unique key can be taken by a
+  different row than its primary key names, a warm capture updates the stale row in place and never
+  writes the new one. The reference path elements and error handlers were that shape and clear what
+  an incoming row displaces first (`GraphitronAstEntries.clearDisplaced`). One writer is left:
+  `graphitron_federation_definition`, keyed by `name` and unique on `local_name`, so an edit handing
+  one definition's local name to another (renamed `@link` imports) keeps the old definition under
+  the new values, silently. Of the other upserted tables with a second key, `sql_constraint`'s
+  contains its primary key and `graphql_field_element`'s coordinate is its key's spelling, so
+  neither can match a different row.
 
 ### A signature's type is a fact about the position that writes it `open`
 
@@ -1081,6 +1091,15 @@ branch is G's (Alf, 2026-11-05).
   decode census `NodeIdDecodeCoverageFacts` reads `graphitron_occurrence_node_id`; the encode for
   output fields is an emitter of its own, written when the store emits output selections. Then
   `graphitron_node_id_instruction` and the `graphitron_node_id_decode_*` relations go.
+* **A `@nodeId` naming a federation stub binds against its table's node metadata** `open`, G's.
+  The manual lets `@nodeId(typeName:)` name a `@table` type that is no node over a table whose class
+  publishes node metadata, the id decoding against that metadata's type id and key, and
+  `NODE_ID_TYPE_NAME_NOT_NODE` accepts it; sis's upgrade branch writes 19 such positions. But
+  `graphitron_occurrence_node_id` binds only a named `graphitron_node`, its key columns keyed into
+  `graphitron_node_keycolumn`, so a stub's id binds nothing: the landing defects never judge it and
+  `NodeIdDecodeQuery` refuses it, which matters once the emitters replace the walk. The stub's key,
+  from `sql_node_key_column` and `sql_node_metadata`, is stated under a relation of its own rather
+  than loosening the binding's key to the node's (C, 2026-11-07), and the binding reads it.
 
 ### A polymorphic id resolves per member, to the overload that accepts it `open`
 
