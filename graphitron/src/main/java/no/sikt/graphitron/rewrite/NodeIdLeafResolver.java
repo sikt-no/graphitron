@@ -586,8 +586,9 @@ final class NodeIdLeafResolver {
      *       scoped to the participant the consuming field is standing on. The path runs from that
      *       participant's own table to the target's, which is the direction the generated predicate
      *       reaches in.</li>
-     *   <li>Neither: single-hop FK auto-discovery via {@link JooqCatalog#findOutgoingFkToTable}.
-     *       Multi-hop is always explicit; auto-discovery does not search past one hop.</li>
+     *   <li>Neither: the one foreign key between the two tables, in either direction, via
+     *       {@link JooqCatalog#findForeignKeysBetweenTables}. Multi-hop is always explicit;
+     *       auto-discovery does not search past one hop.</li>
      * </ul>
      *
      * <p>Every step of an explicit path must join on {@link On.ColumnPairs}; condition-only steps are
@@ -629,23 +630,23 @@ final class NodeIdLeafResolver {
                     "@referenceFor(type: \"" + stated.participantType() + "\")", keyColumns);
             }
             case Route.AutoDiscover ignored -> {
-                // No stated route: single-hop FK auto-discovery. Multi-hop is always explicit; the
-                // auto-discovery fallback never searches past one hop. Disambiguation among
-                // A -> ? -> C chains is the author's responsibility via per-hop { key: ... }.
-                var lookup = ctx.catalog.findOutgoingFkToTable(
+                // No stated route: the one foreign key between the two tables, declared on either.
+                // Multi-hop is always explicit; auto-discovery never searches past one hop. The
+                // tables differ here, the same-table case being the own-rows arm, so no
+                // self-referencing key is counted. A key the node's table declares lands no key
+                // position on the slot's table, which landKeyColumns turns into a remote binding.
+                var between = ctx.catalog.findForeignKeysBetweenTables(
                     containingTable.tableName(), targetTableName);
-                if (!(lookup instanceof JooqCatalog.OutgoingFkLookup.Unique unique)) {
-                    return refuse(autoDiscoveryRefusal(lookup, containingTable.tableName(),
+                if (between.size() != 1) {
+                    return refuse(autoDiscoveryRefusal(between, containingTable.tableName(),
                         targetTableName, participant));
                 }
                 // The search resolved endpoints by class and answers with the FK object itself; hand
                 // it straight to synthesizeFkJoin rather than round-tripping through a bare-name
-                // re-lookup that risks cross-schema constraint-name collision.
-                // NodeId leafs are single-cardinality decoded keys against the parent's own table;
-                // the shim's invariant places the FK on the parent (source) side, so
-                // selfRefFkOnSource=true.
+                // re-lookup that risks cross-schema constraint-name collision. synthesizeFkJoin
+                // orients it from the slot's table whichever side declares it.
                 var fkStepResolution = ctx.synthesizeFkJoin(
-                    unique.fk(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
+                    between.get(0), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
                 return switch (fkStepResolution) {
                     case BuildContext.FkJoinResolution.Resolved r ->
                         new PathResolution.Walked(List.of(r.hop()),
@@ -687,21 +688,16 @@ final class NodeIdLeafResolver {
     }
 
     /**
-     * The prose for a single-hop auto-discovery that found no one foreign key, one sentence per
-     * cause because the remedy differs by cause. Several candidates is a disambiguation and names
-     * them. None in the searched direction is not: a foreign key declared on the target side
-     * reaches the target once the author names it, and where no foreign key connects the two
-     * tables at all the remedy is a path through the tables in between, or a corrected
-     * {@code typeName:}. Offering disambiguation to an author with nothing to disambiguate is what
-     * the single message did.
+     * The prose for a single-hop auto-discovery that found no one foreign key between the two
+     * tables, in either direction, one sentence per cause because the remedy differs by cause.
+     * Several candidates is a disambiguation and names them. None is not: the remedy is a path
+     * through the tables in between, or a corrected {@code typeName:}.
      *
-     * <p>The vocabulary is {@link BuildContext#fkCountMessage}'s, which has split zero from several
-     * for the direction-agnostic {@code @reference} resolution all along: "no foreign key found
-     * between tables", "multiple foreign keys found", candidates named, one worked spelling. The
-     * third arm is what only a <em>directional</em> search can have. Two deliberate divergences from
-     * that message: the chained remedy names {@code { key: ... }} per hop rather than a two-element
-     * example, and the condition-step escape hatch is not offered, because a {@code @nodeId} path
-     * rejects condition steps.
+     * <p>The vocabulary is {@link BuildContext#fkCountMessage}'s: "no foreign key found between
+     * tables", "multiple foreign keys found", candidates named, one worked spelling. Two deliberate
+     * divergences from that message: the chained remedy names {@code { key: ... }} per hop rather
+     * than a two-element example, and the condition-step escape hatch is not offered, because a
+     * {@code @nodeId} path rejects condition steps.
      *
      * <p>Which directive the remedy spells follows the coordinate, which is the whole point of
      * threading the participant this far: under a participant a {@code @reference} is stated once and
@@ -710,37 +706,30 @@ final class NodeIdLeafResolver {
      * this branch and the {@code @condition(override: true)} escape for the case where no generated
      * route fits any branch. Single-table wording is unchanged.
      *
+     * @param between     the foreign keys joining the two tables, either declaring; never one
      * @param source      the table the search departed from, the table the slot's own parent is on
      * @param target      the node type's table
      * @param participant the participant the consuming field is standing on, or {@code null} at a
      *                    single-table coordinate
      */
-    private static String autoDiscoveryRefusal(JooqCatalog.OutgoingFkLookup lookup,
+    private static String autoDiscoveryRefusal(List<org.jooq.ForeignKey<?, ?>> between,
                                                String source, String target,
                                                ParticipantRef.TableBound participant) {
-        return switch (lookup) {
-            case JooqCatalog.OutgoingFkLookup.Unique u -> throw new IllegalStateException(
-                "unreachable: the caller resolves the unique arm instead of refusing it");
-            case JooqCatalog.OutgoingFkLookup.Ambiguous a ->
-                "multiple foreign keys found from table '" + source + "' to '" + target
-                + "'; " + disambiguationRemedy(participant, a.fkNames().get(0))
-                + ". Candidates: " + String.join(", ", a.fkNames());
-            case JooqCatalog.OutgoingFkLookup.NoneInDirection n when !n.reverseFkNames().isEmpty() ->
-                "no foreign key found from table '" + source + "' to '" + target
-                + "', and auto-discovery searches that direction only. The foreign "
-                + (n.reverseFkNames().size() == 1 ? "key" : "keys") + " connecting them "
-                + (n.reverseFkNames().size() == 1 ? "is" : "are") + " declared on '" + target
-                + "': " + String.join(", ", n.reverseFkNames()) + ". "
-                + namingRemedy(participant, n.reverseFkNames().get(0),
-                    n.reverseFkNames().size() == 1 ? "it" : "the one you mean");
-            case JooqCatalog.OutgoingFkLookup.NoneInDirection n ->
-                "no foreign key found between tables '" + source + "' and '" + target
-                + "'; auto-discovery is single-hop, so reach '" + target + "' through the tables"
-                + " in between with one '{key: \"<fk-name>\"}' element per hop"
-                + (participant == null ? "" : " stated as " + referenceForSketch(participant, "<fk-name>"))
-                + ", or correct @nodeId(typeName:) if '" + target + "' is not the type this filter"
-                + " means" + overrideEscape(participant);
-        };
+        if (between.size() == 1) {
+            throw new IllegalStateException("unreachable: the caller resolves the one key instead of refusing it");
+        }
+        if (!between.isEmpty()) {
+            var names = between.stream().map(org.jooq.ForeignKey::getName).toList();
+            return "multiple foreign keys found between tables '" + source + "' and '" + target
+                + "'; " + disambiguationRemedy(participant, names.get(0))
+                + ". Candidates: " + String.join(", ", names);
+        }
+        return "no foreign key found between tables '" + source + "' and '" + target
+            + "'; auto-discovery is single-hop, so reach '" + target + "' through the tables"
+            + " in between with one '{key: \"<fk-name>\"}' element per hop"
+            + (participant == null ? "" : " stated as " + referenceForSketch(participant, "<fk-name>"))
+            + ", or correct @nodeId(typeName:) if '" + target + "' is not the type this filter"
+            + " means" + overrideEscape(participant);
     }
 
     /** "add a @reference / state this participant's path" half of the several-candidates arm. */
@@ -750,16 +739,6 @@ final class NodeIdLeafResolver {
                 + exampleFk + "\"}])')"
             : "state this participant's path with " + referenceForSketch(participant, exampleFk)
                 + overrideEscape(participant);
-    }
-
-    /** "a @reference reaches it by naming it" half of the reverse-FK arm. */
-    private static String namingRemedy(ParticipantRef.TableBound participant, String exampleFk,
-                                       String pronoun) {
-        return participant == null
-            ? "A @reference reaches " + pronoun + " by naming it (e.g. '@reference(path: [{key: \""
-                + exampleFk + "\"}])')"
-            : "Reach " + pronoun + " for this participant by naming it in "
-                + referenceForSketch(participant, exampleFk) + overrideEscape(participant);
     }
 
     /** One worked {@code @referenceFor} spelling for the participant in scope. */

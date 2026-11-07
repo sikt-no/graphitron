@@ -5525,7 +5525,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(uf.reason()).contains("1 input field could not be resolved");
                 assertThat(TestSchemaHelper.diagnosticMessages(schema))
                     .contains("Input field 'FilmFilterInput.languageIds'")
-                    .contains("multiple foreign keys found from table 'film' to 'language'")
+                    .contains("multiple foreign keys found between tables 'film' and 'language'")
                     // Both candidates named, and one of them spelled as the @reference that works.
                     .contains("film_language_id_fkey")
                     .contains("film_original_language_id_fkey")
@@ -5571,8 +5571,9 @@ class GraphitronSchemaBuilderTest {
             }),
 
         ID_REFERENCE_FK_ON_TARGET_SIDE(
-            "[ID!] @nodeId reaching the node type against the FK's direction → refused naming the "
-                + "target-side FK, the other cause the single message spent",
+            "[ID!] @nodeId reaching the node type over the one FK the node's table declares → "
+                + "inferred as an output field's would be, the decoded keys bound on customer inside "
+                + "a correlated EXISTS over customer_address_id_fkey",
             """
             type Customer implements Node @table(name: "customer") @node { id: ID! @nodeId }
             type Address @table(name: "address") { district: String }
@@ -5582,15 +5583,25 @@ class GraphitronSchemaBuilderTest {
             type Query { addresses(in: AddressFilterInput): [Address!]! }
             """,
             schema -> {
-                var uf = (UnclassifiedField) schema.field("Query", "addresses");
-                assertThat(uf.reason()).contains("1 input field could not be resolved");
-                assertThat(TestSchemaHelper.diagnosticMessages(schema))
-                    .contains("Input field 'AddressFilterInput.customerIds'")
-                    .contains("no foreign key found from table 'address' to 'customer'")
-                    .contains("auto-discovery searches that direction only")
-                    // The constraint the author writes to make this coordinate build.
-                    .contains("@reference(path: [{key: \"customer_address_id_fkey\"}])");
-            }),
+                var qf = (QueryField.QueryTableField) schema.field("Query", "addresses");
+                var gcf = (GeneratedConditionFilter) qf.filters().get(0);
+                // The key customer declares references address's own key, so no position of
+                // customer's key lands on address: the predicate binds remotely.
+                var remote = (BodyParam.RemoteColumnPredicate) gcf.bodyParams().get(0);
+                assertThat(remote.joinPath()).hasSize(1);
+                var hop = TestFixtures.fkHop(remote.joinPath().get(0));
+                assertThat(hop.targetTable().tableName()).isEqualToIgnoringCase("customer");
+                var pairs = TestFixtures.fkPairs(hop);
+                assertThat(pairs.sourceSideColumns()).extracting(c -> c.sqlName())
+                    .containsExactly("address_id");
+                assertThat(pairs.targetSideColumns()).extracting(c -> c.sqlName())
+                    .containsExactly("address_id");
+                var inner = (BodyParam.In) remote.inner();
+                assertThat(inner.name()).isEqualTo("customerIds");
+                assertThat(inner.column().sqlName()).isEqualTo("customer_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedReferenceField.class); }
+        },
 
         ID_REFERENCE_MIXED_DIRECTIVES_CANONICAL_WINS(
             "[ID!] @nodeId + @field(name:) → canonical branch wins, @field(name:) value ignored",

@@ -367,6 +367,29 @@ class TranslatedFkTargetFilterExecutionTest {
     }
 
     @Test
+    void reverseHop_inferred_readsTheRowsTheWrittenKeyReads() {
+        // No path written: the one key between address and customer is inferred whichever table
+        // declares it, so the filter must narrow exactly as the written key does, the shared
+        // address once and the unoccupied one never.
+        String shared = NodeIdEncoder.encode("Customer", 1);
+        String sharing = NodeIdEncoder.encode("Customer", 4);
+        String alone = NodeIdEncoder.encode("Customer", 3);
+        Map<String, Object> data = execute("""
+            {
+              writtenShared: addressesByCustomerIds(customerIds: ["%1$s", "%2$s"]) { addressId }
+              inferredShared: addressesByCustomerIdsInferred(customerIds: ["%1$s", "%2$s"]) { addressId }
+              writtenAlone: addressesByCustomerIds(customerIds: ["%3$s"]) { addressId }
+              inferredAlone: addressesByCustomerIdsInferred(customerIds: ["%3$s"]) { addressId }
+            }
+            """.formatted(shared, sharing, alone));
+
+        assertThat(ints(data, "inferredShared", "addressId")).containsExactly(1)
+            .isEqualTo(ints(data, "writtenShared", "addressId"));
+        assertThat(ints(data, "inferredAlone", "addressId")).containsExactly(3)
+            .isEqualTo(ints(data, "writtenAlone", "addressId"));
+    }
+
+    @Test
     void malformedId_surfacesClientError() {
         // The authored filter decodes with throw-on-mismatch semantics: an unparseable id is a
         // client mistake, not a silently empty narrowing.

@@ -829,6 +829,9 @@ type Query {
     addressesByCustomerIds(customerIds: [ID!] @nodeId(typeName: "Customer") @reference(path: [
         {key: "customer_address_id_fkey"}
     ])): [Address!]!
+    # The same filter with no path written: the one key between address and customer is inferred,
+    # though customer declares it, and binds the same way.
+    addressesByCustomerIdsInferred(customerIds: [ID!] @nodeId(typeName: "Customer")): [Address!]!
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
     # filter input has no explicit @condition on its fields. The enclosingOverride flag

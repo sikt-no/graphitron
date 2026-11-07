@@ -120,6 +120,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The position columns and the `code_type` dictionary, both stating a signature's parse. Ends at
   "`code_type` and `code_type_element` are gone".
 * `CodeCapture` sweeping by instant beside the class-file sweep. Ends at "A single changed class re-reads only itself, swept at the class file".
+* An argument's or input field's `@nodeId` route in `NodeIdLeafResolver`'s walk and in the store's
+  inferred and written paths. Ends at "The classifier reads its routes from the store, the @nodeId filter first".
 * `graphitron_node_type`, `graphitron_node` and `NodeDeclaration.isNodeType`, each saying what a
   node is. Ends at "A node is what the manual says takes effect".
 * `graphitron_node_id_instruction` with its private route beside `graphitron_occurrence_node_id`. Ends at "Encode and decode read the target type, and the old node-id relations go".
@@ -1089,6 +1091,13 @@ branch is G's (Alf, 2026-11-05).
   decode census `NodeIdDecodeCoverageFacts` reads `graphitron_occurrence_node_id`; the encode for
   output fields is an emitter of its own, written when the store emits output selections. Then
   `graphitron_node_id_instruction` and the `graphitron_node_id_decode_*` relations go.
+  * **The classifier reads its routes from the store, the @nodeId filter first** `open`, F's.
+    The classifier (`GraphitronSchemaBuilder.buildBundle`, `BuildContext`) takes an optional store
+    handle, `TestSchemaHelper` capturing a store per distinct schema text as `emittedSchema` is
+    cached, and the `@nodeId` filter's route becomes a store query owned by the resolver, so
+    `NodeIdLeafResolver`'s `selectRoute`, `resolveFkJoinPath`, `walkExplicit` and `landKeyColumns`
+    go. Meanwhile the walk's auto-discovery counts the one key in both directions, as the store
+    does, an interim (Alf, 2026-11-07).
 * **An overload accepts a member by two spellings** `open`. Its parameter is the member's own
   record or one of `Object`, `Record`, `TableRecord<?>` and `UpdatableRecord<?>`, most specific
   first.
@@ -2076,7 +2085,8 @@ field: TypeName." An argument's or input field's path to the node's table rides 
 in either direction, as an output field's does; none or several is `NODE_ID_LANDS_ON_TABLE`. Over a
 key the node's table declares, the node's key lands on no column of the slot's table, so the decode
 is a correlated `EXISTS` and `NODE_ID_LANDING_TYPE_DISAGREES` has no pair to judge. The generator's
-`@nodeId` filter reads its route from the store rather than the walk: "We're currently moving the
+`@nodeId` filter is to read its route from the store rather than the walk, the walk counting both
+directions meanwhile: "We're currently moving the
 generator from the walk to the store, a potential solution is to move the @nodeId handling to the
 store early."
 
