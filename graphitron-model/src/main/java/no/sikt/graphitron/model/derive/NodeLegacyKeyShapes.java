@@ -12,7 +12,8 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACY_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACY_KEY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -234,13 +235,19 @@ public final class NodeLegacyKeyShapes {
         return out;
     }
 
-    /** Each type's {@code @node(legacyKeyColumns:)} spellings, in the order written. */
+    /**
+     * Each type's {@code @node(legacyKeyColumns:)} spellings, in the order written, off the type's
+     * first {@code @node} application.
+     */
     private static Map<String, List<String>> writtenLists(DSLContext dsl, String graphName) {
-        var e = GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY;
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var e = GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY;
         var out = new LinkedHashMap<String, List<String>>();
-        dsl.select(e.TYPE_NAME, e.COLUMN_REF).from(e)
-            .where(e.GRAPH_NAME.eq(graphName))
-            .orderBy(e.TYPE_NAME, e.POSITION)
+        dsl.select(a.COORDINATE, e.COLUMN_REF).from(a)
+            .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
+                e.APPLICATION_LINE.eq(a.SOURCE_LINE), e.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(graphName), a.DIRECTIVE_NAME.eq("node"), a.ORDINAL.eq(0))
+            .orderBy(a.COORDINATE, e.POSITION)
             .forEach(r -> out.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(r.value2()));
         return out;
     }

@@ -11,14 +11,15 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 
 /**
  * Catalog GraphQL-type-name completions for any coordinate the
  * {@link LspVocabulary} overlay declares as a
  * {@link Behavior.NodeTypeBinding}: every GraphQL type in this graph whose SDL
- * carries {@code @node}, which is one row of {@code graphitron_node_entry} each,
+ * carries {@code @node}, read off its first {@code @node} application,
  * plus every polymorphic container with at least one table-bound node-type
  * member, which a {@code @service} slot may name to take the id of any
  * implementation.
@@ -54,11 +55,17 @@ public final class NodeTypeCompletions {
             return List.of();
         }
         var items = new ArrayList<CompletionItem>();
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var n = GRAPHITRON_AST_NODE_ENTRY;
         var nodes = store.dsl()
-            .select(GRAPHITRON_NODE_ENTRY.TYPE_NAME, GRAPHITRON_NODE_ENTRY.TYPE_ID)
-            .from(GRAPHITRON_NODE_ENTRY)
-            .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(GRAPHITRON_NODE_ENTRY.TYPE_NAME)
+            .select(a.COORDINATE, n.TYPE_ID)
+            .from(a)
+            .leftJoin(n).on(n.GRAPH_NAME.eq(a.GRAPH_NAME), n.SOURCE_NAME.eq(a.SOURCE_NAME),
+                n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(store.graphName()))
+            .and(a.DIRECTIVE_NAME.eq("node"))
+            .and(a.ORDINAL.eq(0))
+            .orderBy(a.COORDINATE)
             .fetch();
         for (var row : nodes) {
             String typeId = row.value2();

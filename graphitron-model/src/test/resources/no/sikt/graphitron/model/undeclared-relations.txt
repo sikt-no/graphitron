@@ -8,8 +8,6 @@ graphitron_field_binding_entry
 graphitron_field_node_id_entry
 graphitron_field_reference_entry
 graphitron_method_reference_entry
-graphitron_node_entry
-graphitron_node_keycolumn_entry
 graphitron_node_type
 graphitron_reference_for_entry
 graphitron_routine_entry

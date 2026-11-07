@@ -58,7 +58,7 @@ public sealed interface Behavior extends Trigger {
     /**
      * {@code @nodeId(typeName:)} binding: completes against the set of
      * GraphQL types that carry {@code @node} (read from the store's
-     * {@code graphitron_node_entry}), and validates that the named type is
+     * {@code @node} applications), and validates that the named type is
      * one of them. Sibling-by-keyset to
      * {@link CatalogColumnBinding} and {@link CatalogTableBinding}:
      * same dispatch shape, different keyset.

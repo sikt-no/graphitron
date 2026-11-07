@@ -84,7 +84,6 @@ class RelationRegistrationGateTest {
             "graphitron_reference_for_entry", "graphitron_argument_reference_for_entry",
             "graphitron_service_entry", "graphitron_connection_entry", "graphitron_facet_entry",
             "graphitron_default_order_entry", "graphitron_mutation_entry",
-            "graphitron_node_entry", "graphitron_node_keycolumn_entry",
             "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry",
             "graphitron_routine_entry", "graphitron_outbox_entry",
             "graphitron_undecoded_argument_entry",
@@ -291,11 +290,9 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
         // The legacy key shape each type id answers to and the rules a stated one breaks, both
         // written by one stage; GraphitronSchema has no word for either, and the node-legacy-key
-        // fact documents pin them. The anchored legacy list beside them is the author's spelling,
-        // which the walk never reads.
+        // fact documents pin them.
         registrations.put("graphitron_node_legacy_keycolumn", Arm.DERIVED);
         registrations.put("graphitron_node_legacy_key_defect", Arm.DERIVED);
-        registrations.put("graphitron_node_legacykeycolumn_entry", Arm.UNSHADOWED);
         registrations.put("graphitron_code_reference_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site_rule", Arm.DERIVED);

@@ -8,7 +8,8 @@ import no.sikt.graphitron.model.tables.SqlColumn;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -38,7 +39,7 @@ import static org.jooq.impl.DSL.val;
  * the one rule here worth stating twice. An author who pinned columns and misspelled one has made
  * an error, and quietly encoding ids against the primary key instead would publish a wire format
  * they never asked for and would do it silently. The anti-join against
- * {@code graphitron_node_keycolumn_entry} is where that author is told. The same all-or-nothing
+ * {@code graphitron_ast_node_keycolumn_entry} is where that author is told. The same all-or-nothing
  * applies within a tier: a key list with a hole would decode values into the wrong positions, so a
  * single unresolved position drops the whole tuple.
  *
@@ -68,7 +69,8 @@ public final class NodeKeyColumns {
      * yield nothing at all.
      */
     private static void pinned(DSLContext dsl, String graphName) {
-        var e = GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var e = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
         var b = GRAPHITRON_TABLETYPE;
         var c = SQL_COLUMN;
         dsl.insertInto(GRAPHITRON_NODE_KEYCOLUMN)
@@ -78,18 +80,22 @@ public final class NodeKeyColumns {
                 GRAPHITRON_NODE_KEYCOLUMN.TABLE_SOURCE_NAME,
                 GRAPHITRON_NODE_KEYCOLUMN.TABLE_SCHEMA, GRAPHITRON_NODE_KEYCOLUMN.TABLE_NAME)
             .select(dsl
-                .select(e.GRAPH_NAME, e.TYPE_NAME, e.POSITION, c.COLUMN_NAME, val("SDL_PINNED"),
+                .select(a.GRAPH_NAME, a.COORDINATE, e.POSITION, c.COLUMN_NAME, val("SDL_PINNED"),
                     b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
-                .from(e)
+                .from(a)
+                .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    e.APPLICATION_LINE.eq(a.SOURCE_LINE), e.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
                 .join(GRAPHITRON_NODE)
-                .on(GRAPHITRON_NODE.GRAPH_NAME.eq(e.GRAPH_NAME),
-                    GRAPHITRON_NODE.TYPE_NAME.eq(e.TYPE_NAME))
-                .join(b).on(b.GRAPH_NAME.eq(e.GRAPH_NAME), b.TYPE_NAME.eq(e.TYPE_NAME))
+                .on(GRAPHITRON_NODE.GRAPH_NAME.eq(a.GRAPH_NAME),
+                    GRAPHITRON_NODE.TYPE_NAME.eq(a.COORDINATE))
+                .join(b).on(b.GRAPH_NAME.eq(a.GRAPH_NAME), b.TYPE_NAME.eq(a.COORDINATE))
                 .join(c).on(c.SOURCE_NAME.eq(b.TABLE_SOURCE_NAME),
                     c.TABLE_SCHEMA.eq(b.TABLE_SCHEMA), c.TABLE_NAME.eq(b.TABLE_NAME))
                 .and(folds(c, e.COLUMN_REF))
-                .where(e.GRAPH_NAME.eq(graphName))
-                .and(everyPositionResolves(e.GRAPH_NAME, e.TYPE_NAME)))
+                .where(a.GRAPH_NAME.eq(graphName))
+                .and(a.DIRECTIVE_NAME.eq("node"))
+                .and(a.ORDINAL.eq(0))
+                .and(everyPositionResolves(a.GRAPH_NAME, a.COORDINATE)))
             .execute();
     }
 
@@ -188,11 +194,18 @@ public final class NodeKeyColumns {
             .and(folds(c, written))).eq(val(1));
     }
 
-    /** True where the type pinned no key columns at all, which is what lets a later tier apply. */
+    /**
+     * True where the type's first {@code @node} application pinned no key columns at all, which is
+     * what lets a later tier apply.
+     */
     private static Condition pinnedNothing(Field<String> graph, Field<String> type) {
-        var e = GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-        return notExists(selectOne().from(e)
-            .where(e.GRAPH_NAME.eq(graph), e.TYPE_NAME.eq(type)));
+        var a = GRAPHQL_DIRECTIVE_APPLICATION.as("unpinned_application");
+        var e = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY.as("unpinned_probe");
+        return notExists(selectOne().from(a)
+            .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
+                e.APPLICATION_LINE.eq(a.SOURCE_LINE), e.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(graph), a.COORDINATE.eq(type), a.DIRECTIVE_NAME.eq("node"),
+                a.ORDINAL.eq(0)));
     }
 
     /**
@@ -230,14 +243,21 @@ public final class NodeKeyColumns {
      * why the join it guards needs no uniqueness test of its own.
      */
     private static Condition everyPositionResolves(Field<String> graph, Field<String> type) {
-        var e = GRAPHITRON_NODE_KEYCOLUMN_ENTRY.as("pinned_probe");
+        var a = GRAPHQL_DIRECTIVE_APPLICATION.as("pinned_application");
+        var e = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY.as("pinned_probe");
         var b = GRAPHITRON_TABLETYPE.as("binding_probe");
-        var written = field(selectCount().from(e)
-            .where(e.GRAPH_NAME.eq(graph), e.TYPE_NAME.eq(type)));
+        var written = field(selectCount().from(a)
+            .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
+                e.APPLICATION_LINE.eq(a.SOURCE_LINE), e.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(graph), a.COORDINATE.eq(type), a.DIRECTIVE_NAME.eq("node"),
+                a.ORDINAL.eq(0)));
         var resolved = field(selectCount()
-            .from(e)
-            .join(b).on(b.GRAPH_NAME.eq(e.GRAPH_NAME), b.TYPE_NAME.eq(e.TYPE_NAME))
-            .where(e.GRAPH_NAME.eq(graph), e.TYPE_NAME.eq(type))
+            .from(a)
+            .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
+                e.APPLICATION_LINE.eq(a.SOURCE_LINE), e.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
+            .join(b).on(b.GRAPH_NAME.eq(a.GRAPH_NAME), b.TYPE_NAME.eq(a.COORDINATE))
+            .where(a.GRAPH_NAME.eq(graph), a.COORDINATE.eq(type), a.DIRECTIVE_NAME.eq("node"),
+                a.ORDINAL.eq(0))
             .and(resolvesUniquely(b, e.COLUMN_REF)));
         return written.eq(resolved);
     }

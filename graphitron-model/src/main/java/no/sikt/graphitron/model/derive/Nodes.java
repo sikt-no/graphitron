@@ -3,7 +3,8 @@ package no.sikt.graphitron.model.derive;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
@@ -25,7 +26,7 @@ import static org.jooq.impl.DSL.val;
  * publishes node metadata the catalog could use. Either way it must be table bound
  * first: {@code @node} only takes effect on a type that also carries {@code @table}, so both arms
  * read {@code graphitron_tabletype} and a {@code @node} on an unbound type stays in
- * {@code graphitron_node_entry} and does not reach here. Which types those are is the anti-join between
+ * {@code graphql_directive_application} and does not reach here. Which types those are is the anti-join between
  * the two, and that is where an author is told.
  *
  * <p>The type id is resolved rather than carried as written, in three tiers tried in order: what the
@@ -53,14 +54,16 @@ public final class Nodes {
             .where(GRAPHITRON_NODE.GRAPH_NAME.eq(graphName)).execute();
 
         var tt = GRAPHITRON_TABLETYPE;
-        var n = GRAPHITRON_NODE_ENTRY;
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var n = GRAPHITRON_AST_NODE_ENTRY;
         var m = SQL_NODE_METADATA;
         var i = GRAPHQL_POLY_MEMBER;
 
         // A node is a table-bound type that either says so or is published as one.
         var declared = dsl.select(tt.GRAPH_NAME, tt.TYPE_NAME)
             .from(tt)
-            .join(n).on(n.GRAPH_NAME.eq(tt.GRAPH_NAME), n.TYPE_NAME.eq(tt.TYPE_NAME))
+            .join(a).on(a.GRAPH_NAME.eq(tt.GRAPH_NAME), a.COORDINATE.eq(tt.TYPE_NAME),
+                a.DIRECTIVE_NAME.eq("node"), a.ORDINAL.eq(0))
             .where(tt.GRAPH_NAME.eq(graphName));
         var published = dsl.select(tt.GRAPH_NAME, tt.TYPE_NAME)
             .from(tt)
@@ -74,11 +77,15 @@ public final class Nodes {
         var g = nodes.field(tt.GRAPH_NAME);
         var t = nodes.field(tt.TYPE_NAME);
 
-        // The three tiers, lowest precedence number winning; the last always answers.
+        // The three tiers, lowest precedence number winning; the last always answers. The declared
+        // one is the type's first @node application, which is the one a type answers to.
         var arms = dsl.select(g, t, n.TYPE_ID, val("SDL_DECLARED").as("origin"),
                 val(0).as("precedence"))
             .from(nodes)
-            .join(n).on(n.GRAPH_NAME.eq(g), n.TYPE_NAME.eq(t))
+            .join(a).on(a.GRAPH_NAME.eq(g), a.COORDINATE.eq(t), a.DIRECTIVE_NAME.eq("node"),
+                a.ORDINAL.eq(0))
+            .join(n).on(n.GRAPH_NAME.eq(a.GRAPH_NAME), n.SOURCE_NAME.eq(a.SOURCE_NAME),
+                n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
             .where(n.TYPE_ID.isNotNull())
             .unionAll(dsl.select(g, t, m.TYPE_ID, val("JOOQ_METADATA"), val(1))
                 .from(nodes)

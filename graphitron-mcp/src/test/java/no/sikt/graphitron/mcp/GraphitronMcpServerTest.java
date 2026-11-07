@@ -1283,6 +1283,32 @@ class GraphitronMcpServerTest {
             .doesNotContainKey("implementors");
     }
 
+    /** Two @node types, one naming its id and key, one bare, and a table type that is no node. */
+    private static final String NODE_SDL = """
+        interface Node { id: ID! }
+        type FilmCategory implements Node @table(name: "film_category")
+            @node(typeId: "FC", keyColumns: ["category_id", "film_id"]) { id: ID! }
+        type Actor implements Node @table(name: "actor") @node { id: ID! }
+        type Store @table(name: "store") { id: ID! }
+        type Query { categories: [FilmCategory!]! actors: [Actor!]! stores: [Store!]! }
+        """;
+
+    @RegisterExtension
+    static final StoreFixture.Shared NODES = StoreFixture.held().sharedSchema(NODE_SDL);
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsANodesWrittenTypeIdAndKeyColumnsInWrittenOrder() {
+        assertThat((Map<String, Object>) onlyType(NODES, "FilmCategory").get("node"))
+            .as("the id and the columns as written, in the order the id takes them")
+            .containsExactly(Map.entry("typeId", "FC"),
+                Map.entry("keyColumns", List.of("category_id", "film_id")));
+        assertThat((Map<String, Object>) onlyType(NODES, "Actor").get("node"))
+            .as("a bare @node is a node that wrote neither")
+            .isEmpty();
+        assertThat(onlyType(NODES, "Store")).doesNotContainKey("node");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void schemaNarrowsToOneTypeAndReportsAnUndeclaredNameAsNotFound() {

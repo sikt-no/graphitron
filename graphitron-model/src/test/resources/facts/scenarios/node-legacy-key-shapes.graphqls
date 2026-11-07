@@ -41,17 +41,18 @@ extend schema @expectEquals(relation: "graphitron_node_legacy_keycolumn", rows: 
   R,                1,        rental_date,  ,                 SDL_PINNED,    rental
   """)
 
-# The written halves keep the author's spellings; the resolved half above folds them.
-extend schema @expectEquals(relation: "graphitron_node_legacykeycolumn_entry", rows: """
-  type_name,        position, column_ref
-  FilmCategoryItem, 0,        film_id
-  FilmCategoryItem, 1,        last_update
-  FilmCategoryItem, 2,        category_id
-  InventoryItem,    0,        store_id
-  InventoryItem,    1,        inventory_id
-  InventoryItem,    2,        last_update
-  RentalItem,       0,        RENTAL_ID
-  RentalItem,       1,        rental_date
+# The written halves keep the author's spellings; the resolved half above folds them. Each element
+# is keyed where it was written, and its index within its own list rides along.
+extend schema @expectEquals(relation: "graphitron_ast_node_legacykeycolumn_entry", rows: """
+  position, column_ref
+  0,        store_id
+  1,        inventory_id
+  2,        last_update
+  0,        film_id
+  1,        last_update
+  2,        category_id
+  0,        RENTAL_ID
+  1,        rental_date
   """)
 
 extend schema @assertEmpty(relation: "graphitron_node_legacy_key_defect")

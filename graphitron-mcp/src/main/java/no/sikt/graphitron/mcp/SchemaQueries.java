@@ -3,6 +3,7 @@ package no.sikt.graphitron.mcp;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.derive.AuthoredClaim;
+import no.sikt.graphitron.model.tables.GraphqlDirectiveApplication;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 import org.jooq.Field;
@@ -28,8 +29,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -609,21 +611,28 @@ final class SchemaQueries {
 
     /** The type's {@code @node} identity, with its key columns in the order the author wrote them. */
     private static Field<Optional<Node>> node() {
+        var a = GRAPHQL_DIRECTIVE_APPLICATION.as("node_application");
+        var n = GRAPHITRON_AST_NODE_ENTRY;
         return multiset(
-            select(GRAPHITRON_NODE_ENTRY.TYPE_ID, nodeKeyColumns())
-                .from(GRAPHITRON_NODE_ENTRY)
-                .where(ofType(GRAPHITRON_NODE_ENTRY.GRAPH_NAME, GRAPHITRON_NODE_ENTRY.TYPE_NAME)))
+            select(n.TYPE_ID, nodeKeyColumns(a))
+                .from(a)
+                .leftJoin(n).on(n.GRAPH_NAME.eq(a.GRAPH_NAME), n.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(ofType(a.GRAPH_NAME, a.COORDINATE))
+                .and(a.DIRECTIVE_NAME.eq("node"))
+                .and(a.ORDINAL.eq(0)))
             .convertFrom(r -> r.map(Records.mapping(Node::new)).stream().findFirst());
     }
 
-    /** One {@code @node}'s authored key columns, correlated to the node row being projected. */
-    private static Field<List<String>> nodeKeyColumns() {
+    /** One {@code @node}'s authored key columns, correlated to the application being projected. */
+    private static Field<List<String>> nodeKeyColumns(GraphqlDirectiveApplication a) {
+        var k = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
         return multiset(
-            select(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF)
-                .from(GRAPHITRON_NODE_KEYCOLUMN_ENTRY)
-                .where(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME.eq(GRAPHITRON_NODE_ENTRY.GRAPH_NAME)
-                    .and(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME.eq(GRAPHITRON_NODE_ENTRY.TYPE_NAME)))
-                .orderBy(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION.asc()))
+            select(k.COLUMN_REF)
+                .from(k)
+                .where(k.GRAPH_NAME.eq(a.GRAPH_NAME), k.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    k.APPLICATION_LINE.eq(a.SOURCE_LINE), k.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
+                .orderBy(k.POSITION.asc()))
             .convertFrom(r -> r.map(Record1::value1));
     }
 

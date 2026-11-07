@@ -41,7 +41,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -990,10 +990,12 @@ final class DiagnosticFacts {
     private static org.jooq.Field<List<String>> nodeTypeBindingArm(
             StoreHandle store, java.util.Set<String> asked) {
         var m = no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-        return multiset(selectDistinct(GRAPHITRON_NODE_ENTRY.TYPE_NAME)
-            .from(GRAPHITRON_NODE_ENTRY)
-            .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHITRON_NODE_ENTRY.TYPE_NAME.in(asked))
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        return multiset(selectDistinct(a.COORDINATE)
+            .from(a)
+            .where(a.GRAPH_NAME.eq(store.graphName()))
+            .and(a.DIRECTIVE_NAME.eq("node"))
+            .and(a.COORDINATE.in(asked))
             .union(selectDistinct(m.CONTAINER_NAME)
                 .from(m)
                 .where(m.GRAPH_NAME.eq(store.graphName()))

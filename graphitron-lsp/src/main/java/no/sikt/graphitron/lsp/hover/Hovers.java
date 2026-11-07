@@ -36,8 +36,9 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -210,15 +211,22 @@ public final class Hovers {
         // The declaration and its ordered key columns in one query. The left join keeps a @node
         // that named none, whose key-column side is absent rather than empty: the type-name and
         // catalog-primary-key fallbacks are derivations, and a hover reports what was written.
+        // The type's first @node application, which is the one a type answers to.
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var n = GRAPHITRON_AST_NODE_ENTRY;
+        var k = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
         var rows = store.dsl()
-            .select(GRAPHITRON_NODE_ENTRY.TYPE_ID, GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF)
-            .from(GRAPHITRON_NODE_ENTRY)
-            .leftJoin(GRAPHITRON_NODE_KEYCOLUMN_ENTRY)
-            .on(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME.eq(GRAPHITRON_NODE_ENTRY.GRAPH_NAME))
-            .and(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME.eq(GRAPHITRON_NODE_ENTRY.TYPE_NAME))
-            .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHITRON_NODE_ENTRY.TYPE_NAME.eq(typeName))
-            .orderBy(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION)
+            .select(n.TYPE_ID, k.COLUMN_REF)
+            .from(a)
+            .leftJoin(n).on(n.GRAPH_NAME.eq(a.GRAPH_NAME), n.SOURCE_NAME.eq(a.SOURCE_NAME),
+                n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+            .leftJoin(k).on(k.GRAPH_NAME.eq(a.GRAPH_NAME), k.SOURCE_NAME.eq(a.SOURCE_NAME),
+                k.APPLICATION_LINE.eq(a.SOURCE_LINE), k.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(store.graphName()))
+            .and(a.COORDINATE.eq(typeName))
+            .and(a.DIRECTIVE_NAME.eq("node"))
+            .and(a.ORDINAL.eq(0))
+            .orderBy(k.POSITION)
             .fetch();
         if (rows.isEmpty()) return Optional.empty();
         var keyColumns = rows.stream().map(Record2::value2).filter(Objects::nonNull).toList();

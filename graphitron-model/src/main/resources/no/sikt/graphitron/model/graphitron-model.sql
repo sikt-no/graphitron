@@ -3719,68 +3719,6 @@ COMMENT ON COLUMN graphitron_mutation_entry.table_ref_namespace_part_upper IS 't
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_mutation_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
-CREATE TABLE graphitron_node_entry (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL,
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  type_id          VARCHAR,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_node_entry IS '@node on an object type, as the author wrote it. The written half of the pair whose resolved half is graphitron_node: this records the directive wherever it appears and asks nothing of it, that holds the types the directive took effect on. A @node on a type carrying no @table is a row here and no row there, and the anti-join between the two is where an author learns the directive did nothing. Everything the directive leaves unstated is settled on the resolved side and not here: the type-name fallback for the wire id, the catalog key for the columns, and the precedence between what an author declared and what a generated class publishes.';
-COMMENT ON COLUMN graphitron_node_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_node_entry.type_name IS 'the type the directive was written on, which is a type that exists and nothing further. Keyed to the type coordinate and deliberately not to graphitron_node: a decode that could hold only the types the directive took effect on could not record the ones where it did not, and those are exactly the rows worth reporting';
-COMMENT ON COLUMN graphitron_node_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
-COMMENT ON COLUMN graphitron_node_entry.declaration_line IS 'line of the contributing declaration site, keyed with source_name';
-COMMENT ON COLUMN graphitron_node_entry.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphitron_node_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_node_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_node_entry.type_id IS 'the typeId as written, null where the author wrote none. Null means unstated rather than unknown: what such a node answers to is resolved on graphitron_node, which is never null because its last tier is the type''s own name';
-COMMENT ON COLUMN graphitron_node_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a type that still stands; a type the author removed takes its rows with it through the element reference above, so the two together are what makes this relation total without a pass emptying it first';
-
-CREATE TABLE graphitron_node_keycolumn_entry (
-  graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  position   INT     NOT NULL,
-  column_ref VARCHAR NOT NULL,
-  touched_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, position),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node_entry (graph_name, type_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_node_keycolumn_entry IS 'An ordered keyColumns entry of an @node, as the author wrote it. The written half of the pair whose resolved half is graphitron_node_keycolumn: this holds a spelling and asks nothing of it, that holds a column the catalog has. A spelling naming no column of the bound table is a row here and no row there, and the anti-join between the two is the only place an author finds out; there is no other relation that records the mistake. Keyed by the graph and the type rather than by the node, deliberately, because an author may pin key columns on a type that turns out not to be a node at all and a decode that could not hold that row could not report it either.';
-COMMENT ON COLUMN graphitron_node_keycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_node_keycolumn_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_node_keycolumn_entry.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_node_keycolumn_entry.column_ref IS 'the key column as written, folded against nothing and resolved against nothing. Either the catalog''s own spelling or the generated field name will resolve, both being names a consumer sees, but which one this is is not asked here and no fold sits beside it: the crossing happens once, where the column is resolved, and a fold on this side would be a second one';
-COMMENT ON COLUMN graphitron_node_keycolumn_entry.touched_at IS 'when the reading that derived this row ran, on the parent relation''s terms. A list the author shortened loses its tail here and nowhere else: the elements it dropped carry the previous instant and the parent row does not, the application still standing';
-
-CREATE TABLE graphitron_node_legacykeycolumn_entry (
-  graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  position   INT     NOT NULL,
-  column_ref VARCHAR NOT NULL,
-  touched_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, position),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node_entry (graph_name, type_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_node_legacykeycolumn_entry IS 'One ordered legacyKeyColumns entry of an @node, as the author wrote it. For example @node(keyColumns: ["rental_id"], legacyKeyColumns: ["customer_id", "rental_id", "rental_date"]) gives three rows, rental_id at position 1.';
-COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.position IS '0-based position within the owning list, which is the position the value takes inside an id issued under the old key';
-COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.column_ref IS 'the column as written, folded against nothing and resolved against nothing, on graphitron_node_keycolumn_entry''s terms';
-COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.touched_at IS 'when the reading that derived this row ran, on the parent relation''s terms. A list the author shortened loses its tail here and nowhere else';
-
 CREATE TABLE graphitron_field_node_id_entry (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -6180,15 +6118,15 @@ CREATE TABLE graphitron_node (
 );
 COMMENT ON TABLE graphitron_node IS 'Which of a graph''s types are nodes, with the wire type id each answers to: one row per node type, from the authored population and the published one alike. For example a Customer carrying @node over @table draws a row, a type merely implementing Node over a table whose class publishes __NODE_TYPE_ID draws one beside it, and a @node on a type with no @table draws none.';
 COMMENT ON COLUMN graphitron_node.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_node.type_name IS 'the type that is a node. The foreign key is into graphitron_tabletype rather than into the type coordinate, and that is the relation''s central claim: @node only takes effect on a type that also carries @table, so a node is a table-bound type before it is anything else and one that is not table bound cannot be a row here. A @node written on a type with no binding is a row in graphitron_node_entry and none here, and the anti-join between the two is where an author is told so. Cascading on delete, the dependency being existential rather than merely referential: a type that stops resolving to a table stops being a node, and the two are rewritten in one pass by the same gatherer';
+COMMENT ON COLUMN graphitron_node.type_name IS 'the type that is a node. The foreign key is into graphitron_tabletype rather than into the type coordinate, and that is the relation''s central claim: @node only takes effect on a type that also carries @table, so a node is a table-bound type before it is anything else and one that is not table bound cannot be a row here. A @node written on a type with no binding is a @node application in graphql_directive_application and no row here, and the anti-join between the two is where an author is told so. Cascading on delete, the dependency being existential rather than merely referential: a type that stops resolving to a table stops being a node, and the two are rewritten in one pass by the same gatherer';
 COMMENT ON COLUMN graphitron_node.type_id IS 'the wire type id this node answers to, resolved rather than as written: what the author declared where they declared one, what the backing class publishes where they did not, and the type''s own name where neither says. Never null, the last of those three always answering, so a reader encoding an id needs no fallback of its own';
 COMMENT ON COLUMN graphitron_node.type_id_origin IS 'which of the three answered, in the order they are tried: SDL_DECLARED from @node(typeId:), JOOQ_METADATA from the backing class''s __NODE_TYPE_ID, TYPE_NAME from the type itself. Carried because a diagnostic that says an id collides has to say where each came from, and because the tiers are a precedence a reader must not re-derive. The key columns'' own origin is a separate column on a separate relation, the two axes being independent: an author may declare the id and leave the columns to the catalog, or the reverse';
 
 CREATE VIEW graphitron_node_type (graph_name, type_name) AS
-SELECT graph_name, type_name FROM graphitron_node_entry
+SELECT graph_name, coordinate FROM graphql_directive_application WHERE directive_name = 'node'
  UNION
 SELECT graph_name, type_name FROM graphitron_node;
-COMMENT ON VIEW graphitron_node_type IS 'Which of a graph''s types are node types: the union of the authored @node population and the resolved one. The store''s answer to the question NodeDeclaration.isNodeType answers live, and the relation every reader of nodehood joins instead of restating the rule. A declaration-level answer, matching that predicate: @node without implements Node still reads as a node here, and rejecting that shape is the classifier''s job rather than this relation''s, since a membership relation that silently dropped a declared node would leave a detection with nothing to detect. The predicate''s declared-wins short-circuit needs no transcription: a UNION dedupes, so precedence dissolves along with the provenance column that would have asked for it, and a reader wanting to know which rule answered reads the arm, both arms being residents in their own right. Both arms are captured relations, which is this view''s whole cost argument: graphitron_node''s published arm computes the inferred conjunction at capture, so reading the derivation that restates it would re-evaluate a nodehood chain once per naming of this relation, where a captured table counts once and truncates the tree for every rule above it. Its declared arm is the entry relation intersected with the table binding, so the union absorbs it and the entry arm above is what remains.';
+COMMENT ON VIEW graphitron_node_type IS 'Which of a graph''s types are node types: the union of the authored @node population and the resolved one. The store''s answer to the question NodeDeclaration.isNodeType answers live, and the relation every reader of nodehood joins instead of restating the rule. A declaration-level answer, matching that predicate: @node without implements Node still reads as a node here, and rejecting that shape is the classifier''s job rather than this relation''s, since a membership relation that silently dropped a declared node would leave a detection with nothing to detect. The predicate''s declared-wins short-circuit needs no transcription: a UNION dedupes, so precedence dissolves along with the provenance column that would have asked for it, and a reader wanting to know which rule answered reads the arm, both arms being residents in their own right. Both arms are captured relations, which is this view''s whole cost argument: graphitron_node''s published arm computes the inferred conjunction at capture, so reading the derivation that restates it would re-evaluate a nodehood chain once per naming of this relation, where a captured table counts once and truncates the tree for every rule above it. Its declared arm is the @node applications intersected with the table binding, so the union absorbs it and the application arm above is what remains.';
 -- COMMENT ON COLUMN graphitron_node_type.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
 -- COMMENT ON COLUMN graphitron_node_type.type_name IS 'the node type; keyed with the graph, one row per node type however many arms answered for it';
 
@@ -6217,7 +6155,7 @@ COMMENT ON TABLE graphitron_node_keycolumn IS 'A node type''s key columns, in ke
 COMMENT ON COLUMN graphitron_node_keycolumn.graph_name IS 'the owning graph''s partition, carried from the node whose key this is';
 COMMENT ON COLUMN graphitron_node_keycolumn.type_name IS 'the node type this column is part of the identity of. The foreign key is into graphitron_node, so a type that is not a node has no key columns here however well its table is keyed: the two questions are asked in that order and only one of them is about the catalog';
 COMMENT ON COLUMN graphitron_node_keycolumn.position IS 'the column''s place in the key tuple, numbered from zero in the order ids are built and read. The order is the whole reason this is a relation of its own rather than a list on the node: an id encoded against one order and decoded against another finds the wrong row rather than failing';
-COMMENT ON COLUMN graphitron_node_keycolumn.column_name IS 'the catalog column, spelled as the catalog spells it and not as whoever named it did. A pinned keyColumns entry and a generated class''s constant are both authored spellings that meet a catalog name here, so both are folded to resolve and neither spelling survives into this column; what was written stays in graphitron_node_keycolumn_entry and in sql_node_key_column respectively';
+COMMENT ON COLUMN graphitron_node_keycolumn.column_name IS 'the catalog column, spelled as the catalog spells it and not as whoever named it did. A pinned keyColumns entry and a generated class''s constant are both authored spellings that meet a catalog name here, so both are folded to resolve and neither spelling survives into this column; what was written stays in graphitron_ast_node_keycolumn_entry and in sql_node_key_column respectively';
 COMMENT ON COLUMN graphitron_node_keycolumn.column_origin IS 'which of the three populations answered: SDL_PINNED from @node(keyColumns:), JOOQ_METADATA from the backing class''s __NODE_KEY_COLUMNS, CATALOG_PRIMARY_KEY from the bound table''s own key. Repeated on every position rather than held once per type, the tier being uniform across a key tuple by construction: one tier answers for the whole list or none does, so the repetition is a functional dependency inside a derived relation and not a second grain';
 COMMENT ON COLUMN graphitron_node_keycolumn.column_name_upper IS 'the case fold of the column, stored so a reader matching an authored spelling against it compares two stored values and an index can serve. Minted here rather than left to each reader because this is where an authored name meets a catalog one and the crossing happens once: before this relation the answer was a spelling with nowhere to reach, so every consumer folded at its own join. It duplicates sql_column''s own fold of the same value, deliberately, the alternative being a join per reader for a column this relation already carries';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_source_name IS 'the catalog source declaring the table this column belongs to. Carried, with the schema and table beside it, so the row can reference both the type''s binding and the column itself: without them the relation could name a column of some other table and nothing would say so';
@@ -12807,13 +12745,13 @@ UNION ALL
 -- is a root before it is anything else.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
-  FROM graphitron_node_entry n
- WHERE n.source_line IS NOT NULL
+  FROM graphql_directive_application n
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
    AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
-                    WHERE i.graph_name = n.graph_name AND i.type_name = n.type_name
+                    WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
                       AND i.interface_name = 'Node')
    AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
 UNION ALL
 -- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
 -- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
@@ -12821,33 +12759,36 @@ UNION ALL
 -- is both defects, each its own decision for the author.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR)
-  FROM graphitron_node_entry n
- WHERE n.source_line IS NOT NULL
+  FROM graphql_directive_application n
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
    AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry t
-                    WHERE t.graph_name = n.graph_name AND t.type_name = n.type_name)
+                    WHERE t.graph_name = n.graph_name AND t.type_name = n.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
 UNION ALL
 -- A @node(keyColumns:) naming a column the bound table cannot answer to with exactly one column,
 -- folded the way NodeKeyColumns folds: against the SQL name and the generated field name alike. One
 -- row per @node, naming the first spelling that fails in the order written; the pinned tier yields
 -- nothing for the whole list when any position fails, and the others are rows of
--- graphitron_node_keycolumn_entry under their own key rather than a list in this one. A type whose
--- @table did not resolve has no binding to judge against and is that defect instead.
+-- graphitron_ast_node_keycolumn_entry under their own key rather than a list in this one. A type
+-- whose @table did not resolve has no binding to judge against and is that defect instead.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref
-  FROM graphitron_node_entry n
-  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
-  JOIN graphitron_node_keycolumn_entry e
-    ON e.graph_name = n.graph_name AND e.type_name = n.type_name
- WHERE n.source_line IS NOT NULL
+  FROM graphql_directive_application n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
+  JOIN graphitron_ast_node_keycolumn_entry e
+    ON e.graph_name = n.graph_name AND e.source_name = n.source_name
+   AND e.application_line = n.source_line AND e.application_column = n.source_column
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
    AND (SELECT COUNT(*) FROM sql_column c
          WHERE c.source_name = b.table_source_name AND c.table_schema = b.table_schema
            AND c.table_name = b.table_name
            AND (c.column_name_upper = UPPER(e.column_ref)
                 OR c.jooq_name_upper = UPPER(e.column_ref))) <> 1
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry f
-                    WHERE f.graph_name = e.graph_name AND f.type_name = e.type_name
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_keycolumn_entry f
+                    WHERE f.graph_name = e.graph_name AND f.source_name = e.source_name
+                      AND f.application_line = e.application_line
+                      AND f.application_column = e.application_column
                       AND f.position < e.position
                       AND (SELECT COUNT(*) FROM sql_column c
                             WHERE c.source_name = b.table_source_name
@@ -12862,11 +12803,13 @@ UNION ALL
 -- NODE_METADATA_UNREADABLE. The detail is the table.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_KEY', b.table_name
-  FROM graphitron_node_entry n
-  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
- WHERE n.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry e
-                    WHERE e.graph_name = n.graph_name AND e.type_name = n.type_name)
+  FROM graphql_directive_application n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_keycolumn_entry e
+                    WHERE e.graph_name = n.graph_name AND e.source_name = n.source_name
+                      AND e.application_line = n.source_line
+                      AND e.application_column = n.source_column)
    AND NOT EXISTS (SELECT 1 FROM sql_node_metadata m
                     WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
                       AND m.table_name = b.table_name)
@@ -12968,9 +12911,10 @@ UNION ALL
 -- arm only places the verdict at the application the author edits.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column, d.code, d.detail
   FROM graphitron_node_legacy_key_defect d
-  JOIN graphitron_node_entry n ON n.graph_name = d.graph_name AND n.type_name = d.type_name
+  JOIN graphql_directive_application n
+    ON n.graph_name = d.graph_name AND n.coordinate = d.type_name
+   AND n.directive_name = 'node' AND n.ordinal = 0
  WHERE d.site = 'NODE'
-   AND n.source_line IS NOT NULL
 UNION ALL
 -- The same for a shape a table class states, and for a type id a shape cannot belong to because
 -- two tables or two current keys answer to it: reported at each type's @table, which every
@@ -17775,9 +17719,6 @@ INSERT INTO meta_grain VALUES
   ('node-legacy-key-position',
    'one position of the legacy key shape one wire type id answers to, in one graph',
    'graph_name, type_id, position', 'catalog'),
-  ('node-legacy-key-written-position',
-   'one position of one @node legacyKeyColumns list as an author wrote it, in one graph',
-   'graph_name, type_name, position', 'sdl'),
   ('node-legacy-key-defect',
    'one rule one table-bound type''s legacy key shape breaks, in one graph',
    'graph_name, type_name, code', 'catalog'),
@@ -19179,10 +19120,6 @@ INSERT INTO meta_relation VALUES
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',
    'Half of a node''s identity as a resolved fact, beside graphitron_node which carries the other. Three populations answer and one wins: what the author pinned, what the bound table''s generated class publishes, and the table''s own primary key. Standing on the nodehood anchor is what makes resolution possible at all. The relation this replaces reaches the pinned tier through a decode keyed by graph and type alone, so that tier had no table to resolve against and forwarded the authored spelling untouched; a node is table bound unambiguously by construction, so the table is in hand and the column is a reference rather than a name. Both authored tiers fold to resolve, against the column''s SQL name and its generated field name alike, and neither spelling survives into the row. A tier that applies and fails to resolve yields nothing rather than falling through: an author who pinned a column the table does not have has made an error, and encoding ids against the primary key instead would publish a wire format nobody asked for, silently. The same holds within a tier, a key list with a hole decoding values into the wrong positions. The bound table rides along in three columns so the row can reference both the type''s binding and the column, which together make a row naming another table''s column impossible. The order is why this is a relation rather than a list: an id encoded against one order and decoded against another finds the wrong row rather than failing.'),
-  ('graphitron_node_legacykeycolumn_entry', 'node-legacy-key-written-position', 'graphitron',
-   'One ordered legacyKeyColumns entry of an @node, as the author wrote it.',
-   'For example @node(keyColumns: ["rental_id"], legacyKeyColumns: ["customer_id", "rental_id", "rental_date"]) gives three rows, rental_id at position 1.',
-   'The written half of the pair whose resolved half is graphitron_node_legacy_keycolumn, beside graphitron_node_keycolumn_entry and anchored the same way. It holds a spelling and asks nothing of it, so a name the table lacks, a repeated name or a list that misses a current key column is still a row here, which is what lets the defect rules point at what the author wrote.'),
   ('graphitron_node_legacy_keycolumn', 'node-legacy-key-position', 'graphitron',
    'One position of the legacy key shape a wire type id answers to in a graph, resolved against the table the type id''s ids are rows of.',
    'For example type id RentalItem with keyColumns ["rental_id"] and legacyKeyColumns ["customer_id", "rental_id", "rental_date"] draws three rows, rental_id at position 1 with current position 0.',

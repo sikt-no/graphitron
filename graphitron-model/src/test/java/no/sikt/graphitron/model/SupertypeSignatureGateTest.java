@@ -265,8 +265,6 @@ class SupertypeSignatureGateTest {
         // roster together on the day that derivation lands.
         // @node's two list arguments, the current key and the legacy one, decoded as twins.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_ast_node_legacykeycolumn_entry"),
-        // Their coordinate-keyed copies, twins on the same terms.
-        Set.of("graphitron_node_keycolumn_entry", "graphitron_node_legacykeycolumn_entry"),
         // One decode and one resolution of it, and the payload is one column because a deprecation
         // carries one thing: the replacement hint. The three anchors this used to name were one
         // relation each for a directive, an argument of one, and a field of an input object, and

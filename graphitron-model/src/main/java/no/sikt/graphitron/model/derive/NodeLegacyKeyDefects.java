@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACY_KEY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
@@ -47,7 +47,7 @@ public final class NodeLegacyKeyDefects {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_NODE_LEGACY_KEY_DEFECT, GRAPHITRON_NODE_ENTRY, GRAPHITRON_TABLE_ENTRY,
+        GRAPHITRON_NODE_LEGACY_KEY_DEFECT, GRAPHQL_DIRECTIVE_APPLICATION, GRAPHITRON_TABLE_ENTRY,
         GRAPHITRON_TABLETYPE, SQL_NODE_LEGACY_KEY_UNREADABLE, SQL_COLUMN, INTENT_TYPE_DOMAIN);
 
     /** One type whose legacy key shape breaks a rule, with what its message needs. */
@@ -94,11 +94,12 @@ public final class NodeLegacyKeyDefects {
         var d = GRAPHITRON_NODE_LEGACY_KEY_DEFECT;
         var b = GRAPHITRON_TABLETYPE;
 
-        var n = GRAPHITRON_NODE_ENTRY;
+        var n = GRAPHQL_DIRECTIVE_APPLICATION;
         dsl.select(d.TYPE_NAME, d.CODE, d.DETAIL, n.SOURCE_NAME, n.SOURCE_LINE, n.SOURCE_COLUMN,
                 b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
             .from(d)
-            .join(n).on(n.GRAPH_NAME.eq(d.GRAPH_NAME), n.TYPE_NAME.eq(d.TYPE_NAME))
+            .join(n).on(n.GRAPH_NAME.eq(d.GRAPH_NAME), n.COORDINATE.eq(d.TYPE_NAME),
+                n.DIRECTIVE_NAME.eq("node"), n.ORDINAL.eq(0))
             .join(b).on(b.GRAPH_NAME.eq(d.GRAPH_NAME), b.TYPE_NAME.eq(d.TYPE_NAME))
             .where(d.GRAPH_NAME.eq(graphName), d.SITE.eq(inline("NODE")),
                 defectAt(d.GRAPH_NAME, n.SOURCE_NAME, n.SOURCE_LINE, n.SOURCE_COLUMN, d.CODE),

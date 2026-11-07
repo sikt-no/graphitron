@@ -14,12 +14,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
@@ -41,8 +35,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_E
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -120,12 +112,6 @@ public final class GraphitronAnchor {
         connections(dsl, graph, touchedAt);
         mutations(dsl, graph, touchedAt);
         services(dsl, graph, touchedAt);
-        // The node before its key columns, which reference it.
-        nodes(dsl, graph, touchedAt);
-        nodeKeyColumns(dsl, graph, touchedAt, "keyColumns", GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY,
-            GRAPHITRON_NODE_KEYCOLUMN_ENTRY);
-        nodeKeyColumns(dsl, graph, touchedAt, "legacyKeyColumns",
-            GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY, GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY);
         routines(dsl, graph, touchedAt);
         outboxes(dsl, graph, touchedAt);
         defaultOrders(dsl, graph, touchedAt);
@@ -145,8 +131,6 @@ public final class GraphitronAnchor {
             GRAPHITRON_SCALAR_TYPE_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_MUTATION_ENTRY,
             GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
-            GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY,
-            GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_OUTBOX_ENTRY,
             GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
 
@@ -428,94 +412,6 @@ public final class GraphitronAnchor {
             .execute();
     }
 
-
-    /**
-     * The type-identity a declaration claims: rank one of the {@code @node} applications, with the
-     * written type-id joined on from the decode.
-     *
-     * <p>A left join for the reason {@link #tables} takes one, and the decode agrees: both of
-     * {@code @node}'s arguments are optional, an author writing a bare {@code @node} is asking for
-     * the type's own name and the database's own key, and the entry writer produces a row for every
-     * application rather than only for those that wrote an argument. So the outer half never fires
-     * on a legal corpus and states the right thing where the entry stratum refused an application.
-     */
-    private static void nodes(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var c = claimed(dsl, graph, "node");
-        var e = GRAPHITRON_AST_NODE_ENTRY;
-        var t = GRAPHITRON_NODE_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TYPE_ID, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
-                    c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
-                    c.field(SITE_COLUMN), e.TYPE_ID, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
-            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.TYPE_ID, excluded(t.TYPE_ID))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * The columns an id is built from, in the order the author listed them.
-     *
-     * <p>{@link #defaultOrderFields}' shape and its argument: the index is the element's own, read
-     * off {@code graphql_ast_value_entry} rather than ranked here, because the order is part of what
-     * the directive says and the element's row carries it already. A gap cannot open between the
-     * two strata either, the entry stratum refusing an application whose element is not a string
-     * rather than skipping the element and numbering past it.
-     *
-     * <p>After {@link #nodes}, which every row here holds a foreign key into.
-     *
-     * <p>Both list arguments of {@code @node} anchor this way, the current key and the legacy one,
-     * from twin decode relations into twin anchors of one shape; each twin's columns are read off by
-     * name ({@link Table#field(org.jooq.Field)}), the twins being distinct generated types.
-     */
-    private static void nodeKeyColumns(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       String argument, Table<?> decoded, Table<?> anchored) {
-        var c = claimed(dsl, graph, "node");
-        var a = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-        var v = GRAPHQL_AST_VALUE_ENTRY;
-        var ek = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
-        var tk = GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-        var columnRef = anchored.field(tk.COLUMN_REF);
-        var touched = anchored.field(tk.TOUCHED_AT);
-        dsl.insertInto(anchored)
-            .columns(anchored.field(tk.GRAPH_NAME), anchored.field(tk.TYPE_NAME),
-                anchored.field(tk.POSITION), columnRef, touched)
-            .select(dsl
-                .select(val(graph, anchored.field(tk.GRAPH_NAME)), c.field(TYPE_NAME),
-                    coalesce(v.POSITION, inline(0)), decoded.field(ek.COLUMN_REF),
-                    val(touchedAt, touched))
-                .from(c)
-                .join(a).on(a.GRAPH_NAME.eq(graph))
-                    .and(a.SOURCE_NAME.eq(c.field(SITE_NAME)))
-                    .and(a.PARENT_LINE.eq(c.field(SITE_LINE)))
-                    .and(a.PARENT_COLUMN.eq(c.field(SITE_COLUMN)))
-                    .and(a.NAME.eq(argument))
-                .join(v).on(v.GRAPH_NAME.eq(graph))
-                    .and(v.SOURCE_NAME.eq(a.SOURCE_NAME))
-                    .and(v.HOLDER_LINE.eq(a.SOURCE_LINE))
-                    .and(v.HOLDER_COLUMN.eq(a.SOURCE_COLUMN))
-                .join(decoded).on(decoded.field(ek.GRAPH_NAME).eq(graph))
-                    .and(decoded.field(ek.SOURCE_NAME).eq(v.SOURCE_NAME))
-                    .and(decoded.field(ek.SOURCE_LINE).eq(v.SOURCE_LINE))
-                    .and(decoded.field(ek.SOURCE_COLUMN).eq(v.SOURCE_COLUMN))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(columnRef, excluded(columnRef))
-            .set(touched, excluded(touched))
-            .execute();
-    }
 
     /**
      * Every {@code @routine} application at its coordinate, numbered in written order.
