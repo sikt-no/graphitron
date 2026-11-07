@@ -1,0 +1,90 @@
+# What @discriminate and @discriminator refuse, each at the application that says it, and what the
+# participants keep. NoTable has no table to branch on, and BadColumn's table has no column of the
+# name it writes. Under Kinds, a member with a table and no value has nothing telling its rows apart,
+# a member with no table is no row of the shared table, two members write one value, and one writes
+# a value the content_kind enum has no literal for. Loose writes a value for an interface that
+# discriminates nothing. Of Kinds' members only Good is a participant: the others' rows could not be
+# told apart, so a row standing for them would tell rows apart wrongly.
+
+interface NoTable @discriminate(on: "CONTENT_TYPE") {
+    contentId: Int!
+}
+
+type NoTableMember implements NoTable @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+interface BadColumn @table(name: "content") @discriminate(on: "NOPE") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type BadColumnMember implements BadColumn @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+interface Kinds @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Good implements Kinds @table(name: "content") @discriminator(value: "SHORT") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Missing implements Kinds @table(name: "content") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Unbound implements Kinds {
+    contentId: Int!
+}
+
+type DupA implements Kinds @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type DupB implements Kinds @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Outside implements Kinds @table(name: "content") @discriminator(value: "MOVIE") {
+    contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Loose @table(name: "film") @discriminator(value: "X") {
+    title: String @field(name: "TITLE")
+}
+
+extend type Query {
+    noTable: [NoTable!]!
+    badColumn: [BadColumn!]!
+    kinds: [Kinds!]!
+    loose: [Loose!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code LIKE 'DISCRIMINAT%' OR code = 'TABLE_INTERFACE_PARTICIPANT_UNBOUND'
+  """, rows: """
+  coordinate, detail,       code
+  BadColumn,  NOPE,         DISCRIMINATE_UNKNOWN_COLUMN
+  DupA,       Kinds,        DISCRIMINATOR_DUPLICATE
+  DupB,       Kinds,        DISCRIMINATOR_DUPLICATE
+  Kinds,      ,             DISCRIMINATOR_MISSING
+  Kinds,      ,             TABLE_INTERFACE_PARTICIPANT_UNBOUND
+  Loose,      ,             DISCRIMINATOR_WITHOUT_DISCRIMINATE
+  NoTable,    ,             DISCRIMINATE_WITHOUT_TABLE
+  Outside,    content_kind, DISCRIMINATOR_NOT_IN_DOMAIN
+  """)
+
+# The members a defect at Kinds' @discriminate names.
+extend schema @expectEquals(relation: "graphitron_entry_defect_member", where: """
+  code IN ('DISCRIMINATOR_MISSING', 'TABLE_INTERFACE_PARTICIPANT_UNBOUND')
+  """, rows: """
+  code,                                member_type_name
+  DISCRIMINATOR_MISSING,               Missing
+  TABLE_INTERFACE_PARTICIPANT_UNBOUND, Unbound
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_participant", rows: """
+  coordinate,  participant_type, recognized_by, discriminator_value
+  Query.kinds, Good,             DISCRIMINATOR, SHORT
+  """)

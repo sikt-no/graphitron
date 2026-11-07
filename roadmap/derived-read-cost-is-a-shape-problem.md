@@ -449,24 +449,11 @@ static method needs no holder.
   payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
   takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
   at a time", where the per-field `rowsX`, `loadX` and decode copies go.
-* **A polymorphic occurrence states its participants** `open`, E's.
-  `graphitron_occurrence_participant`: one row per occurrence whose target is polymorphic and per
-  participant type its rows may be, with how a row is told apart, `TABLE` by its table (the record
-  class, a multitable interface) or `DISCRIMINATOR` by a column of the shared table and the value
-  that means this type (`@discriminate` / `@discriminator`), a value unique per occurrence. Derived
-  in the anchoring phase from the two AST entries, membership and `graphitron_tabletype`, read at
-  the occurrence because a polymorphic parent is spelled by its participant and no child states
-  them. Its readers: the service's polymorphic re-read, both arms off one relation, and the
-  generated type resolver. The defects are raised at the directive applications by rule views:
-  `DISCRIMINATE_UNKNOWN_COLUMN`, `DISCRIMINATOR_DUPLICATE`, `DISCRIMINATOR_MISSING`,
-  `DISCRIMINATOR_WITHOUT_DISCRIMINATE`, `TABLE_INTERFACE_PARTICIPANT_UNBOUND` and
-  `DISCRIMINATOR_NOT_IN_DOMAIN` against an enum column's database literals, so no rejection the
-  classifier makes is lost; the reference pages state each rule. A participant on a detail table
-  joined to the base states its own table, its re-read refused until its join is stated (Alf,
-  2026-11-07).
-* **A joined participant's re-read reads its join from the base** `blocked`, E's, on "A polymorphic occurrence states its participants".
-  A participant on a detail table is read through the join from the interface's base table, a path
-  fact on F's join paths; until it is stated the re-read and the resolver refuse it, naming it.
+* **A joined participant's re-read reads its join from the base** `open`, E's.
+  `graphitron_occurrence_participant` states a participant on a detail table with that table, its
+  container's table and column beside it; the re-read reads it through the join from the base, a
+  path between the two tables on F's join paths, and until that path is stated the re-read and the
+  resolver refuse it, naming it.
 * **A polymorphic service's list keeps a null where a record finds no row** `open`, E's, off the critical path.
   The old generator's multitable service re-read drops from a list every record whose class matches
   no participant and every key whose row is gone, so the list a service hands back comes out shorter

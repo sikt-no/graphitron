@@ -8569,7 +8569,7 @@ COMMENT ON COLUMN graphitron_entry_defect_member.graph_name IS 'the owning graph
 COMMENT ON COLUMN graphitron_entry_defect_member.source_name IS 'the defect''s file';
 COMMENT ON COLUMN graphitron_entry_defect_member.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_member.source_column IS 'the defect''s column, 1-based';
-COMMENT ON COLUMN graphitron_entry_defect_member.code IS 'the defect''s code, NODE_ID_MEMBER_NOT_NODE_TYPE or NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_member.code IS 'the defect''s code, NODE_ID_MEMBER_NOT_NODE_TYPE, NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, DISCRIMINATOR_MISSING or TABLE_INTERFACE_PARTICIPANT_UNBOUND; with the four columns before it, the defect''s key';
 COMMENT ON COLUMN graphitron_entry_defect_member.member_type_name IS 'the member the defect names';
 COMMENT ON COLUMN graphitron_entry_defect_member.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
@@ -12486,7 +12486,23 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND s.landing_type <> r.record_class_fqn
    AND NOT EXISTS (SELECT 1 FROM sql_table_record_supertype st
                     WHERE st.source_name = r.source_name AND st.table_schema = r.table_schema
-                      AND st.table_name = r.table_name AND st.supertype_name = s.landing_type);
+                      AND st.table_name = r.table_name AND st.supertype_name = s.landing_type)
+UNION ALL
+-- A member of a container writing @discriminate that has no table, so it cannot be a row of the
+-- shared table nor of one joined to it, or that has a table and no @discriminator, so no value
+-- tells its rows apart: at the @discriminate, naming the member.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN m.is_table THEN 'DISCRIMINATOR_MISSING' ELSE 'TABLE_INTERFACE_PARTICIPANT_UNBOUND' END,
+       m.member_type_name
+  FROM graphitron_ast_discriminate_entry d
+  JOIN graphql_directive_application da
+    ON da.graph_name = d.graph_name AND da.source_name = d.source_name
+   AND da.source_line = d.source_line AND da.source_column = d.source_column
+  JOIN member m ON m.graph_name = da.graph_name AND m.container_name = da.coordinate
+ WHERE NOT m.is_table
+    OR NOT EXISTS (SELECT 1 FROM graphql_directive_application va
+                    WHERE va.graph_name = m.graph_name AND va.coordinate = m.member_type_name
+                      AND va.directive_name = 'discriminator');
 COMMENT ON VIEW graphitron_entry_defect_member_rule IS 'One member a polymorphic @nodeId''s defect names, in the shape graphitron_entry_defect_member stores: the rule itself, evaluated on demand rather than read off disk. For example a union of two node types whose @nodeId lands on a parameter taking one of their records draws a NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER row for the other.';
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.source_name IS 'the @nodeId''s file';
@@ -14473,7 +14489,84 @@ UNION ALL
 -- are graphitron_entry_defect_member's.
 SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
        CAST(NULL AS VARCHAR)
-  FROM graphitron_entry_defect_member_rule m;
+  FROM graphitron_entry_defect_member_rule m
+UNION ALL
+-- A @discriminate on a container with no table, which has no shared table to branch on, and one
+-- whose table has no column of the name written, by its SQL name or its jOOQ name; the detail is
+-- the name written.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN tt.type_name IS NULL THEN 'DISCRIMINATE_WITHOUT_TABLE' ELSE 'DISCRIMINATE_UNKNOWN_COLUMN' END,
+       CASE WHEN tt.type_name IS NULL THEN CAST(NULL AS VARCHAR) ELSE d.on_column END
+  FROM graphitron_ast_discriminate_entry d
+  JOIN graphql_directive_application da
+    ON da.graph_name = d.graph_name AND da.source_name = d.source_name
+   AND da.source_line = d.source_line AND da.source_column = d.source_column
+  LEFT JOIN graphitron_tabletype tt ON tt.graph_name = da.graph_name AND tt.type_name = da.coordinate
+ WHERE tt.type_name IS NULL
+    OR NOT EXISTS (SELECT 1 FROM sql_column c
+                    WHERE c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
+                      AND c.table_name = tt.table_name
+                      AND (c.column_name_upper = UPPER(d.on_column) OR c.jooq_name_upper = UPPER(d.on_column)))
+UNION ALL
+-- A @discriminator on a type that is a member of no container writing @discriminate, so there is no
+-- column for the value to match.
+SELECT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_WITHOUT_DISCRIMINATE',
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_ast_discriminator_entry v
+  JOIN graphql_directive_application va
+    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
+   AND va.source_line = v.source_line AND va.source_column = v.source_column
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_poly_member m
+                     JOIN graphql_directive_application ca
+                       ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name
+                      AND ca.directive_name = 'discriminate'
+                    WHERE m.graph_name = va.graph_name AND m.member_type_name = va.coordinate)
+UNION ALL
+-- A @discriminator value another member of the same discriminated container also writes, at each
+-- application, the detail being the container.
+SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_DUPLICATE',
+       m.container_name
+  FROM graphitron_ast_discriminator_entry v
+  JOIN graphql_directive_application va
+    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
+   AND va.source_line = v.source_line AND va.source_column = v.source_column
+  JOIN graphql_poly_member m ON m.graph_name = va.graph_name AND m.member_type_name = va.coordinate
+  JOIN graphql_directive_application ca
+    ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name AND ca.directive_name = 'discriminate'
+  JOIN graphql_poly_member m2
+    ON m2.graph_name = m.graph_name AND m2.container_name = m.container_name
+   AND m2.member_type_name <> m.member_type_name
+  JOIN graphql_directive_application va2
+    ON va2.graph_name = m2.graph_name AND va2.coordinate = m2.member_type_name
+   AND va2.directive_name = 'discriminator'
+  JOIN graphitron_ast_discriminator_entry v2
+    ON v2.graph_name = va2.graph_name AND v2.source_name = va2.source_name
+   AND v2.source_line = va2.source_line AND v2.source_column = va2.source_column
+ WHERE v2.discriminator_value = v.discriminator_value
+UNION ALL
+-- A @discriminator value that is not among the literals of the enum its container's column binds,
+-- the detail being the database enum type, whose literals are sql_enum_binding_literal's.
+SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_NOT_IN_DOMAIN',
+       eb.type_name
+  FROM graphitron_ast_discriminator_entry v
+  JOIN graphql_directive_application va
+    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
+   AND va.source_line = v.source_line AND va.source_column = v.source_column
+  JOIN graphql_poly_member m ON m.graph_name = va.graph_name AND m.member_type_name = va.coordinate
+  JOIN graphql_directive_application ca
+    ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name AND ca.directive_name = 'discriminate'
+  JOIN graphitron_ast_discriminate_entry d
+    ON d.graph_name = ca.graph_name AND d.source_name = ca.source_name
+   AND d.source_line = ca.source_line AND d.source_column = ca.source_column
+  JOIN graphitron_tabletype tt ON tt.graph_name = ca.graph_name AND tt.type_name = ca.coordinate
+  JOIN sql_column c
+    ON c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
+   AND c.table_name = tt.table_name
+   AND (c.column_name_upper = UPPER(d.on_column) OR c.jooq_name_upper = UPPER(d.on_column))
+  JOIN sql_enum_binding eb ON eb.source_name = c.source_name AND eb.class_fqn = c.binding_type
+ WHERE NOT EXISTS (SELECT 1 FROM sql_enum_binding_literal el
+                    WHERE el.source_name = eb.source_name AND el.class_fqn = eb.class_fqn
+                      AND el.literal = v.discriminator_value);
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -18165,6 +18258,20 @@ INSERT INTO graphitron_defect_type VALUES
    'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.', 'graphitron'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
    'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.', 'graphitron'),
+  ('DISCRIMINATE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_WITHOUT_TABLE',
+   'A @discriminate is on an interface or union with no @table, so there is no shared table whose column tells its members apart: give the interface @table, or drop @discriminate for a multitable interface.', 'graphitron'),
+  ('DISCRIMINATE_UNKNOWN_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_UNKNOWN_COLUMN',
+   'A @discriminate(on:) names no column of the interface''s table, by its SQL name or its jOOQ name: name a column of that table.', 'graphitron'),
+  ('DISCRIMINATOR_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_MISSING',
+   'A member of an interface writing @discriminate has no @discriminator, so no value tells its rows apart: give it @discriminator(value:).', 'graphitron'),
+  ('DISCRIMINATOR_WITHOUT_DISCRIMINATE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_WITHOUT_DISCRIMINATE',
+   'A @discriminator is on a type that implements no interface writing @discriminate, so there is no column for its value to match: add @discriminate to the interface, or drop @discriminator.', 'graphitron'),
+  ('DISCRIMINATOR_DUPLICATE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_DUPLICATE',
+   'Two members of one interface writing @discriminate write the same @discriminator value, so the value tells neither apart: give each member its own.', 'graphitron'),
+  ('DISCRIMINATOR_NOT_IN_DOMAIN', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_NOT_IN_DOMAIN',
+   'A @discriminator value is not among the literals of the database enum the discriminating column is, so it would match no row: write one of the enum''s literals, as the database spells it.', 'graphitron'),
+  ('TABLE_INTERFACE_PARTICIPANT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_INTERFACE_PARTICIPANT_UNBOUND',
+   'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.', 'graphitron'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
    'A @service method has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and neither the jOOQ context''s type nor a collection the call''s source can hand it. Name it in argMapping or contextArguments, or rename it after the argument it takes.', 'graphitron'),
   ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',
