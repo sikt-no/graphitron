@@ -1,0 +1,16 @@
+# The second reading links v2.10 and imports @composeDirective as @k, so @k now names a definition
+# with no row yet, and @key falls back to its namespaced name. The stale @key row holds @k when the
+# new @composeDirective row is written.
+
+extend type Query { film: String }
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10",
+  import: [{name: "@composeDirective", as: "@k"}])
+
+extend schema @expectEquals(relation: "graphitron_federation_definition", where: """
+  name IN ('@key', '@composeDirective')
+  """, rows: """
+  name,              local_name,      touched_at
+  @composeDirective, @k,              1000000060
+  @key,              @federation__key, 1000000060
+  """)

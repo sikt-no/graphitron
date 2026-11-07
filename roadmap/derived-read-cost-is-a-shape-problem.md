@@ -1010,16 +1010,6 @@ today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`
   sweeps once, at `store_class_file`, and reads `byte_size` and `mtime` to skip an unchanged class.
-* **No upsert matches a stale row by a second key** `open`, G's. jOOQ's `onDuplicateKeyUpdate` on H2
-  is a `MERGE` matching every unique key, so where a table's second unique key can be taken by a
-  different row than its primary key names, a warm capture updates the stale row in place and never
-  writes the new one. The reference path elements and error handlers were that shape and clear what
-  an incoming row displaces first (`GraphitronAstEntries.clearDisplaced`). One writer is left:
-  `graphitron_federation_definition`, keyed by `name` and unique on `local_name`, so an edit handing
-  one definition's local name to another (renamed `@link` imports) keeps the old definition under
-  the new values, silently. Of the other upserted tables with a second key, `sql_constraint`'s
-  contains its primary key and `graphql_field_element`'s coordinate is its key's spelling, so
-  neither can match a different row.
 
 ### A signature's type is a fact about the position that writes it `open`
 

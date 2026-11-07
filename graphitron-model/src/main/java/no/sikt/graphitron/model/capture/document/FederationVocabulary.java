@@ -14,6 +14,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_DEFINITION_R
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_FEDERATION;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
@@ -45,6 +46,14 @@ final class FederationVocabulary {
     private static void definitions(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var r = GRAPHITRON_FEDERATION_DEFINITION_RULE;
         var t = GRAPHITRON_FEDERATION_DEFINITION;
+        // A local name is unique in the graph, and the upsert below matches on it as well as on the
+        // name, so a definition whose local name the rule now gives another (an import alias handed
+        // on) goes first; it is stale, and its own row is written again under its new local name.
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph))
+            .and(exists(selectOne().from(r)
+                .where(r.GRAPH_NAME.eq(t.GRAPH_NAME), r.LOCAL_NAME.eq(t.LOCAL_NAME), r.NAME.ne(t.NAME))))
+            .execute();
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.NAME, t.LOCAL_NAME, t.KIND, t.SOURCE_NAME, t.VERSION, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.NAME, r.LOCAL_NAME, r.KIND, r.SOURCE_NAME, r.VERSION,
