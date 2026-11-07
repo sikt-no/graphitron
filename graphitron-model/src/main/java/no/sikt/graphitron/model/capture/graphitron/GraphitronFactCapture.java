@@ -39,7 +39,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
 import static org.jooq.impl.DSL.coalesce;
@@ -120,13 +119,11 @@ public final class GraphitronFactCapture {
         String type = site.typeName();
         switch (directive.getName()) {
             case "table" -> {
-                // The relation this arm wrote is derived now, by GraphitronAnchor, out of the entry
-                // the document's own reader writes. What stays here is the spelling, which is a
-                // different relation: graphitron_spelled_reference_entry is keyed by the value and
-                // written from several sites, so it moves when the last of them does rather than when
-                // the first does. The claim stays with it, first-wins per type being what decides
-                // whose spelling the corpus records when a type carries more than one application.
-                if (!sink.claim(GRAPHITRON_TABLE_ENTRY, type)) return;
+                // The spelling, which graphitron_spelled_reference_entry keys by the value across
+                // the several sites that write one, so it moves when the last of them does. The claim
+                // stays with it, first-wins per type being what decides whose spelling the corpus
+                // records when a type carries more than one application.
+                if (!sink.claim(GRAPHITRON_SPELLED_REFERENCE_ENTRY, "TABLE", type)) return;
                 // The site records what the author wrote, which on a bare @table is nothing; the
                 // spelling it resolves against is the type's own name, and that is the fact the
                 // supertype holds, so this site's spelling is not the value it stores.
@@ -569,7 +566,7 @@ public final class GraphitronFactCapture {
      *
      * <p>Writes, not mentions. A relation this class only {@link FactSink#claim}s a coordinate in
      * is written by somebody else: {@link no.sikt.graphitron.model.capture.document.GraphitronAnchor}
-     * owns fourteen of them, sweeps them by instant, and runs ahead of the decode, so listing one
+     * owns the one claimed here, sweeps it by instant, and runs ahead of the decode, so listing it
      * here would empty rows the pass had already written and the relation would read as though the
      * corpus never declared the directive.
      */

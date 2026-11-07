@@ -23,7 +23,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -250,8 +250,9 @@ class GraphitronAnchorTest {
 
     /** Whether the corpus binds this type to a table. */
     private static boolean bound(DSLContext dsl, String typeName) {
-        var t = GRAPHITRON_TABLE_ENTRY;
-        return dsl.fetchExists(dsl.selectOne().from(t).where(t.TYPE_NAME.eq(typeName)));
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        return dsl.fetchExists(dsl.selectOne().from(a)
+            .where(a.COORDINATE.eq(typeName), a.DIRECTIVE_NAME.eq("table")));
     }
 
     /** Whether the corpus marks this directive deprecated as a whole. */

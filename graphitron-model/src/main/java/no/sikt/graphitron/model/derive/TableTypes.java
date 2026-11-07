@@ -2,7 +2,8 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -10,6 +11,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.partitionBy;
+import static org.jooq.impl.DSL.upper;
 
 /**
  * The capture-cadence writer of {@code graphitron_tabletype}: which catalog table each graph type
@@ -48,7 +50,10 @@ public final class TableTypes {
 
     /** Clears and re-derives the graph's settled bindings; see the class javadoc. */
     public static void derive(DSLContext dsl, String graphName) {
-        var t = GRAPHITRON_TABLE_ENTRY;
+        // The type's first @table application, and the name it wrote where it wrote one; a bare
+        // @table resolves against the type's own name.
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var t = GRAPHITRON_AST_TABLE_ENTRY;
         var m = STORE_GRAPH_SOURCE;
         var st = SQL_TABLE;
         // Cleared first so the call is idempotent: capture makes it once per graph, and a caller
@@ -57,17 +62,22 @@ public final class TableTypes {
             .where(GRAPHITRON_TABLETYPE.GRAPH_NAME.eq(graphName)).execute();
         var ty = GRAPHQL_TYPE;
         var resolved = dsl
-            .select(t.GRAPH_NAME, t.TYPE_NAME, ty.KIND, st.SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
-                count().over(partitionBy(t.GRAPH_NAME, t.TYPE_NAME)).as("candidates"))
-            .from(t)
-            .join(ty).on(ty.GRAPH_NAME.eq(t.GRAPH_NAME)).and(ty.TYPE_NAME.eq(t.TYPE_NAME))
-            .join(m).on(m.GRAPH_NAME.eq(t.GRAPH_NAME))
+            .select(a.GRAPH_NAME, a.COORDINATE.as(ty.TYPE_NAME), ty.KIND, st.SOURCE_NAME,
+                st.TABLE_SCHEMA, st.TABLE_NAME,
+                count().over(partitionBy(a.GRAPH_NAME, a.COORDINATE)).as("candidates"))
+            .from(a)
+            .leftJoin(t).on(t.GRAPH_NAME.eq(a.GRAPH_NAME), t.SOURCE_NAME.eq(a.SOURCE_NAME),
+                t.SOURCE_LINE.eq(a.SOURCE_LINE), t.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+            .join(ty).on(ty.GRAPH_NAME.eq(a.GRAPH_NAME)).and(ty.TYPE_NAME.eq(a.COORDINATE))
+            .join(m).on(m.GRAPH_NAME.eq(a.GRAPH_NAME))
             .join(st).on(st.SOURCE_NAME.eq(m.SOURCE_NAME))
-            .and(st.TABLE_NAME_UPPER.eq(coalesce(t.TABLE_REF_NAME_PART_UPPER, t.TYPE_NAME_UPPER)))
+            .and(st.TABLE_NAME_UPPER.eq(coalesce(t.TABLE_REF_NAME_PART_UPPER, upper(a.COORDINATE))))
             .and(t.TABLE_REF_NAMESPACE_PART_UPPER.isNull()
                 .or(st.TABLE_SCHEMA_UPPER.eq(t.TABLE_REF_NAMESPACE_PART_UPPER)))
-            .where(t.GRAPH_NAME.eq(graphName))
-            .and(t.TYPE_NAME.notIn("Query", "Mutation", "Subscription"))
+            .where(a.GRAPH_NAME.eq(graphName))
+            .and(a.DIRECTIVE_NAME.eq("table"))
+            .and(a.ORDINAL.eq(0))
+            .and(a.COORDINATE.notIn("Query", "Mutation", "Subscription"))
             .and(ty.KIND.in("OBJECT", "INTERFACE"))
             .asTable("resolved");
         dsl.insertInto(GRAPHITRON_TABLETYPE)
@@ -75,7 +85,7 @@ public final class TableTypes {
                 GRAPHITRON_TABLETYPE.NAMED_TYPE_KIND, GRAPHITRON_TABLETYPE.TABLE_SOURCE_NAME,
                 GRAPHITRON_TABLETYPE.TABLE_SCHEMA, GRAPHITRON_TABLETYPE.TABLE_NAME)
             .select(dsl
-                .select(resolved.field(t.GRAPH_NAME), resolved.field(t.TYPE_NAME),
+                .select(resolved.field(a.GRAPH_NAME), resolved.field(ty.TYPE_NAME),
                     resolved.field(ty.KIND),
                     resolved.field(st.SOURCE_NAME), resolved.field(st.TABLE_SCHEMA),
                     resolved.field(st.TABLE_NAME))

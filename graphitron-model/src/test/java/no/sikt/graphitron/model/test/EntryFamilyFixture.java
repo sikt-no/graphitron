@@ -28,7 +28,7 @@ import java.util.Locale;
  * <p>Two documents rather than one, and the second is not a spillover. A refresh that deletes one
  * source's rows has to be shown deleting one source's rows, which needs a relation holding rows from
  * two sources at once so that what survives is visible. Several relations are therefore written from
- * both documents deliberately, {@code graphitron_table_entry},
+ * both documents deliberately, {@code graphitron_ast_table_entry},
  * {@code graphitron_ast_binding_entry} and {@code graphitron_field_reference_entry} among them,
  * and the coverage gate holds that overlap rather than leaving it to whoever edits the SDL next.
  *

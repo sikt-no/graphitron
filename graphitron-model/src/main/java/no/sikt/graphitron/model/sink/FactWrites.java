@@ -12,7 +12,6 @@ import java.util.Map;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
 import static org.jooq.impl.DSL.excluded;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -71,7 +70,6 @@ final class FactWrites {
 
     private static Map<Table<?>, RelationWriter> registry() {
         Map<Table<?>, RelationWriter> writers = new HashMap<>();
-        writers.put(GRAPHITRON_TABLE_ENTRY, FactWrites::graphitronTable);
         writers.put(GRAPHITRON_ROUTINE_ENTRY, FactWrites::graphitronRoutine);
         writers.put(SQL_TABLE, FactWrites::sqlTable);
         writers.put(SQL_CONSTRAINT, FactWrites::sqlConstraint);
@@ -94,37 +92,6 @@ final class FactWrites {
                                row.get(t.SPELLING),
                                row.get(t.NAMESPACE_PART),
                                row.get(t.NAME_PART));
-        }
-        batch.execute();
-    }
-
-    private static void graphitronTable(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_TABLE_ENTRY;
-        var batch = dsl.batch(dsl.insertInto(t)
-                .columns(t.GRAPH_NAME,
-                         t.TYPE_NAME,
-                         t.SOURCE_NAME,
-                         t.DECLARATION_LINE,
-                         t.DECLARATION_COLUMN,
-                         t.SOURCE_LINE,
-                         t.SOURCE_COLUMN,
-                         t.TABLE_REF,
-                         t.TABLE_REF_NAMESPACE_PART,
-                         t.TABLE_REF_NAME_PART,
-                         t.TOUCHED_AT)
-                .values(markers(11)));
-        for (TableRecord<?> row : rows) {
-            batch = batch.bind(row.get(t.GRAPH_NAME),
-                               row.get(t.TYPE_NAME),
-                               row.get(t.SOURCE_NAME),
-                               row.get(t.DECLARATION_LINE),
-                               row.get(t.DECLARATION_COLUMN),
-                               row.get(t.SOURCE_LINE),
-                               row.get(t.SOURCE_COLUMN),
-                               row.get(t.TABLE_REF),
-                               row.get(t.TABLE_REF_NAMESPACE_PART),
-                               row.get(t.TABLE_REF_NAME_PART),
-                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }

@@ -25,8 +25,9 @@ import java.util.Arrays;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -97,8 +98,12 @@ class GraphitronTypeAnchorsTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_TABLE_ENTRY;
-            assertThat(dsl.select(t.TYPE_NAME, t.TABLE_REF).from(t).where(t.GRAPH_NAME.eq(GRAPH))
+            var a = GRAPHQL_DIRECTIVE_APPLICATION;
+            var t = GRAPHITRON_AST_TABLE_ENTRY;
+            assertThat(dsl.select(a.COORDINATE, t.TABLE_REF).from(a)
+                    .leftJoin(t).on(t.GRAPH_NAME.eq(a.GRAPH_NAME), t.SOURCE_NAME.eq(a.SOURCE_NAME),
+                        t.SOURCE_LINE.eq(a.SOURCE_LINE), t.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                    .where(a.GRAPH_NAME.eq(GRAPH), a.DIRECTIVE_NAME.eq("table"))
                     .fetch().map(Record::intoList))
                 .as("Film applied it and named nothing; Actor did not apply it at all, and the two "
                     + "are told apart by the row existing rather than by a column")
@@ -122,9 +127,14 @@ class GraphitronTypeAnchorsTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_SCALAR_TYPE_ENTRY;
-            assertThat(dsl.select(t.TYPE_NAME, t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART)
-                    .from(t).where(t.GRAPH_NAME.eq(GRAPH)).fetch().map(Record::intoList))
+            var a = GRAPHQL_DIRECTIVE_APPLICATION;
+            var t = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
+            assertThat(dsl.select(a.COORDINATE, t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART)
+                    .from(a)
+                    .join(t).on(t.GRAPH_NAME.eq(a.GRAPH_NAME), t.SOURCE_NAME.eq(a.SOURCE_NAME),
+                        t.SOURCE_LINE.eq(a.SOURCE_LINE), t.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                    .where(a.GRAPH_NAME.eq(GRAPH), a.DIRECTIVE_NAME.eq("scalarType"))
+                    .fetch().map(Record::intoList))
                 .as("Money is bound and split; Weight named nothing and the grain has no row for "
                     + "an application that said nothing")
                 .containsExactly(List.of("Money", "com.example.Scalars", "MONEY"));
@@ -166,9 +176,13 @@ class GraphitronTypeAnchorsTest {
 
     /** The names one type's binding resolves to, which is at most one. */
     private static List<String> tableRefs(DSLContext dsl, String typeName) {
-        var t = GRAPHITRON_TABLE_ENTRY;
-        return dsl.select(t.TABLE_REF).from(t)
-            .where(t.GRAPH_NAME.eq(GRAPH)).and(t.TYPE_NAME.eq(typeName))
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var t = GRAPHITRON_AST_TABLE_ENTRY;
+        return dsl.select(t.TABLE_REF).from(a)
+            .leftJoin(t).on(t.GRAPH_NAME.eq(a.GRAPH_NAME), t.SOURCE_NAME.eq(a.SOURCE_NAME),
+                t.SOURCE_LINE.eq(a.SOURCE_LINE), t.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(GRAPH), a.COORDINATE.eq(typeName), a.DIRECTIVE_NAME.eq("table"),
+                a.ORDINAL.eq(0))
             .fetch(t.TABLE_REF);
     }
 

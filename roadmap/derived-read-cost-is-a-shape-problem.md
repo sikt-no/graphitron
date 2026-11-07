@@ -121,7 +121,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The position columns and the `code_type` dictionary, both stating a signature's parse. Ends at
   "`code_type` and `code_type_element` are gone".
 * `CodeCapture` sweeping by instant beside the class-file sweep. Ends at "A single changed class re-reads only itself, swept at the class file".
-* The coordinate copy and the position-keyed entries of `@table`. Ends at "The anchor's coordinate-keyed copies go".
 * `graphitron_node_type`, `graphitron_node` and `NodeDeclaration.isNodeType`, each saying what a
   node is. Ends at "A node is what the manual says takes effect".
 * `graphitron_node_id_instruction` with its private route beside `graphitron_occurrence_node_id`. Ends at "Encode and decode read the target type, and the old node-id relations go".
@@ -577,10 +576,9 @@ pass and no stratum that clears and recomputes.
   `graphql_directive_application` by the application's position, ordinal zero standing for the one
   application a coordinate-keyed copy kept, as the `@error` hover and the `@orderBy` and
   `@lookupKey` readers now read.
-  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies four
-    `graphitron_ast_` entries onto a coordinate key: `graphitron_table_entry`,
-    `graphitron_scalar_type_entry`, `graphitron_routine_entry` and `graphitron_outbox_entry`, each
-    read by rules of `graphitron_entry_defect_rule`, `intent_` views or main code.
+  * **The anchor's coordinate-keyed copies go** `open`. `GraphitronAnchor` copies two
+    `graphitron_ast_` entries onto a coordinate key, `graphitron_routine_entry` and
+    `graphitron_outbox_entry`, each read by rules of `graphitron_entry_defect_rule` or main code.
   * **The per-site pairs collapse onto a coordinate** `open`. `graphitron_field_node_id_entry` and
     `graphitron_argument_node_id_entry`, `graphitron_reference_for_entry` and
     `graphitron_argument_reference_for_entry`: their twins `graphitron_ast_node_id_entry` and
@@ -1070,7 +1068,7 @@ disagree with the build about which types are nodes.
 * **The node is settled from the position-keyed entries, in one place** `blocked`, on "The table-binding and node subject converts". `TableTypes`, `Nodes` and `NodeKeyColumns` read
   `graphitron_ast_table_entry`, `graphitron_ast_node_entry` and
   `graphitron_ast_node_keycolumn_entry`, and `NodeKeyColumns` runs in the anchor beside `Nodes`.
-  `Nodes` and `NodeKeyColumns` read the `@node` entries now; `TableTypes` and the move are left.
+  All three read the entries now; the move into the anchor is left.
 * **Table types, nodes and node key columns are marked and swept** `blocked`, on "The node is settled from the position-keyed entries, in one place". An unchanged binding keeps its node and
   key columns rather than losing them to a clear and refill.
 * **A node is what the manual says takes effect** `open`.
@@ -2639,6 +2637,13 @@ which carry the application and the index each element was written at.
 the field's first application in `graphql_directive_application` to `graphql_field_element` and to
 the `graphitron_ast_` entry at its position; the `@mutation` spelling claim is keyed on
 `graphitron_spelled_reference_entry`.
+
+**The anchor's type-site copies** (2026-11-07). `graphitron_table_entry` and
+`graphitron_scalar_type_entry`, with the grain `graph-scalar`, `GraphitronAnchor`'s `claimed`, and
+`FactWrites.graphitronTable`. Their readers join the type's first `@table` or `@scalarType`
+application to `graphitron_ast_table_entry` or `graphitron_ast_scalar_type_entry`, a bare `@table`
+resolving against the type's own name; the `@table` spelling claim is keyed on
+`graphitron_spelled_reference_entry`, and `meta_family_headline` names `graphitron_ast_table_entry`.
 
 **The argument-site marker decodes** (2026-11-07). `graphitron_order_by_entry` and
 `graphitron_argument_lookup_key_entry`: their readers, two rules of `graphitron_entry_defect_rule`,

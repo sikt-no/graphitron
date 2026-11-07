@@ -12,7 +12,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -68,10 +69,14 @@ class TableTypeTest {
     @DisplayName("the decode records no fallback, only what the author wrote")
     void theDecodeRecordsOnlyWhatWasWritten() {
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq())) {
-            assertThat(store.dsl().select(GRAPHITRON_TABLE_ENTRY.TABLE_REF).from(GRAPHITRON_TABLE_ENTRY)
-                    .where(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(GRAPH))
-                    .and(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq("Actor"))
-                    .fetchOne(GRAPHITRON_TABLE_ENTRY.TABLE_REF))
+            var a = GRAPHQL_DIRECTIVE_APPLICATION;
+            var t = GRAPHITRON_AST_TABLE_ENTRY;
+            assertThat(store.dsl().select(t.TABLE_REF).from(a)
+                    .leftJoin(t).on(t.GRAPH_NAME.eq(a.GRAPH_NAME), t.SOURCE_NAME.eq(a.SOURCE_NAME),
+                        t.SOURCE_LINE.eq(a.SOURCE_LINE), t.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                    .where(a.GRAPH_NAME.eq(GRAPH), a.COORDINATE.eq("Actor"),
+                        a.DIRECTIVE_NAME.eq("table"))
+                    .fetchOne(t.TABLE_REF))
                 .as("the entry is the input; a bare @table wrote no name and the column says so")
                 .isNull();
         }

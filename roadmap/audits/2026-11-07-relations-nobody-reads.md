@@ -82,6 +82,17 @@ The `@error` decode went too, `graphitron_error_entry` and `graphitron_error_han
 language server's type hover read the handler rows, and reads `graphitron_ast_error_handler_entry`
 and `graphitron_ast_error_generic_handler_entry` instead, which gives the `@error` capture its reader.
 
+The anchor's coordinate-keyed copies of `@node`, `@table`, `@scalarType` and the field-site
+directives went next (2026-11-07): `graphitron_node_entry`, `graphitron_node_keycolumn_entry`,
+`graphitron_node_legacykeycolumn_entry`, `graphitron_table_entry`, `graphitron_scalar_type_entry`,
+`graphitron_field_binding_entry`, `graphitron_facet_entry`, `graphitron_connection_entry`,
+`graphitron_default_order_entry`, `graphitron_service_entry` and `graphitron_mutation_entry`. Their
+readers read the coordinate's first application off `graphql_directive_application` joined to the
+`graphitron_ast_` entry at its position, which gives each of those entries a reader. Left of the
+decode entries: `graphitron_routine_entry`, `graphitron_outbox_entry`, the per-site `@nodeId` and
+`@referenceFor` pairs, `graphitron_field_reference_entry`, `graphitron_method_reference_entry`,
+`graphitron_spelled_reference_entry` and `graphitron_undecoded_argument_entry`.
+
 ### 3. New-model relations written ahead of their readers
 
 `graphitron_occurrence_parameter`, `graphitron_occurrence_source_object`,
@@ -100,7 +111,8 @@ is checked before it goes.
 
 The DDL check moved these out of the lists the censuses gave:
 
-- read by `graphitron_entry_defect_rule`: `graphitron_service_entry`, `graphitron_scalar_type_entry`,
+- read by `graphitron_entry_defect_rule`: `graphitron_service_entry` and `graphitron_scalar_type_entry`
+  (both gone 2026-11-07, the rules reading the applications),
   `graphitron_argument_lookup_key_entry` (gone 2026-11-07, its rule reading the applications),
   `graphitron_ast_input_value_condition_entry`,
   `sql_node_metadata_unreadable`, `code_method_exception`;

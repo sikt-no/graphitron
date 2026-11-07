@@ -16,7 +16,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -170,10 +171,13 @@ class QualifiedReferenceDecodeTest {
 
     /** One type's {@code @table} reference as its two halves, either of which may be null. */
     private static List<String> tableRefParts(DSLContext dsl, String typeName) {
-        return halves(dsl.select(GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAMESPACE_PART,
-                                 GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAME_PART)
-            .from(GRAPHITRON_TABLE_ENTRY)
-            .where(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq(typeName))
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
+        var t = GRAPHITRON_AST_TABLE_ENTRY;
+        return halves(dsl.select(t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
+            .from(a)
+            .leftJoin(t).on(t.GRAPH_NAME.eq(a.GRAPH_NAME), t.SOURCE_NAME.eq(a.SOURCE_NAME),
+                t.SOURCE_LINE.eq(a.SOURCE_LINE), t.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+            .where(a.COORDINATE.eq(typeName), a.DIRECTIVE_NAME.eq("table"), a.ORDINAL.eq(0))
             .fetchOne());
     }
 

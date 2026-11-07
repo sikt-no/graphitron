@@ -3417,76 +3417,6 @@ COMMENT ON COLUMN graphitron_deprecated.coordinate IS 'the element that was depr
 COMMENT ON COLUMN graphitron_deprecated.reason IS 'the replacement hint, as the author wrote it. Empty where the marker carried none, which is a marker without advice rather than no marker: absence of a row is what says a thing is not deprecated. Which of the two markers said so is not recorded and not asked. GraphQL forces them apart, the native marker being illegal on a directive definition, so a retired directive says so with a token in its description instead; unifying the two is what this family is for';
 COMMENT ON COLUMN graphitron_deprecated.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
-CREATE TABLE graphitron_table_entry (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL,
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  table_ref        VARCHAR,
-  table_ref_namespace_part VARCHAR,
-  table_ref_name_part      VARCHAR,
-  touched_at       TIMESTAMP NOT NULL,
-  type_name_upper                VARCHAR GENERATED ALWAYS AS (UPPER(type_name)),
-  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
-  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
-  PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_table_entry IS 'The table a type is bound to, as one row per type however many @table applications the corpus wrote on it. For example type Film @table(name: "film") gives the row Film reading film, and a bare @table on Actor gives a row carrying no name at all.';
-COMMENT ON COLUMN graphitron_table_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_table_entry.type_name IS 'the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table';
-COMMENT ON COLUMN graphitron_table_entry.source_name IS 'the applying declaration site (keyed with the line and column below); doubles as the file of the position columns';
-COMMENT ON COLUMN graphitron_table_entry.declaration_line IS 'line of the applying declaration site';
-COMMENT ON COLUMN graphitron_table_entry.declaration_column IS 'column of the applying declaration site';
-COMMENT ON COLUMN graphitron_table_entry.source_line IS 'the application''s own position';
-COMMENT ON COLUMN graphitron_table_entry.source_column IS 'the application''s own column';
-COMMENT ON COLUMN graphitron_table_entry.table_ref IS 'the name argument as written (may carry a schema qualifier); NULL when omitted, the type-name fallback is a derivation';
-COMMENT ON COLUMN graphitron_table_entry.table_ref_namespace_part IS 'left of table_ref''s first period, NULL when no period appeared and the empty string when one appeared with nothing before it; for a table name this namespace is the SQL schema in every dialect jOOQ models. Written by capture, because splitting on a period is a decode and decodes happen there';
-COMMENT ON COLUMN graphitron_table_entry.table_ref_name_part IS 'right of table_ref''s first period, or the whole value when none; the empty string when a period was written with nothing after it, which joins nothing and is meant to';
-COMMENT ON COLUMN graphitron_table_entry.type_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table.table_name_upper where @table(name:) was omitted and the type name stands in as a table spelling. Generated, so nothing writes it and nothing can. A GraphQL type name is folded here for that crossing alone; nothing compares one to another case-insensitively';
-COMMENT ON COLUMN graphitron_table_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-COMMENT ON COLUMN graphitron_table_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-COMMENT ON COLUMN graphitron_table_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
-
-CREATE TABLE graphitron_scalar_type_entry (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL,
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  scalar_ref       VARCHAR NOT NULL,
-  scalar_ref_class_part VARCHAR,
-  scalar_ref_field_part VARCHAR,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_scalar_type_entry IS 'The Java constant a scalar type is bound to, as one row per scalar however many @scalarType applications the corpus wrote on it. For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row, split into the class that declares the field and the field itself.';
-COMMENT ON COLUMN graphitron_scalar_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_scalar_type_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_scalar_type_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
-COMMENT ON COLUMN graphitron_scalar_type_entry.declaration_line IS 'line of the contributing declaration site, keyed with source_name';
-COMMENT ON COLUMN graphitron_scalar_type_entry.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphitron_scalar_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_scalar_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref IS 'the fully-qualified Java constant reference as written';
-COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_class_part IS 'the class half of the reference, split on its last period by ConstantReferenceGrammar; NULL where the reference names no class at all, which is that grammar''s malformed arm rather than a missing class';
-COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_field_part IS 'the field half beside it, on the same split and null in the same case; the pair is stored rather than computed so a reader joining the census probes its key instead of comparing against a concatenation';
-COMMENT ON COLUMN graphitron_scalar_type_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
-
 CREATE TABLE graphitron_field_reference_entry (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -5433,7 +5363,7 @@ COMMENT ON COLUMN sql_table.record_class_fqn IS 'the fully qualified name of the
 COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
 COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, when present';
 COMMENT ON COLUMN sql_table.table_schema_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the namespace half of an authored table or routine reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view';
-COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against graphitron_table_entry.type_name_upper where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view.';
+COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against the upper-cased type name where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view.';
 COMMENT ON COLUMN sql_table.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 CREATE INDEX ix_sql_table_record_class_fqn ON sql_table (record_class_fqn, source_name);
 COMMENT ON INDEX ix_sql_table_record_class_fqn IS 'Serves the match of a class to the table whose record class it is, which graphitron_occurrence_producer_result_rule makes for a producer''s element class.';
@@ -5948,7 +5878,7 @@ CREATE TABLE graphitron_tabletype (
 COMMENT ON TABLE graphitron_tabletype IS 'A graph type that resolved to exactly one catalog table: one row per type whose @table spelling the catalog answered unambiguously. For example a Film type over @table(name: "film") draws a row naming the film table in the schema that declares it, while a spelling two schemas both declare draws none and is found by anti-join against the entry the author wrote.';
 COMMENT ON COLUMN graphitron_tabletype.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_tabletype.type_name IS 'the graph type the binding is for, anchored by graphql_type through its kind. With the graph this is the whole key, and that is the resolution''s own claim: a type resolving to two tables is not a row here, so the key is what says the binding is settled rather than a count beside it saying how settled';
-COMMENT ON COLUMN graphitron_tabletype.named_type_kind IS 'which of the six named type kinds the bound type is, OBJECT or INTERFACE, carried here so the reference into graphql_type can name the pair and the store can refuse a binding on a kind that cannot carry one. Not a fact of its own and not a second answer to what kind a type is: the foreign key is what makes it the same answer, and a row disagreeing with the type relation cannot be written. A union, a scalar or an enum with a @table on it resolves to no row here at all, which puts the author''s mistake where every other unresolved application already sits, the anti-join against graphitron_table_entry';
+COMMENT ON COLUMN graphitron_tabletype.named_type_kind IS 'which of the six named type kinds the bound type is, OBJECT or INTERFACE, carried here so the reference into graphql_type can name the pair and the store can refuse a binding on a kind that cannot carry one. Not a fact of its own and not a second answer to what kind a type is: the foreign key is what makes it the same answer, and a row disagreeing with the type relation cannot be written. A union, a scalar or an enum with a @table on it resolves to no row here at all, which puts the author''s mistake where every other unresolved application already sits, the anti-join against the @table applications';
 COMMENT ON COLUMN graphitron_tabletype.table_source_name IS 'the codegen source the table came from, the first of the three columns naming one catalog table';
 COMMENT ON COLUMN graphitron_tabletype.table_schema IS 'the table''s schema as the catalog spells it';
 COMMENT ON COLUMN graphitron_tabletype.table_name IS 'the table''s own name as the catalog spells it; with the two columns above, a foreign key into sql_table, which is what a resolved binding can carry and an unresolved one cannot. The first crossing in this schema from a graph-keyed relation into the source-keyed catalog, and it cascades on delete, which is what makes the crossing sound rather than merely permitted: a catalog source is shared between graphs and recrawled whole, so without the cascade a source could not be recrawled while any graph still named its tables. With it, a recrawled source takes the bindings that named it, and the graphs concerned rebuild theirs the next time they capture. That is the honest outcome of the two available: a reader finds no binding rather than one naming a table the catalog no longer has, which is what the relations this replaces leave behind because they carry no key here at all';
@@ -12580,14 +12510,17 @@ UNION ALL
 -- @routine binds its return type to the routine's result, so the directive names something a type
 -- cannot stand on. Reported at the @table, with the spelling as written.
 SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_NAMES_ROUTINE', COALESCE(t.table_ref, t.type_name)
-  FROM graphitron_table_entry t
+       'TABLE_NAMES_ROUTINE', COALESCE(te.table_ref, t.coordinate)
+  FROM graphql_directive_application t
+  LEFT JOIN graphitron_ast_table_entry te
+    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
+   AND te.source_line = t.source_line AND te.source_column = t.source_column
   JOIN graphitron_spelled_table sp
-    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(te.table_ref, t.coordinate)
   JOIN sql_table st
     ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
    AND st.table_name = sp.table_name
- WHERE t.source_line IS NOT NULL
+ WHERE t.directive_name = 'table' AND t.ordinal = 0
    AND st.table_type = 'FUNCTION'
 UNION ALL
 -- A @node on a type that does not implement Node. The interface is the contract @node publishes to
@@ -12612,8 +12545,9 @@ SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR)
   FROM graphql_directive_application n
  WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry t
-                    WHERE t.graph_name = n.graph_name AND t.type_name = n.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application t
+                    WHERE t.graph_name = n.graph_name AND t.coordinate = n.coordinate
+                      AND t.directive_name = 'table')
    AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
                     WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
 UNION ALL
@@ -12672,12 +12606,15 @@ UNION ALL
 -- @table with the spelling as written. A graph captured with no catalog has said nothing about any
 -- table, so no name it writes is wrong yet, on the terms the code-reference arm states for classes.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_UNRESOLVED', COALESCE(t.table_ref, t.type_name)
-  FROM graphitron_table_entry t
- WHERE t.source_line IS NOT NULL
+       'TABLE_UNRESOLVED', COALESCE(te.table_ref, t.coordinate)
+  FROM graphql_directive_application t
+  LEFT JOIN graphitron_ast_table_entry te
+    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
+   AND te.source_line = t.source_line AND te.source_column = t.source_column
+ WHERE t.directive_name = 'table' AND t.ordinal = 0
    AND NOT EXISTS (SELECT 1 FROM graphitron_spelled_table sp
                     WHERE sp.graph_name = t.graph_name
-                      AND sp.spelling = COALESCE(t.table_ref, t.type_name))
+                      AND sp.spelling = COALESCE(te.table_ref, t.coordinate))
    AND EXISTS (SELECT 1 FROM store_graph_source g
                  JOIN sql_table st ON st.source_name = g.source_name
                 WHERE g.graph_name = t.graph_name)
@@ -12686,19 +12623,25 @@ UNION ALL
 -- the type would be bound to whichever a reader happened to pick; qualifying it with the schema
 -- settles it. Reported once per @table.
 SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_AMBIGUOUS', COALESCE(t.table_ref, t.type_name)
-  FROM graphitron_table_entry t
+       'TABLE_AMBIGUOUS', COALESCE(te.table_ref, t.coordinate)
+  FROM graphql_directive_application t
+  LEFT JOIN graphitron_ast_table_entry te
+    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
+   AND te.source_line = t.source_line AND te.source_column = t.source_column
   JOIN graphitron_spelled_table sp
-    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
- WHERE t.source_line IS NOT NULL
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(te.table_ref, t.coordinate)
+ WHERE t.directive_name = 'table' AND t.ordinal = 0
    AND sp.candidates > 1
 UNION ALL
 -- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
 -- period, or nothing on one side of the last one. Reported with the reference as written.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
        'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref
-  FROM graphitron_scalar_type_entry e
- WHERE e.source_line IS NOT NULL
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
    AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
 UNION ALL
 -- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
@@ -12706,8 +12649,11 @@ UNION ALL
 -- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
        'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part
-  FROM graphitron_scalar_type_entry e
- WHERE e.source_line IS NOT NULL
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
    AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM store_graph_source g
                      JOIN code_class k ON k.source_name = g.source_name
@@ -12721,8 +12667,11 @@ UNION ALL
 -- declared as some other type are one refusal, and the reference is what the author edits.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
        'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref
-  FROM graphitron_scalar_type_entry e
- WHERE e.source_line IS NOT NULL
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
    AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
    AND EXISTS (SELECT 1 FROM store_graph_source g
                  JOIN code_class k ON k.source_name = g.source_name
@@ -12739,9 +12688,10 @@ UNION ALL
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
        'NODE_TYPE_ID_SHARED', n.type_id
   FROM graphitron_node n
-  JOIN graphitron_table_entry t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
- WHERE t.source_line IS NOT NULL
-   AND EXISTS (SELECT 1 FROM graphitron_node o
+  JOIN graphql_directive_application t
+    ON t.graph_name = n.graph_name AND t.coordinate = n.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
+ WHERE EXISTS (SELECT 1 FROM graphitron_node o
                 WHERE o.graph_name = n.graph_name AND o.type_id = n.type_id
                   AND o.type_name <> n.type_name)
 UNION ALL
@@ -12751,11 +12701,12 @@ UNION ALL
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
        'NODE_METADATA_UNREADABLE', b.table_name
   FROM graphitron_tabletype b
-  JOIN graphitron_table_entry t ON t.graph_name = b.graph_name AND t.type_name = b.type_name
+  JOIN graphql_directive_application t
+    ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
   JOIN sql_node_metadata_unreadable u
     ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
    AND u.table_name = b.table_name
- WHERE t.source_line IS NOT NULL
 UNION ALL
 -- A legacy key shape a @node states that breaks one of its rules, as NodeLegacyKeyShapes evaluated
 -- them: the stage that anchors the shapes wrote the verdict, so the rules are applied once and this
@@ -12772,9 +12723,10 @@ UNION ALL
 -- contributor carries, on NODE_METADATA_UNREADABLE's terms.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column, d.code, d.detail
   FROM graphitron_node_legacy_key_defect d
-  JOIN graphitron_table_entry t ON t.graph_name = d.graph_name AND t.type_name = d.type_name
+  JOIN graphql_directive_application t
+    ON t.graph_name = d.graph_name AND t.coordinate = d.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
  WHERE d.site = 'TABLE'
-   AND t.source_line IS NOT NULL
 UNION ALL
 -- A table whose class declares a legacy key-columns array graphitron cannot use. No tier falls back
 -- for it, so unlike NODE_METADATA_UNREADABLE it stops the build: every stored id in the old shape
@@ -12783,11 +12735,12 @@ UNION ALL
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
        'NODE_LEGACY_METADATA_UNREADABLE', b.table_name
   FROM graphitron_tabletype b
-  JOIN graphitron_table_entry t ON t.graph_name = b.graph_name AND t.type_name = b.type_name
+  JOIN graphql_directive_application t
+    ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
   JOIN sql_node_legacy_key_unreadable u
     ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
    AND u.table_name = b.table_name
- WHERE t.source_line IS NOT NULL
 UNION ALL
 -- Two types whose names differ only in case, among the types the generator writes a file for, which
 -- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
@@ -14724,19 +14677,22 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     JOIN graphitron_field df
       ON df.graph_name = d.graph_name AND df.type_name = d.type_name AND df.field_name = d.field_name
    WHERE s.directive_name = 'service' AND m.result_element_class IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
-                      WHERE te.graph_name = pf.graph_name AND te.type_name = pf.target_type_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
-                      WHERE te.graph_name = d.graph_name AND te.type_name = d.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
+                      WHERE te.graph_name = pf.graph_name AND te.coordinate = pf.target_type_name
+                        AND te.directive_name = 'table')
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
+                      WHERE te.graph_name = d.graph_name AND te.coordinate = d.target_type_name
+                        AND te.directive_name = 'table')
      AND NOT EXISTS (SELECT 1 FROM graphitron_field_target o
                        JOIN graphitron_type ot
                          ON ot.graph_name = o.graph_name AND ot.type_name = o.target_type_name
                         AND ot.kind = 'OBJECT'
                       WHERE o.graph_name = d.graph_name AND o.type_name = d.type_name
                         AND o.field_name <> d.field_name
-                        AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry te
+                        AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
                                          WHERE te.graph_name = o.graph_name
-                                           AND te.type_name = o.target_type_name))
+                                           AND te.coordinate = o.target_type_name
+                                           AND te.directive_name = 'table'))
      AND NOT EXISTS (SELECT 1 FROM store_graph_source g
                        JOIN code_read_slot sl
                          ON sl.source_name = g.source_name AND sl.class_name = m.result_element_class
@@ -16897,7 +16853,7 @@ COMMENT ON VIEW meta_family IS 'The family roster: one row per relation-name pre
 CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('store_graph', 0), ('store_graph_source', 1), ('store_stamp', 2),
   ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_directive_application', 2),
-  ('graphitron_table_entry', 0), ('graphitron_field_reference_entry', 1), ('graphitron_undecoded_argument_entry', 2),
+  ('graphitron_ast_table_entry', 0), ('graphitron_field_reference_entry', 1), ('graphitron_undecoded_argument_entry', 2),
   ('graphitron_node_type', 3),
   ('sql_table', 0), ('sql_column', 1), ('sql_referential_constraint', 2),
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
@@ -17549,9 +17505,6 @@ INSERT INTO meta_grain VALUES
   ('directive-argument-name',
    'one formal argument of one directive definition in one graph',
    'graph_name, directive_name, argument_name', 'sdl'),
-  ('graph-scalar',
-   'one scalar type of one graph',
-   'graph_name, type_name', 'sdl'),
   ('reference-for-application',
    'one @referenceFor application at one coordinate that consumes it, in one graph',
    'graph_name, site, type_name, field_name, argument_name, ordinal, consuming_type_name, consuming_field_name', 'sdl'),
@@ -18511,14 +18464,6 @@ INSERT INTO meta_relation VALUES
    'What an @enum application says: the external code reference this enum declaration is bound to, as written.',
    'For example enum Rating @enum(enumReference: {className: "com.example.Ratings"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed: whether the class is on the classpath and whether it declares that method are questions for the classpath census, which is a different relation and a different reading.'),
-  ('graphitron_table_entry', 'graph-type', 'graphitron',
-   'The table a type is bound to, as one row per type however many @table applications the corpus wrote on it.',
-   'For example type Film @table(name: "film") gives the row Film reading film, and a bare @table on Actor gives a row carrying no name at all.',
-   'Derived from the entry beside it, which holds every application at the position it was written, by ranking a type''s applications in corpus merge order and taking the first. That rank is the whole of what this relation adds: a type-keyed grain admits one row and a type may carry the directive on its base declaration and on any extension, so the choice has to be made somewhere and here it is a statement a reader can read rather than an arrival order a walk had. A repeat is not refused, the losing application still standing in the entry stratum, which is what lets the repeated-application detection be a query rather than an overflow relation. The written name arrives by an outer join and is null on a bare application, which is a binding all the same: an author who wrote no name asked for the type''s own, and the deduction belongs to whoever resolves against the catalog rather than to the row that records what was written.'),
-  ('graphitron_scalar_type_entry', 'graph-scalar', 'graphitron',
-   'The Java constant a scalar type is bound to, as one row per scalar however many @scalarType applications the corpus wrote on it.',
-   'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row, split into the class that declares the field and the field itself.',
-   'Derived from the entry beside it on the same terms as the table binding, a rank over a type''s applications in corpus merge order with the first taken. Where that one joins the decode outwards this joins it inwards, and the difference is the relation''s own shape rather than a preference: the reference is this row''s only unkeyed column and it is NOT NULL, so an application naming nothing has no fact to state and draws no row, which is what the walk this replaces said by returning early. Whether the named class declares such a field is the classpath census''s question and is asked where the resolving happens.'),
   ('graphitron_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',

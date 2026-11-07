@@ -192,10 +192,14 @@ public final class SeededStore {
         dsl.execute("""
             INSERT INTO graphitron_spelled_reference_entry (graph_name, spelling, namespace_part, name_part)
             SELECT graph_name, spelling, namespace_part, name_part FROM (
-              SELECT graph_name, COALESCE(table_ref, type_name) AS spelling,
-                     table_ref_namespace_part AS namespace_part,
-                     COALESCE(table_ref_name_part, type_name) AS name_part
-                FROM graphitron_table_entry
+              SELECT a.graph_name, COALESCE(e.table_ref, a.coordinate) AS spelling,
+                     e.table_ref_namespace_part AS namespace_part,
+                     COALESCE(e.table_ref_name_part, a.coordinate) AS name_part
+                FROM graphql_directive_application a
+                LEFT JOIN graphitron_ast_table_entry e
+                  ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+                 AND e.source_line = a.source_line AND e.source_column = a.source_column
+               WHERE a.directive_name = 'table' AND a.ordinal = 0
               UNION
               SELECT a.graph_name, e.table_ref, e.table_ref_namespace_part, e.table_ref_name_part
                 FROM graphql_directive_application a

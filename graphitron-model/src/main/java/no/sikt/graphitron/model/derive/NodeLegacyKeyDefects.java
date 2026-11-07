@@ -17,7 +17,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACY_KEY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_LEGACY_KEY_UNREADABLE;
@@ -47,7 +46,7 @@ public final class NodeLegacyKeyDefects {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_NODE_LEGACY_KEY_DEFECT, GRAPHQL_DIRECTIVE_APPLICATION, GRAPHITRON_TABLE_ENTRY,
+        GRAPHITRON_NODE_LEGACY_KEY_DEFECT, GRAPHQL_DIRECTIVE_APPLICATION,
         GRAPHITRON_TABLETYPE, SQL_NODE_LEGACY_KEY_UNREADABLE, SQL_COLUMN, INTENT_TYPE_DOMAIN);
 
     /** One type whose legacy key shape breaks a rule, with what its message needs. */
@@ -108,10 +107,11 @@ public final class NodeLegacyKeyDefects {
                 location(r.value4(), r.value5(), r.value6()),
                 columnsOf(dsl, r.value7(), r.value8(), r.value9()))));
 
-        var t = GRAPHITRON_TABLE_ENTRY;
+        var t = GRAPHQL_DIRECTIVE_APPLICATION.as("table_application");
         dsl.select(d.TYPE_NAME, d.CODE, d.DETAIL, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
             .from(d)
-            .join(t).on(t.GRAPH_NAME.eq(d.GRAPH_NAME), t.TYPE_NAME.eq(d.TYPE_NAME))
+            .join(t).on(t.GRAPH_NAME.eq(d.GRAPH_NAME), t.COORDINATE.eq(d.TYPE_NAME),
+                t.DIRECTIVE_NAME.eq("table"), t.ORDINAL.eq(0))
             .where(d.GRAPH_NAME.eq(graphName), d.SITE.eq(inline("TABLE")),
                 defectAt(d.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, d.CODE),
                 domain(graphName, d.TYPE_NAME, inDomain))
@@ -121,7 +121,8 @@ public final class NodeLegacyKeyDefects {
         var u = SQL_NODE_LEGACY_KEY_UNREADABLE;
         dsl.select(b.TYPE_NAME, b.TABLE_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
             .from(b)
-            .join(t).on(t.GRAPH_NAME.eq(b.GRAPH_NAME), t.TYPE_NAME.eq(b.TYPE_NAME))
+            .join(t).on(t.GRAPH_NAME.eq(b.GRAPH_NAME), t.COORDINATE.eq(b.TYPE_NAME),
+                t.DIRECTIVE_NAME.eq("table"), t.ORDINAL.eq(0))
             .join(u).on(u.SOURCE_NAME.eq(b.TABLE_SOURCE_NAME), u.TABLE_SCHEMA.eq(b.TABLE_SCHEMA),
                 u.TABLE_NAME.eq(b.TABLE_NAME))
             .where(b.GRAPH_NAME.eq(graphName),

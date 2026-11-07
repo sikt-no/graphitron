@@ -28,7 +28,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_GATHERER;
@@ -476,10 +476,19 @@ class FactSchemaGateTest {
     @DisplayName("a decoded graphitron application keeps its verbatim row too")
     void theDecodeDoesNotReplaceTheTranscription(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
+            var t = GRAPHITRON_AST_TABLE_ENTRY;
             var decoded = store.dsl()
-                .select(GRAPHITRON_TABLE_ENTRY.TYPE_NAME)
-                .from(GRAPHITRON_TABLE_ENTRY)
-                .fetch(GRAPHITRON_TABLE_ENTRY.TYPE_NAME);
+                .select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
+                .from(t)
+                .join(GRAPHQL_DIRECTIVE_APPLICATION)
+                    .on(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(t.GRAPH_NAME),
+                        GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_NAME.eq(t.SOURCE_NAME),
+                        GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_LINE.eq(t.SOURCE_LINE),
+                        GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_COLUMN.eq(t.SOURCE_COLUMN))
+                .join(GRAPHQL_TYPE_ELEMENT)
+                    .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME),
+                        GRAPHQL_TYPE_ELEMENT.COORDINATE.eq(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE))
+                .fetch(GRAPHQL_TYPE_ELEMENT.TYPE_NAME);
             assertThat(decoded).as("the fixture applies @table, so the gate has something to pin")
                 .isNotEmpty();
             var verbatim = store.dsl()

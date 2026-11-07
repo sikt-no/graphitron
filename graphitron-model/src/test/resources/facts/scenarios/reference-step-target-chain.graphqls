@@ -62,7 +62,7 @@ extend schema @assertContains(relation: "graphitron_spelled_table", rows: """
   film_translation, public,       film_translation, 1
   """)
 
-extend schema @assertAbsent(relation: "graphitron_table_entry", rows: """
+extend schema @assertAbsent(relation: "graphitron_ast_table_entry", rows: """
   table_ref
   film_translation
   """)

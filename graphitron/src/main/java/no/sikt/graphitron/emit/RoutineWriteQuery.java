@@ -41,7 +41,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROU
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -462,7 +461,7 @@ public final class RoutineWriteQuery {
         var fc = GRAPHQL_FIELD_ELEMENT;
         var ac = GRAPHQL_ARGUMENT_ELEMENT;
         var dc = GRAPHQL_DIRECTIVE_APPLICATION;
-        var te = GRAPHITRON_TABLE_ENTRY;
+        var te = GRAPHQL_DIRECTIVE_APPLICATION.as("table_application");
         var tt = GRAPHITRON_TABLETYPE;
         var cf = GRAPHITRON_FIELD;
         var ce = GRAPHITRON_CONNECTION_ELEMENT_TYPE;
@@ -497,7 +496,7 @@ public final class RoutineWriteQuery {
                             ac.FIELD_NAME.eq(r.FIELD_NAME))))),
                 ft.TARGET_TYPE_NAME,
                 field(exists(selectOne().from(te).where(te.GRAPH_NAME.eq(ft.GRAPH_NAME),
-                    te.TYPE_NAME.eq(ft.TARGET_TYPE_NAME)))),
+                    te.COORDINATE.eq(ft.TARGET_TYPE_NAME), te.DIRECTIVE_NAME.eq("table")))),
                 field(select(concat(tt.TABLE_SOURCE_NAME, inline("."), tt.TABLE_SCHEMA, inline("."), tt.TABLE_NAME))
                     .from(tt).where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))),
                 dataField,

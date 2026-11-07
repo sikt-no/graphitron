@@ -17,10 +17,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
@@ -55,16 +51,13 @@ import static org.jooq.impl.DSL.val;
  * knowing: told apart by which relation a row is in rather than by a column, because no site
  * admits both.
  *
- * <h2>The type site, where the resolution is a rank</h2>
+ * <h2>The field site, where the key is an ordinal</h2>
  *
- * <p>The relations below the deprecation ones are the first of the incumbent decode's own to move.
- * They are keyed by the type a directive was written on, where the entry stating the same fact is
- * keyed by the position it was written at, so the resolution each of them performs is the one a
- * type-keyed grain forces: a type carrying an application on its base declaration and on an
- * extension has two entries and admits one row, and something has to pick. {@link #claimed} is
- * that pick, stated once for every directive at the site.
+ * <p>The relations below the deprecation ones are keyed by the field a repeatable directive was
+ * written on and its place among that field's applications, where the entry stating the same fact
+ * is keyed by the position it was written at.
  *
- * <p>Three relations over one decode, and the three differ in how far the resolution reaches. The
+ * <p>The three deprecation relations differ in how far the resolution reaches. The
  * directive-argument one is the one thing the {@code graphql_} anchors deliberately do not offer:
  * a directive applied to a directive definition's own argument reaches no applied-directive anchor,
  * an argument of a definition not being a schema element and a coordinate for one being a spelling
@@ -94,8 +87,6 @@ public final class GraphitronAnchor {
         deprecatedDirectives(dsl, graph, touchedAt);
         deprecatedDirectiveArguments(dsl, graph, touchedAt);
         deprecatedInputFields(dsl, graph, touchedAt);
-        tables(dsl, graph, touchedAt);
-        scalarTypes(dsl, graph, touchedAt);
         routines(dsl, graph, touchedAt);
         outboxes(dsl, graph, touchedAt);
         // Last, and children before parents within it, for the reason every delete here has that
@@ -105,9 +96,7 @@ public final class GraphitronAnchor {
 
     /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
     private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_TABLE_ENTRY,
-            GRAPHITRON_SCALAR_TYPE_ENTRY,
-            GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_OUTBOX_ENTRY);
+        List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_OUTBOX_ENTRY);
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather
@@ -232,161 +221,21 @@ public final class GraphitronAnchor {
         }
     }
 
-    // ------------------------------------------------------------------- the type site's decode
+    // ------------------------------------------------------------------ the field site's decode
 
     /**
-     * The type a claimed application was written on, carried up out of the ranking below. Named
-     * apart from the entry relations' own columns so a join above the ranking is unambiguous.
+     * The type a numbered application was written on, carried up out of the numbering below. Named
+     * apart from the entry relations' own columns so a join above the numbering is unambiguous.
      */
     private static final Field<String> TYPE_NAME = field(name("type_name"), String.class);
 
-    /** The file the declaration is in, which is the file its applications are in too. */
+    /** The file the application is in. */
     private static final Field<String> SITE_NAME = field(name("site_name"), String.class);
-
-    /** Where the declaration this was applied to opens. */
-    private static final Field<Integer> DECLARATION_LINE =
-        field(name("declaration_line"), Integer.class);
-
-    private static final Field<Integer> DECLARATION_COLUMN =
-        field(name("declaration_column"), Integer.class);
 
     /** Where the application itself was written, which is the entry relations' key. */
     private static final Field<Integer> SITE_LINE = field(name("site_line"), Integer.class);
 
     private static final Field<Integer> SITE_COLUMN = field(name("site_column"), Integer.class);
-
-    /** The rank that picks one application per type; see {@link #claimed}. */
-    private static final Field<Integer> RANK = field(name("rank"), Integer.class);
-
-    /**
-     * Every application of one type-site directive, ranked so that rank one is the application a
-     * type-keyed anchor states.
-     *
-     * <p>A type-keyed relation admits one row per type, and a type can carry the same directive on
-     * its base declaration and on any number of extensions, so something has to choose. The walk
-     * this replaces chose by arriving first and keeping what it had, and the order it arrived in
-     * was the corpus merge order, so the rank states that order rather than reproducing the
-     * arrival. A repeat is not a collision, which is what lets this rank rather than refuse: the
-     * losing application is still a row in the entry stratum at its own position, and that a
-     * single-application directive repeated is a detection over those rows.
-     *
-     * <p>Ranked over the applications rather than over the decoded entries, because the decode is
-     * not total: an application whose arguments state nothing an entry relation can hold has no
-     * entry row and is still an application. Taking the rank here and joining the decode afterwards
-     * is what keeps "applied, and named nothing" distinguishable from "not applied".
-     */
-    private static Table<?> claimed(DSLContext dsl, String graph, String directive) {
-        var a = GRAPHQL_AST_ENTRY;
-        var an = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-        var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-        var m = GRAPHQL_TYPE_DECLARATION;
-        return dsl
-            .select(d.NAME.as(TYPE_NAME), d.SOURCE_NAME.as(SITE_NAME),
-                d.SOURCE_LINE.as(DECLARATION_LINE), d.SOURCE_COLUMN.as(DECLARATION_COLUMN),
-                a.SOURCE_LINE.as(SITE_LINE), a.SOURCE_COLUMN.as(SITE_COLUMN),
-                rowNumber().over(partitionBy(d.NAME).orderBy(
-                    m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK))
-            .from(a)
-            .join(an).on(an.GRAPH_NAME.eq(a.GRAPH_NAME), an.SOURCE_NAME.eq(a.SOURCE_NAME),
-                an.SOURCE_LINE.eq(a.SOURCE_LINE), an.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-            .join(d).on(d.GRAPH_NAME.eq(a.GRAPH_NAME))
-                .and(d.SOURCE_NAME.eq(a.SOURCE_NAME))
-                .and(d.SOURCE_LINE.eq(a.PARENT_LINE))
-                .and(d.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
-            .join(m).on(m.GRAPH_NAME.eq(graph))
-                .and(m.TYPE_NAME.eq(d.NAME))
-                .and(m.SOURCE_NAME.eq(d.SOURCE_NAME))
-                .and(m.SOURCE_LINE.eq(d.SOURCE_LINE))
-                .and(m.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-            // On the application entry, so its (graph, name) index finds the few applications
-            // of this directive; on the position, H2 reads every position in the graph first.
-            .where(an.GRAPH_NAME.eq(graph))
-            .and(an.NAME.eq(directive))
-            .asTable("claimed");
-    }
-
-    /**
-     * The table a type declaration is bound to: rank one of the {@code @table} applications, with
-     * the written name joined on from the decode.
-     *
-     * <p>A left join, and it is the whole reason this reads two relations. A bare {@code @table}
-     * writes no entry row, the author having written no name to record, and it is still a binding:
-     * the type resolves against its own name. So the application is the row's existence and the
-     * decode is its payload, and an absent payload is the deduction the author asked for by
-     * leaving the argument out rather than the absence of the directive.
-     */
-    private static void tables(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimed(dsl, graph, "table");
-        var e = GRAPHITRON_AST_TABLE_ENTRY;
-        var t = GRAPHITRON_TABLE_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TABLE_REF,
-                t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
-                    c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
-                    c.field(SITE_COLUMN), e.TABLE_REF, e.TABLE_REF_NAMESPACE_PART,
-                    e.TABLE_REF_NAME_PART, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .leftJoin(e).on(e.GRAPH_NAME.eq(graph))
-                    .and(e.SOURCE_NAME.eq(c.field(SITE_NAME)))
-                    .and(e.SOURCE_LINE.eq(c.field(SITE_LINE)))
-                    .and(e.SOURCE_COLUMN.eq(c.field(SITE_COLUMN)))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
-            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.TABLE_REF, excluded(t.TABLE_REF))
-            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
-     * The Java constant a scalar declaration is backed by. An inner join where {@link #tables}
-     * takes an outer one, because here the payload is the fact: {@code scalar_ref} is the
-     * relation's one unkeyed column and it is NOT NULL, so an application naming nothing has
-     * nothing to state and the walk this replaces returned without writing.
-     */
-    private static void scalarTypes(DSLContext dsl, String graph,
-                                        LocalDateTime touchedAt) {
-        var c = claimed(dsl, graph, "scalarType");
-        var e = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
-        var t = GRAPHITRON_SCALAR_TYPE_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SCALAR_REF,
-                t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
-                    c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
-                    c.field(SITE_COLUMN), e.SCALAR_REF, e.SCALAR_REF_CLASS_PART,
-                    e.SCALAR_REF_FIELD_PART, val(touchedAt, t.TOUCHED_AT))
-                .from(c)
-                .join(e).on(e.GRAPH_NAME.eq(graph))
-                    .and(e.SOURCE_NAME.eq(c.field(SITE_NAME)))
-                    .and(e.SOURCE_LINE.eq(c.field(SITE_LINE)))
-                    .and(e.SOURCE_COLUMN.eq(c.field(SITE_COLUMN)))
-                .where(c.field(RANK).eq(1)))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
-            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.SCALAR_REF, excluded(t.SCALAR_REF))
-            .set(t.SCALAR_REF_CLASS_PART, excluded(t.SCALAR_REF_CLASS_PART))
-            .set(t.SCALAR_REF_FIELD_PART, excluded(t.SCALAR_REF_FIELD_PART))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
 
     /**
      * Every {@code @routine} application at its coordinate, numbered in written order.
