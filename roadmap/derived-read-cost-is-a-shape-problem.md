@@ -2608,6 +2608,10 @@ twins staying; and `graphitron_ast_field_condition_context_arg_entry`,
 `graphitron_ast_service_context_arg_entry`, a context key being `graphitron_call_context_key_written`'s.
 `GraphitronFactCapture`'s marker writer and `FactWrites.graphitronArgumentBinding` went with them.
 
+**The `@error` decode** (2026-11-07). `graphitron_error_entry` and `graphitron_error_handler_entry`;
+the language server's type hover reads an `@error` type's handlers off `graphitron_ast_error_entry`'s
+family through `graphql_directive_application`.
+
 **One survivor flagged rather than corrected.** `authored-connection-type-scope-silence` rests its
 premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_scope_table` reading
 it. The column is gone and that view reads neither relation now. A dated note says so in its body;

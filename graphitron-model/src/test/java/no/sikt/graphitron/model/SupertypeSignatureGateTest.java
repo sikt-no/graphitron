@@ -133,7 +133,7 @@ class SupertypeSignatureGateTest {
      * being about the same constants, and the incumbent was retired rather than reconciled.
      *
      * <p>One row left the roster in the same change and for the same reason read backwards.
-     * {@code graphitron_error_entry} and the type-site application relation shared a payload only
+     * The decode's {@code @error} entry, since retired, and the type-site application relation shared a payload only
      * while provenance was counted in it; what they actually shared is the declaration site, which
      * both declared as a foreign key into {@code graphql_type_declaration}. Their supertype was
      * written all along and the columns beside it were hiding that. The application relation has
@@ -359,7 +359,7 @@ class SupertypeSignatureGateTest {
      * members carry the same columns outside their own keys, so the converted shape is those very
      * columns, all of them, referencing one relation: the members agree on a spelling and the
      * database holds them to it. The whole payload and not merely some of it, because a reference
-     * carrying part of one is a different fact entirely. graphitron_error_entry and the type-site
+     * carrying part of one is a different fact entirely. The retired {@code @error} decode entry and the type-site
      * application relation shared five columns and both pointed three of them at
      * graphql_type_declaration, which is where each was written and not what each is a kind of.
      */

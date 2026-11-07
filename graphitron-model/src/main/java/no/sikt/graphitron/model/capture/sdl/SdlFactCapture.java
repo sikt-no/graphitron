@@ -740,20 +740,6 @@ public final class SdlFactCapture {
     }
 
     /**
-     * Writes the line and column of a position whose {@code source_name} column is already spoken
-     * for by the site key. The two always name the same file: an element sits lexically inside
-     * the site that declares it.
-     */
-    public static void setOwnPosition(SourceLocation location, java.util.function.Consumer<Integer> line,
-                               java.util.function.Consumer<Integer> column) {
-        if (location == null) {
-            return;
-        }
-        line.accept(location.getLine());
-        column.accept(location.getColumn());
-    }
-
-    /**
      * The type-expression decode the capture-time rule admits: {@code typeSdl} is the literal the
      * author wrote and the three booleans describe the wrapping. Deeper nesting keeps a faithful
      * {@code typeSdl} while the decode describes the outermost list and the innermost item;

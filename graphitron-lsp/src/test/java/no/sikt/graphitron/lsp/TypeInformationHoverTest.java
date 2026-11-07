@@ -71,6 +71,13 @@ class TypeInformationHoverTest {
         type FilmError @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
             message: String
         }
+
+        type FilmConflict @error(handlers: [
+            {handler: DATABASE, sqlState: "23503"},
+            {handler: GENERIC, className: "java.lang.IllegalStateException"}
+        ]) {
+            message: String
+        }
         """.formatted(FIXTURE_SERVICE);
 
     @TempDir
@@ -124,6 +131,22 @@ class TypeInformationHoverTest {
             """);
         assertThat(hoverAt(file, 0, "type FilmEr".length()))
             .contains("**Handles** `GENERIC java.lang.RuntimeException`");
+    }
+
+    @Test
+    void anErrorTypeListsItsHandlersInWrittenOrderAndAClassOnlyWhereOneIsWritten() {
+        var file = file("""
+            type FilmConflict @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                message: String
+            }
+            """);
+        var hover = hoverAt(file, 0, "type FilmCon".length());
+        assertThat(hover)
+            .contains("**Handles** `DATABASE`")
+            .contains("**Handles** `GENERIC java.lang.IllegalStateException`");
+        assertThat(hover.indexOf("`DATABASE`"))
+            .as("the handlers in the order the author wrote them")
+            .isLessThan(hover.indexOf("`GENERIC java.lang.IllegalStateException`"));
     }
 
     @Test

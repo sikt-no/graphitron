@@ -32,8 +32,6 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
@@ -137,34 +135,6 @@ public final class GraphitronFactCapture {
                 // supertype holds, so this site's spelling is not the value it stores.
                 String written = string(directive, "name");
                 spelling(written == null ? type : written);
-            }
-            case "error" -> {
-                if (!sink.claim(GRAPHITRON_ERROR_ENTRY, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ERROR_ENTRY);
-                record.setTypeName(type);
-                site(site, directive, record::setSourceName, record::setDeclarationLine,
-                    record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-                sink.add(record);
-                int position = 0;
-                for (Value<?> handler : list(directive, "handlers")) {
-                    // An element naming no kind is illegal against the definition, which assembly
-                    // reports; it is undecoded here rather than a row its NOT NULL kind would refuse.
-                    String kind = handler instanceof ObjectValue o ? tokenOf(field(o, "handler")) : null;
-                    if (!(handler instanceof ObjectValue object) || kind == null) {
-                        undecoded(directive, "handlers", handler);
-                        continue;
-                    }
-                    var row = sink.dsl().newRecord(GRAPHITRON_ERROR_HANDLER_ENTRY);
-                    row.setTypeName(type);
-                    row.setPosition(position++);
-                    row.setHandler(kind);
-                    row.setClassName(stringOf(field(object, "className"), directive, "handlers"));
-                    row.setCode(stringOf(field(object, "code"), directive, "handlers"));
-                    row.setSqlState(stringOf(field(object, "sqlState"), directive, "handlers"));
-                    row.setMatches(stringOf(field(object, "matches"), directive, "handlers"));
-                    row.setDescription(stringOf(field(object, "description"), directive, "handlers"));
-                    sink.add(row);
-                }
             }
             default -> { /* no decoded relation: fidelity-only or consumer-less */ }
         }
@@ -563,19 +533,6 @@ public final class GraphitronFactCapture {
     }
 
     /**
-     * Writes the site key (which doubles as the file of the position columns) plus the
-     * application's own line and column, the pattern every type-coordinate relation follows.
-     */
-    private static void site(SiteRef site, Directive directive, Consumer<String> sourceName,
-                             Consumer<Integer> declarationLine, Consumer<Integer> declarationColumn,
-                             Consumer<Integer> line, Consumer<Integer> column) {
-        sourceName.accept(site.location().getSourceName());
-        declarationLine.accept(site.location().getLine());
-        declarationColumn.accept(site.location().getColumn());
-        no.sikt.graphitron.model.capture.sdl.SdlFactCapture.setOwnPosition(directive.getSourceLocation(), line, column);
-    }
-
-    /**
      * Quarantines a literal that does not fit its declared shape, rendered and located, so the
      * authored value survives a decode that produced nothing. Dormant while assembly runs
      * upstream and rejects such schemas first.
@@ -641,8 +598,6 @@ public final class GraphitronFactCapture {
         GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY,
         GRAPHITRON_ARGUMENT_NODE_ID_ENTRY,
         GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY,
-        GRAPHITRON_ERROR_ENTRY,
-        GRAPHITRON_ERROR_HANDLER_ENTRY,
         GRAPHITRON_FIELD_NODE_ID_ENTRY,
         GRAPHITRON_FIELD_REFERENCE_ENTRY,
         GRAPHITRON_METHOD_REFERENCE_ENTRY,

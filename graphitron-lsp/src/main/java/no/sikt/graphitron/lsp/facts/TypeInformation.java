@@ -11,13 +11,15 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.multiset;
@@ -108,9 +110,18 @@ public final class TypeInformation {
             .convertFrom(r -> r.map(Records.mapping(Node::new)))
             .as("type_info_nodes");
 
-        var h = GRAPHITRON_ERROR_HANDLER_ENTRY;
-        handlers = multiset(select(h.HANDLER, h.CLASS_NAME).from(h)
-            .where(h.GRAPH_NAME.eq(graph), h.TYPE_NAME.eq(typeName))
+        // The handlers of the type's first @error application, @error not being repeatable; a
+        // class is written on a GENERIC handler alone.
+        var app = GRAPHQL_DIRECTIVE_APPLICATION;
+        var h = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
+        var g = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
+        handlers = multiset(select(h.HANDLER, g.CLASS_NAME).from(app)
+            .join(h).on(h.GRAPH_NAME.eq(app.GRAPH_NAME), h.SOURCE_NAME.eq(app.SOURCE_NAME),
+                h.APPLICATION_LINE.eq(app.SOURCE_LINE), h.APPLICATION_COLUMN.eq(app.SOURCE_COLUMN))
+            .leftJoin(g).on(g.GRAPH_NAME.eq(h.GRAPH_NAME), g.SOURCE_NAME.eq(h.SOURCE_NAME),
+                g.SOURCE_LINE.eq(h.SOURCE_LINE), g.SOURCE_COLUMN.eq(h.SOURCE_COLUMN))
+            .where(app.GRAPH_NAME.eq(graph), app.COORDINATE.eq(typeName),
+                app.DIRECTIVE_NAME.eq("error"), app.ORDINAL.eq(0))
             .orderBy(h.POSITION))
             .convertFrom(r -> r.map(Records.mapping(Handler::new)))
             .as("type_info_handlers");

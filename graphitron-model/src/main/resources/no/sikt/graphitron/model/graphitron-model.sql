@@ -3719,55 +3719,6 @@ COMMENT ON COLUMN graphitron_mutation_entry.table_ref_namespace_part_upper IS 't
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_mutation_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
-CREATE TABLE graphitron_error_entry (
-  graph_name       VARCHAR NOT NULL,
-  type_name        VARCHAR NOT NULL,
-  source_name      VARCHAR NOT NULL,
-  declaration_line INT     NOT NULL,
-  declaration_column INT   NOT NULL,
-  source_line      INT,
-  source_column    INT,
-  PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_error_entry IS '@error on an object type: presence; the handlers list decodes into the ordered child, and every cross-field handler rule is a detection. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_error_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_error_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_error_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
-COMMENT ON COLUMN graphitron_error_entry.declaration_line IS 'line of the contributing declaration site, keyed with source_name';
-COMMENT ON COLUMN graphitron_error_entry.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphitron_error_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_error_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-
-CREATE TABLE graphitron_error_handler_entry (
-  graph_name  VARCHAR NOT NULL,
-  type_name   VARCHAR NOT NULL,
-  position    INT     NOT NULL,
-  handler     VARCHAR NOT NULL,
-  class_name  VARCHAR,
-  code        VARCHAR,
-  sql_state   VARCHAR,
-  matches     VARCHAR,
-  description VARCHAR,
-  PRIMARY KEY (graph_name, type_name, position),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_error_entry (graph_name, type_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_error_handler_entry IS 'An ordered ErrorHandler of an @error application. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. Nothing has been written to replace it yet.';
-COMMENT ON COLUMN graphitron_error_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_error_handler_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_error_handler_entry.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_error_handler_entry.handler IS 'GENERIC / DATABASE / VALIDATION as written; open column';
-COMMENT ON COLUMN graphitron_error_handler_entry.class_name IS 'the exception class as written';
-COMMENT ON COLUMN graphitron_error_handler_entry.code IS 'the database error code the handler matches on';
-COMMENT ON COLUMN graphitron_error_handler_entry.sql_state IS 'the SQL state code the handler matches on';
-COMMENT ON COLUMN graphitron_error_handler_entry.matches IS 'a substring the exception message must contain';
-COMMENT ON COLUMN graphitron_error_handler_entry.description IS 'SDL description string, when the author wrote one';
-
 CREATE TABLE graphitron_node_entry (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,

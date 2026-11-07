@@ -72,6 +72,10 @@ step's method reference is written, is keyed on `graphitron_method_reference_ent
 `graphitron_ast_external_field_entry` and `graphitron_ast_default_order_field_entry`, the twins of
 the copies that went, read by nothing yet.
 
+The `@error` decode went too, `graphitron_error_entry` and `graphitron_error_handler_entry`: the
+language server's type hover read the handler rows, and reads `graphitron_ast_error_handler_entry`
+and `graphitron_ast_error_generic_handler_entry` instead, which gives the `@error` capture its reader.
+
 ### 3. New-model relations written ahead of their readers
 
 `graphitron_occurrence_parameter`, `graphitron_occurrence_source_object`,

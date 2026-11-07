@@ -1,4 +1,4 @@
-"An @error handler written without its kind. handler is a non-null enum, so the application is illegal against the definition: assembly reports it, and capture records the element as undecoded rather than writing a row its kind column refuses. Before that guard the refused insert failed the capture of the whole corpus, every other document in the store included."
+"An @error handler written without its kind. handler is a non-null enum, so the application is illegal against the definition: assembly reports it, and capture writes no entry rather than a row its kind column refuses. A refused insert once failed the capture of the whole corpus, every other document in the store included."
 type Refused @table(name: "film") @error(handlers: [{className: "java.lang.IllegalStateException"}]) {
   id: ID
 }
@@ -6,11 +6,6 @@ type Refused @table(name: "film") @error(handlers: [{className: "java.lang.Illeg
 extend type Query {
   refused: Refused
 }
-
-extend schema @assertContains(relation: "graphitron_undecoded_argument_entry", rows: """
-  directive_name, directive_argument_name
-  error,          handlers
-  """)
 
 # The illegal application is refused at the entry grain as well: no decode, so no handler rows.
 extend schema @assertEmpty(relation: "graphitron_ast_error_entry", where: "1 = 1")

@@ -60,11 +60,10 @@ public final class BindingUsages {
      * position: the five field- and type-level directives that name one directly, the two condition
      * families, and the three reference-step families through their parent reference row.
      *
-     * <p>Two carriers are deliberately absent. The deprecated {@code @record(className:)} binds no
-     * live class, so the store decodes it nowhere and listing it would show an author a site the
-     * generator ignores; the definition surface carves the same directive out for the same reason.
-     * {@code graphitron_error_handler_entry} names a class and records no position for it, so there
-     * is nowhere to send an editor.
+     * <p>Two carriers are absent. The deprecated {@code @record(className:)} binds no live class, so
+     * the store decodes it nowhere and listing it would show an author a site the generator ignores;
+     * the definition surface carves the same directive out for the same reason. An {@code @error}
+     * handler's class, {@code graphitron_ast_error_generic_handler_entry}, is not listed yet.
      */
     public static List<Location> ofClass(StoreHandle store, String fqn) {
         if (fqn == null || fqn.isEmpty()) return List.of();
