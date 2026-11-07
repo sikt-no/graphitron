@@ -55,11 +55,20 @@ class SameRowTableChildExecutionTest {
         return result.getData();
     }
 
-    /** The films keyed by {@code filmId}, each carrying {@code selection}. */
+    /** The last of sakila's seeded film ids, 1 to 5; other execution tests write films of their own above it. */
+    private static final int LAST_SEEDED_FILM = 5;
+
+    /**
+     * The seeded films keyed by {@code filmId}, each carrying {@code selection}. A film another test
+     * writes can change or go between this query's statements, so only the seeded ones are judged.
+     */
     private Map<Integer, Map<String, Object>> films(String selection) {
         var byId = new HashMap<Integer, Map<String, Object>>();
         for (var film : (List<Map<String, Object>>) execute("{ films { filmId " + selection + " } }").get("films")) {
-            byId.put((Integer) film.get("filmId"), film);
+            int filmId = (Integer) film.get("filmId");
+            if (filmId <= LAST_SEEDED_FILM) {
+                byId.put(filmId, film);
+            }
         }
         return byId;
     }
