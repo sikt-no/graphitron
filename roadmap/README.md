@@ -45,10 +45,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
-| `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | Ready | 2026-11-07 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-10-29 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R1131` | A clean build runs in under five minutes | In Progress | 2026-10-30 | [plan](clean-build-under-five-minutes.md) |
+| `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-07 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -819,7 +819,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R98-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing, blocked by [multi-source-input-validation](multi-source-input-validation.md)
 - `R737` [**roadmap-tool stands a fact store up outside the harness, in a module the guard does not walk**](roadmap-tool-store-site-and-guard-scope.md) — Backlog, cleanup
-- `R1160` [**Every schema a test captures is a fact document, and the test strategy is rebuilt on them**](tests-read-shared-fact-stores.md) — Ready, dx
+- `R1160` [**Every schema a test captures is a fact document, and the test strategy is rebuilt on them**](tests-read-shared-fact-stores.md) — In Progress, dx
 - `R1149` [**Tests that set the JVM default time zone race the test classes running beside them**](test-default-time-zone-mutation-races-parallel-classes.md) — Backlog, tech-debt
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog
