@@ -14500,6 +14500,116 @@ COMMENT ON VIEW graphitron_occurrence_producer_routine_rule IS 'One row the rout
 -- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.table_schema';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.routine_name IS 'the routine_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.routine_name';
 
+-- Who an occurrence's rows may be: the participants of a polymorphic target, and how a row is told
+-- apart as each. Read at the occurrence because a polymorphic parent is spelled by its participant,
+-- so no child of the occurrence states them.
+CREATE VIEW graphitron_occurrence_participant_rule
+  (graph_name, coordinate, participant_type, recognized_by, table_source_name, table_schema,
+   table_name, base_source_name, base_schema, base_name, discriminator_column, discriminator_value) AS
+SELECT o.graph_name, o.coordinate, m.member_type_name,
+       CASE WHEN dc.container_name IS NULL THEN 'TABLE' ELSE 'DISCRIMINATOR' END,
+       mt.table_source_name, mt.table_schema, mt.table_name,
+       dc.table_source_name, dc.table_schema, dc.table_name, dc.column_name,
+       -- A value only where the container discriminates: a member of two containers writes one
+       -- @discriminator, which means nothing under the one that does not.
+       CASE WHEN dc.container_name IS NOT NULL THEN dv.discriminator_value END
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_poly_member m ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
+  -- A participant is table-bound; one that is not has no row, which the defects name.
+  JOIN graphitron_tabletype mt ON mt.graph_name = m.graph_name AND mt.type_name = m.member_type_name
+  -- The container's @discriminate, its table and the column it names there, by the column's SQL
+  -- name or its jOOQ name; the column is null where the name resolves to none.
+  LEFT JOIN (
+    SELECT da.graph_name, da.coordinate AS container_name, tt.table_source_name, tt.table_schema,
+           tt.table_name, c.column_name, c.binding_type
+      FROM graphitron_ast_discriminate_entry d
+      JOIN graphql_directive_application da
+        ON da.graph_name = d.graph_name AND da.source_name = d.source_name
+       AND da.source_line = d.source_line AND da.source_column = d.source_column
+      LEFT JOIN graphitron_tabletype tt ON tt.graph_name = da.graph_name AND tt.type_name = da.coordinate
+      LEFT JOIN sql_column c
+        ON c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
+       AND c.table_name = tt.table_name
+       AND (c.column_name_upper = UPPER(d.on_column) OR c.jooq_name_upper = UPPER(d.on_column))
+  ) dc ON dc.graph_name = m.graph_name AND dc.container_name = m.container_name
+  -- The participant's @discriminator value.
+  LEFT JOIN (
+    SELECT va.graph_name, va.coordinate AS type_name, v.discriminator_value
+      FROM graphitron_ast_discriminator_entry v
+      JOIN graphql_directive_application va
+        ON va.graph_name = v.graph_name AND va.source_name = v.source_name
+       AND va.source_line = v.source_line AND va.source_column = v.source_column
+  ) dv ON dv.graph_name = m.graph_name AND dv.type_name = m.member_type_name
+ WHERE o.kind = 'FIELD'
+   -- A container whose @discriminate names no column, a participant with no value, a value two
+   -- participants share and a value outside an enum column's literals state no participant: each is
+   -- a defect at the application, and a row here would tell a row apart wrongly.
+   AND (dc.container_name IS NULL
+        OR (dc.column_name IS NOT NULL AND dv.discriminator_value IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM graphql_poly_member m2
+                JOIN graphql_directive_application va2
+                  ON va2.graph_name = m2.graph_name AND va2.coordinate = m2.member_type_name
+                 AND va2.directive_name = 'discriminator'
+                JOIN graphitron_ast_discriminator_entry v2
+                  ON v2.graph_name = va2.graph_name AND v2.source_name = va2.source_name
+                 AND v2.source_line = va2.source_line AND v2.source_column = va2.source_column
+               WHERE m2.graph_name = m.graph_name AND m2.container_name = m.container_name
+                 AND m2.member_type_name <> m.member_type_name
+                 AND v2.discriminator_value = dv.discriminator_value)
+            AND (NOT EXISTS (SELECT 1 FROM sql_enum_binding eb
+                              WHERE eb.source_name = dc.table_source_name AND eb.class_fqn = dc.binding_type)
+                 OR EXISTS (SELECT 1 FROM sql_enum_binding_literal el
+                             WHERE el.source_name = dc.table_source_name AND el.class_fqn = dc.binding_type
+                               AND el.literal = dv.discriminator_value))));
+COMMENT ON VIEW graphitron_occurrence_participant_rule IS 'One row the participant rule computes, in the shape graphitron_occurrence_participant stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_participant, which is the name every reader spells.';
+
+CREATE TABLE graphitron_occurrence_participant (
+  graph_name           VARCHAR   NOT NULL,
+  coordinate           VARCHAR   NOT NULL,
+  participant_type     VARCHAR   NOT NULL,
+  recognized_by        VARCHAR   NOT NULL,
+  table_source_name    VARCHAR   NOT NULL,
+  table_schema         VARCHAR   NOT NULL,
+  table_name           VARCHAR   NOT NULL,
+  base_source_name     VARCHAR,
+  base_schema          VARCHAR,
+  base_name            VARCHAR,
+  discriminator_column VARCHAR,
+  discriminator_value  VARCHAR,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, participant_type),
+  -- Two participants one value tells apart would make the value name neither.
+  UNIQUE (graph_name, coordinate, discriminator_value),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  -- The column on the shared table, which is the container's own and may not be the participant's.
+  FOREIGN KEY (base_source_name, base_schema, base_name, discriminator_column)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (recognized_by IN ('TABLE', 'DISCRIMINATOR')),
+  CHECK ((recognized_by = 'DISCRIMINATOR') = (discriminator_value IS NOT NULL)),
+  CHECK ((recognized_by = 'DISCRIMINATOR') = (discriminator_column IS NOT NULL))
+);
+COMMENT ON TABLE graphitron_occurrence_participant IS 'One type an occurrence''s rows may be, and how a row is told apart as it: one row per occurrence whose target is polymorphic and per participant. For example Query.search, returning Searchable, has Film told apart by its table film and Actor by actor, and Query.content, returning Content, has FilmContent told apart by content_type holding FILM.';
+COMMENT ON COLUMN graphitron_occurrence_participant.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_participant.coordinate IS 'the occurrence whose target is the union or interface; with the graph and the participant, the key';
+COMMENT ON COLUMN graphitron_occurrence_participant.participant_type IS 'the member of the union or the implementation of the interface a row may be';
+COMMENT ON COLUMN graphitron_occurrence_participant.recognized_by IS 'how a row is told apart as this participant: TABLE, by the table it is a row of, so in code its record class, where the participants are on tables of their own; DISCRIMINATOR, by the value of a column of the table the container shares, where it writes @discriminate';
+COMMENT ON COLUMN graphitron_occurrence_participant.table_source_name IS 'the participant''s own table, its @table: the shared table for a DISCRIMINATOR participant on it, a detail table for one joined to it';
+COMMENT ON COLUMN graphitron_occurrence_participant.table_schema IS 'the schema of the same';
+COMMENT ON COLUMN graphitron_occurrence_participant.table_name IS 'the name of the same';
+COMMENT ON COLUMN graphitron_occurrence_participant.base_source_name IS 'on DISCRIMINATOR, the source of the container''s table, the one the discriminating column is on';
+COMMENT ON COLUMN graphitron_occurrence_participant.base_schema IS 'on DISCRIMINATOR, the schema of the same';
+COMMENT ON COLUMN graphitron_occurrence_participant.base_name IS 'on DISCRIMINATOR, the name of the same';
+COMMENT ON COLUMN graphitron_occurrence_participant.discriminator_column IS 'on DISCRIMINATOR, the column @discriminate(on:) names, by its SQL name';
+COMMENT ON COLUMN graphitron_occurrence_participant.discriminator_value IS 'on DISCRIMINATOR, the value the column holds for a row of this participant, as @discriminator(value:) writes it: the database''s own spelling, an enum column''s literal';
+COMMENT ON COLUMN graphitron_occurrence_participant.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 CREATE TABLE graphitron_occurrence_producer_routine (
   graph_name          VARCHAR   NOT NULL,
   coordinate          VARCHAR   NOT NULL,
@@ -17670,6 +17780,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence-binding',
    'one place one occurrence binds, in one graph',
    'graph_name, coordinate, bound', 'sdl'),
+  ('graph-occurrence-participant',
+   'one type the rows of one polymorphic occurrence may be, in one graph',
+   'graph_name, coordinate, participant_type', 'sdl'),
   ('graph-occurrence-call-parameter',
    'one parameter position of the call one producer occurrence makes, in one graph',
    'graph_name, coordinate, position', 'sdl'),
@@ -18242,6 +18355,14 @@ INSERT INTO meta_relation VALUES
    'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree.',
    'For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two.',
    'A view because both the rule and the defect read it: a pair that is each other''s only candidate binds, and a parameter whose candidates do not pair off is ambiguous.'),
+  ('graphitron_occurrence_participant_rule', 'graph-occurrence-participant', 'graphitron',
+   'One row the participant rule computes, in the shape graphitron_occurrence_participant stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_participant, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_participant', 'graph-occurrence-participant', 'graphitron',
+   'One type an occurrence''s rows may be, and how a row is told apart as it: one row per occurrence whose target is polymorphic and per participant.',
+   'For example Query.search, returning Searchable, has Film told apart by its table film and Actor by actor, and Query.content, returning Content, has FilmContent told apart by content_type holding FILM.',
+   'Stored because the polymorphic re-read and the generated type resolver both ask it, and a foreign key can reference the discriminating column only where it is written down. Keyed at the occurrence rather than the type, since a polymorphic parent is spelled by its participant and no child of the occurrence states them; derived from the type''s directives, so two occurrences of one container agree.'),
   ('graphitron_occurrence_call_parameter_rule', 'graph-occurrence-call-parameter', 'graphitron',
    'One row the call-parameter rule computes, in the shape graphitron_occurrence_call_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.',

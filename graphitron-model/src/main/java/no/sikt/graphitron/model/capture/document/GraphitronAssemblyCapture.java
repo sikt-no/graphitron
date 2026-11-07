@@ -15,6 +15,7 @@ import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
+import no.sikt.graphitron.model.derive.OccurrenceParticipants;
 import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
 import no.sikt.graphitron.model.derive.PathClaims;
@@ -129,6 +130,9 @@ public final class GraphitronAssemblyCapture {
         // What fills each parameter of each service call, off the calls, landings and sources above,
         // with the PARAMETER binding of each argument a call takes.
         OccurrenceCallParameters.derive(dsl, graph, readAt);
+        // The types each polymorphic occurrence's rows may be and how a row is told apart as each, off
+        // the occurrences, the table types and the discriminator directives.
+        OccurrenceParticipants.derive(dsl, graph, readAt);
         // Last, the defects this gatherer's facts break, off everything above: the rule's rows
         // marked with this reading, the declarations under each condition shape defect, then the
         // argMapping entries under the strings they fault, then the sweep of this gatherer's codes

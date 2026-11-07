@@ -41,3 +41,12 @@ extend schema @expectEquals(relation: "graphitron_result_table", where: "type_na
   FilmContent,  content
   ShortContent, content
   """)
+
+# Query.content's rows may be either member, each told apart by the value content_type holds for it.
+# The column is the content table's, named by its jOOQ name and stated by its SQL name, and the
+# value is checked against the content_kind enum's literals before it is stated.
+extend schema @expectEquals(relation: "graphitron_occurrence_participant", rows: """
+  coordinate,    participant_type, recognized_by, table_name, base_name, discriminator_column, discriminator_value
+  Query.content, FilmContent,      DISCRIMINATOR, content,    content,   content_type,         FILM
+  Query.content, ShortContent,     DISCRIMINATOR, content,    content,   content_type,         SHORT
+  """)
