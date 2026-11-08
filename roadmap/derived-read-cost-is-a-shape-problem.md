@@ -640,15 +640,41 @@ pass and no stratum that clears and recomputes.
       stage, `occurrence-depths`, each depth reading the one above. `StageRosterGateTest` refuses a
       stage rule view that reaches a relation a later stage writes; the sweep is the gatherer's,
       after its stages.
-    * **The outbox's relations are stored by a stage of their own** `open`. `graphitron_outbox_target`,
-      `graphitron_outbox_routine_target`, `graphitron_outbox_result_step` and `graphitron_outbox_leaf`
-      are views, so every reader expands them again: the entry-defect rule names
-      `graphitron_outbox_leaf` four times, about 29 percent of its expanded size. An outbox stage
-      writes them as tables, marked and swept, after the call parameters it reads, and its
-      `OUTBOX_*` arms become that stage's rule.
-    * **An arm belongs to the last stage whose facts it reads** `blocked`, on "A stage's rule reads
-      only what its own and earlier stages wrote" and "The outbox's relations are stored by a stage
-      of their own". Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
+    * **An outbox message is a call of its occurrence** `open`. The outbox views predate the
+      occurrence model and derive at read time what it now states: the `@outbox` applications of a
+      field, three times over by type and field; whether the field writes, off the field-keyed
+      `graphitron_producer_write`; an argument source, off `graphitron_argmapping_candidate`; a
+      `$session` member, matched again; and a `$result` path, walked by hand over result classes and
+      read slots in `graphitron_outbox_result_step`, beside a node-per-table check of its own
+      (Alf, 2026-11-08). Restated over the occurrence:
+      * a message is one row per `@outbox` application, keyed by the occurrence and the ordinal and
+        referencing `graphitron_occurrence_producer`, so a field with no write or service producer
+        is `OUTBOX_NOT_A_WRITE` and a service outbox needs nothing new;
+      * a payload key, the message's own and the common payload's, is a parameter of that call, one
+        row per message and key name with a `fill` in `graphitron_occurrence_call_parameter`'s
+        vocabulary, `ARGUMENT` and `SESSION_MEMBER` as there, and `RESULT` and `SCOPE` added; a
+        relation of its own beside the service call's, since a key is named where a parameter is
+        positioned and hangs off a message where a parameter hangs off the producer;
+      * a `$result` path lands as an argument path does: `graphitron_argmapping_call` admits
+        `@outbox`, and a `$result` path walks field occurrences down from the call, each head the
+        child under the occurrence or, where the type it stands on is table-bound and so starts a
+        chain, that type's own `Type.field`; the key reads its landed occurrence's
+        `graphitron_occurrence_column`, `graphitron_occurrence_node_id` or
+        `graphitron_occurrence_source_object`;
+      * the two targets stay configuration resolved against the catalog, one row per graph, stored.
+
+      `graphitron_outbox_result_step`, `graphitron_outbox_leaf` and the outbox's reading of
+      `graphitron_argmapping_candidate` go, which moves "The argMapping readers read the landing, and
+      the candidate and match go" one reader on. One `outbox` stage after `occurrence-participants`
+      writes the messages and keys and owns the `OUTBOX_*` codes, each read off its relations: a key
+      with no fill is unresolved, a landed binding whose type is not carriable is unserializable,
+      and two keys of a message by one name conflict. `OutboxQuery` reads the message and its keys.
+      Every fact document and sis write the same `graphitron_entry_defect` rows before and after.
+      Merging the payload keys into `graphitron_occurrence_call_parameter`, an occurrence holding
+      several calls, is for when a third kind of call appears. Done here rather than under R1113,
+      whose phase 3 then builds on it.
+    * **An arm belongs to the last stage whose facts it reads** `blocked`, on "An outbox message is a
+      call of its occurrence". Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
       that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every
       fact document and sis write the same `graphitron_entry_defect` rows before and after. The
       checks that read only the documents (`TYPE_NAME_CASE_COLLISION`, `CONNECTION_RETURN`,
