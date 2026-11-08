@@ -23,4 +23,4 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   Film.strayNotes.note
   """)
 extend schema @assertEmpty(relation: "graphitron_occurrence_source", where: "coordinate LIKE 'Film.strayNotes.%'")
-extend schema @assertEmpty(relation: "graphitron_path_need", where: "coordinate LIKE 'Film.strayNotes.%'")
+extend schema @assertEmpty(relation: "graphitron_path_need_table", where: "coordinate LIKE 'Film.strayNotes.%'")

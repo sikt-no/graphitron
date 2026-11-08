@@ -25,7 +25,7 @@ type Query {
   stores: [Store]
 }
 
-extend schema @assertContains(relation: "graphitron_path_need", rows: """
+extend schema @assertContains(relation: "graphitron_path_need_table", rows: """
   coordinate,    target_type, start_table
   Film.language, Language,    film
   Store.address, Address,     store

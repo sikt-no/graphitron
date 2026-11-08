@@ -12,7 +12,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static org.jooq.impl.DSL.coalesce;
@@ -74,7 +74,7 @@ public final class FieldColumnTable {
         var pc = GRAPHITRON_PRODUCER_CLAIM;
         var c = GRAPHITRON_JOIN_PATH_CLAIM;
         var o = GRAPHITRON_OCCURRENCE;
-        var n = GRAPHITRON_PATH_NEED;
+        var n = GRAPHITRON_PATH_NEED_TABLE;
         var jp = GRAPHITRON_JOIN_PATH;
         var st = GRAPHITRON_JOIN_PATH_STOP;
         var t = GRAPHITRON_TYPE;

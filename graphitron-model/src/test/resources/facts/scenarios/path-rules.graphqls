@@ -209,7 +209,7 @@ extend schema @assertAbsent(relation: "graphitron_join_path_stop", rows: """
 # An argument's path starts where its field lands for each type, the member's table, and lands on
 # the node's table: Customer over customer's one key to store, Staff by the key its @referenceFor
 # writes.
-extend schema @expectEquals(relation: "graphitron_path_need", where: "coordinate = 'Query.people(storeId:)'", rows: """
+extend schema @expectEquals(relation: "graphitron_path_need_table", where: "coordinate = 'Query.people(storeId:)'", rows: """
   coordinate,              target_type, start_table, landing_table
   Query.people(storeId:),  Customer,    customer,    customer
   Query.people(storeId:),  Staff,       staff,

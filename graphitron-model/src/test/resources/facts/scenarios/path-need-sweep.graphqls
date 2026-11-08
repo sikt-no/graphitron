@@ -5,7 +5,7 @@ extend schema @withFacts(docs: [
   {path: "layouts/anchor"},
   {path: "shapes/path-need-sweep/a-t0", as: "path-need-sweep.a"}])
 
-extend schema @expectEquals(relation: "graphitron_path_need", where: """
+extend schema @expectEquals(relation: "graphitron_path_need_table", where: """
   coordinate LIKE 'Customer.%' OR coordinate LIKE 'Query.customers%'
   """, rows: """
   coordinate,               target_type, start_table, landing_table, touched_at
@@ -19,7 +19,7 @@ extend schema @tick(ms: 60000)
 extend schema @withFacts(docs: [
   {path: "shapes/path-need-sweep/a-t60", as: "path-need-sweep.a"}])
 
-extend schema @expectEquals(relation: "graphitron_path_need", where: """
+extend schema @expectEquals(relation: "graphitron_path_need_table", where: """
   coordinate LIKE 'Customer.%' OR coordinate LIKE 'Query.customers%'
   """, rows: """
   coordinate,               target_type, start_table, landing_table, touched_at
@@ -27,6 +27,6 @@ extend schema @expectEquals(relation: "graphitron_path_need", where: """
   Query.customers(first:),  Customer,    customer,    customer,      1000000060
   """)
 
-extend schema @assertEmpty(relation: "graphitron_path_need", where: """
+extend schema @assertEmpty(relation: "graphitron_path_need_table", where: """
   coordinate = 'Customer.address'
   """)

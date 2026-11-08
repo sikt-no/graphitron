@@ -8524,9 +8524,40 @@ COMMENT ON COLUMN graphitron_occurrence_source_object.class_source_ref IS 'the c
 COMMENT ON COLUMN graphitron_occurrence_source_object.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
 
 CREATE TABLE graphitron_path_need (
+  graph_name      VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  target_type     VARCHAR   NOT NULL,
+  start_kind      VARCHAR   NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  target_graph_ref VARCHAR,
+  target_type_ref VARCHAR,
+  PRIMARY KEY (graph_name, coordinate, target_type),
+  -- What each subtype references, so a subtype row can only hang under a need of its own kind.
+  UNIQUE (graph_name, coordinate, target_type, start_kind),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  -- The target type, through the need's own copy of its key: a key to what an anchor was built from
+  -- does not cascade, and the sweep removes the row the reading no longer finds.
+  FOREIGN KEY (target_graph_ref, target_type_ref)
+    REFERENCES graphitron_type (graph_name, type_name) ON DELETE SET NULL,
+  CHECK (start_kind IN ('TABLE', 'OBJECT')),
+  CHECK (target_graph_ref IS NULL OR target_graph_ref = graph_name),
+  CHECK (target_type_ref IS NULL OR target_type_ref = target_type)
+);
+COMMENT ON TABLE graphitron_path_need IS 'One type an occurrence must reach from its source: one row per occurrence and target type, with whether the path toward it starts on a table or on an object. For example Query.search(languageId:), an argument of a field returning a union of Film and Language, needs Film and Language, each from a table.';
+COMMENT ON COLUMN graphitron_path_need.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_path_need.coordinate IS 'the occurrence whose need this is, at its nested coordinate; with the graph, a reference into graphitron_occurrence, so a need goes with the occurrence';
+COMMENT ON COLUMN graphitron_path_need.target_type IS 'the type the occurrence reaches: a field''s target where it has a table or none; each member with a table of a union, a multi-table interface or a single-table interface, never the interface itself; for an argument or input field, each type its parent''s needs reach. With the coordinate the key, as a claim is keyed by its element and target type';
+COMMENT ON COLUMN graphitron_path_need.start_kind IS 'TABLE where the path starts on one of the occurrence''s source tables, graphitron_path_need_table; OBJECT where it starts on the object the occurrence''s values are read off. Carried into each subtype''s key so a subtype of the other kind cannot be written';
+COMMENT ON COLUMN graphitron_path_need.touched_at IS 'when the reading that last stated this need ran: the mark the sweep reads, so a need a reading no longer finds goes with its subtype, path, steps and stop';
+COMMENT ON COLUMN graphitron_path_need.target_graph_ref IS 'the graph half of the target type''s key, nullable so the type''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_need.target_type_ref IS 'the type half of the target type''s key, equal to target_type while the type stands; null where the type is none graphitron_type holds';
+
+CREATE TABLE graphitron_path_need_table (
   graph_name           VARCHAR   NOT NULL,
   coordinate           VARCHAR   NOT NULL,
   target_type          VARCHAR   NOT NULL,
+  start_kind           VARCHAR   NOT NULL,
   start_source_name    VARCHAR   NOT NULL,
   start_schema         VARCHAR   NOT NULL,
   start_table          VARCHAR   NOT NULL,
@@ -8539,23 +8570,20 @@ CREATE TABLE graphitron_path_need (
   start_source_ref     VARCHAR,
   start_schema_ref     VARCHAR,
   start_table_ref      VARCHAR,
-  target_graph_ref     VARCHAR,
-  target_type_ref      VARCHAR,
   landing_source_ref   VARCHAR,
   landing_schema_ref   VARCHAR,
   landing_table_ref    VARCHAR,
   PRIMARY KEY (graph_name, coordinate, target_type),
-  FOREIGN KEY (graph_name, coordinate)
-    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  -- The start, the target type and the landing, each through the need's own copy of its key: a key
-  -- to what an anchor was built from does not cascade, and the sweep removes the row the reading no
-  -- longer finds.
+  -- The need it details, pinned to the kind that starts on a table.
+  FOREIGN KEY (graph_name, coordinate, target_type, start_kind)
+    REFERENCES graphitron_path_need (graph_name, coordinate, target_type, start_kind)
+    ON DELETE CASCADE,
+  -- The start and the landing, each through the need's own copy of its key: a key to what an anchor
+  -- was built from does not cascade, and the sweep removes the row the reading no longer finds.
   FOREIGN KEY (start_graph_ref, start_coordinate_ref, start_source_ref, start_schema_ref,
                start_table_ref)
     REFERENCES graphitron_occurrence_source_table (graph_name, coordinate, table_source_name,
                                                    table_schema, table_name) ON DELETE SET NULL,
-  FOREIGN KEY (target_graph_ref, target_type_ref)
-    REFERENCES graphitron_type (graph_name, type_name) ON DELETE SET NULL,
   FOREIGN KEY (landing_source_ref, landing_schema_ref, landing_table_ref)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE SET NULL,
   CHECK (start_graph_ref IS NULL OR start_graph_ref = graph_name),
@@ -8563,8 +8591,7 @@ CREATE TABLE graphitron_path_need (
   CHECK (start_source_ref IS NULL OR start_source_ref = start_source_name),
   CHECK (start_schema_ref IS NULL OR start_schema_ref = start_schema),
   CHECK (start_table_ref IS NULL OR start_table_ref = start_table),
-  CHECK (target_graph_ref IS NULL OR target_graph_ref = graph_name),
-  CHECK (target_type_ref IS NULL OR target_type_ref = target_type),
+  CHECK (start_kind = 'TABLE'),
   -- A landing is a table or not yet known, all three of its columns together.
   CHECK ((landing_source_name IS NULL) = (landing_table IS NULL)
          AND (landing_schema IS NULL) = (landing_table IS NULL)),
@@ -8572,27 +8599,26 @@ CREATE TABLE graphitron_path_need (
   CHECK (landing_schema_ref IS NULL OR landing_schema_ref = landing_schema),
   CHECK (landing_table_ref IS NULL OR landing_table_ref = landing_table)
 );
-COMMENT ON TABLE graphitron_path_need IS 'One type an occurrence with a table source must reach: one row per occurrence and target type, with the source table it starts on and the table it lands on. For example Query.search(languageId:), an argument of a field returning a union of Film and Language, needs Film from film and Language from language, and Film.languageName, a scalar that writes a path, needs String from film with its landing not yet known.';
-COMMENT ON COLUMN graphitron_path_need.graph_name IS 'the owning graph''s partition, carried from the occurrence';
-COMMENT ON COLUMN graphitron_path_need.coordinate IS 'the occurrence whose need this is, at its nested coordinate; with the graph, a reference into graphitron_occurrence, so a need goes with the occurrence';
-COMMENT ON COLUMN graphitron_path_need.target_type IS 'the type the occurrence reaches: a field''s target where it has a table or none; each member with a table of a union, a multi-table interface or a single-table interface, never the interface itself; for an argument or input field, each type its parent''s needs reach. With the coordinate the key, as a claim is keyed by its element and target type. A path follows the claim matching its need: an argument''s or input field''s need the @referenceFor claim naming its target type, else the element''s one claim';
-COMMENT ON COLUMN graphitron_path_need.start_source_name IS 'the catalog partition of the source table the path starts on';
-COMMENT ON COLUMN graphitron_path_need.start_schema IS 'the SQL schema of the source table the path starts on';
-COMMENT ON COLUMN graphitron_path_need.start_table IS 'the source table the path starts on, one of the occurrence''s graphitron_occurrence_source_table rows: for a field its one source table, for an argument where its field lands for the target type, for an input field its parent''s start';
-COMMENT ON COLUMN graphitron_path_need.landing_source_name IS 'the catalog partition of the table the path lands on, null with landing_table';
-COMMENT ON COLUMN graphitron_path_need.landing_schema IS 'the SQL schema of the table the path lands on, null with landing_table';
-COMMENT ON COLUMN graphitron_path_need.landing_table IS 'the table the path lands on: a table-bound target''s own table, the start table for a target bound to none, and null for a scalar whose declaration writes a path until its steps say where it lands. An attribute and not a key, so a need is one row however its landing is learnt';
-COMMENT ON COLUMN graphitron_path_need.touched_at IS 'when the reading that last stated this need ran: the mark the sweep reads, so a need a reading no longer finds goes with its path, steps and stop';
-COMMENT ON COLUMN graphitron_path_need.start_graph_ref IS 'the graph half of the start''s graphitron_occurrence_source_table key, nullable so the source table row''s removal sets the reference null rather than cascading';
-COMMENT ON COLUMN graphitron_path_need.start_coordinate_ref IS 'the coordinate half of the start''s key, equal to coordinate while the source table row stands';
-COMMENT ON COLUMN graphitron_path_need.start_source_ref IS 'the catalog half of the start''s key, equal to start_source_name while the source table row stands';
-COMMENT ON COLUMN graphitron_path_need.start_schema_ref IS 'the schema half of the start''s key, equal to start_schema while the source table row stands';
-COMMENT ON COLUMN graphitron_path_need.start_table_ref IS 'the table half of the start''s key, equal to start_table while the source table row stands';
-COMMENT ON COLUMN graphitron_path_need.target_graph_ref IS 'the graph half of the target type''s key, nullable so the type''s removal sets the reference null rather than cascading';
-COMMENT ON COLUMN graphitron_path_need.target_type_ref IS 'the type half of the target type''s key, equal to target_type while the type stands; null where the type is none graphitron_type holds';
-COMMENT ON COLUMN graphitron_path_need.landing_source_ref IS 'the catalog half of the landing table''s sql_table key, nullable so the table''s removal sets the reference null rather than cascading';
-COMMENT ON COLUMN graphitron_path_need.landing_schema_ref IS 'the schema half of the landing table''s key, equal to landing_schema while the table stands';
-COMMENT ON COLUMN graphitron_path_need.landing_table_ref IS 'the name half of the landing table''s key, equal to landing_table while the table stands';
+COMMENT ON TABLE graphitron_path_need_table IS 'One type an occurrence with a table source must reach: one row per occurrence and target type, with the source table it starts on and the table it lands on. For example Query.search(languageId:), an argument of a field returning a union of Film and Language, needs Film from film and Language from language, and Film.languageName, a scalar that writes a path, needs String from film with its landing not yet known.';
+COMMENT ON COLUMN graphitron_path_need_table.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_path_need_table.coordinate IS 'the occurrence whose need this is, at its nested coordinate; with the graph, a reference into graphitron_occurrence, so a need goes with the occurrence';
+COMMENT ON COLUMN graphitron_path_need_table.target_type IS 'the type the occurrence reaches; with the two columns before it, the need''s key';
+COMMENT ON COLUMN graphitron_path_need_table.start_kind IS 'always TABLE, pinned so the foreign key holds the row to a need that starts on a table';
+COMMENT ON COLUMN graphitron_path_need_table.start_source_name IS 'the catalog partition of the source table the path starts on';
+COMMENT ON COLUMN graphitron_path_need_table.start_schema IS 'the SQL schema of the source table the path starts on';
+COMMENT ON COLUMN graphitron_path_need_table.start_table IS 'the source table the path starts on, one of the occurrence''s graphitron_occurrence_source_table rows: for a field its one source table, for an argument where its field lands for the target type, for an input field its parent''s start';
+COMMENT ON COLUMN graphitron_path_need_table.landing_source_name IS 'the catalog partition of the table the path lands on, null with landing_table';
+COMMENT ON COLUMN graphitron_path_need_table.landing_schema IS 'the SQL schema of the table the path lands on, null with landing_table';
+COMMENT ON COLUMN graphitron_path_need_table.landing_table IS 'the table the path lands on: a table-bound target''s own table, the start table for a target bound to none, and null for a scalar whose declaration writes a path until its steps say where it lands. An attribute and not a key, so a need is one row however its landing is learnt';
+COMMENT ON COLUMN graphitron_path_need_table.touched_at IS 'when the reading that last stated this need ran, as its need''s; carried so a reader of the table side filters on its own row';
+COMMENT ON COLUMN graphitron_path_need_table.start_graph_ref IS 'the graph half of the start''s graphitron_occurrence_source_table key, nullable so the source table row''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_need_table.start_coordinate_ref IS 'the coordinate half of the start''s key, equal to coordinate while the source table row stands';
+COMMENT ON COLUMN graphitron_path_need_table.start_source_ref IS 'the catalog half of the start''s key, equal to start_source_name while the source table row stands';
+COMMENT ON COLUMN graphitron_path_need_table.start_schema_ref IS 'the schema half of the start''s key, equal to start_schema while the source table row stands';
+COMMENT ON COLUMN graphitron_path_need_table.start_table_ref IS 'the table half of the start''s key, equal to start_table while the source table row stands';
+COMMENT ON COLUMN graphitron_path_need_table.landing_source_ref IS 'the catalog half of the landing table''s sql_table key, nullable so the table''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_need_table.landing_schema_ref IS 'the schema half of the landing table''s key, equal to landing_schema while the table stands';
+COMMENT ON COLUMN graphitron_path_need_table.landing_table_ref IS 'the name half of the landing table''s key, equal to landing_table while the table stands';
 
 CREATE TABLE graphitron_path (
   graph_name  VARCHAR   NOT NULL,
@@ -10824,7 +10850,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
   JOIN graphitron_binding_claim cl
     ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
    AND cl.kind = 'NODE_ID' AND cl.named IS NULL
-  JOIN graphitron_path_need pn
+  JOIN graphitron_path_need_table pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
@@ -10879,7 +10905,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
   JOIN graphitron_occurrence o
     ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
    AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
-  JOIN graphitron_path_need pn
+  JOIN graphitron_path_need_table pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
@@ -10902,7 +10928,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
                                 AND b2.table_name = bt.table_name
                                 AND b2.type_name <> bt.type_name)))
  WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need p2
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
                      LEFT JOIN graphitron_join_path jp2
                        ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
                       AND jp2.target_type = p2.target_type
@@ -10944,7 +10970,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
     ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   LEFT JOIN graphitron_argument a
     ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
-  JOIN graphitron_path_need pn
+  JOIN graphitron_path_need_table pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
@@ -10971,7 +10997,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
                       AND x.kind IN ('NODE_ID', 'COLUMN'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need p2
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
                      LEFT JOIN graphitron_join_path jp2
                        ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
                       AND jp2.target_type = p2.target_type
@@ -11077,7 +11103,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_nam
   LEFT JOIN graphitron_binding_claim cl
     ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
    AND cl.kind = 'COLUMN'
-  JOIN graphitron_path_need n
+  JOIN graphitron_path_need_table n
     ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
@@ -11102,7 +11128,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_nam
                              WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
    AND NOT (cl.named IS NULL AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
             AND COALESCE(f.named_type, a.named_type) = 'ID'
-            AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+            AND EXISTS (SELECT 1 FROM graphitron_path_need_table pn
                           LEFT JOIN graphitron_join_path jp
                             ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
                            AND jp.target_type = pn.target_type
@@ -12318,7 +12344,7 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                                               AND r.referenced_schema = n.start_schema
                                               AND r.referenced_table = n.start_table), 0) END
                          AS routes
-                  FROM graphitron_path_need n
+                  FROM graphitron_path_need_table n
                   JOIN graphitron_occurrence o
                     ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate AND o.kind = 'FIELD'
                   JOIN graphitron_tabletype tt
@@ -12379,7 +12405,7 @@ SELECT a.graph_name, el.source_name, el.source_line, el.source_column, 'INHERITE
        MIN(a.first_interface) || ' and ' || MAX(a.last_interface)
   FROM (SELECT n.graph_name, o.element_coordinate, n.target_type,
                MIN(ii.interface_name) AS first_interface, MAX(ii.interface_name) AS last_interface
-          FROM graphitron_path_need n
+          FROM graphitron_path_need_table n
           JOIN graphitron_occurrence o
             ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate AND o.kind = 'FIELD'
           JOIN graphitron_field f
@@ -12886,7 +12912,7 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
   LEFT JOIN graphitron_directive_application da
     ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
    AND da.directive_name = 'field' AND da.ordinal = 0
-  JOIN graphitron_path_need n
+  JOIN graphitron_path_need_table n
     ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
@@ -12944,7 +12970,7 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
   LEFT JOIN graphitron_directive_application da
     ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
    AND da.directive_name = 'field' AND da.ordinal = 0
-  JOIN graphitron_path_need n
+  JOIN graphitron_path_need_table n
     ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
@@ -13579,13 +13605,13 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
  WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
-   AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+   AND EXISTS (SELECT 1 FROM graphitron_path_need_table pn
                  LEFT JOIN graphitron_join_path jp
                    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
                   AND jp.target_type = pn.target_type
                 WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
                   AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need pn
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table pn
                      LEFT JOIN graphitron_join_path jp
                        ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
                       AND jp.target_type = pn.target_type
@@ -13618,7 +13644,7 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
  WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id b
                     WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
-   AND EXISTS (SELECT 1 FROM graphitron_path_need pn
+   AND EXISTS (SELECT 1 FROM graphitron_path_need_table pn
                  LEFT JOIN graphitron_join_path jp
                    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
                   AND jp.target_type = pn.target_type
@@ -13646,7 +13672,7 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
     ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
   JOIN graphql_field f
     ON f.graph_name = fe.graph_name AND f.type_name = fe.type_name AND f.field_name = fe.field_name
-  JOIN graphitron_path_need pn
+  JOIN graphitron_path_need_table pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
@@ -13694,7 +13720,7 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
        COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column),
        'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name)
   FROM graphitron_occurrence o
-  JOIN graphitron_path_need pn
+  JOIN graphitron_path_need_table pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
@@ -13735,7 +13761,7 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
    AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
    AND COALESCE(f.source_line, a.source_line) IS NOT NULL
    AND (o.kind = 'INPUT_FIELD'
-        OR NOT EXISTS (SELECT 1 FROM graphitron_path_need p2
+        OR NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
                         WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
                           AND p2.target_type <> pn.target_type))
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
@@ -16132,7 +16158,7 @@ SELECT graph_name, site, type_name, field_name, argument_name, path, use_site,
           LEFT JOIN graphitron_occurrence o
             ON o.graph_name = e.graph_name AND e.site = 'ARGUMENT' AND o.kind = 'FIELD_ARGUMENT'
            AND o.element_coordinate = e.type_name || '.' || e.field_name || '(' || e.argument_name || ':)'
-          JOIN graphitron_path_need n
+          JOIN graphitron_path_need_table n
             ON n.graph_name = e.graph_name AND n.coordinate = COALESCE(o.coordinate, e.path)
            AND n.start_source_name = e.from_source_name AND n.start_schema = e.from_schema
            AND n.start_table = e.from_table
@@ -16151,7 +16177,7 @@ SELECT graph_name, site, type_name, field_name, argument_name, path, use_site,
          WHERE e.navigation IN ('AUTHORED_PATH', 'DISCOVERED_KEY')
            AND (k.constraint_name IS NOT NULL OR ik.constraint_name IS NOT NULL
                 OR mk.table_name IS NOT NULL)
-           AND NOT EXISTS (SELECT 1 FROM graphitron_path_need n2
+           AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table n2
                              JOIN graphitron_join_path_step s2
                                ON s2.graph_name = n2.graph_name AND s2.coordinate = n2.coordinate
                               AND s2.target_type = n2.target_type AND s2.position = 0
@@ -17304,6 +17330,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_source_table'),
   ('occurrence-depths', 'graphitron_path'),
   ('occurrence-depths', 'graphitron_path_need'),
+  ('occurrence-depths', 'graphitron_path_need_table'),
   ('occurrence-node-ids', 'graphitron_occurrence_binding'),
   ('occurrence-node-ids', 'graphitron_occurrence_node_id'),
   ('occurrence-columns', 'graphitron_occurrence_binding'),
@@ -18406,6 +18433,10 @@ INSERT INTO meta_relation VALUES
    'For example Query.filmBlurbHolder.blurb is read off the FilmBlurbHolder its parent''s service hands back.',
    'A value a producer hands back with a class but no table record and no key row is rows of no table, so its occurrences read it as an object, the start of an accessor path. The class is the parent field''s own producer''s result and nothing else, so a source never guesses among the classes a type may be backed by.'),
   ('graphitron_path_need', 'path-need', 'graphitron',
+   'One type an occurrence must reach from its source: one row per occurrence and target type, with whether the path toward it starts on a table or on an object.',
+   'For example Query.search(languageId:), an argument of a field returning a union of Film and Language, needs Film and Language, each from a table.',
+   'The need the paths meet, whichever side its source is on: a join path meets a need starting on a table, an accessor path one starting on an object, so graphitron_path references the need and each start kind details it in a subtype of its own, the supertype holding the key, the kind, the mark and the target type. Written by the occurrence-depths stage a depth at a time; a need a reading no longer finds is swept, taking its subtype, path, steps and stop.'),
+  ('graphitron_path_need_table', 'path-need', 'graphitron',
    'One type an occurrence with a table source must reach: one row per occurrence and target type, with the source table it starts on and the table it lands on.',
    'For example Query.search(languageId:), an argument of a field returning a union of Film and Language, needs Film from film and Language from language, and Film.languageName, a scalar that writes a path, needs String from film with its landing not yet known.',
    'What an occurrence must reach is decided by its target types, each expanded to its members with a table, before any path is looked for, so a need no path meets is a defect at its claim rather than a row a reader fails to find. Keyed by the occurrence''s nested coordinate and the target type, as a claim by its element and target type, so a fork is a target of its own. Only an occurrence with a table source has needs, its start one of its source table rows, and an argument or input field copies its parent''s. The start, the target type and the landing are referenced through copies of their keys their removal sets null, so the sweep, not a cascade, removes a need the reading no longer finds.'),

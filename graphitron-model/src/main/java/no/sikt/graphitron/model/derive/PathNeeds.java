@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
@@ -36,6 +37,7 @@ import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
@@ -108,7 +110,11 @@ public final class PathNeeds {
         }
     }
 
-    /** Upserts one depth's needs, each start, target type and landing referenced where it stands. */
+    /**
+     * Upserts one depth's needs, the need and then its table side, each start, target type and
+     * landing referenced where it stands. The rule is read once per relation: the need's subtype
+     * references the need, so the need is written first.
+     */
     private static void write(DSLContext dsl, Select<Record> rows, LocalDateTime touchedAt) {
         var c = rows.asTable("c");
         var cGraph = c.field("graph_name", String.class);
@@ -121,48 +127,64 @@ public final class PathNeeds {
         var cLandingSchema = c.field("landing_schema", String.class);
         var cLandingTable = c.field("landing_table", String.class);
         var n = GRAPHITRON_PATH_NEED;
-        var s = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("s");
         var t = GRAPHITRON_TYPE.as("t");
-        var lt = SQL_TABLE.as("lt");
         dsl.insertInto(n)
-            .columns(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE, n.START_SOURCE_NAME, n.START_SCHEMA,
-                n.START_TABLE, n.LANDING_SOURCE_NAME, n.LANDING_SCHEMA, n.LANDING_TABLE, n.TOUCHED_AT,
-                n.START_GRAPH_REF, n.START_COORDINATE_REF, n.START_SOURCE_REF, n.START_SCHEMA_REF,
-                n.START_TABLE_REF, n.TARGET_GRAPH_REF, n.TARGET_TYPE_REF, n.LANDING_SOURCE_REF,
-                n.LANDING_SCHEMA_REF, n.LANDING_TABLE_REF)
-            .select(selectDistinct(cGraph, cCoordinate, cTarget, cStartSource, cStartSchema,
-                    cStartTable, cLandingSource, cLandingSchema, cLandingTable,
-                    val(touchedAt, n.TOUCHED_AT),
+            .columns(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE, n.START_KIND, n.TOUCHED_AT,
+                n.TARGET_GRAPH_REF, n.TARGET_TYPE_REF)
+            .select(selectDistinct(cGraph, cCoordinate, cTarget, inline(TABLE),
+                    val(touchedAt, n.TOUCHED_AT), t.GRAPH_NAME, t.TYPE_NAME)
+                .from(c)
+                .leftJoin(t).on(t.GRAPH_NAME.eq(cGraph), t.TYPE_NAME.eq(cTarget)))
+            .onConflict(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE)
+            .doUpdate()
+            .set(n.START_KIND, excluded(n.START_KIND))
+            .set(n.TOUCHED_AT, excluded(n.TOUCHED_AT))
+            .set(n.TARGET_GRAPH_REF, excluded(n.TARGET_GRAPH_REF))
+            .set(n.TARGET_TYPE_REF, excluded(n.TARGET_TYPE_REF))
+            .execute();
+
+        var nt = GRAPHITRON_PATH_NEED_TABLE;
+        var s = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("s");
+        var lt = SQL_TABLE.as("lt");
+        dsl.insertInto(nt)
+            .columns(nt.GRAPH_NAME, nt.COORDINATE, nt.TARGET_TYPE, nt.START_KIND,
+                nt.START_SOURCE_NAME, nt.START_SCHEMA, nt.START_TABLE, nt.LANDING_SOURCE_NAME,
+                nt.LANDING_SCHEMA, nt.LANDING_TABLE, nt.TOUCHED_AT,
+                nt.START_GRAPH_REF, nt.START_COORDINATE_REF, nt.START_SOURCE_REF, nt.START_SCHEMA_REF,
+                nt.START_TABLE_REF, nt.LANDING_SOURCE_REF, nt.LANDING_SCHEMA_REF, nt.LANDING_TABLE_REF)
+            .select(selectDistinct(cGraph, cCoordinate, cTarget, inline(TABLE), cStartSource,
+                    cStartSchema, cStartTable, cLandingSource, cLandingSchema, cLandingTable,
+                    val(touchedAt, nt.TOUCHED_AT),
                     s.GRAPH_NAME, s.COORDINATE, s.TABLE_SOURCE_NAME, s.TABLE_SCHEMA, s.TABLE_NAME,
-                    t.GRAPH_NAME, t.TYPE_NAME, lt.SOURCE_NAME, lt.TABLE_SCHEMA, lt.TABLE_NAME)
+                    lt.SOURCE_NAME, lt.TABLE_SCHEMA, lt.TABLE_NAME)
                 .from(c)
                 .leftJoin(s).on(s.GRAPH_NAME.eq(cGraph), s.COORDINATE.eq(cCoordinate),
                     s.TABLE_SOURCE_NAME.eq(cStartSource), s.TABLE_SCHEMA.eq(cStartSchema),
                     s.TABLE_NAME.eq(cStartTable), s.TOUCHED_AT.eq(touchedAt))
-                .leftJoin(t).on(t.GRAPH_NAME.eq(cGraph), t.TYPE_NAME.eq(cTarget))
                 .leftJoin(lt).on(lt.SOURCE_NAME.eq(cLandingSource), lt.TABLE_SCHEMA.eq(cLandingSchema),
                     lt.TABLE_NAME.eq(cLandingTable)))
-            .onConflict(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE)
+            .onConflict(nt.GRAPH_NAME, nt.COORDINATE, nt.TARGET_TYPE)
             .doUpdate()
-            .set(n.START_SOURCE_NAME, excluded(n.START_SOURCE_NAME))
-            .set(n.START_SCHEMA, excluded(n.START_SCHEMA))
-            .set(n.START_TABLE, excluded(n.START_TABLE))
-            .set(n.LANDING_SOURCE_NAME, excluded(n.LANDING_SOURCE_NAME))
-            .set(n.LANDING_SCHEMA, excluded(n.LANDING_SCHEMA))
-            .set(n.LANDING_TABLE, excluded(n.LANDING_TABLE))
-            .set(n.TOUCHED_AT, excluded(n.TOUCHED_AT))
-            .set(n.START_GRAPH_REF, excluded(n.START_GRAPH_REF))
-            .set(n.START_COORDINATE_REF, excluded(n.START_COORDINATE_REF))
-            .set(n.START_SOURCE_REF, excluded(n.START_SOURCE_REF))
-            .set(n.START_SCHEMA_REF, excluded(n.START_SCHEMA_REF))
-            .set(n.START_TABLE_REF, excluded(n.START_TABLE_REF))
-            .set(n.TARGET_GRAPH_REF, excluded(n.TARGET_GRAPH_REF))
-            .set(n.TARGET_TYPE_REF, excluded(n.TARGET_TYPE_REF))
-            .set(n.LANDING_SOURCE_REF, excluded(n.LANDING_SOURCE_REF))
-            .set(n.LANDING_SCHEMA_REF, excluded(n.LANDING_SCHEMA_REF))
-            .set(n.LANDING_TABLE_REF, excluded(n.LANDING_TABLE_REF))
+            .set(nt.START_SOURCE_NAME, excluded(nt.START_SOURCE_NAME))
+            .set(nt.START_SCHEMA, excluded(nt.START_SCHEMA))
+            .set(nt.START_TABLE, excluded(nt.START_TABLE))
+            .set(nt.LANDING_SOURCE_NAME, excluded(nt.LANDING_SOURCE_NAME))
+            .set(nt.LANDING_SCHEMA, excluded(nt.LANDING_SCHEMA))
+            .set(nt.LANDING_TABLE, excluded(nt.LANDING_TABLE))
+            .set(nt.TOUCHED_AT, excluded(nt.TOUCHED_AT))
+            .set(nt.START_GRAPH_REF, excluded(nt.START_GRAPH_REF))
+            .set(nt.START_COORDINATE_REF, excluded(nt.START_COORDINATE_REF))
+            .set(nt.START_SOURCE_REF, excluded(nt.START_SOURCE_REF))
+            .set(nt.START_SCHEMA_REF, excluded(nt.START_SCHEMA_REF))
+            .set(nt.START_TABLE_REF, excluded(nt.START_TABLE_REF))
+            .set(nt.LANDING_SOURCE_REF, excluded(nt.LANDING_SOURCE_REF))
+            .set(nt.LANDING_SCHEMA_REF, excluded(nt.LANDING_SCHEMA_REF))
+            .set(nt.LANDING_TABLE_REF, excluded(nt.LANDING_TABLE_REF))
             .execute();
     }
+
+    /** A need that starts on one of the occurrence's source tables. */
+    private static final String TABLE = "TABLE";
 
     /** Every need the rules give the occurrences at {@code depth}. */
     private static Select<Record> candidates(String graph, LocalDateTime touchedAt, int depth) {
@@ -326,7 +348,7 @@ public final class PathNeeds {
      */
     private static Select<Record> argumentCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                                Condition at, LocalDateTime touchedAt) {
-        var pn = GRAPHITRON_PATH_NEED.as("pn");
+        var pn = GRAPHITRON_PATH_NEED_TABLE.as("pn");
         var j = GRAPHITRON_JOIN_PATH.as("j");
         Condition written = claims(o, pn.TARGET_TYPE);
         Condition walked = pn.LANDING_TABLE.isNull();
@@ -349,7 +371,7 @@ public final class PathNeeds {
 
     /** Whether the parent occurrence {@code p} has no need this reading stated. */
     private static Condition parentHasNoNeed(GraphitronOccurrence p, LocalDateTime touchedAt) {
-        var pn = GRAPHITRON_PATH_NEED.as("pn0");
+        var pn = GRAPHITRON_PATH_NEED_TABLE.as("pn0");
         return notExists(selectOne().from(pn)
             .where(pn.GRAPH_NAME.eq(p.GRAPH_NAME), pn.COORDINATE.eq(p.COORDINATE),
                 pn.TOUCHED_AT.eq(touchedAt)));
@@ -467,7 +489,7 @@ public final class PathNeeds {
      */
     private static Select<Record> inputFieldCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at, LocalDateTime touchedAt) {
-        var pn = GRAPHITRON_PATH_NEED.as("pn");
+        var pn = GRAPHITRON_PATH_NEED_TABLE.as("pn");
         Condition written = claims(o, pn.TARGET_TYPE);
         Condition parentWalked = pn.LANDING_TABLE.isNull();
         return row(o, pn.TARGET_TYPE, pn.START_SOURCE_NAME, pn.START_SCHEMA, pn.START_TABLE,

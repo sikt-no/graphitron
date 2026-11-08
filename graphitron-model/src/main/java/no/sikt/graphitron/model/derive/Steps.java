@@ -49,7 +49,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
@@ -218,7 +218,7 @@ public final class Steps {
      */
     private static Map<NeedKey, Walk> claimed(DSLContext dsl, String graph, int depth,
                                               LocalDateTime touchedAt) {
-        var n = GRAPHITRON_PATH_NEED.as("n");
+        var n = GRAPHITRON_PATH_NEED_TABLE.as("n");
         var cr = GRAPHITRON_JOIN_PATH_CLAIMED_RULE.as("cr");
         var out = new LinkedHashMap<NeedKey, Walk>();
         dsl.select(n.COORDINATE, n.TARGET_TYPE, n.START_SOURCE_NAME, n.START_SCHEMA, n.START_TABLE,
@@ -249,7 +249,7 @@ public final class Steps {
         var r = GRAPHITRON_JOIN_PATH_STEP_RULE.as("r");
         var fields = new ArrayList<Field<?>>();
         if (position == 0) {
-            var n = GRAPHITRON_PATH_NEED.as("n");
+            var n = GRAPHITRON_PATH_NEED_TABLE.as("n");
             fields.add(n.COORDINATE.as("NEED_COORDINATE"));
             fields.add(n.TARGET_TYPE.as("NEED_TARGET_TYPE"));
             fields.addAll(List.of(r.fields()));
@@ -439,7 +439,7 @@ public final class Steps {
     private static void inferred(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         var p = GRAPHITRON_PATH.as("p");
         var j = GRAPHITRON_JOIN_PATH.as("j");
-        var n = GRAPHITRON_PATH_NEED.as("n");
+        var n = GRAPHITRON_PATH_NEED_TABLE.as("n");
         Condition inferredHere = p.GRAPH_NAME.eq(graph).and(p.TOUCHED_AT.eq(touchedAt))
             .and(p.ORIGIN.eq("INFERRED")).and(atDepth(p.GRAPH_NAME, p.COORDINATE, depth));
         var s = GRAPHITRON_JOIN_PATH_STEP;

@@ -99,7 +99,7 @@ extend schema @assertContains(relation: "graphitron_join_path", rows: """
 # An object field with nothing written lands on its target's own table, where its column names
 # resolve. Film.credits writes a path ending on film_actor, so no join path reaches Actor and its
 # site is silent, though its need still names actor.
-extend schema @assertContains(relation: "graphitron_path_need", rows: """
+extend schema @assertContains(relation: "graphitron_path_need_table", rows: """
   coordinate,              target_type, start_table, landing_table
   Film.credits,            Actor,       film,        actor
   Film.languageConnection, Language,    film,        language

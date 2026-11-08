@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.tables.GraphitronOccurrence;
-import no.sikt.graphitron.model.tables.GraphitronPathNeed;
+import no.sikt.graphitron.model.tables.GraphitronPathNeedTable;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Select;
@@ -16,7 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
@@ -147,7 +147,7 @@ public final class Paths {
      * the table its path reaches: the start for an empty path, the landing for an inferred one.
      */
     private static Select<?> candidates(String graph, int depth, LocalDateTime touchedAt) {
-        var n = GRAPHITRON_PATH_NEED.as("n");
+        var n = GRAPHITRON_PATH_NEED_TABLE.as("n");
         var o = GRAPHITRON_OCCURRENCE.as("o");
         Condition sameTable = n.START_SOURCE_NAME.eq(n.LANDING_SOURCE_NAME)
             .and(n.START_SCHEMA.eq(n.LANDING_SCHEMA))
@@ -200,7 +200,7 @@ public final class Paths {
      * element, a {@code @referenceFor} naming its target type or any other claim there; or, for a
      * field, the same at the same-named field of an interface its type implements.
      */
-    private static Condition covered(GraphitronOccurrence o, GraphitronPathNeed n) {
+    private static Condition covered(GraphitronOccurrence o, GraphitronPathNeedTable n) {
         var own = GRAPHITRON_JOIN_PATH_CLAIM.as("own");
         var f = GRAPHITRON_FIELD.as("cov_f");
         var ii = GRAPHQL_IMPLEMENTS_INTERFACE.as("cov_ii");
@@ -248,7 +248,7 @@ public final class Paths {
      * Whether the need starts on the derived table a routine returns, which has no foreign key and
      * reaches its landing by the landing's primary key instead.
      */
-    private static Condition startsOnFunction(GraphitronPathNeed n) {
+    private static Condition startsOnFunction(GraphitronPathNeedTable n) {
         var st = SQL_TABLE.as("fn");
         return exists(selectOne().from(st)
             .where(st.SOURCE_NAME.eq(n.START_SOURCE_NAME), st.TABLE_SCHEMA.eq(n.START_SCHEMA),
@@ -259,7 +259,7 @@ public final class Paths {
      * Whether the need's landing has a primary key whose every column the table it starts on has a
      * column of the same name for.
      */
-    private static Condition primaryKeyMatched(GraphitronPathNeed n) {
+    private static Condition primaryKeyMatched(GraphitronPathNeedTable n) {
         var pk = SQL_PRIMARY_KEY.as("pk");
         var mk = SQL_PRIMARY_KEY.as("mk");
         var cc = SQL_CONSTRAINT_COLUMN.as("cc");
@@ -281,7 +281,7 @@ public final class Paths {
      * How many foreign keys join the need's start and the node's table {@code nt}, in either
      * direction; never the start's self-referencing keys, the node's table being another table.
      */
-    private static org.jooq.Field<Integer> nodeKeys(GraphitronPathNeed n,
+    private static org.jooq.Field<Integer> nodeKeys(GraphitronPathNeedTable n,
                                                     no.sikt.graphitron.model.tables.GraphitronTabletype nt) {
         var f = SQL_TABLE_REFERENCE.as("nk_f");
         var b = SQL_TABLE_REFERENCE.as("nk_b");
@@ -297,7 +297,7 @@ public final class Paths {
     }
 
     /** How many self-referencing keys the need's start, which is its landing, declares. */
-    private static org.jooq.Field<Integer> selfKeys(GraphitronPathNeed n) {
+    private static org.jooq.Field<Integer> selfKeys(GraphitronPathNeedTable n) {
         var f = SQL_TABLE_REFERENCE.as("sk_f");
         return coalesce(field(select(f.CONSTRAINTS).from(f)
             .where(f.SOURCE_NAME.eq(n.START_SOURCE_NAME), f.TABLE_SCHEMA.eq(n.START_SCHEMA),
@@ -306,7 +306,7 @@ public final class Paths {
     }
 
     /** How many foreign keys join the need's start and landing, in either direction. */
-    private static org.jooq.Field<Integer> foreignKeys(GraphitronPathNeed n) {
+    private static org.jooq.Field<Integer> foreignKeys(GraphitronPathNeedTable n) {
         var f = SQL_TABLE_REFERENCE.as("fk_f");
         var b = SQL_TABLE_REFERENCE.as("fk_b");
         org.jooq.Field<Integer> forward = field(select(f.CONSTRAINTS).from(f)

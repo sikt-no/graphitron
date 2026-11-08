@@ -110,7 +110,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_object",
   Inventory.filmCardData.film,    no.sikt.graphitron.rewrite.test.services.FilmCardData
   """)
 
-extend schema @expectEquals(relation: "graphitron_path_need",
+extend schema @expectEquals(relation: "graphitron_path_need_table",
     where: "coordinate LIKE 'Inventory.film%'", rows: """
   coordinate,               target_type,     start_table, landing_table
   Inventory.filmCardData,   FilmCardWrapper, inventory,   inventory
@@ -127,5 +127,5 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
 extend schema @assertEmpty(relation: "graphitron_occurrence_source",
     where: "coordinate = 'Inventory.filmCardData.example.fieldA'")
 
-extend schema @assertEmpty(relation: "graphitron_path_need",
+extend schema @assertEmpty(relation: "graphitron_path_need_table",
     where: "coordinate = 'Inventory.filmCardData.example.fieldA'")

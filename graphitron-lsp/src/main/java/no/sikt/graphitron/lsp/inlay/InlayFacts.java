@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
@@ -469,7 +469,7 @@ final class InlayFacts {
     private static Field<List<TargetTableRow>> targetTableArm(StoreHandle store, Collection<String> typeNames) {
         var f = GRAPHITRON_FIELD;
         var o = GRAPHITRON_OCCURRENCE;
-        var n = GRAPHITRON_PATH_NEED;
+        var n = GRAPHITRON_PATH_NEED_TABLE;
         var jp = GRAPHITRON_JOIN_PATH;
         var t = GRAPHITRON_TYPE;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;

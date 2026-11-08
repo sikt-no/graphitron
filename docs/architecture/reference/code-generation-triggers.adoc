@@ -93,7 +93,7 @@ include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_o
 == Path
 
 An occurrence with a table source must reach the type it returns, and an argument the type its field
-returns. `graphitron_path_need` states each such need with the table it starts on and the table it
+returns. `graphitron_path_need` states each such need, and `graphitron_path_need_table` the table it starts on and the table it
 lands on, and `graphitron_path` says how the need is met: by joins from a table source, `JOIN`, or
 by accessor calls on an object, `ACCESSOR`. A path's origin says where it came from.
 

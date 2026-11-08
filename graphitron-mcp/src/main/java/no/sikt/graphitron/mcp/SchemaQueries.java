@@ -53,7 +53,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
@@ -868,7 +868,7 @@ final class SchemaQueries {
     private static Field<List<PathStop>> pathStops() {
         var o = GRAPHITRON_OCCURRENCE;
         var st = GRAPHITRON_JOIN_PATH_STOP;
-        var n = GRAPHITRON_PATH_NEED;
+        var n = GRAPHITRON_PATH_NEED_TABLE;
         var p = GRAPHITRON_JOIN_PATH_STEP;
         // Where the path stands at the stop: the table the step before it reached, or the need's start
         // where it stops before its first.

@@ -335,9 +335,8 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     application: no source parameter, a source of rows or records of no table, a key table with no
     primary key, no member returning the record, two such members, or one returning a collection; the
     reference page states each, and a fact document pins them.
-  * **A value object is reached by its accessor path** `blocked`, on "A need starts on a table or
-    on an object", taken over from F with the path model (Alf, 2026-11-08), for the outbox's service
-    results.
+  * **A value object is reached by its accessor path** `open`, taken over from F with the path
+    model (Alf, 2026-11-08), for the outbox's service results.
     Beside the join path, from object to object: `graphitron_accessor_path`, the path is accessor
     calls with its target class, written by field names and `@field(name:)`, and its steps
     (`graphitron_accessor_path_step`, one member call each), built when value objects are bound,
@@ -353,13 +352,14 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     member call, each a `code_read_slot` row. Written in `occurrence-depths` beside the sources, and a
     child's object source is where its parent's accessor path ends, which `OccurrenceSources` reads
     a depth on; marked and swept.
-    * **A need starts on a table or on an object** `open`. `graphitron_path_need` requires a start
-      table, so an occurrence with an object source has no need and no path can meet one. The need
-      keeps its key and a start kind, and its start and landing tables move to a `TABLE` subtype,
-      every reader with them (the entry-defect and node-id decode hop rules, `PathNeeds`, `Paths`,
-      `Steps`, the editor and the MCP server); a refactor writing the same rows. The `OBJECT`
-      subtype, naming the start class off the occurrence's object source, follows with the accessor
-      paths that meet it.
+    * **A need starts on a table or on an object** `done`. `graphitron_path_need` keeps the key, a
+      start kind, the mark and the target type; the start and landing tables are
+      `graphitron_path_need_table`, the `TABLE` subtype, and every reader of them reads it (the
+      entry-defect, column, node-id and decode hop rules, `PathNeeds`, `Paths`, `Steps`, the editor
+      and the MCP server). `PathNeeds` writes the need and then its subtype, its rule read once for
+      each, a cost accepted until the rule is cheap (Alf, 2026-11-08). The `OBJECT` subtype, naming
+      the start class off the occurrence's object source, follows with the accessor paths that meet
+      it.
 * **`scenarios/path-rules` runs** `open`.
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.

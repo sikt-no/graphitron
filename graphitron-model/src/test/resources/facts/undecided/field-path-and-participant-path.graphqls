@@ -66,7 +66,7 @@ extend schema @assertEmpty(relation: "graphitron_ast_field_path_entry", where: "
 # The walk starts each field that wrote a path on the table its parent's result is a row of, and
 # steps through the field's own elements, two applications or one alike; a participant's path is
 # walked for the member it names.
-extend schema @assertContains(relation: "graphitron_path_need", rows: """
+extend schema @assertContains(relation: "graphitron_path_need_table", rows: """
   coordinate,  target_type, start_table
   Film.actors, Actor,       film
   Film.cast,   Actor,       film

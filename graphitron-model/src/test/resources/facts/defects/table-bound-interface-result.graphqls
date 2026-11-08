@@ -33,7 +33,7 @@ extend schema @assertContains(relation: "graphitron_result_table", rows: """
   """)
 
 # Both of the interface's path fields are walked from its table.
-extend schema @assertContains(relation: "graphitron_path_need", rows: """
+extend schema @assertContains(relation: "graphitron_path_need_table", rows: """
   coordinate,         target_type, start_table
   MediaItem.language, Language,    film
   MediaItem.stores,   Store,       film

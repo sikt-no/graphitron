@@ -19,7 +19,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
@@ -165,7 +165,7 @@ public final class FieldInformation {
         // Where each occurrence lands for each object type it reaches: its join path's table where
         // one was walked, else the need's own landing; and for a root, which has no source to start
         // a path on, where its producer lifts its records.
-        var pn = GRAPHITRON_PATH_NEED;
+        var pn = GRAPHITRON_PATH_NEED_TABLE;
         var jp = GRAPHITRON_JOIN_PATH;
         var jt = GRAPHITRON_TYPE.as("info_landed_type");
         var rp = GRAPHITRON_OCCURRENCE_PRODUCER;

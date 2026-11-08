@@ -155,7 +155,7 @@ type Mutation {
   deleteLanguage(in: LanguageDeleteInput!): ID @mutation(typeName: DELETE, table: "language")
 }
 
-extend schema @expectEquals(relation: "graphitron_path_need",
+extend schema @expectEquals(relation: "graphitron_path_need_table",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate,                               target_type,             start_table,     start_table_ref, landing_table
   Film.actorRows,                           FilmActor,               film,            film,            film_actor
@@ -232,7 +232,7 @@ extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   Film.actorRows.totalCount
   """)
 
-extend schema @assertAbsent(relation: "graphitron_path_need", rows: """
+extend schema @assertAbsent(relation: "graphitron_path_need_table", rows: """
   coordinate
   Query.films
   Query.search
