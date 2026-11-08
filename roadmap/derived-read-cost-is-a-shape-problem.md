@@ -1101,7 +1101,7 @@ branch is G's (Alf, 2026-11-05).
 * **The corpus is written against the model** `open`, G's. Fact documents state a written
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
-* **Encode and decode read the target type, and the old node-id relations go** `open`, G's.
+* **Encode and decode read the target type, and the old node-id relations go** `open`, F's.
   The walk dissolves into store emitters, each with its own query (Alf, 2026-11-06). The decode is
   `NodeIdDecodeQuery` and `NodeIdDecodeEmitter`, which the fill and build emitters call, and the
   decode census `NodeIdDecodeCoverageFacts` reads `graphitron_occurrence_node_id`; the encode for

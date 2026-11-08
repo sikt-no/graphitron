@@ -111,6 +111,46 @@ On its own this form is a stylistic choice. It exists for composition with xref:
 * When `key` is provided alone, `table` is inferred from the FK target. When `table` is provided alone, `key` is inferred when unique. Setting both is allowed but redundant.
 * A `condition`-only hop (no `table`, no `key`) is treated as a join `ON` condition; the generator joins the field's target table and applies the condition. Use this when the join is non-FK or computed.
 
+[#path-rules]
+== Path rules
+
+Every field, argument and input field reached in a query has a path: the joins from the row its parent stands on to the row it reads. The rules below decide that path. They are the same rules for output and input, input being the more limited; a filter will extend them.
+
+=== Output fields
+
+. *Written, inherited or inferred.* A path is written with `@reference` (or per participant with xref:referenceFor.adoc[`@referenceFor`]), inherited from the same-named field of an interface the type implements, or inferred. An interface that extends another overrides the path it redeclares, and `@referenceFor` is inherited member by member. Two interfaces, neither extending the other, that both write the field's path are an error.
+. *Inferred between two tables.* Between two different tables the path is inferred over exactly one foreign key, in either direction. From the table a xref:routine.adoc[`@routine`] returns, it is inferred over the target's primary key, its columns matched by name.
+. *Inferred on one table.* A field whose type is bound to its parent's table is inferred over the table's one self-referencing foreign key, its direction taken from the field: a single-valued field follows the key to the row it points at, a list or a connection follows it back to the rows pointing here.
++
+[source,graphql]
+----
+type Category @table(name: "category") {
+  parent: Category                     # category.parent_category_id -> the parent row
+  children: [Category!]                # the rows whose parent_category_id is this one
+}
+----
+. *When inference fails, write the path.* No foreign key is an error, and so is more than one; name the key with `{key:}`. To read the parent's own row, name its primary key (<<Joining a row to itself>>). A same-table field is never read uncorrelated, whatever arguments narrow it.
+. *An empty path.* A field whose type binds no table is a nesting: it reads the parent's own row. So is the data field of a write's payload, and a child resolved by a `@service` of its own.
+. *A table record a service returns carries its primary key only.* The fields under it are resolved by the queries that follow, lifting each record's key and re-selecting, never by a path from the record.
+. *A routine on a child is a join.* Only a xref:routine.adoc[`@routine`] on a root field is a call; on any other field it is a step of the field's path, joined to the rows the function returns.
+
+=== Arguments and input fields
+
+. *An input is bound to a table record.* An argument and the input fields under it are bound to the field's target table; under a `@service`, to the table of the record type of the parameter they fill (a `FilmRecord` parameter binds `film`). An input type is never bound to a table itself.
+. *Without `@reference` the path is empty.* A nested input is the same row, unnested into the bound record.
+. *A filter's `@reference` is a join in its condition.* On an argument or input field that filters, a path lowers to a correlated `EXISTS`, single- or multi-hop, by the output rules.
+. *On an input that fills a record, `@reference` goes with `@nodeId` only.* A record does not nest, so a path elsewhere on such an input is an error.
+. *`@nodeId(typeName:)` is bound to its node's table, and always has a path from the bound table to it.* The path is inferred as between two output types, over exactly one foreign key in either direction; with none or more than one, write it. A written path is the whole path from the bound table to the node's, as many hops as it takes, and the decoded key fills the bound record's columns of the first hop's key. Where the node's table is the bound table, there is no path: the id is the record's own key.
++
+[source,graphql]
+----
+input InsertEmailReplyInput {
+  # email's key to itself: the decoded Email key fills (mailbox_id, in_reply_to_no), not its own key
+  inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
+}
+----
+. *A self-referencing key is never inferred on an input.* Write it.
+
 [#duplicate-rows-through-a-junction]
 == Duplicate rows through a junction
 
@@ -168,7 +208,7 @@ type Film @table(name: "film") {
 type FilmSummary @table(name: "film") { title: String }
 ----
 
-This is how a field returns its parent's row as a `@table` type, which a field with no `@reference` cannot: two `@table` types on one table are a join, and a join with no stated key is a build error. The element must be the path's only element, the field must be single-valued, and its parent and return type must both be bound to the key's table. Anywhere else, including an argument or input-field path and a xref:referenceFor.adoc[`@referenceFor`] path, naming a primary key is rejected. See xref:../../how-to/map-types-to-tables.adoc#parents-own-row[Map types to tables].
+This is how a field returns its parent's row as a `@table` type, which a field with no `@reference` cannot: an unwritten path on one table is a join over the table's self-referencing key, never the parent's own row (<<path-rules>>). The element must be the path's only element, the field must be single-valued, and its parent and return type must both be bound to the key's table. Anywhere else, including an argument or input-field path and a xref:referenceFor.adoc[`@referenceFor`] path, naming a primary key is rejected. See xref:../../how-to/map-types-to-tables.adoc#parents-own-row[Map types to tables].
 
 == See also
 
