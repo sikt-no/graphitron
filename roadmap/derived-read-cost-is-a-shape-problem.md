@@ -680,9 +680,14 @@ pass and no stratum that clears and recomputes.
         three and `OUTBOX_NOT_A_WRITE`, `OUTBOX_NO_TARGET`, `OUTBOX_TARGET_INVALID` and
         `OUTBOX_DUPLICATE_EVENT` from `graphitron_outbox_entry_defect_rule`, placement read off
         `graphitron_occurrence_producer_write`.
-      * **A `$result` path lands on field occurrences** `open`. `graphitron_argmapping_call` admits
-        `@outbox`, and the steps walk field occurrences for `$result` paths; every service, routine
-        and condition landing stays as it is.
+      * **A `$result` path lands on field occurrences** `done`. `graphitron_argmapping_call` admits
+        `@outbox`, its `$result` paths with the sigil taken off, and the step rules walk field
+        occurrences for them: a head under the call, or the returned type's own `Type.field` where
+        that type is bound to a table and so starts a chain, and each later name the same way from
+        what the step before returns. A path through a list lands as any other, a list being its
+        reader's to judge. `graphitron_argmapping_pair_defect_rule`'s path arm leaves `@outbox` out
+        until "A pair's source is judged once for every directive", so an outbox source keeps one
+        verdict meanwhile. `outbox-applications` and `outbox-service-result` pin the landings.
       * **A payload key is a filled parameter of its message** `blocked`, on "A `$result` path lands
         on field occurrences". The key relation and its fills, the remaining `OUTBOX_*` codes, and
         `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and

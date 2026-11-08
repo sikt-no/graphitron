@@ -65,3 +65,14 @@ extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", wh
   2,        name,       $result.title
   1,        place,      $scope.alias
   """)
+
+# Each entry's path lands as a service's does, under the occurrence of the field it is written on: an
+# argument path on the argument or input field it names, a $result path on the field of what the call
+# returns, here a field of Film, which is bound to a table and so starts its own chain.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "directive_name = 'outbox'", rows: """
+  coordinate,          ordinal, parameter_name, call_coordinate,     landing_coordinate,              trailing_name
+  Mutation.createFilm, 0,       filmId,         Mutation.createFilm, Film.id,                         
+  Mutation.createFilm, 0,       title,          Mutation.createFilm, Mutation.createFilm(in.title:),  
+  Mutation.createFilm, 0,       name,           Mutation.createFilm, Film.title,                      
+  Mutation.createFilm, 1,       all,            Mutation.createFilm, Mutation.createFilm(in:),        
+  """)

@@ -46,6 +46,17 @@ type Mutation {
     @outbox(argMapping: "first: $result.results.film.id")
 }
 
+# A $result path lands on the occurrences of the fields it names, nested under the call while what it
+# returns has no table, and on the bound type's own field once it reaches Film. A path through a list
+# lands as any other: what it may read there is its reader's to judge. A name no field has lands nowhere.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "directive_name = 'outbox'", rows: """
+  coordinate,    parameter_name, landing_coordinate
+  Mutation.blurb, text,          Mutation.blurb.holder.blurb.description
+  Mutation.blurb, whole,         Mutation.blurb.holder.blurb
+  Mutation.card,  filmId,        Film.id
+  Mutation.films, first,         Film.id
+  """)
+
 extend schema @expectEquals(relation: "graphitron_outbox_result_step", rows: """
   field_name, key_name, position, segments, step_type_name, step_field_name, step
   blurb,      text,     0,        3,        BlurbPayload,   holder,          PASSES_THROUGH

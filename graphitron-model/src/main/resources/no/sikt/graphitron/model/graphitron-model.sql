@@ -4573,24 +4573,29 @@ CREATE VIEW graphitron_argmapping_call
   (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
    call_name, call_kind, bound_to, segments, head, rest, source_name, source_line, source_column,
    position) AS
--- A @service, a @routine or a @condition, on a field, an argument or an input field, written once and
--- taken under every occurrence of what it is written on. A sigil binds something else, and a path
--- element's or @outbox's mapping binds a table or a payload.
+-- A @service, a @routine, a @condition or an @outbox, on a field, an argument or an input field,
+-- written once and taken under every occurrence of what it is written on. A path names arguments and
+-- input fields, or, after an @outbox's $result, the fields of what the call returns, the sigil taken
+-- off; any other sigil binds something else, and a path element's mapping binds a table.
 SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.parameter_name,
        c.coordinate, c.name, c.kind, p.bound_to,
-       CHAR_LENGTH(p.bound_to) - CHAR_LENGTH(REPLACE(p.bound_to, '.', '')) + 1,
-       REGEXP_REPLACE(p.bound_to, '\..*$', ''),
-       CASE WHEN POSITION('.', p.bound_to) = 0 THEN ''
-            ELSE SUBSTRING(p.bound_to, POSITION('.', p.bound_to) + 1) END,
+       CHAR_LENGTH(p.path) - CHAR_LENGTH(REPLACE(p.path, '.', '')) + 1,
+       REGEXP_REPLACE(p.path, '\..*$', ''),
+       CASE WHEN POSITION('.', p.path) = 0 THEN ''
+            ELSE SUBSTRING(p.path, POSITION('.', p.path) + 1) END,
        p.source_name, p.source_line, p.source_column, p.position
-  FROM graphitron_argmapping_pair p
+  FROM (SELECT q.graph_name, q.coordinate, q.directive_name, q.ordinal, q.owner, q.parameter_name,
+               q.bound_to, q.source_name, q.source_line, q.source_column, q.position,
+               REGEXP_REPLACE(q.bound_to, '^\$result\.', '') AS path
+          FROM graphitron_argmapping_pair q) p
   JOIN graphitron_argmapping_site s
     ON s.graph_name = p.graph_name AND s.coordinate = p.coordinate
    AND s.directive_name = p.directive_name AND s.ordinal = p.ordinal AND s.owner = p.owner
   JOIN graphitron_occurrence c
     ON c.graph_name = s.graph_name AND c.element_coordinate = s.coordinate
- WHERE p.bound_to NOT LIKE '$%'
-   AND s.directive_name IN ('service', 'routine', 'condition')
+ WHERE (p.bound_to NOT LIKE '$%'
+        OR (s.directive_name = 'outbox' AND p.bound_to LIKE '$result.%'))
+   AND s.directive_name IN ('service', 'routine', 'condition', 'outbox')
    AND s.kind = 'ROOT';
 COMMENT ON VIEW graphitron_argmapping_call IS 'One written argMapping entry binding a parameter to an argument path, under one occurrence of the field, argument or input field its directive is written on. For example filter.minLength on @routine at Actor.filmsNested, under Actor.filmsNested.';
 -- COMMENT ON COLUMN graphitron_argmapping_call.graph_name IS 'the owning graph''s partition';
@@ -4671,8 +4676,32 @@ SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.param
   FROM graphitron_argmapping_call e
   JOIN graphitron_occurrence o
     ON o.graph_name = e.graph_name AND o.parent_coordinate = e.call_coordinate AND o.name = e.head
- WHERE (e.call_kind = 'FIELD' AND o.kind = 'FIELD_ARGUMENT')
-    OR (e.call_kind <> 'FIELD' AND o.kind = 'INPUT_FIELD' AND e.head <> e.call_name)
+ WHERE e.bound_to NOT LIKE '$result.%'
+   AND ((e.call_kind = 'FIELD' AND o.kind = 'FIELD_ARGUMENT')
+        OR (e.call_kind <> 'FIELD' AND o.kind = 'INPUT_FIELD' AND e.head <> e.call_name))
+UNION ALL
+-- A $result path's head is a field of what the call returns: the field under the call, or, where the
+-- type it returns is bound to a table and so starts chains of its own, that type's field.
+SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.parameter_name,
+       e.call_coordinate,
+       1, e.bound_to, e.segments, e.rest, o.coordinate, FALSE
+  FROM graphitron_argmapping_call e
+  JOIN graphitron_occurrence o
+    ON o.graph_name = e.graph_name AND o.parent_coordinate = e.call_coordinate AND o.name = e.head
+   AND o.kind = 'FIELD'
+ WHERE e.call_kind = 'FIELD' AND e.bound_to LIKE '$result.%'
+UNION ALL
+SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.parameter_name,
+       e.call_coordinate,
+       1, e.bound_to, e.segments, e.rest, o.coordinate, FALSE
+  FROM graphitron_argmapping_call e
+  JOIN graphitron_field cf ON cf.graph_name = e.graph_name AND cf.coordinate = e.coordinate
+  JOIN graphitron_field_target ct
+    ON ct.graph_name = cf.graph_name AND ct.type_name = cf.type_name AND ct.field_name = cf.field_name
+  JOIN graphitron_occurrence o
+    ON o.graph_name = e.graph_name AND o.element_coordinate = ct.target_type_name || '.' || e.head
+   AND o.parent_coordinate IS NULL AND o.kind = 'FIELD'
+ WHERE e.call_kind = 'FIELD' AND e.bound_to LIKE '$result.%'
 UNION ALL
 SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.parameter_name,
        e.call_coordinate,
@@ -4710,7 +4739,37 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.param
   JOIN graphitron_occurrence o
     ON o.graph_name = s.graph_name AND o.parent_coordinate = s.step_coordinate
    AND o.name = REGEXP_REPLACE(s.rest, '\..*$', '') AND o.kind = 'INPUT_FIELD'
- WHERE s.consumed < s.segments;
+ WHERE s.consumed < s.segments
+UNION ALL
+-- After a $result head, each name is a field of what the field before returns, found as the head is.
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
+       s.call_coordinate,
+       s.consumed + 1, s.bound_to, s.segments,
+       CASE WHEN POSITION('.', s.rest) = 0 THEN ''
+            ELSE SUBSTRING(s.rest, POSITION('.', s.rest) + 1) END,
+       o.coordinate, s.repeats_own_name, s.consumed, s.touched_at
+  FROM graphitron_argmapping_step s
+  JOIN graphitron_occurrence o
+    ON o.graph_name = s.graph_name AND o.parent_coordinate = s.step_coordinate
+   AND o.name = REGEXP_REPLACE(s.rest, '\..*$', '') AND o.kind = 'FIELD'
+ WHERE s.consumed < s.segments AND s.bound_to LIKE '$result.%'
+UNION ALL
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
+       s.call_coordinate,
+       s.consumed + 1, s.bound_to, s.segments,
+       CASE WHEN POSITION('.', s.rest) = 0 THEN ''
+            ELSE SUBSTRING(s.rest, POSITION('.', s.rest) + 1) END,
+       o.coordinate, s.repeats_own_name, s.consumed, s.touched_at
+  FROM graphitron_argmapping_step s
+  JOIN graphitron_occurrence so ON so.graph_name = s.graph_name AND so.coordinate = s.step_coordinate
+  JOIN graphitron_field sf ON sf.graph_name = so.graph_name AND sf.coordinate = so.element_coordinate
+  JOIN graphitron_field_target st
+    ON st.graph_name = sf.graph_name AND st.type_name = sf.type_name AND st.field_name = sf.field_name
+  JOIN graphitron_occurrence o
+    ON o.graph_name = s.graph_name
+   AND o.element_coordinate = st.target_type_name || '.' || REGEXP_REPLACE(s.rest, '\..*$', '')
+   AND o.parent_coordinate IS NULL AND o.kind = 'FIELD'
+ WHERE s.consumed < s.segments AND s.bound_to LIKE '$result.%';
 COMMENT ON VIEW graphitron_argmapping_step_next_rule IS 'One next step the argMapping step rule computes from a stored step, in the shape graphitron_argmapping_step stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph and one count into graphitron_argmapping_step, a count at a time.';
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.coordinate IS 'the pair''s coordinate';
@@ -10253,7 +10312,10 @@ SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column, c.p
                     WHERE l.graph_name = c.graph_name AND l.coordinate = c.coordinate
                       AND l.directive_name = c.directive_name AND l.ordinal = c.ordinal
                       AND l.owner = c.owner AND l.parameter_name = c.parameter_name
-                      AND l.call_coordinate = c.call_coordinate);
+                      AND l.call_coordinate = c.call_coordinate)
+   -- An @outbox source is the outbox's own verdict until a pair's source is judged once for every
+   -- directive.
+   AND c.directive_name <> 'outbox';
 COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
 
 CREATE TABLE graphitron_outbox_routine_target (
