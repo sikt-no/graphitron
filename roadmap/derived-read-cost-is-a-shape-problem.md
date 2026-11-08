@@ -335,11 +335,19 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     application: no source parameter, a source of rows or records of no table, a key table with no
     primary key, no member returning the record, two such members, or one returning a collection; the
     reference page states each, and a fact document pins them.
-  * **A value object is reached by its accessor path** `open`, F's.
+  * **A value object is reached by its accessor path** `open`, F's, taken up for the outbox's
+    service results (Alf, 2026-11-08).
     Beside the join path, from object to object: `graphitron_accessor_path`, the path is accessor
     calls with its target class, written by field names and `@field(name:)`, and its steps
     (`graphitron_accessor_path_step`, one member call each), built when value objects are bound,
     each step a `code_read_slot` row as a key row's accessor is (`graphitron_field_key_row_accessor`).
+    Every field occurrence with an object source has one, read off its own facts: one step where the
+    field's bound name finds exactly one non-collection member on the source class; empty where it
+    finds none and the field's type holds the same class, the object passing through, as
+    `BlurbPayload.holder` over `FilmBlurbHolder`; none where neither holds. A member returning a jOOQ
+    record of the field's table-bound type is not a step but the lift, the `ACCESSOR` key row, so the
+    chain goes on table-side. Written in `occurrence-depths` beside the sources it reads, a child's
+    source being its parent's value; marked and swept.
 * **`scenarios/path-rules` runs** `open`.
   Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
   the condition cases of the six documents the draft below lists move into it.
@@ -553,7 +561,8 @@ static method needs no holder.
   off the returned value, since a service has no written key to read rows back by.
   * **The outbox on a service is emitted where the service call is** `blocked`, on "The service fields are emitted from the store".
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
-    `$result` leaves off the returned object, and the `OUTBOX_NOT_A_WRITE` arm admits a service write
+    `$result` keys off the returned object through their `VALUE` bindings ("A payload key is a filled
+    parameter of its message"), and the `OUTBOX_NOT_A_WRITE` arm admits a service write
     in the same commit, so a service `@outbox` is never accepted without being emitted. It also waits
     on R1101's phase 2, nested scopes joining the field's transaction.
 * **A table class's column fields are stated** `blocked`, on "The generated jOOQ classes are read with their members". The code family keeps each generated table's public column fields, which
@@ -716,10 +725,13 @@ pass and no stratum that clears and recomputes.
         reader's to judge. `graphitron_argmapping_pair_defect_rule`'s path arm leaves `@outbox` out
         until "A pair's source is judged once for every directive", so an outbox source keeps one
         verdict meanwhile. `outbox-applications` and `outbox-service-result` pin the landings.
-      * **A payload key is a filled parameter of its message** `blocked`, on "A `$result` path lands
-        on field occurrences". The key relation and its fills, the remaining `OUTBOX_*` codes, and
-        `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
-        `graphitron_outbox_result_step` go.
+      * **A payload key is a filled parameter of its message** `blocked`, on "A member's value off
+        its parent's object binds `VALUE`". The key relation and its fills, the remaining `OUTBOX_*`
+        codes, and `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
+        `graphitron_outbox_result_step` go. A `$result` key reads its landed occurrence's binding,
+        `COLUMN` or `NODE_ID` table-side and `VALUE` object-side, so an unresolved path is one that
+        lands on no binding and an unserializable one a binding whose type a payload cannot carry.
+        Done whole rather than with the service half waiting (Alf, 2026-11-08).
       * **A pair's source is judged once for every directive** `blocked`, on "A payload key is a
         filled parameter of its message". `graphitron_argmapping_pair_defect_rule` already judges a
         pair by the kind of source it binds, `$session`, `$context` and argument paths, whatever
@@ -813,6 +825,11 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
+  * **A member's value off its parent's object binds `VALUE`** `blocked`, on "A value object is
+    reached by its accessor path". An occurrence whose accessor path ends on a value binds `VALUE`,
+    `graphitron_occurrence_binding_value` naming the class and the member read, none where the object
+    passes through; what an outbox `$result` key reads over a service's value, and what the service
+    flip's object-side reads read (Alf, 2026-11-08).
 * **A field's source is its parent's result** `open`, F's.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read

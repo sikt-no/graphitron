@@ -312,6 +312,8 @@ Shipped: the capture of routines that are no table, the routine target and its d
 
 ### Phase 3: `@service` and routine writes
 
+Taken over by R876 (Alf, 2026-11-08), under "An `@outbox` on a `@service` mutation emits from the store": the `$result` source over a service's returned value reads the occurrence model's `VALUE` binding, which R876 builds first.
+
 Owned by the work that moves `@service` generation onto the store, which builds it on the store-row seam phases 1 and 2 shipped (`OutboxQuery` reads the rows, `OutboxEmitter` renders the companion, and the DML sites call it through `outboxHook`) rather than on a second walk-driven call site. What is left for it to settle is the `$result` source: the companion reads the written rows back by a captured key, and a service return has none.
 
 Starts once R1101 phase 2 (nested scopes join the field transaction) is on trunk; phases 1 and 2 do not wait for it.
