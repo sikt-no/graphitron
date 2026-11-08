@@ -94,6 +94,7 @@ class FactExpectationTest {
     private static final List<String> misplaced = new ArrayList<>();
     private static final List<String> unnavigated = new ArrayList<>();
     private static final List<String> wholeStore = new ArrayList<>();
+    private static final List<String> refusedAssertions = new ArrayList<>();
     private static int fields;
 
 
@@ -166,10 +167,24 @@ class FactExpectationTest {
         // The plain graphs are the population's, captured once for the run whichever class asks
         // first, each store's on a thread of its own, and checked through the select-only reader:
         // a check that wrote would be refused, which is the population's own promise.
+        //
+        // Beside them, this module's assertion files: claims about a document stated without
+        // editing it, checked against the document's graph like the document's own.
+        var assertionBlocks = new ArrayList<Block>();
+        var documentPaths = plainDocuments().keySet();
+        for (var file : FactAssertions.in(FactAssertions.FOLDER)) {
+            var refusals = file.refusals(documentPaths);
+            refusedAssertions.addAll(refusals);
+            if (refusals.isEmpty() && graphs.plain().containsKey(file.document())) {
+                assertionBlocks.addAll(file.blocks());
+            }
+        }
         FACTS.warm(graphs.plain().keySet());
         for (var examined : FACTS.eachStore((dsl, held) -> {
-            var own = CorpusExpectations.blocks(dsl).stream()
-                .filter(block -> graphs.plain().containsKey(block.graph()))
+            var own = java.util.stream.Stream.concat(
+                    CorpusExpectations.blocks(dsl).stream()
+                        .filter(block -> graphs.plain().containsKey(block.graph())),
+                    assertionBlocks.stream().filter(block -> held.contains(block.graph())))
                 .toList();
             return examine(dsl, held, own, CorpusExpectations.divergences(dsl, own).stream()
                 .map(Object::toString).toList());
@@ -358,6 +373,16 @@ class FactExpectationTest {
     @DisplayName("every scenario stores no defect, and every defect document stores one")
     void everyFolderHoldsWhatItClaims() {
         assertThat(misplaced).as("documents whose folder claims what the store does not hold").isEmpty();
+    }
+
+    /**
+     * An assertion file names a document that exists and only adds to what the document states:
+     * the whole population of a relation is the document's own statement.
+     */
+    @Test
+    @DisplayName("every assertion file names a document and only adds to what it states")
+    void everyAssertionFileNamesADocumentAndOnlyAdds() {
+        assertThat(refusedAssertions).as("assertion files that cannot be checked as they stand").isEmpty();
     }
 
     @Test
