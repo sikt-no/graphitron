@@ -6877,34 +6877,6 @@ COMMENT ON VIEW graphitron_routine_result_rule IS 'One row the routine result ru
 -- COMMENT ON COLUMN graphitron_routine_result_rule.table_schema IS 'the function''s SQL schema';
 -- COMMENT ON COLUMN graphitron_routine_result_rule.table_name IS 'the function''s name';
 
-CREATE VIEW intent_foreign_key_column_pair
-  (source_name, table_schema, table_name, constraint_name, position, column_name,
-   referenced_source_name, referenced_schema, referenced_table, referenced_column_name) AS
-SELECT p.source_name, p.table_schema, p.table_name, p.constraint_name, p.position,
-       cc.column_name, p.referenced_source_name, p.referenced_schema, p.referenced_table,
-       rk.column_name
-  FROM sql_referential_constraint_column p
-  JOIN sql_constraint_column cc
-    ON cc.source_name = p.source_name AND cc.table_schema = p.table_schema
-   AND cc.table_name = p.table_name AND cc.constraint_name = p.constraint_name
-   AND cc.position = p.position
-  JOIN sql_constraint_column rk
-    ON rk.source_name = p.referenced_source_name AND rk.table_schema = p.referenced_schema
-   AND rk.table_name = p.referenced_table
-   AND rk.constraint_name = p.referenced_constraint_name
-   AND rk.position = p.referenced_position;
-COMMENT ON VIEW intent_foreign_key_column_pair IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. What a foreign key equates: one row per position, the key''s own column beside the column it references. The join condition every reader that renders or reasons about a foreign key needs. The pairing is captured, in sql_referential_constraint_column, and not derived: a foreign key''s Nth column references the Nth column of its REFERENCES list, and that list may order the referenced key''s columns differently from the key''s own declaration, so matching the two constraints'' positions would pair the wrong columns. Both sides are joined on their own constraint''s full key, so a constraint name two schemas or two classpath entries both declare pairs within its own table and never across, which is the collision the endpoint triples exist to prevent. No arity is exposed beside the pairs, the position being dense from zero, so a reader wanting the width counts rows. Nothing here is specific to any one consumer''s question, which is why it sits with the catalog derivations and not beside the relation that first needed it: the @nodeId lift is its first reader and a rendered join is its obvious second.';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.source_name IS 'the declaring table''s catalog partition, as on sql_referential_constraint';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.table_schema IS 'the declaring table''s SQL schema';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.table_name IS 'the declaring table''s SQL name: the table the foreign key sits on, which is the child end of the relationship';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.constraint_name IS 'the foreign key''s name under the declaring table, completing sql_referential_constraint''s key with the three columns above';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.position IS '0-based position within the foreign key''s own column list, dense from zero; the order a tuple predicate over the key has to preserve';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.column_name IS 'the key''s own column at this position, on the declaring table. The catalog''s own spelling, so a reader matching it against an authored one folds the authored side';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_source_name IS 'the referenced table''s catalog partition';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_schema IS 'the referenced table''s SQL schema';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_table IS 'the referenced table''s SQL name: the parent end of the relationship, equal to the declaring table on a self-referencing key';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_column_name IS 'the referenced column this position names, on the referenced table; the other half of the equality this row states';
-
 CREATE TABLE graphitron_defect_type (
   code      VARCHAR NOT NULL,
   severity  VARCHAR NOT NULL,

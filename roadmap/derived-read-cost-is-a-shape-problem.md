@@ -2925,6 +2925,11 @@ value loads into is read by `NodeIdDecodeQuery` at emit time. `PartitionSelectiv
 two subjects were the instruction and decode-hop rules, went with them, and with it
 `StoreStatistics.resetIncludingTheDeclaration`.
 
+**The foreign key column pairing view** (2026-11-08). `intent_foreign_key_column_pair`, whose last
+reader was the node-id decode rule. The pairing a path riding a foreign key equates is
+`graphitron_join_path_step_column`'s, per step, and the captured pairing it rests on
+`sql_referential_constraint_column`'s.
+
 ## Owed, not done here
 
 Found while writing the discipline down, verified, and not fixed. Recorded so they are findable

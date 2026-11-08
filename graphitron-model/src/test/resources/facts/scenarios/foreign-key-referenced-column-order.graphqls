@@ -1,8 +1,8 @@
 # A foreign key pairs each of its columns with the column its REFERENCES list names at the same
 # place, and that list need not follow the referenced key's own declaration order.
 # reordered_fk_child declares (fk_b, fk_c, fk_a) REFERENCES reordered_pk_parent (pk_b, pk_c, pk_a)
-# against a key declared (pk_a, pk_b, pk_c), so every column pairs with its namesake: in the pairing
-# itself, in a path riding the key, and in the path a node id decoded across it takes.
+# against a key declared (pk_a, pk_b, pk_c), so every column pairs with its namesake: in a path
+# riding the key, and in the path a node id decoded across it takes.
 
 interface Node { id: ID! }
 
@@ -18,14 +18,6 @@ type ReorderedChild @table(name: "nodeidfixture.reordered_fk_child") {
 type Query {
   reorderedChildren(parent: ID @nodeId(typeName: "ReorderedParent")): [ReorderedChild]
 }
-
-extend schema @assertContains(relation: "intent_foreign_key_column_pair",
-    where: "constraint_name = 'reordered_fk_child_parent_fkey'", rows: """
-  position, column_name, referenced_column_name
-  0,        fk_b,        pk_b
-  1,        fk_c,        pk_c
-  2,        fk_a,        pk_a
-  """)
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_column",
     where: "coordinate = 'ReorderedChild.parent'", rows: """
