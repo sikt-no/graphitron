@@ -8620,6 +8620,37 @@ COMMENT ON COLUMN graphitron_path_need_table.landing_source_ref IS 'the catalog 
 COMMENT ON COLUMN graphitron_path_need_table.landing_schema_ref IS 'the schema half of the landing table''s key, equal to landing_schema while the table stands';
 COMMENT ON COLUMN graphitron_path_need_table.landing_table_ref IS 'the name half of the landing table''s key, equal to landing_table while the table stands';
 
+CREATE TABLE graphitron_path_need_object (
+  graph_name           VARCHAR   NOT NULL,
+  coordinate           VARCHAR   NOT NULL,
+  target_type          VARCHAR   NOT NULL,
+  start_kind           VARCHAR   NOT NULL,
+  start_class          VARCHAR   NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  start_graph_ref      VARCHAR,
+  start_coordinate_ref VARCHAR,
+  PRIMARY KEY (graph_name, coordinate, target_type),
+  -- The need it details, pinned to the kind that starts on an object.
+  FOREIGN KEY (graph_name, coordinate, target_type, start_kind)
+    REFERENCES graphitron_path_need (graph_name, coordinate, target_type, start_kind)
+    ON DELETE CASCADE,
+  -- The object source it starts on, through the need's own copy of its key.
+  FOREIGN KEY (start_graph_ref, start_coordinate_ref)
+    REFERENCES graphitron_occurrence_source_object (graph_name, coordinate) ON DELETE SET NULL,
+  CHECK (start_kind = 'OBJECT'),
+  CHECK (start_graph_ref IS NULL OR start_graph_ref = graph_name),
+  CHECK (start_coordinate_ref IS NULL OR start_coordinate_ref = coordinate)
+);
+COMMENT ON TABLE graphitron_path_need_object IS 'One type an occurrence with an object source must reach: one row per occurrence and target type, with the class it starts on. For example Query.filmBlurbHolder.blurb, read off the FilmBlurbHolder its parent''s service hands back, needs FilmBlurb from FilmBlurbHolder.';
+COMMENT ON COLUMN graphitron_path_need_object.graph_name IS 'the owning graph''s partition, carried from the need';
+COMMENT ON COLUMN graphitron_path_need_object.coordinate IS 'the occurrence whose need this is';
+COMMENT ON COLUMN graphitron_path_need_object.target_type IS 'the type the occurrence reaches, its field''s target; with the two columns before it, the need''s key';
+COMMENT ON COLUMN graphitron_path_need_object.start_kind IS 'always OBJECT, pinned so the foreign key holds the row to a need that starts on an object';
+COMMENT ON COLUMN graphitron_path_need_object.start_class IS 'the class the path starts on, the occurrence''s object source''s';
+COMMENT ON COLUMN graphitron_path_need_object.touched_at IS 'when the reading that last stated this need ran, as its need''s';
+COMMENT ON COLUMN graphitron_path_need_object.start_graph_ref IS 'the graph half of the object source''s key, nullable so the source''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_path_need_object.start_coordinate_ref IS 'the coordinate half of the object source''s key, equal to coordinate while the source stands';
+
 CREATE TABLE graphitron_path (
   graph_name  VARCHAR   NOT NULL,
   coordinate  VARCHAR   NOT NULL,
@@ -8732,7 +8763,7 @@ CREATE TABLE graphitron_accessor_path (
   CHECK (target_class_name_ref IS NULL OR target_class_name_ref = target_class_name),
   CHECK (kind = 'ACCESSOR')
 );
-COMMENT ON TABLE graphitron_accessor_path IS 'The class an accessor path reaches: one row per path of kind ACCESSOR. For example Query.filmBlurbHolder.blurb, read off a FilmBlurbHolder, reaches FilmBlurb by its blurb() accessor; declared only, nothing writes it until value objects are bound.';
+COMMENT ON TABLE graphitron_accessor_path IS 'The class an accessor path reaches: one row per path of kind ACCESSOR. For example Query.filmBlurbHolder.blurb, read off a FilmBlurbHolder, reaches FilmBlurb by its blurb() accessor.';
 COMMENT ON COLUMN graphitron_accessor_path.graph_name IS 'the owning graph''s partition, carried from the path';
 COMMENT ON COLUMN graphitron_accessor_path.coordinate IS 'the occurrence whose need the path meets';
 COMMENT ON COLUMN graphitron_accessor_path.target_type IS 'the type the need reaches; with the two columns before it, the path''s key';
@@ -8741,6 +8772,34 @@ COMMENT ON COLUMN graphitron_accessor_path.target_class_name IS 'the class the p
 COMMENT ON COLUMN graphitron_accessor_path.touched_at IS 'when the reading that last stated this path ran: the mark the sweep reads';
 COMMENT ON COLUMN graphitron_accessor_path.target_class_source_ref IS 'the classpath entry half of the class''s code_class key, nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
 COMMENT ON COLUMN graphitron_accessor_path.target_class_name_ref IS 'the name half of the class''s key, equal to target_class_name while the class stands';
+
+CREATE TABLE graphitron_accessor_path_step (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  target_type      VARCHAR   NOT NULL,
+  position         INT       NOT NULL,
+  slot_source_name VARCHAR   NOT NULL,
+  slot_class_name  VARCHAR   NOT NULL,
+  slot_method_name VARCHAR   NOT NULL,
+  slot_descriptor  VARCHAR   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, target_type, position),
+  FOREIGN KEY (graph_name, coordinate, target_type)
+    REFERENCES graphitron_accessor_path (graph_name, coordinate, target_type) ON DELETE CASCADE,
+  FOREIGN KEY (slot_source_name, slot_class_name, slot_method_name, slot_descriptor)
+    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_accessor_path_step IS 'One member call an accessor path makes: one row per path and position, naming the member''s code_read_slot row. For example Query.filmBlurbHolder.blurb calls FilmBlurbHolder.blurb() at position 0; a path where the object passes through calls nothing and has no step.';
+COMMENT ON COLUMN graphitron_accessor_path_step.graph_name IS 'the owning graph''s partition, carried from the path';
+COMMENT ON COLUMN graphitron_accessor_path_step.coordinate IS 'the occurrence whose path this is';
+COMMENT ON COLUMN graphitron_accessor_path_step.target_type IS 'the type the path reaches; with the two columns before it, the path''s key';
+COMMENT ON COLUMN graphitron_accessor_path_step.position IS 'the call''s place in the path, from zero in the order made';
+COMMENT ON COLUMN graphitron_accessor_path_step.slot_source_name IS 'the classpath entry of the member''s code_read_slot row';
+COMMENT ON COLUMN graphitron_accessor_path_step.slot_class_name IS 'the class the member is read on';
+COMMENT ON COLUMN graphitron_accessor_path_step.slot_method_name IS 'the method that reads the member';
+COMMENT ON COLUMN graphitron_accessor_path_step.slot_descriptor IS 'the method''s descriptor; with the three before it, the code_read_slot row';
+COMMENT ON COLUMN graphitron_accessor_path_step.touched_at IS 'when the reading that last stated this step ran; a step a reading no longer takes goes with its path or by the sweep';
 
 CREATE TABLE graphitron_join_path_step (
   graph_name       VARCHAR   NOT NULL,
@@ -17328,8 +17387,11 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_source'),
   ('occurrence-depths', 'graphitron_occurrence_source_object'),
   ('occurrence-depths', 'graphitron_occurrence_source_table'),
+  ('occurrence-depths', 'graphitron_accessor_path'),
+  ('occurrence-depths', 'graphitron_accessor_path_step'),
   ('occurrence-depths', 'graphitron_path'),
   ('occurrence-depths', 'graphitron_path_need'),
+  ('occurrence-depths', 'graphitron_path_need_object'),
   ('occurrence-depths', 'graphitron_path_need_table'),
   ('occurrence-node-ids', 'graphitron_occurrence_binding'),
   ('occurrence-node-ids', 'graphitron_occurrence_node_id'),
@@ -17610,6 +17672,9 @@ INSERT INTO meta_grain VALUES
   ('path-need',
    'one type one occurrence must reach, in one graph',
    'graph_name, coordinate, target_type', 'sdl'),
+  ('accessor-path-step',
+   'one member call one accessor path makes, in one graph',
+   'graph_name, coordinate, target_type, position', 'sdl'),
   ('path-step',
    'one step one join path takes, in one graph',
    'graph_name, coordinate, target_type, position', 'sdl'),
@@ -18454,8 +18519,16 @@ INSERT INTO meta_relation VALUES
    'A written or inherited path names the claim it follows by its element and target type rather than by position, since an inherited path''s claim may lie in another file, and as a copy a swept claim sets null. An inherited path is a row per implementation, so no reader joins through implementations; an inferred one is claimed by nothing.'),
   ('graphitron_accessor_path', 'path-need', 'graphitron',
    'The class an accessor path reaches: one row per path of kind ACCESSOR.',
-   'For example Query.filmBlurbHolder.blurb, read off a FilmBlurbHolder, reaches FilmBlurb by its blurb() accessor; declared only, nothing writes it until value objects are bound.',
+   'For example Query.filmBlurbHolder.blurb, read off a FilmBlurbHolder, reaches FilmBlurb by its blurb() accessor.',
    'The object side of a path: what an accessor path reaches, written by field names and @field(name:). Declared beside the join path so the supertype''s kind has both its subtypes; its steps come when value objects are bound.'),
+  ('graphitron_path_need_object', 'path-need', 'graphitron',
+   'One type an occurrence with an object source must reach: one row per occurrence and target type, with the class it starts on.',
+   'For example Query.filmBlurbHolder.blurb, read off the FilmBlurbHolder its parent''s service hands back, needs FilmBlurb from FilmBlurbHolder.',
+   'The object side of the need, beside graphitron_path_need_table: an accessor path meets it as a join path meets a table need, so the two sides share one need and one path supertype. Written by the occurrence-depths stage after the need, marked and swept with it.'),
+  ('graphitron_accessor_path_step', 'accessor-path-step', 'graphitron',
+   'One member call an accessor path makes: one row per path and position, naming the member''s code_read_slot row.',
+   'For example Query.filmBlurbHolder.blurb calls FilmBlurbHolder.blurb() at position 0; a path where the object passes through calls nothing and has no step.',
+   'What an accessor path calls, as a join path''s steps say what it joins, so a reader renders the call off the row rather than finding the member again. One step today, a bound name being one member. Written by the occurrence-depths stage with its path.'),
   ('graphitron_join_path_step', 'path-step', 'graphitron',
    'One step a join path takes: one row per need and position the path toward it stepped through, from one table to the next, with the place of the written element it resolved where one did.',
    'For example Customer.city over @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}]) is two steps, customer to address and address to city.',

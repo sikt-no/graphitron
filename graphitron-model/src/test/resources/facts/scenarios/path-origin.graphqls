@@ -160,7 +160,8 @@ type Mutation {
 # need a claim covers, its path walked: a written path, a @referenceFor, a single-table interface's
 # implementation, the field of a service's carrier, a scalar, a plain type reached by a path, a
 # root field's @routine, its path ending on the derived table it returns, an argument's and an input
-# field's own @reference, and a named node id inferred over the one key its argument's start declares.
+# field's own @reference, and a named node id inferred over the one key its argument's start declares;
+# and the accessor paths off the object a service hands back, each the member its bound name finds.
 extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPTY'", rows: """
   coordinate,                      target_type,     kind, origin
   Film.actorRows,                  FilmActor,       JOIN, INFERRED
@@ -177,6 +178,8 @@ extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPT
   Query.films(filter.languageName:), Film,          JOIN, WRITTEN
   Query.filmsByLanguage(language:), Film,           JOIN, WRITTEN
   Query.filmsByLanguageName(name:), Film,           JOIN, WRITTEN
+  Query.filmBlurbHolder.blurb,     FilmBlurb,       ACCESSOR, INFERRED
+  Query.filmBlurbHolder.blurb.description, String,  ACCESSOR, INFERRED
   """)
 
 # An empty path for a scalar, a nested object and its field, an argument, an input field, a write

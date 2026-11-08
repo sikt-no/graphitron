@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCESSOR_PATH;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
@@ -196,6 +197,7 @@ public final class OccurrenceSources {
             .union(keyRow(o, p, at, touchedAt))
             .union(record(o, p, at, touchedAt))
             .union(object(o, p, at, touchedAt))
+            .union(objectMember(o, p, at, touchedAt))
             .union(writePayload(o, p, at, touchedAt))
             .union(writePayloadMember(o, p, at, touchedAt))
             .union(nestedCopy(o, p, at, touchedAt))
@@ -421,6 +423,39 @@ public final class OccurrenceSources {
             .and(notExists(selectOne().from(po)
                 .where(po.GRAPH_NAME.eq(p.GRAPH_NAME), po.COORDINATE.eq(p.COORDINATE),
                     po.KIND.eq(OBJECT), po.TOUCHED_AT.eq(touchedAt))))
+            .and(notExists(selectOne().from(ef)
+                .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
+                    ef.FIELD_NAME.eq(cf.FIELD_NAME))));
+    }
+
+    /**
+     * A field under an occurrence whose accessor path this reading stated reads an instance of the
+     * class that path reaches, its parent's value: the object side reaching past the producer's own
+     * object as the table side reaches past its first table. Not where the class is a table's record,
+     * nor for a field taking its parent's columns or for an errors field, as for the producer's own
+     * object.
+     */
+    private static Select<Record> objectMember(GraphitronOccurrence o, GraphitronOccurrence p,
+                                               Condition at, LocalDateTime touchedAt) {
+        var pa = GRAPHITRON_ACCESSOR_PATH.as("pa");
+        var cf = GRAPHITRON_FIELD.as("cf");
+        var gs = STORE_GRAPH_SOURCE.as("gs");
+        var st = SQL_TABLE.as("st");
+        var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
+        var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
+        return row(o, OBJECT, null, null, null, pa.TARGET_CLASS_NAME)
+            .from(o)
+            .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
+            .join(pa).on(pa.GRAPH_NAME.eq(p.GRAPH_NAME), pa.COORDINATE.eq(p.COORDINATE),
+                pa.TOUCHED_AT.eq(touchedAt))
+            .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .where(at, o.KIND.eq("FIELD"))
+            .and(notExists(selectOne().from(gs)
+                .join(st).on(st.SOURCE_NAME.eq(gs.SOURCE_NAME))
+                .where(gs.GRAPH_NAME.eq(o.GRAPH_NAME), st.RECORD_CLASS_FQN.eq(pa.TARGET_CLASS_NAME))))
+            .and(notExists(selectOne().from(kr)
+                .where(kr.GRAPH_NAME.eq(cf.GRAPH_NAME), kr.TYPE_NAME.eq(cf.TYPE_NAME),
+                    kr.FIELD_NAME.eq(cf.FIELD_NAME), kr.KIND.eq("COLUMNS"))))
             .and(notExists(selectOne().from(ef)
                 .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
                     ef.FIELD_NAME.eq(cf.FIELD_NAME))));

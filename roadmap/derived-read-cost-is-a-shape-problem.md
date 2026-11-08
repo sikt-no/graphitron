@@ -335,8 +335,13 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     application: no source parameter, a source of rows or records of no table, a key table with no
     primary key, no member returning the record, two such members, or one returning a collection; the
     reference page states each, and a fact document pins them.
-  * **A value object is reached by its accessor path** `open`, taken over from F with the path
-    model (Alf, 2026-11-08), for the outbox's service results.
+  * **A value object is reached by its accessor path** `done`, taken over from F with the path
+    model (Alf, 2026-11-08), for the outbox's service results. A field read off an object has a
+    need that starts on the object, `graphitron_path_need_object`, and an `ACCESSOR` path meets it,
+    with `graphitron_accessor_path` and its `graphitron_accessor_path_step`; its children read off
+    the class the path reaches, so `Query.filmBlurbHolder.blurb.description` now has the object
+    source `FilmBlurb` it lacked. A payload's data element that the service's own class backs passes
+    the object through. `outbox-service-result`, `occurrence-source` and `path-origin` pin it.
     Beside the join path, from object to object: `graphitron_accessor_path`, the path is accessor
     calls with its target class, written by field names and `@field(name:)`, and its steps
     (`graphitron_accessor_path_step`, one member call each), built when value objects are bound,
@@ -861,8 +866,7 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
-  * **A member's value off its parent's object binds `VALUE`** `blocked`, on "A value object is
-    reached by its accessor path". An occurrence whose accessor path ends on a value binds `VALUE`,
+  * **A member's value off its parent's object binds `VALUE`** `open`. An occurrence whose accessor path ends on a value binds `VALUE`,
     `graphitron_occurrence_binding_value` naming the class and the member read, none where the object
     passes through; what an outbox `$result` key reads over a service's value, and what the service
     flip's object-side reads read (Alf, 2026-11-08).

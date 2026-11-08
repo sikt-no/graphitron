@@ -13,7 +13,8 @@ import static org.jooq.impl.DSL.max;
  * gatherer's anchor phase, since each depth reads what the depth above it wrote.
  *
  * <p>Within a depth: the producers, which the sources read; the sources, its tables or its class;
- * the needs off those sources; the paths no claim covers, an empty one where the need starts on its
+ * the needs off those sources; the accessor paths meeting the needs that start on an object, where a
+ * child's object source at the next depth begins; the paths no claim covers, an empty one where the need starts on its
  * landing and an inferred one over the one foreign key; and the claimed needs walked into their
  * steps, each to its written or inherited path or to a stop, {@link Steps} writing the defects of
  * the walk as it takes it. A child field or an argument under a field that writes a path starts
@@ -34,6 +35,7 @@ public final class OccurrenceDepths {
                 OccurrenceProducers.writeDepth(dsl, graph, depth, touchedAt);
                 OccurrenceSources.writeDepth(dsl, graph, depth, touchedAt);
                 PathNeeds.writeDepth(dsl, graph, depth, touchedAt);
+                AccessorPaths.writeDepth(dsl, graph, depth, touchedAt);
                 Paths.writeDepth(dsl, graph, depth, touchedAt);
                 Steps.writeDepth(dsl, graph, depth, touchedAt);
             }

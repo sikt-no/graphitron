@@ -123,6 +123,7 @@ type Mutation {
 extend schema @expectEquals(relation: "graphitron_occurrence_source",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate,                                kind
+  Query.filmBlurbHolder.blurb.description,   OBJECT
   Film.actorRows,                            TABLE
   Film.actorRows(after:),                    TABLE
   Film.actorRows(first:),                    TABLE
@@ -209,12 +210,14 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_object",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate,                               class_name,                                                   class_name_ref
   Query.filmBlurbHolder.blurb,              no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,     no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder
+  Query.filmBlurbHolder.blurb.description,  no.sikt.graphitron.rewrite.test.services.FilmBlurb,           no.sikt.graphitron.rewrite.test.services.FilmBlurb
   Query.recentlyCreatedFilmsBatched.films,  no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,  no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload
   """)
 
 # Occurrences that stand with no source: a root field with no @routine, its arguments where the target
-# binds no table, an errors field, a write payload's field whose target binds no table, and a field
-# read off an object source, and a connection's fields.
+# binds no table, an errors field, a write payload's field whose target binds no table, and a
+# connection's fields. A field read off an object reads the class its parent's accessor path reaches,
+# as Query.filmBlurbHolder.blurb.description reads the FilmBlurb that blurb() delivers.
 extend schema @assertContains(relation: "graphitron_occurrence", rows: """
   coordinate
   Query.films
@@ -235,7 +238,6 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
   Query.filmBlurbHolder(filmId:)
   Mutation.addFilm.errors
   Mutation.deleteLanguages.deletedIds
-  Query.filmBlurbHolder.blurb.description
   Film.actorRows.edges
   Film.actorRows.edges.node
   Film.actorRows.nodes

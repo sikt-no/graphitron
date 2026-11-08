@@ -57,6 +57,33 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "d
   Mutation.films, first,         Film.id
   """)
 
+# Each field read off the service's object reaches its value by an accessor path: holder finds no member
+# on FilmBlurbHolder and HolderView is backed by it, so the object passes through; blurb and description
+# are members. films.results is the payload's data element, which the service's own class backs, so it
+# passes the object through too. card.film takes its keys through a member
+# returning a FilmRecord, which is the lift onto film, not a path.
+extend schema @expectEquals(relation: "graphitron_accessor_path", where: "coordinate LIKE 'Mutation.%'", rows: """
+  coordinate,                                   target_type
+  Mutation.blurb.holder,                        HolderView
+  Mutation.blurb.holder.blurb,                  FilmBlurb
+  Mutation.blurb.holder.blurb.description,      String
+  Mutation.blurbMissing.holder,                 HolderView
+  Mutation.blurbMissing.holder.blurb,           FilmBlurb
+  Mutation.blurbMissing.holder.blurb.description, String
+  Mutation.films.results,                       FilmWithActorsResult
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path", where: "kind = 'ACCESSOR' AND coordinate LIKE 'Mutation.%'", rows: """
+  coordinate,                                   target_type,          origin
+  Mutation.blurb.holder,                        HolderView,           EMPTY
+  Mutation.blurb.holder.blurb,                  FilmBlurb,            INFERRED
+  Mutation.blurb.holder.blurb.description,      String,               INFERRED
+  Mutation.blurbMissing.holder,                 HolderView,           EMPTY
+  Mutation.blurbMissing.holder.blurb,           FilmBlurb,            INFERRED
+  Mutation.blurbMissing.holder.blurb.description, String,             INFERRED
+  Mutation.films.results,                       FilmWithActorsResult, EMPTY
+  """)
+
 extend schema @expectEquals(relation: "graphitron_outbox_result_step", rows: """
   field_name, key_name, position, segments, step_type_name, step_field_name, step
   blurb,      text,     0,        3,        BlurbPayload,   holder,          PASSES_THROUGH

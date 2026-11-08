@@ -20,8 +20,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -75,8 +77,73 @@ public final class PathNeeds {
     /** States the needs of the occurrences at {@code depth}. */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         requireOneSourceTablePerField(dsl, graph, touchedAt, depth);
-        write(dsl, candidates(graph, touchedAt, depth), touchedAt);
+        write(dsl, graph, candidates(graph, touchedAt, depth), touchedAt);
+        writeObject(dsl, graph, depth, touchedAt);
     }
+
+    /**
+     * Upserts one depth's needs that start on an object: a field read off an object source needs its
+     * target type, starting on the class the source names; the need, then its object side.
+     */
+    private static void writeObject(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        var o = GRAPHITRON_OCCURRENCE.as("o");
+        var so = GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.as("so");
+        var f = GRAPHITRON_FIELD.as("f");
+        var ft = GRAPHITRON_FIELD_TARGET.as("ft");
+        var t = GRAPHITRON_TYPE.as("t");
+        var n = GRAPHITRON_PATH_NEED;
+        // A need that started on a table goes, with its table side and path, where the occurrence now
+        // reads off an object.
+        var sx = GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.as("sx");
+        dsl.deleteFrom(n)
+            .where(n.GRAPH_NAME.eq(graph), n.START_KIND.ne(OBJECT))
+            .and(exists(selectOne().from(sx).where(sx.GRAPH_NAME.eq(n.GRAPH_NAME),
+                sx.COORDINATE.eq(n.COORDINATE), sx.TOUCHED_AT.eq(touchedAt))))
+            .execute();
+        dsl.insertInto(n)
+            .columns(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE, n.START_KIND, n.TOUCHED_AT,
+                n.TARGET_GRAPH_REF, n.TARGET_TYPE_REF)
+            .select(selectDistinct(o.GRAPH_NAME, o.COORDINATE, ft.TARGET_TYPE_NAME, inline(OBJECT),
+                    val(touchedAt, n.TOUCHED_AT), t.GRAPH_NAME, t.TYPE_NAME)
+                .from(o)
+                .join(so).on(so.GRAPH_NAME.eq(o.GRAPH_NAME), so.COORDINATE.eq(o.COORDINATE),
+                    so.TOUCHED_AT.eq(touchedAt))
+                .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+                .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME),
+                    ft.FIELD_NAME.eq(f.FIELD_NAME))
+                .leftJoin(t).on(t.GRAPH_NAME.eq(ft.GRAPH_NAME), t.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
+                .where(o.GRAPH_NAME.eq(graph), o.TOUCHED_AT.eq(touchedAt), o.DEPTH.eq(depth),
+                    o.KIND.eq("FIELD")))
+            .onConflict(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE)
+            .doUpdate()
+            .set(n.START_KIND, excluded(n.START_KIND))
+            .set(n.TOUCHED_AT, excluded(n.TOUCHED_AT))
+            .set(n.TARGET_GRAPH_REF, excluded(n.TARGET_GRAPH_REF))
+            .set(n.TARGET_TYPE_REF, excluded(n.TARGET_TYPE_REF))
+            .execute();
+        var no = GRAPHITRON_PATH_NEED_OBJECT;
+        var nn = GRAPHITRON_PATH_NEED.as("nn");
+        dsl.insertInto(no)
+            .columns(no.GRAPH_NAME, no.COORDINATE, no.TARGET_TYPE, no.START_KIND, no.START_CLASS,
+                no.TOUCHED_AT, no.START_GRAPH_REF, no.START_COORDINATE_REF)
+            .select(selectDistinct(nn.GRAPH_NAME, nn.COORDINATE, nn.TARGET_TYPE, nn.START_KIND,
+                    so.CLASS_NAME, val(touchedAt, no.TOUCHED_AT), so.GRAPH_NAME, so.COORDINATE)
+                .from(nn)
+                .join(o).on(o.GRAPH_NAME.eq(nn.GRAPH_NAME), o.COORDINATE.eq(nn.COORDINATE))
+                .join(so).on(so.GRAPH_NAME.eq(nn.GRAPH_NAME), so.COORDINATE.eq(nn.COORDINATE))
+                .where(nn.GRAPH_NAME.eq(graph), nn.TOUCHED_AT.eq(touchedAt), nn.START_KIND.eq(OBJECT),
+                    o.DEPTH.eq(depth)))
+            .onConflict(no.GRAPH_NAME, no.COORDINATE, no.TARGET_TYPE)
+            .doUpdate()
+            .set(no.START_CLASS, excluded(no.START_CLASS))
+            .set(no.TOUCHED_AT, excluded(no.TOUCHED_AT))
+            .set(no.START_GRAPH_REF, excluded(no.START_GRAPH_REF))
+            .set(no.START_COORDINATE_REF, excluded(no.START_COORDINATE_REF))
+            .execute();
+    }
+
+    /** A need that starts on the object an occurrence's values are read off. */
+    private static final String OBJECT = "OBJECT";
 
     /** Deletes the needs no depth of this reading marked. */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
@@ -115,7 +182,8 @@ public final class PathNeeds {
      * landing referenced where it stands. The rule is read once per relation: the need's subtype
      * references the need, so the need is written first.
      */
-    private static void write(DSLContext dsl, Select<Record> rows, LocalDateTime touchedAt) {
+    private static void write(DSLContext dsl, String graph, Select<Record> rows,
+                              LocalDateTime touchedAt) {
         var c = rows.asTable("c");
         var cGraph = c.field("graph_name", String.class);
         var cCoordinate = c.field("coordinate", String.class);
@@ -128,6 +196,14 @@ public final class PathNeeds {
         var cLandingTable = c.field("landing_table", String.class);
         var n = GRAPHITRON_PATH_NEED;
         var t = GRAPHITRON_TYPE.as("t");
+        // A need that started on an object goes, with its object side and path, where the occurrence
+        // now reads off a table.
+        var sx = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("sx");
+        dsl.deleteFrom(n)
+            .where(n.GRAPH_NAME.eq(graph), n.START_KIND.ne(TABLE))
+            .and(exists(selectOne().from(sx).where(sx.GRAPH_NAME.eq(n.GRAPH_NAME),
+                sx.COORDINATE.eq(n.COORDINATE), sx.TOUCHED_AT.eq(touchedAt))))
+            .execute();
         dsl.insertInto(n)
             .columns(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE, n.START_KIND, n.TOUCHED_AT,
                 n.TARGET_GRAPH_REF, n.TARGET_TYPE_REF)
