@@ -334,8 +334,8 @@ class DevMojoTest {
      *
      * <p>The fixture is validation-rejected on purpose, because that is the interesting round: the
      * pass declines to emit and still owes the editor a report, so both writers have something to
-     * write. The unresolvable {@code @reference} key is the rejection; the snake_case SDL field name
-     * is a lint finding beside it.
+     * write. The unresolvable {@code @reference} key is the store's refusal; the snake_case SDL
+     * field name is a lint finding beside it.
      */
     @Test
     void regeneratePass_publishesTheRoundsFactsAndReplaysThemToEveryOpenFile(@TempDir Path basedir)
@@ -363,9 +363,13 @@ class DevMojoTest {
 
             mojo.regeneratePass(jooqContextFor(basedir, schema), workspace);
 
+            var d = no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+            assertThat(store.dsl().fetchCount(d, d.COORDINATE.eq("Film.languageName")))
+                .as("the store's refusal reaches the stratum the language server reads, once")
+                .isOne();
             assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR))
-                .as("the round's rejection residue reaches the stratum the language server reads")
-                .isPositive();
+                .as("the walk never ran, so it adds no account of the same fault")
+                .isZero();
             assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.LINT_FINDING))
                 .as("and so does its post-suppression warning list")
                 .isPositive();

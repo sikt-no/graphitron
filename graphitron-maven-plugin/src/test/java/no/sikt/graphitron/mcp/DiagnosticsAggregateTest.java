@@ -34,10 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DiagnosticsAggregateTest {
 
     /**
-     * Produces, through the real pipeline: three unresolved-column errors (two sharing the
-     * attempt {@code badOne} across two types), a stack of lint findings including the
-     * whole-build {@code no-session-state} finding that carries no location at all, and the
-     * rule-less {@code @table}-on-input advisory.
+     * Produces, through the real pipeline: the store's three unresolved-column defects, and a
+     * stack of lint findings including the whole-build {@code no-session-state} finding that
+     * carries no location at all.
      */
     private static final String SDL = """
         type Film @table(name: "film") {
@@ -84,11 +83,28 @@ class DiagnosticsAggregateTest {
         }
     }
 
+    /**
+     * The walk's residue is what carries an attempt and a kind, and the pipeline now walks only a
+     * graph the store accepts, so these facets are pinned over residue written through the loader:
+     * three unresolved columns, two sharing the attempt {@code badOne} across two types.
+     */
+    private StoreHandle walkResidue(DSLContext dsl) {
+        var loc = new SourceLocation(1, 1, "/s.graphqls");
+        return volumeHandle(dsl, List.of(
+            ValidationError.forField("Actor.badOne",
+                Rejection.unknownColumn("column could not be resolved", "badOne", List.of()), loc),
+            ValidationError.forField("Film.badOne",
+                Rejection.unknownColumn("column could not be resolved", "badOne", List.of()), loc),
+            ValidationError.forField("Film.badTwo",
+                Rejection.unknownColumn("column could not be resolved", "badTwo", List.of()), loc)));
+    }
+
     @Test
     void aggregateAndDrillDownAgreeOnEveryGroupsCount() {
-        try (var build = StoreBackedBuild.run(tmp, "aggregate-parity", SDL)) {
+        try (var store = FactStores.inMemory()) {
+            var handle = walkResidue(store.dsl());
             var structured = structured(aggregate(
-                build.handle(), Map.of("groupBy", List.of("attemptKind", "attempt"))));
+                handle, Map.of("groupBy", List.of("attemptKind", "attempt"))));
             var groups = groups(structured);
             assertThat(groups).isNotEmpty();
             // The two-type badOne attempt proves the group key spans coordinates.
@@ -103,7 +119,7 @@ class DiagnosticsAggregateTest {
                 args.put("where", key(group));
                 args.put("limit", 10_000);
                 var drilled = structured(
-                    DiagnosticsTool.diagnosticsResult(build.handle(), args));
+                    DiagnosticsTool.diagnosticsResult(handle, args));
                 assertThat(entries(drilled))
                     .as("filtering diagnostics to the group key %s returns exactly that group's "
                         + "count; the two tools share one where translation", key(group))
@@ -324,23 +340,24 @@ class DiagnosticsAggregateTest {
 
     @Test
     void theKindSpellingTheEntriesRenderReadsBackThroughWhere() {
-        try (var build = StoreBackedBuild.run(tmp, "aggregate-kind-spelling", SDL)) {
+        try (var store = FactStores.inMemory()) {
+            var handle = walkResidue(store.dsl());
             var kinds = groups(structured(aggregate(
-                build.handle(), Map.of("groupBy", List.of("kind"))))).stream()
+                handle, Map.of("groupBy", List.of("kind"))))).stream()
                 .filter(group -> key(group).get("kind") != null)
                 .toList();
             assertThat(kinds).isNotEmpty();
             for (var group : kinds) {
                 String stored = (String) key(group).get("kind");
                 int count = (Integer) group.get("count");
-                var byStored = entries(structured(filtered(build.handle(), "kind", stored)));
+                var byStored = entries(structured(filtered(handle, "kind", stored)));
                 assertThat(byStored).hasSize(count);
 
                 // The entries render the stored kind kebab-cased. That spelling is what an agent
                 // has in hand to paste back, so it has to filter the same rows.
                 String rendered = (String) byStored.getFirst().get("rejectionKind");
                 assertThat(rendered).isNotNull().isNotEqualTo(stored);
-                assertThat(entries(structured(filtered(build.handle(), "kind", rendered))))
+                assertThat(entries(structured(filtered(handle, "kind", rendered))))
                     .as("the kind spelling the entries render ('%s') reads back as a filter", rendered)
                     .hasSize(count);
             }

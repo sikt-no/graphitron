@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
+import no.sikt.graphitron.model.derive.EntryDefectVerdict;
 import no.sikt.graphitron.model.derive.StoreDetections;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
@@ -447,14 +448,44 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
+     * The store's error-severity defects as build errors. A class a code reference names that the
+     * reading did not read is explained from the classpath: the dependency that carries it and
+     * that the module does not declare, which the defect itself cannot know. An unknown
+     * {@code $session} member is explained by the members the handle does offer.
+     */
+    private List<ValidationError> refusals() {
+        var nameability = new ClasspathNameability(ctx.classpathRoots());
+        return EntryDefectVerdict.rows(store.dsl(), store.graphName()).stream()
+            .map(row -> EntryDefectVerdict.error(row, switch (row.code()) {
+                case "CODE_REFERENCE_CLASS_NOT_READ" -> row.detail() != null
+                    && nameability.verdictFor(row.detail())
+                        instanceof ClasspathNameability.Verdict.Rejected rejected
+                    ? rejected.reason()
+                    : null;
+                case "SESSION_MEMBER_UNKNOWN" -> EntryDefectVerdict.offeredMembers(store.dsl(), store.graphName());
+                default -> null;
+            }))
+            .toList();
+    }
+
+    /**
      * The pipeline. Every public entry point runs this body and projects what it wants out of the
      * result; see the class javadoc for why there is one body rather than one per entry point.
      */
     private PassProducts runPipeline(Projection projection) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-
         var attributed = AttributedRegistry.of(schemas.written(), jooq);
-        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, acceptedSchema(attributed), ctx);
+        // A document the loading rewrites refuse is refused as that, before its entries are judged.
+        var accepted = acceptedSchema(attributed);
+        // The store's verdict comes next: a graph it refuses is not classified, so an author meets
+        // the stored defect and never the walk's account of the same fault.
+        var refused = refusals();
+        if (!refused.isEmpty()) {
+            return new PassProducts(List.of(), refused,
+                suppressed(storeWarnings(store, schemas.narrowings())), null);
+        }
+
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, accepted, ctx);
         var schema = bundle.model();
         boolean federationLink = bundle.federationLink();
         var assembled = emittedSchema();
@@ -724,8 +755,24 @@ public class GraphQLRewriteGenerator {
                                                 no.sikt.graphitron.model.read.StoreHandle store,
                                                 List<EmittedRegistry.TagNarrowing> narrowings,
                                                 no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
-        LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
+        all.addAll(storeWarnings(store, narrowings));
+        // The jOOQ record columns a VALIDATION pre-step cannot check, from the same partition the
+        // pre-step emits its checks from, so the two agree on every column. It applies excludedTypes
+        // at the field it locates a finding on, as the fan-out producer does.
+        all.addAll(no.sikt.graphitron.rewrite.validation.ValidationColumnWarnings.findings(
+            schema, recordAccessors, no.sikt.graphitron.model.lint.ExcludedTypes.of(ctx.lintConfig())));
+        return suppressed(all);
+    }
+
+    /**
+     * The warnings that answer from the store and the configuration alone, which a round the store
+     * refuses still reports beside its errors, the walk never having run.
+     */
+    private List<BuildWarning> storeWarnings(no.sikt.graphitron.model.read.StoreHandle store,
+                                             List<EmittedRegistry.TagNarrowing> narrowings) {
+        LintConfig lintConfig = ctx.lintConfig();
+        var all = new java.util.ArrayList<BuildWarning>();
         // The nine rules, read off this run's rows. Both things the walk was handed here are gone
         // rather than moved: excludedTypes is a relation the configuration gatherer writes and the
         // rules join, so a consumer's exclusion is applied once where the rule is stated instead of
@@ -753,11 +800,12 @@ public class GraphQLRewriteGenerator {
         // asymmetry the comment below accepts for the classifier advisories would read as a bug.
         all.addAll(no.sikt.graphitron.model.lint.ReferencePathFanout.findings(
             store, no.sikt.graphitron.model.lint.ExcludedTypes.of(lintConfig)));
-        // The jOOQ record columns a VALIDATION pre-step cannot check, from the same partition the
-        // pre-step emits its checks from, so the two agree on every column. It applies excludedTypes
-        // at the field it locates a finding on, as the fan-out producer does.
-        all.addAll(no.sikt.graphitron.rewrite.validation.ValidationColumnWarnings.findings(
-            schema, recordAccessors, no.sikt.graphitron.model.lint.ExcludedTypes.of(lintConfig)));
+        return all;
+    }
+
+    private List<BuildWarning> suppressed(List<BuildWarning> warnings) {
+        LintConfig lintConfig = ctx.lintConfig();
+        var all = new java.util.ArrayList<BuildWarning>(warnings);
         // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
         // classifier advisories (schema.warnings()) and engine findings are concatenated means it
         // covers both channels, so a classifier advisory is suppressible by rule id like any

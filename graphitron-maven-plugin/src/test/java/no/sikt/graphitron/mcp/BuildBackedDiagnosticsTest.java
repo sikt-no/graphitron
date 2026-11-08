@@ -54,6 +54,18 @@ class BuildBackedDiagnosticsTest {
      * pre-fuse streams, so the rows these cases assert on come from a real pipeline run rather than
      * a hand-built report.
      */
+    private static final String ADVISORY_SDL = """
+        type Film @table(name: "film") {
+          title: String
+        }
+        input FilmInput @table(name: "film") {
+          film_id: Int
+        }
+        type Query {
+          film(where: FilmInput): Film
+        }
+        """;
+
     private static final String DIAGNOSTICS_SDL = """
         type Film @table(name: "film") {
           original_language_id: Int
@@ -116,22 +128,15 @@ class BuildBackedDiagnosticsTest {
             var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build()));
             var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
 
-            // The walk's rejection, chosen by its kind rather than by being first: the store states
-            // the same fault at the same coordinate as an entry defect, which carries no rejection
-            // kind, and the two stand side by side until validate reads the store and the walk's
-            // rejection goes. Asserted below so that day changes this test on purpose.
+            // The store's verdict on the column, and only it: validate reads the store first, so a
+            // graph the store refuses is never walked and no rejection kind stands beside it.
+            assertThat(diagnostics)
+                .as("no walk rejection beside the store's verdict")
+                .noneSatisfy(d -> assertThat(d).containsKey("rejectionKind"));
             var error = diagnostics.stream()
                 .filter(d -> "error".equals(d.get("severity")))
-                .filter(d -> d.get("rejectionKind") != null).findFirst().orElseThrow();
-            assertThat(diagnostics)
-                .as("the store's own verdict on the same column, beside the walk's")
-                .anySatisfy(d -> assertThat(d)
-                    .containsEntry("coordinate", "Film.badColumn")
-                    .doesNotContainKey("rejectionKind"));
-            assertThat(error)
-                .containsEntry("source", "schema")
-                .containsEntry("coordinate", "Film.badColumn")
-                .containsEntry("rejectionKind", "author-error");
+                .filter(d -> "Film.badColumn".equals(d.get("coordinate"))).findFirst().orElseThrow();
+            assertThat(error).containsEntry("source", "schema");
             assertThat((String) error.get("message")).contains("badColumn");
             var location = (Map<String, Object>) error.get("location");
             // The stored path rendered as a file URI, and the 1-based stored position on the
@@ -141,12 +146,6 @@ class BuildBackedDiagnosticsTest {
                 .startsWith("file:").endsWith("mcp-diagnostics.graphqls");
             assertThat(location).containsEntry("line", 2);
 
-            // The rule-less advisory (a real producer: @table on an input type) keeps surfacing
-            // as a warning with no lintRule key.
-            assertThat(diagnostics).anySatisfy(d -> {
-                assertThat(d).containsEntry("severity", "warning").doesNotContainKey("lintRule");
-                assertThat((String) d.get("message")).contains("@table");
-            });
             // Snapshot axes reported alongside so an agent can tell whether diagnostics are current.
             assertThat(structured).containsEntry("snapshotAvailability", "Built")
                 .containsEntry("snapshotFreshness", "Current");
@@ -169,6 +168,25 @@ class BuildBackedDiagnosticsTest {
             assertThat(diagnostics).anySatisfy(d -> assertThat(d)
                 .containsEntry("severity", "warning")
                 .containsEntry("lintRule", "field-names-camel-case"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aRuleLessAdvisorySurfacesAsAWarningWithoutALintRule(@TempDir Path tmp) throws Exception {
+        // A real producer, @table on an input type, which the walk raises and so only over a
+        // graph the store accepts.
+        try (var build = StoreBackedBuild.run(tmp, "mcp-advisory", ADVISORY_SDL);
+             var server = server(build);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build()));
+            var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
+            assertThat(diagnostics).anySatisfy(d -> {
+                assertThat(d).containsEntry("severity", "warning").doesNotContainKey("lintRule");
+                assertThat((String) d.get("message")).contains("@table");
+            });
         }
     }
 

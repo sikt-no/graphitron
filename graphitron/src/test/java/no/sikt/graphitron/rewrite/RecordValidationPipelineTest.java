@@ -56,7 +56,7 @@ class RecordValidationPipelineTest {
             description: String @field(name: "description")
         }
         input FilmKeyInput { id: ID! @nodeId(typeName: "Film") }
-        type Query { x: String }
+        type Query { films: [Film!]! }
         type Mutation {
             draftFilms(in: [FilmDraftInput!]!): SakPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithFilmRecords"})

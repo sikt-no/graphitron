@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>no.sikt.graphitron.it</groupId>
+  <artifactId>entry-defect-fails-build</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <dependencies>
+    <!-- The jOOQ catalog the schema's @table directives reflect against. Declared as a
+         normal project dep, not under <plugin><dependencies>: this IT locks the R124
+         contract that the rewrite plugin sources its codegen classpath from the project's
+         compile classpath. Pre-R124 the same artifact lived under the plugin block; the
+         dep move is the entire point of the migration. -->
+    <dependency>
+      <groupId>no.sikt</groupId>
+      <artifactId>graphitron-sakila-db</artifactId>
+      <version>@project.version@</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-maven-plugin</artifactId>
+        <version>@project.version@</version>
+        <executions>
+          <execution>
+            <id>rewrite-generate</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <schemaInputs>
+                <schemaInput>
+                  <pattern>src/main/resources/schema.graphqls</pattern>
+                </schemaInput>
+              </schemaInputs>
+              <outputPackage>no.sikt.it.generated</outputPackage>
+              <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

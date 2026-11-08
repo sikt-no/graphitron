@@ -17,8 +17,8 @@ extend type Query {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                            coordinate,              detail
-  DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM, Query.directive,         defaultFirstValue
-  DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM, Query.authored(first:),  first
+  DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM, Query.directive,         defaultFirstValue: 50 against a maximum of 10
+  DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM, Query.authored(first:),  first = 50 against a maximum of 10
   """)
 
 extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """

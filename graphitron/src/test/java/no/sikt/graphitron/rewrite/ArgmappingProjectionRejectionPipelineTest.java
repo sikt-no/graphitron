@@ -51,7 +51,8 @@ class ArgmappingProjectionRejectionPipelineTest {
     @Test
     void aBareNodeIdBindingFailsTheBuild(@TempDir Path tmp) throws IOException {
         assertThatThrownBy(() -> validate(tmp, """
-            type Inventory @table(name: "inventory") @node(keyColumns: ["inventory_id", "store_id"]) {
+            interface Node { id: ID! }
+            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id", "store_id"]) {
                 id: ID! @nodeId
             }
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -175,7 +176,8 @@ class ArgmappingProjectionRejectionPipelineTest {
 
     /** The node type every fixture below opens, and the one key column it actually resolves. */
     private static final String INVENTORY_NODE = """
-        type Inventory @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+        interface Node { id: ID! }
+        type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
             id: ID! @nodeId
         }
         """;
@@ -280,7 +282,7 @@ class ArgmappingProjectionRejectionPipelineTest {
                     className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
                     method: "filmActorsViaCondition",
                     argMapping: "filmId: in.filmId.film_id"
-                }}])
+                }}, {table: "film"}])
             }
             type Query { actor: Actor }
             """))
@@ -333,7 +335,8 @@ class ArgmappingProjectionRejectionPipelineTest {
     @Test
     void aKeyColumnTheParameterCannotTakeFailsTheBuild(@TempDir Path tmp) throws IOException {
         assertThatThrownBy(() -> validate(tmp, """
-            type Customer @table(name: "customer") @node(keyColumns: ["first_name"]) {
+            interface Node { id: ID! }
+            type Customer implements Node @table(name: "customer") @node(keyColumns: ["first_name"]) {
                 id: ID! @nodeId
             }
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -368,7 +371,8 @@ class ArgmappingProjectionRejectionPipelineTest {
     void anInferredKeyColumnTheParameterCannotTakeFailsTheBuild(@TempDir Path tmp)
             throws IOException {
         assertThatThrownBy(() -> validate(tmp, """
-            type Customer @table(name: "customer") @node(keyColumns: ["first_name"]) {
+            interface Node { id: ID! }
+            type Customer implements Node @table(name: "customer") @node(keyColumns: ["first_name"]) {
                 id: ID! @nodeId
             }
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }

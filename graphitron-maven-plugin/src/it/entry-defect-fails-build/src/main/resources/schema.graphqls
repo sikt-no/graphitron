@@ -1,0 +1,7 @@
+type Query {
+  ghosts: [Ghost]
+}
+
+type Ghost @table(name: "no_such_table") {
+  name: String
+}

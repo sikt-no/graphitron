@@ -75,7 +75,8 @@ class UnlowerableOrderingRejectionPipelineTest {
 
     /**
      * A child multitable field over participants that each reach the parent by a foreign key, so
-     * the only thing wrong with it is the declaration a child fan-out cannot lower.
+     * the only thing wrong with it is the declaration a child fan-out cannot lower. Staff reaches
+     * store by two keys, its own store_id and the store's manager, so its route is written.
      */
     private static final String CHILD = """
         type Customer @table(name: "customer") { lastName: String @field(name: "last_name") }
@@ -86,6 +87,7 @@ class UnlowerableOrderingRejectionPipelineTest {
         type Store @table(name: "store") {
             occupants(order: OccupantOrderBy @orderBy): [Occupant!]!
                 @defaultOrder(fields: [{name: "last_name"}])
+                @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
         }
         type Query { stores: [Store!]! }
         """;
@@ -157,10 +159,9 @@ class UnlowerableOrderingRejectionPipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .anyMatch(m -> m.contains("Field 'Store.occupants': @defaultOrder declares an"
-                    + " ordering this field cannot honour")
-                    && m.contains("one statement per participant (Customer, Staff)"))
-                .anyMatch(m -> m.contains("argument 'order' carries @orderBy")));
+                .allMatch(m -> m.endsWith("[ORDERING_ACROSS_PARTICIPANTS]"))
+                .anyMatch(m -> m.startsWith("Field 'Store.occupants':"))
+                .anyMatch(m -> m.startsWith("Field 'Store.occupants(order:)':")));
     }
 
     /**
@@ -177,8 +178,8 @@ class UnlowerableOrderingRejectionPipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .anyMatch(m -> m.contains("Field 'Query.document': @defaultOrder declares an"
-                    + " ordering this field cannot honour")));
+                .anyMatch(m -> m.startsWith("Field 'Query.document':")
+                    && m.endsWith("[ORDERING_ACROSS_PARTICIPANTS]")));
     }
 
     /**

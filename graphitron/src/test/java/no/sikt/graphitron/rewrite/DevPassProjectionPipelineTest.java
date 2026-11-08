@@ -140,8 +140,9 @@ class DevPassProjectionPipelineTest {
                 .as("the verdict is a value on the report, not an exception out of the pass")
                 .anyMatch(m -> m.contains("languageName") || m.contains("no_such_fk"));
             assertThat(pass.output().walkErrors())
-                .as("the walk's own error stream, which the diagnostics stratum is written from")
-                .isNotEmpty();
+                .as("a round the store refuses never reaches the walk, so the diagnostics stratum"
+                    + " holds the refusal once, as the entry defect")
+                .isEmpty();
             assertThat(pass.generation())
                 .as("a rejected schema emits nothing, so there is no generation to compile")
                 .isEmpty();

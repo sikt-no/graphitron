@@ -12905,7 +12905,7 @@ UNION ALL
 -- default: at the first argument's declaration where the carrier declares first itself, and
 -- otherwise at the @asConnection application whose defaultFirstValue set it. The minted default
 -- never fires it, being lowered to the maximum where it is minted. The detail says which of the two
--- was written. A connection type an author declared without @asConnection is no carrier and is not
+-- was written, the value and the maximum. A connection type an author declared without @asConnection is no carrier and is not
 -- judged here; the runtime serves its oversized default at the maximum like any value a client
 -- sends.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
@@ -12914,8 +12914,8 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
                COALESCE(el.source_name, c.source_name) AS source_name,
                COALESCE(el.source_line, c.source_line) AS source_line,
                COALESCE(el.source_column, c.source_column) AS source_column,
-               CASE WHEN el.source_line IS NOT NULL THEN 'first' ELSE 'defaultFirstValue' END
-                 AS detail
+               CASE WHEN el.source_line IS NOT NULL THEN 'first = ' ELSE 'defaultFirstValue: ' END
+                 || ga.default_value_sdl || ' against a maximum of ' || mx.max_page_size AS detail
           FROM graphitron_connection_carrier c
           JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
           JOIN graphitron_argument ga

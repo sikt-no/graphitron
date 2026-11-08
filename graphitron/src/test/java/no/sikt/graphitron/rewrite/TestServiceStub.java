@@ -26,7 +26,7 @@ import org.jooq.Result;
  * <p>Requires the {@code -parameters} compiler flag for context-arg variants
  * (the project's {@code pom.xml} already sets this flag).
  */
-class TestServiceStub {
+public class TestServiceStub {
 
     // ===== String-returning methods (return-type mismatch / parameter-classification tests) =====
 

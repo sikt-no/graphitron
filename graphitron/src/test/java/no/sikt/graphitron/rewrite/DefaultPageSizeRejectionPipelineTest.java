@@ -47,8 +47,9 @@ class DefaultPageSizeRejectionPipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .anyMatch(m -> m.startsWith("Field 'Query.films': @asConnection(defaultFirstValue:"
-                    + " 50) exceeds <maxAllowedPageSize> 10")));
+                .anyMatch(m -> m.startsWith("Field 'Query.films': ")
+                    && m.contains("(defaultFirstValue: 50 against a maximum of 10)")
+                    && m.endsWith("[DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM]")));
     }
 
     @Test
@@ -59,8 +60,9 @@ class DefaultPageSizeRejectionPipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .anyMatch(m -> m.startsWith("Field 'Query.films': the default of argument 'first'"
-                    + " (50) exceeds <maxAllowedPageSize> 10")));
+                .anyMatch(m -> m.startsWith("Field 'Query.films(first:)': ")
+                    && m.contains("(first = 50 against a maximum of 10)")
+                    && m.endsWith("[DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM]")));
     }
 
     /** The negatives beside the positives, so the gate cannot pass because everything fails. */

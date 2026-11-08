@@ -84,7 +84,8 @@ class SessionIdentityRejectionPipelineTest {
     void aBoxedMemberIntoAPrimitiveParameter_rejectsNamingBothDeclarations(@TempDir Path tmp) throws IOException {
         assertThat(errors(tmp, serviceSdl("sokerOfPrimitive", "sokerId: $session.sokerId"), handle(RECORD_HANDLE)))
             .singleElement().asString()
-            .contains("Query.bruker").contains("$session.sokerId").contains("long").contains("java.lang.Long");
+            .contains("Query.bruker").contains("$session.sokerId").contains("long").contains("java.lang.Long")
+            .contains("[SESSION_BINDING_TYPE_MISMATCH]");
     }
 
     @Test
@@ -92,14 +93,15 @@ class SessionIdentityRejectionPipelineTest {
         assertThat(errors(tmp, conditionSdl("sessionWrongType", "brukerId: $session.brukerId"),
             handle(RECORD_HANDLE)))
             .singleElement().asString()
-            .contains("Query.films").contains("java.lang.String").contains("long");
+            .contains("Query.films").contains("java.lang.String").contains("long")
+            .contains("[SESSION_BINDING_TYPE_MISMATCH]");
     }
 
     @Test
     void anUnknownMember_rejectsListingTheMembersTheHandleOffers(@TempDir Path tmp) throws IOException {
         assertThat(errors(tmp, serviceSdl("brukerOf", "brukerId: $session.nope"), handle(RECORD_HANDLE)))
             .singleElement().asString()
-            .contains("nope").contains("brukerId, sokerId");
+            .contains("nope").contains("brukerId, sokerId").contains("[SESSION_MEMBER_UNKNOWN]");
     }
 
     @Test
@@ -107,7 +109,7 @@ class SessionIdentityRejectionPipelineTest {
         assertThat(errors(tmp, conditionSdl("sessionBoxed", "brukerId: $session.brukerId"),
             SessionStateConfig.none()))
             .singleElement().asString()
-            .contains("$session.brukerId").contains("no <sessionState> is configured");
+            .contains("$session.brukerId").contains("[SESSION_BINDING_WITHOUT_IDENTITY]");
     }
 
     @Test
@@ -115,7 +117,7 @@ class SessionIdentityRejectionPipelineTest {
         assertThat(errors(tmp, conditionSdl("sessionBoxed", "brukerId: $session.brukerId"),
             SessionStateConfig.from(null, null, null)))
             .singleElement().asString()
-            .contains("$session.brukerId").contains("<handle>");
+            .contains("$session.brukerId").contains("[SESSION_HANDLE_UNNAMED]");
     }
 
     @Test

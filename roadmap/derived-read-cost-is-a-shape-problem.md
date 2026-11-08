@@ -202,6 +202,7 @@ resolutions and links built beside it are gone.
 * **Capture states each field's path in the order it was written** `done`.
 * **A path is resolved by a deterministic forward walk over what each element names** `done`.
 * **A table-bound type no field returns is walked from its binding** `done`.
+* **An inferred join follows the key the field's cardinality allows** `open`. Where no path is written and two foreign keys join the tables, a list field follows the key its target holds and a single field the key its parent holds or a unique key on the target, so `Store.occupants: [Occupant!]!` takes `staff_store_id_fkey` and a manager field `store_manager_staff_id_fkey`, and only two keys fitting one cardinality stay `ROUTE_AMBIGUOUS`. The store's route count, the path stage that writes `graphitron_join_path_step` and the walk's `BuildContext.parsePath` apply it together, or the store and the walk disagree.
 * **A round of the walk steps only its newest layer** `open`. Each round re-reads the rule from every
   start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
   capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one

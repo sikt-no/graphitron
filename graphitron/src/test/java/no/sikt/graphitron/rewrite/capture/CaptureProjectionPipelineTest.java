@@ -73,7 +73,7 @@ class CaptureProjectionPipelineTest {
             assertThat(checked.output().report().errors())
                 .extracting(ValidationError::message)
                 .as("the fixture is a rejected one, which is what makes the case below non-vacuous")
-                .anyMatch(m -> m.contains("no_such_fk"));
+                .anyMatch(m -> m.startsWith("Field 'Film.languageName': ") && m.endsWith("[ELEMENT_UNRESOLVED]"));
 
             assertThat(captured.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
                 .fetchSet(0, String.class))

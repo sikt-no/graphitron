@@ -28,9 +28,9 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * pins the {@link ValidationReport#from} factory, and the LSP-side {@code ValidatorDiagnosticsTest}
  * pins the consumer. This drives the actual producer end-to-end against the test jOOQ catalog and
  * asserts that <em>both</em> halves flow through {@code buildOutput()} onto
- * {@link GraphQLRewriteGenerator.BuildOutput#report()}: the validator pass over {@code bundle.model()}
- * reaches {@code report().errors()}, and {@code bundle.model().warnings()} reaches
- * {@code report().warnings()}. Without this, a refactor breaking the validator pass or the
+ * {@link GraphQLRewriteGenerator.BuildOutput#report()}: the store's refusals reach
+ * {@code report().errors()}, and {@code bundle.model().warnings()} reaches
+ * {@code report().warnings()} for a schema the store accepts. Without this, a refactor breaking the validator pass or the
  * warnings-into-report wiring leaves the build-time log surface correct (it still runs
  * {@link GraphQLRewriteGenerator#validate()}) while silently dropping diagnostics from the LSP's
  * report, with no other test gate — the failure mode identified when this test was originally deferred.
@@ -38,29 +38,51 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
 @PipelineTier
 class BuildOutputReportPipelineTest {
 
-    @Test
-    void buildOutput_populatesReportWithValidatorErrorsAndModelWarnings(@TempDir Path tmp) throws IOException {
-        // One schema, two independent diagnostics on two different types:
-        //  - Film.languageName: @reference to a non-existent FK -> UnclassifiedField -> validator error.
-        //  - FilmDetails.language: @splitQuery on a record-backed parent (FilmDetails binds to the
-        //    @service producer's reflected return) -> "@splitQuery is redundant" build warning.
-        // The two are independent so each half of the report is exercised in the same run.
-        Path schema = tmp.resolve("schema.graphqls");
-        Files.writeString(schema, """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-              languageName: String @reference(path: [{key: "no_such_fk"}])
-            }
-            type FilmDetails {
-              language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query {
-              film: Film
-              details: FilmDetails
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """);
+    /** A schema whose only diagnostic is the redundant @splitQuery under a record-backed parent. */
+    private static final String WARNED = """
+        type Language @table(name: "language") { name: String }
+        type Film @table(name: "film") { title: String }
+        type FilmDetails {
+          language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+        }
+        type Query {
+          film: Film
+          details: FilmDetails
+            @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+        }
+        """;
 
+    @Test
+    void buildOutput_populatesReportWithTheStoresRefusal(@TempDir Path tmp) throws IOException {
+        // An unresolvable @reference key, which the store refuses before the walk runs.
+        var report = report(tmp, WARNED.replace("type Film @table(name: \"film\") { title: String }",
+            "type Film @table(name: \"film\") {\n  languageName: String @reference(path: [{key: \"no_such_fk\"}])\n}"));
+
+        assertThat(report.errors())
+            .as("the store's refusals flow through buildOutput() into the report")
+            .isNotEmpty();
+        assertThat(report.errors())
+            .extracting(ValidationError::message)
+            .as("the unresolvable @reference key surfaces as an error at its field")
+            .anyMatch(m -> m.startsWith("Field 'Film.languageName':"));
+        assertThat(report.isEmpty()).isFalse();
+    }
+
+    @Test
+    void buildOutput_populatesReportWithModelWarnings(@TempDir Path tmp) throws IOException {
+        var report = report(tmp, WARNED);
+
+        assertThat(report.errors()).as("nothing in this schema is refused").isEmpty();
+        assertThat(report.warnings())
+            .as("model warnings flow through buildOutput() into the report")
+            .extracting(BuildWarning::message)
+            .as("the redundant @splitQuery directive surfaces as a build warning")
+            .anyMatch(m -> m.contains("FilmDetails.language") && m.contains("redundant"));
+    }
+
+    private static ValidationReport report(Path tmp, String sdl) throws IOException {
+        Path schema = tmp.resolve("schema.graphqls");
+        Files.writeString(schema, sdl);
         var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "BuildOutputReportPipelineTest",
@@ -68,32 +90,9 @@ class BuildOutputReportPipelineTest {
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE
         );
-
-        ValidationReport report;
         try (var store = GraphitronStore.captured(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, store)
-                .buildOutput().report();
+            return new GraphQLRewriteGenerator(ctx, store).buildOutput().report();
         }
-
-        // Error half: the validator pass over bundle.model() reaches report.errors().
-        assertThat(report.errors())
-            .as("validator errors flow through buildOutput() into the report")
-            .isNotEmpty();
-        assertThat(report.errors())
-            .extracting(ValidationError::message)
-            .as("the unresolvable @reference key surfaces as a validator error")
-            .anyMatch(m -> m.contains("languageName") || m.contains("no_such_fk") || m.contains("did you mean:"));
-
-        // Warning half: bundle.model().warnings() reaches report.warnings().
-        assertThat(report.warnings())
-            .as("model warnings flow through buildOutput() into the report")
-            .isNotEmpty();
-        assertThat(report.warnings())
-            .extracting(BuildWarning::message)
-            .as("the redundant @splitQuery directive surfaces as a build warning")
-            .anyMatch(m -> m.contains("FilmDetails.language") && m.contains("redundant"));
-
-        assertThat(report.isEmpty()).isFalse();
     }
 
     @Test

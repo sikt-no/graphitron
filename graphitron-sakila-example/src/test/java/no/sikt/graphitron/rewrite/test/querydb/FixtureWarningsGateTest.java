@@ -3,7 +3,9 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.test.internal.CapturedGenerator;
+import no.sikt.graphitron.model.config.OutboxConfig;
 import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -61,16 +63,41 @@ class FixtureWarningsGateTest {
     private static final String OUTPUT_PACKAGE = "no.sikt.graphitron.generated";
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
+    /**
+     * The fixture as the build configures it: the classes it names read off this test's classpath,
+     * the session handle and the outbox. A run missing any of them is refused by the store before
+     * the walk raises the advisories pinned here.
+     */
     private static List<BuildWarning> buildAllWarnings() {
         var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "FixtureWarningsGateTest",
             FIXTURE_SCHEMA.getParent(),
             OUTPUT_PACKAGE,
-            JOOQ_PACKAGE
-        );
+            JOOQ_PACKAGE,
+            classpathRoots()
+        ).withSessionStateConfig(SessionStateConfig.from(
+            "no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord", null, null))
+            .withOutboxConfig(OutboxConfig.from(
+                "outbox", null, java.util.Map.of(), java.util.Map.of(),
+                "operation: $scope.operationName"));
         return CapturedGenerator.with(ctx,
             generator -> generator.buildOutput().report().warnings());
+    }
+
+    /**
+     * The example's own modules on this test's classpath and the libraries the schema names a class
+     * of, not every third-party jar.
+     */
+    private static List<Path> classpathRoots() {
+        return java.util.Arrays.stream(System.getProperty("java.class.path").split(java.io.File.pathSeparator))
+            .map(Path::of)
+            .filter(p -> p.toString().contains("graphitron-sakila")
+                || p.getFileName().toString().startsWith("jooq-3")
+                || p.getFileName().toString().startsWith("graphql-java-2")
+                || p.getFileName().toString().startsWith("graphql-java-extended-scalars"))
+            .filter(p -> java.nio.file.Files.isDirectory(p) || p.toString().endsWith(".jar"))
+            .toList();
     }
 
     @Test

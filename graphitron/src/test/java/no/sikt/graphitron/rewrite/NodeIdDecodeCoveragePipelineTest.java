@@ -77,10 +77,9 @@ class NodeIdDecodeCoveragePipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("the coordinate, the node type and the fact that no rail decodes it")
-                .anyMatch(m -> m.contains("argument 'languageId' on field 'Actor.firstName'")
-                    && m.contains("@nodeId for node type 'Language'")
-                    && m.contains("neither the classification walk nor the projected-key rail")));
+                .as("the store refuses the coordinate: nothing joins actor to the node's table")
+                .anyMatch(m -> m.startsWith("Field 'Actor.firstName(languageId:)'")
+                    && m.endsWith("[NODE_ID_LANDS_ON_TABLE]")));
     }
 
     /**
@@ -161,10 +160,9 @@ class NodeIdDecodeCoveragePipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("the uninstalled use site is named, and the installed one is not")
-                .anyMatch(m -> m.contains("input field 'FilmFilter.languageId'")
-                    && m.contains("Actor.firstName(pick)"))
-                .noneMatch(m -> m.contains("Query.films(filter)")));
+                .as("the input field one of its use sites cannot follow is refused")
+                .anyMatch(m -> m.startsWith("Field 'FilmFilter.languageId'")
+                    && m.endsWith("[NO_ROUTE_FROM_DEPARTURE]")));
     }
 
     /**
@@ -192,9 +190,11 @@ class NodeIdDecodeCoveragePipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("one message per dropped coordinate, not one per owning field")
-                .anyMatch(m -> m.contains("argument 'one' on field 'Actor.firstName'"))
-                .anyMatch(m -> m.contains("argument 'two' on field 'Actor.firstName'")));
+                .as("one message per refused coordinate, not one per owning field")
+                .anyMatch(m -> m.startsWith("Field 'Actor.firstName(one:)'")
+                    && m.endsWith("[NODE_ID_LANDS_ON_TABLE]"))
+                .anyMatch(m -> m.startsWith("Field 'Actor.firstName(two:)'")
+                    && m.endsWith("[NODE_ID_LANDS_ON_TABLE]")));
     }
 
     /**
@@ -292,9 +292,9 @@ class NodeIdDecodeCoveragePipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("the coordinate the generator lowers is named, the declaration above it is not")
-                .anyMatch(m -> m.contains("argument 'languageId' on field 'FilmContent.summary'"))
-                .noneMatch(m -> m.contains("on field 'Content.summary'")));
+                .as("the participant's own instruction is refused where it is written")
+                .anyMatch(m -> m.startsWith("Field 'FilmContent.summary(languageId:)'")
+                    && m.endsWith("[NODE_ID_LANDS_ON_TABLE]")));
     }
 
     /**
