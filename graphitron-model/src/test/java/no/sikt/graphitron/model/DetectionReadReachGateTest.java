@@ -113,33 +113,12 @@ class DetectionReadReachGateTest {
         // participant view on the sakila and sis stores.
         REACH.put("ReferenceForParticipantDefects", Set.of("graphql_poly_member"));
 
-        // Eleven relations while this component evaluated the unlowerable-ordering view; it reads
-        // the stored ORDERING_ACROSS_PARTICIPANTS defects now, and only the container's members are
-        // a view.
-        REACH.put("UnlowerableOrderings", Set.of(
-            "graphql_poly_member"));
-
-        // Every relation it names is a table: the carrier's own entry, the AST entries the default
-        // can be written at, and the configured maximum.
-        REACH.put("DefaultPageSizeDefects", Set.of());
-
         // The stored session defects, a configured handle class's class row and the mapping
         // strings' sites are tables; the handle's members are a view, the one join that states
         // them, which lists the offered members for a message in about a millisecond on sis.
         REACH.put("SessionIdentityDefects", Set.of(
             "graphitron_session_handle_member"));
 
-        // The legacy key shape's verdicts and its positive half are both stored by the stage that
-        // evaluates the rules, so reading either back expands no rule.
-        REACH.put("NodeLegacyKeyDefects", Set.of());
-
-        // Every relation it names is a table: the stored defect rows, the code vocabulary and the
-        // outbox anchor the rows sit at.
-        REACH.put("OutboxDefects", Set.of());
-
-        // Every relation it names is a table: the stored condition-overload defects, the condition
-        // element and path entry they sit at, and the field the path belongs to.
-        REACH.put("ConditionOverloadDefects", Set.of());
         REACH.put("StoreLegacyKeyShapes", Set.of());
 
         // The decode-coverage rule's store operand. Its census side costs nothing here: every

@@ -43,22 +43,8 @@ import java.util.Set;
  * different participant sets. Per use site the classifier treats a non-matching name as inert; that
  * this family exists is what keeps inertness from swallowing a typo.
  *
- * <p>{@link #unlowerableOrderings} is the family whose question is neither about a name nor about
- * a signature but about whether a fact the schema states reaches the SQL it was written for: an
- * ordering is available at a coordinate and the coordinate's own read shape delivers none. It is
- * separate from every family above because it judges no author spelling at all; the declaration is
- * well formed, and what fails is that nothing lowers it.
- *
- * <p>{@link #defaultPageSizes} judges the schema against the build's configuration rather than
- * against itself: a connection's default page size is well formed on its own and fails only beside
- * a {@code <maxAllowedPageSize>} smaller than it, which no other family reads.
- *
  * <p>{@link #sessionIdentity} judges the {@code $session} bindings and the configured handle
  * class against the build's {@code <sessionState>} and the classpath, which no other family reads.
- *
- * <p>{@link #conditionOverloads} judges a path element's condition method against the step it
- * joins or filters: the generated call passes the step's two tables, and the consumer's javac has to
- * find exactly one declaration taking them, which no other family reads.
  *
  * <p>{@link #nodeIdDecodeCoverage} is the second member that is not a detection, and it is not one
  * for a different reason than {@link #keyProjections}: it is half of a rule whose other half the
@@ -66,9 +52,8 @@ import java.util.Set;
  * is the classification run's own fact, so the verdict is pronounced where the run's ledger meets
  * these rows, and what rides here is only the store's side of the subtraction.
  *
- * <p>{@link #nodeLegacyKeys} judges a node key's legacy shape, the column list old ids were encoded
- * from, against the current key and the catalog; {@link #legacyKeyShapes} is its positive half, the
- * shapes the encoder converts old ids through, an emission fact on {@link #keyProjections}' terms.
+ * <p>{@link #legacyKeyShapes} is the shapes the encoder converts old ids through, an emission fact
+ * on {@link #keyProjections}' terms.
  *
  * <p>Not every member is a detection, and {@link #keyProjections} is the first that is not: it is the
  * positive half of the {@code argMapping} node-id resolution, read for the plan to emit from rather
@@ -82,12 +67,7 @@ public record StoreDetections(ClaimConflicts.Detection claims,
                               NodeIdDecodeDefects.Detection nodeIdDecodes,
                               NodeIdPolymorphicDecodeDefects.Detection nodeIdPolymorphicDecodes,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
-                              UnlowerableOrderings.Detection unlowerableOrderings,
-                              DefaultPageSizeDefects.Detection defaultPageSizes,
                               SessionIdentityDefects.Detection sessionIdentity,
-                              NodeLegacyKeyDefects.Detection nodeLegacyKeys,
-                              OutboxDefects.Detection outboxes,
-                              ConditionOverloadDefects.Detection conditionOverloads,
                               ResolvedKeyProjections.Projections keyProjections,
                               NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage,
                               StoreLegacyKeyShapes.Shapes legacyKeyShapes) {
@@ -113,12 +93,7 @@ public record StoreDetections(ClaimConflicts.Detection claims,
         roster.put("NodeIdDecodeDefects", NodeIdDecodeDefects.READS);
         roster.put("NodeIdPolymorphicDecodeDefects", NodeIdPolymorphicDecodeDefects.READS);
         roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
-        roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
-        roster.put("DefaultPageSizeDefects", DefaultPageSizeDefects.READS);
         roster.put("SessionIdentityDefects", SessionIdentityDefects.READS);
-        roster.put("NodeLegacyKeyDefects", NodeLegacyKeyDefects.READS);
-        roster.put("OutboxDefects", OutboxDefects.READS);
-        roster.put("ConditionOverloadDefects", ConditionOverloadDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
         roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
         roster.put("StoreLegacyKeyShapes", StoreLegacyKeyShapes.READS);
@@ -141,12 +116,7 @@ public record StoreDetections(ClaimConflicts.Detection claims,
                     NodeIdDecodeDefects.detect(dsl, graphName),
                     NodeIdPolymorphicDecodeDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
-                    UnlowerableOrderings.detect(dsl, graphName),
-                    DefaultPageSizeDefects.detect(dsl, graphName),
                     SessionIdentityDefects.detect(dsl, graphName),
-                    NodeLegacyKeyDefects.detect(dsl, graphName),
-                    OutboxDefects.detect(dsl, graphName),
-                    ConditionOverloadDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
                     NodeIdDecodeCoverageFacts.read(dsl, graphName),
                     StoreLegacyKeyShapes.read(dsl, graphName));
@@ -161,12 +131,7 @@ public record StoreDetections(ClaimConflicts.Detection claims,
             NodeIdDecodeDefects.Detection.empty(),
             NodeIdPolymorphicDecodeDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
-            UnlowerableOrderings.Detection.empty(),
-            DefaultPageSizeDefects.Detection.empty(),
             SessionIdentityDefects.Detection.empty(),
-            NodeLegacyKeyDefects.Detection.empty(),
-            OutboxDefects.Detection.empty(),
-            ConditionOverloadDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
             NodeIdDecodeCoverageFacts.Facts.empty(),
             StoreLegacyKeyShapes.Shapes.empty());
@@ -179,12 +144,7 @@ public record StoreDetections(ClaimConflicts.Detection claims,
         out.addAll(nodeIdDecodes.violations());
         out.addAll(nodeIdPolymorphicDecodes.violations());
         out.addAll(referenceForParticipants.violations());
-        out.addAll(unlowerableOrderings.violations());
-        out.addAll(defaultPageSizes.violations());
         out.addAll(sessionIdentity.violations());
-        out.addAll(nodeLegacyKeys.violations());
-        out.addAll(outboxes.violations());
-        out.addAll(conditionOverloads.violations());
         return List.copyOf(out);
     }
 }
