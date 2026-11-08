@@ -1,0 +1,11 @@
+# An occurrence's source read in steps, its kind changing between readings. The first reading's
+# service hands back a FilmRecord, so the carrier's filmId reads film, the table whose record it is.
+
+type Film @table(name: "film") { title: String }
+
+type FilmDetailsCarrier { filmId: Int @field(name: "film_id") }
+
+extend type Query {
+  carrier(id: Int!): FilmDetailsCarrier
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+}

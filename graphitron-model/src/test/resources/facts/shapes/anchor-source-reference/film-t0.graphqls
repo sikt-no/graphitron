@@ -1,0 +1,8 @@
+# An anchor references the entries it was read from. The first reading points each field at the
+# position of its own definition and of the declaration it sits in.
+
+type Film {
+  title: String
+}
+
+extend type Query { films: [Film] }

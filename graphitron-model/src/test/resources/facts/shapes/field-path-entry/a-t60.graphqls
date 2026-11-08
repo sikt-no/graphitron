@@ -1,0 +1,12 @@
+# The second reading turns the first application into a @referenceFor. Its element is still written
+# where it was, but a participant's path is no place in the field's, so the second application's
+# element moves to place 0 while the first still holds it: the path is rewritten whole, each
+# element still at one place.
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  hopped: [Film!]!
+    @referenceFor(path: [{table: "film"}], type: "Film")
+    @reference(path: [{table: "film"}])
+}

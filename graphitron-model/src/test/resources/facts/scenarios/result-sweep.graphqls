@@ -1,0 +1,45 @@
+# result-sweep, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/result-sweep/a-t0", as: "result-sweep.a"}])
+
+extend schema @assertContains(relation: "graphitron_result", rows: """
+  type_name,   shape, touched_at
+  Film,        ROW,   1000000000
+  FilmDetails, ROW,   1000000000
+  FilmMore,    ROW,   1000000000
+  """)
+
+extend schema @assertContains(relation: "graphitron_result_table", rows: """
+  type_name,   table_name, touched_at
+  Film,        film,       1000000000
+  FilmDetails, film,       1000000000
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/result-sweep/a-t60", as: "result-sweep.a"}])
+
+extend schema @assertContains(relation: "graphitron_result", rows: """
+  type_name, shape, touched_at
+  Film,      ROW,   1000000060
+  """)
+
+extend schema @assertContains(relation: "graphitron_result_table", rows: """
+  type_name, table_name, touched_at
+  Film,      film,       1000000060
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_result", rows: """
+  type_name
+  FilmDetails
+  FilmMore
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_result_table", rows: """
+  type_name
+  FilmDetails
+  """)

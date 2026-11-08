@@ -1,0 +1,11 @@
+# The second reading moves every position in the file down by three lines, so the rewrite deletes
+# every entry the first reading wrote. The field anchor's references to them are nulled, not the
+# anchor, and the reading that re-derives it points it at the positions it was read from now.
+#
+#
+
+type Film {
+  title: String
+}
+
+extend type Query { films: [Film] }

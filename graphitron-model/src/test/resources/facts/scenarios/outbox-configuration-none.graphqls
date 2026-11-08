@@ -1,5 +1,5 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A build with no <outbox> block has no row of the outbox family: row presence is the fact.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @assertEmpty(relation: "store_graph_outbox")
 extend schema @assertEmpty(relation: "store_graph_outbox_role")

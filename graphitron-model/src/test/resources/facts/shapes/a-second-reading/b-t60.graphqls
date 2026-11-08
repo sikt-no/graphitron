@@ -1,0 +1,7 @@
+# The second reading rewrites this file and not the other. The rewritten file's entries carry this
+# reading's mark, the untouched file's keep the first reading's, and the sweep takes the type no
+# file declares any more. The anchors re-derive what the rewritten file named, before and after, so
+# Replacement carries this reading's mark and Kept, which only the untouched file declares, keeps the
+# first's.
+
+type Replacement { note: String }

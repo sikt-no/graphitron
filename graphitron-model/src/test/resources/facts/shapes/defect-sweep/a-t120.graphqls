@@ -1,0 +1,25 @@
+# The third reading puts the condition back on Staff.address, so the no-overload defect is found
+# again at the element and names both declarations of pairOnly.
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+type Language @table(name: "language") { name: String }
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Staff @table(name: "staff") {
+  staffId: Int @field(name: "staff_id")
+  address: Address @reference(path: [{table: "address", condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "pairOnly"
+  }}])
+}
+type Customer @table(name: "customer") {
+  customerId: Int @field(name: "customer_id")
+  address: Address @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "ambiguousPair"
+  }}])
+}
+
+extend type Query { films: [Film!]! staffs: [Staff!]! customers: [Customer!]! }

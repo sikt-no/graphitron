@@ -1,8 +1,8 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # An extension adds to a type and never adds the type. A specification scalar is an element because
 # the specification declares it, so a document extending one writes a declaration row for the
 # extension and no second element for the name. Capturing this document at all is half the claim:
 # when an extension added an element, String was written twice and the capture failed.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend scalar String @specifiedBy(url: "https://example.org/string")
 

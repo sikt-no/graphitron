@@ -1,0 +1,37 @@
+# directive-application-sweep, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/directive-application-sweep/a-t0", as: "directive-application-sweep.a"}])
+
+extend schema @assertContains(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, origin,   touched_at
+  Film.title, deprecated,     AUTHORED, 1000000000
+  Film.year,  deprecated,     AUTHORED, 1000000000
+  """)
+
+extend schema @assertContains(relation: "graphitron_directive_application_arg", rows: """
+  coordinate, directive_name, directive_argument_name, touched_at
+  Film.title, deprecated,     reason,                  1000000000
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/directive-application-sweep/a-t60", as: "directive-application-sweep.a"}])
+
+extend schema @assertContains(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, origin,   touched_at
+  Film.title, deprecated,     AUTHORED, 1000000060
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name
+  Film.year,  deprecated
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_directive_application_arg", rows: """
+  coordinate, directive_name, directive_argument_name
+  Film.title, deprecated,     reason
+  """)

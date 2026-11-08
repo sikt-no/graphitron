@@ -29,10 +29,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@link FactDocuments.Claim}).
  * {@code scenarios} generate, and the {@code graphitron} module generates each one at
  * {@code generate-test-sources} for the tests of generated code, so a scenario never holds a
- * defect; {@code defects} never generate and always store one; {@code incremental-captures} are
- * graphs read in steps; {@code undecided} makes no claim and only shrinks. Every plain document is a
- * {@link Scenario}, run by the population: its claims are checked as it runs, and this class asserts
- * what they found.
+ * defect; {@code defects} never generate and always store one; {@code undecided} makes no claim
+ * and only shrinks. A folder's claim is judged on a scenario's final reading. Every document is a
+ * {@link Scenario}, run by the population: its claims are checked as it runs, each against the
+ * reading before it, and this class asserts what they found.
  *
  * <p>The corpus beside it carries classification verdicts for the walk and asserts nothing about
  * the store; a document here is about the shape of the store, and is where a store fact is pinned.
@@ -41,40 +41,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  * no projection operation, no documentation fragment, no verdict, no launcher-command apparatus. A
  * fact document is an SDL example and the rows it says the store holds for it.
  *
- * <p>A graph can be read in steps, one document per version of one of its files:
- * {@code name.<file>.<epoch>.graphqls}, the file a short name that only tells the files apart and
- * the epoch the second that version is read at. A claim about a second reading is a claim about the
- * store a first one left, so it is written as the sequence that produces it; and each reading runs
- * at its own instant, so a mark column says which reading last wrote a row, which is what tells a
- * row the sweep kept from one a later reading wrote again.
- *
- * <p>A document states the configuration its graph is captured under with {@code @withConfiguration},
- * which this class reads off the document's own text before the capture, since the configuration is
- * an input to the reading rather than something it finds. A stepped graph's reading takes it from
- * the files as they then stand, so a later version of a file without it is a run that stopped being
- * configured with it.
+ * <p>A scenario can read its graph in steps: {@code @tick} moves its clock and a later
+ * {@code @withFacts} writes the next version of a file, so a claim about a second reading is written
+ * after the step that produces it, and a mark column says which reading last wrote a row, which is
+ * what tells a row the sweep kept from one a later reading wrote again. {@code @withConfiguration}
+ * is a step too: each capture runs under the last one stated above it.
  */
 class FactExpectationTest {
 
     /** The undecided folder's size, lowered as documents leave it and never raised. */
-    private static final int UNDECIDED_CEILING = 41;
+    private static final int UNDECIDED_CEILING = 42;
 
-    /** Each graph's claim, by its name: a plain document's path, or a stepped graph's stem. */
+    /** Each scenario's claim, by its graph's name, which is its path. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();
-
-    @TempDir
-    static Path tmp;
-
-    /** The name a stepped graph's prelude is written under, which no file of the pattern can take. */
-    private static final String PRELUDE_FILE = FactDocuments.PRELUDE_FILE;
-
 
     @RegisterExtension
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
-
-    /** The store the graphs read in steps are captured into, which the population does not keep. */
-    @RegisterExtension
-    static final FactStores.ClassStore STEPPED = FactStores.perClass();
 
     private static final List<Block> blocks = new ArrayList<>();
     private static final List<String> divergences = new ArrayList<>();
@@ -87,55 +69,6 @@ class FactExpectationTest {
     /** Each plain graph's facts, as {@link #SHAPE} projects them. */
     private static final Map<String, java.util.Set<String>> fingerprints = new TreeMap<>();
     private static int fields;
-
-
-    /**
-     * The documents read once, by graph, which is the document's path, and the stepped ones: by
-     * graph, then by file, then by the instant each version of the file is read at. A plain document
-     * beside a stepped graph of the same name is a folder that does not say which it means.
-     */
-    private record Graphs(Map<String, CorpusDocuments.Document> plain,
-                          Map<String, Map<String, TreeMap<Long, CorpusDocuments.Document>>> stepped) {
-
-        static Graphs of(Map<CorpusDocuments.Document, FactDocuments.Claim> documents) {
-            var plain = new LinkedHashMap<String, CorpusDocuments.Document>();
-            var stepped = new LinkedHashMap<String, Map<String, TreeMap<Long, CorpusDocuments.Document>>>();
-            var names = new LinkedHashSet<String>();
-            for (var entry : documents.entrySet()) {
-                var document = entry.getKey();
-                var step = FactDocuments.STEP.matcher(document.id() + CorpusDocuments.SUFFIX);
-                if (step.matches()) {
-                    stepped.computeIfAbsent(step.group(1), ignored -> new TreeMap<>())
-                        .computeIfAbsent(step.group(2), ignored -> new TreeMap<>())
-                        .put(Long.parseLong(step.group(3)), document);
-                } else if (document.id().contains(".")) {
-                    throw new AssertionError(document.id() + CorpusDocuments.SUFFIX + " is neither "
-                        + "a plain document, whose name has no dot, nor a step named "
-                        + "<graph>.<file>.<epoch>" + CorpusDocuments.SUFFIX + " with a lower-case "
-                        + "file and a ten-digit epoch");
-                } else {
-                    plain.put(FactDocuments.path(entry.getValue(), document), document);
-                    names.add(document.id());
-                }
-            }
-            for (String graph : stepped.keySet()) {
-                if (names.contains(graph)) {
-                    throw new AssertionError(graph + " is both a document and a graph read in "
-                        + "steps; name it one way");
-                }
-            }
-            if (plain.isEmpty()) {
-                throw new AssertionError("the fact folder holds no plain document to open the store");
-            }
-            return new Graphs(plain, stepped);
-        }
-
-        /** Every instant one stepped graph is read at, in order. */
-        static List<Long> instants(Map<String, TreeMap<Long, CorpusDocuments.Document>> files) {
-            return files.values().stream().flatMap(versions -> versions.keySet().stream())
-                .distinct().sorted().toList();
-        }
-    }
 
 
     @BeforeAll
@@ -153,7 +86,8 @@ class FactExpectationTest {
                 .noneMatch(FactDocuments.path(entry.getValue(), entry.getKey())::startsWith));
         }
         claimed.forEach((document, claim) -> claims.put(FactDocuments.path(claim, document), claim));
-        var graphs = Graphs.of(claimed);
+        var scenarios = new LinkedHashMap<String, CorpusDocuments.Document>();
+        claimed.forEach((document, claim) -> scenarios.put(FactDocuments.path(claim, document), document));
 
         // The plain graphs are the population's, captured once for the run whichever class asks
         // first, each store's on a thread of its own, and checked through the select-only reader:
@@ -166,16 +100,16 @@ class FactExpectationTest {
         for (var file : FactAssertions.in(FactAssertions.FOLDER)) {
             var refusals = file.refusals(documentPaths);
             refusedAssertions.addAll(refusals);
-            if (refusals.isEmpty() && graphs.plain().containsKey(file.document())) {
+            if (refusals.isEmpty() && scenarios.containsKey(file.document())) {
                 assertionBlocks.addAll(file.blocks());
             }
         }
-        FACTS.warm(graphs.plain().keySet());
+        FACTS.warm(scenarios.keySet());
         // Each scenario's claims were checked as it ran, against the store at the claim's point;
         // what they found is the record the population keeps.
         var verified = new LinkedHashMap<String, FactGraphs.Verification>();
         FACTS.verifications().forEach((graph, verification) -> {
-            if (graphs.plain().containsKey(graph)) {
+            if (scenarios.containsKey(graph)) {
                 verified.put(graph, verification);
                 divergences.addAll(verification.divergences().stream()
                     .map(divergence -> graph + " " + divergence).toList());
@@ -194,61 +128,8 @@ class FactExpectationTest {
         })) {
             examined.addTo();
         }
-        FACTS.eachStore((dsl, held) -> fingerprints(dsl, held, graphs.plain().keySet()))
+        FACTS.eachStore((dsl, held) -> fingerprints(dsl, held, scenarios.keySet()))
             .forEach(fingerprints::putAll);
-
-        // The classpath corpus beside the catalog, so a document can state what a reading finds in
-        // Java as well as what it finds in SDL, as the population reads every document.
-        var corpus = ClasspathCorpus.entries();
-        var steppedBlocks = new ArrayList<Block>();
-        var steppedDivergences = new ArrayList<String>();
-        if (graphs.stepped().isEmpty()) {
-            return;
-        }
-        var dsl = STEPPED.handle().dsl();
-
-        // A stepped graph is read once per instant any of its files names. At each, the files
-        // with a version at that instant are written and dated at it, the graph is captured over
-        // every file it has met so far, and only the claims written at that instant are checked:
-        // a file the reading did not write keeps its bytes, its rows keep the mark an earlier
-        // reading gave them, and its blocks state that earlier reading's claims. The prelude is
-        // the graph's own file, written at its first instant, so no file declares it twice.
-        for (var graph : graphs.stepped().entrySet()) {
-            var files = new LinkedHashSet<String>();
-            files.add(PRELUDE_FILE);
-            var standing = new LinkedHashMap<String, String>();
-            boolean first = true;
-            for (long instant : Graphs.instants(graph.getValue())) {
-                var written = new LinkedHashMap<String, String>();
-                if (first) {
-                    written.put(PRELUDE_FILE, FactDocuments.steppedPrelude());
-                    first = false;
-                }
-                graph.getValue().forEach((file, versions) -> {
-                    var version = versions.get(instant);
-                    if (version != null) {
-                        written.put(file, version.sdl());
-                        standing.put(file, version.sdl());
-                        files.add(file);
-                    }
-                });
-                var texts = List.copyOf(standing.values());
-                var sourceNames = CapturedStore.readAt(dsl, tmp, graph.getKey(), written, files,
-                    Instant.ofEpochSecond(instant),
-                    FactDocuments.StatedConfiguration.catalog(texts, jooq), corpus,
-                    FactDocuments.StatedConfiguration.of(texts));
-                var writtenNow = written.keySet().stream()
-                    .filter(file -> !PRELUDE_FILE.equals(file))
-                    .map(sourceNames::get)
-                    .collect(Collectors.toSet());
-                var current = CorpusExpectations.blocksWrittenIn(dsl, writtenNow);
-                steppedBlocks.addAll(current);
-                CorpusExpectations.divergences(dsl, current).stream()
-                    .map(divergence -> "@" + instant + " " + divergence)
-                    .forEach(steppedDivergences::add);
-            }
-        }
-        examine(dsl, graphs.stepped().keySet(), steppedBlocks, steppedDivergences).addTo();
     }
 
     /** What one store says about the blocks its graphs declare, gathered for the cases below. */
@@ -486,11 +367,8 @@ class FactExpectationTest {
     /** Every plain document, by path, whatever {@code -Dfacts} narrowed the capture to. */
     private static Map<String, CorpusDocuments.Document> plainDocuments() {
         var plain = new TreeMap<String, CorpusDocuments.Document>();
-        FactDocuments.claimed().forEach((document, claim) -> {
-            if (claim != FactDocuments.Claim.INCREMENTAL_CAPTURE) {
-                plain.put(FactDocuments.path(claim, document), document);
-            }
-        });
+        FactDocuments.claimed().forEach((document, claim) ->
+            plain.put(FactDocuments.path(claim, document), document));
         return plain;
     }
 

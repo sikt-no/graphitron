@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A $result over a service's returned value is a pointer: a path read step by step off the result, each
 # step as its field's own facts say. A field reads the member its bound name finds on the one class its
 # parent's result holds; where it finds none and its type holds that class, the object passes through;
@@ -6,6 +5,9 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # @nodeId can end the path. A path ends on a member a payload can carry, on a node id, or, bare, on a
 # scalar return. A path that resolves to something a payload cannot carry is unserializable, naming the
 # type; one through a list, or through a field with no read, is unresolved.
+
+extend schema @withConfiguration(outboxTable: "outbox")
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 interface Node { id: ID! }
 
@@ -25,8 +27,6 @@ type FilmCardWrapper { film: Film }
 
 type FilmWithActorsResult { film: Film! @field(name: "filmRecord") }
 type FilmsWithActorsPayload { results: [FilmWithActorsResult] }
-
-extend schema @withConfiguration(outboxTable: "outbox")
 
 type Mutation {
   blurb(filmId: Int!): BlurbPayload

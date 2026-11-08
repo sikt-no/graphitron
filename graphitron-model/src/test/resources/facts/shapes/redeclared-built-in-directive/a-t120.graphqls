@@ -1,0 +1,4 @@
+# The third reading rewrites the redeclaring file without them: the specification's declarations
+# stand again, with the locations and arguments only they grant.
+
+input FilmOneOfFilter @oneOf { filmId: Int title: String }

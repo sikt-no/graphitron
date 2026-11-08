@@ -1,0 +1,8 @@
+# A document redeclaring a specified directive holds the directive in its place. The specification's
+# declaration sorts after every file, so the authored one wins the name, and its locations and
+# arguments are the authored declaration's alone: none of what only the specification grants.
+
+directive @oneOf on INPUT_OBJECT
+directive @deprecated(reason: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION
+directive @include(if: Boolean) on FIELD
+input FilmOneOfFilter @oneOf { filmId: Int title: String }

@@ -170,13 +170,6 @@ public final class CorpusExpectations {
         return blocks(dsl, DSL.noCondition());
     }
 
-    /**
-     * The assertion applications written in the files named, which is what a reading checks when
-     * the files it did not write still hold an earlier reading's claims.
-     */
-    public static List<Block> blocksWrittenIn(DSLContext dsl, Set<String> sourceNames) {
-        return blocks(dsl, DSL.field(id("d", "source_name"), String.class).in(sourceNames));
-    }
 
     private static List<Block> blocks(DSLContext dsl, Condition written) {
         var arguments = dsl

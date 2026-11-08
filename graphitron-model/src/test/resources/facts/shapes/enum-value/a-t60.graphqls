@@ -1,0 +1,7 @@
+# The second reading drops a value. The element sweep takes it, and its part row with it.
+
+extend type Query { rated: Rating }
+
+enum Rating {
+  G
+}

@@ -1,0 +1,12 @@
+# A field's needs read in steps, the field removed between readings. The first reading has
+# Customer.address, a table-bound target reached by a written key, and Customer.firstName beside it;
+# each has its need, and the argument of the field returning customers has its own.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+  address: Address @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+extend type Query { customers(first: Int): [Customer!]! }

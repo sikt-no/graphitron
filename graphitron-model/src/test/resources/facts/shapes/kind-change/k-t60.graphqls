@@ -1,0 +1,6 @@
+# The second reading: 5:3, a field definition in the first, is an enum value now.
+#
+
+enum Kind {
+  TITLE
+}

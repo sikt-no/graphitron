@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # An @outbox is a message each. A field's applications are kept in the order they were written, at
 # ordinals from zero, whatever their events are; an event the author left out is the field's own
 # coordinate. The mapping of each is read
@@ -6,6 +5,12 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # each entry becomes a leaf by the source it reads: an argument path, the node id of the result, a
 # column of the written type, or a member of the field's scope. The configured common payload adds
 # its own leaves to every message, and a message's own key wins over a common one of the same name.
+
+extend schema @withConfiguration(
+  outboxTable: "outbox",
+  outboxPayload: "operation: $scope.operationName, where: $scope.coordinate"
+)
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 interface Node { id: ID! }
 
@@ -15,11 +20,6 @@ type Film implements Node @table(name: "film") @node {
 }
 
 input FilmInput { title: String }
-
-extend schema @withConfiguration(
-  outboxTable: "outbox",
-  outboxPayload: "operation: $scope.operationName, where: $scope.coordinate"
-)
 
 type Mutation {
   createFilm(in: FilmInput!): Film

@@ -1,0 +1,37 @@
+# Every written path is captured at the anchor that wrote it, one row per element at its place: a
+# field declaration's @reference, a @referenceFor application, an argument's @reference and an input
+# field's. Each anchor is then named by the declared element it is written on and the type it
+# reaches. The second reading shortens the field's path and drops the argument's, so its rows go.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Staff @table(name: "staff") { staffId: Int @field(name: "staff_id") }
+
+type Customer @table(name: "customer") {
+  city: String @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}])
+}
+
+union Person = Customer | Staff
+
+# An interface with no table of its own, its field writing a path for every implementation.
+interface Located {
+  address: Address @reference(path: [{table: "address"}])
+}
+
+type Branch implements Located @table(name: "store") { address: Address }
+
+input CustomerFilter @table(name: "customer") {
+  addressId: Int @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+type Store @table(name: "store") {
+  people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+    @referenceFor(type: "Customer", path: [{key: "customer_store_id_fkey"}])
+  managers: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+    @referenceFor(type: "Staff", path: [{table: "staff"}])
+  customers(
+    filter: CustomerFilter
+    cityId: Int @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}])
+  ): [Customer!]!
+}
+
+extend type Query { stores: [Store!]! branches: [Located!]! }

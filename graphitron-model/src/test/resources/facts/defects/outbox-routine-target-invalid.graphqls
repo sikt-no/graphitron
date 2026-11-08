@@ -1,6 +1,8 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A configured function that does not resolve is reported at every @outbox it serves, as a table that
 # does not is: a routine the catalog does not hold, here. No routine target is derived for it.
+
+extend schema @withConfiguration(outboxFunction: "no_such_routine")
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 interface Node { id: ID! }
 
@@ -10,8 +12,6 @@ type Film implements Node @table(name: "film") @node {
 }
 
 input FilmInput { title: String }
-
-extend schema @withConfiguration(outboxFunction: "no_such_routine")
 
 type Mutation {
   create(in: FilmInput!): Film

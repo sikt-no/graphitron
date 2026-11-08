@@ -1,0 +1,10 @@
+# The second reading no longer declares Customer.address, so its occurrence goes and its need with
+# it; the needs still found are marked again.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+}
+
+extend type Query { customers(first: Int): [Customer!]! }

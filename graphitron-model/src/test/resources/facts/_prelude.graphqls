@@ -22,7 +22,8 @@ directive @assertEmpty(relation: String!, where: String) repeatable on SCHEMA
 # the fact harness off the document's text before the capture, since a reading is told its
 # configuration rather than finding it. A document without it is a run that declared nothing. The
 # output coordinates travel together, all three or none; the schema files are always the document's
-# own. In a graph read in steps, a reading takes it from the files as they then stand.
+# own. It is a step of the scenario's script: each capture runs under the last one stated above it,
+# so a scenario can change its configuration between readings, never its catalog.
 #
 # jooqPackage is the catalog the graph is captured against. Left out, it is the fixture catalog every
 # other graph reads; jooqPackage: null is a run that declared no catalog. All graphs share one store,
@@ -40,7 +41,7 @@ directive @withConfiguration(
   sessionState: Boolean,
   sessionHandle: String,
   maxAllowedPageSize: Int, outboxTable: String, outboxFunction: String, outboxColumns: [String!], outboxParameters: [String!], outboxPayload: String
-) on SCHEMA
+) repeatable on SCHEMA
 
 # @withFacts(docs: [{path: "layouts/anchor"}, {path: "shapes/film", as: "shapes/film"}]) renders
 # each document, and first what it pulls in, into the scenario's folder as the file its entry names

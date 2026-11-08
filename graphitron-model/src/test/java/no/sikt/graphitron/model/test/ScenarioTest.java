@@ -31,7 +31,8 @@ class ScenarioTest {
     /** What a run did: each capture as the folder's files then, and each claim as it arrived. */
     private record Run(List<Capture> captures, List<Scenario.Claim> claims) {}
 
-    private record Capture(Instant at, boolean first, Map<String, String> files, Map<String, Instant> times) {}
+    private record Capture(Instant at, boolean first, Map<String, String> files, Map<String, Instant> times,
+                           String configuration) {}
 
     @Test
     @DisplayName("the scenario's own definitions are rendered and captured at t0, lines kept and engine directives blanked")
@@ -79,10 +80,10 @@ class ScenarioTest {
 
         assertThat(run.captures()).extracting(Capture::first).containsExactly(true, false);
         assertThat(run.captures().getFirst().files())
-            .containsOnlyKeys("layouts/core", "shapes/a", "shapes/renamed");
+            .as("a layout of nothing but engine directives renders no file of its own")
+            .containsOnlyKeys("shapes/a", "shapes/renamed");
         assertThat(run.captures().getLast().files())
-            .containsOnlyKeys("scenarios/s", "layouts/core", "shapes/a", "shapes/renamed");
-        assertThat(run.captures().getFirst().files().get("layouts/core")).isBlank();
+            .containsOnlyKeys("scenarios/s", "shapes/a", "shapes/renamed");
         assertThat(run.claims()).extracting(Scenario.Claim::sdl).singleElement().asString().contains("\"r\"");
     }
 
@@ -193,6 +194,27 @@ class ScenarioTest {
     }
 
     @Test
+    @DisplayName("a document with nothing to render writes no file, takes away its earlier version, and its step still captures")
+    void emptyDocumentsWriteNothing() throws IOException {
+        var run = run("scenarios/s", Map.of(
+            "scenarios/s", """
+                extend schema @withFacts(docs: [{path: "shapes/v1", as: "shapes/film"}, {path: "shapes/carrier"}])
+                extend schema @assertEmpty(relation: "r")
+                extend schema @tick(ms: 1000)
+                extend schema @withFacts(docs: [{path: "shapes/emptied", as: "shapes/film"}])
+                extend schema @assertEmpty(relation: "r")
+                """,
+            "shapes/v1", "type Film { title: String }\n",
+            "shapes/carrier", "# Claims lived here once.\n",
+            "shapes/emptied", "# Nothing left.\n"));
+
+        assertThat(run.captures()).hasSize(2);
+        assertThat(run.captures().getFirst().files()).containsOnlyKeys("shapes/film");
+        assertThat(run.captures().getLast().files()).isEmpty();
+        assertThat(run.captures().getLast().at()).isEqualTo(Scenario.T0.plusMillis(1000));
+    }
+
+    @Test
     @DisplayName("a directive that is not the engine's stays where it was written, beside a blanked claim")
     void otherDirectivesStay() throws IOException {
         var run = run("scenarios/s", Map.of("scenarios/s", """
@@ -240,11 +262,12 @@ class ScenarioTest {
         var captures = new ArrayList<Capture>();
         var claims = new ArrayList<Scenario.Claim>();
         Scenario.load(path, p -> Optional.ofNullable(documents.get(p)))
-            .run(folder, (dir, at, first) -> captures.add(snapshot(dir, at, first)), claims::add);
+            .run(folder, (dir, at, first, configuration) -> captures.add(snapshot(dir, at, first, configuration)),
+                claims::add);
         return new Run(captures, claims);
     }
 
-    private static Capture snapshot(Path dir, Instant at, boolean first) {
+    private static Capture snapshot(Path dir, Instant at, boolean first, String configuration) {
         var files = new TreeMap<String, String>();
         var times = new TreeMap<String, Instant>();
         try (Stream<Path> paths = Files.walk(dir)) {
@@ -256,6 +279,6 @@ class ScenarioTest {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        return new Capture(at, first, files, times);
+        return new Capture(at, first, files, times, configuration);
     }
 }

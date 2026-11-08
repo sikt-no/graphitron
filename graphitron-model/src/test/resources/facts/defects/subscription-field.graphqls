@@ -1,8 +1,8 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A field on the subscription root is a subscription, which graphitron does not generate yet. The
 # schema is valid and means something, so the verdict rests on UNSUPPORTED: the defect sits at the
 # field's own declaration, and the diagnostic surface reports it as something an author works
 # around rather than fixes.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 type Subscription { filmAdded: String }
 

@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # What the catalog reading says of each table it finds, over the fixture catalog's several schemas.
 #
 # A table is found in every schema the codegen read, and the same name in two schemas is two tables:
@@ -7,6 +6,7 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The table class and the record class are two names because a codegen configuration decides what a
 # record is called, so one is not a function of the other; a table generated without a record class
 # reads as jOOQ's own Record, which recordless_note shows.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @assertContains(relation: "sql_table", rows: """
   table_schema,  table_name,      table_type, jooq_name,       class_fqn,                                                           record_class_fqn

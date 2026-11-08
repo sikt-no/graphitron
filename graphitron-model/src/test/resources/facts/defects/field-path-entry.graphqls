@@ -1,0 +1,30 @@
+# field-path-entry, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/field-path-entry/a-t0", as: "field-path-entry.a"}])
+
+extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Query' AND name = 'hopped')
+  """, rows: """
+  position, element_column, touched_at
+  0,        26,             1000000000
+  1,        23,             1000000000
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/field-path-entry/a-t60", as: "field-path-entry.a"}])
+
+extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Query' AND name = 'hopped')
+  """, rows: """
+  position, element_column, touched_at
+  0,        23,             1000000060
+  """)

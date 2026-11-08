@@ -1,10 +1,16 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A $session source an @outbox cannot carry is reported where it is written. A member whose type a
 # JSON payload cannot carry is one this check names, with the type, since the member is found and the
 # session defects have nothing to say; the whole handle is no member and is a source the message
 # cannot read; and a member the handle does not offer is the session defect, which reads every
 # argMapping the same way wherever it is written. FilmKeySummary offers label, which is text, and
 # film, a record a payload cannot carry.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary",
+  outboxTable: "outbox"
+)
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 interface Node { id: ID! }
 
@@ -14,12 +20,6 @@ type Film implements Node @table(name: "film") @node {
 }
 
 input FilmInput { title: String }
-
-extend schema @withConfiguration(
-  sessionState: true,
-  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary",
-  outboxTable: "outbox"
-)
 
 type Mutation {
   unwritable(in: FilmInput!): Film

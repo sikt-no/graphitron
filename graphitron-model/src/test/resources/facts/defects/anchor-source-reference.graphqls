@@ -1,0 +1,21 @@
+# anchor-source-reference, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/anchor-source-reference/film-t0", as: "anchor-source-reference.film"}])
+
+extend schema @expectEquals(relation: "graphql_field", where: "type_name = 'Film'", rows: """
+  field_name, declaration_line, source_line, site_line_ref, declaration_line_ref
+  title,      4,                5,           5,             4
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/anchor-source-reference/film-t60", as: "anchor-source-reference.film"}])
+
+extend schema @expectEquals(relation: "graphql_field", where: "type_name = 'Film'", rows: """
+  field_name, declaration_line, source_line, site_line_ref, declaration_line_ref
+  title,      7,                8,           8,             7
+  """)

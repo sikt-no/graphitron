@@ -1,9 +1,9 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # An author may declare a specification scalar themselves. Their file is older than the
 # specification's document, which sorts after every file, so the authored declaration is the base
 # and the specification's is a second one behind it; the type is the authored one, description and
 # all. The transcription keeps it: what it drops is the engine's own nodes, by identity, never a
 # declaration by its name.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 """an authored String"""
 scalar String

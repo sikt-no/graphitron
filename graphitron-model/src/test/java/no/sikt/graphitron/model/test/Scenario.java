@@ -64,12 +64,16 @@ import java.util.stream.Stream;
  *   <li>{@code @tick(ms:)} moves the clock, which starts at {@link #T0}; every file a step renders
  *       is dated at the clock's time, a microsecond after the file before it at the same time, so
  *       reading order follows writing order.</li>
+ *   <li>A document with nothing to render, claims or configuration alone or an emptied version,
+ *       writes no file and takes away the earlier version of its own; its step is still a reading,
+ *       at that time, of the files that stand.</li>
  *   <li>Every render is followed by a capture at the clock's time. A claim ({@code @expectEquals},
  *       {@code @assertContains}, {@code @assertAbsent}, {@code @assertEmpty}) is handed to the
  *       verifier as it arrives and once only, to check against the store as the last capture left
  *       it.</li>
- *   <li>{@code @withConfiguration} is read from the scenario's own file, and from nowhere else: in a
- *       document pulled in it is ignored.</li>
+ *   <li>{@code @withConfiguration} is a step of the scenario's own script: the last one the walk has
+ *       passed is the configuration every capture after it runs under, so a scenario can change its
+ *       configuration between readings. In a document pulled in it is ignored.</li>
  * </ul>
  *
  * <p>The engine owns those directives. They are never rendered, since none of them is part of an
@@ -94,10 +98,14 @@ public final class Scenario {
     private static final Set<String> CLAIMS =
         Set.of("expectEquals", "assertContains", "assertAbsent", "assertEmpty");
 
-    /** Captures the folder as a build would read it, at the clock's time; later captures are warm. */
+    /**
+     * Captures the folder as a build would read it, at the clock's time, under the configuration in
+     * effect ({@code extend schema @withConfiguration(...)}, or empty where the script has stated
+     * none yet); later captures are warm.
+     */
     @FunctionalInterface
     public interface Execute {
-        void capture(Path folder, Instant at, boolean first);
+        void capture(Path folder, Instant at, boolean first, String configuration);
     }
 
     /** Checks one claim against the store as the last capture left it. */
@@ -153,7 +161,7 @@ public final class Scenario {
         try {
             var folder = Files.createTempDirectory("graphitron-scenario");
             try {
-                run(folder, (dir, at, first) -> { }, claim -> { });
+                run(folder, (dir, at, first, configuration) -> { }, claim -> { });
                 try (Stream<Path> files = Files.walk(folder)) {
                     var ordered = files.filter(Files::isRegularFile)
                         .sorted(Comparator.comparing((Path file) -> {
@@ -193,6 +201,7 @@ public final class Scenario {
         private Instant clock = T0;
         private long written;
         private int captures;
+        private String configuration = "";
 
         Run(Path folder, Execute execute, Verify verify) {
             this.folder = folder;
@@ -226,6 +235,8 @@ public final class Scenario {
                             step(pulled);
                         }
                         case TICK -> clock = clock.plusMillis(milliseconds(directive));
+                        case WITH_CONFIGURATION -> configuration = AstPrinter.printAst(
+                            SchemaExtensionDefinition.newSchemaExtensionDefinition().directive(directive).build());
                         default -> {
                             if (CLAIMS.contains(directive.getName())) {
                                 if (captures == 0) {
@@ -253,10 +264,18 @@ public final class Scenario {
                     // holds the step's sound part.
                     registry.add(definition);
                 }
-                write(source.name(), composed.text());
-                rendered.put(source.name(), composed.definitions());
+                if (!composed.renders()) {
+                    // Nothing to render: a document of claims or configuration alone, or an emptied
+                    // version. It writes no file and takes away the earlier version of its own; the
+                    // step is still a reading, at this time, of the files that stand.
+                    remove(source.name());
+                    rendered.remove(source.name());
+                } else {
+                    write(source.name(), composed.text());
+                    rendered.put(source.name(), composed.definitions());
+                }
             }
-            execute.capture(folder, clock, captures++ == 0);
+            execute.capture(folder, clock, captures++ == 0, configuration);
         }
 
         /**
@@ -272,6 +291,7 @@ public final class Scenario {
             var kept = new ArrayList<SDLDefinition<?>>();
             var bases = new ArrayList<TypeDefinition<?>>();
             var defined = defined(source.name());
+            boolean renders = false;
             for (int i = 0; i < definitions.size(); i++) {
                 Definition<?> definition = definitions.get(i);
                 int start = offsets.of(definition);
@@ -288,12 +308,16 @@ public final class Scenario {
                             blanks.add(new int[]{offsets.of(directives.get(j)), to});
                         }
                     }
+                    kept.add(extension.transform(builder -> builder.directives(extension.getDirectives()
+                        .stream().filter(directive -> !isEngine(directive)).toList())));
+                    renders = true;
                     continue;
                 }
                 if (definition instanceof TypeDefinition<?> type && !isExtension(type)) {
                     var base = defined.get(type.getName());
                     if (base != null && hasMembers(type) && compatible(base, type)) {
                         extend(text, offsets, type, base, start, end, blanks, inserts);
+                        renders = true;
                         continue;
                     }
                     if (base != null && printed(base).equals(printed(type))) {
@@ -306,6 +330,7 @@ public final class Scenario {
                 }
                 if (definition instanceof SDLDefinition<?> sdl) {
                     kept.add(sdl);
+                    renders = true;
                 }
             }
             var out = new StringBuilder(text);
@@ -315,7 +340,7 @@ public final class Scenario {
             for (var insert : inserts.descendingMap().entrySet()) {
                 out.insert(insert.getKey(), insert.getValue());
             }
-            return new Composed(out.toString(), kept, bases);
+            return new Composed(out.toString(), kept, bases, renders);
         }
 
         /** The base definitions the folder holds outside {@code source}, by type name. */
@@ -327,6 +352,14 @@ public final class Scenario {
                 }
             });
             return defined;
+        }
+
+        private void remove(String name) {
+            try {
+                Files.deleteIfExists(folder.resolve(name + CorpusDocuments.SUFFIX));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
 
         private void write(String name, String text) {
@@ -341,8 +374,12 @@ public final class Scenario {
         }
     }
 
-    /** One source as rendered: its text, its definitions a capture reads, and the types it defines. */
-    private record Composed(String text, List<SDLDefinition<?>> kept, List<TypeDefinition<?>> definitions) {}
+    /**
+     * One source as rendered: its text, its definitions the step's registry merges, the types it
+     * defines, and whether it renders anything at all, an extension counting.
+     */
+    private record Composed(String text, List<SDLDefinition<?>> kept, List<TypeDefinition<?>> definitions,
+                            boolean renders) {}
 
     /** One document as a file of the folder: the name it is rendered as, parsed and as written. */
     private record Source(String name, Document document, String text) {}
@@ -601,6 +638,11 @@ public final class Scenario {
     }
 
     private static Document parse(String sourceName, String text) {
+        // A file holding nothing but comments is a version too, an emptied one; graphql-java refuses
+        // to parse a document without a definition.
+        if (text.lines().map(String::strip).allMatch(line -> line.isEmpty() || line.startsWith("#"))) {
+            return Document.newDocument().build();
+        }
         try (var reader = MultiSourceReader.newMultiSourceReader()
                 .reader(new StringReader(text), sourceName)
                 .trackData(true)

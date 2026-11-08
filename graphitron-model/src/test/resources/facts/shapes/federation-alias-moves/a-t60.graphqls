@@ -1,0 +1,8 @@
+# The second reading links v2.10 and imports @composeDirective as @k, so @k now names a definition
+# with no row yet, and @key falls back to its namespaced name. The stale @key row holds @k when the
+# new @composeDirective row is written.
+
+extend type Query { film: String }
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10",
+  import: [{name: "@composeDirective", as: "@k"}])

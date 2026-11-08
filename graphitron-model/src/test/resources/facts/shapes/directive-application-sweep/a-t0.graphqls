@@ -1,0 +1,7 @@
+# The directive anchor read in steps, over one file. The first reading writes two applications, one
+# with an argument, and marks every row with its own instant.
+
+type Film {
+  title: String @deprecated(reason: "old")
+  year: Int @deprecated
+}

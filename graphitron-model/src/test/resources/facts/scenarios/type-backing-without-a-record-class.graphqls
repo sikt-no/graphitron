@@ -1,7 +1,7 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A table jOOQ generated no record class for binds its rows to org.jooq.Record, which names no
 # class. A type bound to such a table has a table and no backing: the bound-table population reads
 # a table through its record class, and this table has none to read.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 type Note @table(name: "recordless_note") { body: String }
 

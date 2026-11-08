@@ -1,9 +1,16 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A $session.<member> source is a leaf like any other: the member name rides as the source path, and
 # the message reads it from the session handle the build's <sessionState> names. It resolves where
 # the handle offers the member once and what it yields is something a JSON payload can carry, here
 # the text label; the common payload may read one too, so every message carries the same identity.
 # The handle is any class the classpath census holds, which is what the member relation is read from.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary",
+  outboxTable: "outbox",
+  outboxPayload: "who: $session.label, operation: $scope.operationName"
+)
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 interface Node { id: ID! }
 
@@ -13,13 +20,6 @@ type Film implements Node @table(name: "film") @node {
 }
 
 input FilmInput { title: String }
-
-extend schema @withConfiguration(
-  sessionState: true,
-  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary",
-  outboxTable: "outbox",
-  outboxPayload: "who: $session.label, operation: $scope.operationName"
-)
 
 type Mutation {
   createFilm(in: FilmInput!): Film

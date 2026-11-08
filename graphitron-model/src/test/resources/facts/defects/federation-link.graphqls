@@ -1,0 +1,57 @@
+# federation-link, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/federation-link/a-t0", as: "federation-link.a"}])
+
+extend schema @expectEquals(relation: "graphitron_ast_federation_link_entry", rows: """
+  version, touched_at
+  v2.10,   1000000000
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link", rows: """
+  origin,   version, touched_at
+  AUTHORED, v2.10,   1000000000
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link_import", rows: """
+  ordinal, name,       alias,                touched_at
+  0,       @key,       ,                     1000000000
+  1,       @shareable, @federatedShareable,  1000000000
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/federation-link/a-t60", as: "federation-link.a"}])
+
+extend schema @expectEquals(relation: "graphitron_federation_link", rows: """
+  origin,   version, touched_at
+  AUTHORED, v2.10,   1000000060
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link_import", rows: """
+  ordinal, name, alias, touched_at
+  0,       @key,      , 1000000060
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/federation-link/a-t120", as: "federation-link.a"}])
+
+extend schema @assertAbsent(relation: "graphitron_ast_federation_link_entry", rows: """
+  version
+  v2.10
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_federation_link", rows: """
+  origin
+  AUTHORED
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_federation_link_import", rows: """
+  name
+  @key
+  """)

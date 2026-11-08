@@ -1,0 +1,66 @@
+# defect-sweep, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/defect-sweep/a-t0", as: "defect-sweep.a"}])
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: """
+  code IN ('ROUTE_AMBIGUOUS', 'CONDITION_NO_OVERLOAD_FOR_PAIR', 'CONDITION_OVERLOAD_TIE')
+  """, rows: """
+  code,                           touched_at
+  ROUTE_AMBIGUOUS,                1000000000
+  CONDITION_NO_OVERLOAD_FOR_PAIR, 1000000000
+  CONDITION_OVERLOAD_TIE,         1000000000
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/defect-sweep/a-t60", as: "defect-sweep.a"}])
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: """
+  code IN ('ROUTE_AMBIGUOUS', 'CONDITION_NO_OVERLOAD_FOR_PAIR', 'CONDITION_OVERLOAD_TIE')
+  """, rows: """
+  code,                   touched_at
+  CONDITION_OVERLOAD_TIE, 1000000060
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_method", rows: """
+  code,                   method_name,   touched_at
+  CONDITION_OVERLOAD_TIE, ambiguousPair, 1000000060
+  CONDITION_OVERLOAD_TIE, ambiguousPair, 1000000060
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/defect-sweep/a-t120", as: "defect-sweep.a"}])
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_method", where: """
+  code = 'CONDITION_NO_OVERLOAD_FOR_PAIR'
+  """, rows: """
+  method_name, touched_at
+  pairOnly,    1000000120
+  pairOnly,    1000000120
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/defect-sweep/a-t180", as: "defect-sweep.a"}])
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: """
+  code = 'CONDITION_NO_OVERLOAD_FOR_PAIR'
+  """, rows: """
+  code,                           touched_at
+  CONDITION_NO_OVERLOAD_FOR_PAIR, 1000000180
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_method", where: """
+  code = 'CONDITION_NO_OVERLOAD_FOR_PAIR'
+  """, rows: """
+  method_name,       touched_at
+  divergingArrivals, 1000000180
+  divergingArrivals, 1000000180
+  """)

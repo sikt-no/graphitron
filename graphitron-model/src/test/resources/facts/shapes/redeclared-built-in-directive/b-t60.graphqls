@@ -1,0 +1,4 @@
+# A second reading that writes only this file, leaving the redeclarations' bytes as they were:
+# nothing about it changes which declaration holds the name. The redeclaring file's entries keep the
+# first reading's mark, and so do the specification's, its bundled bytes being stamped and unmoved;
+# and so does the anchor, this file naming no directive for the reading to re-derive.

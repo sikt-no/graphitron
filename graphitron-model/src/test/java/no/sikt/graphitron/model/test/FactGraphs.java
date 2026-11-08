@@ -87,7 +87,7 @@ public final class FactGraphs implements AutoCloseable {
 
     private static final AtomicLong BOOTS = new AtomicLong();
 
-    /** Every plain document, by path, with its claim; stepped graphs are not in the population. */
+    /** Every scenario, by path; building blocks are pulled in rather than run. */
     private final Map<String, CorpusDocuments.Document> documents;
 
     private final CatalogInput fixture;
@@ -99,11 +99,8 @@ public final class FactGraphs implements AutoCloseable {
 
     private FactGraphs() {
         var plain = new LinkedHashMap<String, CorpusDocuments.Document>();
-        FactDocuments.claimed().forEach((document, claim) -> {
-            if (claim != FactDocuments.Claim.INCREMENTAL_CAPTURE) {
-                plain.put(FactDocuments.path(claim, document), document);
-            }
-        });
+        FactDocuments.claimed().forEach((document, claim) ->
+            plain.put(FactDocuments.path(claim, document), document));
         this.documents = Map.copyOf(plain);
         this.fixture = CatalogInput.of(TestRunContext.of());
         this.classpath = ClasspathCorpus.entries();
@@ -139,7 +136,7 @@ public final class FactGraphs implements AutoCloseable {
         if (document == null) {
             throw new IllegalArgumentException("no plain fact document has the path '" + path
                 + "'; a path is a folder under facts and a name, as scenarios/field-key-row, and a"
-                + " graph read in steps is not in the population");
+                + " building block is pulled in by a scenario rather than read alone");
         }
         return shardOf(path, document).ensure(path, document);
     }
@@ -231,15 +228,20 @@ public final class FactGraphs implements AutoCloseable {
             // The scenario run: its renders captured into this store as a build reads a folder, under
             // the configuration its own file states, and each claim checked as it arrives.
             var scenario = Scenario.load(path);
-            var texts = List.of(scenario.text());
-            var catalog = FactDocuments.StatedConfiguration.catalog(texts, fixture);
-            var configuration = FactDocuments.StatedConfiguration.of(texts);
+            var keyed = FactDocuments.catalogPackage(document, fixture);
             var verification = new Verification(path);
             var built = new CapturedSchema[1];
             var dsl = store.dsl();
-            scenario.run(directory.resolve(path), (folder, at, first) ->
+            scenario.run(directory.resolve(path), (folder, at, first, stated) -> {
+                    var texts = stated.isEmpty() ? List.<String>of() : List.of(stated);
+                    var catalog = FactDocuments.StatedConfiguration.catalog(texts, fixture);
+                    if (!Optional.ofNullable(catalog).map(CatalogInput::jooqPackage).equals(keyed)) {
+                        throw new IllegalArgumentException(path + " changes its catalog between steps;"
+                            + " a scenario keeps the catalog its first configuration names");
+                    }
                     built[0] = CapturedStore.captureFolder(dsl, folder, path, catalog, classpath,
-                        configuration, at, !first),
+                        FactDocuments.StatedConfiguration.of(texts), at, !first);
+                },
                 claim -> verification.check(dsl, claim));
             if (built[0] == null) {
                 throw new IllegalStateException(path + " renders nothing to capture");

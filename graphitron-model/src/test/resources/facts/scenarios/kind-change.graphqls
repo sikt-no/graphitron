@@ -1,0 +1,29 @@
+# kind-change, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/kind-change/k-t0", as: "kind-change.k"}])
+
+extend schema @assertContains(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name,  source_line, source_column
+  Kind,      title, 5,           3
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/kind-change/k-t60", as: "kind-change.k"}])
+
+# The position's kind changed, so the reading deletes the position before writing it again, and the
+# field definition written there goes with it by cascade; an upsert of the position alone would have
+# left it beside the enum value, keyed by the same position.
+extend schema @assertAbsent(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name
+  Kind,      title
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_enum_value_definition_entry", rows: """
+  type_name, name,  source_line, source_column
+  Kind,      TITLE, 5,           3
+  """)

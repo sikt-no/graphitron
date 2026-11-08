@@ -1,0 +1,11 @@
+# The enum value part relation read in steps, over one file. The first reading anchors each value
+# of an authored enum at its coordinate, with its position and the docstring its author wrote.
+# Containment, the bundled directive vocabulary declaring enums of its own.
+
+extend type Query { rated: Rating }
+
+enum Rating {
+  G
+  "Parental guidance."
+  PG
+}

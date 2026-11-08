@@ -1,9 +1,9 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # @mutation(typeName: UPSERT) is a write graphitron does not generate yet. The schema means
 # something, so the verdict rests on UNSUPPORTED, at the @mutation as written. The verb is still a
 # claim: graphitron would generate the write, so a @service beside it, whose author provides the
 # code, is the conflict whatever the verb. An upsert runs nothing yet, so it is no producer, and the
 # refusal is its only defect rather than a field nothing fetches.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 type Film @table(name: "film") {
   title: String

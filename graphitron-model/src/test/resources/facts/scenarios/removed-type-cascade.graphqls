@@ -1,0 +1,52 @@
+# removed-type-cascade, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/removed-type-cascade/r-t0", as: "removed-type-cascade.r"}])
+
+extend schema @assertContains(relation: "graphql_ast_field_argument_entry", rows: """
+  type_name, field_name, name
+  Gone,      shelf,      first
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/removed-type-cascade/r-t60", as: "removed-type-cascade.r"}])
+
+extend schema @assertAbsent(relation: "graphql_ast_type_declaration_entry", rows: """
+  name
+  Gone
+  """)
+
+extend schema @assertAbsent(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name
+  Gone,      shelf
+  """)
+
+extend schema @assertAbsent(relation: "graphql_ast_field_argument_entry", rows: """
+  type_name, field_name, name
+  Gone,      shelf,      first
+  """)
+
+# This file's own applications, the bundled documents applying @deprecated to their own elements;
+# the declaration of Kept below is what shows the filter reaches this file.
+extend schema @assertAbsent(relation: "graphql_ast_directive_application_entry", where: """
+  source_name LIKE '%removed-type-cascade.r.graphqls'
+  """, rows: """
+  name
+  deprecated
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_entry", where: """
+  source_name LIKE '%removed-type-cascade.r.graphqls'
+  """, rows: """
+  entry_kind,       source_line, source_column
+  TYPE_DECLARATION, 5,           1
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name
+  Kept,      name
+  """)

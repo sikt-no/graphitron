@@ -1,0 +1,6 @@
+# The third reading changes another file and not the configuration. An unchanged configuration
+# transcribes to the same rows however often it is read, and every one of them carries the reading
+# that just ran: a sweep predicate wrong on a second pass shows here, as rows deleted, duplicated or
+# left with the older mark.
+
+type Unrelated { note: String }

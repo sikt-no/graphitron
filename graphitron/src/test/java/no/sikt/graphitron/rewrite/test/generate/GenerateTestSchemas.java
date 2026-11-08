@@ -71,7 +71,7 @@ public final class GenerateTestSchemas {
                 var folder = directory.resolve(path);
                 // The scenario's final folder, as the engine renders it; the run below is the build
                 // that reads it, so no capture is asked of the engine here.
-                Scenario.load(path).run(folder, (dir, at, first) -> { }, claim -> { });
+                Scenario.load(path).run(folder, (dir, at, first, configuration) -> { }, claim -> { });
                 generate(filesIn(folder), path, packagePrefix + "." + scenario.id().replace('-', '_'),
                     outputDirectory);
             }

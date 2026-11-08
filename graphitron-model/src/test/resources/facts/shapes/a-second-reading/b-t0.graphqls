@@ -1,0 +1,3 @@
+# The second file of the first reading.
+
+type Ephemeral { note: String }

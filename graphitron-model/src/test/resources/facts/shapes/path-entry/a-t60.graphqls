@@ -1,0 +1,34 @@
+# The second reading: the field's path loses its second element, the argument its @reference, and
+# managers its second @referenceFor naming Staff. The rows that still say what is written are marked
+# again; the others go.
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+type Staff @table(name: "staff") { staffId: Int @field(name: "staff_id") }
+
+type Customer @table(name: "customer") {
+  city: String @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+union Person = Customer | Staff
+
+interface Located {
+  address: Address @reference(path: [{table: "address"}])
+}
+
+type Branch implements Located @table(name: "store") { address: Address }
+
+input CustomerFilter @table(name: "customer") {
+  addressId: Int @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+type Store @table(name: "store") {
+  people: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+    @referenceFor(type: "Customer", path: [{key: "customer_store_id_fkey"}])
+  managers: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
+  customers(
+    filter: CustomerFilter
+    cityId: Int
+  ): [Customer!]!
+}
+
+extend type Query { stores: [Store!]! branches: [Located!]! }

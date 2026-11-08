@@ -47,24 +47,8 @@ public final class FactDocuments {
 
     private FactDocuments() {}
 
-    /**
-     * The name the prelude's file takes within a graph, after the graph's own name: a file of the
-     * graph like any other, which no document name can take since none starts with an underscore.
-     */
-    public static final String PRELUDE_FILE = "_prelude";
-
     /** The fact folder, which holds the engine's directive declarations and the document folders. */
     static final CorpusDocuments.Folder FACTS = new CorpusDocuments.Folder("facts", 0);
-
-    /**
-     * A stepped document's file name, whole: the graph, the file within it, and the instant this
-     * version of the file is read at as ten-digit epoch seconds. Anchored on the extension and on
-     * a graph with no dot of its own, so a name either is a step or is not one; a plain document's
-     * name carries no dot, and a name with one that does not match is refused rather than read as
-     * whichever kind it happens to resemble.
-     */
-    static final Pattern STEP =
-        Pattern.compile("([^.]+)\\.([a-z]+)\\.(\\d{10})" + Pattern.quote(CorpusDocuments.SUFFIX));
 
     /**
      * What a folder of fact documents claims about each graph in it, each folder with the floor
@@ -78,8 +62,6 @@ public final class FactDocuments {
         SCENARIO("facts/scenarios", 15),
         /** The graph does not generate, and the store says why: at least one defect or problem. */
         DEFECT("facts/defects", 24),
-        /** A graph read in steps, which no single schema stands for. */
-        INCREMENTAL_CAPTURE("facts/incremental-captures", 18),
         /**
          * No claim yet: a document the generator refuses with nothing stored, or one tripping over
          * a defect it does not state. It only shrinks, each document leaving for a folder whose
@@ -117,21 +99,9 @@ public final class FactDocuments {
         return claimed;
     }
 
-    /**
-     * One folder's documents. Refuses a stepped document outside
-     * {@link Claim#INCREMENTAL_CAPTURE} and a plain one inside it.
-     */
+    /** One folder's documents. */
     public static List<CorpusDocuments.Document> documents(Claim claim) {
-        var documents = CorpusDocuments.documents(claim.folder());
-        for (var document : documents) {
-            var stepped = STEP.matcher(document.id() + CorpusDocuments.SUFFIX).matches();
-            if (stepped != (claim == Claim.INCREMENTAL_CAPTURE)) {
-                throw new AssertionError(document.id() + CorpusDocuments.SUFFIX + " is in "
-                    + claim.folder().name() + ", which holds " + (stepped ? "no" : "only")
-                    + " graphs read in steps");
-            }
-        }
-        return documents;
+        return CorpusDocuments.documents(claim.folder());
     }
 
     /**
@@ -162,14 +132,21 @@ public final class FactDocuments {
      * does not exist yet holds none.
      */
     public static Map<String, CorpusDocuments.Document> buildingBlocks() {
-        var blocks = new LinkedHashMap<String, CorpusDocuments.Document>();
+        var blocks = new java.util.TreeMap<String, CorpusDocuments.Document>();
         for (var name : BUILDING_BLOCKS) {
             var folder = new CorpusDocuments.Folder(FACTS.name() + "/" + name, 0);
-            if (folder.candidates().stream().noneMatch(java.nio.file.Files::isDirectory)) {
+            if (folder.candidates().stream().noneMatch(Files::isDirectory)) {
                 continue;
             }
-            for (var document : CorpusDocuments.documents(folder)) {
-                blocks.put(name + "/" + document.id(), document);
+            var root = CorpusDocuments.folder(folder);
+            try (var files = Files.walk(root)) {
+                for (var file : files.filter(f -> f.toString().endsWith(CorpusDocuments.SUFFIX)).toList()) {
+                    var relative = root.relativize(file).toString().replace('\\', '/');
+                    var id = relative.substring(0, relative.length() - CorpusDocuments.SUFFIX.length());
+                    blocks.put(name + "/" + id, new CorpusDocuments.Document(id, Files.readString(file), null));
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
             }
         }
         return blocks;
@@ -183,21 +160,9 @@ public final class FactDocuments {
         return CorpusDocuments.prelude(FACTS);
     }
 
-    /** Whether the document states the configuration its graph is captured under. */
+    /** Whether the document states a configuration its graph is captured under, at any step. */
     public static boolean statesConfiguration(CorpusDocuments.Document document) {
-        return StatedConfiguration.application(List.of(document.sdl())).isPresent();
-    }
-
-    /**
-     * What a graph read in steps is captured over beside its own files: the claim directives' and
-     * configuration's declarations and the anchor layout's query root, as the shared prelude was
-     * before documents became scenarios. Read only by the stepped graphs, which become scenarios in
-     * their turn.
-     */
-    public static String steppedPrelude() {
-        var declarations = prelude().replaceAll(
-            "(?m)^(directive @withFacts|input FactDoc|directive @tick)\\b.*$", "");
-        return declarations + "\n" + buildingBlocks().get("layouts/anchor").sdl();
+        return StatedConfiguration.first(document.sdl()).isPresent();
     }
 
     /**
@@ -208,7 +173,12 @@ public final class FactDocuments {
      */
     public static Optional<String> catalogPackage(CorpusDocuments.Document document,
                                                   CatalogInput fixture) {
-        return Optional.ofNullable(StatedConfiguration.catalog(List.of(document.sdl()), fixture))
+        var first = StatedConfiguration.first(document.sdl())
+            .map(directive -> graphql.language.AstPrinter.printAst(graphql.language.SchemaExtensionDefinition
+                .newSchemaExtensionDefinition().directive(directive).build()))
+            .map(List::of)
+            .orElse(List.of());
+        return Optional.ofNullable(StatedConfiguration.catalog(first, fixture))
             .map(CatalogInput::jooqPackage);
     }
 
@@ -243,6 +213,17 @@ public final class FactDocuments {
                 return null;
             }
             return new CatalogInput(text(argument.getValue(), "jooqPackage"), fixture.loader());
+        }
+
+        /**
+         * The first configuration a scenario's script states, which sets its catalog: a scenario may
+         * change its configuration between steps, never its catalog.
+         */
+        static Optional<Directive> first(String text) {
+            return new Parser().parseDocument(text).getDefinitions().stream()
+                .flatMap(definition -> definition instanceof SchemaDefinition schema
+                    ? schema.getDirectives(DIRECTIVE).stream() : java.util.stream.Stream.empty())
+                .findFirst();
         }
 
         static Optional<Directive> application(List<String> texts) {

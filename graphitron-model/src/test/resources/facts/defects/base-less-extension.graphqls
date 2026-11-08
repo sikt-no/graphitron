@@ -1,7 +1,7 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # An extension of a type nothing declares. That is an author error a detection reports, never a
 # constraint, so the chain still anchors its type: the first extension holds merge ordinal zero
 # and the type exists in the graph for the detection to report on.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend type Phantom {
   ghost: String

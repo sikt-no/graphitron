@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # Every parameter of the run's configuration lands as the run held it, one relation per parameter
 # grouped by what is present together and means one thing. The output coordinates are three columns
 # of one row because they travel together. The disabled lint rules are a set, so their rows carry no
@@ -18,6 +17,7 @@ extend schema @withConfiguration(
   sessionHandle: "com.example.Identity",
   maxAllowedPageSize: 1000
 )
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @expectEquals(relation: "store_graph_supergraph", rows: """
   supergraph_name

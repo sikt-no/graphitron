@@ -1,0 +1,11 @@
+# A field's path read in steps, over one file. The first reading writes two @reference
+# applications' elements, at places 0 and 1. The spaces before the first one's arguments put its
+# element where the second reading's @referenceFor writes one.
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  hopped: [Film!]!
+    @reference   (path: [{table: "film"}])
+    @reference(path: [{table: "film"}])
+}

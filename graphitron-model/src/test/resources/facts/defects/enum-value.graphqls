@@ -1,0 +1,27 @@
+# enum-value, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/enum-value/a-t0", as: "enum-value.a"}])
+
+extend schema @assertContains(relation: "graphitron_enum_value", rows: """
+  type_name, value_name, coordinate, ordinal, description
+  Rating,    G,          Rating.G,   0,
+  Rating,    PG,         Rating.PG,  1,       Parental guidance.
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/enum-value/a-t60", as: "enum-value.a"}])
+
+extend schema @assertContains(relation: "graphitron_enum_value", rows: """
+  type_name, value_name, coordinate, ordinal, description
+  Rating,    G,          Rating.G,   0,
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_enum_value", rows: """
+  coordinate
+  Rating.PG
+  """)

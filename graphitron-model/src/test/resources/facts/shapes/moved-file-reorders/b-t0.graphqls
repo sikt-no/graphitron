@@ -1,0 +1,4 @@
+# The other declaration of @tag, as old as the first and sorting after it by name, so the first
+# reading honours the other file's.
+
+directive @tag on OBJECT

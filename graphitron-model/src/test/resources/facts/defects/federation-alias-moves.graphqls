@@ -1,0 +1,26 @@
+# federation-alias-moves, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/federation-alias-moves/a-t0", as: "federation-alias-moves.a"}])
+
+extend schema @expectEquals(relation: "graphitron_federation_definition", where: """
+  name IN ('@key', '@composeDirective')
+  """, rows: """
+  name, local_name, touched_at
+  @key, @k,         1000000000
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/federation-alias-moves/a-t60", as: "federation-alias-moves.a"}])
+
+extend schema @expectEquals(relation: "graphitron_federation_definition", where: """
+  name IN ('@key', '@composeDirective')
+  """, rows: """
+  name,              local_name,      touched_at
+  @composeDirective, @k,              1000000060
+  @key,              @federation__key, 1000000060
+  """)

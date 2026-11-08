@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The argMapping bindings that decode a node id and project one column out of the decoded key: the
 # row an emitter reads to know which column of a decoded record a parameter gets. A reduction over
 # the relations beside it with one rule of its own, the type agreement, so most of what is here is
@@ -11,6 +10,7 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The type agreement holds only where both types are known. An unresolvable parameter leaves the
 # pair projecting as it would without the gate: requiring the match would make a pair that is
 # neither a projection nor a defect.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 # Pinned, so the SDL tier answers.
 type Inventory @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {

@@ -1,0 +1,13 @@
+# The results read in steps, over one file. The first reading reaches film's row and the rows nested
+# two deep under it, and marks each with its own instant.
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+}
+
+type FilmDetails { summary: String, more: FilmMore }
+
+type FilmMore { note: String }
+
+extend type Query { films: [Film!]! }

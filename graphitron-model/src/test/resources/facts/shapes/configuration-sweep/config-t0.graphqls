@@ -1,0 +1,2 @@
+# The first reading: a run configured with a tenant column, a maximum page size, a session
+# identity naming its handle class, and two disabled lint rules.

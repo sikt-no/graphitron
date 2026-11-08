@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The callables the catalog holds and the call surface their parameters belong to.
 #
 # A table-valued function is a routine as well as a table, and the routine names the method jOOQ
@@ -8,6 +7,7 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The parameter names are the database's own, camelCased, rather than arg0: the store records a
 # reflected name, so the fixture module compiling its jOOQ output with -parameters is load-bearing,
 # and losing that flag fails here.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @assertContains(relation: "sql_routine", rows: """
   table_schema, routine_name,       routines_class_fqn,                                    routines_method_name, routine_type

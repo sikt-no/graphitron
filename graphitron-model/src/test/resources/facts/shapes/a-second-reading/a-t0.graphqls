@@ -1,0 +1,4 @@
+# A graph read in steps, over two files. Its first reading writes both and marks what they say with
+# its own instant.
+
+type Kept { note: String }

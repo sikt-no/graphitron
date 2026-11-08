@@ -1,0 +1,34 @@
+# moved-file-reorders, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/moved-file-reorders/a-t0", as: "moved-file-reorders.a"},
+  {path: "shapes/moved-file-reorders/b-t0", as: "moved-file-reorders.b"}])
+
+extend schema @expectEquals(relation: "graphql_directive_location", where: "directive_name = 'tag'", rows: """
+  location
+  FIELD_DEFINITION
+  """)
+
+# The toolchain refuses the second declaration of a name, and capture records that.
+extend schema @assertContains(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  REGISTRY, DirectiveRedefinitionError
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/moved-file-reorders/a-t60", as: "moved-file-reorders.a"},
+  {path: "shapes/moved-file-reorders/c-t60", as: "moved-file-reorders.c"}])
+
+extend schema @expectEquals(relation: "graphql_directive_location", where: "directive_name = 'tag'", rows: """
+  location
+  OBJECT
+  """)
+
+extend schema @assertContains(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  REGISTRY, DirectiveRedefinitionError
+  """)

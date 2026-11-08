@@ -10,6 +10,8 @@
 # defect stands: of two entries with one key the first written is the leaf, and a message's own
 # entry is the leaf where the common payload names its key too.
 
+extend schema @withConfiguration(outboxTable: "outbox", outboxPayload: "operation: $scope.operationName")
+
 interface Node { id: ID! }
 
 type Film implements Node @table(name: "film") @node {
@@ -18,8 +20,6 @@ type Film implements Node @table(name: "film") @node {
 }
 
 input FilmInput { title: String }
-
-extend schema @withConfiguration(outboxTable: "outbox", outboxPayload: "operation: $scope.operationName")
 
 type Query {
   films: [Film!]! @outbox(argMapping: "other: $scope.alias")

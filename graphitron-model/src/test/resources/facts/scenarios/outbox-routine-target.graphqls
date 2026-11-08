@@ -1,10 +1,15 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The <function> target resolves against the routines the catalog holds that are no table: a routine
 # called through its Configuration-first method, with the database's own parameter names. The roles
 # bind to parameters by name, underscores and case aside, the configuration saying which parameter a
 # role means and the role's own name standing where it says nothing. Every parameter must answer to a
 # role; the payload parameter's type decides whether the JSON rides as JSON or as text. A graph
 # configures one target, so no table target is derived beside this one.
+
+extend schema @withConfiguration(
+  outboxFunction: "outbox_emit",
+  outboxParameters: ["type=p_type", "aggregatetype=p_aggregatetype", "aggregateid=p_aggregateid", "payload=p_payload"]
+)
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 interface Node { id: ID! }
 
@@ -14,11 +19,6 @@ type Film implements Node @table(name: "film") @node {
 }
 
 input FilmInput { title: String }
-
-extend schema @withConfiguration(
-  outboxFunction: "outbox_emit",
-  outboxParameters: ["type=p_type", "aggregatetype=p_aggregatetype", "aggregateid=p_aggregateid", "payload=p_payload"]
-)
 
 type Mutation {
   createFilm(in: FilmInput!): Film

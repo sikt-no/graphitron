@@ -1,0 +1,19 @@
+# Each element row names the declaration it was written inside, at the depth its kind sits: a
+# declaration is its own, a field, an input field, an enum value and a directive argument are their
+# parent's, and a field argument is its field's parent's.
+
+type Shelf {
+  books(first: Int): [String]
+}
+
+input ShelfInput {
+  name: String
+}
+
+enum Size {
+  SMALL
+}
+
+directive @shelved(at: Int) on OBJECT
+
+schema { query: Query }

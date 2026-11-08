@@ -1,0 +1,45 @@
+# a-second-reading, read in steps: each @withFacts writes the files of one reading, the clock
+# moving between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/a-second-reading/a-t0", as: "a-second-reading.a"},
+  {path: "shapes/a-second-reading/b-t0", as: "a-second-reading.b"}])
+
+extend schema @assertContains(relation: "graphql_type", rows: """
+  type_name, kind,   touched_at
+  Kept,      OBJECT, 1000000000
+  """)
+
+extend schema @assertContains(relation: "graphql_type", rows: """
+  type_name, kind,   touched_at
+  Ephemeral, OBJECT, 1000000000
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/a-second-reading/b-t60", as: "a-second-reading.b"}])
+
+extend schema @assertAbsent(relation: "graphql_type", rows: """
+  type_name, kind
+  Ephemeral, OBJECT
+  """)
+
+# The instant is the entry supertype's, the one the sweep reads: Kept at 4:1 of the untouched
+# file, Replacement at 7:1 of this one.
+extend schema @expectEquals(relation: "graphql_ast_entry", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_type_declaration_entry WHERE name IN ('Kept', 'Replacement'))
+  """, rows: """
+  entry_kind,       source_line, touched_at
+  TYPE_DECLARATION, 4,           1000000000
+  TYPE_DECLARATION, 7,           1000000060
+  """)
+
+extend schema @assertContains(relation: "graphql_type", rows: """
+  type_name,   kind,   touched_at
+  Kept,        OBJECT, 1000000000
+  Replacement, OBJECT, 1000000060
+  """)

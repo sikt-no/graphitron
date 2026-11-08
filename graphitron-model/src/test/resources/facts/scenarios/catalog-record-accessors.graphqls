@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The getter a table's generated record reads each column through, and the Bean Validation property
 # that getter names, as the catalog reading writes them.
 #
@@ -7,6 +6,7 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # property drops the get and lower-cases what is left of the first letter, so it reads filmId. A
 # column whose record declares no such getter has no row, which the hand-written catalog in
 # JooqFactCaptureTest pins.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @assertContains(relation: "sql_column_record_accessor", rows: """
   table_schema, table_name, column_name,      getter_name,       property_name

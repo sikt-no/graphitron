@@ -1,6 +1,6 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # An @outbox in a build that configures no outbox target has nowhere to write: the fault is
 # reported at the @outbox, because the configuration it is missing has no position to report at.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 interface Node { id: ID! }
 

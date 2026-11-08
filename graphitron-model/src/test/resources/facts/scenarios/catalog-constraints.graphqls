@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The keys the catalog reading writes, and how a foreign key reaches what it references.
 #
 # Every constraint is a row of its own form, the primary key and a unique key both: parent_node's
@@ -6,6 +5,7 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # Keys constant an author writes in @reference(key:), resolved by identity against the generated
 # Keys class rather than by a formula over the constraint name, so the constant is stated here as
 # the generated class spells it.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @assertContains(relation: "sql_constraint", rows: """
   table_schema,  table_name,         constraint_name,                 constraint_type, jooq_name

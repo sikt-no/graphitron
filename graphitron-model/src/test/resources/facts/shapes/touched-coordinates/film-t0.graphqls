@@ -1,0 +1,10 @@
+# What a reading touches, read in steps over two files. The first reading writes every file, so it
+# touches everything they name.
+
+type Film implements Named {
+  id: ID
+  title: String
+  year: Int
+}
+
+extend type Query { films: [Film] }

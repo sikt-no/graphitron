@@ -1,4 +1,3 @@
-extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A column's position and its two types, as the catalog reading writes them.
 #
 # The ordinal is the table definition's order. The reflective walk the jOOQ names come from returns
@@ -10,6 +9,7 @@ extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # the SQL type, so neither can be read off the other. film's columns are chosen for the bindings
 # they reach: a numeric to BigDecimal, a smallint to Short, a timestamp to LocalDateTime and a
 # database enum to its generated enum class.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @assertContains(relation: "sql_column", rows: """
   table_schema, table_name, ordinal, column_name, sql_type,           binding_type
