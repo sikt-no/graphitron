@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import com.palantir.javapoet.TypeSpec;
@@ -112,7 +113,9 @@ class MethodClosureOracleTest {
             workDir, "MethodClosureOracleTest",
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,
-            TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+            TestConfiguration.DEFAULT_JOOQ_PACKAGE,
+            TestSchemaHelper.testClasspath().stream()
+                .map(no.sikt.graphitron.model.config.ClasspathEntry::path).toList());
         try (var store = GraphitronStore.captured(ctx)) {
             walk = EmittedMethodClosure.walk(new GraphQLRewriteGenerator(ctx, store).generate().emittedUnits());
         }
@@ -201,9 +204,10 @@ class MethodClosureOracleTest {
                 "actorsConnection", "rowsActorsConnection", "scatterConnectionByIdx",
                 "actorsConnectionOrderBy");
 
-        // The service reentry load method.
+        // The service the store emits: its frame, the body the frame calls, and the lift of the
+        // service's records onto the answer's table.
         assertThat(declaredIn(pkg + ".fetchers.LanguageFetchers"))
-            .contains("filmsViaService", "loadFilmsViaService");
+            .contains("filmsViaService", "filmsViaServiceCall", "filmsViaServiceLift");
 
         // Boundary helpers: the jOOQ-record instantiation pair at the @service
         // parameter position, and the input carrier's fromMap factory.

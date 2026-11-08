@@ -113,6 +113,7 @@ class LauncherRelationClosureTest {
     private static EmittedMethodClosure walk;
     private static LauncherRelation launchers;
     private static Map<String, com.palantir.javapoet.TypeSpec> emittedUnits;
+    private static no.sikt.graphitron.emit.ServiceEmission services;
 
     @BeforeAll
     static void generateAndWalk(@TempDir Path workDir) throws Exception {
@@ -124,11 +125,14 @@ class LauncherRelationClosureTest {
             workDir, "LauncherRelationClosureTest",
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,
-            TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+            TestConfiguration.DEFAULT_JOOQ_PACKAGE,
+            TestSchemaHelper.testClasspath().stream()
+                .map(no.sikt.graphitron.model.config.ClasspathEntry::path).toList());
         GraphQLRewriteGenerator.GenerationResult result;
         try (var store = GraphitronStore.captured(ctx)) {
             result = new GraphQLRewriteGenerator(ctx, store)
                 .generate();
+            services = no.sikt.graphitron.emit.ServiceEmission.read(store.handle());
         }
         walk = EmittedMethodClosure.walk(result.emittedUnits());
         launchers = result.plan().launchers();
@@ -164,10 +168,15 @@ class LauncherRelationClosureTest {
             .containsExactlyInAnyOrderElementsOf(coveredCoordinates());
     }
 
-    /** Row → emit: every row's {@code (owner, method)} ref names a method the run declared. */
+    /**
+     * Row → emit: every row's {@code (owner, method)} ref names a method the run declared. A
+     * service the store emits keeps its row in the relation but is rendered from the store, with no
+     * launcher behind it, so its row is not asked for one.
+     */
     @Test
     void everyRowResolvesToAnEmittedMethod() {
         for (LauncherCommand row : launchers.rows()) {
+            if (services.emits(coordinateOf(row))) continue;
             String unitFqcn = row.unit().owner().fqcn();
             Map<String, Set<String>> byPath = walk.declaredMethods().get(unitFqcn);
             assertThat(byPath)
