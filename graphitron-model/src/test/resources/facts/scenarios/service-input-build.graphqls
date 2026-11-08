@@ -1,7 +1,9 @@
 # An input object a service takes is built into the class the service's parameter holds, one member
 # per field: a list of input objects into a list of that class, a grouping whose fields bind against
 # the enclosing class (FilmBundleLimitsInput's capacity is FilmBundleDraft's own), a nested input
-# object into its member's class, and a jOOQ record on the column axis, one column per field.
+# object into its member's class, a class with setters (FilmSurvey) by them, and a jOOQ record on the
+# column axis, one column per field: a deprecated alias of a column writes it where the live field was
+# not sent, and a node id is decoded into the record's own key.
 
 input FilmDraftInput { title: String! }
 input FilmBundleLimitsInput { capacity: Int }
@@ -11,6 +13,17 @@ input FilmBundleDraftInput {
   films: [FilmDraftInput!]
 }
 input FilmRecordDraftInput { title: String @field(name: "title") }
+input FilmRecordDatedDraftInput {
+  title: String @field(name: "title")
+  releaseYear: Int @field(name: "release_year")
+  year: Int @field(name: "release_year") @deprecated(reason: "Use releaseYear.")
+  filmId: ID @nodeId(typeName: "Film")
+}
+enum FilmMood { HAPPY, SAD }
+input FilmSurveyInput { count: Int!, mood: FilmMood, note: String }
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! }
 type FilmDraftsCountedPayload { count: Int }
 
 type Query {
@@ -23,6 +36,13 @@ type Query {
   countFilmRecordDrafts(in: [FilmRecordDraftInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
       method: "count", argMapping: "drafts: in"})
+  countFilmRecordDatedDrafts(in: [FilmRecordDatedDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "count", argMapping: "drafts: in"})
+  countFilmSurvey(in: FilmSurveyInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmSurveyService",
+      method: "count", argMapping: "survey: in"})
+  films: [Film!]!
 }
 
 # Each call's one parameter takes its argument whole; what the argument is built into is the build.
@@ -31,4 +51,6 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter", ro
   Query.countFilmDrafts,      0,        drafts,         ARGUMENT, Query.countFilmDrafts(in:)
   Query.countFilmBundleDraft, 0,        bundle,         ARGUMENT, Query.countFilmBundleDraft(in:)
   Query.countFilmRecordDrafts, 0,       drafts,         ARGUMENT, Query.countFilmRecordDrafts(in:)
+  Query.countFilmRecordDatedDrafts, 0,  drafts,         ARGUMENT, Query.countFilmRecordDatedDrafts(in:)
+  Query.countFilmSurvey,      0,        survey,         ARGUMENT, Query.countFilmSurvey(in:)
   """)

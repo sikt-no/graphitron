@@ -14,21 +14,22 @@ import no.sikt.graphitron.emit.stub.Body;
 import no.sikt.graphitron.emit.stub.ErrorMappings;
 import no.sikt.graphitron.emit.stub.ErrorRouter;
 import no.sikt.graphitron.emit.stub.Outcome;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.services.FilmKeySummary;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.dataloader.DataLoaderRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,10 +43,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The body, the jOOQ context and the error runtime are the stubs in
  * {@link no.sikt.graphitron.emit.stub}, standing in for the generated ones; the batching runs through
- * a real {@link DataLoaderRegistry}. Compiled strictly, as a consumer compiles generated sources.
+ * a real {@link DataLoaderRegistry}. Compiled strictly, as a consumer compiles generated sources. The
+ * frames are read from the {@code scenarios/field-key-row} and {@code scenarios/child-outcome} fact
+ * documents, so each is one a capture produces.
  */
-@UnitTier
+@PipelineTier
 class FrameEmitterTest {
+
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     private static final String PACKAGE = "framerun";
     private static final ClassName BODY = ClassName.get(Body.class);
@@ -56,22 +62,17 @@ class FrameEmitterTest {
     private static final FrameEmitter.Runtime RUNTIME = new FrameEmitter.Runtime(ROUTER, OUTCOME, MAPPINGS,
         type -> type.toUpperCase(), env -> CodeBlock.of("$T.dsl($L)", BODY, env));
 
-    private static final FrameQuery.ParentTable FILM = new FrameQuery.ParentTable("film",
-        "no.sikt.graphitron.rewrite.test.jooq.public_.Tables", "FILM",
-        List.of(new FrameQuery.KeyColumn("film_id", "FILM_ID", "java.lang.Integer")));
-
     private static EmittedCodeHarness harness;
     private static Map<String, Method> fetchers;
 
     @BeforeAll
     static void emit() throws Exception {
-        var plain = new FrameQuery.Row("Query.count", "Query", Optional.empty(), Optional.empty());
-        var outcome = new FrameQuery.Row("Query.lookup", "Query",
-            Optional.of(new FrameQuery.Outcome("Payload", "errors")), Optional.empty());
-        var child = new FrameQuery.Row("Film.upper", "Film", Optional.empty(), Optional.of(FILM));
-        var throughAccessor = new FrameQuery.Row("FilmKeySummary.upper", "FilmKeySummary", Optional.empty(),
-            Optional.of(FILM), Optional.of(new FrameQuery.Accessor(FilmKeySummary.class.getName(), "film",
-                FilmRecord.class.getName())));
+        var keyed = FACTS.read("scenarios/field-key-row", graph -> FrameQuery.read(graph.handle()));
+        var outcomes = FACTS.read("scenarios/child-outcome", graph -> FrameQuery.read(graph.handle()));
+        var plain = frame(keyed, "Query.filmKeySummaries");
+        var outcome = frame(outcomes, "Query.filmLookup");
+        var child = frame(keyed, "Film.titleUppercase");
+        var throughAccessor = frame(keyed, "Query.filmKeySummaries.keyCensus");
         var host = TypeSpec.classBuilder("Fetchers").addModifiers(Modifier.PUBLIC)
             .addMethod(FrameEmitter.render(plain, "count", TypeName.get(Integer.class), BODY, "count", RUNTIME))
             .addMethod(FrameEmitter.render(plain, "failing", TypeName.get(Integer.class), BODY, "fail", RUNTIME))
@@ -86,6 +87,10 @@ class FrameEmitterTest {
             List.of(com.palantir.javapoet.JavaFile.builder(PACKAGE, host).build().writeToPath(dir)));
         fetchers = new java.util.HashMap<>();
         for (var m : harness.load(PACKAGE + ".Fetchers").getDeclaredMethods()) fetchers.put(m.getName(), m);
+    }
+
+    private static FrameQuery.Row frame(List<FrameQuery.Row> rows, String coordinate) {
+        return rows.stream().filter(row -> row.coordinate().equals(coordinate)).findFirst().orElseThrow();
     }
 
     @AfterAll

@@ -79,6 +79,13 @@ assertions on command-driven emission. The producer's decisions are asserted sep
 pipeline tier, as data (SDL to command rows, e.g. `ProjectionMembershipTest`,
 `ConditionCommandsPipelineTest`), without javapoet.
 
+*Emitter tests* (the `emit` package) are the exception to record literals: an emitter's input that a
+store states, the rows `FrameQuery`, `FillQuery` and `BuildQuery` answer, is read from a fact
+document through `FactGraphs`, never built by hand, since a literal can state a row no capture
+produces. Such a test reads a store, so it sits in the pipeline tier. A literal stays only for an
+input with no store origin: a stand-in for generated runtime code, or a shape the model or the
+generator refuses, which the test's javadoc says.
+
 == Pipeline tier
 
 SDL → classified model → generated `TypeSpec`.

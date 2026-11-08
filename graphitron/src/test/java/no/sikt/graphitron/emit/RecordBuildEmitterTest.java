@@ -5,6 +5,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
@@ -12,10 +13,11 @@ import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.InvocationTargetException;
@@ -23,7 +25,6 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,13 +33,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * run: an input object made into a jOOQ record on the column axis, a column written only for a field
  * the client sent so the record's flags say what it wrote, an explicit null written, a deprecated
  * alias writing its column where the live field was not sent and losing to it where both were, and a
- * node id decoded into the record's key.
+ * node id decoded into the record's key. The build is read from the {@code scenarios/service-input-build}
+ * fact document.
  */
-@UnitTier
+@PipelineTier
 class RecordBuildEmitterTest {
 
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
     private static final String PACKAGE = "recordbuild";
-    private static final String TABLES = "no.sikt.graphitron.rewrite.test.jooq.public_.Tables";
     private static final ClassName ENCODER = ClassName.get(PACKAGE + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
     private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(ENCODER, PACKAGE);
 
@@ -48,15 +52,11 @@ class RecordBuildEmitterTest {
 
     @BeforeAll
     static void compile() throws Exception {
-        var filmId = new BuildQuery.Member(
-            new BuildQuery.Slot(null, null, 0, "film_id", FilmRecord.class.getName(), FilmRecord.class.getName(), null),
-            List.of("filmId"), "SCALAR", false, Optional.empty(),
-            Optional.of(new NodeIdDecodeQuery.Decode("Film", "Film", TABLES, "FILM", FilmRecord.class.getName(),
-                List.of("FILM_ID"))));
-        var film = new BuildQuery.RecordBuild(FilmRecord.class.getName(), TABLES, "FILM", List.of(
-            new BuildQuery.ColumnWrite("TITLE", List.of(List.of("title"))),
-            new BuildQuery.ColumnWrite("RELEASE_YEAR", List.of(List.of("releaseYear"), List.of("year")))),
-            List.of(filmId));
+        var film = FACTS.read("scenarios/service-input-build", graph -> BuildQuery.read(graph.handle()))
+            .entrySet().stream()
+            .filter(e -> e.getKey().callCoordinate().equals("Query.countFilmRecordDatedDrafts"))
+            .map(e -> ((BuildQuery.Result.Columns) e.getValue()).build())
+            .findFirst().orElseThrow();
         var anyMap = ParameterizedTypeName.get(ClassName.get(Map.class),
             WildcardTypeName.subtypeOf(Object.class), WildcardTypeName.subtypeOf(Object.class));
         var host = TypeSpec.classBuilder("Probes").addModifiers(Modifier.PUBLIC)

@@ -1,16 +1,16 @@
-package no.sikt.graphitron.emit.stub;
+package no.sikt.graphitron.rewrite.test.services;
 
 /**
  * A class an input object is made into by its setters: one member a primitive, one a Java enum, one
  * with a value of its own that a field the client did not send leaves alone.
  */
-public final class Bean {
+public final class FilmSurvey {
 
     private int count;
-    private Mood mood;
+    private FilmMood mood;
     private String note = "untouched";
 
-    public Bean() {}
+    public FilmSurvey() {}
 
     public int getCount() {
         return count;
@@ -20,11 +20,11 @@ public final class Bean {
         this.count = count;
     }
 
-    public Mood getMood() {
+    public FilmMood getMood() {
         return mood;
     }
 
-    public void setMood(Mood mood) {
+    public void setMood(FilmMood mood) {
         this.mood = mood;
     }
 

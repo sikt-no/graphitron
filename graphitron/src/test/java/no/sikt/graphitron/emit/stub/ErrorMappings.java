@@ -5,5 +5,5 @@ public final class ErrorMappings {
 
     private ErrorMappings() {}
 
-    public static final String[] PAYLOAD = {"claimed"};
+    public static final String[] FILMLOOKUPPAYLOAD = {"claimed"};
 }

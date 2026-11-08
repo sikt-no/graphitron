@@ -10,7 +10,9 @@
 # a @scalarType binds has the Java type its constant coerces to, so Film.titlesLabelledSince's Day
 # argument takes its LocalDate by type beside a String that takes the String. A call
 # under a type with no table of its own is made once per parent and filled under each. An argument a
-# call takes is bound to the parameter that takes it, seen from the argument.
+# call takes is bound to the parameter that takes it, seen from the argument. An enum argument fills a
+# String with its name or a Java enum with its constant, and through a list of input objects an
+# argument path may run under two lists; FillShapeService's calls each take one family of these.
 
 extend schema @withConfiguration(
   sessionState: true,
@@ -53,6 +55,14 @@ type FilmBlurbHolder {
 input FilmIdsInput { ids: [Int!] }
 input FilmIdItem { id: Int! }
 input FilmIdsByItemInput { items: [FilmIdItem!]! }
+input FilmIdGroup { items: [FilmIdItem!]! }
+input FilmIdsListedInput { items: [FilmIdItem!]!, groups: [FilmIdGroup!]! }
+input EveryFillInner { deep: String }
+input EveryFillInput { ids: [Int!], inner: EveryFillInner, count: Int! }
+enum FilmMood { HAPPY, SAD }
+input FilmMoodInput { mood: FilmMood }
+input FilmMoodItem { mood: FilmMood }
+input FilmMoodItemsInput { items: [FilmMoodItem!]! }
 input FilmDraftIn { title: String }
 type FilmDraftsCountedPayload { count: Int }
 
@@ -69,6 +79,20 @@ type Query {
   callFilmsByListPath(input: FilmIdsByItemInput!): [Film] @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByListPath", argMapping: "filmIds: input.items.id"})
+  callEveryFill(limit: Int, input: EveryFillInput): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FillShapeService",
+      method: "everyFill",
+      argMapping: "ids: input.ids, deep: input.inner.deep, count: input.count, summary: $session, label: $session.label"},
+      contextArguments: ["userId"])
+  callMoods(moodName: FilmMood, input: FilmMoodInput, moods: [FilmMood!]): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FillShapeService",
+      method: "moods", argMapping: "mood: input.mood"})
+  callListed(input: FilmIdsListedInput): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FillShapeService",
+      method: "listed", argMapping: "ids: input.items.id, groups: input.groups.items.id"})
+  callMoodsThroughList(input: FilmMoodItemsInput): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FillShapeService",
+      method: "moodsThroughList", argMapping: "moods: input.items.mood"})
   callGreeting: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
       method: "greet"}, contextArguments: ["userId"])

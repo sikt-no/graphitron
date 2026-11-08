@@ -1,9 +1,21 @@
 # A child @service catching into its outcome: the service's throw a handler claims is the outcome's
-# errors, and any other throw is redacted. Generated for graphitron's ChildOutcomeExecutionTest.
+# errors, and any other throw is redacted. A root service hands back an outcome the same way, with no
+# parent to take keys off. Generated for graphitron's ChildOutcomeExecutionTest.
 
 type Query {
   "Every film."
   films: [Film!]!
+  "A film looked up by its key, or why it was not found."
+  filmLookup(id: Int!): FilmLookupPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+}
+
+"A film's title, or why there is none."
+type FilmLookupPayload {
+  "The title, when the film was found."
+  title: String
+  "Why there is no title."
+  errors: [VerdictFailure]
 }
 
 "A film, read from the film table."
@@ -39,11 +51,13 @@ union VerdictFailure = VerdictRefused
 # The outcome's errors field holds the union of @error types.
 extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
   type_name,          field_name, container_name
+  FilmLookupPayload,  errors,     VerdictFailure
   FilmVerdictOutcome, errors,     VerdictFailure
   """)
 
-# The child service is a producer handing back an outcome, as a root one would.
+# The child service is a producer handing back an outcome, as the root one does.
 extend schema @expectEquals(relation: "graphitron_producer_outcome", rows: """
   type_name, field_name, kind,    outcome_type_name,  errors_field_name
   Film,      verdict,    SERVICE, FilmVerdictOutcome, errors
+  Query,     filmLookup, SERVICE, FilmLookupPayload,  errors
   """)
