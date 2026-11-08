@@ -389,17 +389,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_input_field_resolving_table_rule", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
-        registrations.put("graphitron_node_id_instruction", Arm.DERIVED);
-        registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
-        registrations.put("graphitron_node_id_decode_hop", Arm.DERIVED);
-        registrations.put("graphitron_node_id_decode_hop_column", Arm.DERIVED);
-        registrations.put("graphitron_node_id_decode_column", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("graphitron_argument_scope_table_rule", Arm.DERIVED);
-        registrations.put("graphitron_node_id_decode_hop_rule", Arm.DERIVED);
-        registrations.put("graphitron_node_id_decode_hop_column_rule", Arm.DERIVED);
-        registrations.put("graphitron_node_id_decode_column_rule", Arm.DERIVED);
-        registrations.put("graphitron_node_id_instruction_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_match", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);
         registrations.put("intent_argmapping_key_column_candidate", Arm.DERIVED);

@@ -38,27 +38,27 @@ type Query {
   mediaItems(someId: ID @nodeId): [MediaItem]
 }
 
-extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: """
-  site,         use_site,                  basis,                  resolved_type_name
-  ARGUMENT,     Query.media(filmId),       EXPLICIT_TYPE_NAME,     Film
-  ARGUMENT,     Query.media(someId),       TARGET_TABLE_NODE_TYPE, Actor
-  ARGUMENT,     Query.media(someId),       TARGET_TABLE_NODE_TYPE, Film
-  ARGUMENT,     Query.mediaItems(someId),  TARGET_TABLE_NODE_TYPE, Film
-  ARGUMENT,     Query.occupants(someId),   TARGET_TABLE_NODE_TYPE, Actor
-  ARGUMENT,     Query.occupants(someId),   TARGET_TABLE_NODE_TYPE, Film
-  INPUT_FIELD,  Query.films(where.someId:), TARGET_TABLE_NODE_TYPE, Film
-  OUTPUT_FIELD, Actor.id,                  OWN_ID_FIELD,           Actor
-  OUTPUT_FIELD, Film.id,                   OWN_ID_FIELD,           Film
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", rows: """
+  coordinate,                 bound,        position, basis,                  node_type_name, column_name
+  Actor.id,                   public.actor, 0,        OWN_ID_FIELD,           Actor,          actor_id
+  Film.id,                    public.film,  0,        OWN_ID_FIELD,           Film,           film_id
+  Query.films(where.someId:), public.film,  0,        TARGET_TABLE_NODE_TYPE, Film,           film_id
+  Query.media(filmId:),       public.film,  0,        EXPLICIT_TYPE_NAME,     Film,           film_id
+  Query.media(someId:),       public.actor, 0,        TARGET_TABLE_NODE_TYPE, Actor,          actor_id
+  Query.media(someId:),       public.film,  0,        TARGET_TABLE_NODE_TYPE, Film,           film_id
+  Query.mediaItems(someId:),  public.film,  0,        TARGET_TABLE_NODE_TYPE, Film,           film_id
+  Query.occupants(someId:),   public.actor, 0,        TARGET_TABLE_NODE_TYPE, Actor,          actor_id
+  Query.occupants(someId:),   public.film,  0,        TARGET_TABLE_NODE_TYPE, Film,           film_id
   """)
 
-# Every column but the source position, which is the directive's and one for both, so a column
-# telling the two branches apart would show.
-extend schema @expectEquals(relation: "graphitron_node_id_instruction", where: """
-  use_site = 'Query.media(someId)'
+# Every column but the reading's time and the catalog source, so a column telling the two branches
+# apart other than the node and its table would show.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: """
+  coordinate = 'Query.media(someId:)'
   """, rows: """
-  site,     type_name, field_name, argument_name, path, use_site,            basis,                  resolved_type_name, resolved_type_kind, carries_reference_path
-  ARGUMENT, Query,     media,      someId,        ,     Query.media(someId), TARGET_TABLE_NODE_TYPE, Actor,  NODE_TYPE,          FALSE
-  ARGUMENT, Query,     media,      someId,        ,     Query.media(someId), TARGET_TABLE_NODE_TYPE, Film,  NODE_TYPE,          FALSE
+  coordinate,           bound,        position, kind,    basis,                  node_type_name, table_schema, table_name, column_name
+  Query.media(someId:), public.actor, 0,        NODE_ID, TARGET_TABLE_NODE_TYPE, Actor,          public,       actor,      actor_id
+  Query.media(someId:), public.film,  0,        NODE_ID, TARGET_TABLE_NODE_TYPE, Film,           public,       film,       film_id
   """)
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """

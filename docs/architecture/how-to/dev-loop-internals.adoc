@@ -290,8 +290,8 @@ mvn generate-sources -X | grep 'graphitron: *[0-9]*/'
 
 [source,text]
 ----
-[DEBUG] graphitron: 17/27 stage NodeIdDecodeHops
-[DEBUG] graphitron: 17/27 done in 3.1 s, 812 rows
+[DEBUG] graphitron: 3/4 stage ArgumentScopeTables
+[DEBUG] graphitron: 3/4 done in 3.1 s, 812 rows
 ----
 
 The name is printed before the stage's statements are issued and the duration

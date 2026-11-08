@@ -114,21 +114,13 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       against, one case per rung plus the cases where the rungs compete, the precedence being the
  *       claim rather than the table that came out;
  *       the {@code node-id-instruction} fact documents bind
- *       {@code graphitron_node_id_instruction}, which slots carry the {@code @nodeId} instruction and
- *       which node type each names, with one case per basis because the basis is the claim: a
+ *       {@code graphitron_occurrence_node_id}, which occurrences carry a node id and which node
+ *       type and key columns each binds, with one case per basis because the basis is the claim: a
  *       coordinate answered by the wrong rule resolves the wrong node type wherever several rules
  *       could answer, so the assertion is which rule answered and not merely that something did;
- *       the {@code node-id-decode-reach} fact documents bind the pair a decode
- *       navigates on ({@code intent_node_id_decode_endpoint} and
- *       {@code graphitron_node_id_decode_hop}, the hop child pinned through the endpoint relation's
- *       navigation column rather than twice), one case per navigation and one per shape that
- *       contributes no hop, the two silences meaning different things being the claim;
- *       the {@code node-id-decode-column} fact documents bind where the decoded
- *       values land ({@code graphitron_node_id_decode_column}, and with it the foreign-key pairing
- *       ({@code intent_foreign_key_column_pair}) and its walk-oriented reading
- *       ({@code graphitron_node_id_decode_hop_column}) that the lift walks over), one case per shape
- *       the lift either carries or drops, the absent local column being the claim rather than the
- *       present one;
+ *       the {@code node-id-decode} fact documents bind the same relation beside the join path a
+ *       decode takes to the node's table ({@code graphitron_join_path_step} and its columns), one
+ *       case per way the path is reached and one per shape that stops short of the node's table;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedStepHopTest} binds the hop view's
  *       name-matched arm, which only a chain departing a function result reaches;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedKeyPairTest} binds the pair behind a hop

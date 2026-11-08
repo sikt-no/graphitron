@@ -45,17 +45,18 @@ type Mutation {
   updateFilm(in: FilmInput): Film @mutation(typeName: UPDATE)
 }
 
-extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", rows: """
-  site,        use_site,                          node_type_name, navigation,     from_table, to_table
-  ARGUMENT,    Query.films(castEntryId),          FilmActor,      DISCOVERED_KEY, film,       film_actor
-  ARGUMENT,    Query.films(inCategory),           Category,       AUTHORED_PATH,  film,       category
-  ARGUMENT,    Query.films(languageId),           Language,       DISCOVERED_KEY, film,       language
-  INPUT_FIELD, Mutation.updateFilm(in.inCategory:), Category,      AUTHORED_PATH,  film,       category
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Mutation.%'", rows: """
+  coordinate,                          bound,             position, node_type_name, column_name
+  Mutation.updateFilm(in.inCategory:), public.category,   0,        Category,       category_id
+  Query.films(castEntryId:),           public.film_actor, 0,        FilmActor,      actor_id
+  Query.films(castEntryId:),           public.film_actor, 1,        FilmActor,      film_id
+  Query.films(inCategory:),            public.category,   0,        Category,       category_id
+  Query.films(languageId:),            public.language,   0,        Language,       language_id
   """)
 
-extend schema @expectEquals(relation: "graphitron_node_id_decode_hop", rows: """
-  use_site,                           position, via,        from_table, to_table,      constraint_name,            fk_on_from
-  Query.films(castEntryId),           0,        DISCOVERED, film,       film_actor,    film_actor_film_id_fkey,    FALSE
-  Query.films(inCategory),            0,        KEY,        film,       film_category, film_category_film_id_fkey, FALSE
-  Mutation.updateFilm(in.inCategory:), 0,        KEY,        film,       film_category, film_category_film_id_fkey, FALSE
+extend schema @expectEquals(relation: "graphitron_join_path_step", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Mutation.%'", rows: """
+  coordinate,                          position, from_table, to_table
+  Mutation.updateFilm(in.inCategory:), 0,        film,       film_category
+  Query.films(castEntryId:),           0,        film,       film_actor
+  Query.films(inCategory:),            0,        film,       film_category
   """)

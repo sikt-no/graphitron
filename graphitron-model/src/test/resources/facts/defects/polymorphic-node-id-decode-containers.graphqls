@@ -116,13 +116,7 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
   code IN ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
   """)
 
-# A container naming instruction is one row per use site, not one per member ...
-extend schema @expectEquals(relation: "graphitron_node_id_instruction", where: "use_site = 'Query.occupant(occupant)'", rows: """
-  site,     use_site,                 basis,              resolved_type_name, resolved_type_kind
-  ARGUMENT, Query.occupant(occupant), EXPLICIT_TYPE_NAME, AddressOccupant,    POLY_CONTAINER
-  """)
-
-# ... and one slot, the parameter the argument is named for.
+# A container's slot is one, the parameter the argument is named for.
 extend schema @expectEquals(relation: "graphitron_node_id_slot", where: """
   element_coordinate IN ('Query.occupant(occupant:)', 'Query.greet(userId:)')
   """, rows: """
@@ -131,15 +125,17 @@ extend schema @expectEquals(relation: "graphitron_node_id_slot", where: """
   Query.occupant(occupant:), occupant,       TRUE
   """)
 
-# A container binding a table itself draws no endpoint row, at an argument, at an input field or
-# under a written path, while a node type at the same coordinates does. graphitron_tabletype holds
-# MediaItem, so the endpoint's own kind predicate is what keeps it out.
-extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", where: "use_site LIKE 'Query.mediaItems%' OR use_site LIKE 'Query.inventories%' OR use_site LIKE 'Query.filtered%'", rows: """
-  use_site,                           node_type_name, navigation,     from_table, to_table
-  Query.filtered(filter.customerId:),  Customer,       SAME_TABLE,     customer,   customer
-  Query.inventories(film),            Film,           AUTHORED_PATH,  inventory,  film
-  Query.mediaItems(film),             Film,           SAME_TABLE,     film,       film
-  Query.mediaItems(filter.filmId:),    Film,           SAME_TABLE,     film,       film
+# A container binding a table itself binds no node id, at an argument, at an input field or under a
+# written path, while a node type at the same coordinates does, and so does a multi-table container
+# beside it, once per member node as the case below states.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "coordinate LIKE 'Query.mediaItems%' OR coordinate LIKE 'Query.inventories%' OR coordinate LIKE 'Query.filtered%'", rows: """
+  coordinate,                         bound,           position, basis,              node_type_name, column_name
+  Query.filtered(filter.customerId:), public.customer, 0,        EXPLICIT_TYPE_NAME, Customer,       customer_id
+  Query.filtered(filter.occupantId:), public.customer, 0,        EXPLICIT_TYPE_NAME, Customer,       customer_id
+  Query.filtered(filter.occupantId:), public.staff,    0,        EXPLICIT_TYPE_NAME, Staff,          staff_id
+  Query.inventories(film:),           public.film,     0,        EXPLICIT_TYPE_NAME, Film,           film_id
+  Query.mediaItems(film:),            public.film,     0,        EXPLICIT_TYPE_NAME, Film,           film_id
+  Query.mediaItems(filter.filmId:),   public.film,     0,        EXPLICIT_TYPE_NAME, Film,           film_id
   """)
 
 # So the path that stops short is judged for the node type, and the container beside it is refused as

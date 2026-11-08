@@ -61,21 +61,6 @@ type Mutation {
   createActorByKey(in: KeyInput): Actor @mutation(typeName: INSERT)
 }
 
-extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: """
-  site,         use_site,                         basis,                  resolved_type_name
-  ARGUMENT,     Query.films(filmId),              TARGET_TABLE_NODE_TYPE, Film
-  ARGUMENT,     Query.inventories(filmId),        EXPLICIT_TYPE_NAME,     Film
-  INPUT_FIELD,  Mutation.createActorByKey(in.id:), TARGET_ID_NAME,         Actor
-  INPUT_FIELD,  Mutation.createFilm(in.filmId:),   TARGET_TABLE_NODE_TYPE, Film
-  INPUT_FIELD,  Mutation.createFilmByKey(in.id:),  TARGET_ID_NAME,         Film
-  INPUT_FIELD,  Mutation.deleteFilm(in.filmId:),   TARGET_TABLE_NODE_TYPE, Film
-  INPUT_FIELD,  Mutation.updateFilm(in.id:),       TARGET_ID_NAME,         Film
-  INPUT_FIELD,  Query.inventories(where.filmId:),  EXPLICIT_TYPE_NAME,     Film
-  OUTPUT_FIELD, Actor.id,                         OWN_ID_FIELD,           Actor
-  OUTPUT_FIELD, Film.id,                          CONTAINING_NODE_TYPE,   Film
-  OUTPUT_FIELD, Inventory.filmNodeId,             EXPLICIT_TYPE_NAME,     Film
-  """)
-
 # The key columns each id carries, at its occurrence and the node's table. A written typeName:
 # decides at every site. A bare @nodeId at an output field takes its containing node; at an argument
 # or input field, as does an id named for its target, the node each need reaches. A DELETE returning

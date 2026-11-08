@@ -1,7 +1,6 @@
 # Decodes whose key lands short. A key pinned in SDL that a compound departure reaches only part of
-# is recorded position by position rather than collapsed. An input field's own path that stops at a
-# junction lands nothing local and still states the key column. A node type no tier resolves key
-# columns for has no rows at all.
+# still binds every position of it. An input field's own path that stops at a junction still binds
+# the node's key column. A node type no tier resolves key columns for binds nothing.
 
 interface Node { id: ID! }
 
@@ -38,9 +37,9 @@ type Mutation {
   updateFilm(in: FilmInput): Film @mutation(typeName: UPDATE)
 }
 
-extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
-  use_site,                           position, key_column_name, local_column_name
-  Mutation.updateFilm(in.inCategory:), 0,        category_id,
-  Query.projectNotes(ofProject),      0,        org_id,          org_id
-  Query.projectNotes(ofProject),      1,        name,
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "coordinate LIKE 'Query.%' OR coordinate LIKE 'Mutation.%'", rows: """
+  coordinate,                          bound,           position, node_type_name, column_name
+  Mutation.updateFilm(in.inCategory:), public.category, 0,        Category,       category_id
+  Query.projectNotes(ofProject:),      public.project,  0,        Project,        org_id
+  Query.projectNotes(ofProject:),      public.project,  1,        Project,        name
   """)

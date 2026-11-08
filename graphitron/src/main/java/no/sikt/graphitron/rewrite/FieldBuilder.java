@@ -774,14 +774,13 @@ class FieldBuilder {
      * participant be table-bound would reject unions that generate correctly today.
      *
      * <p>This is the sole owner of the use-site-times-participant grain. The fact store's
-     * {@code graphitron_node_id_instruction} does reach this coordinate: a bare leaf whose consuming
-     * field returns a multi-table container is one row per participant table there, because the
-     * departure those inference bases read is one table per branch. What those rows do not carry is
-     * which branch each came from, that relation being keyed on the use site and the one table the
-     * site's content binds against, so they can say the branches disagree and cannot say which node
-     * type the branch being lowered resolves. That is the question answered here, per leaf, and it
-     * is answered here rather than read because this is the only reader asking it; the relation's own
-     * comment carries the participant-keyed spelling for whoever adds a second.
+     * {@code graphitron_occurrence_node_id} does reach this coordinate: a bare leaf whose consuming
+     * field returns a multi-table container is one row per node table its needs reach there, one
+     * need per branch. What those rows do not carry is which branch each came from, that relation
+     * being keyed on the occurrence and the node's table, so they can say the branches disagree and
+     * cannot say which node type the branch being lowered resolves. That is the question answered
+     * here, per leaf, and it is answered here rather than read because this is the only reader
+     * asking it.
      */
     private NodeIdParticipantTargets resolveNodeIdArgTargets(
             GraphQLFieldDefinition fieldDef, List<ParticipantRef.TableBound> participants) {

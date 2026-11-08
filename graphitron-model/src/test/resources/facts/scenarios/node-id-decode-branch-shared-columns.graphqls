@@ -1,6 +1,6 @@
 # A @nodeId argument on a field returning a union of three tables, each declaring its own foreign key
-# to the node type's table and all three pairing the same two column names. The decode is stated once
-# per branch, so each branch is its own hop pairing and lands its own key positions, once.
+# to the node type's table and all three pairing the same two column names. Each branch is its own
+# path and its own pairing, and the node id binds the node's key positions once, not once per branch.
 
 interface Node { id: ID! }
 
@@ -18,22 +18,18 @@ type Query {
   projectRecords(ofProject: ID @nodeId(typeName: "Project")): [ProjectRecord]
 }
 
-extend schema @expectEquals(relation: "graphitron_node_id_decode_hop_column", rows: """
-  origin_table,  pair_position, from_column_name, to_column_name
-  describe_hub,  0,             org_id,           org_id
-  describe_hub,  1,             project_id,       project_id
-  project_event, 0,             org_id,           org_id
-  project_event, 1,             project_id,       project_id
-  project_note,  0,             org_id,           org_id
-  project_note,  1,             project_id,       project_id
+extend schema @expectEquals(relation: "graphitron_join_path_step_column", where: "coordinate = 'Query.projectRecords(ofProject:)'", rows: """
+  target_type,  position, ordinal, from_table,    from_column, to_table, to_column
+  DescribeHub,  0,        0,       describe_hub,  org_id,      project,  org_id
+  DescribeHub,  0,        1,       describe_hub,  project_id,  project,  project_id
+  ProjectEvent, 0,        0,       project_event, org_id,      project,  org_id
+  ProjectEvent, 0,        1,       project_event, project_id,  project,  project_id
+  ProjectNote,  0,        0,       project_note,  org_id,      project,  org_id
+  ProjectNote,  0,        1,       project_note,  project_id,  project,  project_id
   """)
 
-extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
-  origin_table,  position, key_column_name, local_column_name
-  describe_hub,  0,        org_id,          org_id
-  describe_hub,  1,        project_id,      project_id
-  project_event, 0,        org_id,          org_id
-  project_event, 1,        project_id,      project_id
-  project_note,  0,        org_id,          org_id
-  project_note,  1,        project_id,      project_id
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "coordinate = 'Query.projectRecords(ofProject:)'", rows: """
+  bound,          position, node_type_name, column_name
+  public.project, 0,        Project,        org_id
+  public.project, 1,        Project,        project_id
   """)

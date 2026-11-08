@@ -123,7 +123,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
   inferred and written paths. Ends at "The classifier reads its routes from the store, the @nodeId filter first".
 * `graphitron_node_type`, `graphitron_node` and `NodeDeclaration.isNodeType`, each saying what a
   node is. Ends at "A node is what the manual says takes effect".
-* `graphitron_node_id_instruction` with its private route beside `graphitron_occurrence_node_id`. Ends at "Encode and decode read the target type, and the old node-id relations go".
 * Walk derivations and their store replacements, pinned by the shadow tests. Ends at "The shadow tests go with their walk side".
 * The vocabulary listed twice, by the editor from `graphitron_directive` and by MCP from
   `graphql_directive`. Ends at "The MCP lists the composed vocabulary".
@@ -399,8 +398,8 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   participant set's single-table message at the argument site, which has no test.
 * **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `open`.
   The landing and participant arms read the walk from the using field's target, and the occurrence,
-  scope, resolving, step-target and decode relations go, with `graphitron_node_id_instruction` once
-  "Encode and decode read the target type, and the old node-id relations go" lands. Neither side
+  scope, resolving and step-target relations go; the decode relations and
+  `graphitron_node_id_instruction` are gone already. Neither side
   checks where a `@referenceFor` route lands today; it becomes a landing arm here.
   `NodeIdDecodeCoverage` stays, comparing the census with the walk's ledger, until the walk goes.
 
@@ -1280,10 +1279,10 @@ disagree with the build about which types are nodes.
 ### A node id is a target type, read as its ID `open`
 
 A `@nodeId` field, argument or input field has a target type like any other, the node type, and
-says only that the value is that type's ID; the route to it is the ordinary forward walk. Today
-`graphitron_node_id_instruction` blends what was written with what was inferred and the node-id
-relations keep a private model of the route; both are replaced from scratch, reading nothing from
-`intent_`. `graphitron_node_id_instruction`'s insert costs 23 CPU-seconds of preparation over a
+says only that the value is that type's ID; the route to it is the ordinary forward walk.
+`graphitron_node_id_instruction` blended what was written with what was inferred and the node-id
+relations kept a private model of the route; both were replaced from scratch, reading nothing from
+`intent_`, and are gone. `graphitron_node_id_instruction`'s insert cost 23 CPU-seconds of preparation over a
 `graphitron` test phase, reaching 24 relations through 4 views (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 The replacement is the binding's `NODE_ID` subtype, `graphitron_occurrence_node_id`: at each
 occurrence, the node type, the rule that decided it and the node's key columns on its own table. The
@@ -1292,12 +1291,10 @@ branch is G's (Alf, 2026-11-05).
 * **The corpus is written against the model** `open`, G's. Fact documents state a written
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
-* **Encode and decode read the target type, and the old node-id relations go** `open`, F's.
-  The walk dissolves into store emitters, each with its own query (Alf, 2026-11-06). The decode is
-  `NodeIdDecodeQuery` and `NodeIdDecodeEmitter`, which the fill and build emitters call, and the
-  decode census `NodeIdDecodeCoverageFacts` reads `graphitron_occurrence_node_id`; the encode for
-  output fields is an emitter of its own, written when the store emits output selections. Then
-  `graphitron_node_id_instruction` and the `graphitron_node_id_decode_*` relations go.
+* **An output field's node id is encoded from the store** `open`, F's.
+  The encode is an emitter of its own with its own query over `graphitron_occurrence_node_id`,
+  written when the store emits output selections; the walk dissolves into store emitters this way
+  (Alf, 2026-11-06), and the decode already has, in `NodeIdDecodeQuery` and `NodeIdDecodeEmitter`.
   * **The classifier reads its routes from the store, the @nodeId filter first** `open`, F's.
     The classifier (`GraphitronSchemaBuilder.buildBundle`, `BuildContext`) takes an optional store
     handle, `TestSchemaHelper` capturing a store per distinct schema text as `emittedSchema` is
@@ -1344,22 +1341,22 @@ here with a document that shows it.
   member, and its type, a column's generated `Field<T>` or the member's, matches the shape the encode
   or decode needs, a mismatch the defect (Alf, 2026-11-05).
 * **A `@nodeId` argument walking its own path decodes the type it arrives at** `blocked`, on
-  "Encode and decode read the target type, and the old node-id relations go". On the field below
+  "The classifier reads its routes from the store, the @nodeId filter first". On the field below
   the store resolves `Actor` from the table the path arrives at, while the generator infers `Film`
   from the field's table and emits `actor.FILM_ID`, which does not compile. The generator never
   supported the shape and is not patched for it: reading the store's target type is the fix. When
   it lands, the fragment goes into the scenario `node-id-instruction-bases`, which already declares
   `Film` and `Actor` as nodes: the field into its `extend type Query`, the row into its
-  `graphitron_node_id_instruction` expectation.
+  `graphitron_occurrence_node_id` expectation.
 
   ```graphql
   extend type Query {
     filmsByActor(byActor: ID @nodeId @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])): [Film]
   }
 
-  extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: """
-    site,     use_site,                    basis,                  resolved_type_name
-    ARGUMENT, Query.filmsByActor(byActor), TARGET_TABLE_NODE_TYPE, Actor
+  extend schema @expectEquals(relation: "graphitron_occurrence_node_id", rows: """
+    coordinate,                   bound,        position, basis,                  node_type_name, column_name
+    Query.filmsByActor(byActor:), public.actor, 0,        TARGET_TABLE_NODE_TYPE, Actor,          actor_id
     """)
   ```
 
@@ -2914,6 +2911,19 @@ inline multiset's standalone shape is gone: `CallWrap.Multiset` and `CallWrap.Lo
 non-empty path and a parent correlation, and `ProjectionUnitRenderer` no longer renders a read of the
 field's own table under `noCondition()`. A `TableField` with an empty path stays representable in the
 model, which only unit-test fixtures construct.
+
+**The old node-id relations** (2026-11-08). `graphitron_node_id_instruction`,
+`graphitron_node_id_decode_hop`, `graphitron_node_id_decode_hop_column` and
+`graphitron_node_id_decode_column`, each with its `_rule` view, its writer (`NodeIdInstructions`,
+`NodeIdDecodeHops`, `NodeIdDecodeHopColumns`, `NodeIdDecodeColumns`) and its `DerivationStratum`
+step, and the grains `nodeid-instruction`, `nodeid-decode-hop`, `nodeid-decode-hop-column` and
+`nodeid-decode-column`; with them `intent_node_id_decode_endpoint`, and the endpoint's
+`navigation` vocabulary (`SAME_TABLE`, `AUTHORED_PATH`, `DISCOVERED_KEY`), the hop's `via` and
+`fk_on_from`, and the decode column's `local_column_name` lift. A node id's node type and key are
+`graphitron_occurrence_node_id`'s, the route to it the join path's, and the record column a decoded
+value loads into is read by `NodeIdDecodeQuery` at emit time. `PartitionSelectivityWorthTest`, whose
+two subjects were the instruction and decode-hop rules, went with them, and with it
+`StoreStatistics.resetIncludingTheDeclaration`.
 
 ## Owed, not done here
 

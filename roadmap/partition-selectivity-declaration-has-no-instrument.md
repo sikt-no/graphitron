@@ -22,7 +22,8 @@ used to be a control in `PartitionSelectivityWorthTest`: the same read visited 1
 the declaration against 1113 with it. Three conversions have since put primary keys on the relations
 that reader joins, each key giving the planner a seekable ordering it can reach without being told
 anything, and the gap closed to twelve rows in 524. The control was retired rather than propped up
-with a lower floor, so the file now records a collapse and the declaration's remaining evidence is
+with a lower floor, the file then recording only a collapse, and it went when both readers it
+measured were dissolved (2026-11-08). The declaration's remaining evidence is
 plan text in `RefreshPlanStatisticsTest` plus one consumer-scale round taken on a shape that no
 longer ships.
 

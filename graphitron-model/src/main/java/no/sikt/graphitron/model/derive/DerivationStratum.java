@@ -81,14 +81,7 @@ public final class DerivationStratum {
             step("ArgumentScopeTables", "graphitron_argument_scope_table",
                 ArgumentScopeTables::derive),
             step("InputFieldResolvingTables", "graphitron_input_field_resolving_table",
-                InputFieldResolvingTables::derive),
-            step("NodeIdInstructions", "graphitron_node_id_instruction",
-                NodeIdInstructions::derive),
-            step("NodeIdDecodeHops", "graphitron_node_id_decode_hop", NodeIdDecodeHops::derive),
-            step("NodeIdDecodeHopColumns", "graphitron_node_id_decode_hop_column",
-                NodeIdDecodeHopColumns::derive),
-            step("NodeIdDecodeColumns", "graphitron_node_id_decode_column",
-                NodeIdDecodeColumns::derive));
+                InputFieldResolvingTables::derive));
     }
 
     /**

@@ -64,10 +64,6 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
         new Stage("graphitron_input_field_resolving_table",
             "graphitron_input_field_resolving_table_rule"),
-        new Stage("graphitron_node_id_instruction", "graphitron_node_id_instruction_rule"),
-        new Stage("graphitron_node_id_decode_hop", "graphitron_node_id_decode_hop_rule"),
-        new Stage("graphitron_node_id_decode_hop_column", "graphitron_node_id_decode_hop_column_rule"),
-        new Stage("graphitron_node_id_decode_column", "graphitron_node_id_decode_column_rule"),
         new Stage("graphitron_entry_defect", "graphitron_entry_defect_rule"));
 
     @Test

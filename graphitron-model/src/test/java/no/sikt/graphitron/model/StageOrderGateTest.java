@@ -95,15 +95,7 @@ class StageOrderGateTest {
         new Step("ArgumentScopeTables", "graphitron_argument_scope_table_rule",
             Set.of("graphitron_argument_scope_table")),
         new Step("InputFieldResolvingTables", "graphitron_input_field_resolving_table_rule",
-            Set.of("graphitron_input_field_resolving_table")),
-        new Step("NodeIdInstructions", "graphitron_node_id_instruction_rule",
-            Set.of("graphitron_node_id_instruction")),
-        new Step("NodeIdDecodeHops", "graphitron_node_id_decode_hop_rule",
-            Set.of("graphitron_node_id_decode_hop")),
-        new Step("NodeIdDecodeHopColumns", "graphitron_node_id_decode_hop_column_rule",
-            Set.of("graphitron_node_id_decode_hop_column")),
-        new Step("NodeIdDecodeColumns", "graphitron_node_id_decode_column_rule",
-            Set.of("graphitron_node_id_decode_column")));
+            Set.of("graphitron_input_field_resolving_table")));
 
     /**
      * The roster is the stratum, name for name and write set for write set, in order. Without this
@@ -148,11 +140,11 @@ class StageOrderGateTest {
 
     /**
      * The gate firing, shown rather than argued. The real {@code DerivationStratum}, with a deep
-     * stage moved to the front: the node-id decode column's rule reads the decode hop columns,
-     * which a stage writes, so ahead of it it would read the previous capture's rows, and the check
-     * above names it. A real ordering rather than a fixture, so the case keeps meaning something as
-     * stages are added: it fails the day the decode column stops reading anything a stage writes,
-     * which is a change to the rule this gate would want a reader to notice.
+     * stage moved to the front: the input-field resolving-table rule reads the argument scope
+     * table, which a stage writes, so ahead of it it would read the previous capture's rows, and the
+     * check above names it. A real ordering rather than a fixture, so the case keeps meaning
+     * something as stages are added: it fails the day the resolving table stops reading anything a
+     * stage writes, which is a change to the rule this gate would want a reader to notice.
      */
     @Test
     @DisplayName("a stage placed ahead of the step that writes what it reads is caught")
@@ -160,7 +152,7 @@ class StageOrderGateTest {
         withStore(dsl -> {
             var steps = new ArrayList<>(resolved(dsl));
             var deepest = steps.stream()
-                .filter(step -> step.writes().contains("graphitron_node_id_decode_column"))
+                .filter(step -> step.writes().contains("graphitron_input_field_resolving_table"))
                 .findFirst().orElseThrow();
             steps.remove(deepest);
             steps.addFirst(deepest);

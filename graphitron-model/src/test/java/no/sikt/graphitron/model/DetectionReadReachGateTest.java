@@ -97,16 +97,6 @@ class DetectionReadReachGateTest {
             // A container's members, in declared order, for the messages that list them.
             "graphql_poly_member"));
 
-        // Twelve relations until graphitron_node_id_decode_hop was registered, and six of them were
-        // reached only through it, the reference-target relations it read then among them. The walk
-        // stops at the target table now, so this reader evaluates none of their bodies. That
-        // is the lever this gate was written for landing, and the delta is the diff a reviewer
-        // reads the outcome off.
-        //
-        // intent_node_id_decode_endpoint stays, read live by the verdict's own judged CTE rather
-        // than through the hop, and it is known rather than unpriced: 14 ms on the population that
-        // exposed the defect, whose whole subtree answers in single-digit milliseconds.
-        //
         // graphql_poly_member is the participants of a field's target, read beside the stored target
         // and binding. It is the union intent_poly_member was over the same two tables, and the
         // reference-for application that reaches it answers no slower than it did through the

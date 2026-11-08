@@ -1,10 +1,8 @@
-# Where each value a @nodeId decode yields lands: one row per position of the node type's key, with
-# the column on the slot's own table it lifts back to, or none. Own-row identity lands each key column
-# on itself, a single hop on the key's own column, and a chain whose next hop departs columns the last
-# arrived at lifts back through every hop. A composite key lands every position. The lift drops on a
-# junction chain, whose second hop departs a column the first never arrived at, and on a key
-# referencing an alternate key, which translates a value before it can filter. A reverse hop lands the
-# key columns the departure shares and no others, position by position.
+# The key a @nodeId decode yields: one row per position of the node type's key, on the node's own
+# table, whatever path the slot takes there. A composite key binds every position, and a node over a
+# junction, a key referencing an alternate key, or a reverse hop binds its own key just the same.
+# Which column of a record the value then loads into is not a fact here: the decode emitter reads it
+# off the record table's one foreign key to the node's table when it emits.
 
 interface Node { id: ID! }
 
@@ -61,17 +59,17 @@ type Query {
   xlatParents(childRow: ID @nodeId(typeName: "XlatChild") @reference(path: [{key: "xlat_child_parent_alt_key_fkey"}])): [XlatParent]
 }
 
-extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
-  use_site,                         position, key_column_name, local_column_name
-  Query.filmActors(actorId),        0,        actor_id,        actor_id
-  Query.films(castEntry),           0,        actor_id,
-  Query.films(castEntry),           1,        film_id,         film_id
-  Query.films(ids),                 0,        film_id,         film_id
-  Query.films(inCategory),          0,        category_id,
-  Query.levelCs(ofA),               0,        k1,              k1
-  Query.levelCs(ofA),               1,        k2,              k2
-  Query.projectNotes(ofProject),    0,        org_id,          org_id
-  Query.projectNotes(ofProject),    1,        project_id,      project_id
-  Query.xlatChildren(ofParent),     0,        pk_id,
-  Query.xlatParents(childRow),      0,        child_id,
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate,                     bound,                 position, node_type_name, column_name
+  Query.filmActors(actorId:),     public.actor,          0,        Actor,          actor_id
+  Query.films(castEntry:),        public.film_actor,     0,        FilmActor,      actor_id
+  Query.films(castEntry:),        public.film_actor,     1,        FilmActor,      film_id
+  Query.films(ids:),              public.film,           0,        Film,           film_id
+  Query.films(inCategory:),       public.category,       0,        Category,       category_id
+  Query.levelCs(ofA:),            nodeidfixture.level_a, 0,        LevelA,         k1
+  Query.levelCs(ofA:),            nodeidfixture.level_a, 1,        LevelA,         k2
+  Query.projectNotes(ofProject:), public.project,        0,        Project,        org_id
+  Query.projectNotes(ofProject:), public.project,        1,        Project,        project_id
+  Query.xlatChildren(ofParent:),  public.xlat_parent,    0,        XlatParent,     pk_id
+  Query.xlatParents(childRow:),   public.xlat_child,     0,        XlatChild,      child_id
   """)

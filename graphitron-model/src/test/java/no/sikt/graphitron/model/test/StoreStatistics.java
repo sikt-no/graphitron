@@ -48,10 +48,10 @@ public final class StoreStatistics {
      * <p>One catalog read finds the drifted columns and one {@code ALTER} per hit puts each back, so
      * a case whose writes never crossed H2's own analysis threshold, which is nearly every case,
      * pays that read and the base-table list beside it and issues nothing. The end state is exactly
-     * what {@link #resetIncludingTheDeclaration} followed by the creation-time declaration over
-     * {@link GraphPartition#keyedBaseTables} leave, at a fraction of the statements: walking every
-     * column instead cost about three quarters of a second per clear on a schema past two thousand
-     * columns, and was most of the store-heavy modules' test time.
+     * what putting every column back to {@link #UNANALYSED} followed by the creation-time
+     * declaration over {@link GraphPartition#keyedBaseTables} leave, at a fraction of the
+     * statements: walking every column instead cost about three quarters of a second per clear on a
+     * schema past two thousand columns, and was most of the store-heavy modules' test time.
      *
      * <p>The restatement is what makes this a cold <em>store</em> rather than a state no store can
      * be in. A bare reset models a store created before the declaration existed: every plan measured
@@ -79,27 +79,6 @@ public final class StoreStatistics {
                 dsl.execute("ALTER TABLE \"" + row.get(0) + "\" ALTER COLUMN \"" + column
                     + "\" SELECTIVITY " + selectivity);
             });
-    }
-
-    /**
-     * Puts every base table's every column back to {@link #UNANALYSED}, the partition column
-     * included: the state a store created before the declaration existed was in, which no store can
-     * be in now. Only a measurement of what the declaration itself is worth has any business asking
-     * for it, and {@code PartitionSelectivityWorthTest} is the one that does.
-     *
-     * <p>Not a join to the base tables, for {@link #reset}'s reason, which costs this one the most:
-     * it keeps every base-table column rather than only the drifted ones.
-     */
-    public static void resetIncludingTheDeclaration(DSLContext dsl) {
-        Set<String> baseTables = Set.copyOf(ThreadConfinedStore.baseTables(dsl));
-        dsl.fetch("""
-            SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = 'PUBLIC'
-            ORDER BY TABLE_NAME, ORDINAL_POSITION
-            """).stream()
-            .filter(row -> baseTables.contains(row.get(0, String.class)))
-            .forEach(row -> dsl.execute("ALTER TABLE \"" + row.get(0)
-                + "\" ALTER COLUMN \"" + row.get(1) + "\" SELECTIVITY 0"));
     }
 
     /**
