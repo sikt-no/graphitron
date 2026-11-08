@@ -1716,7 +1716,8 @@ class FieldBuilder {
             // auto-discovered single-hop FK plus any explicit @referenceFor route (single-hop,
             // multi-hop, condition, or self-FK).
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
-                location, parentTableType.table(), interfaceType.participants(), buildWrapper(fieldDef).isList());
+                location, parentTableType.table(), interfaceType.participants(), buildWrapper(fieldDef).isList(),
+                /*inferSelfKey=*/true);
             if (resolved.rejection() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, resolved.rejection());
             }
@@ -1759,7 +1760,8 @@ class FieldBuilder {
 
         if (elementType instanceof UnionType unionType) {
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
-                location, parentTableType.table(), unionType.participants(), buildWrapper(fieldDef).isList());
+                location, parentTableType.table(), unionType.participants(), buildWrapper(fieldDef).isList(),
+                /*inferSelfKey=*/true);
             if (resolved.rejection() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, resolved.rejection());
             }
@@ -8694,7 +8696,9 @@ class FieldBuilder {
         var resolved = (PolymorphicRecordParentResolution.Resolved) resolution;
 
         var paths = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
-            location, resolved.hubTable(), participants, returnType.wrapper().isList());
+            location, resolved.hubTable(), participants, returnType.wrapper().isList(),
+            // A record parent's fields are resolved by the lift from its primary key, never a self-join.
+            /*inferSelfKey=*/false);
         if (paths.rejection() != null) {
             return new UnclassifiedField(parentTypeName, name, location, paths.rejection());
         }
@@ -9523,7 +9527,7 @@ class FieldBuilder {
     private ChildPolymorphicJoinPaths resolveChildPolymorphicJoinPaths(
             GraphQLFieldDefinition fieldDef, String fieldName, String parentTypeName,
             SourceLocation location, TableRef parentTable, List<ParticipantRef> participants,
-            boolean isList) {
+            boolean isList, boolean inferSelfKey) {
         // Rule 1a: a field-level @reference cannot express a distinct join per participant.
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             return ChildPolymorphicJoinPaths.fail(Rejection.structural(
@@ -9582,7 +9586,7 @@ class FieldBuilder {
                 ? ctx.parseExplicitPath(explicitRoutes.get(type), fieldName, parentTable.tableName(),
                     tb.table().tableName(), tb.table(), isList)
                 : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table(), isList,
-                    /*admitPrimaryKey=*/false, /*inferSelfKey=*/true);
+                    /*admitPrimaryKey=*/false, inferSelfKey);
 
             var outcome = classifyParticipantRoute(explicit, isList, parsed, tb, parentTable);
             if (outcome.rejection() != null) {
