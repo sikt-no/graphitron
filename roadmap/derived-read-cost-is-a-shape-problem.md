@@ -524,6 +524,26 @@ static method needs no holder.
   * **A single child's null contract is stated** `blocked`, on the expression and condition nodes.
     Nothing states when a nesting field or a single inline child is null, which the `__p_` probe
     decides today as a disjunction over its paths and expressions; it is modelled once those land.
+  * **An input object is read once, by a reader of its own** `open`. One generated typed record per
+    input type, built from the argument map with its node ids decoded, enums converted and lists
+    walked, so a condition, a lookup's rows and a service's fills read `filter.range().fra()` rather
+    than each spelling its own `instanceof Map` ladder over the wire (Alf, 2026-11-08). A node id
+    decodes through one method per node type and policy beside `NodeIdEncoder`, strict or
+    not-this-participant, rather than through private copies in every class that reads one.
+  * **The filter conditions are emitted from the store** `blocked`, on the reader and the
+    `@condition` call nodes. One condition per producer occurrence, named and aliased from its
+    coordinate, composing the generated predicates, the authored `@condition` calls and the path
+    steps' conditions with `override:` read as written, its behaviour today's; a faceted condition is
+    built term by term, the full condition the base and every facet's term, its facet sources
+    reusing the condition's paths, and facets back off to a node of their own if that proves hard.
+    Additive and uncalled until the flip, pinned by tests that compile the emitted code and run it
+    against the database (Alf, 2026-11-08).
+* **What a filter means does not depend on where it is written** `open`, off the critical path.
+  Today an empty list drops its predicate where a polymorphic participant's all-foreign ids answer
+  `falseCondition()`, the lenient node-id decode drops a malformed id with one of another type, a
+  non-object list element is false in one matcher and a row of nulls in another, and a faceted enum
+  list is cast where a scalar one is converted by `valueOf`, untested beyond `G`. Each gets a test
+  first, then a fix or a stated breaking change, after the flip, which keeps them as they are.
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
   container's table and column beside it; the re-read reads it through the join from the base, a
