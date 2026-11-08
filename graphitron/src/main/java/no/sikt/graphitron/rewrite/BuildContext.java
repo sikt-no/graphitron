@@ -2535,7 +2535,7 @@ class BuildContext {
      * choice fixes both correlation topology and batch grain.
      *
      * <p>Returns an empty {@link ParentCorrelationResolution.Resolved} (wrapping {@code null})
-     * for an empty joinPath — the standalone-lookup shape, where the carrier needs no parent
+     * for an empty joinPath, where the carrier reads the parent's own row and needs no parent
      * correlation. The carrier-side invariant pinned by
      * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation#checkCarrierInvariant} reads
      * this case as "empty joinPath → null correlation".

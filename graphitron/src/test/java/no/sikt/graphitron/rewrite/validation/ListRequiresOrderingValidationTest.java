@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryTableField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -40,6 +41,13 @@ class ListRequiresOrderingValidationTest {
             "Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
+    // The child surface's parent is a language and its films are the ones in that language: the
+    // one-hop path every inline child read carries to its parent.
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("film_language_id_fkey"), TestFixtures.languageTable(),
+        List.of(TestFixtures.languageIdCol()), filmReturn(new FieldWrapper.Single(true)).table(),
+        List.of(TestFixtures.languageIdCol()), null, ""));
+
     private static final String LIST_ORDERING_ERROR =
         "list fields must have a deterministic order. Add a primary key to the target table, or use "
             + "@defaultOrder or @orderBy.";
@@ -67,15 +75,15 @@ class ListRequiresOrderingValidationTest {
         CHILD_LIST_NO_ORDER("Child-position list TableField on no-PK table — error",
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
+                FK_PATH, List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.languageTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of("Field 'Parent.films': " + LIST_ORDERING_ERROR)),
 
         CHILD_LIST_WITH_DEFAULT_ORDER("Child-position list TableField with Fixed ordering — admit",
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), List.of(), PK_ORDER, null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
+                FK_PATH, List.of(), PK_ORDER, null, LookupResolution.None.INSTANCE,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.languageTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of());
 
         private final String description;

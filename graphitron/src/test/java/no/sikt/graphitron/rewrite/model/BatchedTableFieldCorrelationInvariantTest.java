@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * A batched child keys every batch on its parent correlation, so
  * {@link ChildField.BatchedTableField} refuses a null correlation on both source arms, even on an
- * empty path where the shared {@link ParentCorrelation} carrier invariant admits null for the
- * inline standalone shape.
+ * empty path where the shared {@link ParentCorrelation} carrier invariant admits null for a
+ * carrier on the parent's own row.
  */
 @UnitTier
 class BatchedTableFieldCorrelationInvariantTest {

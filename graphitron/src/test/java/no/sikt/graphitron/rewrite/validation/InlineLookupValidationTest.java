@@ -54,21 +54,28 @@ class InlineLookupValidationTest {
             ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.filmTable(), ""));
 
+    // The language a film is in, read from the language's side: the one-hop path every inline
+    // child read carries to its parent.
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("film_language_id_fkey"), TestFixtures.languageTable(),
+        List.of(TestFixtures.languageIdCol()), FILM_TABLE, List.of(TestFixtures.languageIdCol()),
+        null, ""));
+
     enum Case implements ValidatorCase {
 
         // Single-cardinality @lookupKey is now rejected at classifier time (argres Phase 2a C1);
         // it cannot reach the validator. Kept as a structural-validator smoke test: the model
         // record itself is constructible, and the validator has no extra errors to add.
         SINGLE_NOW_PROJECTED("single return — no validator errors; classifier rejection prevents reaching this state",
-            new TableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
+            new TableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), FK_PATH, List.of(), new OrderBySpec.None(), null,
                 KEYED_LOOKUP,
-                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.languageTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         LIST_PROJECTED("list return — inline-projected, no validator errors",
-            new TableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), PK_ORDER, null,
+            new TableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), FK_PATH, List.of(), PK_ORDER, null,
                 KEYED_LOOKUP,
-                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.languageTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
@@ -79,9 +86,9 @@ class InlineLookupValidationTest {
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
-            new TableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,
+            new TableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), FK_PATH, List.of(), new OrderBySpec.None(), null,
                 KEYED_LOOKUP,
-                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.languageTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;

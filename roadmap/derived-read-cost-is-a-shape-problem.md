@@ -2909,8 +2909,8 @@ whether the defect it reports still exists is its own author's to re-measure.
 **The uncorrelated same-table read.** With a same-table field refused unless a key joins it, the
 inline multiset's standalone shape is gone: `CallWrap.Multiset` and `CallWrap.LookupMultiset` take a
 non-empty path and a parent correlation, and `ProjectionUnitRenderer` no longer renders a read of the
-field's own table under `noCondition()`. A `TableField` with an empty path stays representable in the
-model, which only unit-test fixtures construct.
+field's own table under `noCondition()`. A `TableField` takes a non-empty path and a parent
+correlation too, and `Presence`'s empty-path check on a table probe went with the shape.
 
 **The old node-id relations** (2026-11-08). `graphitron_node_id_instruction`,
 `graphitron_node_id_decode_hop`, `graphitron_node_id_decode_hop_column` and

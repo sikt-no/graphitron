@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -39,9 +40,16 @@ class ArgumentValidationTest {
             TestFixtures.tableRef("film", "FILM", "Film", List.of()),
             new FieldWrapper.Single(true));
 
+    // A language's film, reached over the one-hop path every inline child read carries to its
+    // parent.
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("film_language_id_fkey"), TestFixtures.languageTable(),
+        List.of(TestFixtures.languageIdCol()), FILM_RETURN.table(),
+        List.of(TestFixtures.languageIdCol()), null, ""));
+
     private static TableField tableField(List<WhereFilter> filters) {
-        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), filters, new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-            /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
+        return new TableField("Language", "film", null, FILM_RETURN, FK_PATH, filters, new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
+            TestFixtures.pcFor(FK_PATH, TestFixtures.languageTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
     }
 
     enum Case implements ValidatorCase {

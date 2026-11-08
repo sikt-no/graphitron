@@ -457,13 +457,6 @@ class PresenceTest {
     }
 
     @Test
-    void uncorrelatedReadOfTheOwnTable_blocks() {
-        var standalone = reference("anyLanguage", "Language", new FieldWrapper.Single(true),
-            List.of(), List.of(), null);
-        assertThat(contract(nullable("release", standalone))).isEqualTo(blockedBy(standalone));
-    }
-
-    @Test
     void recordSourcedSplitField_blocks() {
         var returnType = new ReturnTypeRef.TableBoundReturnType("Language", TestFixtures.languageTable(),
             new FieldWrapper.Single(true));

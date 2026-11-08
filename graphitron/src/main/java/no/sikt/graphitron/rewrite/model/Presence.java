@@ -259,8 +259,7 @@ public final class Presence {
      */
     private static Optional<PresenceLeaf> tableProbe(ChildField.TableTargetField field, TypeFields types) {
         var wrapper = field.returnType().wrapper();
-        if (field.joinPath().isEmpty()
-                || !probeablePath(field.joinPath())
+        if (!probeablePath(field.joinPath())
                 || wrapper instanceof FieldWrapper.Connection
                 || !(field.lookup() instanceof LookupResolution.None)
                 || field.filters().stream().flatMap(f -> f.callParams().stream())

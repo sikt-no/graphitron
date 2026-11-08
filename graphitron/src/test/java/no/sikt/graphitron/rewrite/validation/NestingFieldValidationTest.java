@@ -433,8 +433,8 @@ class NestingFieldValidationTest {
         // a real conflict; this test is what makes the ordering a build failure rather than a
         // review note.
         var schema = twoParentSchema(
-            List.of(sharedTableLeaf(List.of())),
-            List.of(sharedTableLeaf(List.of(
+            List.of(sharedTableLeaf("film_address_id_fkey", FILM_TABLE, List.of())),
+            List.of(sharedTableLeaf("advertisement_address_id_fkey", ADVERTISEMENT_TABLE, List.of(
                 new no.sikt.graphitron.rewrite.model.ConditionFilter(
                     "com.example.Conditions", "addressCondition", List.of())))));
         assertThat(validate(schema))
@@ -445,14 +445,21 @@ class NestingFieldValidationTest {
                     + "generated condition method serves every site");
     }
 
-    /** An inline {@code TableField} leaf with the filter list as the variable. */
-    private static ChildField.TableField sharedTableLeaf(List<no.sikt.graphitron.rewrite.model.WhereFilter> filters) {
+    /**
+     * An inline {@code TableField} leaf with the filter list as the variable, reached from
+     * {@code anchor} over the one-hop path {@code fk} states.
+     */
+    private static ChildField.TableField sharedTableLeaf(String fk, TableRef anchor,
+                                                         List<no.sikt.graphitron.rewrite.model.WhereFilter> filters) {
+        var addressId = TestFixtures.col("address_id", "ADDRESS_ID", "java.lang.Integer");
+        var address = TestFixtures.joinTarget("address");
+        var path = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef(fk), anchor,
+            List.of(addressId), address, List.of(addressId), null, ""));
         return new ChildField.TableField("FilmDetails", "address", null,
-            new ReturnTypeRef.TableBoundReturnType("Address",
-                TestFixtures.joinTarget("address"), new FieldWrapper.Single(true)),
-            List.of(), filters, new OrderBySpec.None(), null,
+            new ReturnTypeRef.TableBoundReturnType("Address", address, new FieldWrapper.Single(true)),
+            path, filters, new OrderBySpec.None(), null,
             no.sikt.graphitron.rewrite.model.LookupResolution.None.INSTANCE,
-            /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());
+            TestFixtures.pcFor(path, anchor), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());
     }
 
     @Test

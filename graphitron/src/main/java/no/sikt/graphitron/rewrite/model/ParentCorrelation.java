@@ -109,17 +109,18 @@ public sealed interface ParentCorrelation
     /**
      * Carrier-side classifier invariant. A non-empty {@code joinPath} carries a non-null,
      * hop-anchored {@link ParentCorrelation} whose first hop is the same instance as
-     * {@code joinPath.get(0)}. An empty joinPath carries either a null correlation (the lookup
-     * runs standalone and no parent correlation is needed) or the hop-less {@link OnLiftedSlots}
-     * arm (the pre-keyed lifter / accessor / re-fetch shape). Each ChildField variant compact
-     * constructor invokes this helper so the model can never carry a correlation that disagrees
-     * with the path it sits on.
+     * {@code joinPath.get(0)}. An empty joinPath carries either a null correlation (the carrier
+     * reads the parent's own row, as a {@link ChildField.ColumnBackedReferenceField} with no path
+     * does) or the hop-less {@link OnLiftedSlots} arm (the pre-keyed lifter / accessor / re-fetch
+     * shape). Each ChildField variant compact constructor invokes this helper so the model can
+     * never carry a correlation that disagrees with the path it sits on; a variant that is never
+     * on the parent's own row, such as {@link ChildField.TableField}, refuses the empty path itself.
      */
     static void checkCarrierInvariant(ParentCorrelation pc, List<JoinStep> joinPath, String variantName) {
         if (joinPath.isEmpty()) {
             if (pc != null && !(pc instanceof OnLiftedSlots)) {
                 throw new IllegalArgumentException(
-                    variantName + ".parentCorrelation must be null (standalone-lookup shape) or "
+                    variantName + ".parentCorrelation must be null (the parent's own row) or "
                     + "OnLiftedSlots (pre-keyed lifted shape) when joinPath is empty; got "
                     + pc.getClass().getSimpleName());
             }

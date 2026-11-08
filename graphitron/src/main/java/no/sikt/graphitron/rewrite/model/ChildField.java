@@ -423,6 +423,16 @@ public sealed interface ChildField extends OutputField
             java.util.Objects.requireNonNull(aliasScope, "aliasScope");
             java.util.Objects.requireNonNull(lookup, "lookup");
             java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
+            // An inline child read is correlated to its parent row over its join path. Stricter
+            // than the shared helper, which admits an empty path with no correlation: a read of
+            // a table over no path pairs none of its rows with the parent, and the classifier
+            // refuses a same-table field no key joins.
+            if (joinPath.isEmpty()) {
+                throw new IllegalArgumentException("TableField " + parentTypeName + "." + name
+                    + " needs a join path to its parent; a read over no path pairs no row with it");
+            }
+            java.util.Objects.requireNonNull(parentCorrelation, () ->
+                "TableField " + parentTypeName + "." + name + " needs a parent correlation");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
             // No validator gate re-checks TableField's shape, so the emittable routine-chain
             // set is pinned mechanically here: the check below admits exactly the shape the
@@ -499,7 +509,7 @@ public sealed interface ChildField extends OutputField
             java.util.Objects.requireNonNull(lift, "lift");
             KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedTableField");
             // (2) carrier invariant. Stricter than the shared helper, which admits null on an
-            // empty path for the inline standalone shape: a batched child keys every batch on
+            // empty path for a carrier on the parent's own row: a batched child keys every batch on
             // its parent correlation, on both arms, so the leaf refuses null outright.
             java.util.Objects.requireNonNull(parentCorrelation, () ->
                 "BatchedTableField " + parentTypeName + "." + name + " needs a parent correlation; "
