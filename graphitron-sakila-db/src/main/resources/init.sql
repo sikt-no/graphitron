@@ -167,6 +167,15 @@ CREATE TABLE category_label (
     label              varchar(30)  NOT NULL
 );
 
+-- Two self-referencing keys on one table, employee_manager_id_fkey and employee_mentor_id_fkey: a
+-- field from an employee to employees has no one key to ride and names the one it means.
+CREATE TABLE employee (
+    employee_id  serial       PRIMARY KEY,
+    name         varchar(50)  NOT NULL,
+    manager_id   int          REFERENCES employee(employee_id),
+    mentor_id    int          REFERENCES employee(employee_id)
+);
+
 -- -------------------------
 -- Inventory / rental / payment
 -- -------------------------

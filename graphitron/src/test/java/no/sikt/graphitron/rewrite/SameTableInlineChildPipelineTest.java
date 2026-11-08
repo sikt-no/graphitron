@@ -534,6 +534,68 @@ class SameTableInlineChildPipelineTest {
     }
 
     /**
+     * employee has two self-referencing keys, employee_manager_id_fkey and employee_mentor_id_fkey,
+     * so a same-table field on it has no one key to infer and names the one it rides.
+     */
+    @Nested
+    class TwoSelfReferencingKeys {
+
+        @Test
+        void unreferenced_rejectedNamingBothKeys() {
+            var schema = TestSchemaHelper.buildSchema("""
+                type Employee @table(name: "employee") {
+                    name: String
+                    boss: Employee
+                    reports: [Employee!]!
+                }
+                type Query { employees: [Employee!]! }
+                """);
+
+            for (var field : List.of("boss", "reports")) {
+                assertThat(schema.field("Employee", field)).isInstanceOf(UnclassifiedField.class);
+                assertThat(errorsAt(schema, "Employee." + field)).singleElement()
+                    .satisfies(m -> assertThat(m)
+                        .contains("multiple foreign keys found between tables 'employee' and 'employee'")
+                        .contains("employee_manager_id_fkey")
+                        .contains("employee_mentor_id_fkey"));
+            }
+        }
+
+        @Test
+        void writtenKey_ridesTheNamedKeyByCardinality() {
+            var schema = TestSchemaHelper.buildSchema("""
+                type Employee @table(name: "employee") {
+                    name: String
+                    manager: Employee @reference(path: [{key: "employee_manager_id_fkey"}])
+                    mentees: [Employee!]! @reference(path: [{key: "employee_mentor_id_fkey"}])
+                }
+                type Query { employees: [Employee!]! }
+                """);
+
+            assertThat(schema.field("Employee", "manager"))
+                .isInstanceOfSatisfying(ChildField.TableField.class, f ->
+                    assertThat(f.joinPath()).singleElement().isInstanceOfSatisfying(JoinStep.Hop.class, hop ->
+                        assertThat(hop.on()).isInstanceOfSatisfying(On.ColumnPairs.class, cp -> {
+                            assertThat(cp.keying()).isInstanceOfSatisfying(On.Keying.ForeignKey.class, k ->
+                                assertThat(k.fk().sqlName()).isEqualTo("employee_manager_id_fkey"));
+                            assertThat(cp.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("manager_id");
+                            assertThat(cp.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("employee_id");
+                        })));
+            assertThat(schema.field("Employee", "mentees"))
+                .isInstanceOfSatisfying(ChildField.TableField.class, f ->
+                    assertThat(f.joinPath()).singleElement().isInstanceOfSatisfying(JoinStep.Hop.class, hop ->
+                        assertThat(hop.on()).isInstanceOfSatisfying(On.ColumnPairs.class, cp -> {
+                            assertThat(cp.keying()).isInstanceOfSatisfying(On.Keying.ForeignKey.class, k ->
+                                assertThat(k.fk().sqlName()).isEqualTo("employee_mentor_id_fkey"));
+                            assertThat(cp.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("employee_id");
+                            assertThat(cp.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("mentor_id");
+                        })));
+            assertThat(errorsAt(schema, "Employee.manager")).isEmpty();
+            assertThat(errorsAt(schema, "Employee.mentees")).isEmpty();
+        }
+    }
+
+    /**
      * Every output field reaching a type on its own start's table infers the one self-referencing
      * key as the store does: a discriminated interface on the table and a polymorphic participant on
      * it, besides the plain table field.

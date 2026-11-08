@@ -45,6 +45,15 @@ type Genre implements CategoryKind @table(name: "category") @discriminator(value
 type CategoryLabel @table(name: "category_label") { label: String }
 union CategoryLink = Category | CategoryLabel
 
+# employee_manager_id_fkey and employee_mentor_id_fkey both join employee to itself.
+type Employee @table(name: "employee") {
+  name: String
+  # Neither key is the one: ambiguous.
+  boss: Employee
+  # A written key names one of the two.
+  manager: Employee @reference(path: [{key: "employee_manager_id_fkey"}])
+}
+
 type City @table(name: "city") { cityId: Int @field(name: "city_id") }
 type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
 
@@ -101,6 +110,7 @@ type Store implements Staffed @table(name: "store") {
 
 extend type Query {
   categories: [Category!]!
+  employees: [Employee!]!
   films: [Film!]!
   customers: [Customer!]!
   staff: [Staff!]!
@@ -114,6 +124,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   NO_ROUTE_TO_TARGET,       RentFilmPayload.customer, "public.rent_film to public.customer, whose result has no column customer_id of the primary key"
   NO_ROUTE_TO_TARGET,       Film.sameTableById,  "public.film to public.film, which takes a written path: the primary-key self-join {key: ""film_pkey""} or a self-referencing key"
   ROUTE_AMBIGUOUS,          Film.language,       public.film to public.language by film_language_id_fkey or film_original_language_id_fkey
+  ROUTE_AMBIGUOUS,          Employee.boss,       public.employee to public.employee by employee_manager_id_fkey or employee_mentor_id_fkey
   INHERITED_PATH_AMBIGUOUS, Staff.address,       Addressed and Located
   """)
 
@@ -137,6 +148,7 @@ extend schema @expectEquals(relation: "graphitron_path",
   Category.parentLink,           CategoryLabel,   JOIN, INFERRED
   Customer.address,              Address,         JOIN, INHERITED
   Customer.home,                 Address,         JOIN, INHERITED
+  Employee.manager,              Employee,        JOIN, WRITTEN
   Film.sameTableById(filmId:),   Film,            JOIN, EMPTY
   Mutation.rentFilm,             RentFilmPayload, JOIN, WRITTEN
   Mutation.rentFilm.rental,      Rental,          JOIN, INFERRED
@@ -180,6 +192,7 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_column",
 
 extend schema @assertAbsent(relation: "graphitron_path", rows: """
   coordinate
+  Employee.boss
   Film.cities
   Film.sameTableById
   Film.language
