@@ -1,4 +1,4 @@
-package no.sikt.graphitron.emit.stub;
+package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.DSLContext;
@@ -13,11 +13,12 @@ import java.util.Set;
 /**
  * Service methods in every shape a call takes: at a root a static method and one that throws a
  * checked exception; under an object the batch's keys taken as the frame's records, as rows, as the
- * parent table's records and as a list in the batch's order, answered as a map by key or a list.
+ * parent table's records and as a list in the batch's order, answered as a map by key or a list. The
+ * call emitter's tests run these bodies, so they answer without a database.
  */
-public final class Calls {
+public final class CallShapeService {
 
-    private Calls() {}
+    private CallShapeService() {}
 
     public static Integer count(DSLContext dsl) {
         return dsl == null ? -1 : 42;

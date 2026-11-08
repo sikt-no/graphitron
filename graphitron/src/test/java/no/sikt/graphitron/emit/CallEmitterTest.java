@@ -8,20 +8,18 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
-import no.sikt.graphitron.emit.stub.Calls;
-import no.sikt.graphitron.emit.stub.DslHolder;
 import no.sikt.graphitron.emit.stub.FillRuntime;
-import no.sikt.graphitron.emit.stub.PlainHolder;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
-import org.jooq.DSLContext;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.Record1;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.InvocationTargetException;
@@ -38,14 +36,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * {@link CallEmitter}'s bodies, compiled strictly and run against the stub services: at a root a
- * static method, an instance method on an object made with the jOOQ context and one made with
- * nothing, and a checked exception passed through; under an object the batch's keys handed over as
+ * {@link CallEmitter}'s bodies, compiled strictly and run against services that answer without a
+ * database, each call and its fills read from the {@code scenarios/service-call-shapes} fact document:
+ * at a root a static method, an instance method on an object made with the jOOQ context and one made
+ * with nothing, and a checked exception passed through; under an object the batch's keys handed over as
  * the frame's records, as rows, as the parent table's records and as a list in the batch's order,
  * each parent's value read back by its own key, one the service did not answer null.
  */
-@UnitTier
+@PipelineTier
 class CallEmitterTest {
+
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     private static final String PACKAGE = "callrun";
     private static final FillEmitter.Runtime RUNTIME = new FillEmitter.Runtime(
@@ -54,66 +56,49 @@ class CallEmitterTest {
         (member, coordinate) -> CodeBlock.of("$T.sessionMember_$L(dsl, $S)", FillRuntime.class, member, coordinate));
     private static final TypeName KEY = ParameterizedTypeName.get(ClassName.get(Record1.class), ClassName.get(Integer.class));
     private static final CallEmitter.FrameKey FRAME_KEY = new CallEmitter.FrameKey(KEY, ClassName.get(Tables.class), "FILM");
-    private static final String KEY_SPELLING = "org.jooq.Record1<java.lang.Integer>";
 
     private static EmittedCodeHarness harness;
     private static Map<String, Method> bodies;
 
-    private static FillQuery.Fill fill(int position, String name, String type, String fill, FillQuery.Landing landing) {
-        return new FillQuery.Fill(position, name, type, type, fill, null, null, Optional.ofNullable(landing));
-    }
+    /** The bodies, by the name each is emitted under, and the call it is for. */
+    private static final Map<String, String> CALLS = Map.of("count", "Query.count", "greet", "Query.greet", "echo", "Query.echo", "byRecord", "Film.byRecord", "byRow", "Film.byRow",
+        "byFilm", "Film.byFilm", "inOrder", "Film.inOrder");
 
-    private static final FillQuery.Fill DSL_FILL = fill(0, "dsl", "org.jooq.DSLContext", "DSL_CONTEXT", null);
+    private record Read(List<CallQuery.Row> calls, List<FillQuery.Row> fills) {}
 
-    private record Case(String name, CallQuery.Row call, List<FillQuery.Fill> fills, boolean batched) {}
-
-    private static CallQuery.Row call(String name, String className, String method, boolean isStatic,
-                                      String constructor, String result, CallQuery.Source source) {
-        return new CallQuery.Row("Query." + name, className, method, isStatic, Optional.ofNullable(constructor),
-            result, Optional.ofNullable(source));
-    }
-
-    private static final List<Case> CASES = List.of(
-        new Case("count", call("count", Calls.class.getName(), "count", true, null, "java.lang.Integer", null),
-            List.of(DSL_FILL), false),
-        new Case("failing", call("failing", Calls.class.getName(), "failing", true, null, "java.lang.String", null),
-            List.of(DSL_FILL), false),
-        new Case("greet", call("greet", DslHolder.class.getName(), "greet", false, CallQuery.DSL_CONSTRUCTOR,
-            "java.lang.String", null),
-            List.of(fill(0, "name", "java.lang.String", "ARGUMENT", new FillQuery.Landing(List.of("name"), "SCALAR", false))),
-            false),
-        new Case("echo", call("echo", PlainHolder.class.getName(), "echo", false, "()V", "java.lang.String", null),
-            List.of(fill(0, "name", "java.lang.String", "ARGUMENT", new FillQuery.Landing(List.of("name"), "SCALAR", false))),
-            false),
-        new Case("byRecord", call("byRecord", Calls.class.getName(), "byRecord", true, null,
-            "java.util.Map<" + KEY_SPELLING + ",java.lang.String>", new CallQuery.Source(0, "java.util.Set<" + KEY_SPELLING + ">")),
-            List.of(fill(0, "keys", "java.util.Set<" + KEY_SPELLING + ">", "SOURCE", null),
-                fill(1, "dsl", "org.jooq.DSLContext", "DSL_CONTEXT", null)), true),
-        new Case("byRow", call("byRow", Calls.class.getName(), "byRow", true, null,
-            "java.util.Map<org.jooq.Row1<java.lang.Integer>,java.lang.String>",
-            new CallQuery.Source(0, "java.util.Set<org.jooq.Row1<java.lang.Integer>>")),
-            List.of(fill(0, "keys", "java.util.Set<org.jooq.Row1<java.lang.Integer>>", "SOURCE", null)), true),
-        new Case("byFilm", call("byFilm", Calls.class.getName(), "byFilm", true, null,
-            "java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord,java.lang.String>",
-            new CallQuery.Source(0, "java.util.Set<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>")),
-            List.of(fill(0, "films", "java.util.Set<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>",
-                "SOURCE", null)), true),
-        new Case("inOrder", call("inOrder", Calls.class.getName(), "inOrder", true, null, "java.util.List<java.lang.String>",
-            new CallQuery.Source(0, "java.util.List<" + KEY_SPELLING + ">")),
-            List.of(fill(0, "keys", "java.util.List<" + KEY_SPELLING + ">", "SOURCE", null)), true));
+    /**
+     * A static method declaring a checked exception, stated here: the generator refuses a declared
+     * checked exception no {@code @error} handler covers, and one that is covered is the frame's to
+     * route, so no schema that generates states the body passing it through.
+     */
+    private static final CallQuery.Row FAILING = new CallQuery.Row("Query.failing",
+        "no.sikt.graphitron.rewrite.test.services.CallShapeService", "failing", true, Optional.empty(),
+        "java.lang.String", Optional.empty());
+    private static final FillQuery.Row FAILING_FILLS = new FillQuery.Row("Query.failing", "Query.failing",
+        List.of(new FillQuery.Fill(0, "dsl", "org.jooq.DSLContext", "org.jooq.DSLContext", "DSL_CONTEXT", null,
+            null, Optional.empty())), true);
 
     @BeforeAll
     static void compile() throws Exception {
+        var read = FACTS.read("scenarios/service-call-shapes",
+            graph -> new Read(CallQuery.read(graph.handle()), FillQuery.read(graph.handle())));
         var host = TypeSpec.classBuilder("Bodies").addModifiers(Modifier.PUBLIC);
-        for (var c : CASES) {
-            var fills = new FillQuery.Row(c.call().coordinate(), c.call().coordinate(), c.fills(), true);
-            var result = CallEmitter.body(c.call(), fills, Map.of(), RUNTIME, c.name(),
-                c.batched() ? Optional.of(FRAME_KEY) : Optional.empty(), Optional.empty());
-            assertThat(result).as(c.name()).isInstanceOf(CallEmitter.Result.Emitted.class);
+        for (var entry : CALLS.entrySet()) {
+            var call = read.calls().stream().filter(r -> r.coordinate().equals(entry.getValue()))
+                .findFirst().orElseThrow();
+            var fills = read.fills().stream().filter(r -> r.coordinate().equals(entry.getValue()))
+                .findFirst().orElseThrow();
+            var result = CallEmitter.body(call, fills, Map.of(), RUNTIME, entry.getKey(),
+                call.source().isPresent() ? Optional.of(FRAME_KEY) : Optional.empty(), Optional.empty());
+            assertThat(result).as(entry.getKey()).isInstanceOf(CallEmitter.Result.Emitted.class);
             var emitted = (CallEmitter.Result.Emitted) result;
             host.addMethod(emitted.body());
             emitted.helpers().forEach(host::addMethod);
         }
+        var failing = (CallEmitter.Result.Emitted) CallEmitter.body(FAILING, FAILING_FILLS, Map.of(), RUNTIME,
+            "failing", Optional.empty(), Optional.empty());
+        host.addMethod(failing.body());
+        failing.helpers().forEach(host::addMethod);
         var dir = Files.createTempDirectory("call");
         harness = EmittedCodeHarness.compileFilesStrictly(
             List.of(JavaFile.builder(PACKAGE, host.build()).build().writeToPath(dir)));

@@ -1,0 +1,35 @@
+# What a service call is made on, and how a batch reaches it. At a root a static method is called on
+# its class, and an instance method runs on an object made with the jOOQ context, or with nothing. Under a table a call takes the batch's keys as the
+# frame's records, as rows, as the table's own records, or as a list in the batch's order, and
+# answers a map by key or a list.
+
+type Film @table(name: "film") {
+  title: String
+  byRecord: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byRecord"})
+  byRow: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byRow"})
+  byFilm: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byFilm"})
+  inOrder: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "inOrder"})
+}
+
+type Query {
+  films: [Film!]!
+  count: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "count"})
+  greet(name: String): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallDslHolderService", method: "greet"})
+  echo(name: String): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallPlainHolderService", method: "echo"})
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_producer_service", rows: """
+  coordinate,    method_name, constructor_class_name
+  Query.count,   count,
+  Query.greet,   greet,       no.sikt.graphitron.rewrite.test.services.CallDslHolderService
+  Query.echo,    echo,        no.sikt.graphitron.rewrite.test.services.CallPlainHolderService
+  Film.byRecord, byRecord,
+  Film.inOrder,  inOrder,
+  """)
