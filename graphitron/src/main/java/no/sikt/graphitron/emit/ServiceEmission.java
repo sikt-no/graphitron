@@ -2,6 +2,7 @@ package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
@@ -54,10 +55,12 @@ public final class ServiceEmission {
      * The generated classes a store-emitted fetcher calls into, and where the type's fetchers class
      * and a target type's projection unit are.
      */
-    public record Runtime(FrameEmitter.Runtime frame, FillEmitter.Runtime fill, ClassName fetchersClass,
-                          ClassName selectionOccurrences, Function<String, ClassName> projectionClass) {
+    public record Runtime(FrameEmitter.Runtime frame, FillEmitter.Runtime fill, ValidationEmitter.Runtime validation,
+                          ClassName fetchersClass, ClassName selectionOccurrences,
+                          Function<String, ClassName> projectionClass) {
         public Runtime {
             Objects.requireNonNull(frame, "frame");
+            Objects.requireNonNull(validation, "validation");
             Objects.requireNonNull(fill, "fill");
             Objects.requireNonNull(fetchersClass, "fetchersClass");
             Objects.requireNonNull(selectionOccurrences, "selectionOccurrences");
@@ -66,13 +69,15 @@ public final class ServiceEmission {
     }
 
     /**
-     * What a field's fetcher is made of: the methods for its fetchers class, the frame first, and
-     * the classes to nest in it, the lifted tables' derived source tables, one per table.
+     * What a field's fetcher is made of: the methods for its fetchers class, the frame first, the
+     * classes to nest in it, the lifted tables' derived source tables, one per table, and the
+     * constants its validation pass names.
      */
-    public record Emitted(List<MethodSpec> methods, List<TypeSpec> nestedTypes) {
+    public record Emitted(List<MethodSpec> methods, List<TypeSpec> nestedTypes, List<FieldSpec> constants) {
         public Emitted {
             methods = List.copyOf(methods);
             nestedTypes = List.copyOf(nestedTypes);
+            constants = List.copyOf(constants);
         }
     }
 
@@ -84,6 +89,8 @@ public final class ServiceEmission {
     private static final FillEmitter.Runtime CENSUS_FILL = new FillEmitter.Runtime(
         key -> CodeBlock.of("null"), coordinate -> CodeBlock.of("null"), (member, coordinate) -> CodeBlock.of("null"),
         new NodeIdDecodeEmitter.Runtime(CENSUS_HOST, "census"));
+    private static final ValidationEmitter.Runtime CENSUS_VALIDATION = new ValidationEmitter.Runtime(
+        CENSUS_HOST, CENSUS_HOST, env -> CodeBlock.of("null"));
 
     private final Map<String, FrameQuery.Row> frames;
     private final Map<String, CallQuery.Row> calls;
@@ -215,7 +222,7 @@ public final class ServiceEmission {
         if (frame == null) return "NO_FRAME";
         if (excluded.containsKey(coordinate)) return excluded.get(coordinate);
         if (validating.contains(coordinate) && builds.getOrDefault(coordinate, Map.of()).values().stream()
-                .anyMatch(r -> r instanceof BuildQuery.Result.Built || r instanceof BuildQuery.Result.Columns)) {
+                .anyMatch(r -> r instanceof BuildQuery.Result.Columns)) {
             return "VALIDATION";
         }
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
@@ -233,7 +240,9 @@ public final class ServiceEmission {
         var lift = Optional.ofNullable(lifts.get(coordinate))
             .map(row -> new CallEmitter.Lift(CENSUS_HOST, "lift", row.list()));
         if (CallEmitter.body(call, filled, builds.getOrDefault(coordinate, Map.of()), CENSUS_FILL, "census",
-                frame.parent().map(ServiceEmission::frameKey), lift) instanceof CallEmitter.Result.NeedsBuilding) {
+                frame.parent().map(ServiceEmission::frameKey), lift, Optional.empty(),
+                validating.contains(coordinate) ? Optional.of(CENSUS_VALIDATION) : Optional.empty())
+                instanceof CallEmitter.Result.NeedsBuilding) {
             return "CALL_REFUSED";
         }
         return EMITTED;
@@ -267,8 +276,10 @@ public final class ServiceEmission {
                 runtime.selectionOccurrences()));
             liftRef = Optional.of(new CallEmitter.Lift(runtime.fetchersClass(), liftName, row.list()));
         }
+        boolean validates = validating.contains(coordinate);
         var body = CallEmitter.body(call, fills.get(coordinate), builds.getOrDefault(coordinate, Map.of()),
-            runtime.fill(), bodyName, frameKey, liftRef);
+            runtime.fill(), bodyName, frameKey, liftRef, Optional.empty(),
+            validates ? Optional.of(runtime.validation()) : Optional.empty());
         if (!(body instanceof CallEmitter.Result.Emitted emitted)) {
             throw new IllegalStateException(coordinate + " is censused as emitted but its body is not, "
                 + "though the census asks the same emitter: "
@@ -280,13 +291,13 @@ public final class ServiceEmission {
                 : ClassName.get("org.jooq", "Record"))
             : answered(SessionIdentityRows.typeOf(call.resultType()).box(), frameKey.isPresent());
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
-            bodyName, runtime.frame(), needsContext(call, fills.get(coordinate), lift.isPresent()));
+            bodyName, runtime.frame(), needsContext(call, fills.get(coordinate), lift.isPresent()), validates);
         var all = new ArrayList<MethodSpec>();
         all.add(frame);
         all.add(emitted.body());
         all.addAll(emitted.helpers());
         all.addAll(methods);
-        return Optional.of(new Emitted(all, nested));
+        return Optional.of(new Emitted(all, nested, emitted.constants()));
     }
 
     /**

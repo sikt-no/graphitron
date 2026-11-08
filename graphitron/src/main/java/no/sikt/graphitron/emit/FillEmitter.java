@@ -76,13 +76,28 @@ public final class FillEmitter {
 
     /** What the emitter makes of a call: its fills, or the first parameter it cannot fill. */
     public sealed interface Result {
-        /** The locals to declare in the body, then the arguments to call the method with. */
-        record Emitted(List<CodeBlock> statements, List<CodeBlock> arguments, List<MethodSpec> helpers)
-                implements Result {
+        /**
+         * The locals to declare in the body, then the arguments to call the method with, and the
+         * values built into a class from an input object, which a validating call validates.
+         */
+        record Emitted(List<CodeBlock> statements, List<CodeBlock> arguments, List<MethodSpec> helpers,
+                       List<Built> built) implements Result {
             public Emitted {
                 helpers = List.copyOf(helpers);
                 statements = List.copyOf(statements);
                 arguments = List.copyOf(arguments);
+                built = List.copyOf(built);
+            }
+        }
+
+        /**
+         * A value built into a class from an input object: the local holding it, the names from the
+         * argument down to the input object, how the class was made, and whether the local is a list
+         * of them.
+         */
+        record Built(String local, List<String> argumentPath, BuildQuery.Build build, boolean list) {
+            public Built {
+                argumentPath = List.copyOf(argumentPath);
             }
         }
 
@@ -110,6 +125,7 @@ public final class FillEmitter {
         }
         var statements = new ArrayList<CodeBlock>();
         var helpers = new ArrayList<MethodSpec>();
+        var built = new ArrayList<Result.Built>();
         var arguments = new ArrayList<CodeBlock>();
         for (var fill : row.fills()) {
             var type = SessionIdentityRows.typeOf(fill.parameterType());
@@ -160,8 +176,10 @@ public final class FillEmitter {
                     if (!landing.nodeId() && "INPUT_OBJECT".equals(landing.typeKind())) {
                         var build = builds.get(fill.position());
                         var helper = "build" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
-                        if (build instanceof BuildQuery.Result.Built built) {
-                            helpers.addAll(BuildEmitter.helpers(built.build(), helper, runtime.decode()));
+                        if (build instanceof BuildQuery.Result.Built made) {
+                            helpers.addAll(BuildEmitter.helpers(made.build(), helper, runtime.decode()));
+                            built.add(new Result.Built(local, landing.path(), made.build(),
+                                type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())));
                         } else if (build instanceof BuildQuery.Result.Columns columns) {
                             helpers.add(BuildEmitter.recordHelper(columns.build(), helper, runtime.decode()));
                         } else {
@@ -196,7 +214,7 @@ public final class FillEmitter {
                     + row.coordinate() + " position " + fill.position());
             }
         }
-        return new Result.Emitted(statements, arguments, helpers);
+        return new Result.Emitted(statements, arguments, helpers, built);
     }
 
     /**

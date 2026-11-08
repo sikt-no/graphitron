@@ -1659,6 +1659,7 @@ public class TypeFetcherGenerator {
             return false;
         }
         emitted.get().methods().forEach(builder::addMethod);
+        emitted.get().constants().forEach(builder::addField);
         for (var nested : emitted.get().nestedTypes()) {
             if (ctx.claimNestedType(nested.name())) {
                 builder.addType(nested);
@@ -1689,7 +1690,11 @@ public class TypeFetcherGenerator {
                 coordinate),
             new no.sikt.graphitron.emit.NodeIdDecodeEmitter.Runtime(
                 no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage), outputPackage));
-        return new no.sikt.graphitron.emit.ServiceEmission.Runtime(frame, fill,
+        var validation = new no.sikt.graphitron.emit.ValidationEmitter.Runtime(className(units.outcome()),
+            no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator.pathsClass(outputPackage)
+                .enclosingClassName(),
+            env -> CodeBlock.of("$L.getValidator($L)", ctx.graphitronContextCall(), env));
+        return new no.sikt.graphitron.emit.ServiceEmission.Runtime(frame, fill, validation,
             className(units.fetchers(ctx.parentTypeName())),
             no.sikt.graphitron.render.ProjectionCall.selectionOccurrencesClass(outputPackage),
             typeName -> className(units.typeClass(typeName)));

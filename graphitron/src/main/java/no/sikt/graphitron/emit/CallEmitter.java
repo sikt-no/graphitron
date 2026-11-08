@@ -2,11 +2,13 @@ package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -83,9 +85,16 @@ public final class CallEmitter {
 
     /** What the emitter makes of a call: its body and the helpers its fills need, or why it cannot. */
     public sealed interface Result {
-        record Emitted(MethodSpec body, List<MethodSpec> helpers) implements Result {
+        record Emitted(MethodSpec body, List<MethodSpec> helpers, List<FieldSpec> constants)
+                implements Result {
             public Emitted {
                 helpers = List.copyOf(helpers);
+                constants = List.copyOf(constants);
+            }
+
+            /** A body that names no constants. */
+            public Emitted(MethodSpec body, List<MethodSpec> helpers) {
+                this(body, helpers, List.of());
             }
         }
 
@@ -112,8 +121,26 @@ public final class CallEmitter {
     public static Result body(CallQuery.Row call, FillQuery.Row fills, Map<Integer, BuildQuery.Result> builds,
                               FillEmitter.Runtime runtime, String name, Optional<FrameKey> frameKey,
                               Optional<Lift> lift, Optional<Polymorphic> polymorphic) {
+        return body(call, fills, builds, runtime, name, frameKey, lift, polymorphic, Optional.empty());
+    }
+
+    /**
+     * {@link #body}, where {@code validation} is present when the call's outcome claims validation:
+     * the values its fills built into classes are validated before the call, a violation answering
+     * the outcome's errors in place of calling it, and the body answers the outcome itself, the
+     * call's value as its success. Only a root call validates, once per fetch on its own arguments,
+     * never a batch.
+     */
+    public static Result body(CallQuery.Row call, FillQuery.Row fills, Map<Integer, BuildQuery.Result> builds,
+                              FillEmitter.Runtime runtime, String name, Optional<FrameKey> frameKey,
+                              Optional<Lift> lift, Optional<Polymorphic> polymorphic,
+                              Optional<ValidationEmitter.Runtime> validation) {
         if (polymorphic.isPresent() && (frameKey.isPresent() || lift.isPresent())) {
             return new Result.NeedsBuilding(call.coordinate() + " lifts polymorphically, which only a root call does");
+        }
+        if (validation.isPresent() && (frameKey.isPresent() || polymorphic.isPresent())) {
+            return new Result.NeedsBuilding(call.coordinate() + " validates, which only a root call lifting at most"
+                + " onto one table does");
         }
         var answer = SessionIdentityRows.typeOf(call.resultType());
         var method = MethodSpec.methodBuilder(name)
@@ -143,8 +170,32 @@ public final class CallEmitter {
             batch.declareKeys(method, frameKey.get());
         }
         emitted.statements().forEach(method::addStatement);
+        var constants = new ArrayList<FieldSpec>();
+        if (validation.isPresent()) {
+            var pass = ValidationEmitter.pass(emitted.built(), name, validation.get());
+            method.addCode(pass.statements());
+            constants.addAll(pass.constants());
+        }
         var target = target(call, method);
         var invocation = CodeBlock.of("$L.$L($L)", target, call.methodName(), CodeBlock.join(emitted.arguments(), ", "));
+        if (validation.isPresent()) {
+            var outcome = validation.get().outcome();
+            if (lift.isEmpty()) {
+                method.returns(ParameterizedTypeName.get(outcome, answer.box()))
+                    .addStatement("return new $T.Success<>($L)", outcome, invocation);
+            } else {
+                method.returns(ParameterizedTypeName.get(outcome, lifted(lift.get())))
+                    .addStatement("$T answered = $L", answer, invocation);
+                if (lift.get().list()) {
+                    method.addStatement("return new $T.Success<>($T.$L(env, dsl, answered).stream().filter($T::nonNull).toList())",
+                        outcome, lift.get().host(), lift.get().method(), ClassName.get("java.util", "Objects"));
+                } else {
+                    method.addStatement("return new $T.Success<>($T.$L(env, dsl, answered))", outcome,
+                        lift.get().host(), lift.get().method());
+                }
+            }
+            return new Result.Emitted(method.build(), emitted.helpers(), constants);
+        }
         if (polymorphic.isPresent()) {
             liftPolymorphic(method, answer, invocation, polymorphic.get());
         } else if (batch == null && lift.isEmpty()) {

@@ -98,14 +98,31 @@ public final class FrameEmitter {
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
                                     ClassName bodyClass, String body, Runtime runtime, boolean needsContext) {
+        return render(row, methodName, valueType, bodyClass, body, runtime, needsContext, false);
+    }
+
+    /**
+     * {@link #render}, where at a root {@code bodyAnswersOutcome} says the body hands back the
+     * outcome itself, its errors or its success, which the frame passes on as it is rather than
+     * wrapping the value as the success.
+     */
+    public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
+                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                    boolean bodyAnswersOutcome) {
+        if (bodyAnswersOutcome && (!row.root() || row.outcome().isEmpty())) {
+            throw new IllegalArgumentException(row.coordinate() + ": only a root frame with an outcome takes it"
+                + " from its body");
+        }
         return row.root()
-            ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext)
+            ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome)
             : child(row, methodName, valueType, bodyClass, body, runtime);
     }
 
     private static MethodSpec root(FrameQuery.Row row, String methodName, TypeName valueType,
-                                   ClassName bodyClass, String body, Runtime runtime, boolean needsContext) {
+                                   ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                   boolean bodyAnswersOutcome) {
         var declared = declared(row, valueType, runtime);
+        var held = bodyAnswersOutcome ? declared : valueType;
         var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(RESULT, declared))
@@ -113,12 +130,15 @@ public final class FrameEmitter {
             .beginControlFlow("try");
         if (needsContext) {
             method.addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("env"))
-                .addStatement("$T value = $T.$L(env, dsl)", valueType, bodyClass, body);
+                .addStatement("$T value = $T.$L(env, dsl)", held, bodyClass, body);
         } else {
-            method.addStatement("$T value = $T.$L(env, null)", valueType, bodyClass, body);
+            method.addStatement("$T value = $T.$L(env, null)", held, bodyClass, body);
         }
+        var answer = bodyAnswersOutcome
+            ? CodeBlock.of("$T.<$T>newResult().data(value).build()", RESULT, declared)
+            : success(row, declared, CodeBlock.of("value"), runtime);
         return method
-            .addStatement("return $L", success(row, declared, CodeBlock.of("value"), runtime))
+            .addStatement("return $L", answer)
             .nextControlFlow("catch ($T thrown)", Exception.class)
             .addCode(failure(row, declared, runtime))
             .endControlFlow()
