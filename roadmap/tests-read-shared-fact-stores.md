@@ -122,7 +122,7 @@ What stays a Java test, reading a document through the population: generated beh
 
 A class in graphitron-model's test harness, published in the test-jar that graphitron, graphitron-lsp, graphitron-mcp and graphitron-maven-plugin consume. Its own class rather than a member of `FactStores`, whose stated design is that it never puts rows in a store. It opens stores through `FactStores.inMemory(StoreUse.LONG_LIVED)` and captures through `FactDocuments`, the one reading `FactExpectationTest` checks and `GenerateTestSchemas` generates from.
 
-* **Captured once per JVM, lazily, per graph**, in JUnit's root `ExtensionContext` store as an `AutoCloseable` closed at the end of the run. `FactGraphs.captures(graph)` stays at one however many classes ask.
+* **Captured once per JVM, lazily, per graph**, in JUnit's root `ExtensionContext` store as an `AutoCloseable` closed at the end of the run. `FACTS.captures(path)` stays at one however many classes ask.
 * **Sharded within catalog and classpath.** Graphs share a store only when they share a catalog and a classpath, so a store-wide relation holds the same rows in every store a graph can land in. Within each such key there are four long-lived stores, a graph assigned to one by its name, each with its own lock, so captures keep the four-way parallelism they have today; nearly every document shares the default catalog and classpath. Four is a constant of `FactGraphs`, not read from `junit-platform.properties`, so it does not depend on which properties file a module sees. Configuration is graph-keyed (`store_graph_*` rows), so graphs of different configurations may share a store.
 * **Read-only, by the database**: readers connect as `GRAPHITRON_READER`, which every store's DDL creates with `SELECT` and nothing else.
 * **Handed out in a transaction.** A test declares `@RegisterExtension static final FactGraphs.Reader FACTS = FactGraphs.reader();`, the shape `FactStores.perClass()` and graphitron-mcp's `StoreFixture.held()` already have, and reads with `FACTS.read("worlds/default/field-key-row", graph -> ...)`. The body gets a `FactGraph`: the `StoreHandle` scoped to the graph and the `CapturedSchema` the capture built, which a generating run needs beside the store. There is no parameter resolver handing out a bare handle: `StoreReader` makes its transaction the only way onto a reader, so an answer built from several queries sees one commit, and production readers take the same shape (`CatalogQueries`, `CatalogCorpus`).
@@ -228,8 +228,7 @@ The migration runs as a pipeline of agents, carried by one skill (`fact-document
   - a graph asked for from several classes on several threads is captured once;
   - an `INSERT`, `UPDATE`, `DELETE` or DDL statement inside `read` is refused by the database;
   - two documents of different catalogs never share a store, a store-wide relation reads the same rows in every shard of one catalog and classpath, and a whole-population claim on a store-wide relation is refused;
-  - a stepped graph hands out its last instant;
-  - readers close in `afterAll` and shards at the end of the run.
+  - a path naming no plain document is refused, naming the shape a path takes; stepped graphs are not in the population.
 * `FactExpectationTest` over the population, with: the assertion-file floor; refusal of `@expectEquals` and `@assertEmpty` in an assertion file; refusal of those modes without `where:` inside a world; per-source folder claims; a member redeclaring a base type failing with the member named.
 * The world measurement's two-order comparison, recorded in the phase 2 commit.
 * The duplicate-document refusal and the near-twin ceiling in `FactExpectationTest`, each with a negative case.

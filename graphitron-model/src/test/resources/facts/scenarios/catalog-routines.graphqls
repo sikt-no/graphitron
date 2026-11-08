@@ -22,8 +22,9 @@ extend schema @assertContains(relation: "sql_routine_parameter", rows: """
   public,       create_secure_note, 1,        pNote,      java.lang.String
   """)
 
-extend schema @assertEmpty(relation: "sql_routine", where: """
-  table_schema = 'public' AND routine_name = 'film'
+extend schema @assertAbsent(relation: "sql_routine", rows: """
+  table_schema, routine_name
+  public,       film
   """)
 
 # A routine that is no table has no sql_table row and no table-form method: it is called through the
@@ -46,6 +47,8 @@ extend schema @assertContains(relation: "sql_routine_parameter", rows: """
   public,       outbox_emit,               3,        pPayload,        p_payload,       org.jooq.JSONB
   """)
 
-extend schema @assertEmpty(relation: "sql_routine_parameter", where: """
-  routine_name = 'films_for_actor' AND sql_name IS NOT NULL
+extend schema @assertContains(relation: "sql_routine_parameter", rows: """
+  table_schema, routine_name,    position, sql_name
+  public,       films_for_actor, 0,
+  public,       films_for_actor, 1,
   """)

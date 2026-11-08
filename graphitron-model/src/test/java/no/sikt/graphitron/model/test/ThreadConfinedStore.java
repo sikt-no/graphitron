@@ -83,6 +83,9 @@ public final class ThreadConfinedStore {
      * here it guards this module against nothing; that is the price of keeping the number in one
      * place while the larger module is mid-conversion.
      *
+     * <p>{@link FactGraphs} boots under it too, a few stores per catalog for a whole run, which a
+     * test reading a fact document spends instead of a boot of its own.
+     *
      * <p>Raising it is a deliberate act: recount what boots and why, and if a new class opens a
      * store per case, ask whether it should run on the funnel instead.
      *

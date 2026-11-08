@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.SeededStore;
 import org.junit.jupiter.api.Test;
@@ -16,8 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>A case's {@link StoreFixture} borrows the thread's store; what boots per call is named: a
  * fixture opened through {@link StoreFixture#held()}, which every {@code @BeforeAll}, static and
- * DDL-issuing fixture is, counted as {@link CapturedStore#ownedStores()}; and
- * {@link SdlDeprecations#stores()}. So every boot {@link FactStores} counted is one of those or
+ * DDL-issuing fixture is, counted as {@link CapturedStore#ownedStores()};
+ * {@link SdlDeprecations#stores()}; and the fact-document stores a run shares,
+ * {@link FactGraphs#boots()}. So every boot {@link FactStores} counted is one of those or
  * one per booting thread, and a helper that starts booting per case again fails the equality.
  *
  * <p>An equality against the booting threads rather than the literal four: the fixed pool adds
@@ -41,6 +43,6 @@ class StoreBootCountTest {
             .as("thread stores, owned fixtures and the shipped-deprecations reader account for"
                 + " every boot; more means something opens a store per case outside them")
             .isEqualTo(SeededStore.threadStoreBoots() + CapturedStore.ownedStores()
-                + SdlDeprecations.stores());
+                + SdlDeprecations.stores() + FactGraphs.boots());
     }
 }

@@ -12,7 +12,7 @@ extend type Query {
   foreigners: [Foreign!]!
 }
 
-extend schema @expectEquals(relation: "sql_node_metadata_unreadable", rows: """
+extend schema @assertContains(relation: "sql_node_metadata_unreadable", rows: """
   table_schema, table_name
   public,       node_metadata_foreign
   """)

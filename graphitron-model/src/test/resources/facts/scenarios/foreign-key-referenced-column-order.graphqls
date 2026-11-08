@@ -19,7 +19,7 @@ extend type Query {
   reorderedChildren(parent: ID @nodeId(typeName: "ReorderedParent")): [ReorderedChild]
 }
 
-extend schema @expectEquals(relation: "intent_foreign_key_column_pair",
+extend schema @assertContains(relation: "intent_foreign_key_column_pair",
     where: "constraint_name = 'reordered_fk_child_parent_fkey'", rows: """
   position, column_name, referenced_column_name
   0,        fk_b,        pk_b

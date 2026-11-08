@@ -14,7 +14,7 @@ extend type Query {
   legacyKeyedRows: [LegacyKeyedRow!]!
 }
 
-extend schema @expectEquals(relation: "sql_node_legacy_key_column", rows: """
+extend schema @assertContains(relation: "sql_node_legacy_key_column", rows: """
   table_schema, table_name,        position, column_name
   public,       node_legacy_keyed, 0,        era
   public,       node_legacy_keyed, 1,        id

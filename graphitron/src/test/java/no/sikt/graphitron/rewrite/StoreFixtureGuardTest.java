@@ -79,6 +79,9 @@ class StoreFixtureGuardTest {
                 + "between bodies, and never handed out as a lifetime the caller owns"),
         new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/CapturedStore.java",
             "a real capture walk over a fixture document, for tests about the crawlers"),
+        new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/FactGraphs.java",
+            "the fact documents' graphs captured once per run and read through a select-only "
+                + "reader, for every test that reads a document rather than writing a store"),
         new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/BuiltStore.java",
             "a real generator run into a store on disk, for tests about the dev loop's wiring"));
 

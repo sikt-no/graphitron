@@ -535,6 +535,20 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * {@link #ofCatalogFilesWith}'s reading into a store the caller opened: several files the caller
+     * has written and dated, captured as {@code graphName} under a configuration the caller states.
+     * For a harness that owns its stores and hands out readers, which a fixture borrowing the
+     * thread's store cannot be.
+     */
+    public static CapturedSchema captureFilesInto(DSLContext dsl, Path directory, String graphName,
+                                                  List<Path> files, CatalogInput jooq,
+                                                  List<ClasspathEntry> classpath,
+                                                  SubjectConfig configuration) {
+        return captureFiles(dsl, files, directory, graphName, jooq, false, classpath,
+            LocalDateTime.now(), configuration);
+    }
+
+    /**
      * {@link #ofCatalogFilesWith}'s reading as a further graph in this store: several files the
      * caller has written and dated, under a configuration the caller states.
      */
@@ -584,6 +598,23 @@ public final class CapturedStore implements AutoCloseable {
                                                      Instant at, CatalogInput jooq,
                                                      List<ClasspathEntry> classpath,
                                                      SubjectConfig configuration) {
+        return readAt(store.dsl(), directory, graph, written, files, at, jooq, classpath,
+            configuration);
+    }
+
+    /**
+     * {@link #andCatalogGraphReadAt}'s reading into a store the caller opened, for a harness that owns
+     * its store rather than borrowing a fixture's: the files in {@code written} are written into
+     * {@code directory} and dated at {@code at}, and {@code graph} is captured over every file in
+     * {@code files} at that instant.
+     *
+     * @return the source name each file in {@code files} is captured under, by name
+     */
+    public static Map<String, String> readAt(DSLContext dsl, Path directory, String graph,
+                                             Map<String, String> written,
+                                             java.util.Collection<String> files, Instant at,
+                                             CatalogInput jooq, List<ClasspathEntry> classpath,
+                                             SubjectConfig configuration) {
         for (var file : written.entrySet()) {
             Path path = write(directory, graph + "." + file.getKey(), file.getValue());
             try {
@@ -595,7 +626,7 @@ public final class CapturedStore implements AutoCloseable {
         var paths = files.stream()
             .map(name -> fixtureFile(directory, graph + "." + name))
             .toList();
-        captureFiles(store.dsl(), paths, directory, graph, jooq, false, classpath,
+        captureFiles(dsl, paths, directory, graph, jooq, false, classpath,
             LocalDateTime.ofEpochSecond(at.getEpochSecond(), 0, ZoneOffset.UTC), configuration);
         var sourceNames = new java.util.LinkedHashMap<String, String>();
         files.forEach(name -> sourceNames.put(name,

@@ -2,10 +2,10 @@ package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import org.jooq.DSLContext;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -66,9 +67,22 @@ class FactExpectationTest {
     /** The name a stepped graph's prelude is written under, which no file of the pattern can take. */
     private static final String PRELUDE_FILE = FactDocuments.PRELUDE_FILE;
 
-    private static CapturedStore captured;
-    private static List<Block> blocks;
-    private static List<String> divergences;
+
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
+    /** The store the graphs read in steps are captured into, which the population does not keep. */
+    @RegisterExtension
+    static final FactStores.ClassStore STEPPED = FactStores.perClass();
+
+    private static final List<Block> blocks = new ArrayList<>();
+    private static final List<String> divergences = new ArrayList<>();
+    private static final List<String> unstated = new ArrayList<>();
+    private static final List<String> misplaced = new ArrayList<>();
+    private static final List<String> unnavigated = new ArrayList<>();
+    private static final List<String> wholeStore = new ArrayList<>();
+    private static int fields;
+
 
     /**
      * The documents read once, by graph, which is the document's path, and the stepped ones: by
@@ -118,6 +132,7 @@ class FactExpectationTest {
         }
     }
 
+
     @BeforeAll
     static void captureEveryDocument() {
         var ctx = TestRunContext.of();
@@ -134,26 +149,30 @@ class FactExpectationTest {
         }
         claimed.forEach((document, claim) -> claims.put(FactDocuments.path(claim, document), claim));
         var graphs = Graphs.of(claimed);
-        // The classpath corpus beside the catalog, so a document can state what a reading finds in
-        // Java as well as what it finds in SDL. The model and the capture are one subject: a
-        // document asserting a derived relation without the facts under it tests half of what it
-        // names, and the runner resolves a relation by name whether capture wrote it or a view
-        // derived it.
-        //
-        // Affordable because the classpath is read once for the store. It carries no graph, so the
-        // second document's reading of it is the first document's reading again.
-        var corpus = ClasspathCorpus.entries();
-        var allBlocks = new ArrayList<Block>();
-        var allDivergences = new ArrayList<String>();
 
-        for (var graph : graphs.plain().entrySet()) {
-            captured = FactDocuments.capture(captured, tmp, graph.getKey(), graph.getValue(), jooq,
-                corpus);
+        // The plain graphs are the population's, captured once for the run whichever class asks
+        // first, each store's on a thread of its own, and checked through the select-only reader:
+        // a check that wrote would be refused, which is the population's own promise.
+        FACTS.warm(graphs.plain().keySet());
+        for (var examined : FACTS.eachStore((dsl, held) -> {
+            var own = CorpusExpectations.blocks(dsl).stream()
+                .filter(block -> graphs.plain().containsKey(block.graph()))
+                .toList();
+            return examine(dsl, held, own, CorpusExpectations.divergences(dsl, own).stream()
+                .map(Object::toString).toList());
+        })) {
+            examined.addTo();
         }
-        var plainBlocks = CorpusExpectations.blocks(captured.dsl()).stream()
-            .filter(block -> graphs.plain().containsKey(block.graph()))
-            .toList();
-        check(plainBlocks, "", allBlocks, allDivergences);
+
+        // The classpath corpus beside the catalog, so a document can state what a reading finds in
+        // Java as well as what it finds in SDL, as the population reads every document.
+        var corpus = ClasspathCorpus.entries();
+        var steppedBlocks = new ArrayList<Block>();
+        var steppedDivergences = new ArrayList<String>();
+        if (graphs.stepped().isEmpty()) {
+            return;
+        }
+        var dsl = STEPPED.handle().dsl();
 
         // A stepped graph is read once per instant any of its files names. At each, the files
         // with a version at that instant are written and dated at it, the graph is captured over
@@ -181,7 +200,7 @@ class FactExpectationTest {
                     }
                 });
                 var texts = List.copyOf(standing.values());
-                var sourceNames = captured.andCatalogGraphReadAt(graph.getKey(), written, files,
+                var sourceNames = CapturedStore.readAt(dsl, tmp, graph.getKey(), written, files,
                     Instant.ofEpochSecond(instant),
                     FactDocuments.StatedConfiguration.catalog(texts, jooq), corpus,
                     FactDocuments.StatedConfiguration.of(texts));
@@ -189,28 +208,119 @@ class FactExpectationTest {
                     .filter(file -> !PRELUDE_FILE.equals(file))
                     .map(sourceNames::get)
                     .collect(Collectors.toSet());
-                check(CorpusExpectations.blocksWrittenIn(captured.dsl(), writtenNow),
-                    "@" + instant + " ", allBlocks, allDivergences);
+                var current = CorpusExpectations.blocksWrittenIn(dsl, writtenNow);
+                steppedBlocks.addAll(current);
+                CorpusExpectations.divergences(dsl, current).stream()
+                    .map(divergence -> "@" + instant + " " + divergence)
+                    .forEach(steppedDivergences::add);
             }
         }
-        blocks = List.copyOf(allBlocks);
-        divergences = List.copyOf(allDivergences);
+        examine(dsl, graphs.stepped().keySet(), steppedBlocks, steppedDivergences).addTo();
     }
 
-    /** How {@code current} disagrees with the store as it now stands, labelled with the reading. */
-    private static void check(List<Block> current, String label, List<Block> allBlocks,
-                              List<String> allDivergences) {
-        allBlocks.addAll(current);
-        CorpusExpectations.divergences(captured.dsl(), current).stream()
-            .map(divergence -> label + divergence)
-            .forEach(allDivergences::add);
-    }
+    /** What one store says about the blocks its graphs declare, gathered for the cases below. */
+    private record Examined(List<Block> blocks, List<String> divergences, List<String> unstated,
+                            List<String> misplaced, List<String> unnavigated, int fields,
+                            List<String> wholeStore) {
 
-    @AfterAll
-    static void closeTheStore() {
-        if (captured != null) {
-            captured.close();
+        void addTo() {
+            FactExpectationTest.blocks.addAll(blocks);
+            FactExpectationTest.divergences.addAll(divergences);
+            FactExpectationTest.unstated.addAll(unstated);
+            FactExpectationTest.misplaced.addAll(misplaced);
+            FactExpectationTest.unnavigated.addAll(unnavigated);
+            FactExpectationTest.fields += fields;
+            FactExpectationTest.wholeStore.addAll(wholeStore);
         }
+    }
+
+    /**
+     * Every check over one store: {@code held} the graphs it holds, {@code own} the blocks they
+     * declare, and {@code divergences} how those blocks disagree with it.
+     */
+    private static Examined examine(DSLContext dsl, java.util.Set<String> held, List<Block> own,
+                                    List<String> divergences) {
+        return new Examined(own, divergences, CorpusExpectations.unstatedProblems(dsl, own),
+            misplaced(dsl, held), unnavigated(dsl), dsl.fetchCount(GRAPHITRON_FIELD),
+            wholeStore(dsl, own));
+    }
+
+    /**
+     * A scenario has no defect and a defect document has one, counted from what the store
+     * records for the graph rather than from what the document states, so a document cannot pass
+     * by forgetting to state what it holds. A scenario holding some names each one, so the report
+     * says what to fix rather than how many things there are to find.
+     */
+    private static List<String> misplaced(DSLContext dsl, java.util.Set<String> held) {
+        var defect = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+        // The site only names what the position is about; the count is the defect relation's.
+        var site = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
+        var problem = no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
+        var found = new ArrayList<String>();
+        claims.forEach((graph, claim) -> {
+            if (!held.contains(graph)
+                    || claim != FactDocuments.Claim.SCENARIO && claim != FactDocuments.Claim.DEFECT) {
+                return;
+            }
+            var stored = new ArrayList<String>();
+            dsl.select(defect.CODE, site.COORDINATE, defect.SOURCE_LINE, defect.SOURCE_COLUMN,
+                    defect.DETAIL)
+                .from(defect)
+                .leftJoin(site).on(site.GRAPH_NAME.eq(defect.GRAPH_NAME),
+                    site.SOURCE_NAME.eq(defect.SOURCE_NAME), site.SOURCE_LINE.eq(defect.SOURCE_LINE),
+                    site.SOURCE_COLUMN.eq(defect.SOURCE_COLUMN), site.CODE.eq(defect.CODE))
+                .where(defect.GRAPH_NAME.eq(graph))
+                .orderBy(defect.SOURCE_LINE, defect.SOURCE_COLUMN, defect.CODE)
+                .forEach(r -> stored.add(r.value1() + " at " + r.value2() + " (" + r.value3() + ":"
+                    + r.value4() + ")" + (r.value5() == null ? "" : ": " + r.value5())));
+            dsl.select(problem.STAGE, problem.ERROR_CLASS, problem.MESSAGE, problem.SOURCE_LINE)
+                .from(problem)
+                .where(problem.GRAPH_NAME.eq(graph))
+                .orderBy(problem.ORDINAL)
+                .forEach(r -> stored.add(r.value1() + " " + r.value2() + " (line " + r.value4()
+                    + "): " + r.value3()));
+            if ((claim == FactDocuments.Claim.SCENARIO) != stored.isEmpty()) {
+                found.add(graph + " stores " + stored.size() + " defects and schema problems"
+                    + (stored.isEmpty() ? "" : ": " + stored));
+            }
+        });
+        return found;
+    }
+
+    /**
+     * Navigation is total and single-valued over every field the examples capture: each field
+     * navigates as exactly one type, which is what lets a reader join the relation rather than
+     * left-join it. Counted against the emitted fields rather than the written ones, a minted field
+     * navigating like any other.
+     */
+    private static List<String> unnavigated(DSLContext dsl) {
+        var f = GRAPHITRON_FIELD;
+        var nav = no.sikt.graphitron.model.Tables.INTENT_FIELD_NAVIGATED_TYPE;
+        var count = dsl.selectCount().from(nav)
+            .where(nav.GRAPH_NAME.eq(f.GRAPH_NAME), nav.TYPE_NAME.eq(f.TYPE_NAME),
+                nav.FIELD_NAME.eq(f.FIELD_NAME))
+            .<Integer>asField("navigations");
+        return dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.FIELD_NAME, count)
+            .from(f)
+            .fetch()
+            .stream()
+            .filter(r -> r.value4() != 1)
+            .map(r -> r.value1() + " " + r.value2() + "." + r.value3() + " navigates " + r.value4())
+            .toList();
+    }
+
+    /**
+     * The blocks claiming a store-wide relation's whole population. A relation keyed by no graph
+     * holds what every capture into its store wrote, so a document can add to or subtract from what
+     * it says, never state all of it: no document owns the store.
+     */
+    private static List<String> wholeStore(DSLContext dsl, List<Block> own) {
+        return own.stream()
+            .filter(block -> block.mode() == CorpusExpectations.Mode.EQUALS
+                || block.mode() == CorpusExpectations.Mode.EMPTY)
+            .filter(block -> !CorpusExpectations.partitioned(dsl, block.relation()))
+            .map(block -> block.graph() + " " + block.mode() + " " + block.relation())
+            .toList();
     }
 
     @Test
@@ -226,53 +336,24 @@ class FactExpectationTest {
     @Test
     @DisplayName("every document is one the toolchain accepts, or it states the problem")
     void everyDocumentTheToolchainRefusesSaysSo() {
-        assertThat(CorpusExpectations.unstatedProblems(captured.dsl(), blocks))
+        assertThat(unstated)
             .as("problems capture recorded in a document that does not state graphql_schema_problem")
             .isEmpty();
     }
 
-    /**
-     * A scenario has no defect and a defect document has one, counted from what the store
-     * records for the graph rather than from what the document states, so a document cannot pass
-     * by forgetting to state what it holds. A scenario holding some names each one, so the report
-     * says what to fix rather than how many things there are to find.
-     */
     @Test
     @DisplayName("every scenario stores no defect, and every defect document stores one")
     void everyFolderHoldsWhatItClaims() {
-        var defect = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-        // The site only names what the position is about; the count is the defect relation's.
-        var site = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
-        var problem = no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
-        var dsl = captured.dsl();
-        var misplaced = new ArrayList<String>();
-        claims.forEach((graph, claim) -> {
-            if (claim != FactDocuments.Claim.SCENARIO && claim != FactDocuments.Claim.DEFECT) {
-                return;
-            }
-            var held = new ArrayList<String>();
-            dsl.select(defect.CODE, site.COORDINATE, defect.SOURCE_LINE, defect.SOURCE_COLUMN,
-                    defect.DETAIL)
-                .from(defect)
-                .leftJoin(site).on(site.GRAPH_NAME.eq(defect.GRAPH_NAME),
-                    site.SOURCE_NAME.eq(defect.SOURCE_NAME), site.SOURCE_LINE.eq(defect.SOURCE_LINE),
-                    site.SOURCE_COLUMN.eq(defect.SOURCE_COLUMN), site.CODE.eq(defect.CODE))
-                .where(defect.GRAPH_NAME.eq(graph))
-                .orderBy(defect.SOURCE_LINE, defect.SOURCE_COLUMN, defect.CODE)
-                .forEach(r -> held.add(r.value1() + " at " + r.value2() + " (" + r.value3() + ":"
-                    + r.value4() + ")" + (r.value5() == null ? "" : ": " + r.value5())));
-            dsl.select(problem.STAGE, problem.ERROR_CLASS, problem.MESSAGE, problem.SOURCE_LINE)
-                .from(problem)
-                .where(problem.GRAPH_NAME.eq(graph))
-                .orderBy(problem.ORDINAL)
-                .forEach(r -> held.add(r.value1() + " " + r.value2() + " (line " + r.value4()
-                    + "): " + r.value3()));
-            if ((claim == FactDocuments.Claim.SCENARIO) != held.isEmpty()) {
-                misplaced.add(graph + " stores " + held.size()
-                    + " defects and schema problems" + (held.isEmpty() ? "" : ": " + held));
-            }
-        });
         assertThat(misplaced).as("documents whose folder claims what the store does not hold").isEmpty();
+    }
+
+    @Test
+    @DisplayName("no document claims a store-wide relation's whole population")
+    void noDocumentClaimsTheWholeStore() {
+        assertThat(wholeStore)
+            .as("@expectEquals or @assertEmpty on a relation keyed by no graph; state it with "
+                + "@assertContains or @assertAbsent")
+            .isEmpty();
     }
 
     /** The undecided folder only shrinks: a document arrives in the folder whose claim it meets. */
@@ -284,31 +365,11 @@ class FactExpectationTest {
             .isEqualTo(UNDECIDED_CEILING);
     }
 
-    /**
-     * Navigation is total and single-valued over every field the examples capture: each field
-     * navigates as exactly one type, which is what lets a reader join the relation rather than
-     * left-join it. Counted against the emitted fields rather than the written ones, a minted field
-     * navigating like any other.
-     */
     @Test
     @DisplayName("every field navigates as exactly one type")
     void everyFieldNavigatesAsExactlyOneType() {
-        var f = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-        var nav = no.sikt.graphitron.model.Tables.INTENT_FIELD_NAVIGATED_TYPE;
-        var dsl = captured.dsl();
-        var count = dsl.selectCount().from(nav)
-            .where(nav.GRAPH_NAME.eq(f.GRAPH_NAME), nav.TYPE_NAME.eq(f.TYPE_NAME),
-                nav.FIELD_NAME.eq(f.FIELD_NAME))
-            .<Integer>asField("navigations");
-        var offenders = dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.FIELD_NAME, count)
-            .from(f)
-            .fetch()
-            .stream()
-            .filter(r -> r.value4() != 1)
-            .map(r -> r.value1() + " " + r.value2() + "." + r.value3() + " navigates " + r.value4())
-            .toList();
-        assertThat(offenders).as("fields navigating as no type or as several").isEmpty();
-        assertThat(dsl.fetchCount(f)).as("a store with no fields passes by having none").isPositive();
+        assertThat(unnavigated).as("fields navigating as no type or as several").isEmpty();
+        assertThat(fields).as("a store with no fields passes by having none").isPositive();
     }
 
     /**

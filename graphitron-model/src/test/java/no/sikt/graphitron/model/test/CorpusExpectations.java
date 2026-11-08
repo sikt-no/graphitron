@@ -343,9 +343,10 @@ public final class CorpusExpectations {
      * <p>A relation without one is not a loophole: the classpath and the catalog are read once for
      * the store and carry no graph, so what a document says about them is a claim about the store
      * every document shares. Stating such a claim is the point, a document naming a class being
-     * the only way to assert what a reading of that class found.
+     * the only way to assert what a reading of that class found. Such a claim can only add to or
+     * subtract from that store: a document owns its graph, and no document owns the store.
      */
-    private static boolean partitioned(DSLContext dsl, String relation) {
+    public static boolean partitioned(DSLContext dsl, String relation) {
         return dsl.fetchCount(
             DSL.table(id("INFORMATION_SCHEMA", "COLUMNS")),
             DSL.field(id("TABLE_NAME"), String.class).equalIgnoreCase(relation)

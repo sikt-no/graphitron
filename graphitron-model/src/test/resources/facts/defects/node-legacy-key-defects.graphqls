@@ -48,7 +48,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   NODE_LEGACY_METADATA_UNREADABLE,         ForeignLegacy, ,           node_legacy_foreign
   """)
 
-extend schema @expectEquals(relation: "sql_node_legacy_key_unreadable", rows: """
+extend schema @assertContains(relation: "sql_node_legacy_key_unreadable", rows: """
   table_schema, table_name
   public,       node_legacy_foreign
   """)

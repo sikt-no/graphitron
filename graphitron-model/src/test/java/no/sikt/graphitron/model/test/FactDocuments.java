@@ -11,9 +11,12 @@ import graphql.parser.Parser;
 import no.sikt.graphitron.model.config.OutboxConfig;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.run.CapturedSchema;
 import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+
+import org.jooq.DSLContext;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -187,24 +190,31 @@ public final class FactDocuments {
     }
 
     /**
-     * A plain document's graph, captured under its {@link #path} into {@code store}, or into a store this
-     * opens in {@code directory} where {@code store} is null: against the catalog its configuration
-     * names, else {@code fixture}, over {@code classpath}, under the configuration it states.
+     * A plain document's graph, captured under its {@link #path} into the store {@code dsl} writes:
+     * against the catalog its configuration names, else {@code fixture}, over {@code classpath},
+     * under the configuration it states, from the files {@link #write} lays down in
+     * {@code directory}.
      *
-     * @return the store the graph is in
+     * @return the two schemas the capture built
      */
-    public static CapturedStore capture(CapturedStore store, Path directory, String path,
-                                        CorpusDocuments.Document document, CatalogInput fixture,
-                                        List<ClasspathEntry> classpath) {
+    public static CapturedSchema capture(DSLContext dsl, Path directory, String path,
+                                         CorpusDocuments.Document document, CatalogInput fixture,
+                                         List<ClasspathEntry> classpath) {
         var texts = List.of(document.sdl());
-        var configuration = StatedConfiguration.of(texts);
-        var catalog = StatedConfiguration.catalog(texts, fixture);
-        var files = write(directory, path, document);
-        if (store == null) {
-            return CapturedStore.ofCatalogFilesWith(directory, path, files, catalog, classpath,
-                configuration);
-        }
-        return store.andCatalogGraphFilesWith(path, files, catalog, classpath, configuration);
+        return CapturedStore.captureFilesInto(dsl, directory, path, write(directory, path, document),
+            StatedConfiguration.catalog(texts, fixture), classpath, StatedConfiguration.of(texts));
+    }
+
+    /**
+     * The catalog a plain document's graph is captured against: the one its configuration names,
+     * {@code fixture} where it names none, or none at all where it names {@code null}. Graphs share
+     * a store only when they share this, so a relation keyed by no graph holds the same rows
+     * wherever a document lands.
+     */
+    public static Optional<String> catalogPackage(CorpusDocuments.Document document,
+                                                  CatalogInput fixture) {
+        return Optional.ofNullable(StatedConfiguration.catalog(List.of(document.sdl()), fixture))
+            .map(CatalogInput::jooqPackage);
     }
 
     /**
