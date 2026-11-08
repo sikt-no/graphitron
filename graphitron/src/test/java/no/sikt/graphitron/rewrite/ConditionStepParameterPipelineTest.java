@@ -34,20 +34,13 @@ class ConditionStepParameterPipelineTest {
     }
 
     @Test
-    void agreeingOnBoth_refusedAtAStep_whereTheStoreKeepsItsTwoParameterDeclaration() {
+    void agreeingOnBoth_takesTheTwoParameterDeclarationTheStepsCallReaches() {
         // agreeingOnBoth is declared (Customer, Address) and (Customer, Address, String). The step
         // calls it agreeingOnBoth(customerAlias, addressAlias), which javac resolves to the
-        // two-parameter declaration, and the store keeps that one with no defect. The walk folds every
-        // declaration of the name into one shape and refuses the set on its parameter count, so the
-        // field does not classify. agreeingOnArrival, whose two declarations have one count, is the
-        // control: the parameter count is what refuses.
-        var refused = TestSchemaHelper.buildSchema(customerToAddress("agreeingOnBoth"));
-        assertThat(refused.field("Customer", "address")).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) refused.field("Customer", "address")).rejection().message())
-            .contains("agreeingOnBoth").contains("has 2 declarations")
-            .contains("they declare different numbers of parameters");
-        var control = TestSchemaHelper.buildSchema(customerToAddress("agreeingOnArrival"));
-        assertThat(control.field("Customer", "address")).isNotInstanceOf(UnclassifiedField.class);
+        // two-parameter declaration, and the store keeps that one with no defect; the declaration
+        // with a String beside is no candidate, so the field classifies as the store accepts it.
+        var schema = TestSchemaHelper.buildSchema(customerToAddress("agreeingOnBoth"));
+        assertThat(schema.field("Customer", "address")).isNotInstanceOf(UnclassifiedField.class);
     }
 
     private static String customerToAddress(String method) {

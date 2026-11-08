@@ -2884,7 +2884,7 @@ class BuildContext {
                 "path-step @condition: " + p.message());
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
-        var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of());
+        var result = svc.reflectPathStepCondition(className, methodName, argBindings);
         return result.failed()
             ? new ConditionResolution.Failed("path-step @condition: " + result.rejection().message())
             : new ConditionResolution.Resolved(result.ref());

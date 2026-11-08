@@ -1024,6 +1024,19 @@ class ServiceCatalog {
     }
 
     /**
+     * A path element's {@code {condition:}}, which the generated join calls as
+     * {@code method(sourceAlias, targetAlias)} with nothing else in scope. Only a declaration that
+     * call can reach is a candidate, two parameters both taking a table, as javac and the store's
+     * step read the set; a declaration with more parameters beside is not one the step means, so
+     * the shape the rest of the set would have to agree on is the reachable declarations' alone.
+     */
+    ServiceReflectionResult reflectPathStepCondition(String className, String methodName,
+            ArgBindingMap argBindings) {
+        return reflectTableMethod(className, methodName, argBindings, Set.of(), Map.of(), null,
+            Map.of(), true);
+    }
+
+    /**
      * Slot-types-aware overload of {@link #reflectTableMethod}. {@code slotTypes} carries the
      * GraphQL slots in scope at the directive site (single argument for argument-level
      * {@code @condition}, every field argument for field-level {@code @condition}), and feeds
@@ -1051,6 +1064,15 @@ class ServiceCatalog {
             ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes,
             ConditionSite site,
             Map<String, no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding> sessionBound) {
+        return reflectTableMethod(className, methodName, argBindings, ctxKeys, slotTypes, site,
+            sessionBound, false);
+    }
+
+    private ServiceReflectionResult reflectTableMethod(String className, String methodName,
+            ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes,
+            ConditionSite site,
+            Map<String, no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding> sessionBound,
+            boolean pathStep) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
@@ -1065,7 +1087,16 @@ class ServiceCatalog {
             return new ServiceReflectionResult(null, load.rejection());
         }
         Class<?> cls = loaded.cls();
-        var declarations = candidateMethods(cls, className, methodName);
+        var named = candidateMethods(cls, className, methodName);
+        var reachable = pathStep
+            ? named.stream()
+                .filter(m -> m.getParameterCount() == 2
+                    && takesTable(m.getParameterTypes()[0]) && takesTable(m.getParameterTypes()[1]))
+                .toList()
+            : named;
+        // No reachable declaration is the store's CONDITION_NO_OVERLOAD_FOR_PAIR, refused before
+        // the walk; the whole set then stands, so a direct walk still names what it holds.
+        var declarations = reachable.isEmpty() ? named : reachable;
         var admission = admitConditionShape(declarations);
         if (admission instanceof ConditionAdmission.Refused refused) {
             return new ServiceReflectionResult(null,

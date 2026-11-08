@@ -453,12 +453,18 @@ class MultiTableChildReferenceForPipelineTest {
     }
 
 
-    // ===== A path-step condition that cannot be bound says why =====
+    // ===== A path-step condition is the declaration its call reaches =====
 
+    /**
+     * {@code overloadedPathCondition(Table<?>, Table<?>)} beside the same name over two
+     * {@code Field<Long>}: the generated join calls {@code method(sourceAlias, targetAlias)}, which
+     * only the first can take, so the second is no candidate and the step resolves.
+     */
     private static final String OVERLOADED_CONDITION =
         "{className: \"no.sikt.graphitron.rewrite.TestConditionStub\", method: \"overloadedPathCondition\"}";
 
-    private static String referenceForConditionRejection(String condition) {
+    @Test
+    void referenceForCondition_anOverloadTheCallCannotReachIsNoCandidate() {
         var schema = TestSchemaHelper.buildSchema("""
             interface LangThing { rowId: Int }
             type Film implements LangThing @table(name: "film") { rowId: Int @field(name: "film_id") }
@@ -466,38 +472,12 @@ class MultiTableChildReferenceForPipelineTest {
               thing: LangThing @referenceFor(type: "Film", path: [{condition: %s}])
             }
             type Query { language: Language }
-            """.formatted(condition));
-        return rejectionOf(schema.field("Language", "thing")).message();
+            """.formatted(OVERLOADED_CONDITION));
+        assertThat(schema.field("Language", "thing")).isNotInstanceOf(UnclassifiedField.class);
     }
 
     @Test
-    void referenceForCondition_overloadsDisagree_explainsTheOverloadSet() {
-        var message = referenceForConditionRejection(OVERLOADED_CONDITION);
-        assertThat(message)
-            .contains("@referenceFor route for participant 'Film' could not be resolved")
-            .contains("path-step @condition: method 'overloadedPathCondition'")
-            .contains("has 2 declarations")
-            .contains("overloadedPathCondition(org.jooq.Table<?>, org.jooq.Table<?>)")
-            .contains("overloadedPathCondition(org.jooq.Field<java.lang.Long>, org.jooq.Field<java.lang.Long>)")
-            .contains("collapse the set to a single method taking org.jooq.Table<?>");
-    }
-
-    @Test
-    void referenceForCondition_rejection_carriesNoFieldPrefixOfItsOwnAndNoNestedQuotes() {
-        // The validator prepends the field coordinate, so the reason must not state it too, and
-        // the method name is quoted once.
-        var message = referenceForConditionRejection(OVERLOADED_CONDITION);
-        assertThat(message)
-            .doesNotContain("Field '")
-            .doesNotContain("''")
-            .doesNotContain("'method '")
-            .doesNotContain("..");
-    }
-
-    @Test
-    void referencePathCondition_overloadsDisagree_explainsTheOverloadSet() {
-        // The reason was lost in the shared path-step resolution, so a plain @reference path with
-        // a condition: element carries the same explanation.
+    void referencePathCondition_anOverloadTheCallCannotReachIsNoCandidate() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Language @table(name: "language") {
@@ -505,9 +485,7 @@ class MultiTableChildReferenceForPipelineTest {
             }
             type Query { language: Language }
             """.formatted(OVERLOADED_CONDITION));
-        assertThat(rejectionOf(schema.field("Language", "films")).message())
-            .contains("has 2 declarations")
-            .contains("collapse the set to a single method taking org.jooq.Table<?>");
+        assertThat(schema.field("Language", "films")).isNotInstanceOf(UnclassifiedField.class);
     }
 
     private static Rejection rejectionOf(no.sikt.graphitron.rewrite.model.GraphitronField field) {

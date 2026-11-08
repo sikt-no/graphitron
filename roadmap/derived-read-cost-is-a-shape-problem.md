@@ -386,13 +386,10 @@ classpath and catalog, and every reader reads that resolution rather than a view
 
 * **The walk's condition shape refusals go** `open`.
   `ServiceCatalog.admitConditionShape` refuses a `@condition` set with `AmbiguousMethod` where
-  `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same, and at a path step it refuses on
-  axes the generated call never reaches. That half is a false positive: `Customer.addressByOverloads
-  @reference(path: [{condition: {method: "agreeingOnBoth"}}])` over `agreeingOnBoth(Customer, Address)`
-  and the same with a `String` beside draws no store defect, the step keeping the two-parameter
-  declaration javac picks for `method(sourceAlias, targetAlias)`, and the walk refuses it on
-  parameter count, so validate fails a valid schema. Fixed ahead of the rest: a path step's
-  condition is the declaration the store's step keeps, not a shape the set agrees on.
+  `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same. A path step's condition no longer
+  folds declarations its call `method(sourceAlias, targetAlias)` cannot reach, which refused
+  `agreeingOnBoth(Customer, Address)` beside the same with a `String` though the store keeps the
+  two-parameter declaration.
 * **The per-site copies and coordinate-keyed entries go** `blocked`, on "The code-reference subject converts". The twins lose their
   class, method and argMapping columns.
 * **`sql_name_matched_key_column` is gone** `blocked`, on the child below. With `NameMatchedKeys`,
