@@ -632,18 +632,40 @@ pass and no stratum that clears and recomputes.
       inferred-route arm for one no path is written for, two statements of one rule with nothing
       comparing them; `steps` owns them and the gate lists the arm as a second writer until it
       moves to the walk.
-    * **An arm belongs to the last stage whose facts it reads** `open`. Each arm of
-      `graphitron_entry_defect_rule` moves into a rule view of the stage that writes the last
-      relation it reads, its codes' `owner_stage` with it, as a refactor that writes the same rows
-      on every fact document and on sis. A gate refuses a stage's rule that reads a relation a later
-      stage writes, which needs the stages' order and the relations each owns in the store; the
-      `OUTBOX_*` arms have no stage to go to yet, and the checks that read only the documents go to
-      the anchor. The detail writers (`EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
-      `ConditionShapeDefectMethods`, `ArgMappingPairDefects`) move with their codes, and the depth
-      loop's stages write their defects once after the last depth.
+    * **A stage's rule reads only what its own and earlier stages wrote** `open`. `meta_stage`
+      states each stage's position in its gatherer and `meta_stage_write` the relations it writes,
+      the graphitron anchor phase runs its stages from that order, and a gate refuses a stage rule
+      view that reaches a relation a later stage writes, as `StageOrderGateTest` does for the
+      derivation stratum. A crossing arm's owner is then computed rather than chosen: the last
+      stage whose relations it reads.
+    * **The outbox's relations are stored by a stage of their own** `open`. `graphitron_outbox_target`,
+      `graphitron_outbox_routine_target`, `graphitron_outbox_result_step` and `graphitron_outbox_leaf`
+      are views, so every reader expands them again: the entry-defect rule names
+      `graphitron_outbox_leaf` four times, about 29 percent of its expanded size. An outbox stage
+      writes them as tables, marked and swept, after the call parameters it reads, and its
+      `OUTBOX_*` arms become that stage's rule.
+    * **An arm belongs to the last stage whose facts it reads** `blocked`, on "A stage's rule reads
+      only what its own and earlier stages wrote" and "The outbox's relations are stored by a stage
+      of their own". Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
+      that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every
+      fact document and sis write the same `graphitron_entry_defect` rows before and after. The
+      checks that read only the documents (`TYPE_NAME_CASE_COLLISION`, `CONNECTION_RETURN`,
+      `DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM`, the subscription arm) go to a stage of the anchor, and the
+      depth loop's stages write theirs once after the last depth, ahead of the sweeps. A stage's
+      arms that expand one view several times read it once, from a table the stage writes. Priced
+      by a prepare tally per stage on a cold capture before and after, against the 0.5 s the single
+      rule costs today; `graphitron_entry_defect_rule` and the `entry-defects` stage go when their
+      last arm leaves.
+    * **The detail writers move with their codes** `blocked`, on "An arm belongs to the last stage
+      whose facts it reads". `EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
+      `ConditionShapeDefectMethods` and `ArgMappingPairDefects` each write their rows in the stage
+      that owns the codes they detail, so no defect writer runs after the stages but the gatherer's
+      one sweep.
     * **The routine seat's refusals are codes a stage writes** `open`.
       `intent_mutation_routine_seat` and the walk's routine classification still make them.
-  * **A defect is keyed by the occurrence it judges, with the written position where there is one** `open`.
+  * **A defect is keyed by the occurrence it judges, with the written position where there is one** `blocked`, on "An arm belongs to the last stage whose facts it reads".
+    The split by stage comes first, writing the same rows, so the re-keying changes one grain inside
+    rule views that are already small rather than a shape and a grain at once.
     `graphitron_occurrence_defect`, keyed (graph, coordinate, code) with a cascade from the occurrence,
     carries the written position as an attribute where the problem was written, the element's
     declaration being where an editor points otherwise, and `graphitron_entry_defect_site` reads both
