@@ -463,7 +463,7 @@ static method needs no holder.
   payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
   takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
   at a time", where the per-field `rowsX`, `loadX` and decode copies go.
-* **The projection units are rendered from the store** `open`.
+* **The projection units are rendered from the store** `blocked`, on the facts below.
   The store-fed lift selects through `<Type>.$project`, the projection unit `ProjectionUnitRenderer`
   renders from `ProjectionCommand` rows, which `ProjectionCommands` derives from the classified
   model; so a producer whose body the store emits still projects through units the walk decides,
@@ -476,6 +476,34 @@ static method needs no holder.
   select, so the four call sites that restrict before calling it today (`SelectMethodBody`,
   `MultiTablePolymorphicEmitter`, `DiscriminatedTableFragments` and the store-fed `LiftEmitter`)
   stop doing so; after the `@service` flip, which keeps the call-site restriction.
+  One unit per table-bound type, its arms the occurrences of the chain the type's fields start: a
+  nesting field's arms are its chain's deeper occurrences, inline in the anchor's unit, so
+  `NestedUnit`, `CallWrap.Splice` and the `<Anchor><Nesting>` classes go. A result-key alias is the
+  runtime result keys from the row's owner down to the field, as many as the occurrence lies deep
+  below it, in place of the threaded `rkPath`; the flip is one pass over every arm, each fact
+  below landed first, as its own store change pinned by a fact document (Alf, 2026-11-08).
+  * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
+    `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
+    parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
+  * **A field's or argument's `@condition` is a call at its occurrence** `open`. The overload is
+    pinned as `graphitron_join_path_step_method` pins a step's, rather than by name, with whether it
+    reads context or the session; the multiset's filter and the `dsl` closure read it there.
+  * **An inline list's ordering is resolved at its occurrence** `open`. `@defaultOrder` and `@order`
+    are stored as written today; the occurrence states its sort keys in order, each a column with
+    direction and collation or an order-field method, read by the multiset's `orderBy`.
+  * **An inline list states how it is narrowed** `open`. Its `@lookupKey` arguments in key order,
+    which today claim `LOOKUP` only at a root or a split, and whether `first` limits it, which only a
+    connection carrier says today.
+  * **A `@pivot` is resolved against the catalog** `open`. The attribute table, its on and value
+    columns as `sql_column` rows, and each slot's token, where today the entry holds the strings
+    written and the slots bind no column.
+  * **A child producer states the parent columns it is handed** `open`. Beside
+    `graphitron_occurrence_producer_key_row`'s table, the columns of the parent occurrence's table its
+    loader keys on, so the parent's unit projects them by a join from the producer rather than by
+    `correlationKeyArm`.
+  * **A single child's null contract is stated** `blocked`, on the expression and condition nodes.
+    Nothing states when a nesting field or a single inline child is null, which the `__p_` probe
+    decides today as a disjunction over its paths and expressions; it is modelled once those land.
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
   container's table and column beside it; the re-read reads it through the join from the base, a
