@@ -92,10 +92,13 @@ public final class ServiceEmission {
     private final Map<String, LiftQuery.Row> lifts;
     private final Set<String> polymorphic;
     private final Map<String, String> excluded;
+    /** The services whose outcome claims validation, by coordinate. */
+    private final Set<String> validating;
 
     private ServiceEmission(Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
-                            Map<String, LiftQuery.Row> lifts, Set<String> polymorphic, Map<String, String> excluded) {
+                            Map<String, LiftQuery.Row> lifts, Set<String> polymorphic, Map<String, String> excluded,
+                            Set<String> validating) {
         this.frames = frames;
         this.calls = calls;
         this.fills = fills;
@@ -103,11 +106,12 @@ public final class ServiceEmission {
         this.lifts = lifts;
         this.polymorphic = polymorphic;
         this.excluded = excluded;
+        this.validating = validating;
     }
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
-        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of());
+        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of());
     }
 
     /** Reads every part's rows for the graph once. */
@@ -123,7 +127,8 @@ public final class ServiceEmission {
             byCoordinate(LiftQuery.read(store), LiftQuery.Row::coordinate),
             PolymorphicLiftQuery.read(store).stream().map(PolymorphicLiftQuery.Row::coordinate)
                 .collect(Collectors.toSet()),
-            excluded(store));
+            excluded(store),
+            validating(store));
     }
 
     private static <R> Map<String, R> byCoordinate(List<R> rows, Function<R, String> coordinate) {
@@ -134,18 +139,11 @@ public final class ServiceEmission {
 
     /**
      * The root services the store states a part of the fetcher for that is not emitted here yet,
-     * by why: a build with a tenant column, which routes calls by tenant; an outcome whose errors
-     * claim validation, which runs a validation pass before the call; a target whose participants a
+     * by why: a build with a tenant column, which routes calls by tenant; a target whose participants a
      * discriminating column tells apart, read off one shared table; and a connection's page.
      */
     private static Map<String, String> excluded(StoreHandle store) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
-        var o = GRAPHITRON_OCCURRENCE;
-        var po = GRAPHITRON_PRODUCER_OUTCOME;
-        var ef = GRAPHITRON_ERRORS_FIELD;
-        var m = GRAPHQL_POLY_MEMBER;
-        var da = GRAPHQL_DIRECTIVE_APPLICATION;
-        var h = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
         var tc = STORE_GRAPH_TENANT_COLUMN;
         var out = new LinkedHashMap<String, String>();
         boolean tenanted = store.dsl().fetchExists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(store.graphName())));
@@ -156,7 +154,34 @@ public final class ServiceEmission {
             coordinates.forEach(c -> out.put(c, "TENANT_ROUTING"));
             return out;
         }
-        store.dsl().selectDistinct(p.COORDINATE)
+        var pt = GRAPHITRON_OCCURRENCE_PARTICIPANT;
+        store.dsl().selectDistinct(pt.COORDINATE).from(pt)
+            .where(pt.GRAPH_NAME.eq(store.graphName()), pt.RECOGNIZED_BY.eq("DISCRIMINATOR"))
+            .fetch(pt.COORDINATE)
+            .forEach(c -> out.putIfAbsent(c, "DISCRIMINATED"));
+        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+        store.dsl().select(r.COORDINATE).from(r)
+            .where(r.GRAPH_NAME.eq(store.graphName()), r.SHAPE.eq("CONNECTION"))
+            .fetch(r.COORDINATE)
+            .forEach(c -> out.putIfAbsent(c, "CONNECTION"));
+        return out;
+    }
+
+    /**
+     * The services whose outcome claims validation: a member of the errors field's union is an
+     * {@code @error} with a {@code VALIDATION} handler. Such a service validates the arguments its
+     * call builds before the call, which is not emitted here yet; one that builds none has no pass
+     * to run, and its outcome is the frame's like any other.
+     */
+    private static Set<String> validating(StoreHandle store) {
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var o = GRAPHITRON_OCCURRENCE;
+        var po = GRAPHITRON_PRODUCER_OUTCOME;
+        var ef = GRAPHITRON_ERRORS_FIELD;
+        var m = GRAPHQL_POLY_MEMBER;
+        var da = GRAPHQL_DIRECTIVE_APPLICATION;
+        var h = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
+        return store.dsl().selectDistinct(p.COORDINATE)
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(po).on(po.GRAPH_NAME.eq(o.GRAPH_NAME),
@@ -171,18 +196,7 @@ public final class ServiceEmission {
                 h.HANDLER.eq("VALIDATION"))
             .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
             .fetch(p.COORDINATE)
-            .forEach(c -> out.put(c, "VALIDATION"));
-        var pt = GRAPHITRON_OCCURRENCE_PARTICIPANT;
-        store.dsl().selectDistinct(pt.COORDINATE).from(pt)
-            .where(pt.GRAPH_NAME.eq(store.graphName()), pt.RECOGNIZED_BY.eq("DISCRIMINATOR"))
-            .fetch(pt.COORDINATE)
-            .forEach(c -> out.putIfAbsent(c, "DISCRIMINATED"));
-        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
-        store.dsl().select(r.COORDINATE).from(r)
-            .where(r.GRAPH_NAME.eq(store.graphName()), r.SHAPE.eq("CONNECTION"))
-            .fetch(r.COORDINATE)
-            .forEach(c -> out.putIfAbsent(c, "CONNECTION"));
-        return out;
+            .stream().collect(Collectors.toSet());
     }
 
     /**
@@ -200,6 +214,10 @@ public final class ServiceEmission {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
         if (excluded.containsKey(coordinate)) return excluded.get(coordinate);
+        if (validating.contains(coordinate) && builds.getOrDefault(coordinate, Map.of()).values().stream()
+                .anyMatch(r -> r instanceof BuildQuery.Result.Built || r instanceof BuildQuery.Result.Columns)) {
+            return "VALIDATION";
+        }
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
         if (polymorphic.contains(coordinate)) return "POLYMORPHIC";
         var call = calls.get(coordinate);
