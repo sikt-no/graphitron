@@ -42,7 +42,7 @@ type Mutation {
     @routine(name: "rent_film", argMapping: "pCustomer: customer")
 }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter): [Film!]!
   # A sigil written first keeps position 0, and the entry after it keeps 1: a sigil is an entry
   # like any other, at the position the author wrote it.

@@ -54,7 +54,7 @@ type Loose @table(name: "film") @discriminator(value: "X") {
     title: String @field(name: "TITLE")
 }
 
-extend type Query {
+type Query {
     noTable: [NoTable!]!
     badColumn: [BadColumn!]!
     kinds: [Kinds!]!

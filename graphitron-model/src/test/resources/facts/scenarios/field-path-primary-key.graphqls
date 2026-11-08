@@ -23,7 +23,7 @@ type FilmActor @table(name: "film_actor") {
   row: FilmActorRow @reference(path: [{key: "film_actor_pkey"}])
 }
 
-extend type Query {
+type Query {
   films: [Film]
   filmActors: [FilmActor]
 }

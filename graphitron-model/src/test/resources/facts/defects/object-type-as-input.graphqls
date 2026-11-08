@@ -6,7 +6,7 @@ type Wrapper {
   label: String
 }
 
-extend type Query {
+type Query {
   wrapped(by: Wrapper): String
 }
 

@@ -2,7 +2,7 @@
 type Film @table(name: "film") { id: ID }
 type Language @table(name: "language") { id: ID }
 
-extend type Query {
+type Query {
   films: [Film!]! @asConnection(connectionName: "Shared")
   tongues: [Language!]! @asConnection(connectionName: "Shared")
 }
@@ -29,6 +29,6 @@ extend schema @expectEquals(relation: "graphitron_field_minted", rows: """
   PageInfo,   hasPreviousPage, 1,       Boolean!
   PageInfo,   startCursor,     2,       String
   PageInfo,   endCursor,       3,       String
-  Query,      films,           1,       Shared!
-  Query,      tongues,         2,       Shared!
+  Query,      films,           0,       Shared!
+  Query,      tongues,         1,       Shared!
   """)

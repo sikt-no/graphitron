@@ -69,7 +69,7 @@ type Level @table(name: "study_level") @node(resolvable: false) {
   code: String
 }
 
-extend type Query {
+type Query {
   levels: [Level!]!
   films: [Film!]!
   languages: [Language!]!

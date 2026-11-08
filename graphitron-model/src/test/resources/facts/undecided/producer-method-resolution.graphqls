@@ -4,7 +4,7 @@ type Film @table(name: "film") {
     title: String
 }
 
-extend type Query {
+type Query {
     "The overload. One name, two methods, and the resolution refuses to choose between them."
     topRated: [Film!]!
         @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})

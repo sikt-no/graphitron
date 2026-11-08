@@ -4,7 +4,7 @@
 # parameters can read it once the site does. A parameter given a key twice, by two contextArguments
 # elements or by an element and a pair, is filled by neither.
 
-extend type Query {
+type Query {
   # The pair fills tenant from the key tenantId, and is refused at this site.
   byPair(id: Int): String @service(service: {
       className: "example.Ref", method: "m", argMapping: "tenant: $context.tenantId"})

@@ -12,7 +12,7 @@ type Api {
   allFilms: [Film!]!
 }
 
-extend type Query {
+type Query {
   rated: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method: "filmCount"})
   notRoot: [Film!]!
 }

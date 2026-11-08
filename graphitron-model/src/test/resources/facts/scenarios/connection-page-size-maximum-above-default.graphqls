@@ -5,7 +5,7 @@ extend schema @withConfiguration(maxAllowedPageSize: 500)
 
 type Film @table(name: "film") { title: String }
 
-extend type Query { films: [Film!]! @asConnection }
+type Query { films: [Film!]! @asConnection }
 
 extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
   type_name, field_name, argument_name, default_value_sdl

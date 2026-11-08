@@ -33,7 +33,7 @@ type MoreDetails {
 
 type Language @table(name: "language") { name: String }
 
-extend type Query {
+type Query {
   film: Film
 }
 

@@ -37,7 +37,7 @@ type FilmConnection {
   pageInfo: PageInfo!
 }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter, shape: ShapeFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
   archivedFilms(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
   "Surfaces nothing: the author wrote this shape and the expansion never rewrote it."

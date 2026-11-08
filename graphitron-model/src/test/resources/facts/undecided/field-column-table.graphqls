@@ -59,7 +59,7 @@ type Errored @table(name: "film") @error(handlers: [{handler: DATABASE}]) { titl
 # A path written on an input field is a claim; nothing walks it to a landing yet.
 input FilmFilter { languageName: String @reference(path: [{key: "film_language_id_fkey"}]) }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter): [Film]
   notes: [Note]
   erroreds: [Errored]

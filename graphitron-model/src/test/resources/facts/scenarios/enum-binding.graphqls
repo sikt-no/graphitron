@@ -15,7 +15,7 @@ type Film @table(name: "film") {
     rating: MpaaRating
 }
 
-extend type Query { films: [Film!]! }
+type Query { films: [Film!]! }
 
 extend schema @expectEquals(relation: "graphitron_ast_enum_entry", rows: """
   class_name

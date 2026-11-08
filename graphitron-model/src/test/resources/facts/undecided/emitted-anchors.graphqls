@@ -11,7 +11,7 @@ input FilmFilter { title: String }
 
 enum Rating { G }
 
-extend type Query { films(filter: FilmFilter): [Film!]! @asConnection, rating: Rating }
+type Query { films(filter: FilmFilter): [Film!]! @asConnection, rating: Rating }
 
 extend schema @expectEquals(relation: "graphitron_type", where: """
   type_name IN ('Film', 'FilmFilter', 'Rating', 'QueryFilmsConnection', 'QueryFilmsConnectionEdge', 'PageInfo')
@@ -29,7 +29,6 @@ extend schema @expectEquals(relation: "graphitron_field", where: """
   type_name IN ('Query', 'Film', 'FilmFilter', 'QueryFilmsConnection', 'QueryFilmsConnectionEdge', 'PageInfo')
   """, rows: """
   type_name,                field_name,      type_sdl
-  Query,                    anchor,          FactAnchor
   Query,                    films,           QueryFilmsConnection!
   Query,                    rating,          Rating
   Film,                     id,              ID

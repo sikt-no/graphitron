@@ -76,7 +76,7 @@ type Category @table(name: "category") {
   childPage: [Category!]! @asConnection @splitQuery
 }
 
-extend type Query {
+type Query {
   categories: [Category!]!
   people(
     "Per member of Person, to the node's table: Customer inferred, Staff stated."

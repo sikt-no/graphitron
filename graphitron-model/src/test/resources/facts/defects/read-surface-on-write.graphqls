@@ -16,7 +16,7 @@ type Mutation {
     @condition(condition: {className: "example.Ref", method: "m"})
 }
 
-extend type Query {
+type Query {
   film(id: ID @condition(condition: {className: "example.Ref", method: "m"}), order: FilmOrder @orderBy): Film
     @routine(name: "film_fn")
     @condition(condition: {className: "example.Ref", method: "m"})

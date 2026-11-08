@@ -22,7 +22,7 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
 
 enum MpaaRating { G PG PG_13 R NC_17 }
 
-extend type Query { content: [Content!]! }
+type Query { content: [Content!]! }
 
 extend schema @assertContains(relation: "graphitron_ast_discriminate_entry", rows: """
   on_column

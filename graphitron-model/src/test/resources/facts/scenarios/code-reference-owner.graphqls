@@ -8,7 +8,7 @@ type Customer @table(name: "customer") {
   firstName: String @field(name: "first_name")
 }
 
-extend type Query {
+type Query {
   filmsByIds(ids: [Int!]!): [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
   filmsByLatestStock: [Film!]!

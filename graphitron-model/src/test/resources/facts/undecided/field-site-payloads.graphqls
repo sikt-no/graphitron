@@ -4,7 +4,7 @@
 
 type Film @table(name: "film") { title: String }
 
-extend type Query {
+type Query {
   produced(id: Int): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
 }

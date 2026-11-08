@@ -2,7 +2,7 @@
 # nothing or only a DSLContext, has no holder: FilmShelf is made from a FilmBlurb, which the run does
 # not have.
 
-extend type Query {
+type Query {
   shelfByKey: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmShelf", method: "getByKey"})
 }

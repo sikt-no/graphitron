@@ -24,7 +24,7 @@ type FilmBlurbHolder {
   blurb: FilmBlurb
 }
 
-extend type Query {
+type Query {
   filmBlurbHolder(filmId: Int!): FilmBlurbHolder
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
   createFilmsWithActors(filmIds: [Int!]!): FilmsWithActorsPayload

@@ -64,7 +64,7 @@ type Store @table(name: "store") {
   peopleByKey: [Person!]! @reference(path: [{key: "customer_store_id_fkey"}])
 }
 
-extend type Query {
+type Query {
   """
   An argument's @reference, followed for every member of Person: from customer it reaches store,
   and from staff the key does not leave.

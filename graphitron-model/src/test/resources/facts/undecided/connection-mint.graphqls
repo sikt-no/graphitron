@@ -1,7 +1,7 @@
 "The expansion of one @asConnection application, stated as the rows it derives. The carrier is a bare list of a table-backed type, which is the only shape the expansion admits, and everything below follows from that one application: the connection, its edge, the shared page info, the machinery fields on each, the rewritten carrier and the pagination arguments."
 type Film @table(name: "film") { id: ID title: String }
 
-extend type Query { films: [Film!]! @asConnection }
+type Query { films: [Film!]! @asConnection }
 
 extend schema @expectEquals(relation: "graphitron_connection_carrier", rows: """
   type_name, field_name, connection_name,      edge_name,                element_type, item_non_null, argument_count
@@ -27,7 +27,7 @@ extend schema @expectEquals(relation: "graphitron_field_minted", rows: """
   PageInfo,                 hasPreviousPage, 1,       Boolean!
   PageInfo,                 startCursor,     2,       String
   PageInfo,                 endCursor,       3,       String
-  Query,                    films,           1,       QueryFilmsConnection!
+  Query,                    films,           0,       QueryFilmsConnection!
   """)
 
 extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """

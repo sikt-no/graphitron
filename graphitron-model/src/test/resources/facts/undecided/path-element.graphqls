@@ -24,7 +24,7 @@ type Note @table(name: "multischema_a.note") {
   thisSchemasEvent: Event @reference(path: [{key: "multischema_a.note_event_fk"}])
 }
 
-extend type Query { films: [Film!]! notes: [Note!]! }
+type Query { films: [Film!]! notes: [Note!]! }
 
 # The SQL name.
 extend schema @expectEquals(relation: "graphitron_path_element_key", where: """

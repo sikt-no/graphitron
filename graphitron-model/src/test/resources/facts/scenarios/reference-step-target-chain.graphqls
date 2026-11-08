@@ -25,7 +25,7 @@ type Category @table(name: "category") {
   parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])
 }
 
-extend type Query { films: [Film!]! categories: [Category!]! }
+type Query { films: [Film!]! categories: [Category!]! }
 
 extend schema @expectEquals(relation: "graphitron_join_path_step", rows: """
   coordinate,          position, from_table, to_table

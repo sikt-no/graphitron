@@ -10,7 +10,7 @@ type Note @table(name: "multischema_a.note") {
 
 type Event @table(name: "multischema_a.event") { eventId: Int @field(name: "event_id") }
 
-extend type Query { notes: [Note!]! }
+type Query { notes: [Note!]! }
 
 extend schema @expectEquals(relation: "graphitron_join_path_step", rows: """
   coordinate,            position, from_schema,   from_table, to_schema,     to_table

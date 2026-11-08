@@ -107,11 +107,9 @@ public final class FactGraphs implements AutoCloseable {
         this.documents = Map.copyOf(plain);
         this.fixture = CatalogInput.of(TestRunContext.of());
         this.classpath = ClasspathCorpus.entries();
-        try {
-            this.directory = Files.createTempDirectory("graphitron-fact-graphs");
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        // Under the module's own build output, and kept: a failing scenario's rendered folder is
+        // where its expanded schema is read.
+        this.directory = Path.of("target", "fact-scenarios").toAbsolutePath();
     }
 
     /** The run's population, opened by the first class that asks for it. */
@@ -186,11 +184,31 @@ public final class FactGraphs implements AutoCloseable {
     @Override
     public void close() {
         shards.values().forEach(Shard::close);
-        try (Stream<Path> files = Files.walk(directory)) {
-            files.sorted(Comparator.reverseOrder()).forEach(file -> file.toFile().delete());
-        } catch (IOException e) {
-            // A temporary directory left behind costs nothing a run should fail over.
+    }
+
+    /** What running a scenario found: each claim's block, and how the store disagreed with it then. */
+    record Verification(String scenario, List<CorpusExpectations.Block> blocks, List<String> divergences) {
+
+        Verification(String scenario) {
+            this(scenario, new ArrayList<>(), new ArrayList<>());
         }
+
+        /** Checks {@code claim} against the store {@code dsl} writes, as the last capture left it. */
+        void check(DSLContext dsl, Scenario.Claim claim) {
+            var claimed = CorpusExpectations.declaredBlocks(
+                org.jooq.impl.DSL.using(org.jooq.SQLDialect.H2), scenario, claim.sdl());
+            blocks.addAll(claimed);
+            CorpusExpectations.divergences(dsl, claimed).stream()
+                .map(divergence -> "line " + claim.line() + " " + divergence)
+                .forEach(divergences::add);
+        }
+    }
+
+    /** What running each scenario captured so far found, by its path. */
+    Map<String, Verification> verifications() {
+        var all = new java.util.TreeMap<String, Verification>();
+        shards.values().forEach(shard -> all.putAll(shard.verifications()));
+        return all;
     }
 
     /** One store and the graphs captured into it, every write under this object's lock. */
@@ -198,6 +216,7 @@ public final class FactGraphs implements AutoCloseable {
 
         private GraphitronModelStore store;
         private final Map<String, CapturedSchema> graphs = new LinkedHashMap<>();
+        private final Map<String, Verification> verifications = new LinkedHashMap<>();
         private final Map<String, Integer> captures = new LinkedHashMap<>();
 
         synchronized CapturedSchema ensure(String path, CorpusDocuments.Document document) {
@@ -209,11 +228,31 @@ public final class FactGraphs implements AutoCloseable {
                 store = FactStores.inMemory(StoreUse.LONG_LIVED);
                 BOOTS.incrementAndGet();
             }
-            schema = FactDocuments.capture(store.dsl(), directory, path, document, fixture,
-                classpath);
+            // The scenario run: its renders captured into this store as a build reads a folder, under
+            // the configuration its own file states, and each claim checked as it arrives.
+            var scenario = Scenario.load(path);
+            var texts = List.of(scenario.text());
+            var catalog = FactDocuments.StatedConfiguration.catalog(texts, fixture);
+            var configuration = FactDocuments.StatedConfiguration.of(texts);
+            var verification = new Verification(path);
+            var built = new CapturedSchema[1];
+            var dsl = store.dsl();
+            scenario.run(directory.resolve(path), (folder, at, first) ->
+                    built[0] = CapturedStore.captureFolder(dsl, folder, path, catalog, classpath,
+                        configuration, at, !first),
+                claim -> verification.check(dsl, claim));
+            if (built[0] == null) {
+                throw new IllegalStateException(path + " renders nothing to capture");
+            }
+            schema = built[0];
             graphs.put(path, schema);
+            verifications.put(path, verification);
             captures.merge(path, 1, Integer::sum);
             return schema;
+        }
+
+        synchronized Map<String, Verification> verifications() {
+            return new LinkedHashMap<>(verifications);
         }
 
         synchronized int captures(String path) {
@@ -293,6 +332,11 @@ public final class FactGraphs implements AutoCloseable {
         /** Every plain document's path, in folder then name order. */
         Set<String> paths() {
             return population().paths();
+        }
+
+        /** What running each scenario captured so far found, by its path. */
+        Map<String, Verification> verifications() {
+            return population().verifications();
         }
 
         /**

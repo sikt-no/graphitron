@@ -15,7 +15,7 @@ type Film @table(name: "film") {
       method: "mountedSessionNumber", argMapping: "number: $session.sessionNo"})
 }
 
-extend type Query { films: [Film!]! }
+type Query { films: [Film!]! }
 
 extend schema @assertAbsent(relation: "code_read_slot", rows: """
   class_name

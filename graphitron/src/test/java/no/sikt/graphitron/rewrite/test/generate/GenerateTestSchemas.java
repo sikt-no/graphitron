@@ -9,6 +9,7 @@ import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.FactDocuments;
+import no.sikt.graphitron.model.test.Scenario;
 import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 
@@ -28,8 +29,8 @@ import java.util.List;
  * coordinates, captured by {@link GraphitronStore#captured(RunContext)} and generated from what that
  * captured. So everything the run declares reaches the store the way it does in production, and an
  * emitter reading the run's configuration from the store finds it there. What the scenario is captured
- * over is what {@code FactExpectationTest} checks: the files {@link FactDocuments#write} lays down
- * for it, the prelude and the document, the sakila catalog and the classpath corpus.
+ * over is what {@code FactExpectationTest} checks: the folder {@link Scenario} renders for it, the
+ * sakila catalog and the classpath corpus.
  *
  * <p>A scenario is a fact document the store records no defect for, which is the folder's claim and
  * {@code FactExpectationTest}'s to check; a scenario this refuses is a defect the store does not
@@ -67,8 +68,11 @@ public final class GenerateTestSchemas {
                     continue;
                 }
                 var path = FactDocuments.path(FactDocuments.Claim.SCENARIO, scenario);
-                var files = FactDocuments.write(directory, path, scenario);
-                generate(files, path, packagePrefix + "." + scenario.id().replace('-', '_'),
+                var folder = directory.resolve(path);
+                // The scenario's final folder, as the engine renders it; the run below is the build
+                // that reads it, so no capture is asked of the engine here.
+                Scenario.load(path).run(folder, (dir, at, first) -> { }, claim -> { });
+                generate(filesIn(folder), path, packagePrefix + "." + scenario.id().replace('-', '_'),
                     outputDirectory);
             }
         } finally {
@@ -101,6 +105,12 @@ public final class GenerateTestSchemas {
             null);
         try (var captured = GraphitronStore.captured(ctx)) {
             new GraphQLRewriteGenerator(ctx, captured).generate();
+        }
+    }
+
+    private static List<Path> filesIn(Path folder) throws IOException {
+        try (var paths = Files.walk(folder)) {
+            return paths.filter(file -> file.toString().endsWith(".graphqls")).sorted().toList();
         }
     }
 

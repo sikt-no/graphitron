@@ -8,7 +8,7 @@ type Film @table(name: "film") @node {
   title: String
 }
 
-extend type Query {
+type Query {
   films(ids: ID @nodeId(typeName: "Film")): [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: ids"})
   # lookup takes its id as an Integer, so the decode is carried out into it.

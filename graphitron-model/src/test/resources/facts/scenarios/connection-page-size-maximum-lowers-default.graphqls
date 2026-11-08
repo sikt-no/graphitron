@@ -6,7 +6,7 @@ extend schema @withConfiguration(maxAllowedPageSize: 50)
 
 type Film @table(name: "film") { title: String }
 
-extend type Query {
+type Query {
   films: [Film!]! @asConnection
   fewFilms: [Film!]! @asConnection(defaultFirstValue: 20)
 }

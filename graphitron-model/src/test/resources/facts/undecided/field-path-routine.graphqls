@@ -5,7 +5,7 @@
 type Film @table(name: "film") { title: String }
 type Row { title: String }
 
-extend type Query {
+type Query {
   films: [Film!]!
   rows(actorId: Int!, minLength: Int!): [Row!]!
     @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")

@@ -22,7 +22,7 @@ type RentalItem implements Node @table(name: "rental") @node(typeId: "R", legacy
 
 type Plain implements Node @table(name: "actor") @node { id: ID! }
 
-extend type Query {
+type Query {
   inventoryItems: [InventoryItem!]!
   filmCategoryItems: [FilmCategoryItem!]!
   rentalItems: [RentalItem!]!

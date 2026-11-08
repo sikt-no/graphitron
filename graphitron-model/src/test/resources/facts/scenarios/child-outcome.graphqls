@@ -1,7 +1,7 @@
 # A child @service catching into its outcome: the service's throw a handler claims is the outcome's
 # errors, and any other throw is redacted. Generated for graphitron's ChildOutcomeExecutionTest.
 
-extend type Query {
+type Query {
   "Every film."
   films: [Film!]!
 }

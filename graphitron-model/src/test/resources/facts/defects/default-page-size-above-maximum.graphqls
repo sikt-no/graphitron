@@ -8,7 +8,7 @@ extend schema @withConfiguration(maxAllowedPageSize: 10)
 
 type Film @table(name: "film") { title: String }
 
-extend type Query {
+type Query {
   directive: [Film!]! @asConnection(defaultFirstValue: 50)
   authored(first: Int = 50): [Film!]! @asConnection
   atMaximum: [Film!]! @asConnection(defaultFirstValue: 10)

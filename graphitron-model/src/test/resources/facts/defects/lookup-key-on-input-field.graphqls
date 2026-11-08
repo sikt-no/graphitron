@@ -14,7 +14,7 @@ input FilmInput {
   title: String @lookupKey
 }
 
-extend type Query {
+type Query {
   filmsByKey(key: [FilmKey]): [Film]
   filmsByTitle(title: [String] @lookupKey): [Film]
 }

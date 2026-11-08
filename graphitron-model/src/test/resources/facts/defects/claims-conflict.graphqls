@@ -41,7 +41,7 @@ input FilmFilter {
   filmId: ID @nodeId(typeName: "Film") @field(name: "film_id")
 }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter): [Film!]!
   failures: [Failure!]!
   misspelt: [Misspelt!]!

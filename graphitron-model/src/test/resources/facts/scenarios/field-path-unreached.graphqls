@@ -21,7 +21,7 @@ type Address @table(name: "address") {
   district: String
 }
 
-extend type Query {
+type Query {
   stores: [Store]
 }
 

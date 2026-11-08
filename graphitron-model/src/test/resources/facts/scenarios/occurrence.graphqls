@@ -27,7 +27,7 @@ input FilmFilter {
 
 input YearSpan { from: Int @field(name: "release_year") }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter, first: Int): [Film!]!
   search: [Searchable]
   filmPage: [Film!]! @asConnection

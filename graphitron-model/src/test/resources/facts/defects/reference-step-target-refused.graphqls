@@ -33,7 +33,7 @@ type Customer @table(name: "customer") {
 
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
 
-extend type Query { films: [Film!]! unbound: Unbound customers: [Customer!]! }
+type Query { films: [Film!]! unbound: Unbound customers: [Customer!]! }
 
 extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
   coordinate,              target_type, position, moves

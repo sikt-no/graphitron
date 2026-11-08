@@ -44,7 +44,7 @@ type JustTable @table(name: "film") { id: ID! }
 type BoundOnly @table(name: "baz") { id: ID! }
 type Ev implements Node @table(name: "event") @node(keyColumns: ["event_id"]) { id: ID! }
 
-extend type Query {
+type Query {
   langs: [Lang!]!
   pagedPks: [PagedPk!]!
   unkeyeds: [Unkeyed!]!

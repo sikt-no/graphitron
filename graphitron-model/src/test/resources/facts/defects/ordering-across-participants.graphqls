@@ -37,7 +37,7 @@ type Holder @table(name: "language") {
   films: [Film!]! @defaultOrder(primaryKey: true)
 }
 
-extend type Query {
+type Query {
   holder: Holder
   # Lowered: a list, an @asConnection, an authored connection, and a Node connection, whose named
   # type is the connection's rather than Node.

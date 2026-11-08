@@ -16,7 +16,7 @@ type OutboxPayload {
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.OutboxExtensions"})
 }
 
-extend type Query { outboxMessages: [OutboxMessage!]! }
+type Query { outboxMessages: [OutboxMessage!]! }
 
 # No class backs the nesting type: the parent's record class is not read through accessors, so its
 # payload getter grounds nothing.

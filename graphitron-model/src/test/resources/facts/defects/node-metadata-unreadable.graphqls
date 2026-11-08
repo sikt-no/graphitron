@@ -8,7 +8,7 @@ interface Node { id: ID! }
 
 type Half implements Node @table(name: "node_metadata_half") @node { id: ID! }
 
-extend type Query {
+type Query {
   halves: [Half!]!
 }
 

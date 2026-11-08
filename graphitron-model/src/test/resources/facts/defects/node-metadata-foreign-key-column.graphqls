@@ -8,7 +8,7 @@ interface Node { id: ID! }
 
 type Foreign implements Node @table(name: "node_metadata_foreign") @node { id: ID! }
 
-extend type Query {
+type Query {
   foreigners: [Foreign!]!
 }
 

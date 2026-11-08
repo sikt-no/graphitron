@@ -63,7 +63,7 @@ type Orphan { label: String }
 type AddFilmPayload { film: Film }
 input FilmInput @table(name: "film") { title: String }
 
-extend type Query {
+type Query {
   "A connection's producer hands back the page as an object; its parts read it."
   pagedFilms: [Film!]! @asConnection
   "Over a union: nodes and Edge.node still read the page rather than run a statement."

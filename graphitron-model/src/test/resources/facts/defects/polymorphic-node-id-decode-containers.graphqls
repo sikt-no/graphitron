@@ -41,7 +41,7 @@ input OccupantFilter {
   occupantId: ID @nodeId(typeName: "AddressOccupant")
 }
 
-extend type Query {
+type Query {
   # A slot typed as a record supertype every member's record has.
   occupant(occupant: ID @nodeId(typeName: "AddressOccupant")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})

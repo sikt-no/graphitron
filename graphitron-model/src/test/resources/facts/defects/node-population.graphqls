@@ -45,7 +45,7 @@ type HalfInferred implements Node @table(name: "node_metadata_half") { id: ID! }
 # goes when "is a node" becomes what took effect.
 type NoInterface @table(name: "plain_id") @node { id: ID! }
 
-extend type Query {
+type Query {
   langs: [Lang!]!
   bazNodes: [BazNode!]!
   barNodes: [BarNode!]!

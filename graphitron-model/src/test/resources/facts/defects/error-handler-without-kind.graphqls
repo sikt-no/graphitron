@@ -3,7 +3,7 @@ type Refused @table(name: "film") @error(handlers: [{className: "java.lang.Illeg
   id: ID
 }
 
-extend type Query {
+type Query {
   refused: Refused
 }
 

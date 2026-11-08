@@ -113,7 +113,7 @@ type FilmDetailsCarrier {
 type FilmBlurb { description: String }
 type FilmBlurbHolder { blurb: FilmBlurb }
 
-extend type Query {
+type Query {
   films: [Film!]!
   filteredFilms(filter: FilmFilter): [Film!]!
   inventories: [Inventory!]!
@@ -149,7 +149,6 @@ extend schema @assertEmpty(relation: "graphitron_occurrence_source_table",
 # twiceBroken, nowhere and wrongSide have no row.
 extend schema @expectEquals(relation: "graphitron_occurrence_column", rows: """
   coordinate,                    bound,                    column_name, matched_by
-  FactAnchor.paymentId,          public.payment,           payment_id,  SQL_NAME
   Film.details.lastUpdate,       public.film,              last_update, SQL_NAME
   Film.details.title,            public.film,              title,       SQL_NAME
   Film.langDetails.langName,     public.language,          name,        SQL_NAME

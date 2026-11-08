@@ -26,7 +26,7 @@ input MediaFilter {
   someId: ID @nodeId
 }
 
-extend type Query {
+type Query {
   media(
     someId: ID @nodeId
     # Actor reaches film through film_actor, which a written typeName: on a multi-table field states.

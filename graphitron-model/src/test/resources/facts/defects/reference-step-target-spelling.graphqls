@@ -15,7 +15,7 @@ type Film @table(name: "film") {
   threeParts: Event @reference(path: [{table: "multischema_a.event.x"}])
 }
 
-extend type Query { films: [Film!]! }
+type Query { films: [Film!]! }
 
 extend schema @expectEquals(relation: "graphitron_spelled_table", where: "spelling <> 'film' AND spelling <> 'payment'", rows: """
   spelling,            table_schema,  table_name, candidates

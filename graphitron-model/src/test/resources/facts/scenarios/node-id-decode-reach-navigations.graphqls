@@ -32,7 +32,7 @@ input CastInput {
   actorId: ID @nodeId(typeName: "Actor")
 }
 
-extend type Query {
+type Query {
   films(
     ids: [ID] @nodeId(typeName: "Film"),
     inCategory: ID @nodeId(typeName: "Category") @reference(path: [{key: "film_category_film_id_fkey"}, {key: "film_category_category_id_fkey"}])

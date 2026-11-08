@@ -7,7 +7,7 @@ type Cash implements Node @table(name: "film") {
   id: ID!
 }
 
-extend type Query {
+type Query {
   cash: Cash
 }
 

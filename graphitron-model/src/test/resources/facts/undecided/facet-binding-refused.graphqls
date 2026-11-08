@@ -9,7 +9,7 @@ input FilmFilter {
   viaNodeId: [String!] @field(name: "rating") @asFacet @nodeId
 }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter): [Film!]! @asConnection
 }
 

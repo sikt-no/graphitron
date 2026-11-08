@@ -15,7 +15,7 @@ scalar Unread @scalarType(scalar: "no.example.Absent.SCALAR")
 # No class in the reference at all, so nothing to look for.
 scalar Bare @scalarType(scalar: "SCALAR")
 
-extend type Query {
+type Query {
   decimal: Decimal
   misspelt: Misspelt
   unread: Unread

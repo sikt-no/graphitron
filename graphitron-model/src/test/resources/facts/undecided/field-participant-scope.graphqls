@@ -24,7 +24,7 @@ type Clip implements MediaItem @table(name: "actor") { title: String }
 
 type Language @table(name: "language") { documents: [Document!]! }
 
-extend type Query {
+type Query {
   documents(name: String): [Document!]!
   search: [Searchable!]!
   media: [MediaItem!]!

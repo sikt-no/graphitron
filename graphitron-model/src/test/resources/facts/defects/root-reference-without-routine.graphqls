@@ -12,7 +12,7 @@ type Store @table(name: "store") {
   storeId: Int @field(name: "store_id")
 }
 
-extend type Query {
+type Query {
   storeForFilm(id: ID! @nodeId(typeName: "Film")): [Store!]! @reference(path: [
     {key: "inventory_film_id_fkey"},
     {key: "inventory_store_id_fkey"}

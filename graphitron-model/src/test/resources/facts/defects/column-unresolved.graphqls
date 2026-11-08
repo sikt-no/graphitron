@@ -19,7 +19,7 @@ type Film @table(name: "film") {
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
 }
 
-extend type Query {
+type Query {
   films: [Film!]!
 }
 

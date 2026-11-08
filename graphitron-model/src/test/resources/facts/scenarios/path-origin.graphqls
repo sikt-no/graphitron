@@ -122,7 +122,7 @@ input LanguageDeleteInput { languageId: Int! @field(name: "language_id") }
 # A delete's payload: the ids of the deleted languages, which read off what the write produced.
 type DeletedLanguagesPayload { deletedIds: [ID!] }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter, first: Int): [Film!]!
   # A written argument path, from film to language.
   filmsByLanguageName(name: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")): [Film!]!

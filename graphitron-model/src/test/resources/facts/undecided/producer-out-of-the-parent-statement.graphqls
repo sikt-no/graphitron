@@ -43,7 +43,7 @@ type Bare { film: Film }
 input FilmInput @table(name: "film") { title: String }
 input Assign { film: FilmInput }
 
-extend type Query {
+type Query {
   films: [Film!]!
   summaries: [Payload!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
@@ -58,7 +58,6 @@ type Mutation {
 
 extend schema @expectEquals(relation: "graphitron_producer", rows: """
   type_name, field_name, kind
-  Query,     anchor,     SELECT
   Query,     films,      SELECT
   Query,     summaries,  SERVICE
   Query,     byIds,      SERVICE

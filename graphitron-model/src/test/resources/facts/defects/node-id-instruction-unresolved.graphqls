@@ -40,7 +40,7 @@ type PlainNode implements Node @table(name: "plain_id") @node {
 
 input PlainFilter { id: ID }
 
-extend type Query {
+type Query {
   "Lands on inventory, which no node declares itself over."
   inventories(filmId: ID @nodeId): [Inventory!]!
   "Lands on film, which two nodes declare themselves over."

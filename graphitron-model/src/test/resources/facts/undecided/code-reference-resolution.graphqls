@@ -52,7 +52,7 @@ enum Rating @enum(enumReference: {className: "no.example.RatingEnum"}) {
   G
 }
 
-extend type Query {
+type Query {
   cities: [City!]!
   films: [Film!]!
   languages: [Language!]!

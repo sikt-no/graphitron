@@ -15,7 +15,7 @@ type Actor implements Searchable @table(name: "actor") {
     title: String @field(name: "FIRST_NAME")
 }
 
-extend type Query {
+type Query {
     search: [Searchable!]!
         @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
 }

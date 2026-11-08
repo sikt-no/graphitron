@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The keys the catalog reading writes, and how a foreign key reaches what it references.
 #
 # Every constraint is a row of its own form, the primary key and a unique key both: parent_node's

@@ -15,7 +15,7 @@ type ReorderedChild @table(name: "nodeidfixture.reordered_fk_child") {
   parent: ReorderedParent @reference(path: [{key: "reordered_fk_child_parent_fkey"}])
 }
 
-extend type Query {
+type Query {
   reorderedChildren(parent: ID @nodeId(typeName: "ReorderedParent")): [ReorderedChild]
 }
 

@@ -33,7 +33,7 @@ public final class InlineCaptures {
         + "|StoreFixture|StoreBackedBuild|BuiltStoreFixture|ModelCapture|EntryFamilyFixture";
 
     /** The arms that capture, through the class or the {@code held()} owner. */
-    private static final String ARMS = "of|ofWith|ofFiles|ofCatalog|ofCatalogWith|ofCatalogFilesWith"
+    private static final String ARMS = "of|ofWith|ofFiles|ofCatalog|ofCatalogWith"
         + "|ownStore|ownStoreWith|ownStoreOfCatalog|ownStoreOfCatalogWith|ownLongLivedStoreOfCatalog"
         + "|ownStoreOfFiles|tagged|configured|ofRefusedSchema|withCapturedStore|capture|captured"
         + "|capturedInMemory|buildBundle|storeBackedPlan|storeBackedFetchers|withStoreOver|run"
@@ -45,7 +45,7 @@ public final class InlineCaptures {
     /** Arms reached without their class: a static import, or a further graph on an open fixture. */
     private static final Pattern WITHOUT_A_FIXTURE = Pattern.compile(
         "(?<![\\w.])(?:withCapturedStore|buildBundle)\\s*\\(|\\.(?:andGraph|andGraphWith|andCatalogGraph"
-            + "|andCatalogGraphWith|andCatalogGraphFilesWith|andGraphSharingTheFile|recapture"
+            + "|andCatalogGraphWith|andGraphSharingTheFile|recapture"
             + "|recaptureCatalog)\\s*\\(");
 
     private static final Pattern COMMENTS = Pattern.compile("/\\*.*?\\*/|//[^\\n]*", Pattern.DOTALL);

@@ -12,7 +12,7 @@ type Venue @table(name: "event") { name: String }
 
 type Report { text: String }
 
-extend type Query {
+type Query {
   films(inActor: ID, title: String): [Film!]!
   pagedFilms(inActor: ID): [Film!]! @asConnection
   venues(inActor: ID): [Venue!]!

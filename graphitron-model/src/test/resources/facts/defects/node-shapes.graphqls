@@ -21,7 +21,7 @@ type NoTable implements Node @node { id: ID! }
 
 type Bare @node { id: ID! }
 
-extend type Query { e: ExplicitNode, i: InferredNode, a: NoInterface, t: NoTable, b: Bare }
+type Query { e: ExplicitNode, i: InferredNode, a: NoInterface, t: NoTable, b: Bare }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   type_name IN ('ExplicitNode', 'InferredNode', 'NoInterface', 'NoTable', 'Bare')

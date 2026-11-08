@@ -12,7 +12,7 @@ type Actor @table(name: "actor") {
     @defaultOrder(fields: [{name: "film_id"}])
 }
 
-extend type Query {
+type Query {
   actors: [Actor]
 }
 

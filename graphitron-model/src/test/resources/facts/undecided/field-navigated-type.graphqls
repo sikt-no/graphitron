@@ -25,7 +25,7 @@ interface InterfaceEdge { node: Film }
 
 union Document = Film
 
-extend type Query {
+type Query {
   film: Film
   filmsConnection: FilmsConnection
   films: [Film] @asConnection

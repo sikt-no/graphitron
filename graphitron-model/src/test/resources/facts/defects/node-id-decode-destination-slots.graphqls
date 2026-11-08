@@ -15,7 +15,7 @@ input Filter @table(name: "film") {
   filmId: ID @nodeId(typeName: "Film")
 }
 
-extend type Query {
+type Query {
   # Own-row identity binds the row's own columns.
   films(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
   # The junction chain binds the node type's own table inside a correlated EXISTS.

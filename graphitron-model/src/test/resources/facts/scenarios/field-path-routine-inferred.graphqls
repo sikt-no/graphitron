@@ -15,7 +15,7 @@ type Actor @table(name: "actor") {
     @defaultOrder(primaryKey: true)
 }
 
-extend type Query {
+type Query {
   actors: [Actor]
   recentFilmsForActor(actorId: Int!, minLength: Int!): [Film!]!
     @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")

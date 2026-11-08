@@ -6,7 +6,7 @@
 type Repeated { kept: String }
 type Repeated { dropped: String }
 
-extend type Query {
+type Query {
   repeated: Repeated
 }
 

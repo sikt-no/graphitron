@@ -7,7 +7,7 @@
 
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
-extend type Query { film: Film, language: Language, actor: Actor }
+type Query { film: Film, language: Language, actor: Actor }
 
 interface Node { id: ID! }
 

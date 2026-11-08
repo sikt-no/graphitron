@@ -11,7 +11,7 @@ type Film @table(name: "film") {
 
 type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
 
-extend type Query { films: [Film!]! }
+type Query { films: [Film!]! }
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_key", where: "coordinate LIKE 'Film.%'", rows: """
   coordinate, target_type, position, constraint_name

@@ -3,7 +3,7 @@
 # being a schema problem beside it. A repeated @routine is again one claim at its first application.
 # @lookupKey written on a field rather than an argument claims nothing. The coordinates are the ones
 # authored-claim-decoded decodes, so a graph's decode silences no claim of another's, and the
-# positions below are the lines of this file below the prelude.
+# positions below are the lines of this file.
 
 type Film @table(name: "film") {
   title: String
@@ -11,7 +11,7 @@ type Film @table(name: "film") {
   mutation: Film @mutation
 }
 
-extend type Query {
+type Query {
   routine: [Film!]! @routine
   mutation: Film @mutation
   repeated: [Film!]!

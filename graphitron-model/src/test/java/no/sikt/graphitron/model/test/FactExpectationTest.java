@@ -30,8 +30,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code scenarios} generate, and the {@code graphitron} module generates each one at
  * {@code generate-test-sources} for the tests of generated code, so a scenario never holds a
  * defect; {@code defects} never generate and always store one; {@code incremental-captures} are
- * graphs read in steps; {@code undecided} makes no claim and only shrinks. The prelude sits above
- * all four.
+ * graphs read in steps; {@code undecided} makes no claim and only shrinks. Every plain document is a
+ * {@link Scenario}, run by the population: its claims are checked as it runs, and this class asserts
+ * what they found.
  *
  * <p>The corpus beside it carries classification verdicts for the walk and asserts nothing about
  * the store; a document here is about the shape of the store, and is where a store fact is pinned.
@@ -57,9 +58,6 @@ class FactExpectationTest {
 
     /** The undecided folder's size, lowered as documents leave it and never raised. */
     private static final int UNDECIDED_CEILING = 41;
-
-    /** The share of graphs a fact must be in to count as the baseline every graph has. */
-    private static final double BASELINE = 0.9;
 
     /** Each graph's claim, by its name: a plain document's path, or a stepped graph's stem. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();
@@ -173,13 +171,25 @@ class FactExpectationTest {
             }
         }
         FACTS.warm(graphs.plain().keySet());
+        // Each scenario's claims were checked as it ran, against the store at the claim's point;
+        // what they found is the record the population keeps.
+        var verified = new LinkedHashMap<String, FactGraphs.Verification>();
+        FACTS.verifications().forEach((graph, verification) -> {
+            if (graphs.plain().containsKey(graph)) {
+                verified.put(graph, verification);
+                divergences.addAll(verification.divergences().stream()
+                    .map(divergence -> graph + " " + divergence).toList());
+            }
+        });
         for (var examined : FACTS.eachStore((dsl, held) -> {
+            var files = assertionBlocks.stream().filter(block -> held.contains(block.graph())).toList();
             var own = java.util.stream.Stream.concat(
-                    CorpusExpectations.blocks(dsl).stream()
-                        .filter(block -> graphs.plain().containsKey(block.graph())),
-                    assertionBlocks.stream().filter(block -> held.contains(block.graph())))
+                    verified.entrySet().stream()
+                        .filter(entry -> held.contains(entry.getKey()))
+                        .flatMap(entry -> entry.getValue().blocks().stream()),
+                    files.stream())
                 .toList();
-            return examine(dsl, held, own, CorpusExpectations.divergences(dsl, own).stream()
+            return examine(dsl, held, own, CorpusExpectations.divergences(dsl, files).stream()
                 .map(Object::toString).toList());
         })) {
             examined.addTo();
@@ -211,7 +221,7 @@ class FactExpectationTest {
             for (long instant : Graphs.instants(graph.getValue())) {
                 var written = new LinkedHashMap<String, String>();
                 if (first) {
-                    written.put(PRELUDE_FILE, FactDocuments.prelude());
+                    written.put(PRELUDE_FILE, FactDocuments.steppedPrelude());
                     first = false;
                 }
                 graph.getValue().forEach((file, versions) -> {
@@ -390,42 +400,27 @@ class FactExpectationTest {
     }
 
     /**
-     * Each example is stated once. Two documents whose graphs hold the same facts, beyond the
-     * baseline every graph holds, state one example twice, and every claim on one is a claim the
-     * other could carry; they merge.
+     * Each example is stated once. Two documents whose graphs hold the same facts state one example
+     * twice, and every claim on one is a claim the other could carry; they merge.
      *
      * <p>The comparison is the store's rather than the text's, so an example spelled two ways is
-     * one example and two that read alike but differ in a directive are two. A document whose graph
-     * holds nothing beyond the baseline is exempt: its example is the catalog or the configuration
-     * read alone, and its subject is all in its claims.
+     * one example and two that read alike but differ in a directive are two. A document stating no
+     * SDL of its own is exempt: its example is what it pulls in, the catalog or the configuration
+     * read over the anchor, and its subject is all in its claims.
      */
     @Test
     @DisplayName("no two documents state the same example")
     void noTwoDocumentsStateTheSameExample() {
+        var documents = plainDocuments();
         var byFacts = new LinkedHashMap<java.util.Set<String>, List<String>>();
-        beyondTheBaseline().forEach((graph, facts) -> {
-            if (!facts.isEmpty()) {
+        fingerprints.forEach((graph, facts) -> {
+            if (Scenario.statesExample(documents.get(graph).sdl())) {
                 byFacts.computeIfAbsent(facts, ignored -> new ArrayList<>()).add(graph);
             }
         });
         assertThat(byFacts.values().stream().filter(graphs -> graphs.size() > 1).toList())
             .as("documents whose graphs hold the same facts; merge them")
             .isEmpty();
-    }
-
-    /** Each graph's facts without the ones nearly every graph holds, which the prelude puts there. */
-    private static Map<String, java.util.Set<String>> beyondTheBaseline() {
-        var frequency = new java.util.HashMap<String, Integer>();
-        fingerprints.values().forEach(facts -> facts.forEach(fact -> frequency.merge(fact, 1, Integer::sum)));
-        var baseline = frequency.entrySet().stream()
-            .filter(entry -> entry.getValue() >= BASELINE * fingerprints.size())
-            .map(Map.Entry::getKey)
-            .collect(Collectors.toSet());
-        var beyond = new TreeMap<String, java.util.Set<String>>();
-        fingerprints.forEach((graph, facts) -> beyond.put(graph, facts.stream()
-            .filter(fact -> !baseline.contains(fact))
-            .collect(Collectors.toSet())));
-        return beyond;
     }
 
     /**

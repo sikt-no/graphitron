@@ -67,7 +67,7 @@ type PageInfo {
     endCursor: String
 }
 
-extend type Query {
+type Query {
     addresses: [Address!]! @defaultOrder(primaryKey: true)
     films: [Film!]! @defaultOrder(primaryKey: true)
 }

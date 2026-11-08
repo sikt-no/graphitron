@@ -8,7 +8,7 @@ type Event @table(name: "event") { id: ID }
 
 type QualifiedEvent @table(name: "multischema_a.event") { id: ID }
 
-extend type Query {
+type Query {
   missing: Missing
   event: Event
   qualifiedEvent: QualifiedEvent

@@ -20,7 +20,7 @@ union OrgHolder = DivergedRefChild | DivergedRefSibling
 
 input ChildFilter { ofOrg: ID @nodeId(typeName: "ConverterOrg") }
 
-extend type Query {
+type Query {
   "The two ends disagree."
   divergedChildren(ofOrg: ID @nodeId(typeName: "ConverterOrg")): [DivergedRefChild!]!
   "The same, at an input field."

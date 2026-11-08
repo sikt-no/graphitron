@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The catalog is partitioned by the generated package a schema's classes live in, which is the unit
 # codegen rewrites. The classpath entry the classes came from would also be true of these rows and is
 # the wrong unit: one jar carries every schema a codegen run produced, so invalidating the entry

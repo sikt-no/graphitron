@@ -45,7 +45,7 @@ type SinglePayload { text: String, error: FilmFailure }
 "A member that is no @error makes the list a result, not errors."
 type MixedPayload { text: String, errors: [FilmOrError] }
 
-extend type Query {
+type Query {
   filmOutcome: FilmOutcome
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
   films: [Film!]!

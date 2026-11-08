@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A routine that is found but cannot be the target is invalid the same way. The event and the payload
 # are passed as text or JSON, so a routine whose only parameter is an integer cannot carry either,
 # however the roles are bound: rental_count_for_customer takes one integer. A table-valued function is

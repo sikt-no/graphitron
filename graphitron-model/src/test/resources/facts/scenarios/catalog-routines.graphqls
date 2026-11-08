@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The callables the catalog holds and the call surface their parameters belong to.
 #
 # A table-valued function is a routine as well as a table, and the routine names the method jOOQ

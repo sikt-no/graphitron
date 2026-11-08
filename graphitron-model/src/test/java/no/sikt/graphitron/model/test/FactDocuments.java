@@ -39,9 +39,9 @@ import java.util.regex.Pattern;
  * generating run over the same text and classpath, so the code under test is generated from the
  * facts the documents check.
  *
- * <p>A document's folder is a claim about its graph ({@link Claim}). The prelude sits above all
- * four folders and is a file of every graph: a plain document's graph is two files, the prelude and
- * the document, so a claim's source lines are the document's own.
+ * <p>A document's folder is a claim about its graph ({@link Claim}). A document is a
+ * {@link Scenario}: it states its own example and pulls in what it builds on, the building blocks
+ * under {@code layouts} and {@code shapes} ({@link #buildingBlocks()}), with {@code @withFacts}.
  */
 public final class FactDocuments {
 
@@ -53,7 +53,7 @@ public final class FactDocuments {
      */
     public static final String PRELUDE_FILE = "_prelude";
 
-    /** The fact folder, which holds the prelude and the four folders of documents. */
+    /** The fact folder, which holds the engine's directive declarations and the document folders. */
     static final CorpusDocuments.Folder FACTS = new CorpusDocuments.Folder("facts", 0);
 
     /**
@@ -144,44 +144,43 @@ public final class FactDocuments {
         return claim.folder().name().substring(FACTS.name().length() + 1) + "/" + document.id();
     }
 
-    /** The document a path names, if one does. */
+    /** The document a path names, a scenario or a building block, if one does. */
     public static Optional<CorpusDocuments.Document> at(String path) {
         return claimed().entrySet().stream()
             .filter(entry -> path(entry.getValue(), entry.getKey()).equals(path))
             .map(Map.Entry::getKey)
-            .findFirst();
+            .findFirst()
+            .or(() -> Optional.ofNullable(buildingBlocks().get(path)));
     }
 
-    /** The prelude's text. */
-    public static String prelude() {
-        return CorpusDocuments.prelude(FACTS);
+    /** The folders of building blocks: documents other documents pull in, no folder claim on them. */
+    static final List<String> BUILDING_BLOCKS = List.of("layouts", "shapes");
+
+    /**
+     * Every building block by path: the documents under {@code layouts} and {@code shapes}, which a
+     * scenario pulls in with {@code @withFacts} and which no folder claim applies to. A folder that
+     * does not exist yet holds none.
+     */
+    public static Map<String, CorpusDocuments.Document> buildingBlocks() {
+        var blocks = new LinkedHashMap<String, CorpusDocuments.Document>();
+        for (var name : BUILDING_BLOCKS) {
+            var folder = new CorpusDocuments.Folder(FACTS.name() + "/" + name, 0);
+            if (folder.candidates().stream().noneMatch(java.nio.file.Files::isDirectory)) {
+                continue;
+            }
+            for (var document : CorpusDocuments.documents(folder)) {
+                blocks.put(name + "/" + document.id(), document);
+            }
+        }
+        return blocks;
     }
 
     /**
-     * A plain document's graph written into {@code directory} as the files it is read over, in the
-     * order they are read: the prelude, as {@code <path>._prelude.graphqls}, then the document, as
-     * {@code <path>.graphqls}, {@code path} being the document's {@link #path}. Every reading of a plain document reads these files, so what
-     * {@code FactExpectationTest} checks is what {@code GenerateTestSchemas} generates from.
-     *
-     * <p>The prelude is dated a second before the document. Reading order is modification time,
-     * name breaking a tie, and two files written in one breath may land either side of a clock tick;
-     * stating the order keeps the prelude the incumbent of every coordinate it declares, which is
-     * what a document extending its {@code Query} expects.
+     * The engine's own directives, declared for an editor and the documentation renderer to read a
+     * document against; never rendered into a graph.
      */
-    public static List<Path> write(Path directory, String path, CorpusDocuments.Document document) {
-        var prelude = directory.resolve(path + "." + PRELUDE_FILE + ".graphqls");
-        var file = directory.resolve(path + ".graphqls");
-        var now = Instant.now();
-        try {
-            Files.createDirectories(file.getParent());
-            Files.writeString(prelude, prelude());
-            Files.writeString(file, document.sdl());
-            Files.setLastModifiedTime(prelude, FileTime.from(now.minusSeconds(1)));
-            Files.setLastModifiedTime(file, FileTime.from(now));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return List.of(prelude, file);
+    public static String prelude() {
+        return CorpusDocuments.prelude(FACTS);
     }
 
     /** Whether the document states the configuration its graph is captured under. */
@@ -190,19 +189,15 @@ public final class FactDocuments {
     }
 
     /**
-     * A plain document's graph, captured under its {@link #path} into the store {@code dsl} writes:
-     * against the catalog its configuration names, else {@code fixture}, over {@code classpath},
-     * under the configuration it states, from the files {@link #write} lays down in
-     * {@code directory}.
-     *
-     * @return the two schemas the capture built
+     * What a graph read in steps is captured over beside its own files: the claim directives' and
+     * configuration's declarations and the anchor layout's query root, as the shared prelude was
+     * before documents became scenarios. Read only by the stepped graphs, which become scenarios in
+     * their turn.
      */
-    public static CapturedSchema capture(DSLContext dsl, Path directory, String path,
-                                         CorpusDocuments.Document document, CatalogInput fixture,
-                                         List<ClasspathEntry> classpath) {
-        var texts = List.of(document.sdl());
-        return CapturedStore.captureFilesInto(dsl, directory, path, write(directory, path, document),
-            StatedConfiguration.catalog(texts, fixture), classpath, StatedConfiguration.of(texts));
+    public static String steppedPrelude() {
+        var declarations = prelude().replaceAll(
+            "(?m)^(directive @withFacts|input FactDoc|directive @tick)\\b.*$", "");
+        return declarations + "\n" + buildingBlocks().get("layouts/anchor").sdl();
     }
 
     /**

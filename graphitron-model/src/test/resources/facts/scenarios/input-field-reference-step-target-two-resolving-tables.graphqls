@@ -11,7 +11,7 @@ input CityFilter {
   inCity: String @field(name: "city") @reference(path: [{table: "address"}, {table: "city"}])
 }
 
-extend type Query {
+type Query {
   customers(filter: CityFilter): [Customer!]!
   staff(filter: CityFilter): [Staff!]!
 }

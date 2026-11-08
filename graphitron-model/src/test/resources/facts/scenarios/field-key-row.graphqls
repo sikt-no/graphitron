@@ -40,7 +40,7 @@ type OccupantsBatchPayload {
   occupants: [AddressOccupant!]! @field(name: "addresses")
 }
 
-extend type Query {
+type Query {
   filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
   recentlyCreatedFilmsBatched: [CreateFilmsPayload!]!

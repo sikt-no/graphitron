@@ -7,7 +7,7 @@ union Media = Film | Note
 
 # The macro rewrote this field's type to a connection it minted, so the field's named type is the
 # wrapper and the target is the element.
-extend type Query { films: [Film!]! @asConnection }
+type Query { films: [Film!]! @asConnection }
 
 # The author declared the wrapper, and its edges-then-node shape is what makes it one.
 extend type Query { pages: FilmPage }
@@ -28,7 +28,6 @@ extend schema @assertContains(relation: "graphitron_field_target", rows: """
   Query,          pages,      Film,             FilmPage
   Query,          firstFilm,  Film,
   Query,          media,      Media,
-  Query,          anchor,     FactAnchor,
   Film,           title,      String,
   Mutation,       addFilm,    AddFilmPayload,
   AddFilmPayload, film,       Film,

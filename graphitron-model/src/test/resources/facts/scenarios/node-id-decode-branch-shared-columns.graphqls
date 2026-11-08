@@ -14,7 +14,7 @@ type DescribeHub @table(name: "describe_hub") { hubCode: String @field(name: "hu
 
 union ProjectRecord = ProjectNote | ProjectEvent | DescribeHub
 
-extend type Query {
+type Query {
   projectRecords(ofProject: ID @nodeId(typeName: "Project")): [ProjectRecord]
 }
 

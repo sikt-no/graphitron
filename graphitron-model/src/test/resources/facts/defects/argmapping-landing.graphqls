@@ -13,7 +13,7 @@ input Tree { value: Int child: Tree }
 
 type Shelf { titles(ids: FilmIds): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: ids.ids"}) }
 
-extend type Query {
+type Query {
   byIds(input: FilmIds): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "a: input.ids, b: input.ref.key, c: input.ref.actor_id"})
   byFilter(filter: TitleFilter @condition(condition: {className: "example.Ref", method: "m", argMapping: "t: title, u: filter.title"})): [String]
   shelfA: Shelf

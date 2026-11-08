@@ -45,7 +45,7 @@ type Holder implements Node @table(name: "array_holder") @node {
   id: ID!
 }
 
-extend type Query @table(name: "film") {
+type Query @table(name: "film") {
   films: [Film!]!
   unbound: [Unbound!]!
   served: [Served!]!

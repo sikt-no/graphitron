@@ -24,7 +24,7 @@ input FilmFilter {
 
 type Film @table(name: "film") { filmId: ID rating: String }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
 }
 

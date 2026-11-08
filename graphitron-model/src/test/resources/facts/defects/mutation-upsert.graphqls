@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # @mutation(typeName: UPSERT) is a write graphitron does not generate yet. The schema means
 # something, so the verdict rests on UNSUPPORTED, at the @mutation as written. The verb is still a
 # claim: graphitron would generate the write, so a @service beside it, whose author provides the

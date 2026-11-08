@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # What the catalog reading says of each table it finds, over the fixture catalog's several schemas.
 #
 # A table is found in every schema the codegen read, and the same name in two schemas is two tables:

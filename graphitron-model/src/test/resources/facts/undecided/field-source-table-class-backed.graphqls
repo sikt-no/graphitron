@@ -10,7 +10,7 @@ type FilmDetailsCarrier {
   language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
 }
 
-extend type Query {
+type Query {
   filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
 }

@@ -14,7 +14,7 @@ type Film @table(name: "film") {
              argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
 }
 
-extend type Query {
+type Query {
   films: [Film]
 }
 

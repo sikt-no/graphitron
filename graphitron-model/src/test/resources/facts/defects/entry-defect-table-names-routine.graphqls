@@ -10,7 +10,7 @@ type TilgangBound {
   organisasjonskode: Int
 }
 
-extend type Query {
+type Query {
   tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
     @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
              argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")

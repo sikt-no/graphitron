@@ -10,7 +10,7 @@ type Language @table(name: "language") @node {
   name: String
 }
 
-extend type Query {
+type Query {
   films: [Film!]!
   languages: [Language!]!
 }

@@ -12,7 +12,7 @@ type Film @table(name: "film") {
   title: String
 }
 
-extend type Query {
+type Query {
   parents: [Parent!]!
   films: [Film!]!
 }

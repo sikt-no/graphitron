@@ -21,7 +21,7 @@ input FilmInput { title: String }
 
 extend schema @withConfiguration(outboxTable: "outbox", outboxPayload: "operation: $scope.operationName")
 
-extend type Query {
+type Query {
   films: [Film!]! @outbox(argMapping: "other: $scope.alias")
 }
 

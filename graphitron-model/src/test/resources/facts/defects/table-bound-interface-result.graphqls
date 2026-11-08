@@ -18,7 +18,7 @@ type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
 type Language @table(name: "language") { name: String }
 type Store @table(name: "store") { storeId: Int @field(name: "store_id") }
 
-extend type Query {
+type Query {
   topMedia: MediaItem
 }
 

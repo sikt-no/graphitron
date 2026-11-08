@@ -16,7 +16,7 @@ input PairingInput {
   pairingId: ID @nodeId(typeName: "FilmActor")
 }
 
-extend type Query {
+type Query {
   # A composite key at a parameter holding one String: refused on the count alone.
   pairings(userId: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})

@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The getter a table's generated record reads each column through, and the Bean Validation property
 # that getter names, as the catalog reading writes them.
 #

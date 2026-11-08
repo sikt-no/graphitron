@@ -12,7 +12,7 @@ input FilmOrder { title: String }
 
 type Unread @table(name: "no_such_table") { title: String }
 
-extend type Query {
+type Query {
   film(id: ID, order: FilmOrder @orderBy): Film
     @reference(path: [{table: "film"}])
     @routine(name: "film_fn")

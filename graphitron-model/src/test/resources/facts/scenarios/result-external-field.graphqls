@@ -33,7 +33,7 @@ type Film @table(name: "film") {
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
 }
 
-extend type Query { inventories: [Inventory!]! }
+type Query { inventories: [Inventory!]! }
 
 # The class a method's result names as its first type argument, which no peel reaches.
 extend schema @assertContains(relation: "code_method", rows: """

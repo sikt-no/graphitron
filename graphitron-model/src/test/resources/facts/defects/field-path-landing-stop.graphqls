@@ -16,7 +16,7 @@ type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
 }
 
-extend type Query {
+type Query {
   films: [Film]
   castOf(actorId: Int!, minLength: Int!): [Actor!]!
     @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")

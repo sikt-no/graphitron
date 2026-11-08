@@ -60,7 +60,7 @@ enum Rating @enum(enumReference: {className: "example.RatingEnum"}) {
   PG
 }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter, actors: ActorFilter): [Film!]!
   actors: [Actor!]!
 }

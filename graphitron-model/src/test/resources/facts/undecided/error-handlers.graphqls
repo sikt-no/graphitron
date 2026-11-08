@@ -32,7 +32,7 @@ type Empty @error(handlers: []) {
   message: String
 }
 
-extend type Query {
+type Query {
   lone: Lone
   mixed: Mixed
   classless: Classless

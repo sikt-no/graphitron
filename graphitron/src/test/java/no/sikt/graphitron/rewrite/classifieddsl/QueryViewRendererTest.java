@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A check for {@link QueryViewRenderer}: a query selects a closure of a fixture read over the fact
- * documents' prelude, and the renderer regenerates real SDL for it, pruned to the selected fields
+ * A check for {@link QueryViewRenderer}: a query selects a closure of a fixture read over the scenario
+ * engine's directive declarations and the anchor layout, and the renderer regenerates real SDL for it, pruned to the selected fields
  * (job 3) with the prelude's own directives stripped (job 2) but real Graphitron directives retained.
  *
  * <p>Two closure expansions are exercised below: the input-object closure from a kept field's
@@ -22,8 +22,10 @@ class QueryViewRendererTest {
     private static final QueryViewRenderer.Prelude FACTS =
         QueryViewRenderer.Prelude.of(FactDocuments.prelude());
 
+    /** A fixture rendered as a document pulling in the anchor layout's query root, which it extends. */
     private static String render(String fixture, String selection) {
-        return QueryViewRenderer.render(FACTS, fixture, selection);
+        return QueryViewRenderer.render(FACTS,
+            FactDocuments.buildingBlocks().get("layouts/anchor").sdl() + "\n" + fixture, selection);
     }
 
     private static final String FIXTURE = """

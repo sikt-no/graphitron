@@ -3,7 +3,7 @@ type Film @table(name: "film") { title: String }
 
 input FilmFilter { title: [String!] @field(name: "title") @asFacet }
 
-extend type Query { films(filter: FilmFilter): [Film!]! @asConnection }
+type Query { films(filter: FilmFilter): [Film!]! @asConnection }
 
 extend schema @expectEquals(relation: "graphitron_carrier_facet_mint", rows: """
   type_name, field_name, connection_name,      facets_type_name,           position, facet_field_name, value_type_name,  value_scalar, value_nullable

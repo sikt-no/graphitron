@@ -8,7 +8,7 @@ type FilmForActor @table(name: "films_for_actor") { title: String }
 
 union AnyFilmRow = FilmActor | FilmForActor
 
-extend type Query {
+type Query {
   rows(filmed: String @reference(path: [{table: "film"}])): [AnyFilmRow!]!
 }
 

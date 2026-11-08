@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The configured common payload is judged at every @outbox it is carried by, since the
 # configuration has no position of its own. A key it names twice, or an entry no message can carry
 # (a common payload reads scope members only, so an argument path is none), is one row per @outbox

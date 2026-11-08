@@ -11,7 +11,7 @@ type Actor implements Node @table(name: "actor") @node(typeId: "Shared") { id: I
 # An id of its own, defaulted to the type name.
 type Language implements Node @table(name: "language") @node { id: ID! }
 
-extend type Query {
+type Query {
   films: [Film!]!
   actors: [Actor!]!
   languages: [Language!]!

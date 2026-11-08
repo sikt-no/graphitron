@@ -31,7 +31,7 @@ input IntervalFilter {
   toLevel: ID @nodeId(typeName: "BareLevel") @reference(path: [{key: "level_interval_to_level_fkey"}])
 }
 
-extend type Query {
+type Query {
   intervals(where: IntervalFilter): [Interval!]!
   levels: [Level!]!
   pinnedLevels: [PinnedLevel!]!

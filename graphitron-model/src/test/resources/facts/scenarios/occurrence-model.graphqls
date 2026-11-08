@@ -28,7 +28,7 @@ type Actor @table(name: "actor") { lastName: String @field(name: "last_name") }
 
 input FilmFilter { title: String }
 
-extend type Query { films(filter: FilmFilter): [Film!]! }
+type Query { films(filter: FilmFilter): [Film!]! }
 
 extend schema @expectEquals(relation: "graphitron_occurrence",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """

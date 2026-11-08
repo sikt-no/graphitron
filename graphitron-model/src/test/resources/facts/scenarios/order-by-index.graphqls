@@ -15,7 +15,7 @@ input FilmOrderBy {
     direction: SortDirection
 }
 
-extend type Query {
+type Query {
     films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
 }
 

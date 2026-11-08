@@ -16,7 +16,7 @@ type Actor @table(name: "actor") { firstName: String @field(name: "first_name") 
 type Customer @table(name: "customer") { customerId: Int @field(name: "customer_id") }
 type Report { text: String }
 
-extend type Query {
+type Query {
   films(
     inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
     viaJunction: String @reference(path: [{key: "film_actor_film_id_fkey"}])

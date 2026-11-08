@@ -70,7 +70,7 @@ extend type Customer {
   }}])
 }
 
-extend type Query { films: [Film!]! customers: [Customer!]! staffs: [Staff!]! }
+type Query { films: [Film!]! customers: [Customer!]! staffs: [Staff!]! }
 
 # The walk takes a condition alone as the step its method's signature routes, joined by the method
 # and no column, and a condition beside nothing else whose overloads agree as one step.

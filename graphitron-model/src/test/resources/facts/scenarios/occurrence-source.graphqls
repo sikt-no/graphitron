@@ -95,7 +95,7 @@ input LanguageDeleteInput { languageId: Int! @field(name: "language_id") }
 # A delete's payload: the ids of the deleted languages, which read off what the write produced.
 type DeletedLanguagesPayload { deletedIds: [ID!] }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter, first: Int): [Film!]!
   search(languageId: Int @field(name: "language_id")): [Searchable]
   topMedia(title: String): MediaItem

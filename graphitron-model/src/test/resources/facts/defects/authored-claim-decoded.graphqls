@@ -22,7 +22,7 @@ type Failure @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
 
 input LookupInput { key: Int }
 
-extend type Query @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
+type Query @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
   claimed: String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})

@@ -10,7 +10,7 @@
 # fill and is not reported unfilled a second time. contextPair fills userId from a $context pair,
 # which this site refuses while the fill itself is still stated.
 
-extend type Query {
+type Query {
   unfilledFilms(other: [String!]): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByService"})

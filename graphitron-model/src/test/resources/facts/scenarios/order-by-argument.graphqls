@@ -9,7 +9,7 @@ type Film @table(name: "film") {
 
 enum MpaaRating { G PG PG_13 R NC_17 }
 
-extend type Query {
+type Query {
     filmsOrderedConnection(
         rating: MpaaRating @field(name: "RATING"),
         order: [FilmOrderBy] @orderBy,

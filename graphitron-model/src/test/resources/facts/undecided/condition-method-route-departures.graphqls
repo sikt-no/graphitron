@@ -5,7 +5,7 @@
 
 type Customer @table(name: "customer") { customerId: Int }
 
-extend type Query {
+type Query {
   customers(
     wildcard: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "anythingToAddress"}}])
     primitive: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "intToAddress"}}])

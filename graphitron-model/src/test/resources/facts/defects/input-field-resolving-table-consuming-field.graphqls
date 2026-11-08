@@ -16,7 +16,7 @@ input ReportFilter { title: String }
 input Unused { title: String }
 input FilmInput { title: String }
 
-extend type Query {
+type Query {
   films(filter: FilmFilter, shared: SharedFilter): [Film!]!
   otherFilms(filter: FilmFilter): [Film!]!
   actors(shared: SharedFilter): [Actor!]!

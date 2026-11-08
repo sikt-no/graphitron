@@ -98,7 +98,7 @@ type Film @table(name: "film") {
     @reference(path: [{table: "film", condition: {className: "example.Ref", method: "m", argMapping: "p: byInventory.nope"}}])
 }
 
-extend type Query {
+type Query {
   films(input: FilmActorInput): [Film!]!
     @service(service: {className: "example.Ref", method: "m", argMapping: "javaParam: input.inventoryId"})
 }

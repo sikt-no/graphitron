@@ -32,7 +32,7 @@ type Film @table(name: "film") {
     @reference(path: [{table: "film_actor"}, {table: "actor"}])
 }
 
-extend type Query {
+type Query {
   films: [Film!]!
 }
 

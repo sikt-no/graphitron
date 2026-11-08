@@ -9,7 +9,7 @@ type Ledger @table(name: "ledger") { entry: String }
 
 type QualifiedNote @table(name: "multischema_a.note") { body: String }
 
-extend type Query {
+type Query {
   notes: [Note!]!
   ledgers: [Ledger!]!
   qualifiedNotes: [QualifiedNote!]!

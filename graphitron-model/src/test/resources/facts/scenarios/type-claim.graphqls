@@ -17,11 +17,10 @@ extend type Extended @table(name: "film")
 
 type Plain { title: String }
 
-extend type Query {
+type Query {
   films: [Film]
 }
 
-# The prelude's own claim is left out.
 extend schema @expectEquals(relation: "graphitron_claim", where: """
   kind IN ('TABLE_TYPE', 'ERROR_TYPE') AND coordinate <> 'FactAnchor'
   """, rows: """

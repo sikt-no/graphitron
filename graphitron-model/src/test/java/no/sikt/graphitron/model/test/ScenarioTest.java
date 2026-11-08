@@ -21,17 +21,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The scenario engine alone, over documents held in memory and with no store: what it renders into
- * the folder, when it asks for a capture, and which claims it hands over, in what order.
+ * the folder, when it captures, and which claims it hands over, in what order.
  */
 class ScenarioTest {
-
-    private static final String PRELUDE = """
-        directive @assertEmpty(relation: String!, where: String) repeatable on SCHEMA
-        directive @withFacts(docs: [FactDoc!]!) repeatable on SCHEMA
-        input FactDoc { path: String!, as: String }
-        directive @tick(ms: Int!) repeatable on SCHEMA
-        type Query { anchor: Int }
-        """;
 
     @TempDir
     Path folder;
@@ -39,55 +31,78 @@ class ScenarioTest {
     /** What a run did: each capture as the folder's files then, and each claim as it arrived. */
     private record Run(List<Capture> captures, List<Scenario.Claim> claims) {}
 
-    private record Capture(Instant at, Map<String, String> files, Map<String, Instant> times) {}
+    private record Capture(Instant at, boolean first, Map<String, String> files, Map<String, Instant> times) {}
 
     @Test
-    @DisplayName("the scenario's own file is rendered at t0 beside the prelude, its lines kept and its claims blanked")
+    @DisplayName("the scenario's own definitions are rendered and captured at t0, lines kept and engine directives blanked")
     void ownFileAtT0() throws IOException {
         var scenario = """
             # A film.
-            extend schema @assertEmpty(relation: "graphitron_entry_defect")
+            extend schema @withConfiguration(maxAllowedPageSize: 10)
             type Film { title: String }
+            extend schema @assertEmpty(relation: "graphitron_entry_defect")
             """;
         var run = run("scenarios/film", Map.of("scenarios/film", scenario));
 
         assertThat(run.captures()).singleElement().satisfies(capture -> {
             assertThat(capture.at()).isEqualTo(Scenario.T0);
-            assertThat(capture.files()).containsOnlyKeys("_prelude", "scenarios/film");
-            assertThat(capture.times().values()).containsOnly(Scenario.T0);
+            assertThat(capture.first()).isTrue();
+            assertThat(capture.files()).containsOnlyKeys("scenarios/film");
             var lines = capture.files().get("scenarios/film").split("\n", -1);
             assertThat(lines[0]).isEqualTo("# A film.");
-            assertThat(lines[1]).isBlank().hasSize(lines[1].length());
+            assertThat(lines[1]).isBlank();
             assertThat(lines[2]).isEqualTo("type Film { title: String }");
-            assertThat(capture.files().get("_prelude"))
-                .doesNotContain("withFacts").doesNotContain("FactDoc").doesNotContain("@tick")
-                .contains("directive @assertEmpty").contains("type Query");
+            assertThat(lines[3]).isBlank();
         });
         assertThat(run.claims()).singleElement().satisfies(claim -> {
-            assertThat(claim.line()).isEqualTo(2);
+            assertThat(claim.line()).isEqualTo(4);
             assertThat(claim.sdl()).contains("@assertEmpty(relation: \"graphitron_entry_defect\")");
         });
     }
 
     @Test
-    @DisplayName("@withFacts renders each document, and first what it pulls in, as the file its entry names")
+    @DisplayName("@withFacts renders each document, and first what it pulls in, as the file its entry names, and captures")
     void pullsInRecursively() throws IOException {
         var run = run("scenarios/s", Map.of(
             "scenarios/s", """
                 extend schema @withFacts(docs: [{path: "layouts/core"}, {path: "shapes/b", as: "shapes/renamed"}])
-                extend type Film { rating: Int }
+                type Rating { stars: Int }
                 extend schema @assertEmpty(relation: "r")
                 """,
             "layouts/core", """
                 extend schema @withFacts(docs: [{path: "shapes/a"}])
+                extend schema @withConfiguration(maxAllowedPageSize: 3)
                 extend schema @assertEmpty(relation: "never handed over")
                 """,
             "shapes/a", "type Film { title: String }\n",
             "shapes/b", "type Language { name: String }\n"));
 
-        assertThat(run.captures()).singleElement().satisfies(capture -> assertThat(capture.files())
-            .containsOnlyKeys("_prelude", "scenarios/s", "layouts/core", "shapes/a", "shapes/renamed"));
-        assertThat(run.claims()).extracting(claim -> claim.sdl()).singleElement().asString().contains("\"r\"");
+        assertThat(run.captures()).extracting(Capture::first).containsExactly(true, false);
+        assertThat(run.captures().getFirst().files())
+            .containsOnlyKeys("layouts/core", "shapes/a", "shapes/renamed");
+        assertThat(run.captures().getLast().files())
+            .containsOnlyKeys("scenarios/s", "layouts/core", "shapes/a", "shapes/renamed");
+        assertThat(run.captures().getFirst().files().get("layouts/core")).isBlank();
+        assertThat(run.claims()).extracting(Scenario.Claim::sdl).singleElement().asString().contains("\"r\"");
+    }
+
+    @Test
+    @DisplayName("files rendered at one clock time are dated in the order they were written")
+    void writeOrderWithinAnInstant() throws IOException {
+        var run = run("scenarios/s", Map.of(
+            "scenarios/s", """
+                extend schema @withFacts(docs: [{path: "shapes/a"}, {path: "shapes/b"}])
+                type Rating { stars: Int }
+                extend schema @assertEmpty(relation: "r")
+                """,
+            "shapes/a", "type Film { title: String }\n",
+            "shapes/b", "type Language { name: String }\n"));
+
+        var times = run.captures().getLast().times();
+        assertThat(times.get("shapes/a")).isEqualTo(Scenario.T0);
+        assertThat(times.get("shapes/b")).isAfter(times.get("shapes/a"));
+        assertThat(times.get("scenarios/s")).isAfter(times.get("shapes/b"))
+            .isBefore(Scenario.T0.plusMillis(1));
     }
 
     @Test
@@ -108,19 +123,19 @@ class ScenarioTest {
 
         assertThat(run.captures()).singleElement().satisfies(capture -> {
             assertThat(capture.files().get("shapes/film")).isEqualTo("type Film { name: String }\n");
-            assertThat(capture.times().values()).containsOnly(Scenario.T0);
+            assertThat(capture.at()).isEqualTo(Scenario.T0);
         });
     }
 
     @Test
-    @DisplayName("a claim captures only when something was rendered since the last capture, at the clock's time, and arrives once")
-    void capturesWhenChangedAndClaimsOnce() throws IOException {
+    @DisplayName("every render is captured at the clock's time, and each claim arrives once against the capture before it")
+    void capturesAfterEveryRender() throws IOException {
         var run = run("scenarios/s", Map.of(
             "scenarios/s", """
                 type Film { title: String }
                 extend schema @assertEmpty(relation: "first") @assertEmpty(relation: "second")
                 extend schema @tick(ms: 1500)
-                extend schema @assertEmpty(relation: "no change, no capture")
+                extend schema @assertEmpty(relation: "still the first capture")
                 extend schema @tick(ms: 500)
                 extend schema @withFacts(docs: [{path: "shapes/a"}])
                 extend schema @assertEmpty(relation: "third")
@@ -129,17 +144,56 @@ class ScenarioTest {
 
         assertThat(run.captures()).extracting(Capture::at)
             .containsExactly(Scenario.T0, Scenario.T0.plusMillis(2000));
-        assertThat(run.captures().getLast().times())
-            .containsEntry("scenarios/s", Scenario.T0)
-            .containsEntry("shapes/a", Scenario.T0.plusMillis(2000));
-        assertThat(run.claims()).extracting(claim -> claim.at())
+        assertThat(run.claims()).extracting(Scenario.Claim::at)
             .containsExactly(Scenario.T0, Scenario.T0, Scenario.T0.plusMillis(1500),
                 Scenario.T0.plusMillis(2000));
-        assertThat(run.claims()).extracting(claim -> claim.line()).containsExactly(2, 2, 4, 7);
+        assertThat(run.claims()).extracting(Scenario.Claim::line).containsExactly(2, 2, 4, 7);
     }
 
     @Test
-    @DisplayName("a directive that is not setup or a claim stays where it was written, beside a blanked claim")
+    @DisplayName("a type the folder already defines, defined again compatibly, is rendered as an extension adding only what is new")
+    void compatibleDuplicatesBecomeExtensions() throws IOException {
+        var run = run("scenarios/s", Map.of(
+            "scenarios/s", """
+                extend schema @withFacts(docs: [{path: "shapes/film"}])
+                "A film, as this scenario needs it."
+                type Film @table(name: "film") {
+                  title: String
+                  rating: Int
+                }
+                type Query { films: [Film!]! }
+                extend schema @assertEmpty(relation: "r")
+                """,
+            "shapes/film", """
+                type Film @table(name: "film") { title: String }
+                type Query { film: Film }
+                """));
+
+        var lines = run.captures().getLast().files().get("scenarios/s").split("\n", -1);
+        assertThat(lines[1]).isBlank();
+        assertThat(lines[2]).matches("extend type Film +\\{");
+        assertThat(lines[3]).isBlank();
+        assertThat(lines[4]).isEqualTo("  rating: Int");
+        assertThat(lines[6]).isEqualTo("extend type Query { films: [Film!]! }");
+    }
+
+    @Test
+    @DisplayName("a type defined again in disagreement is rendered as written, for the capture to see")
+    void incompatibleDuplicatesStay() throws IOException {
+        var run = run("scenarios/s", Map.of(
+            "scenarios/s", """
+                extend schema @withFacts(docs: [{path: "shapes/film"}])
+                type Film @table(name: "language") { title: String }
+                extend schema @assertEmpty(relation: "r")
+                """,
+            "shapes/film", "type Film @table(name: \"film\") { title: Int }\n"));
+
+        assertThat(run.captures().getLast().files().get("scenarios/s").split("\n")[1])
+            .isEqualTo("type Film @table(name: \"language\") { title: String }");
+    }
+
+    @Test
+    @DisplayName("a directive that is not the engine's stays where it was written, beside a blanked claim")
     void otherDirectivesStay() throws IOException {
         var run = run("scenarios/s", Map.of("scenarios/s", """
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.3") @assertEmpty(relation: "r")
@@ -148,6 +202,18 @@ class ScenarioTest {
         var line = run.captures().getFirst().files().get("scenarios/s").split("\n")[0];
         assertThat(line).startsWith("extend schema @link(url: \"https://specs.apollo.dev/federation/v2.3\") ")
             .doesNotContain("assertEmpty");
+        assertThat(run.claims()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a claim before anything is rendered is refused")
+    void claimsNeedACapture() {
+        assertThatThrownBy(() -> run("scenarios/s", Map.of("scenarios/s", """
+                extend schema @assertEmpty(relation: "r")
+                type Film { title: String }
+                """)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("before anything is rendered");
     }
 
     @Test
@@ -162,29 +228,6 @@ class ScenarioTest {
     }
 
     @Test
-    @DisplayName("a step whose documents do not merge is refused; a conflict for the capture spans two steps")
-    void aStepMustMerge() throws IOException {
-        var documents = Map.of(
-            "scenarios/s", """
-                extend schema @withFacts(docs: [{path: "shapes/a"}, {path: "shapes/b"}])
-                """,
-            "scenarios/t", """
-                extend schema @withFacts(docs: [{path: "shapes/a"}])
-                extend schema @withFacts(docs: [{path: "shapes/b"}])
-                extend schema @assertEmpty(relation: "r")
-                """,
-            "shapes/a", "type Film { title: String }\n",
-            "shapes/b", "type Film { name: String }\n");
-        assertThatThrownBy(() -> run("scenarios/s", documents))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("shapes/b")
-            .hasMessageContaining("across two @withFacts");
-
-        assertThat(run("scenarios/t", documents).captures().getFirst().files())
-            .containsKeys("shapes/a", "shapes/b");
-    }
-
-    @Test
     @DisplayName("a document that does not exist is refused, naming who named it")
     void missingDocumentsAreRefused() {
         assertThatThrownBy(() -> run("scenarios/s", Map.of(
@@ -196,12 +239,12 @@ class ScenarioTest {
     private Run run(String path, Map<String, String> documents) throws IOException {
         var captures = new ArrayList<Capture>();
         var claims = new ArrayList<Scenario.Claim>();
-        Scenario.load(path, p -> Optional.ofNullable(documents.get(p)), PRELUDE)
-            .run(folder, (dir, at) -> captures.add(snapshot(dir, at)), claims::add);
+        Scenario.load(path, p -> Optional.ofNullable(documents.get(p)))
+            .run(folder, (dir, at, first) -> captures.add(snapshot(dir, at, first)), claims::add);
         return new Run(captures, claims);
     }
 
-    private static Capture snapshot(Path dir, Instant at) {
+    private static Capture snapshot(Path dir, Instant at, boolean first) {
         var files = new TreeMap<String, String>();
         var times = new TreeMap<String, Instant>();
         try (Stream<Path> paths = Files.walk(dir)) {
@@ -213,6 +256,6 @@ class ScenarioTest {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        return new Capture(at, files, times);
+        return new Capture(at, first, files, times);
     }
 }

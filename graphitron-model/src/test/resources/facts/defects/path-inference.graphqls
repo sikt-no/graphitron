@@ -108,7 +108,7 @@ type Store implements Staffed @table(name: "store") {
   peopleInferred: [Person!]! @referenceFor(type: "Staff", path: [{key: "staff_store_id_fkey"}])
 }
 
-extend type Query {
+type Query {
   categories: [Category!]!
   employees: [Employee!]!
   films: [Film!]!

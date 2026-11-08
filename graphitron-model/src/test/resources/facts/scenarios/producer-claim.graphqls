@@ -11,7 +11,7 @@ input FilmInput @table(name: "film") {
   title: String
 }
 
-extend type Query {
+type Query {
   "The node signature with a service written on it: one claim, SERVICE."
   node(id: Int!): Node
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})

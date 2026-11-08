@@ -8,7 +8,7 @@ type LegacyKeyed implements Node @table(name: "node_legacy_keyed") @node(legacyK
   id: ID! @nodeId
 }
 
-extend type Query { legacyKeyed: [LegacyKeyed!]! }
+type Query { legacyKeyed: [LegacyKeyed!]! }
 
 extend schema @expectEquals(relation: "graphitron_node_legacy_keycolumn", rows: """
   type_id,         position, column_name, current_position, column_origin

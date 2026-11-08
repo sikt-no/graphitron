@@ -4,7 +4,7 @@
 # federated. The version set is pinned whole, so a library upgrade that adds a version, or breaks
 # the upward probe that finds them, fails here first.
 
-extend type Query {
+type Query {
   film: String
 }
 

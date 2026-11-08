@@ -18,7 +18,7 @@ input RolleFilter {
   rolleId: ID @nodeId(typeName: "Rolle") @reference(path: [{key: "link_fkey"}, {key: "rolle_fkey"}])
 }
 
-extend type Query {
+type Query {
   personroller(filter: RolleFilter): [Roller]
 }
 

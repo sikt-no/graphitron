@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The <function> target resolves against the routines the catalog holds that are no table: a routine
 # called through its Configuration-first method, with the database's own parameter names. The roles
 # bind to parameters by name, underscores and case aside, the configuration saying which parameter a

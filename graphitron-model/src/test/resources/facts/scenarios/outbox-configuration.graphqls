@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # The <outbox> block lands as written and resolves nothing: the target and the payload mapping on
 # one row, the role bindings of the table target as rows of their own, and the common payload's
 # entries decoded the way a mapping in the SDL is. Both targets present is recorded as written;

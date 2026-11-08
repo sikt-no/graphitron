@@ -9,6 +9,7 @@ import no.sikt.graphitron.model.test.CorpusDocuments.Document;
 import no.sikt.graphitron.model.test.CorpusExpectations;
 import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import no.sikt.graphitron.model.test.FactDocuments;
+import no.sikt.graphitron.model.test.Scenario;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 
@@ -166,7 +167,8 @@ final class ManualExamples {
                     + " document '" + example.path() + "', which does not exist"));
             out.append("\n# tag::").append(example.name()).append("[]\n")
                 .append(wrapDirectives(
-                    QueryViewRenderer.render(prelude, document.sdl(), example.selection())))
+                    QueryViewRenderer.render(prelude, Scenario.load(example.path()).composed(),
+                        example.selection())))
                 .append("\n# end::").append(example.name()).append("[]\n");
         }
         return out.toString();

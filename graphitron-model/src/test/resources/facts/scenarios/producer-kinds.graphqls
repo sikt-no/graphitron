@@ -18,7 +18,7 @@ input FilmInput {
   languageId: Int @field(name: "language_id")
 }
 
-extend type Query {
+type Query {
   films: [Film!]!
   filmsByKey(film_id: [Int!] @lookupKey): [Film]!
   filmsByService(ids: [Int!]!): [Film!]! @service(service: {

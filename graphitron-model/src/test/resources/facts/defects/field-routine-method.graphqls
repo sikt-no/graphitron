@@ -4,7 +4,7 @@
 # callable, both resolve to nothing, and which of the two happened is the spelling's own answer. A
 # name two schemas declare is two rows that say so, and a qualified name picks its schema.
 
-extend type Query {
+type Query {
   films: [String] @routine(name: "films_for_actor")
   chained: [String] @routine(name: "films_for_actor") @routine(name: "rent_film")
   missing: [String] @routine(name: "no_such_routine")

@@ -29,7 +29,7 @@ type CollideB implements Node @table(name: "collide_b") @node(legacyKeyColumns: 
 
 type ForeignLegacy @table(name: "node_legacy_foreign") { id: Int }
 
-extend type Query {
+type Query {
   u: Unresolved, m: Misses, r: Reorders, p: Repeats, d: Disagrees, a: CollideA, b: CollideB,
   f: ForeignLegacy
 }

@@ -2,7 +2,7 @@
 # the widest constructor it can call: one taking nothing or only a DSLContext. A static method runs on
 # no object and has no holder.
 
-extend type Query {
+type Query {
   titleByFilmIdViaInstance(filmId: Int!): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleInstanceService",
       method: "titleByFilmId"})

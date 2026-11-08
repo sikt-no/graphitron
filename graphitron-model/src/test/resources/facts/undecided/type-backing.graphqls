@@ -6,7 +6,7 @@
 
 type Film @table(name: "film") { title: String }
 
-extend type Query {
+type Query {
   holder(filmId: Int): Holder
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
   producedFilm(id: Int): Film
@@ -69,7 +69,6 @@ input ConditionedPickInput { filmId: Int }
 # Film is named by both populations with one class: two rows, one answer.
 extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   type_name,       class_name,                                                    declared_via
-  FactAnchor,      no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.PaymentRecord, BOUND_TABLE
   Film,            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, BOUND_TABLE
   Film,            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PRODUCER
   Holder,          no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,      PRODUCER

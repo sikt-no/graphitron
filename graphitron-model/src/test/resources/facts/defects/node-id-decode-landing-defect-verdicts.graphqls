@@ -33,7 +33,7 @@ input HolderFilter {
   ofOrg: ID @referenceFor(type: "DivergedRefChild", path: [{key: "diverged_ref_child_org_code_fkey"}])
 }
 
-extend type Query {
+type Query {
   # One hop reaches the junction and the node type is one hop further on.
   shortOfCategory(inCategory: ID @nodeId(typeName: "Category")
       @reference(path: [{key: "film_category_film_id_fkey"}])): [Film!]!

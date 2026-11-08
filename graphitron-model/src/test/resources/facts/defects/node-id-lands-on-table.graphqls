@@ -47,7 +47,7 @@ input InventoryFilter { filmId: ID @nodeId(typeName: "Film") }
 "Two keys to language, but the id goes to a call, not a predicate."
 input LanguageFilter { languageId: ID @nodeId(typeName: "Language") }
 
-extend type Query {
+type Query {
   films(languageId: ID @nodeId(typeName: "Language")): [Film!]!
   filmsByKey(languageId: ID @nodeId(typeName: "Language")
                @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!

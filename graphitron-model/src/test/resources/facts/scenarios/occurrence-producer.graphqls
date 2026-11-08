@@ -10,7 +10,7 @@ type Film @table(name: "film") {
   language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
 }
 
-extend type Query {
+type Query {
   producedFilms: [Film]
   greetingByUser: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",

@@ -47,7 +47,7 @@ input KeyInput {
   id: ID
 }
 
-extend type Query {
+type Query {
   inventories(filmId: ID @nodeId(typeName: "Film"), where: InventoryFilter): [Inventory]
   films(filmId: ID @nodeId): [Film]
   holders: [Holder]

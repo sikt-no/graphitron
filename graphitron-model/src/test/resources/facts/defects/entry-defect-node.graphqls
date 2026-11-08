@@ -37,7 +37,7 @@ type Film implements Node @table(name: "film") @node {
   title: String
 }
 
-extend type Query {
+type Query {
   withoutInterface: FilmWithoutInterface
   pinned: FilmPinned
   pinnedTwice: FilmPinnedTwice

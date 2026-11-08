@@ -5,7 +5,7 @@ type City @table(name: "city") {
         @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityUppercase"})
 }
 
-extend type Query {
+type Query {
     cities: [City!]!
 }
 

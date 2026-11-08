@@ -1,0 +1,6 @@
+# The smallest query root a document can be captured against, for a document whose example has no
+# query field of its own: a catalog or configuration read, or a schema whose subject is elsewhere.
+# The root field runs something, as every output field must: a read of payment, a table no fact
+# document reads, so these rows sit beside a document's without meeting them.
+type Query { anchor: FactAnchor }
+type FactAnchor @table(name: "payment") { paymentId: Int! @field(name: "payment_id") }

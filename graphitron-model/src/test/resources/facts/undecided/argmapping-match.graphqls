@@ -80,7 +80,7 @@ type Film @table(name: "film") {
     @reference(path: [{table: "film", condition: {className: "example.Ref", method: "m", argMapping: "p: since"}}])
 }
 
-extend type Query {
+type Query {
   # At an argument's @condition the argument it sits on is the only one in scope.
   films(
     byActor: ID @nodeId(typeName: "Actor") @condition(condition: {className: "example.Ref", method: "m", argMapping: "p: byActor"}),

@@ -13,7 +13,7 @@ type Customer @table(name: "customer") {
 
 type Address @table(name: "address") { addressId: Int }
 
-extend type Query {
+type Query {
   customers(
     # Both parameters concrete.
     concrete: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "customerToAddress"}}])

@@ -31,7 +31,7 @@ enum PivotLang { EN NO }
 type Translations { EN: String NO: String }
 type Summary { name: String }
 
-extend type Query { film: Film store: Store }
+type Query { film: Film store: Store }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'REFERENCE_WITHOUT_TARGET_TABLE'", rows: """

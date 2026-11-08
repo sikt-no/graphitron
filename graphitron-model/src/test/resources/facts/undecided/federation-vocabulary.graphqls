@@ -6,7 +6,7 @@ type Film @table(name: "film") @key(fields: "id") @fedShareable {
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10",
   import: ["@key", {name: "@shareable", as: "@fedShareable"}])
 
-extend type Query {
+type Query {
   films: [Film!]!
 }
 

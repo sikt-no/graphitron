@@ -21,7 +21,7 @@ type Actor @table(name: "actor") {
              argMapping: "pActorId: $source.actor_id")
 }
 
-extend type Query {
+type Query {
   actors: [Actor]
 }
 

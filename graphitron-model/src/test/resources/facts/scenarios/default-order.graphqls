@@ -34,7 +34,7 @@ type PageInfo {
     endCursor: String
 }
 
-extend type Query {
+type Query {
     stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
 
     filmsConnection(

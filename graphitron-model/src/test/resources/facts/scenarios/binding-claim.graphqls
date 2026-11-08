@@ -21,12 +21,12 @@ input FilmFilter {
   name: String @field(name: "title")
 }
 
-extend type Query {
+type Query {
   "An argument naming its column."
   filmsByTitle(name: String @field(name: "title"), filter: FilmFilter): [Film!]!
 }
 
-# Empty cells are nulls; the prelude's own claim is left out.
+# Empty cells are nulls.
 extend schema @expectEquals(relation: "graphitron_binding_claim", where: """
   coordinate NOT LIKE 'FactAnchor.%'
   """, rows: """

@@ -29,7 +29,7 @@ type Language @table(name: "language") { name: String }
 
 type Row { title: String }
 
-extend type Query {
+type Query {
   films: [Film!]!
   actors: [Actor!]!
   categories: [Category!]!

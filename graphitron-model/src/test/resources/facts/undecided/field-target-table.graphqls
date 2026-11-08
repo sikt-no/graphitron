@@ -16,7 +16,7 @@ union Mixed = Actor | Note | Event
 interface Credited @table(name: "actor") { title: String }
 type Clip implements Credited @table(name: "actor") { title: String }
 
-extend type Query {
+type Query {
   film: Film
   reels: [Reels!]!
   mixed: [Mixed!]!

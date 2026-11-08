@@ -33,7 +33,7 @@ interface Titled { title: String }
 
 union Credit = Film | Actor
 
-extend type Query {
+type Query {
   film(id: ID! @nodeId): Film
   credit(id: ID! @nodeId): Credit
   titled(id: ID! @nodeId): Titled

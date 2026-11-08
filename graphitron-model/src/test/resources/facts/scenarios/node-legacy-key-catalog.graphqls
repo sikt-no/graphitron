@@ -9,7 +9,7 @@ type LegacyKeyed implements Node @table(name: "node_legacy_keyed") { id: ID! @no
 
 type LegacyKeyedRow @table(name: "node_legacy_keyed") { era: Int }
 
-extend type Query {
+type Query {
   legacyKeyed: [LegacyKeyed!]!
   legacyKeyedRows: [LegacyKeyedRow!]!
 }

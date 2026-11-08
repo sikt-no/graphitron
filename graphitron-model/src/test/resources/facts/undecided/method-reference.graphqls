@@ -28,7 +28,7 @@ type City @table(name: "city") {
       method: "stepCondition"}}])
 }
 
-extend type Query {
+type Query {
   languages: [Language!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.generators.TestFilmService",
     method: "getFilms"})

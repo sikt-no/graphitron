@@ -54,7 +54,7 @@ input FilmIdsInput { ids: [Int!] }
 input FilmDraftIn { title: String }
 type FilmDraftsCountedPayload { count: Int }
 
-extend type Query {
+type Query {
   callFilms(ids: [Int!]): [Film] @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByService"})

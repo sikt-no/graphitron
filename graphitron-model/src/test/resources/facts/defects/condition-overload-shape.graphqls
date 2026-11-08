@@ -13,7 +13,7 @@ input CustomerFilter {
   name: String @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "nameAtPosition"})
 }
 
-extend type Query {
+type Query {
   byCount: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "parameterCount"})
   byStatic: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "staticModifier"})
   byReturn: [Customer!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures", method: "returnType"})

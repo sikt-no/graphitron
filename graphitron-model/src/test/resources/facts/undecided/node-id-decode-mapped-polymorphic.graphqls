@@ -13,7 +13,7 @@ type Staff @table(name: "staff") @node {
 
 union AddressOccupant = Customer | Staff
 
-extend type Query {
+type Query {
   occupants(occupant: [ID!] @nodeId(typeName: "AddressOccupant")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantsByMapping", argMapping: "keys: occupant"})
 }

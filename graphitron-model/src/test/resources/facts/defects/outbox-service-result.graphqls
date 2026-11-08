@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A $result over a service's returned value is a pointer: a path read step by step off the result, each
 # step as its field's own facts say. A field reads the member its bound name finds on the one class its
 # parent's result holds; where it finds none and its type holds that class, the object passes through;

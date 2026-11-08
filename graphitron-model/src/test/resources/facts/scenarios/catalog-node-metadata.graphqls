@@ -1,3 +1,4 @@
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 # A table's node metadata as the catalog reading records it: the type id and the key columns a
 # generated class declares as a usable pair. film_actor declares both, its key two columns long,
 # and reordered_pk_parent a key of three, each in the order the class declares it. A table

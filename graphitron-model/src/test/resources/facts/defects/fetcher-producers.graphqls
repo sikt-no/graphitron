@@ -24,7 +24,7 @@ input FilmInput @table(name: "film") {
   title: String
 }
 
-extend type Query {
+type Query {
   "Every root field runs something; with nothing written, it selects."
   films: [Film!]!
   "Keys handed in by the caller, one position per key: a lookup."
@@ -65,7 +65,6 @@ type AddFilmPayload {
 # Each producer is a fetcher on the producer side. The readers are the next relation's.
 extend schema @assertContains(relation: "graphitron_fetcher", rows: """
   type_name,                 field_name,    side
-  Query,                     anchor,        PRODUCER
   Query,                     films,         PRODUCER
   Mutation,                  addFilm,       PRODUCER
   Film,                      language,      PRODUCER
@@ -83,7 +82,6 @@ extend schema @expectEquals(relation: "graphitron_producer", where: """
   type_name IN ('Query', 'Mutation', 'Film', 'QueryPagedFilmsConnection', 'AddFilmPayload')
   """, rows: """
   type_name,                 field_name,         kind
-  Query,                     anchor,             SELECT
   Query,                     films,              SELECT
   Query,                     filmsById,          LOOKUP
   Query,                     pagedFilms,         SELECT

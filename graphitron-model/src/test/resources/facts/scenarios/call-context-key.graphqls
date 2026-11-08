@@ -4,7 +4,7 @@
 
 type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
 
-extend type Query {
+type Query {
   greetingByUser: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
       method: "greet"

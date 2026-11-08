@@ -9,7 +9,7 @@ type FILM { title: String }
 enum Rating { G }
 scalar RATING
 
-extend type Query {
+type Query {
   film: Film
   shouty: FILM
   rating: Rating

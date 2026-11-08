@@ -8,7 +8,7 @@ type Payment @table(name: "payment") {
     amount: BigDecimal!
 }
 
-extend type Query { payments: [Payment!]! }
+type Query { payments: [Payment!]! }
 
 extend schema @expectEquals(relation: "graphitron_ast_scalar_type_entry", rows: """
   scalar_ref
