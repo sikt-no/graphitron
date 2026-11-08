@@ -86,15 +86,6 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 *Next step.* Correct the constraint name. If the FK exists in the database but not in the catalog, regenerate jOOQ. If the FK doesn't exist, declare it (`ALTER TABLE ... ADD FOREIGN KEY`) or pin the join with `table:` instead of `key:`. xref:directives/reference.adoc[`@reference` directive reference] covers both pinning shapes.
 
-[#attempt-service-method]
-=== service-method
-
-*Sample line.* `[author-error] @service method 'findCustomers' not found on com.example.CustomerService; did you mean: findCustomer`.
-
-*Cause.* The `@service` (or `@externalField`) directive's `methodName:` argument (or the field-name default) did not match any static method on the resolved class. Candidates are the public static methods on that class with matching arity.
-
-*Next step.* Correct the method name or rebind via `argMapping:` if the parameter list shifted. xref:../how-to/external-code.adoc[How-to: Wire external Java code] covers the FQCN + method-name contract.
-
 [#attempt-enum-constant]
 === enum-constant
 

@@ -75,30 +75,6 @@ class R58TypedRejectionPipelineTest {
         assertThat(unknown.candidates()).isNotEmpty();
     }
 
-    @Test
-    void unknownServiceMethod_typedShapeSurvivesWrapperPrefix() {
-        // The wrapper site in ServiceDirectiveResolver prefixes "service method could not be
-        // resolved — " onto the producer's typed UnknownName via Rejection.prefixedWith;
-        // assert the typed components survive that wrap.
-        var schema = TestSchemaHelper.buildSchema("""
-            type Query {
-                noSuch: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "bogusNonExistentMethod"})
-            }
-            """);
-
-        var field = schema.field("Query", "noSuch");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-
-        var rejection = ((UnclassifiedField) field).rejection();
-        assertThat(rejection).isInstanceOf(Rejection.AuthorError.UnknownName.class);
-
-        var unknown = (Rejection.AuthorError.UnknownName) rejection;
-        assertThat(unknown.attemptKind()).isEqualTo(Rejection.AttemptKind.SERVICE_METHOD);
-        assertThat(unknown.attempt()).isEqualTo("bogusNonExistentMethod");
-        assertThat(unknown.candidates()).isNotEmpty();
-        assertThat(unknown.message()).startsWith("service method could not be resolved — ");
-    }
-
     // The typed directives list on a @service x @mutation conflict is asserted in the store-backed
     // detection's test (ClaimConflictsTest.serviceAndMutationMintOneFieldViolation), off the
     // ValidationError's rejection: the conflict is no builder tombstone.

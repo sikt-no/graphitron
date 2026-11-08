@@ -96,7 +96,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
   "The readers read the paths, and the old path relations go".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
-* The walk's unknown-method rejections beside the stored code-reference defects. Ends at "The walk's unknown-method rejections go".
 * The walk's `@condition` shape refusals beside `CONDITION_OVERLOAD_SHAPE_DISAGREES`. Ends at "The walk's condition shape refusals go".
 * The name-match join in `sql_name_matched_key_column` and in
   `BuildContext.synthesizeNameMatchedJoin`. Ends at "`sql_name_matched_key_column` is gone".
@@ -391,8 +390,6 @@ classpath and catalog, and every reader reads that resolution rather than a view
   axes the generated call never reaches, as for `agreeingOnBoth`.
 * **The per-site copies and coordinate-keyed entries go** `blocked`, on "The code-reference subject converts". The twins lose their
   class, method and argMapping columns.
-* **The walk's unknown-method rejections go** `open`.
-  `Rejection.unknownServiceMethod` and `unknownLifterMethod` give way to the stored defects.
 * **`sql_name_matched_key_column` is gone** `blocked`, on the child below. With `NameMatchedKeys`,
   and `fact-model.adoc` stops citing it; the walk's name-match step reads it today and moves too.
   * **A routine result's name-matched pairs are written where a join asks for them** `open`. By the

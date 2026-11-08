@@ -458,9 +458,6 @@ class MultiTableChildReferenceForPipelineTest {
     private static final String OVERLOADED_CONDITION =
         "{className: \"no.sikt.graphitron.rewrite.TestConditionStub\", method: \"overloadedPathCondition\"}";
 
-    private static final String MISSING_CONDITION =
-        "{className: \"no.sikt.graphitron.rewrite.TestConditionStub\", method: \"noSuchMethod\"}";
-
     private static String referenceForConditionRejection(String condition) {
         var schema = TestSchemaHelper.buildSchema("""
             interface LangThing { rowId: Int }
@@ -495,13 +492,6 @@ class MultiTableChildReferenceForPipelineTest {
             .doesNotContain("''")
             .doesNotContain("'method '")
             .doesNotContain("..");
-    }
-
-    @Test
-    void referenceForCondition_methodNotFound_reasonReachesTheMessage() {
-        assertThat(referenceForConditionRejection(MISSING_CONDITION))
-            .contains("path-step @condition: method 'noSuchMethod' not found in class")
-            .contains("TestConditionStub");
     }
 
     @Test

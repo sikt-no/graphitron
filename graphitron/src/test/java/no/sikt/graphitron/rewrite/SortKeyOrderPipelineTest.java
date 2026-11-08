@@ -265,16 +265,6 @@ class SortKeyOrderPipelineTest {
     }
 
     @Test
-    void methodNamingAMissingMethodIsRefused() {
-        var message = rejection(build(FILM + """
-            type Query {
-                films: [Film!]! @defaultOrder(fields: [{method: {className: "%s", method: "doesNotExist"}}])
-            }
-            """.formatted(STUB)), "Query", "films");
-        assertThat(message).contains("method: could not be resolved", "doesNotExist");
-    }
-
-    @Test
     void methodTakingAnotherTableIsRefused() {
         var message = rejection(build(FILM + """
             type Query {

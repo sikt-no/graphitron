@@ -2382,22 +2382,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(cf.method().params().get(0).source()).isInstanceOf(no.sikt.graphitron.rewrite.model.ParamSource.Table.class);
             }),
 
-        METHOD_NOT_FOUND(
-            "@externalField referencing a missing method → UnclassifiedField (AUTHOR_ERROR)",
-            """
-            type Film @table(name: "film") {
-                displayTitle: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "doesNotExist"})
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var field = schema.field("Film", "displayTitle");
-                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
-                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("doesNotExist");
-            }),
-
         NAME_MATCHES_COLUMN(
             "@externalField sharing its name with a column on the parent table → ComputedField; a sibling still reads the column",
             """
@@ -2453,22 +2437,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(cf.method()).isNotNull();
                 assertThat(cf.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestExternalFieldStub");
                 assertThat(cf.method().methodName()).isEqualTo("isEnglish");
-            }),
-
-        METHOD_DEFAULT_NOT_FOUND(
-            "@externalField omitting `method:` but field name has no matching static method → UnclassifiedField (AUTHOR_ERROR)",
-            """
-            type Film @table(name: "film") {
-                noSuchExternalMethod: Boolean @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub"})
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var field = schema.field("Film", "noSuchExternalMethod");
-                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
-                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("noSuchExternalMethod");
             }),
 
         EMPTY_REFERENCE(

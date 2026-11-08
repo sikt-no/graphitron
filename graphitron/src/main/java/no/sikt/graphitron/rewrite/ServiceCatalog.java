@@ -587,8 +587,7 @@ class ServiceCatalog {
     /**
      * Outcome of {@link #pickMethod}: sealed ok-or-rejected, so the resolution arms arrive as
      * variants rather than as a null combination every caller re-tests. {@link Rejected} carries
-     * the typed rejection (method-not-found {@link Rejection.AuthorError.UnknownName},
-     * {@link ReflectionError.AmbiguousMethod} when more than one declaration shares the name).
+     * the {@link ReflectionError.AmbiguousMethod} when more than one declaration shares the name.
      */
     private sealed interface MethodPick {
         record Picked(java.lang.reflect.Method method) implements MethodPick {}
@@ -602,34 +601,24 @@ class ServiceCatalog {
             .collect(Collectors.joining(", ", "(", ")"));
     }
 
-    /** Outcome of {@link #candidateMethods}: the same-named declarations, or the not-found rejection. */
-    private sealed interface MethodCandidates {
-        record Named(List<java.lang.reflect.Method> declarations) implements MethodCandidates {}
-        record Rejected(Rejection rejection) implements MethodCandidates {}
-    }
-
     /**
      * The name filter alone, as {@link #pickMethod}'s sibling entry: every declaration sharing the
-     * referenced name, or the same not-found rejection {@code pickMethod} produces. The
-     * {@code @condition} coordinate judges the <em>set</em> rather than picking from it, so it needs
-     * the candidates where the other coordinates need a pick; both read one name filter, so the
-     * zero-match rejection cannot drift between them.
+     * referenced name. The {@code @condition} coordinate judges the <em>set</em> rather than picking
+     * from it, so it needs the candidates where the other coordinates need a pick. A name the class
+     * does not declare never reaches here: the store refuses it first as
+     * {@code CODE_REFERENCE_METHOD_NOT_FOUND}.
      */
-    private static MethodCandidates candidateMethods(Class<?> cls, String className, String methodName) {
+    private static List<java.lang.reflect.Method> candidateMethods(Class<?> cls, String className,
+                                                                   String methodName) {
         var methods = Arrays.stream(cls.getDeclaredMethods())
             .filter(m -> m.getName().equals(methodName))
             .toList();
         if (methods.isEmpty()) {
-            var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
-                .map(java.lang.reflect.Method::getName)
-                .distinct()
-                .toList();
-            return new MethodCandidates.Rejected(
-                Rejection.unknownServiceMethod(
-                    "method '" + methodName + "' not found in class '" + className + "'",
-                    methodName, declaredMethodNames));
+            throw new IllegalStateException("method '" + methodName + "' not found in class '"
+                + className + "', which the store refuses as CODE_REFERENCE_METHOD_NOT_FOUND before"
+                + " the walk reads it");
         }
-        return new MethodCandidates.Named(methods);
+        return methods;
     }
 
     /**
@@ -638,11 +627,7 @@ class ServiceCatalog {
      * naming every candidate's rendered signature.
      */
     private static MethodPick pickMethod(Class<?> cls, String className, String methodName) {
-        var candidates = candidateMethods(cls, className, methodName);
-        if (candidates instanceof MethodCandidates.Rejected notFound) {
-            return new MethodPick.Rejected(notFound.rejection());
-        }
-        var methods = ((MethodCandidates.Named) candidates).declarations();
+        var methods = candidateMethods(cls, className, methodName);
         if (methods.size() > 1) {
             return new MethodPick.Rejected(new ReflectionError.AmbiguousMethod(className, methodName,
                 methods.stream().map(ServiceCatalog::renderSignature).toList(),
@@ -1080,11 +1065,7 @@ class ServiceCatalog {
             return new ServiceReflectionResult(null, load.rejection());
         }
         Class<?> cls = loaded.cls();
-        var candidates = candidateMethods(cls, className, methodName);
-        if (candidates instanceof MethodCandidates.Rejected notFound) {
-            return new ServiceReflectionResult(null, notFound.rejection());
-        }
-        var declarations = ((MethodCandidates.Named) candidates).declarations();
+        var declarations = candidateMethods(cls, className, methodName);
         var admission = admitConditionShape(declarations);
         if (admission instanceof ConditionAdmission.Refused refused) {
             return new ServiceReflectionResult(null,

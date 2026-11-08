@@ -127,13 +127,13 @@ class RejectionRenderingTest {
 
     @Test
     void prefixedWithPreservesUnknownNameTypedFields() {
-        var inner = (Rejection.AuthorError.UnknownName) Rejection.unknownServiceMethod(
-            "method 'getActor' not found in class 'A'", "getActor", List.of("getActors", "getFilms"));
-        var prefixed = (Rejection.AuthorError.UnknownName) inner.prefixedWith("service method could not be resolved — ");
-        assertThat(prefixed.attempt()).isEqualTo("getActor");
-        assertThat(prefixed.candidates()).containsExactly("getActors", "getFilms");
-        assertThat(prefixed.attemptKind()).isEqualTo(Rejection.AttemptKind.SERVICE_METHOD);
-        assertThat(prefixed.message()).startsWith("service method could not be resolved — method 'getActor' not found");
+        var inner = (Rejection.AuthorError.UnknownName) Rejection.unknownColumn(
+            "column 'titel' not found on table 'film'", "titel", List.of("title", "title_ft"));
+        var prefixed = (Rejection.AuthorError.UnknownName) inner.prefixedWith("@field could not be resolved: ");
+        assertThat(prefixed.attempt()).isEqualTo("titel");
+        assertThat(prefixed.candidates()).containsExactly("title", "title_ft");
+        assertThat(prefixed.attemptKind()).isEqualTo(Rejection.AttemptKind.COLUMN);
+        assertThat(prefixed.message()).startsWith("@field could not be resolved: column 'titel' not found");
     }
 
     @Test

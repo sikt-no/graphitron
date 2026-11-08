@@ -138,10 +138,10 @@ class NodeIdProducerBackedFieldPipelineTest {
             type Film implements Node @table(name: "film") @node {
                 id: ID! @nodeId
                 producedNodeId: ID @nodeId(typeName: "Film")
-                    @externalField(reference: {className: "%s", method: "doesNotExist"})
+                    @externalField(reference: {className: "no.sikt.does.not.Exist", method: "rating"})
             }
             type Query { film: Film }
-            """.formatted(EXTERNAL_STUB));
+            """);
 
         var field = schema.field("Film", "producedNodeId");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
