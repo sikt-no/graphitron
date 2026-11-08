@@ -505,6 +505,19 @@ static method needs no holder.
 * **The service fields are emitted from the store** `blocked`, E's, on "A producer's fetcher parts are emitted from the store". The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
   the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
   changes on purpose, its behaviour does not.
+  * **A discriminated interface target is re-projected from the store** `open`, E's. The store-fed lift
+    renders the discriminated re-projection from `graphitron_occurrence_participant` and the participant
+    fields' join paths (the `__discriminator__` alias, the known values, each participant's columns, the
+    discriminator-gated cross-table subselects), keeping `$project` for the columns and the
+    `<Participant>_<field>` alias the walk's child fetchers read (Alf, 2026-11-08); the three
+    `contentSearch` services then leave `DISCRIMINATED`.
+  * **A record argument's input fields bind the record's columns** `blocked`, on F's `call_parameter`
+    widening, where an argument whose parameter is a jOOQ record of table T lands on T, its input fields
+    too. Then `BuildQuery`'s columns and the decode read it, and the ten `RECORD_BUILD` services and the
+    two that validate a record leave the census's exclusions.
+  * **A built argument decodes what `BuildQuery` refuses today** `blocked`, on F's `NodeIdDecodeQuery`
+    change. A list of node ids, an id of several node types and a decode into one key value; the seven
+    `BUILD_REFUSED` services then leave the census's exclusions.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
