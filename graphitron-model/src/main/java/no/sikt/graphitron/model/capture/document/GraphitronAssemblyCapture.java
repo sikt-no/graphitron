@@ -134,17 +134,17 @@ public final class GraphitronAssemblyCapture {
         // The types each polymorphic occurrence's rows may be and how a row is told apart as each, off
         // the occurrences, the table types and the discriminator directives.
         OccurrenceParticipants.derive(dsl, graph, readAt);
-        // Last, the defects this gatherer's facts break, off everything above: the rule's rows
-        // marked with this reading, the declarations under each condition shape defect, then the
-        // argMapping entries under the strings they fault, then the sweep of this gatherer's codes
-        // the reading did not mark.
+        // Last, the entry-defects stage: the defects of every code no earlier stage writes itself,
+        // off everything above, the rule's rows marked with this reading, the declarations under
+        // each condition shape defect, then the argMapping entries under the strings they fault;
+        // then the sweep of the codes this gatherer's stages own that the reading did not mark.
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
         ConditionShapeDefectMethods.derive(dsl, graph, readAt);
         EntryDefectClaims.derive(dsl, graph, readAt);
         EntryDefectMembers.derive(dsl, graph, readAt);
         EntryDefectTables.derive(dsl, graph, readAt);
         ArgMappingPairDefects.derive(dsl, graph);
-        EntryDefects.sweep(dsl, graph, readAt, EntryDefects.GRAPHITRON.gatherer());
+        EntryDefects.sweep(dsl, graph, readAt, GraphitronAstCapture.GATHERER);
     }
 
     /**

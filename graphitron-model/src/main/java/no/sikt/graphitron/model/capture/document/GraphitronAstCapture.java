@@ -57,8 +57,8 @@ public final class GraphitronAstCapture {
         Progress.completed(dsl, graph.name(), GATHERER);
     }
 
-    /** This gatherer's row in {@code store_graph_progress}. */
-    private static final String GATHERER = "graphitron";
+    /** This gatherer's row in {@code store_graph_progress} and {@code meta_gatherer}. */
+    static final String GATHERER = "graphitron";
 
     private static void gather(DSLContext dsl, GraphIdentity graph,
                                List<GraphQLSourceCapture.SourceDocument> documents,

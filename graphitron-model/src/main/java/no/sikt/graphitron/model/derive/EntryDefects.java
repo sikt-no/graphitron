@@ -15,23 +15,26 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.val;
 
 /**
- * The writer of {@code graphitron_entry_defect} from an owner gatherer's rule view: the defects that
- * gatherer's facts break, at the positions they were written, as the last step of its anchor phase.
+ * The writer of {@code graphitron_entry_defect} from an owner stage's rule view: the defects that
+ * stage's facts break, at the positions they were written, as the stage's last statement.
  *
- * <p>Each owner has its own rule view, named in a {@link Rule} beside the gatherer that runs it, and
- * the writer is one statement over that view and a sweep scoped to the codes the owner holds in
- * {@code graphitron_defect_type.owner_gatherer}. A next owner adds its view and a {@link Rule} to
- * {@link #RULES} and calls {@link #derive} and {@link #sweep} from its own anchor phase, touching no
- * other owner's. What this class adds is who evaluates a rule and when.
+ * <p>A code's owner is a stage of a gatherer's anchor phase, {@code graphitron_defect_type.owner_stage}
+ * naming its {@code meta_stage} row. Each owning stage has its own rule view, named in a {@link Rule}
+ * beside the stage that runs it, and the writer is one statement over that view; the sweep is the
+ * gatherer's, once after its last stage, scoped to the codes its stages own. A stage taking its codes
+ * adds its view and a {@link Rule} to {@link #RULES} and calls {@link #derive} as its last statement,
+ * touching no other stage's. What this class adds is who evaluates a rule and when.
  *
- * <p>The graphitron gatherer's rule view is {@code graphitron_entry_defect_rule}, its prefix being
- * that family's. What follows is about that rule.
+ * <p>Today one stage owns a rule view: this class's own, {@code entry-defects}, the graphitron anchor
+ * phase's last step, whose view is {@code graphitron_entry_defect_rule} and which owns every graphitron
+ * code no stage writes itself. What follows is about that rule.
  *
  * <p><b>Stored because it is read interactively and costs a walk.</b> Most of the rule is cheap,
  * the write arms reading entries the gatherer already anchored. The chain arms were not: they
@@ -55,15 +58,15 @@ public final class EntryDefects {
     private EntryDefects() {}
 
     /**
-     * One owner's rule: the gatherer that owns the codes {@code view} emits and runs its writer, and
-     * the view, which has {@code graphitron_entry_defect}'s columns but the mark.
+     * One owner's rule: the {@code meta_stage} row that owns the codes {@code view} emits and runs
+     * its writer, and the view, which has {@code graphitron_entry_defect}'s columns but the mark.
      */
-    public record Rule(String gatherer, Table<?> view) {}
+    public record Rule(String stage, Table<?> view) {}
 
-    /** The graphitron gatherer's rule. */
-    public static final Rule GRAPHITRON = new Rule("graphitron", GRAPHITRON_ENTRY_DEFECT_RULE);
+    /** The rule of the graphitron anchor phase's last stage, this class. */
+    public static final Rule GRAPHITRON = new Rule("entry-defects", GRAPHITRON_ENTRY_DEFECT_RULE);
 
-    /** Every owner's rule, one per owner gatherer. */
+    /** Every owner's rule, one per owner stage. */
     public static final List<Rule> RULES = List.of(GRAPHITRON);
 
     /**
@@ -101,49 +104,52 @@ public final class EntryDefects {
     }
 
     /**
-     * Deletes the graph's defects of the codes {@code gatherer} owns that the reading at
+     * Deletes the graph's defects of the codes {@code gatherer}'s stages own that the reading at
      * {@code readAt} did not mark. Another gatherer's codes are not touched, so each owner sweeps
      * only what it writes; a detail relation's rows under a swept defect go with it by their
-     * foreign key. A detail row the reading did not mark under a defect it did, a method, claim,
+     * foreign key. One sweep covers every stage, each having marked its rows with the same instant. A detail row the reading did not mark under a defect it did, a method, claim,
      * member, table or path step a defect no longer names, is swept here first by its own mark.
      */
     public static void sweep(DSLContext dsl, String graphName, LocalDateTime readAt, String gatherer) {
         var target = GRAPHITRON_ENTRY_DEFECT;
         var type = GRAPHITRON_DEFECT_TYPE;
+        var owned = select(type.CODE).from(type).join(META_STAGE)
+            .on(META_STAGE.STAGE_NAME.eq(type.OWNER_STAGE))
+            .where(META_STAGE.GATHERER_NAME.eq(gatherer));
         var method = GRAPHITRON_ENTRY_DEFECT_METHOD;
         dsl.deleteFrom(method)
             .where(method.GRAPH_NAME.eq(graphName))
             .and(method.TOUCHED_AT.ne(readAt))
-            .and(method.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .and(method.CODE.in(owned))
             .execute();
         var claim = GRAPHITRON_ENTRY_DEFECT_CLAIM;
         dsl.deleteFrom(claim)
             .where(claim.GRAPH_NAME.eq(graphName))
             .and(claim.TOUCHED_AT.ne(readAt))
-            .and(claim.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .and(claim.CODE.in(owned))
             .execute();
         var member = GRAPHITRON_ENTRY_DEFECT_MEMBER;
         dsl.deleteFrom(member)
             .where(member.GRAPH_NAME.eq(graphName))
             .and(member.TOUCHED_AT.ne(readAt))
-            .and(member.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .and(member.CODE.in(owned))
             .execute();
         var table = GRAPHITRON_ENTRY_DEFECT_TABLE;
         dsl.deleteFrom(table)
             .where(table.GRAPH_NAME.eq(graphName))
             .and(table.TOUCHED_AT.ne(readAt))
-            .and(table.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .and(table.CODE.in(owned))
             .execute();
         var step = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
         dsl.deleteFrom(step)
             .where(step.GRAPH_NAME.eq(graphName))
             .and(step.TOUCHED_AT.ne(readAt))
-            .and(step.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .and(step.CODE.in(owned))
             .execute();
         dsl.deleteFrom(target)
             .where(target.GRAPH_NAME.eq(graphName))
             .and(target.TOUCHED_AT.ne(readAt))
-            .and(target.CODE.in(select(type.CODE).from(type).where(type.OWNER_GATHERER.eq(gatherer))))
+            .and(target.CODE.in(owned))
             .execute();
     }
 

@@ -32,6 +32,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_GATHERER;
+import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static no.sikt.graphitron.model.Tables.META_PREFIXLESS_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
@@ -351,6 +352,34 @@ class FactSchemaGateTest {
             }
             assertThat(dangling)
                 .as("gatherer rows naming classes the reactor no longer declares;"
+                    + " repoint the row at the class that took the job")
+                .isEmpty();
+        }
+    }
+
+    /**
+     * The stage roster is held to the code as the gatherer roster is: a renamed or deleted stage
+     * class fails here until its {@code meta_stage} row is repointed.
+     */
+    @Test
+    @DisplayName("every stage row names a Java class that exists")
+    void everyStageRowNamesAClassThatExists() {
+        try (var store = GraphitronModelStore.open()) {
+            var rows = store.dsl()
+                .select(META_STAGE.STAGE_NAME, META_STAGE.STAGE_CLASS)
+                .from(META_STAGE)
+                .fetch();
+            assertThat(rows).as("stage rows to gate").isNotEmpty();
+            var dangling = new java.util.ArrayList<String>();
+            for (var row : rows) {
+                try {
+                    Class.forName(row.value2(), false, FactSchemaGateTest.class.getClassLoader());
+                } catch (ClassNotFoundException e) {
+                    dangling.add(row.value1() + " names " + row.value2());
+                }
+            }
+            assertThat(dangling)
+                .as("stage rows naming classes the reactor no longer declares;"
                     + " repoint the row at the class that took the job")
                 .isEmpty();
         }
@@ -696,6 +725,7 @@ class FactSchemaGateTest {
                         case "meta_gatherer", "meta_gatherer_corpus", "meta_gatherer_dependency"
                             -> "gatherer_name";
                         case "meta_grain" -> "grain_name";
+                        case "meta_stage" -> "stage_name";
                         case "meta_relation" -> "relation_name";
                         default -> "graph_name";
                     };

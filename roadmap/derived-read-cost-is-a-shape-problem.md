@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-10-21
+last-updated: 2026-11-08
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -104,7 +104,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * A field's departure table in `graphitron_field_source_table`'s interim rules and in
   `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
 * A routine write's carrier refusals in `intent_mutation_routine_seat` and in the walk's routine
-  classification. Ends at "A defect is written by the gatherer whose facts it judges, marked and swept by its owner".
+  classification. Ends at "The routine seat's refusals are codes a stage writes".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
 * The walk's own schema beside the emitted one capture builds. Ends at "The generator builds no schema".
@@ -556,7 +556,7 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
   candidate only under a producer it composes with, `@condition`, `@routine` or a table read, so
   under `@service` and `@externalField` an occurrence the call does not take is that defect.
   `ARGUMENT_WITHOUT_CONSUMER` is a code whose `graphitron_defect_type` row names its
-  `owner_gatherer`, written and swept through that owner's rule view.
+  `owner_stage`, written through that stage's rule view and swept by its gatherer.
   * **A path or a column a consumer does not take is a defect** `blocked`, on "An argument's consumer is stated".
     A written path on an occurrence whose consumer takes no table is `PATH_NOT_TAKEN`. A scalar
     argument or input field matching no column at its path's end is `COLUMN_UNRESOLVED` only where
@@ -610,20 +610,39 @@ pass and no stratum that clears and recomputes.
 * **`DerivationStratum` is gone, each step anchored by its owner** `blocked`, on the three below.
   With `StageProgress` and `StageOrderGateTest`, the order they kept being the gatherer order.
   `DerivationStratumCeilingGateTest` keeps it from growing, and each child lowers its ceilings.
-  * **A defect is written by the gatherer whose facts it judges, marked and swept by its owner** `open`.
-    The mechanism has landed: each `graphitron_defect_type` code names its `owner_gatherer`;
-    `graphitron_entry_defect` carries `touched_at`; the graphitron gatherer writes its codes' rows in
-    its anchor phase, `EntryDefects` upserting the rule's rows beside `FieldPaths`' condition codes,
-    and sweeps only its own codes once; `ArgMappingCandidates`, `EntryDefects` and
-    `ArgMappingPairDefects` left the stratum, and `DefectOwnerGateTest` holds each code to its
-    writer's gatherer. Each owner has its own rule view, which `EntryDefects` writes for it;
-    every code is graphitron's today, so `graphitron_entry_defect_rule` is the only one.
-    `graphitron_entry_defect` is a supertype, one row per defect at its written position; a
-    gatherer is encouraged to add subtype and other detail relations where a defect has more to
-    say than its code and detail, each keyed by the defect's key with a foreign key to it
-    `ON DELETE CASCADE`, so a swept defect takes its details with it. What remains is the routine seat's refusals, which
-    `intent_mutation_routine_seat` and the walk's routine classification still make, becoming codes
-    the graphitron gatherer writes.
+  * **A defect is written by the stage whose facts it judges, and swept by its gatherer** `open`.
+    A gatherer's anchor phase is a sequence of stages, and the defects a stage's facts break are
+    that stage's to write, as its last statement, from a rule view of its own; one rule over every
+    arm is one statement reaching every relation the gatherer derives, `graphitron_entry_defect_rule`
+    reaching 123 relations through 21 views and costing about 0.5 s to prepare on a cold ten-type
+    capture (2026-11-08), and each walk rejection that becomes a code would add to it.
+    `graphitron_entry_defect` is a supertype, one row per defect at its written position; a stage
+    is encouraged to add subtype and other detail relations where a defect has more to say than its
+    code and detail, each keyed by the defect's key with a foreign key to it `ON DELETE CASCADE`, so
+    a swept defect takes its details with it.
+    * **A defect code names the stage that writes it** `done`. `meta_stage` rosters the stages
+      that own something, each with its gatherer and its class, held to a class that exists;
+      `graphitron_defect_type.owner_stage` replaces `owner_gatherer`; `Steps` owns the seven codes
+      of the walk it writes, and `entry-defects`, `EntryDefects` as the anchor phase's last step,
+      every other graphitron code, from `graphitron_entry_defect_rule`. The gatherer sweeps its
+      stages' codes once. `DefectOwnerGateTest` holds a stage to exactly the codes it writes, and
+      found two codes with two writers, which the gatherer-level gate could not tell apart.
+    * **A route defect has one writer** `open`. `ROUTE_AMBIGUOUS` and `NO_ROUTE_TO_TARGET` are
+      written by `Steps` for a route the walk takes from a written path and by the rule's
+      inferred-route arm for one no path is written for, two statements of one rule with nothing
+      comparing them; `steps` owns them and the gate lists the arm as a second writer until it
+      moves to the walk.
+    * **An arm belongs to the last stage whose facts it reads** `open`. Each arm of
+      `graphitron_entry_defect_rule` moves into a rule view of the stage that writes the last
+      relation it reads, its codes' `owner_stage` with it, as a refactor that writes the same rows
+      on every fact document and on sis. A gate refuses a stage's rule that reads a relation a later
+      stage writes, which needs the stages' order and the relations each owns in the store; the
+      `OUTBOX_*` arms have no stage to go to yet, and the checks that read only the documents go to
+      the anchor. The detail writers (`EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
+      `ConditionShapeDefectMethods`, `ArgMappingPairDefects`) move with their codes, and the depth
+      loop's stages write their defects once after the last depth.
+    * **The routine seat's refusals are codes a stage writes** `open`.
+      `intent_mutation_routine_seat` and the walk's routine classification still make them.
   * **A defect is keyed by the occurrence it judges, with the written position where there is one** `open`.
     `graphitron_occurrence_defect`, keyed (graph, coordinate, code) with a cascade from the occurrence,
     carries the written position as an attribute where the problem was written, the element's

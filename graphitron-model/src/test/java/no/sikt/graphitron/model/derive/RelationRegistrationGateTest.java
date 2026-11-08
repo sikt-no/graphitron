@@ -539,14 +539,15 @@ class RelationRegistrationGateTest {
         // keys, foreign keys and CHECK constraints, the declaration gates in
         // no.sikt.graphitron.model.MetaDeclarationGateTest (which close the undeclared roster,
         // the comment echo, the corpus agreement, the key-shape match and the view-ownership
-        // rule against the observed schema), and the gatherer-class gate in FactSchemaGateTest,
-        // which holds every meta_gatherer row to a class that exists.
+        // rule against the observed schema), and the class gates in FactSchemaGateTest, which
+        // hold every meta_gatherer and meta_stage row to a class that exists.
         registrations.put("meta_corpus", Arm.DERIVED);
         registrations.put("meta_gatherer", Arm.DERIVED);
         registrations.put("meta_gatherer_corpus", Arm.DERIVED);
         registrations.put("meta_gatherer_dependency", Arm.DERIVED);
         registrations.put("meta_grain", Arm.DERIVED);
         registrations.put("meta_relation", Arm.DERIVED);
+        registrations.put("meta_stage", Arm.DERIVED);
         registrations.put("meta_stated_relation", Arm.DERIVED);
         // The lint vocabulary, on the meta_ rosters' terms: rows this file supplies, so there
         // is no gatherer whose reading could be compared against anything. What pins it is

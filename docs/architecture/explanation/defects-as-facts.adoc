@@ -2,7 +2,7 @@
 
 A schema that breaks a rule should say so in one place, at the spot the author edits to fix it, and
 every tool should read the same verdict. So a defect is a fact in the store: a row, written once by
-the gatherer whose facts it judges, at the written position of the offending directive. This page
+the stage whose facts it judges, at the written position of the offending directive. This page
 says how that relation is shaped, who writes it, and how to add a defect.
 
 == Why a defect is a fact
@@ -36,21 +36,31 @@ breaking two rules is two rows.
 graphitron does not support yet.
 | `lsp_code` | The code the editor shows.
 | `statement` | One sentence an author reads to understand the rule.
-| `owner_gatherer` | The gatherer that writes and sweeps the code's rows.
+| `owner_stage` | The stage that writes the code's rows, a `meta_stage` row naming its gatherer,
+which sweeps them.
 |===
 
 == Ownership
 
-Each code is owned by the gatherer whose facts it judges. That gatherer writes its codes in its
-anchor phase, after the facts they judge are in: from its own rule view, a view named
-`<family>_entry_defect_rule` that `EntryDefects` writes for it, or by a stage that writes the rows
-itself where the rule needs work a view cannot state. Every row carries `touched_at`, the instant
-of the reading that found it. When its writers have run, the owner sweeps its own codes once,
-deleting the rows of those codes the reading did not mark. Another owner's rows are never touched.
+Each code is owned by the stage whose facts it judges. A gatherer's anchor phase is a sequence of
+stages, and `meta_stage` rosters the ones that own something, each with its gatherer and its
+class. A stage writes its codes as its last statement, once the facts they judge are in: from a
+rule view of its own that `EntryDefects` writes for it, or directly where the rule needs work a
+view cannot state, as `Steps` writes the route defects of the walk it takes. So no one statement
+reaches every relation a gatherer derives, and a stage's rule reads only what that stage and the
+stages before it wrote. Every row carries `touched_at`, the instant of the reading that found it.
+When its stages have run, the gatherer sweeps the codes its stages own once, deleting the rows of
+those codes the reading did not mark. Another gatherer's rows are never touched.
 
-`DefectOwnerGateTest` holds this together: every code names a gatherer, every owner's rule view
-emits only that owner's codes and is written by that owner, the owner may read what its view
-reaches, and each Java writer writes only its gatherer's codes.
+The split is under way. Today the `entry-defects` stage, `EntryDefects` itself as the graphitron
+anchor phase's last step, owns every graphitron code no earlier stage writes, from
+`graphitron_entry_defect_rule`; a stage takes its codes by writing them and moving their
+`owner_stage`.
+
+`DefectOwnerGateTest` holds this together: every code names a stage of a gatherer, a stage owns
+exactly the codes it writes, every stage's rule view emits only that stage's codes and its gatherer
+owns the view, the gatherer may read what the view reaches, and each Java writer is a stage by its
+class.
 
 == Detail and subtype relations
 
@@ -70,10 +80,10 @@ a reader lists them without parsing the detail.
 
 . Declare the code in `graphitron_defect_type`: severity, basis, `lsp_code`, a one-sentence
   statement.
-. Choose its owner: the gatherer whose facts the rule reads. That gatherer must own or declare a
-  dependency on every relation the rule reads.
-. Write it in the owner's anchor phase, as a branch of the owner's rule view or as a stage, marked
-  with the reading's instant and swept by the owner.
+. Choose its owner: the stage whose facts the rule reads, the last of them where it reads several.
+  That stage's gatherer must own or declare a dependency on every relation the rule reads.
+. Write it as the stage's last statement, as a branch of the stage's rule view or directly, marked
+  with the reading's instant and swept by the gatherer.
 . Add a detail relation where the defect has more to say, keyed and cascaded as above.
 . Add a build reader to `StoreDetections` if the defect must fail the build, not only show in the
   editor.
