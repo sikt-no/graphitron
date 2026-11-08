@@ -687,6 +687,18 @@ pass and no stratum that clears and recomputes.
         on field occurrences". The key relation and its fills, the remaining `OUTBOX_*` codes, and
         `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
         `graphitron_outbox_result_step` go.
+      * **A pair's source is judged once for every directive** `blocked`, on "A payload key is a
+        filled parameter of its message". `graphitron_argmapping_pair_defect_rule` already judges a
+        pair by the kind of source it binds, `$session`, `$context` and argument paths, whatever
+        directive wrote it; the outbox's restatements fold into it (Alf, 2026-11-08): the argument
+        half of `OUTBOX_SOURCE_UNRESOLVED` is `ARGMAPPING_PATH_UNRESOLVED` once `@outbox` lands, its
+        `$result` and `$scope` halves join the path family as their sigils', and the two
+        `*_UNSERIALIZABLE` codes are the source's type not fitting the place it binds, a parameter's
+        declared type or a payload key's JSON, beside `SESSION_BINDING_TYPE_MISMATCH`. No release
+        carried the outbox codes, so they retire without a deprecation; the outbox keeps placement,
+        its targets, its events and its common payload. A message is the code's statement and its
+        detail, read beside the directive it sits at, and a per-directive wording, should one be
+        wanted, is a statement keyed by code and directive.
     * **An arm belongs to the last stage whose facts it reads** `blocked`, on "An outbox message is a
       call of its occurrence". Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
       that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every
