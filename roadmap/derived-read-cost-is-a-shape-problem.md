@@ -203,22 +203,6 @@ resolutions and links built beside it are gone.
   start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
   capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one
   added, and writes their keys, columns and stops as it goes, reads each step once.
-* **A child `@routine` is a lateral step of the path** `open`, E's. Only a root's first `@routine` is
-  called as a producer; any other is a step from the table the walk stands on to its function, called with
-  that table's columns and the field's arguments, and still produces its result where the field's type is unbound. Each parameter's source is a row of the step,
-  `graphitron_field_path_parameter`, read off `graphitron_field_path_parameter_binding`.
-  `columnMapping` is gone: an `argMapping` entry names an argument, or with `$source.<column>` a
-  column of the standing table, and one that binds nothing is `ROUTINE_PARAMETER_UNBOUND`. A path ending on a `@routine` whose field returns a table-bound type
-  takes one more step, from the function's result to that table by name: a walk step at the next
-  place with no written element. The MCP server shows the routine step and the inferred one; what
-  is left is the editor, whose `argMapping` completion at a path routine offers the field's
-  arguments and not yet the standing table's columns. `graphitron_path_element_routine`, what a
-  `@routine` element names, sits on the walk's side of "`graphitron_path_element_*` beside the
-  step hops", which stays as it is; it retired `graphitron_producer_routine`'s own spelling of the
-  same lookup.
-* **A split child `@routine` is a path routine** `blocked`, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
-  `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
-  the walk's first step from the parent's keys.
 * **A broken or refused path is a defect at its position** `open`. A walk that stops, ends at the wrong
   table or has no source, an element naming nothing, and `@reference` beside `@referenceFor` or
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
@@ -595,6 +579,28 @@ static method needs no holder.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
+* **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
+  A root `@routine` is the producer call: its parameters are filled per occurrence in
+  `graphitron_occurrence_call_parameter`, widened from service calls to any producer's call, and its
+  call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
+  producer but a join step of the path; under `@splitQuery` the producer is the split's derived source
+  lookup. Then `graphitron_routine_entry` and the routine decode go.
+  * **A child `@routine` is a lateral step of the path** `open`, F's. Only a root's first `@routine` is
+    called as a producer; any other is a step from the table the walk stands on to its function, called with
+    that table's columns and the field's arguments, and still produces its result where the field's type is unbound. Each parameter's source is a row of the step,
+    `graphitron_field_path_parameter`, read off `graphitron_field_path_parameter_binding`.
+    `columnMapping` is gone: an `argMapping` entry names an argument, or with `$source.<column>` a
+    column of the standing table, and one that binds nothing is `ROUTINE_PARAMETER_UNBOUND`. A path ending on a `@routine` whose field returns a table-bound type
+    takes one more step, from the function's result to that table by name: a walk step at the next
+    place with no written element. The MCP server shows the routine step and the inferred one; what
+    is left is the editor, whose `argMapping` completion at a path routine offers the field's
+    arguments and not yet the standing table's columns. `graphitron_path_element_routine`, what a
+    `@routine` element names, sits on the walk's side of
+    "`graphitron_path_element_*` beside the step hops", which stays as it is; it retired
+    `graphitron_producer_routine`'s own spelling of the same lookup.
+  * **A split child `@routine` is a path routine** `blocked`, F's, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
+    `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
+    the walk's first step from the parent's keys.
 * **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in

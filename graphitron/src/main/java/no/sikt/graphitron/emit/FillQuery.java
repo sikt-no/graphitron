@@ -112,6 +112,7 @@ public final class FillQuery {
                 .leftJoin(lf).on(lf.GRAPH_NAME.eq(lo.GRAPH_NAME), lf.COORDINATE.eq(lo.ELEMENT_COORDINATE))
                 .leftJoin(lt).on(lt.GRAPH_NAME.eq(lo.GRAPH_NAME),
                     lt.TYPE_NAME.eq(coalesce(la.NAMED_TYPE, lf.NAMED_TYPE)))
+                // Correlated to the service producer, so another kind's fills never reach a service call.
                 .where(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE))
                 .orderBy(c.POSITION))
             .convertFrom(r -> r.map(Records.mapping(Raw::new)));

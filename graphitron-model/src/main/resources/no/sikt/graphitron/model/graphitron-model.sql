@@ -11857,9 +11857,9 @@ CREATE TABLE graphitron_occurrence_call_parameter (
   session_member     VARCHAR,
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, position),
-  -- The call, so a fill cannot outlive the producer that makes it.
+  -- The producer making the call, of whatever kind, so a fill cannot outlive it.
   FOREIGN KEY (graph_name, coordinate)
-    REFERENCES graphitron_occurrence_producer_service (graph_name, coordinate) ON DELETE CASCADE,
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
   -- The argument it takes, so a place the corpus no longer reaches takes the fill with it.
   FOREIGN KEY (graph_name, landing_coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,

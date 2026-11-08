@@ -64,6 +64,7 @@ public final class CallQuery {
             .from(s)
             .join(m).on(m.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), m.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 m.METHOD_NAME.eq(s.METHOD_NAME), m.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR))
+            // Driven from the service producer, so another kind's fills never reach a service call.
             .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.FILL.eq("SOURCE"))
             .leftJoin(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))

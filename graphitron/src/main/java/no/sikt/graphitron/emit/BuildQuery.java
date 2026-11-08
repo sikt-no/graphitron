@@ -147,6 +147,7 @@ public final class BuildQuery {
         var out = new HashMap<Root, String>();
         store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
             .from(c)
+            // The service producer's join keeps another kind's fills out.
             .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE))
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
@@ -194,6 +195,7 @@ public final class BuildQuery {
         store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE,
                 coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
             .from(c)
+            // The service producer's join keeps another kind's fills out.
             .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE))
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
