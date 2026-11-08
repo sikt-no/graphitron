@@ -32,7 +32,18 @@ type Category @table(name: "category") {
   parent: Category
   # A list: in reverse, to the rows pointing here.
   children(name: String): [Category!]!
+  # A discriminated interface on category and a union with a member on it ride the key the same
+  # way, the union's other member over the one key between category and category_label.
+  parentKind: CategoryKind
+  childKinds: [CategoryKind!]!
+  parentLink: CategoryLink
+  links: [CategoryLink!]!
 }
+
+interface CategoryKind @table(name: "category") @discriminate(on: "name") { name: String }
+type Genre implements CategoryKind @table(name: "category") @discriminator(value: "GENRE") { name: String }
+type CategoryLabel @table(name: "category_label") { label: String }
+union CategoryLink = Category | CategoryLabel
 
 type City @table(name: "city") { cityId: Int @field(name: "city_id") }
 type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
@@ -117,7 +128,13 @@ extend schema @expectEquals(relation: "graphitron_path",
   coordinate,                    target_type,     kind, origin
   Category.children,             Category,        JOIN, INFERRED
   Category.children(name:),      Category,        JOIN, EMPTY
+  Category.childKinds,           Genre,           JOIN, INFERRED
+  Category.links,                Category,        JOIN, INFERRED
+  Category.links,                CategoryLabel,   JOIN, INFERRED
   Category.parent,               Category,        JOIN, INFERRED
+  Category.parentKind,           Genre,           JOIN, INFERRED
+  Category.parentLink,           Category,        JOIN, INFERRED
+  Category.parentLink,           CategoryLabel,   JOIN, INFERRED
   Customer.address,              Address,         JOIN, INHERITED
   Customer.home,                 Address,         JOIN, INHERITED
   Film.sameTableById(filmId:),   Film,            JOIN, EMPTY
@@ -138,19 +155,27 @@ extend schema @expectEquals(relation: "graphitron_join_path_claimed",
   """)
 
 # Each rides category's one key, the single field from the declaring row to the one it points at, the
-# list from the parent's key to the rows declaring it.
+# list from the parent's key to the rows declaring it, whatever the field reaches category for.
 extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key",
-    where: "coordinate LIKE 'Category.%'", rows: """
-  coordinate,         target_type, position, constraint_name
-  Category.children,  Category,    0,        category_parent_category_id_fkey
-  Category.parent,    Category,    0,        category_parent_category_id_fkey
+    where: "coordinate LIKE 'Category.%' AND target_type IN ('Category', 'Genre')", rows: """
+  coordinate,           target_type, position, constraint_name
+  Category.childKinds,  Genre,       0,        category_parent_category_id_fkey
+  Category.children,    Category,    0,        category_parent_category_id_fkey
+  Category.links,       Category,    0,        category_parent_category_id_fkey
+  Category.parent,      Category,    0,        category_parent_category_id_fkey
+  Category.parentKind,  Genre,       0,        category_parent_category_id_fkey
+  Category.parentLink,  Category,    0,        category_parent_category_id_fkey
   """)
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_column",
-    where: "coordinate LIKE 'Category.%'", rows: """
-  coordinate,         target_type, position, ordinal, from_table, from_column,        to_table, to_column
-  Category.children,  Category,    0,        0,       category,   category_id,        category, parent_category_id
-  Category.parent,    Category,    0,        0,       category,   parent_category_id, category, category_id
+    where: "coordinate LIKE 'Category.%' AND target_type IN ('Category', 'Genre')", rows: """
+  coordinate,           target_type, position, ordinal, from_table, from_column,        to_table, to_column
+  Category.childKinds,  Genre,       0,        0,       category,   category_id,        category, parent_category_id
+  Category.children,    Category,    0,        0,       category,   category_id,        category, parent_category_id
+  Category.links,       Category,    0,        0,       category,   category_id,        category, parent_category_id
+  Category.parent,      Category,    0,        0,       category,   parent_category_id, category, category_id
+  Category.parentKind,  Genre,       0,        0,       category,   parent_category_id, category, category_id
+  Category.parentLink,  Category,    0,        0,       category,   parent_category_id, category, category_id
   """)
 
 extend schema @assertAbsent(relation: "graphitron_path", rows: """

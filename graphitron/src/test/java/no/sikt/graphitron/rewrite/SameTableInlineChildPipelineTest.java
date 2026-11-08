@@ -533,6 +533,79 @@ class SameTableInlineChildPipelineTest {
         }
     }
 
+    /**
+     * Every output field reaching a type on its own start's table infers the one self-referencing
+     * key as the store does: a discriminated interface on the table and a polymorphic participant on
+     * it, besides the plain table field.
+     */
+    @Nested
+    class SelfReferencingKeyOnEveryOutputArm {
+
+        private static void assertSelfKey(On on, String sourceColumn, String targetColumn) {
+            assertThat(on).isInstanceOfSatisfying(On.ColumnPairs.class, cp -> {
+                assertThat(cp.keying()).isInstanceOfSatisfying(On.Keying.ForeignKey.class, k ->
+                    assertThat(k.fk().sqlName()).isEqualTo("category_parent_category_id_fkey"));
+                assertThat(cp.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly(sourceColumn);
+                assertThat(cp.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly(targetColumn);
+            });
+        }
+
+        private static On onlyHop(List<JoinStep> path) {
+            assertThat(path).singleElement().isInstanceOf(JoinStep.Hop.class);
+            return ((JoinStep.Hop) path.getFirst()).on();
+        }
+
+        @Test
+        void tableInterface_ridesTheKeyByCardinality() {
+            var schema = TestSchemaHelper.buildSchema("""
+                interface CategoryKind @table(name: "category") @discriminate(on: "name") { name: String }
+                type Genre implements CategoryKind @table(name: "category") @discriminator(value: "GENRE") { name: String }
+                type Category @table(name: "category") {
+                    name: String
+                    parentKind: CategoryKind
+                    childKinds: [CategoryKind!]!
+                }
+                type Query { categories: [Category!]! }
+                """);
+
+            assertThat(schema.field("Category", "parentKind"))
+                .isInstanceOfSatisfying(ChildField.TableInterfaceField.class, f ->
+                    assertSelfKey(onlyHop(f.joinPath()), "parent_category_id", "category_id"));
+            assertThat(schema.field("Category", "childKinds"))
+                .isInstanceOfSatisfying(ChildField.BatchedTableInterfaceField.class, f ->
+                    assertSelfKey(onlyHop(f.joinPath()), "category_id", "parent_category_id"));
+            assertThat(errorsAt(schema, "Category.parentKind")).isEmpty();
+            assertThat(errorsAt(schema, "Category.childKinds")).isEmpty();
+        }
+
+        @Test
+        void polymorphicParticipant_ridesTheKeyByCardinality() {
+            var schema = TestSchemaHelper.buildSchema("""
+                type CategoryLabel @table(name: "category_label") { label: String }
+                union CategoryLink = Category | CategoryLabel
+                type Category @table(name: "category") {
+                    name: String
+                    parentLink: CategoryLink
+                    links: [CategoryLink!]!
+                }
+                type Query { categories: [Category!]! }
+                """);
+
+            assertThat(schema.field("Category", "parentLink"))
+                .isInstanceOfSatisfying(ChildField.UnionField.class, f ->
+                    assertThat(f.participantJoinPaths().get("Category"))
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere.class,
+                            k -> assertSelfKey(k.on(), "parent_category_id", "category_id")));
+            assertThat(schema.field("Category", "links"))
+                .isInstanceOfSatisfying(ChildField.BatchedUnionField.class, f ->
+                    assertThat(f.participantJoinPaths().get("Category"))
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere.class,
+                            k -> assertSelfKey(k.on(), "category_id", "parent_category_id")));
+            assertThat(errorsAt(schema, "Category.parentLink")).isEmpty();
+            assertThat(errorsAt(schema, "Category.links")).isEmpty();
+        }
+    }
+
     @Nested
     class NullContractOverTheReturnType {
 

@@ -24,9 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       presence, not path shape: condition, multi-hop, and explicit single-hop {@code {key:}}
  *       all reject identically). A single stated path cannot express a distinct join per
  *       participant.</li>
- *   <li><b>1b</b>: a same-table participant (participant table equals the parent/hub table)
- *       produces an empty auto-path and is rejected with a structural steer to state the
- *       self-referencing key via {@code @referenceFor}.</li>
+ *   <li><b>1b</b>: a same-table participant (participant table equals the parent/hub table) on a
+ *       table with no self-referencing key produces an empty auto-path and is rejected with a
+ *       structural steer to state the correlation via {@code @referenceFor}.</li>
  *   <li><b>1c</b>: a zero-FK / multi-FK auto-discovery failure carries the multi-table-child
  *       context wrapper (steering to {@code @referenceFor}) rather than the bare
  *       "add a @reference directive" steer.</li>
@@ -140,13 +140,13 @@ class MultiTableChildReferencePathRejectionPipelineTest {
             .contains("an explicit @reference is not supported on a multi-table interface/union child field");
     }
 
-    // ===== Rule 1b: same-table participant is a deferred capability =====
+    // ===== Rule 1b: a same-table participant with no self-referencing key to infer =====
 
     @Test
     void interfaceChild_sameTableParticipant_withoutReferenceFor_steersToReferenceFor() {
-        // FilmSelf is backed by the same table (film) as the parent/hub. parsePath skips FK
-        // auto-discovery when source and target tables match, so no correlation is auto-derivable;
-        // the rejection steers the author to state the self-referencing key via @referenceFor.
+        // FilmSelf is backed by the same table (film) as the parent/hub, which has no
+        // self-referencing key, so no correlation is auto-derivable; the rejection steers the
+        // author to state it via @referenceFor.
         var schema = TestSchemaHelper.buildSchema("""
             interface FilmThing { rowId: Int }
             type FilmSelf implements FilmThing @table(name: "film") { rowId: Int @field(name: "film_id") }
@@ -159,6 +159,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
         assertThat(rejection.message())
             .contains("FilmSelf")
             .contains("same table as the parent/hub ('film')")
+            .contains("no self-referencing key")
             .contains("@referenceFor(type: \"FilmSelf\"");
     }
 

@@ -1646,7 +1646,8 @@ class FieldBuilder {
 
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName(), tableInterfaceType.table());
+            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName(), tableInterfaceType.table(),
+                wrapper.isList(), /*admitPrimaryKey=*/false, /*inferSelfKey=*/true);
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(referencePath.errorMessage()));
             }
@@ -1710,9 +1711,10 @@ class FieldBuilder {
             // Per-participant FK auto-discovery from parent table to each participant's table.
             // resolveChildPolymorphicJoinPaths is the gate: it rejects a field-level
             // @reference (which cannot express per-participant joins) and, absent a @referenceFor
-            // route, a same-table participant or a zero/multi-FK auto-discovery failure. The
-            // correlations reaching the emitter are the auto-discovered single-hop FK plus any
-            // explicit @referenceFor route (single-hop, multi-hop, condition, or self-FK).
+            // route, a zero/multi-FK auto-discovery failure, a same-table participant counting its
+            // table's self-referencing keys. The correlations reaching the emitter are the
+            // auto-discovered single-hop FK plus any explicit @referenceFor route (single-hop,
+            // multi-hop, condition, or self-FK).
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
                 location, parentTableType.table(), interfaceType.participants(), buildWrapper(fieldDef).isList());
             if (resolved.rejection() != null) {
@@ -9494,10 +9496,9 @@ class FieldBuilder {
      *       {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation}; both
      *       arms are emittable by {@code MultiTablePolymorphicEmitter} in all three cardinality
      *       forms.</li>
-     *   <li><b>Rule 1b</b> — a same-table participant with no {@code @referenceFor} produces an empty
-     *       auto-path ({@code parsePath} skips FK discovery when source and target match); a
-     *       structural steer to {@code @referenceFor} (self-FK is author-correctable by stating
-     *       the self-referencing key).</li>
+     *   <li><b>Rule 1b</b>: a same-table participant with no {@code @referenceFor} rides its
+     *       table's one self-referencing key by cardinality; with none the auto-path is empty, a
+     *       structural steer to {@code @referenceFor}, and with several it is rule 1c.</li>
      *   <li><b>Rule 1c</b> — a zero-FK / multi-FK auto-discovery failure carries the generic
      *       {@code fkCountMessage} steer; wrapped here with multi-table-child context and a
      *       {@code @referenceFor} steer.</li>
@@ -9514,10 +9515,10 @@ class FieldBuilder {
      * side, and this flag is the sole discriminator (see {@code JooqCatalog.foreignKeyOnSource}). A
      * single-valued field navigates <em>to</em> the parent (FK on the parent/source side); a list or
      * connection field collects the <em>children</em> pointing back (FK on the child/target side). A
-     * flipped orientation is silently wrong data, so a same-table self-FK {@code @referenceFor} route
+     * flipped orientation is silently wrong data, so a same-table self-FK route, written or inferred,
      * must resolve against the real cardinality rather than a hardcoded default. For non-self FKs the
-     * hint is ignored (orientation comes from FK class identity), so it is inert on the auto-discovery
-     * arm and on cross-table routes.
+     * hint is ignored (orientation comes from FK class identity), so it is inert on cross-table
+     * routes.
      */
     private ChildPolymorphicJoinPaths resolveChildPolymorphicJoinPaths(
             GraphQLFieldDefinition fieldDef, String fieldName, String parentTypeName,
@@ -9580,7 +9581,8 @@ class FieldBuilder {
             var parsed = explicit
                 ? ctx.parseExplicitPath(explicitRoutes.get(type), fieldName, parentTable.tableName(),
                     tb.table().tableName(), tb.table(), isList)
-                : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table(), isList);
+                : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table(), isList,
+                    /*admitPrimaryKey=*/false, /*inferSelfKey=*/true);
 
             var outcome = classifyParticipantRoute(explicit, isList, parsed, tb, parentTable);
             if (outcome.rejection() != null) {
@@ -9681,14 +9683,13 @@ class FieldBuilder {
                     + REFERENCE_FOR_USAGE_SKETCH));
             }
             if (parsed.elements().isEmpty()) {
-                // Rule 1b: same-table participant. parsePath skips FK auto-discovery when source and target
-                // tables match. A structural steer to @referenceFor: a self-FK participant is
-                // author-correctable by stating the self-referencing key.
+                // Rule 1b: same-table participant on a table with no self-referencing key, the one key
+                // parsePath infers between a table and itself. A structural steer to @referenceFor.
                 return ParticipantRouteOutcome.fail(Rejection.structural(
                     "participant '" + type + "' is backed by the same table as the "
-                    + "parent/hub ('" + parentTable.tableName() + "'), so no foreign-key correlation from "
-                    + "parent to participant can be auto-discovered. State the self-referencing key with "
-                    + "@referenceFor(type: \"" + type + "\", path: [{key: \"<self-fk>\"}])."));
+                    + "parent/hub ('" + parentTable.tableName() + "'), which has no self-referencing key "
+                    + "to auto-discover. State the correlation with "
+                    + "@referenceFor(type: \"" + type + "\", path: [{condition: ...}])."));
             }
             var pairs = singleHopFkColumnPairs(parsed.elements());
             if (pairs.isEmpty()) {
