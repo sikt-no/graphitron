@@ -58,6 +58,19 @@ class FactExpectationTest {
     /** The undecided folder's size, lowered as documents leave it and never raised. */
     private static final int UNDECIDED_CEILING = 41;
 
+    /**
+     * Pairs of plain documents whose type and field names overlap by {@link #TWIN_OVERLAP} or more,
+     * lowered as near-twins merge or come to state different subjects, and never raised.
+     */
+    private static final int NEAR_TWIN_CEILING = 17;
+
+    /** The share of type and field names two documents hold in common to count as near-twins. */
+    private static final double TWIN_OVERLAP = 0.9;
+
+    /** The directives a claim block applies, which say nothing about the example itself. */
+    private static final java.util.Set<String> CLAIM_DIRECTIVES =
+        java.util.Set.of("expectEquals", "assertContains", "assertAbsent", "assertEmpty");
+
     /** Each graph's claim, by its name: a plain document's path, or a stepped graph's stem. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();
 
@@ -354,6 +367,110 @@ class FactExpectationTest {
             .as("@expectEquals or @assertEmpty on a relation keyed by no graph; state it with "
                 + "@assertContains or @assertAbsent")
             .isEmpty();
+    }
+
+    /**
+     * Each example is stated once. Two documents that print alike once their comments and claim
+     * blocks are set aside state one example twice, and every claim on one is a claim the other
+     * could carry; they merge.
+     *
+     * <p>A document that states no SDL of its own is exempt: its example is the catalog or the
+     * configuration read alone, which every such document shares, and its subject is all in its
+     * claims.
+     */
+    @Test
+    @DisplayName("no two documents state the same example")
+    void noTwoDocumentsStateTheSameExample() {
+        var bySchema = new LinkedHashMap<String, List<String>>();
+        plainDocuments().forEach((path, document) -> {
+            var example = example(document);
+            if (!example.isBlank()) {
+                bySchema.computeIfAbsent(example, ignored -> new ArrayList<>()).add(path);
+            }
+        });
+        assertThat(bySchema.values().stream().filter(paths -> paths.size() > 1).toList())
+            .as("documents whose example, without comments and claims, is the same; merge them")
+            .isEmpty();
+    }
+
+    /**
+     * Near-twins are merged or told apart rather than added to. A document whose types and fields
+     * are nine tenths another's either pins a different subject, which its header says and its
+     * names show, or is the same example and merges.
+     */
+    @Test
+    @DisplayName("near-twin documents do not grow in number")
+    void nearTwinsDoNotGrow() {
+        var names = new LinkedHashMap<String, java.util.Set<String>>();
+        plainDocuments().forEach((path, document) -> names.put(path, names(document)));
+        var paths = List.copyOf(names.keySet());
+        var twins = new ArrayList<String>();
+        for (int i = 0; i < paths.size(); i++) {
+            for (int j = i + 1; j < paths.size(); j++) {
+                var a = names.get(paths.get(i));
+                var b = names.get(paths.get(j));
+                var shared = a.stream().filter(b::contains).count();
+                var all = a.size() + b.size() - shared;
+                if (all > 0 && (double) shared / all >= TWIN_OVERLAP) {
+                    twins.add(paths.get(i) + " ~ " + paths.get(j));
+                }
+            }
+        }
+        assertThat(twins)
+            .as("pairs of documents sharing nine tenths of their type and field names; merge a pair "
+                + "or give one a subject of its own, and lower NEAR_TWIN_CEILING when one goes")
+            .hasSizeLessThanOrEqualTo(NEAR_TWIN_CEILING);
+    }
+
+    /** Every plain document, by path, whatever {@code -Dfacts} narrowed the capture to. */
+    private static Map<String, CorpusDocuments.Document> plainDocuments() {
+        var plain = new TreeMap<String, CorpusDocuments.Document>();
+        FactDocuments.claimed().forEach((document, claim) -> {
+            if (claim != FactDocuments.Claim.INCREMENTAL_CAPTURE) {
+                plain.put(FactDocuments.path(claim, document), document);
+            }
+        });
+        return plain;
+    }
+
+    /** A document's example as printed without its comments and its claim blocks. */
+    private static String example(CorpusDocuments.Document document) {
+        var definitions = graphql.parser.Parser.parse(document.sdl()).getDefinitions().stream()
+            .filter(definition -> !(definition instanceof graphql.language.SchemaExtensionDefinition extension)
+                || !extension.getDirectives().stream()
+                    .allMatch(directive -> CLAIM_DIRECTIVES.contains(directive.getName())))
+            .map(graphql.language.AstPrinter::printAst)
+            .toList();
+        return String.join("\n", definitions);
+    }
+
+    /** The types a document declares or extends, and each one's fields, input fields and values. */
+    private static java.util.Set<String> names(CorpusDocuments.Document document) {
+        var names = new java.util.TreeSet<String>();
+        for (graphql.language.Definition<?> definition
+                : graphql.parser.Parser.parse(document.sdl()).getDefinitions()) {
+            switch (definition) {
+                case graphql.language.ObjectTypeDefinition type -> {
+                    names.add(type.getName());
+                    type.getFieldDefinitions().forEach(f -> names.add(type.getName() + "." + f.getName()));
+                }
+                case graphql.language.InterfaceTypeDefinition type -> {
+                    names.add(type.getName());
+                    type.getFieldDefinitions().forEach(f -> names.add(type.getName() + "." + f.getName()));
+                }
+                case graphql.language.InputObjectTypeDefinition type -> {
+                    names.add(type.getName());
+                    type.getInputValueDefinitions().forEach(f -> names.add(type.getName() + "." + f.getName()));
+                }
+                case graphql.language.EnumTypeDefinition type -> {
+                    names.add(type.getName());
+                    type.getEnumValueDefinitions().forEach(v -> names.add(type.getName() + "." + v.getName()));
+                }
+                case graphql.language.TypeDefinition<?> type -> names.add(type.getName());
+                default -> { }
+            }
+        }
+        return names;
     }
 
     /** The undecided folder only shrinks: a document arrives in the folder whose claim it meets. */
