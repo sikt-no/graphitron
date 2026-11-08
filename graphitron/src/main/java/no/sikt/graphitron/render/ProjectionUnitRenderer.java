@@ -312,21 +312,9 @@ public final class ProjectionUnitRenderer {
                 ProjectionCall.selectionOccurrencesClass(outputPackage));
         }
 
-        String terminalAlias;
-        if (m.path().isEmpty()) {
-            // Standalone shape: start table == target table, no FK chain. The subquery is
-            // uncorrelated: it reads the field's own table, narrowed only by the field's own
-            // filters, the same rows under every parent.
-            terminalAlias = "t0";
-            code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                CatalogRefs.tableClass(m.terminalTable()), terminalAlias,
-                CatalogRefs.constantsClass(m.terminalTable()), m.terminalTable().javaFieldName(),
-                "table", "_" + terminalAlias);
-        } else {
-            var aliases = PathFragments.generateAliases(m.path());
-            terminalAlias = aliases.get(aliases.size() - 1);
-            declareHopAliases(argHelpers, code, m.path(), aliases, "");
-        }
+        var pathAliases = PathFragments.generateAliases(m.path());
+        String terminalAlias = pathAliases.get(pathAliases.size() - 1);
+        declareHopAliases(argHelpers, code, m.path(), pathAliases, "");
 
         var callee = ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
             CodeBlock.of("$L", terminalAlias), outputPackage, c.calleeTakesDsl());
@@ -364,10 +352,10 @@ public final class ProjectionUnitRenderer {
     private static CodeBlock multisetInnerSelect(CallWrap.Multiset m, String terminalAlias,
             CodeBlock selectList) {
         var path = m.path();
-        var aliases = path.isEmpty() ? List.<String>of() : PathFragments.generateAliases(path);
+        var aliases = PathFragments.generateAliases(path);
         var sel = CodeBlock.builder();
         sel.add("$T.select($L)", DSL, selectList);
-        sel.add("\n        .from($L)", path.isEmpty() ? terminalAlias : aliases.get(0));
+        sel.add("\n        .from($L)", aliases.get(0));
         for (int i = 1; i < path.size(); i++) {
             switch (path.get(i)) {
                 case JoinStep.Hop hop -> sel.add("\n        $L",
@@ -376,11 +364,7 @@ public final class ProjectionUnitRenderer {
         }
 
         var where = CodeBlock.builder();
-        if (path.isEmpty()) {
-            where.add("$T.noCondition()", DSL);
-        } else {
-            where.add("$L", PathFragments.correlationWhere(m.correlation(), aliases.get(0), "table", "inline table"));
-        }
+        where.add("$L", PathFragments.correlationWhere(m.correlation(), aliases.get(0), "table", "inline table"));
         PathFragments.appendHopFilters(where, path, aliases, "table", "\n        .and($L)");
         if (m.filter() != null) {
             // The glue call reads the argument map off the inline field's own SelectedField
@@ -415,20 +399,9 @@ public final class ProjectionUnitRenderer {
             ProjectionCall.selectionOccurrencesClass(outputPackage));
 
         var path = lm.path();
-        List<String> aliases;
-        String terminalAlias;
-        if (path.isEmpty()) {
-            aliases = List.of();
-            terminalAlias = "lk0";
-            code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                CatalogRefs.tableClass(lm.terminalTable()), terminalAlias,
-                CatalogRefs.constantsClass(lm.terminalTable()), lm.terminalTable().javaFieldName(),
-                "table", "_" + c.field() + "_" + terminalAlias);
-        } else {
-            aliases = PathFragments.generateAliases(path);
-            terminalAlias = aliases.get(aliases.size() - 1);
-            declareHopAliases(argHelpers, code, path, aliases, "");
-        }
+        var aliases = PathFragments.generateAliases(path);
+        String terminalAlias = aliases.get(aliases.size() - 1);
+        declareHopAliases(argHelpers, code, path, aliases, "");
 
         String diagnostic = c.callee().simpleName() + "." + c.field();
         code.addStatement("$T rows = $L(sf, $L)",
@@ -468,7 +441,7 @@ public final class ProjectionUnitRenderer {
             ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
                 CodeBlock.of("$L", terminalAlias), outputPackage, c.calleeTakesDsl()));
         sel.add("\n        .from($L)", terminalAlias);
-        // JOIN chain from the terminal hop back towards step 0; no-op when the path is empty.
+        // JOIN chain from the terminal hop back towards step 0.
         for (int i = path.size() - 1; i >= 1; i--) {
             switch (path.get(i)) {
                 case JoinStep.Hop hop -> sel.add("\n        $L",
@@ -478,11 +451,7 @@ public final class ProjectionUnitRenderer {
         sel.add("\n        .join(input).on($L)", onCondition);
 
         var where = CodeBlock.builder();
-        if (path.isEmpty()) {
-            where.add("$T.noCondition()", DSL);
-        } else {
-            where.add("$L", PathFragments.correlationWhere(lm.correlation(), aliases.get(0), "table", "lookup"));
-        }
+        where.add("$L", PathFragments.correlationWhere(lm.correlation(), aliases.get(0), "table", "lookup"));
         PathFragments.appendHopFilters(where, path, aliases, "table", "\n        .and($L)");
         if (lm.filter() != null) {
             where.add("\n        .and($L)", glueExpression(lm.filter(), terminalAlias,

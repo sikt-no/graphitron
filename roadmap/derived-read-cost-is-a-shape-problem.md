@@ -2718,6 +2718,12 @@ premise on `graphitron_field_synthesis.authored_type_sdl` and on `intent_field_s
 it. The column is gone and that view reads neither relation now. A dated note says so in its body;
 whether the defect it reports still exists is its own author's to re-measure.
 
+**The uncorrelated same-table read.** With a same-table field refused unless a key joins it, the
+inline multiset's standalone shape is gone: `CallWrap.Multiset` and `CallWrap.LookupMultiset` take a
+non-empty path and a parent correlation, and `ProjectionUnitRenderer` no longer renders a read of the
+field's own table under `noCondition()`. A `TableField` with an empty path stays representable in the
+model, which only unit-test fixtures construct.
+
 ## Owed, not done here
 
 Found while writing the discipline down, verified, and not fixed. Recorded so they are findable

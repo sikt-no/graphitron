@@ -52,18 +52,14 @@ public sealed interface CallWrap {
     }
 
     /**
-     * Other rows over a {@code @reference} path (or standalone against the callee's own table
-     * when {@code path} is empty): exactly one projected field, a
+     * Other rows over a {@code @reference} path: exactly one projected field, a
      * {@code DSL.multiset(<inner select>).as("__rk_" + key)} whose inner select list is the
      * callee's projection.
      *
-     * @param path            the resolved join path; empty for the standalone shape (start table
-     *                        equals target table)
-     * @param correlation     the step-0 parent correlation; {@code null} exactly when
-     *                        {@code path} is empty (the standalone shape has no parent
-     *                        correlation), mirroring the model's carrier invariant
-     * @param terminalTable   the callee's table (the subselect's FROM when the path is empty,
-     *                        and the alias-naming read for the terminal hop otherwise)
+     * @param path            the resolved join path, never empty: a field on its parent's own
+     *                        table reaches it over a written or inferred key like any other
+     * @param correlation     the step-0 parent correlation, never null
+     * @param terminalTable   the callee's table, the alias-naming read for the terminal hop
      * @param arity           result cardinality; {@link Arity#SINGLE} caps the inner select at
      *                        {@code .limit(1)}
      * @param orderBy         the field's authoritative ordering; only the
@@ -119,15 +115,11 @@ public sealed interface CallWrap {
             Objects.requireNonNull(terminalTable, "terminalTable");
             Objects.requireNonNull(orderBy, "orderBy");
             Objects.requireNonNull(arity, "arity");
-            if (path.isEmpty() && correlation != null) {
+            if (path.isEmpty()) {
                 throw new IllegalArgumentException(
-                    "Multiset with an empty path is the standalone shape and carries no parent "
-                    + "correlation; got " + correlation.getClass().getSimpleName());
+                    "Multiset reads over a join path; an empty one correlates nothing to the parent");
             }
-            if (!path.isEmpty() && correlation == null) {
-                throw new NullPointerException(
-                    "Multiset with a non-empty path requires a parent correlation");
-            }
+            Objects.requireNonNull(correlation, "correlation");
             if (arity == Arity.SINGLE && limitByFirstArgument) {
                 throw new IllegalArgumentException(
                     "Multiset cannot both cap at limit(1) and honour a runtime first argument");
@@ -144,9 +136,8 @@ public sealed interface CallWrap {
      * order); the occurrence-argument guard is structurally unconditional because the
      * {@code @lookupKey} read is what the arm is.
      *
-     * @param path           the resolved join path; may be empty (standalone lookup)
-     * @param correlation    the step-0 parent correlation; {@code null} exactly when
-     *                       {@code path} is empty
+     * @param path           the resolved join path, never empty
+     * @param correlation    the step-0 parent correlation, never null
      * @param terminalTable  the callee's table (the lookup keyset's target)
      * @param mapping        the {@code @lookupKey} column mapping the VALUES keyset and the
      *                       rows helper are built from
@@ -166,15 +157,11 @@ public sealed interface CallWrap {
             Objects.requireNonNull(terminalTable, "terminalTable");
             Objects.requireNonNull(mapping, "mapping");
             Objects.requireNonNull(inputRowsHelper, "inputRowsHelper");
-            if (path.isEmpty() && correlation != null) {
+            if (path.isEmpty()) {
                 throw new IllegalArgumentException(
-                    "LookupMultiset with an empty path is the standalone shape and carries no "
-                    + "parent correlation; got " + correlation.getClass().getSimpleName());
+                    "LookupMultiset reads over a join path; an empty one correlates nothing to the parent");
             }
-            if (!path.isEmpty() && correlation == null) {
-                throw new NullPointerException(
-                    "LookupMultiset with a non-empty path requires a parent correlation");
-            }
+            Objects.requireNonNull(correlation, "correlation");
         }
     }
 
