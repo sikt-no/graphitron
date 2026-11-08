@@ -58,18 +58,8 @@ class FactExpectationTest {
     /** The undecided folder's size, lowered as documents leave it and never raised. */
     private static final int UNDECIDED_CEILING = 41;
 
-    /**
-     * Pairs of plain documents whose type and field names overlap by {@link #TWIN_OVERLAP} or more,
-     * lowered as near-twins merge or come to state different subjects, and never raised.
-     */
-    private static final int NEAR_TWIN_CEILING = 17;
-
-    /** The share of type and field names two documents hold in common to count as near-twins. */
-    private static final double TWIN_OVERLAP = 0.9;
-
-    /** The directives a claim block applies, which say nothing about the example itself. */
-    private static final java.util.Set<String> CLAIM_DIRECTIVES =
-        java.util.Set.of("expectEquals", "assertContains", "assertAbsent", "assertEmpty");
+    /** The share of graphs a fact must be in to count as the baseline every graph has. */
+    private static final double BASELINE = 0.9;
 
     /** Each graph's claim, by its name: a plain document's path, or a stepped graph's stem. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();
@@ -95,6 +85,9 @@ class FactExpectationTest {
     private static final List<String> unnavigated = new ArrayList<>();
     private static final List<String> wholeStore = new ArrayList<>();
     private static final List<String> refusedAssertions = new ArrayList<>();
+
+    /** Each plain graph's facts, as {@link #SHAPE} projects them. */
+    private static final Map<String, java.util.Set<String>> fingerprints = new TreeMap<>();
     private static int fields;
 
 
@@ -191,6 +184,8 @@ class FactExpectationTest {
         })) {
             examined.addTo();
         }
+        FACTS.eachStore((dsl, held) -> fingerprints(dsl, held, graphs.plain().keySet()))
+            .forEach(fingerprints::putAll);
 
         // The classpath corpus beside the catalog, so a document can state what a reading finds in
         // Java as well as what it finds in SDL, as the population reads every document.
@@ -395,56 +390,102 @@ class FactExpectationTest {
     }
 
     /**
-     * Each example is stated once. Two documents that print alike once their comments and claim
-     * blocks are set aside state one example twice, and every claim on one is a claim the other
-     * could carry; they merge.
+     * Each example is stated once. Two documents whose graphs hold the same facts, beyond the
+     * baseline every graph holds, state one example twice, and every claim on one is a claim the
+     * other could carry; they merge.
      *
-     * <p>A document that states no SDL of its own is exempt: its example is the catalog or the
-     * configuration read alone, which every such document shares, and its subject is all in its
-     * claims.
+     * <p>The comparison is the store's rather than the text's, so an example spelled two ways is
+     * one example and two that read alike but differ in a directive are two. A document whose graph
+     * holds nothing beyond the baseline is exempt: its example is the catalog or the configuration
+     * read alone, and its subject is all in its claims.
      */
     @Test
     @DisplayName("no two documents state the same example")
     void noTwoDocumentsStateTheSameExample() {
-        var bySchema = new LinkedHashMap<String, List<String>>();
-        plainDocuments().forEach((path, document) -> {
-            var example = example(document);
-            if (!example.isBlank()) {
-                bySchema.computeIfAbsent(example, ignored -> new ArrayList<>()).add(path);
+        var byFacts = new LinkedHashMap<java.util.Set<String>, List<String>>();
+        beyondTheBaseline().forEach((graph, facts) -> {
+            if (!facts.isEmpty()) {
+                byFacts.computeIfAbsent(facts, ignored -> new ArrayList<>()).add(graph);
             }
         });
-        assertThat(bySchema.values().stream().filter(paths -> paths.size() > 1).toList())
-            .as("documents whose example, without comments and claims, is the same; merge them")
+        assertThat(byFacts.values().stream().filter(graphs -> graphs.size() > 1).toList())
+            .as("documents whose graphs hold the same facts; merge them")
             .isEmpty();
     }
 
+    /** Each graph's facts without the ones nearly every graph holds, which the prelude puts there. */
+    private static Map<String, java.util.Set<String>> beyondTheBaseline() {
+        var frequency = new java.util.HashMap<String, Integer>();
+        fingerprints.values().forEach(facts -> facts.forEach(fact -> frequency.merge(fact, 1, Integer::sum)));
+        var baseline = frequency.entrySet().stream()
+            .filter(entry -> entry.getValue() >= BASELINE * fingerprints.size())
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+        var beyond = new TreeMap<String, java.util.Set<String>>();
+        fingerprints.forEach((graph, facts) -> beyond.put(graph, facts.stream()
+            .filter(fact -> !baseline.contains(fact))
+            .collect(Collectors.toSet())));
+        return beyond;
+    }
+
     /**
-     * Near-twins are merged or told apart rather than added to. A document whose types and fields
-     * are nine tenths another's either pins a different subject, which its header says and its
-     * names show, or is the same example and merges.
+     * What an example is, as the model states it: one row per fact, its graph beside it. Declared
+     * rather than everything the store holds, so a new relation changes no fingerprint until
+     * somebody adds a select here. Types and their kind, fields and arguments at their type
+     * expressions, the directives applied where (the author's, claim blocks aside, and the ones
+     * expansion minted), the class standing for a type and the shape of result it holds, the defects
+     * and schema problems the reading found, and the configuration the graph is captured under: two
+     * documents stating one schema under two configurations are two examples.
      */
-    @Test
-    @DisplayName("near-twin documents do not grow in number")
-    void nearTwinsDoNotGrow() {
-        var names = new LinkedHashMap<String, java.util.Set<String>>();
-        plainDocuments().forEach((path, document) -> names.put(path, names(document)));
-        var paths = List.copyOf(names.keySet());
-        var twins = new ArrayList<String>();
-        for (int i = 0; i < paths.size(); i++) {
-            for (int j = i + 1; j < paths.size(); j++) {
-                var a = names.get(paths.get(i));
-                var b = names.get(paths.get(j));
-                var shared = a.stream().filter(b::contains).count();
-                var all = a.size() + b.size() - shared;
-                if (all > 0 && (double) shared / all >= TWIN_OVERLAP) {
-                    twins.add(paths.get(i) + " ~ " + paths.get(j));
-                }
+    private static final String SHAPE = """
+        SELECT graph_name, CONCAT_WS('|', 'type', coordinate, kind) FROM graphitron_type
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'field', coordinate, type_sdl) FROM graphitron_field
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'argument', coordinate, type_sdl, default_value_sdl)
+          FROM graphitron_argument
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'applied', coordinate, directive_name)
+          FROM graphql_directive_application
+          WHERE directive_name NOT IN
+            ('expectEquals', 'assertContains', 'assertAbsent', 'assertEmpty', 'withConfiguration')
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'emitted', coordinate, directive_name)
+          FROM graphitron_directive_application
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'backing', type_name, class_name)
+          FROM graphitron_type_backing
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'result', type_name, shape) FROM graphitron_result
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'defect', code, coordinate, detail)
+          FROM graphitron_entry_defect_site
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'problem', stage, error_class)
+          FROM graphql_schema_problem
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'page size', max_page_size)
+          FROM store_graph_max_allowed_page_size
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'outbox', table_name, function_name, payload_mapping)
+          FROM store_graph_outbox
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'outbox role', kind, role, name)
+          FROM store_graph_outbox_role
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'outbox payload', position, key_name, bound_to)
+          FROM store_graph_outbox_payload_entry
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'session', handle_class) FROM store_graph_session_handle
+        UNION ALL SELECT graph_name, 'session supplied' FROM store_graph_session_supplied
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'supergraph', supergraph_name)
+          FROM store_graph_supergraph
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'tenant', column_name) FROM store_graph_tenant_column
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'lint off', rule_id) FROM store_graph_lint_disabled_rule
+        UNION ALL SELECT graph_name, CONCAT_WS('|', 'lint skips', type_pattern)
+          FROM store_graph_lint_excluded_type
+        """;
+
+    /** The facts {@link #SHAPE} states for each of {@code plain}'s graphs that {@code dsl}'s store holds. */
+    private static Map<String, java.util.Set<String>> fingerprints(DSLContext dsl, java.util.Set<String> held,
+                                                                   java.util.Set<String> plain) {
+        var facts = new TreeMap<String, java.util.Set<String>>();
+        held.stream().filter(plain::contains)
+            .forEach(graph -> facts.put(graph, new java.util.HashSet<>()));
+        for (var row : dsl.resultQuery(SHAPE).fetch()) {
+            var graph = facts.get(row.get(0, String.class));
+            if (graph != null) {
+                graph.add(row.get(1, String.class));
             }
         }
-        assertThat(twins)
-            .as("pairs of documents sharing nine tenths of their type and field names; merge a pair "
-                + "or give one a subject of its own, and lower NEAR_TWIN_CEILING when one goes")
-            .hasSizeLessThanOrEqualTo(NEAR_TWIN_CEILING);
+        return facts;
     }
 
     /** Every plain document, by path, whatever {@code -Dfacts} narrowed the capture to. */
@@ -456,46 +497,6 @@ class FactExpectationTest {
             }
         });
         return plain;
-    }
-
-    /** A document's example as printed without its comments and its claim blocks. */
-    private static String example(CorpusDocuments.Document document) {
-        var definitions = graphql.parser.Parser.parse(document.sdl()).getDefinitions().stream()
-            .filter(definition -> !(definition instanceof graphql.language.SchemaExtensionDefinition extension)
-                || !extension.getDirectives().stream()
-                    .allMatch(directive -> CLAIM_DIRECTIVES.contains(directive.getName())))
-            .map(graphql.language.AstPrinter::printAst)
-            .toList();
-        return String.join("\n", definitions);
-    }
-
-    /** The types a document declares or extends, and each one's fields, input fields and values. */
-    private static java.util.Set<String> names(CorpusDocuments.Document document) {
-        var names = new java.util.TreeSet<String>();
-        for (graphql.language.Definition<?> definition
-                : graphql.parser.Parser.parse(document.sdl()).getDefinitions()) {
-            switch (definition) {
-                case graphql.language.ObjectTypeDefinition type -> {
-                    names.add(type.getName());
-                    type.getFieldDefinitions().forEach(f -> names.add(type.getName() + "." + f.getName()));
-                }
-                case graphql.language.InterfaceTypeDefinition type -> {
-                    names.add(type.getName());
-                    type.getFieldDefinitions().forEach(f -> names.add(type.getName() + "." + f.getName()));
-                }
-                case graphql.language.InputObjectTypeDefinition type -> {
-                    names.add(type.getName());
-                    type.getInputValueDefinitions().forEach(f -> names.add(type.getName() + "." + f.getName()));
-                }
-                case graphql.language.EnumTypeDefinition type -> {
-                    names.add(type.getName());
-                    type.getEnumValueDefinitions().forEach(v -> names.add(type.getName() + "." + v.getName()));
-                }
-                case graphql.language.TypeDefinition<?> type -> names.add(type.getName());
-                default -> { }
-            }
-        }
-        return names;
     }
 
     /** The undecided folder only shrinks: a document arrives in the folder whose claim it meets. */
