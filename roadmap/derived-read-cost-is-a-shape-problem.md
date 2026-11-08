@@ -507,6 +507,10 @@ static method needs no holder.
   runtime result keys from the row's owner down to the field, as many as the occurrence lies deep
   below it, in place of the threaded `rkPath`; the flip is one pass over every arm, each fact
   below landed first, as its own store change pinned by a fact document (Alf, 2026-11-08).
+  The store-fed discriminated lift (`DiscriminatedQuery`) refuses what this node decides: a participant
+  on a table of its own, a field the interface declares off the shared table, a participant's field
+  nesting an object and a cross-table field more than one step away, and it restricts each participant
+  with no shared-alias names; those cases stay with the walk's emitters until the units are designed.
   * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
     `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
     parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
@@ -582,12 +586,6 @@ static method needs no holder.
 * **The service fields are emitted from the store** `blocked`, E's, on "A producer's fetcher parts are emitted from the store". The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
   the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
   changes on purpose, its behaviour does not.
-  * **A discriminated interface target is re-projected from the store** `open`, E's. The store-fed lift
-    renders the discriminated re-projection from `graphitron_occurrence_participant` and the participant
-    fields' join paths (the `__discriminator__` alias, the known values, each participant's columns, the
-    discriminator-gated cross-table subselects), keeping `$project` for the columns and the
-    `<Participant>_<field>` alias the walk's child fetchers read (Alf, 2026-11-08); the three
-    `contentSearch` services then leave `DISCRIMINATED`.
   * **A record argument's input fields bind the record's columns** `blocked`, on F's `call_parameter`
     widening, where an argument whose parameter is a jOOQ record of table T lands on T, its input fields
     too. Then `BuildQuery`'s columns and the decode read it, and the ten `RECORD_BUILD` services and the

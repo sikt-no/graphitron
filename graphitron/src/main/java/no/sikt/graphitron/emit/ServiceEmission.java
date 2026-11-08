@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
@@ -43,8 +42,8 @@ import static org.jooq.impl.DSL.selectOne;
  * {@link #census} says why. Today that is a service, at a root or under an object whose field has one
  * occurrence, whose answer is a record, a scalar or the records of its target's table, in a build with no tenant column, whose outcome claims no
  * validation, whose arguments build no jOOQ record and reach no input field
- * deeper than the argument itself, and whose target is neither a discriminated interface nor a
- * connection. A field whose call uses no jOOQ context takes none, so it opens no connection.
+ * deeper than the argument itself, and whose target is not a connection; a discriminated interface's rows are told apart by
+ * its column where {@link DiscriminatedQuery} states every participant. A field whose call uses no jOOQ context takes none, so it opens no connection.
  */
 public final class ServiceEmission {
 
@@ -101,11 +100,13 @@ public final class ServiceEmission {
     private final Map<String, String> excluded;
     /** The services whose outcome claims validation, by coordinate. */
     private final Set<String> validating;
+    /** The occurrences whose rows a column of one shared table tells apart, by coordinate. */
+    private final Map<String, DiscriminatedQuery.Row> discriminated;
 
     private ServiceEmission(Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Set<String> polymorphic, Map<String, String> excluded,
-                            Set<String> validating) {
+                            Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated) {
         this.frames = frames;
         this.calls = calls;
         this.fills = fills;
@@ -114,11 +115,12 @@ public final class ServiceEmission {
         this.polymorphic = polymorphic;
         this.excluded = excluded;
         this.validating = validating;
+        this.discriminated = discriminated;
     }
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
-        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of());
+        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of(), Map.of());
     }
 
     /** Reads every part's rows for the graph once. */
@@ -126,16 +128,20 @@ public final class ServiceEmission {
         var builds = new HashMap<String, Map<Integer, BuildQuery.Result>>();
         BuildQuery.read(store).forEach((root, result) ->
             builds.computeIfAbsent(root.callCoordinate(), k -> new HashMap<>()).put(root.position(), result));
+        var lifts = byCoordinate(LiftQuery.read(store), LiftQuery.Row::coordinate);
+        var targets = new HashMap<String, String>();
+        lifts.forEach((coordinate, row) -> targets.put(coordinate, row.targetType()));
         return new ServiceEmission(
             byCoordinate(FrameQuery.read(store), FrameQuery.Row::coordinate),
             byCoordinate(CallQuery.read(store), CallQuery.Row::coordinate),
             byCoordinate(FillQuery.read(store), FillQuery.Row::coordinate),
             builds,
-            byCoordinate(LiftQuery.read(store), LiftQuery.Row::coordinate),
+            lifts,
             PolymorphicLiftQuery.read(store).stream().map(PolymorphicLiftQuery.Row::coordinate)
                 .collect(Collectors.toSet()),
             excluded(store),
-            validating(store));
+            validating(store),
+            DiscriminatedQuery.read(store, targets));
     }
 
     private static <R> Map<String, R> byCoordinate(List<R> rows, Function<R, String> coordinate) {
@@ -161,11 +167,6 @@ public final class ServiceEmission {
             coordinates.forEach(c -> out.put(c, "TENANT_ROUTING"));
             return out;
         }
-        var pt = GRAPHITRON_OCCURRENCE_PARTICIPANT;
-        store.dsl().selectDistinct(pt.COORDINATE).from(pt)
-            .where(pt.GRAPH_NAME.eq(store.graphName()), pt.RECOGNIZED_BY.eq("DISCRIMINATOR"))
-            .fetch(pt.COORDINATE)
-            .forEach(c -> out.putIfAbsent(c, "DISCRIMINATED"));
         var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
         store.dsl().select(r.COORDINATE).from(r)
             .where(r.GRAPH_NAME.eq(store.graphName()), r.SHAPE.eq("CONNECTION"))
@@ -227,6 +228,11 @@ public final class ServiceEmission {
         }
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
         if (polymorphic.contains(coordinate)) return "POLYMORPHIC";
+        var told = discriminated.get(coordinate);
+        if (told != null && (told.refusal().isPresent() || !lifts.containsKey(coordinate)
+                || !lifts.get(coordinate).root())) {
+            return "DISCRIMINATED";
+        }
         var call = calls.get(coordinate);
         if (call == null) return "NO_CALL";
         var filled = fills.get(coordinate);
@@ -272,7 +278,11 @@ public final class ServiceEmission {
             nested.add(LiftEmitter.sourceTable(source, row.table(), row.key()).toBuilder()
                 .addModifiers(javax.lang.model.element.Modifier.STATIC).build());
             String liftName = fieldName + "Lift";
-            methods.add(LiftEmitter.lift(row, liftName, source, runtime.projectionClass().apply(row.targetType()),
+            var told = discriminated.get(coordinate);
+            methods.add(told != null
+                ? LiftEmitter.discriminatedLift(row, told, liftName, source, runtime.projectionClass(),
+                    runtime.selectionOccurrences())
+                : LiftEmitter.lift(row, liftName, source, runtime.projectionClass().apply(row.targetType()),
                 runtime.selectionOccurrences()));
             liftRef = Optional.of(new CallEmitter.Lift(runtime.fetchersClass(), liftName, row.list()));
         }

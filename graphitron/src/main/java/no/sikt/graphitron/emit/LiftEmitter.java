@@ -271,6 +271,115 @@ public final class LiftEmitter {
         return builder.addCode(targetDecl).addCode(select.unindent().build()).build();
     }
 
+    /**
+     * The lift of a root call's records onto a shared table whose rows a column tells apart, as the
+     * participants {@code discriminated} states: each row carries that column under the alias the
+     * generated type resolver reads, each participant's projection unit selects its own occurrences
+     * of the fetched field's selection, a participant's field off the shared table is read through
+     * its one step for that participant's rows alone where the selection asks for it, and a row
+     * whose column holds no participant's value is no row. A record handed back as null, or whose
+     * row is gone, is null at its position.
+     *
+     * <pre>{@code
+     * List<SelectField<?>> fields = new ArrayList<>();
+     * fields.add(DSL.field(target.getQualifiedName().append(DSL.name("content_type")), Object.class).as("__discriminator__"));
+     * fields.addAll(FilmContent.$project(SelectionOccurrences.restrictTo(selection, "FilmContent", Set.of()), target, env));
+     * if (<the selection asks FilmContent's rating>) {
+     *     Film hop0 = Tables.FILM.as("target_hop0");
+     *     fields.add(DSL.field(DSL.select(hop0.RATING).from(hop0)
+     *         .where(hop0.FILM_ID.eq(target.FILM_ID).and(<content_type = 'FILM'>)).limit(1)).as("FilmContent_rating"));
+     * }
+     * return dsl.select(fields).select(...FOUND).from(source).leftJoin(target).on(<key>.and(<content_type in values>))...
+     * }</pre>
+     *
+     * <p>The cross-table field's alias, the participant's name and the field's joined by an
+     * underscore, is what the field's own fetcher reads it back under.
+     */
+    public static MethodSpec discriminatedLift(LiftQuery.Row row, DiscriminatedQuery.Row discriminated,
+                                               String methodName, ClassName source,
+                                               java.util.function.Function<String, ClassName> projectionOf,
+                                               ClassName selectionOccurrences) {
+        requireKey(row.table(), row.key());
+        if (!row.root() || discriminated.refusal().isPresent()) {
+            throw new IllegalArgumentException(row.coordinate() + " is not a root lift this emits: "
+                + discriminated.refusal().orElse("it lifts under an object"));
+        }
+        var table = row.table();
+        var tableType = ClassName.bestGuess(table.tableClassName());
+        var selectField = ParameterizedTypeName.get(ClassName.get("org.jooq", "SelectField"),
+            WildcardTypeName.subtypeOf(Object.class));
+        var grouped = ParameterizedTypeName.get(ClassName.get("java.util", "Map"), ClassName.get(String.class),
+            ParameterizedTypeName.get(LIST, ClassName.get("graphql.schema", "SelectedField")));
+        var column = CodeBlock.of("$T.field($L.getQualifiedName().append($T.name($S)), $T.class)", DSL, TARGET, DSL,
+            discriminated.discriminatorColumn(), Object.class);
+        var builder = MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(ENV, "env")
+            .addParameter(DSL_CONTEXT, "dsl");
+        if (row.list()) {
+            builder.returns(ParameterizedTypeName.get(LIST, RECORD))
+                .addParameter(ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD)), "lifted")
+                .addStatement("if (lifted.isEmpty()) return $T.of()", LIST);
+        } else {
+            builder.returns(RECORD).addParameter(RECORD, "lifted")
+                .addStatement("if (lifted == null) return null");
+        }
+        builder.addStatement("$T $L = $L.as($S)", tableType, TARGET, constants(table), TARGET)
+            .addStatement("$T selection = $T.ownFields(env.getSelectionSet())", grouped, selectionOccurrences)
+            .addStatement("$T<$T> fields = new $T<>()", LIST, selectField, ArrayList.class)
+            // The type resolver reads the column back as the participant's value; untyped, so an enum
+            // column comes back as its literal.
+            .addStatement("fields.add($L.as($S))", column, DISCRIMINATOR);
+        int hop = 0;
+        var values = new ArrayList<CodeBlock>();
+        for (var participant : discriminated.participants()) {
+            var value = CodeBlock.of("$T.inline($S)", DSL, participant.value());
+            values.add(value);
+            builder.addStatement("fields.addAll($T.$$project($T.restrictTo(selection, $S, $T.of()), $L, env))",
+                projectionOf.apply(participant.typeName()), selectionOccurrences, participant.typeName(),
+                ClassName.get("java.util", "Set"), TARGET);
+            for (var cross : participant.crossFields()) {
+                String alias = TARGET + "_hop" + hop++;
+                var on = new ArrayList<CodeBlock>();
+                for (var pair : cross.on()) {
+                    on.add(CodeBlock.of("$L.$L.eq($L.$L)", alias, pair.toJavaName(), TARGET, pair.fromJavaName()));
+                }
+                on.add(CodeBlock.of("$L.eq($L)", column, value));
+                builder.beginControlFlow("if (selection.values().stream().anyMatch(bucket -> bucket.stream()"
+                        + ".anyMatch(f -> f.getName().equals($S) && f.getObjectTypeNames().contains($S))))",
+                        cross.fieldName(), participant.typeName())
+                    .addStatement("$T $L = $L.as($S)", ClassName.bestGuess(cross.table().tableClassName()), alias,
+                        constants(cross.table()), alias)
+                    .addStatement("fields.add($T.field($T.select($L.$L).from($L).where($L).limit(1)).as($S))", DSL, DSL,
+                        alias, cross.columnJavaName(), alias, chained(on),
+                        participant.typeName() + "_" + cross.fieldName())
+                    .endControlFlow();
+            }
+        }
+        var on = new ArrayList<CodeBlock>();
+        for (var key : row.key()) {
+            on.add(CodeBlock.of("$L.$L.eq($T.$L)", TARGET, key.javaName(), source, key.javaName()));
+        }
+        on.add(CodeBlock.of("$L.in($L)", column, CodeBlock.join(values, ", ")));
+        var select = CodeBlock.builder()
+            .add("return dsl.select(fields)\n")
+            .indent()
+            .add(".select($L.$L.as($T.FOUND))\n", TARGET, row.key().getFirst().javaName(), source)
+            .add(row.list()
+                ? CodeBlock.of(".from($T.of(lifted))\n", source)
+                : CodeBlock.of(".from($T.of($T.of(lifted)))\n", source, LIST))
+            .add(".leftJoin($L).on($L)\n", TARGET, chained(on))
+            .add(".orderBy($T.IDX)\n", source)
+            .add(row.list()
+                ? CodeBlock.of(".fetch(r -> r.get($T.FOUND) == null ? null : r);\n", source)
+                : CodeBlock.of(".fetchOptional(r -> r.get($T.FOUND) == null ? null : r).orElse(null);\n", source))
+            .unindent();
+        return builder.addCode(select.build()).build();
+    }
+
+    /** The column the generated type resolver reads a discriminated row's participant value under. */
+    static final String DISCRIMINATOR = "__discriminator__";
+
     private static void requireKey(LiftQuery.Table table, List<LiftQuery.KeyColumn> key) {
         if (key.isEmpty()) {
             throw new IllegalArgumentException(table.sqlName() + " has no primary key to lift by");
