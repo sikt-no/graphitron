@@ -560,6 +560,22 @@ public final class Scenario {
         return parse("example", text).getDefinitions().stream().anyMatch(d -> !engineOnly(d));
     }
 
+    /** The paths {@code text}'s {@code @withFacts} directives pull in, in the order written. */
+    static List<String> pulls(String text) {
+        return parse("pulls", text).getDefinitionsOfType(SchemaExtensionDefinition.class).stream()
+            .flatMap(extension -> extension.getDirectives(WITH_FACTS).stream())
+            .flatMap(directive -> docs(directive).stream())
+            .map(Doc::path)
+            .toList();
+    }
+
+    /** Whether {@code text} states any claim. */
+    static boolean claims(String text) {
+        return parse("claims", text).getDefinitionsOfType(SchemaExtensionDefinition.class).stream()
+            .flatMap(extension -> extension.getDirectives().stream())
+            .anyMatch(directive -> CLAIMS.contains(directive.getName()));
+    }
+
     /** Whether {@code definition} is an {@code extend schema} carrying engine directives alone. */
     private static boolean engineOnly(Definition<?> definition) {
         return definition instanceof SchemaExtensionDefinition extension

@@ -372,6 +372,43 @@ class FactExpectationTest {
         return plain;
     }
 
+    /**
+     * Every building block is pulled in by something a scenario runs: a shape or layout nothing
+     * reaches is setup no test reads, and goes.
+     */
+    @Test
+    @DisplayName("every building block is pulled in, directly or through another")
+    void everyBuildingBlockIsPulledIn() {
+        var blocks = FactDocuments.buildingBlocks();
+        var reached = new java.util.HashSet<String>();
+        var pending = new java.util.ArrayDeque<String>();
+        plainDocuments().values().forEach(document -> pending.addAll(Scenario.pulls(document.sdl())));
+        while (!pending.isEmpty()) {
+            var path = pending.pop();
+            if (reached.add(path) && blocks.containsKey(path)) {
+                pending.addAll(Scenario.pulls(blocks.get(path).sdl()));
+            }
+        }
+        assertThat(blocks.keySet().stream().filter(path -> !reached.contains(path)).toList())
+            .as("building blocks no scenario pulls in, directly or through another block")
+            .isEmpty();
+    }
+
+    /**
+     * A building block states no claim. It is never run on its own, so a claim in it would never be
+     * checked: claims belong to the scenario that pulls the block in, after the step they are about.
+     */
+    @Test
+    @DisplayName("no building block states a claim")
+    void noBuildingBlockClaims() {
+        assertThat(FactDocuments.buildingBlocks().entrySet().stream()
+                .filter(entry -> Scenario.claims(entry.getValue().sdl()))
+                .map(Map.Entry::getKey)
+                .toList())
+            .as("building blocks stating claims nothing checks; move them into the scenario")
+            .isEmpty();
+    }
+
     /** The undecided folder only shrinks: a document arrives in the folder whose claim it meets. */
     @Test
     @DisplayName("the undecided folder does not grow")

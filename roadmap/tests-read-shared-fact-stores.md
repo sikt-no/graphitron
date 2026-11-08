@@ -103,7 +103,7 @@ extend schema @assertAbsent(relation: "graphitron_field_key_row", rows: """ ... 
 
 This replaces the stepped files (`<graph>.<file>.<epoch>.graphqls` under `incremental-captures/`), whose 19 graphs become scenarios sequencing their versions with `@tick`, and it is how larger realistic schemas are built: a scenario pulling in many layouts is one generated package for execution tests and the manual, and it still owns its whole graph, so a whole-population claim means what it says.
 
-Folders: `scenarios/` and `defects/` hold scenarios, judged on their final reading; `undecided/` makes no claim and only shrinks; `shapes/` and `layouts/` hold building blocks no folder claim applies to, and a building block nothing pulls in fails a floor.
+Folders: `scenarios/` and `defects/` hold scenarios, judged on their final reading; `undecided/` makes no claim and only shrinks; `shapes/` and `layouts/` hold building blocks no folder claim applies to; a building block nothing pulls in fails a floor, and so does one that states a claim, since expansion would strip it unread.
 
 ### Identity
 
@@ -201,7 +201,7 @@ Four phases, each landing on its own and keeping the build green.
    - Execute through the production capture over the rendered directory; the population, `FactExpectationTest` and `GenerateTestSchemas` all go through it, and `FactDocuments.write`, `CapturedStore`'s multi-file arms and `readAt` lose their callers.
    - Claims verified from text for documents as for assertion files, read at the step they follow; folder claims on the final reading.
    - The 19 stepped graphs become scenarios, their versions building blocks under `shapes/<graph>/` and their claims after the step each is about; judged on the final reading, nine land under `defects/`, nine under `scenarios/`, and one, which the generator refuses with nothing stored, under `undecided/`. The `STEP` pattern and the stepped path in `FactExpectationTest` go.
-   - `shapes/` and `layouts/`, with the floor for a building block nothing pulls in, and the first layouts extracted from the most repeated setup (`Film` is declared in 141 graphs, in 58 field sets).
+   - `shapes/` and `layouts/`, with the floors for a building block nothing pulls in and one that states a claim. Layouts are extracted where a conversion shares setup, starting with the emit batch, not ahead of a consumer (`Film` is declared in 141 graphs, in 58 field sets, so the pressure is there).
 3. **Keystones and pins.**
    - The three pin queries, the duplicate gate and the keystone report.
    - The keystone for each behaviour the manual already shows, read from `@factDocument(path:)` and `@factRows(relation:)`.
@@ -250,7 +250,7 @@ The migration runs as a pipeline of agents, carried by one skill (`fact-document
   - two documents of different catalogs never share a store, a store-wide relation reads the same rows in every shard of one catalog and classpath, and a whole-population claim on a store-wide relation is refused;
   - a path naming no document is refused, naming the shape a path takes.
 * `FactExpectationTest` over the population, with: the assertion-file floor; refusal of `@expectEquals` and `@assertEmpty` in an assertion file; the same-example gate, with a negative case.
-* The scenario engine: expansion pulls in documents transitively, refuses a cycle, writes a file once, strips claims and blanks them so lines are kept; `@tick` dates files, and a pulled-in document's `@tick` is not read and only its last version of each file is written; a step's claims see that step's reading and folder claims the final one; a building block nothing pulls in fails its floor; the 19 former stepped graphs pass as scenarios.
+* The scenario engine: expansion pulls in documents transitively, refuses a cycle, writes a file once, strips claims and blanks them so lines are kept; `@tick` dates files, and a pulled-in document's `@tick` is not read and only its last version of each file is written; a step's claims see that step's reading and folder claims the final one; a building block nothing pulls in, or one that states a claim, fails its floor; the 19 former stepped graphs pass as scenarios.
 * The pin queries and the duplicate gate, with a negative case per family, and the keystone report.
 * The defect-type rendering gate: every row of `graphitron_defect_type` renders from a document that draws it.
 * Each module's assertion runner, with one negative case per kind.
