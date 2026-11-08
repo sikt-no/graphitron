@@ -673,6 +673,20 @@ pass and no stratum that clears and recomputes.
       Merging the payload keys into `graphitron_occurrence_call_parameter`, an occurrence holding
       several calls, is for when a third kind of call appears. Done here rather than under R1113,
       whose phase 3 then builds on it.
+      * **The messages and targets are stored by the outbox stage** `done`. `graphitron_outbox_message`
+        holds each application keyed by field and ordinal, with its event and a reference to the
+        field's occurrence where one reaches it, so a message on a field nothing reaches is still
+        judged; the two targets are tables beside their `_rule` views; the `outbox` stage writes all
+        three and `OUTBOX_NOT_A_WRITE`, `OUTBOX_NO_TARGET`, `OUTBOX_TARGET_INVALID` and
+        `OUTBOX_DUPLICATE_EVENT` from `graphitron_outbox_entry_defect_rule`, placement read off
+        `graphitron_occurrence_producer_write`.
+      * **A `$result` path lands on field occurrences** `open`. `graphitron_argmapping_call` admits
+        `@outbox`, and the steps walk field occurrences for `$result` paths; every service, routine
+        and condition landing stays as it is.
+      * **A payload key is a filled parameter of its message** `blocked`, on "A `$result` path lands
+        on field occurrences". The key relation and its fills, the remaining `OUTBOX_*` codes, and
+        `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
+        `graphitron_outbox_result_step` go.
     * **An arm belongs to the last stage whose facts it reads** `blocked`, on "An outbox message is a
       call of its occurrence". Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
       that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every

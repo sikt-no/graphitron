@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
+import no.sikt.graphitron.model.derive.Outboxes;
 import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
 import no.sikt.graphitron.model.derive.PathClaims;
@@ -150,6 +151,9 @@ public final class GraphitronAssemblyCapture {
         // the occurrences, the table types and the discriminator directives.
         new AnchorStage("occurrence-participants", OccurrenceParticipants.class,
             OccurrenceParticipants::derive),
+        // The outbox targets the configuration resolves to, and each @outbox as the message its
+        // field's call writes, judged against the occurrences' producers above; then their defects.
+        new AnchorStage("outbox", Outboxes.class, Outboxes::derive),
         // Last, the defects of every code no earlier stage writes itself, off everything above: the
         // rule's rows marked with this reading, the declarations under each condition shape defect,
         // then the argMapping entries under the strings they fault.

@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -32,9 +33,10 @@ import static org.jooq.impl.DSL.val;
  * adds its view and a {@link Rule} to {@link #RULES} and calls {@link #derive} as its last statement,
  * touching no other stage's. What this class adds is who evaluates a rule and when.
  *
- * <p>Today one stage owns a rule view: this class's own, {@code entry-defects}, the graphitron anchor
- * phase's last step, whose view is {@code graphitron_entry_defect_rule} and which owns every graphitron
- * code no stage writes itself. What follows is about that rule.
+ * <p>{@link Outboxes} owns the {@code OUTBOX_} codes its relations judge, from
+ * {@code graphitron_outbox_entry_defect_rule}. This class's own stage, {@code entry-defects}, the
+ * graphitron anchor phase's last step, owns every graphitron code no earlier stage writes itself, from
+ * {@code graphitron_entry_defect_rule}. What follows is about that rule.
  *
  * <p><b>Stored because it is read interactively and costs a walk.</b> Most of the rule is cheap,
  * the write arms reading entries the gatherer already anchored. The chain arms were not: they
@@ -66,8 +68,11 @@ public final class EntryDefects {
     /** The rule of the graphitron anchor phase's last stage, this class. */
     public static final Rule GRAPHITRON = new Rule("entry-defects", GRAPHITRON_ENTRY_DEFECT_RULE);
 
+    /** The outbox stage's rule. */
+    public static final Rule OUTBOX = new Rule("outbox", GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE);
+
     /** Every owner's rule, one per owner stage. */
-    public static final List<Rule> RULES = List.of(GRAPHITRON);
+    public static final List<Rule> RULES = List.of(OUTBOX, GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already
