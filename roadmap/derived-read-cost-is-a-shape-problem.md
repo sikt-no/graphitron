@@ -186,9 +186,7 @@ shown an error on a schema that generates, and validate can then fail on them.
 
 * **A condition method over untyped tables resolves** `open`. A condition-only element whose method takes `Table<?>` steps from where the walk stands,
   as the generator calls it.
-* **The sakila example draws no error-severity entry defect** `open`. Its outcome and result-shape refusals are fixed, and its last 3, `NODE_ID_TYPE_NAME_NOT_NODE` naming the federation stub `StudyLevel`, go when that stub is written `@node(resolvable: false)` (Alf, 2026-11-07); the failing build of "Entry defects fail validate" is the check that holds it, so the two land together.
 * **sis draws no entry defect the generator accepts** `open`. Of the 34 sis drew, the 5 `OUTCOME_FIELD_NON_NULL` were ours and are fixed; the 19 `NODE_ID_TYPE_NAME_NOT_NODE` name federation stubs sis writes `@node(resolvable: false)` once graphitron reads it, the 8 `COLUMN_UNRESOLVED` on a nesting type's deprecated `id: ID!`, keys a legacy split query needed, stay refused, the generator now refusing them too, and are sis's to fix by dropping the fields (fs-plattform MR 6639), and the 2 `NODE_ID_LANDS_ON_TABLE` are fs-plattform MR 6636 (Alf, 2026-11-07).
-* **Entry defects fail validate** `open`. Every error code in `graphitron_entry_defect` stops a build, not only the editor.
 * **An unknown `$session` member's defect states what the handle offers** `open`. A detail relation under the defect holds one row per member the handle offers, as `graphitron_entry_defect_table` holds `TABLE_AMBIGUOUS`'s candidates, and the build's message reads it instead of querying `graphitron_session_handle_member` when it renders.
 * **An unresolved path element's defect names the element** `open`. `ELEMENT_UNRESOLVED` carries no detail, so `@reference(path: [{key: "no_such_fk"}])` is reported at the element without saying `no_such_fk`; the path stage states the spelling the element wrote as the defect's detail.
 
@@ -387,13 +385,13 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
 A directive naming Java code or a routine is resolved once, by the graphitron anchor against the
 classpath and catalog, and every reader reads that resolution rather than a view of its own.
 
-* **The walk's condition shape refusals go** `blocked`, on "Entry defects fail validate".
+* **The walk's condition shape refusals go** `open`.
   `ServiceCatalog.admitConditionShape` refuses a `@condition` set with `AmbiguousMethod` where
   `CONDITION_OVERLOAD_SHAPE_DISAGREES` already says the same, and at a path step it refuses on
   axes the generated call never reaches, as for `agreeingOnBoth`.
 * **The per-site copies and coordinate-keyed entries go** `blocked`, on "The code-reference subject converts". The twins lose their
   class, method and argMapping columns.
-* **The walk's unknown-method rejections go** `blocked`, on "Entry defects fail validate".
+* **The walk's unknown-method rejections go** `open`.
   `Rejection.unknownServiceMethod` and `unknownLifterMethod` give way to the stored defects.
 * **`sql_name_matched_key_column` is gone** `blocked`, on the child below. With `NameMatchedKeys`,
   and `fact-model.adoc` stops citing it; the walk's name-match step reads it today and moves too.
@@ -808,7 +806,7 @@ before `generate` does.
     once.
   * **A scalar constant says why it has no input type** `open`. `code_scalar_constant` tells an
     erased coercing apart from the other silences, so the erased-coercing rule reads the store.
-* **`validate` reads its verdict from the store** `blocked`, on "Each rule the walk enforces is a located defect" and "Entry defects fail validate". Node-id decode coverage is restated over store facts or goes, and
+* **`validate` reads its verdict from the store** `blocked`, on "Each rule the walk enforces is a located defect". Node-id decode coverage is restated over store facts or goes, and
   `GraphQLRewriteGenerator.validate` and the `VALIDATE` projection go.
 
 ### `generate` is a function of the store and the emitted schema `open`
