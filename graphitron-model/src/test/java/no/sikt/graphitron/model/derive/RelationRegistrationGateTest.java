@@ -233,6 +233,7 @@ class RelationRegistrationGateTest {
         // How long the capture spent writing each table, the run's own record as well.
         // WriteTimesTest pins it, over a capture that finishes and a second that writes less.
         registrations.put("store_graph_write", Arm.UNSHADOWED);
+        registrations.put("store_graph_write_stage", Arm.UNSHADOWED);
         registrations.put("store_graph_read", Arm.UNSHADOWED);
         // What each file's recipe entry configures for it. GraphitronSchema is built from the
         // registry the configuration already rewrote and keeps no word on which file a tag came
@@ -548,6 +549,7 @@ class RelationRegistrationGateTest {
         registrations.put("meta_grain", Arm.DERIVED);
         registrations.put("meta_relation", Arm.DERIVED);
         registrations.put("meta_stage", Arm.DERIVED);
+        registrations.put("meta_stage_write", Arm.DERIVED);
         registrations.put("meta_stated_relation", Arm.DERIVED);
         // The lint vocabulary, on the meta_ rosters' terms: rows this file supplies, so there
         // is no gatherer whose reading could be compared against anything. What pins it is

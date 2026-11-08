@@ -8,37 +8,32 @@ import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
 import no.sikt.graphitron.model.derive.EntryDefectClaims;
 import no.sikt.graphitron.model.derive.EntryDefectMembers;
 import no.sikt.graphitron.model.derive.EntryDefectTables;
-import no.sikt.graphitron.model.derive.OccurrenceProducers;
-import no.sikt.graphitron.model.derive.OccurrenceSources;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
+import no.sikt.graphitron.model.derive.OccurrenceDepths;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
 import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
 import no.sikt.graphitron.model.derive.PathClaims;
-import no.sikt.graphitron.model.derive.PathNeeds;
-import no.sikt.graphitron.model.derive.Paths;
 import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.ProducerClaims;
 import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.SpelledTables;
-import no.sikt.graphitron.model.derive.Steps;
 import no.sikt.graphitron.model.derive.TypeBackings;
 import no.sikt.graphitron.model.derive.TypeClaims;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -68,115 +63,104 @@ public final class GraphitronAssemblyCapture {
     private GraphitronAssemblyCapture() {}
 
     /**
-     * Resolves {@code graph}'s facts against everything the reading captured, as the anchor's
-     * last step.
+     * The stages that resolve {@code graph}'s facts against everything the reading captured, in the
+     * order they run, as the anchor's last stages; {@link GraphitronAstCapture#STAGES} runs them.
      *
      * <p>The instant is the caller's, on every gatherer's terms: the relations these stages mark and
      * sweep tell this reading's rows from the last one's by it.
      */
-    public static void resolve(DSLContext dsl, String graph, LocalDateTime readAt) {
+    static final List<AnchorStage> STAGES = List.of(
         // What each argMapping may write at its site, off the sites the anchor just wrote and the
         // transcription; the views the defects below read over it see this reading's rows.
-        ArgMappingCandidates.derive(dsl, graph);
+        new AnchorStage("argmapping-candidates", ArgMappingCandidates.class,
+            (dsl, graph, readAt) -> ArgMappingCandidates.derive(dsl, graph)),
         // Over the nodes the anchor settled.
-        NodeKeyColumns.derive(dsl, graph);
+        new AnchorStage("node-key-columns", NodeKeyColumns.class,
+            (dsl, graph, readAt) -> NodeKeyColumns.derive(dsl, graph)),
         // The legacy key shape each type id answers to, against the current keys just written.
-        NodeLegacyKeyShapes.derive(dsl, graph);
-        targets(dsl, graph, readAt);
+        new AnchorStage("node-legacy-key-shapes", NodeLegacyKeyShapes.class,
+            (dsl, graph, readAt) -> NodeLegacyKeyShapes.derive(dsl, graph)),
+        // Each field's target type, over the population the generator emits.
+        new AnchorStage("field-targets", GraphitronAssemblyCapture.class,
+            GraphitronAssemblyCapture::targets),
         // What each field's written directives claim it runs, off the anchor's fields and
         // applications; the fetchers and the entry defects below read it.
-        ProducerClaims.derive(dsl, graph, readAt);
+        new AnchorStage("producer-claims", ProducerClaims.class,
+            ProducerClaims::derive),
         // And what each field, input field and argument's written directives claim it binds to, off
         // the same elements and applications; the bindings and their defects read it.
-        BindingClaims.derive(dsl, graph, readAt);
+        new AnchorStage("binding-claims", BindingClaims.class,
+            BindingClaims::derive),
         // And what each type's written directives claim it stands for, off the same applications.
-        TypeClaims.derive(dsl, graph, readAt);
+        new AnchorStage("type-claims", TypeClaims.class,
+            TypeClaims::derive),
         // The reference stratum's own resolutions, bottom rung first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could
-        // take, which read it. Every input either was captured before this gatherer ran or is a
-        // plain view over facts that were, so nothing here reads a table a later step writes.
-        SpelledTables.derive(dsl, graph);
+        // take, which read it.
+        new AnchorStage("spelled-tables", SpelledTables.class,
+            (dsl, graph, readAt) -> SpelledTables.derive(dsl, graph)),
         // What each path element names, its spelling resolved against the catalog and classpath
         // once, keyed by the element.
-        PathElements.derive(dsl, graph, readAt);
+        new AnchorStage("path-elements", PathElements.class,
+            PathElements::derive),
         // Where a field's path ends on a @routine, off the targets and the elements just resolved.
-        RoutineResults.derive(dsl, graph, readAt);
+        new AnchorStage("routine-results", RoutineResults.class,
+            RoutineResults::derive),
         // Every place a field or an argument is reached, off the targets written above and the
         // anchor's table types: a chain grows through a field whose target is an object type with no
-        // table. Here rather than as a line of the anchor because the targets are written above; it
-        // moves with the other steps when this class dissolves into the anchor's own lines.
-        Occurrences.derive(dsl, graph, readAt);
+        // table.
+        new AnchorStage("occurrences", Occurrences.class,
+            Occurrences::derive),
         // Where each written argMapping path lands under each occurrence of its call, a walk over the
         // occurrences just written.
-        ArgMappingLandings.derive(dsl, graph, readAt);
+        new AnchorStage("argmapping-landings", ArgMappingLandings.class,
+            ArgMappingLandings::derive),
         // Where each path is written, by the declared element and the type it reaches, off the path
         // entries and the targets above; the paths follow these.
-        PathClaims.derive(dsl, graph, readAt);
+        new AnchorStage("path-claims", PathClaims.class,
+            PathClaims::derive),
         // Then which class stands for each type: the table binding just written read through its
         // record class, and what the producers' resolved methods ground, closed over the members
         // each backed class offers. The classpath was read before this gatherer ran.
-        TypeBackings.derive(dsl, graph, readAt);
-        // Last, each output field's fetcher, off the targets, bindings and backings above.
-        Fetchers.derive(dsl, graph, readAt);
+        new AnchorStage("type-backings", TypeBackings.class,
+            TypeBackings::derive),
+        // Each output field's fetcher, off the targets, bindings and backings above.
+        new AnchorStage("fetchers", Fetchers.class,
+            Fetchers::derive),
         // How each field under a held object takes its keys off it, off the producers and results
         // just written and the path elements above; the walk departs from these.
-        FieldKeyRows.derive(dsl, graph, readAt);
+        new AnchorStage("field-key-rows", FieldKeyRows.class,
+            FieldKeyRows::derive),
         // Each occurrence's producer, source, needs and paths, a depth at a time, off the
-        // occurrences, the key rows and the claims above.
-        occurrenceDepths(dsl, graph, readAt);
-        // The key columns each node id at an occurrence carries, where the needs just written land,
-        // then the column each other scalar occurrence reads or binds there.
-        OccurrenceNodeIds.derive(dsl, graph, readAt);
-        OccurrenceColumns.derive(dsl, graph, readAt);
+        // occurrences, the key rows and the claims above: one stage, each depth reading what the
+        // depth above it wrote.
+        new AnchorStage("occurrence-depths", OccurrenceDepths.class,
+            OccurrenceDepths::derive),
+        // The key columns each node id at an occurrence carries, where the needs just written land.
+        new AnchorStage("occurrence-node-ids", OccurrenceNodeIds.class,
+            OccurrenceNodeIds::derive),
+        // Then the column each other scalar occurrence reads or binds there.
+        new AnchorStage("occurrence-columns", OccurrenceColumns.class,
+            OccurrenceColumns::derive),
         // What fills each parameter of each service call, off the calls, landings and sources above,
         // with the PARAMETER binding of each argument a call takes.
-        OccurrenceCallParameters.derive(dsl, graph, readAt);
+        new AnchorStage("occurrence-call-parameters", OccurrenceCallParameters.class,
+            OccurrenceCallParameters::derive),
         // The types each polymorphic occurrence's rows may be and how a row is told apart as each, off
         // the occurrences, the table types and the discriminator directives.
-        OccurrenceParticipants.derive(dsl, graph, readAt);
-        // Last, the entry-defects stage: the defects of every code no earlier stage writes itself,
-        // off everything above, the rule's rows marked with this reading, the declarations under
-        // each condition shape defect, then the argMapping entries under the strings they fault;
-        // then the sweep of the codes this gatherer's stages own that the reading did not mark.
-        EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
-        ConditionShapeDefectMethods.derive(dsl, graph, readAt);
-        EntryDefectClaims.derive(dsl, graph, readAt);
-        EntryDefectMembers.derive(dsl, graph, readAt);
-        EntryDefectTables.derive(dsl, graph, readAt);
-        ArgMappingPairDefects.derive(dsl, graph);
-        EntryDefects.sweep(dsl, graph, readAt, GraphitronAstCapture.GATHERER);
-    }
-
-    /**
-     * What each occurrence executes, where its values come from, the types it must reach and the
-     * path to each, one depth at a time, then the sweep of every relation. Within a depth: the
-     * producers, which the sources read; the sources, its tables or its class; the needs off those
-     * sources; the paths no claim covers, an empty one where the need starts on its landing and an
-     * inferred one over the one foreign key; and the claimed needs walked into their steps, each to
-     * its written or inherited path or to a stop. A child field or an argument under a field that
-     * writes a path starts where that path's join path lands, so a depth reads the join paths of the
-     * depth above.
-     */
-    private static void occurrenceDepths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var o = GRAPHITRON_OCCURRENCE;
-        Integer deepest = dsl.select(max(o.DEPTH)).from(o)
-            .where(o.GRAPH_NAME.eq(graph)).and(o.TOUCHED_AT.eq(touchedAt))
-            .fetchOne(0, Integer.class);
-        if (deepest != null) {
-            for (int depth = 0; depth <= deepest; depth++) {
-                OccurrenceProducers.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceSources.writeDepth(dsl, graph, depth, touchedAt);
-                PathNeeds.writeDepth(dsl, graph, depth, touchedAt);
-                Paths.writeDepth(dsl, graph, depth, touchedAt);
-                Steps.writeDepth(dsl, graph, depth, touchedAt);
-            }
-        }
-        OccurrenceProducers.sweep(dsl, graph, touchedAt);
-        OccurrenceSources.sweep(dsl, graph, touchedAt);
-        PathNeeds.sweep(dsl, graph, touchedAt);
-        Paths.sweep(dsl, graph, touchedAt);
-        Steps.sweep(dsl, graph, touchedAt);
-    }
+        new AnchorStage("occurrence-participants", OccurrenceParticipants.class,
+            OccurrenceParticipants::derive),
+        // Last, the defects of every code no earlier stage writes itself, off everything above: the
+        // rule's rows marked with this reading, the declarations under each condition shape defect,
+        // then the argMapping entries under the strings they fault.
+        new AnchorStage("entry-defects", EntryDefects.class, (dsl, graph, readAt) -> {
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
+            ConditionShapeDefectMethods.derive(dsl, graph, readAt);
+            EntryDefectClaims.derive(dsl, graph, readAt);
+            EntryDefectMembers.derive(dsl, graph, readAt);
+            EntryDefectTables.derive(dsl, graph, readAt);
+            ArgMappingPairDefects.derive(dsl, graph);
+        }));
 
     /**
      * Each field's target type, over the population the generator emits rather than over the
@@ -185,7 +169,7 @@ public final class GraphitronAssemblyCapture {
      * type is a connection, and the named type itself otherwise. The rule is the view beside the
      * target; stored because a reader joins on the target's name and wants an index on that column.
      */
-    private static void targets(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    static void targets(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var target = GRAPHITRON_FIELD_TARGET;
         var rule = GRAPHITRON_FIELD_TARGET_RULE;
         dsl.insertInto(target)

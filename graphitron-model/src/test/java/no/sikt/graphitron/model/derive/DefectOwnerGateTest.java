@@ -35,7 +35,7 @@ import static org.jooq.impl.DSL.table;
  * code literals in the view bodies its read expands, and the {@code CHECK} lists of the tables it
  * reaches that carry a code column, which is how a defect relation of its own feeds a rule. A Java
  * writer states its codes as a constant beside the statement that writes them, and is listed here by
- * its class, which names its stage through {@code meta_stage.stage_class}.
+ * the stage that runs it.
  */
 class DefectOwnerGateTest {
 
@@ -76,8 +76,8 @@ class DefectOwnerGateTest {
                 written.computeIfAbsent(rule.stage(), k -> new TreeSet<>())
                     .addAll(codesEmittedBy(dsl, rule.view().getName().toLowerCase(java.util.Locale.ROOT)));
             }
-            javaWriters().forEach((writer, codes) ->
-                written.computeIfAbsent(stageOf(dsl, writer), k -> new TreeSet<>()).addAll(codes));
+            javaWriters().forEach((stage, codes) ->
+                written.computeIfAbsent(stage, k -> new TreeSet<>()).addAll(codes));
             var t = GRAPHITRON_DEFECT_TYPE;
             var owned = new java.util.HashMap<String, Set<String>>();
             dsl.select(t.OWNER_STAGE, t.CODE).from(t).fetch().forEach(r ->
@@ -146,14 +146,14 @@ class DefectOwnerGateTest {
     }
 
     @Test
-    @DisplayName("each Java writer of graphitron_entry_defect is a stage and writes only its codes")
+    @DisplayName("each Java writer of graphitron_entry_defect runs in a stage and writes only its codes")
     void eachJavaWriterWritesOnlyItsStagesCodes() {
-        ThreadConfinedStore.run(dsl -> javaWriters().forEach((writer, codes) -> {
+        ThreadConfinedStore.run(dsl -> javaWriters().forEach((stage, codes) -> {
             assertThat(codes).as("a writer listed with no codes checks nothing").isNotEmpty();
-            String stage = stageOf(dsl, writer);
+            assertThat(dsl.fetchExists(META_STAGE, META_STAGE.STAGE_NAME.eq(stage)))
+                .as(stage + " is a meta_stage row").isTrue();
             assertThat(foreignCodes(dsl, codes, stage))
-                .as("codes written by " + writer.getSimpleName() + ", stage " + stage
-                    + ", and owned by another stage")
+                .as("codes written in stage " + stage + " and owned by another stage")
                 .isEmpty();
         }));
     }
@@ -184,11 +184,12 @@ class DefectOwnerGateTest {
     }
 
     /**
-     * The Java writers of {@code graphitron_entry_defect}, keyed by their class, which
-     * {@code meta_stage.stage_class} names, with the codes each states beside its statement.
+     * The Java writers of {@code graphitron_entry_defect}, keyed by the stage that runs them, with
+     * the codes each states beside its statement: {@link Steps} writes the walk's defects inside
+     * {@link OccurrenceDepths}.
      */
-    private static Map<Class<?>, List<String>> javaWriters() {
-        return Map.of(Steps.class, Steps.ENTRY_DEFECT_CODES);
+    private static Map<String, List<String>> javaWriters() {
+        return Map.of("occurrence-depths", Steps.ENTRY_DEFECT_CODES);
     }
 
     /**
@@ -214,8 +215,8 @@ class DefectOwnerGateTest {
                 String owner = dsl.select(t.OWNER_STAGE).from(t).where(t.CODE.eq(code))
                     .fetchSingle(t.OWNER_STAGE);
                 var ownWrites = new TreeSet<String>();
-                javaWriters().forEach((writer, codes) -> {
-                    if (stageOf(dsl, writer).equals(owner)) {
+                javaWriters().forEach((stage, codes) -> {
+                    if (stage.equals(owner)) {
                         ownWrites.addAll(codes);
                     }
                 });
@@ -229,15 +230,6 @@ class DefectOwnerGateTest {
                     + " writes it too; take it off SHARED once one writer is left").contains(code);
             }
         });
-    }
-
-    /** The {@code meta_stage} row whose class is {@code writer}. */
-    private static String stageOf(DSLContext dsl, Class<?> writer) {
-        return dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
-            .where(META_STAGE.STAGE_CLASS.eq(writer.getName()))
-            .fetchOptional(META_STAGE.STAGE_NAME)
-            .orElseThrow(() -> new AssertionError(writer.getName()
-                + " writes graphitron_entry_defect and is no meta_stage row's class"));
     }
 
     /** The gatherer whose anchor phase runs {@code stage}. */

@@ -725,7 +725,7 @@ class FactSchemaGateTest {
                         case "meta_gatherer", "meta_gatherer_corpus", "meta_gatherer_dependency"
                             -> "gatherer_name";
                         case "meta_grain" -> "grain_name";
-                        case "meta_stage" -> "stage_name";
+                        case "meta_stage", "meta_stage_write" -> "stage_name";
                         case "meta_relation" -> "relation_name";
                         default -> "graph_name";
                     };

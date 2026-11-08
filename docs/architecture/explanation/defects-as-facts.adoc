@@ -43,13 +43,16 @@ which sweeps them.
 == Ownership
 
 Each code is owned by the stage whose facts it judges. A gatherer's anchor phase is a sequence of
-stages, and `meta_stage` rosters the ones that own something, each with its gatherer and its
-class. A stage writes its codes as its last statement, once the facts they judge are in: from a
-rule view of its own that `EntryDefects` writes for it, or directly where the rule needs work a
-view cannot state, as `Steps` writes the route defects of the walk it takes. So no one statement
-reaches every relation a gatherer derives, and a stage's rule reads only what that stage and the
-stages before it wrote. Every row carries `touched_at`, the instant of the reading that found it.
-When its stages have run, the gatherer sweeps the codes its stages own once, deleting the rows of
+stages, and `meta_stage` rosters them, each with its gatherer, its position in that gatherer's order
+and its class; the gatherer runs its stages from that order, and `meta_stage_write` states the
+relations each one writes. A stage writes its codes as its last statement, once the facts they
+judge are in: from a rule view of its own that `EntryDefects` writes for it, or directly where the
+rule needs work a view cannot state, as the `occurrence-depths` stage writes the route defects of
+the walk it takes. So no one statement reaches every relation a gatherer derives, and a stage's rule
+reads only what that stage and the stages before it wrote; one that read a later stage's relation
+would read the previous reading's rows. An arm reading several stages' facts belongs to the last of
+them. Every row carries `touched_at`, the instant of the reading that found it. When its stages have
+run, the gatherer sweeps the codes its stages own once, deleting the rows of
 those codes the reading did not mark. Another gatherer's rows are never touched.
 
 The split is under way. Today the `entry-defects` stage, `EntryDefects` itself as the graphitron
@@ -59,8 +62,11 @@ anchor phase's last step, owns every graphitron code no earlier stage writes, fr
 
 `DefectOwnerGateTest` holds this together: every code names a stage of a gatherer, a stage owns
 exactly the codes it writes, every stage's rule view emits only that stage's codes and its gatherer
-owns the view, the gatherer may read what the view reaches, and each Java writer is a stage by its
-class.
+owns the view, the gatherer may read what the view reaches, and each Java writer runs in a stage.
+`StageRosterGateTest` holds the order: the gatherer runs the stages its roster states, and no
+stage's rule view reaches a relation a later stage writes. `StageWriteGateTest` holds the writes:
+every relation a stage wrote in a fact document's capture, as `store_graph_write_stage` records it,
+is one `meta_stage_write` declares.
 
 == Detail and subtype relations
 

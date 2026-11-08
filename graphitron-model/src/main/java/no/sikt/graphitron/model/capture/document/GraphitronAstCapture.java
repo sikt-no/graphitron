@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -9,6 +10,7 @@ import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Decodes the directive applications the SDL transcription wrote, onto the rows it wrote them as.
@@ -116,34 +118,48 @@ public final class GraphitronAstCapture {
      * which is a grain with no application in it and nothing to tell two applications apart by.
      */
     public static void anchor(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
-        GraphitronAnchor.write(dsl, graph.name(), readAt);
+        AnchorStage.runAll(dsl, graph.name(), readAt, STAGES);
+        // The gatherer's, not a stage's: the codes its stages own that this reading did not mark.
+        EntryDefects.sweep(dsl, graph.name(), readAt, GATHERER);
+    }
+
+    /**
+     * The anchor phase's stages, in the order they run, which is {@code meta_stage}'s order for this
+     * gatherer: the anchors, then what they mint, then {@link GraphitronAssemblyCapture#STAGES}, the
+     * stages that resolve against everything above and the catalog and classpath.
+     */
+    public static final List<AnchorStage> STAGES = Stream.concat(Stream.of(
+        new AnchorStage("anchor", GraphitronAnchor.class, GraphitronAnchor::write),
         // What each written code reference names on the classpath, which this anchor can ask now it
         // runs after the classpath has been read.
-        GraphitronCodeReferences.write(dsl, graph.name(), readAt);
+        new AnchorStage("code-references", GraphitronCodeReferences.class,
+            GraphitronCodeReferences::write),
         // Where each written argMapping sits, which its readers join into views of their own.
-        GraphitronArgMappingSites.write(dsl, graph.name(), readAt);
+        new AnchorStage("argmapping-sites", GraphitronArgMappingSites.class,
+            GraphitronArgMappingSites::write),
         // And each pair of each, named by its mapping and the parameter it binds.
-        GraphitronArgMappingPairs.write(dsl, graph.name(), readAt);
+        new AnchorStage("argmapping-pairs", GraphitronArgMappingPairs.class,
+            GraphitronArgMappingPairs::write),
         // The context key filling each parameter of each call, which finds a pair's call through
         // the sites just written.
-        GraphitronCallContextKeys.write(dsl, graph.name(), readAt);
+        new AnchorStage("call-context-keys", GraphitronCallContextKeys.class,
+            GraphitronCallContextKeys::write),
         // Which types are bound to a table and which of those are nodes. Both read the anchors just
         // written and corpora captured before this one, and the mint below reads the second.
-        TableTypes.derive(dsl, graph.name());
-        Nodes.derive(dsl, graph.name());
+        new AnchorStage("table-types", TableTypes.class, (dsl, graph, readAt) -> TableTypes.derive(dsl, graph)),
+        new AnchorStage("nodes", Nodes.class, (dsl, graph, readAt) -> Nodes.derive(dsl, graph)),
         // Whether the graph opts in to federation, which the key mint below reads.
-        FederationLinks.link(dsl, graph.name(), readAt);
+        new AnchorStage("federation-link", FederationLinks.class, FederationLinks::link),
         // Then what the applications just anchored mint. Second by our choice rather than by
         // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
         // siblings, each decoded from its own position and reading nothing of the other. It is
         // here that one depends on the other, the emitted population being resolved out of the
         // applications this gatherer settled a statement earlier.
-        EmittedAnchor.derive(dsl, graph.name(), readAt);
+        new AnchorStage("emitted", EmittedAnchor.class, EmittedAnchor::derive),
         // What the link imports, which is what the author wrote plus what was just applied.
-        FederationLinks.imports(dsl, graph.name(), readAt);
+        new AnchorStage("federation-imports", FederationLinks.class, FederationLinks::imports),
         // And the vocabulary the composed schema has, which those imports name.
-        FederationVocabulary.derive(dsl, graph.name(), readAt);
-        // Last, the stages that resolve against everything above and the catalog and classpath.
-        GraphitronAssemblyCapture.resolve(dsl, graph.name(), readAt);
-    }
+        new AnchorStage("federation-vocabulary", FederationVocabulary.class,
+            FederationVocabulary::derive)),
+        GraphitronAssemblyCapture.STAGES.stream()).toList();
 }

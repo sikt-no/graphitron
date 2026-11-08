@@ -622,22 +622,24 @@ pass and no stratum that clears and recomputes.
     a swept defect takes its details with it.
     * **A defect code names the stage that writes it** `done`. `meta_stage` rosters the stages
       that own something, each with its gatherer and its class, held to a class that exists;
-      `graphitron_defect_type.owner_stage` replaces `owner_gatherer`; `Steps` owns the seven codes
-      of the walk it writes, and `entry-defects`, `EntryDefects` as the anchor phase's last step,
+      `graphitron_defect_type.owner_stage` replaces `owner_gatherer`; the stage running `Steps` owns
+      the seven codes of the walk it writes, and `entry-defects`, `EntryDefects` as the anchor phase's last step,
       every other graphitron code, from `graphitron_entry_defect_rule`. The gatherer sweeps its
       stages' codes once. `DefectOwnerGateTest` holds a stage to exactly the codes it writes, and
       found two codes with two writers, which the gatherer-level gate could not tell apart.
     * **A route defect has one writer** `open`. `ROUTE_AMBIGUOUS` and `NO_ROUTE_TO_TARGET` are
       written by `Steps` for a route the walk takes from a written path and by the rule's
       inferred-route arm for one no path is written for, two statements of one rule with nothing
-      comparing them; `steps` owns them and the gate lists the arm as a second writer until it
-      moves to the walk.
-    * **A stage's rule reads only what its own and earlier stages wrote** `open`. `meta_stage`
-      states each stage's position in its gatherer and `meta_stage_write` the relations it writes,
-      the graphitron anchor phase runs its stages from that order, and a gate refuses a stage rule
-      view that reaches a relation a later stage writes, as `StageOrderGateTest` does for the
-      derivation stratum. A crossing arm's owner is then computed rather than chosen: the last
-      stage whose relations it reads.
+      comparing them; `occurrence-depths` owns them and the gate lists the arm as a second writer
+      until it moves to the walk.
+    * **A stage's rule reads only what its own and earlier stages wrote** `done`. `meta_stage`
+      rosters the graphitron anchor phase's 33 stages with their positions, the gatherer runs
+      `GraphitronAstCapture.STAGES` in that order, and `meta_stage_write` declares the 102 relations
+      they write, held to what every fact document's capture records per stage in
+      `store_graph_write_stage`, which also prices each stage. The depth loop is one
+      stage, `occurrence-depths`, each depth reading the one above. `StageRosterGateTest` refuses a
+      stage rule view that reaches a relation a later stage writes; the sweep is the gatherer's,
+      after its stages.
     * **The outbox's relations are stored by a stage of their own** `open`. `graphitron_outbox_target`,
       `graphitron_outbox_routine_target`, `graphitron_outbox_result_step` and `graphitron_outbox_leaf`
       are views, so every reader expands them again: the entry-defect rule names

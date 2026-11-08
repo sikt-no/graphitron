@@ -16351,9 +16351,13 @@ COMMENT ON COLUMN meta_stated_relation.example IS 'one concrete row, on meta_rel
 COMMENT ON COLUMN meta_stated_relation.rationale IS 'why the rows are the file''s rather than a gatherer''s. The bar is not that the rows change rarely: a gathered relation whose corpus never changes is still gathered. It is that no corpus outside the store could be read to produce them, because they are the vocabulary this file itself declares, so a refresh has nothing to re-read and a gate has nothing to compare against but the DDL';
 
 INSERT INTO meta_stated_relation VALUES
+  ('meta_stage_write',
+   'One relation a stage writes rows into: an insert, a merge, an update or a delete the stage issues, a sweep of its own relations included.',
+   'For example occurrence-depths writes graphitron_path_need.',
+   'What lets a gate order a gatherer''s stages without reading their code: a stage whose rule reads a relation a later stage writes reads the previous reading''s rows, and these rows with meta_stage''s positions say which relations are later. Stated rather than observed because it is a property of the generator''s code, and held to the code by a gate that reads store_graph_write_stage over every fact document''s captures and refuses a write no row here declares; a write no document exercises is not caught.'),
   ('meta_stage',
-   'One stage of a gatherer''s anchor phase that owns what it writes, with the gatherer that runs it and its class.',
-   'For example steps is the graphitron gatherer''s stage whose class is Steps, and owns the route defects the walk writes.',
+   'One stage of a gatherer''s anchor phase, with the gatherer that runs it, its place in that gatherer''s order and its class.',
+   'For example occurrence-depths is the graphitron gatherer''s stage whose class is OccurrenceDepths, and owns the route defects its walk writes.',
    'Ownership below a gatherer, declared once so a defect code names the stage that writes it rather than only the gatherer that sweeps it. A gatherer''s anchor phase is a sequence of stages, and the defects a stage''s facts break are the stage''s to write as its last statement, each from a rule view of its own, so no one statement reaches every relation the gatherer derives. Which stages exist is a property of this generator and not of anybody''s schema, so the rows are stated here, and the class column is held to a class that exists as meta_gatherer''s is.'),
   ('graphitron_claim_inclusion',
    'One pair of claims that may stand at one element, or the defect the pair is reported under instead of a conflict.',
@@ -17030,25 +17034,174 @@ INSERT INTO meta_gatherer VALUES
 CREATE TABLE meta_stage (
   stage_name    VARCHAR NOT NULL,
   gatherer_name VARCHAR NOT NULL,
+  position      INTEGER NOT NULL,
   stage_class   VARCHAR NOT NULL,
   PRIMARY KEY (stage_name),
-  UNIQUE (stage_class),
-  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name)
+  UNIQUE (gatherer_name, position),
+  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name),
+  CHECK (position >= 0)
 );
-COMMENT ON TABLE meta_stage IS 'One stage of a gatherer''s anchor phase that owns what it writes, with the gatherer that runs it and its class. For example steps is the graphitron gatherer''s stage whose class is Steps, and owns the route defects the walk writes.';
+COMMENT ON TABLE meta_stage IS 'One stage of a gatherer''s anchor phase, with the gatherer that runs it, its place in that gatherer''s order and its class. For example occurrence-depths is the graphitron gatherer''s stage whose class is OccurrenceDepths, and owns the route defects its walk writes.';
 COMMENT ON COLUMN meta_stage.stage_name IS 'the stage''s name, the roster''s key, in lowercase kebab case and unique across gatherers';
+COMMENT ON COLUMN meta_stage.position IS 'where the stage runs in its gatherer''s anchor phase, from zero; the gatherer runs its stages in this order, a gate in this module holding the list it runs to these rows, so a stage reading a relation a later stage writes can be refused from the roster rather than found by reading the code';
 COMMENT ON COLUMN meta_stage.gatherer_name IS 'the gatherer whose anchor phase runs the stage, a meta_gatherer key: what a stage owns, its gatherer owns, so the gatherer''s sweep reaches its stages'' rows';
-COMMENT ON COLUMN meta_stage.stage_class IS 'the fully qualified Java class that is the stage, unique per row; a class-loading gate in the graphitron module holds every value to a class that exists. The entry-defects stage names EntryDefects, which writes every graphitron code no stage of its own writes yet, from graphitron_entry_defect_rule as the anchor phase''s last step';
+COMMENT ON COLUMN meta_stage.stage_class IS 'the fully qualified Java class whose code the stage runs; a class-loading gate in the graphitron module holds every value to a class that exists, and one class may run two stages, as FederationLinks runs the link and its imports. The entry-defects stage names EntryDefects, which writes every graphitron code no stage of its own writes yet, from graphitron_entry_defect_rule as the anchor phase''s last step';
 -- graphitron_defect_type is declared ahead of the roster its owner column names, so the reference is
 -- added here, where the roster exists.
 ALTER TABLE graphitron_defect_type ADD FOREIGN KEY (owner_stage)
   REFERENCES meta_stage (stage_name);
 
+-- The graphitron gatherer's anchor phase, in the order GraphitronAstCapture.STAGES runs it.
 INSERT INTO meta_stage VALUES
-  -- The forward walk, a depth at a time, writing the defects of the walk as it takes it.
-  ('steps', 'graphitron', 'no.sikt.graphitron.model.derive.Steps'),
-  -- The anchor phase's last step, writing graphitron_entry_defect_rule's codes.
-  ('entry-defects', 'graphitron', 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('anchor', 'graphitron', 0, 'no.sikt.graphitron.model.capture.document.GraphitronAnchor'),
+  ('code-references', 'graphitron', 1, 'no.sikt.graphitron.model.capture.document.GraphitronCodeReferences'),
+  ('argmapping-sites', 'graphitron', 2, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingSites'),
+  ('argmapping-pairs', 'graphitron', 3, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingPairs'),
+  ('call-context-keys', 'graphitron', 4, 'no.sikt.graphitron.model.capture.document.GraphitronCallContextKeys'),
+  ('table-types', 'graphitron', 5, 'no.sikt.graphitron.model.derive.TableTypes'),
+  ('nodes', 'graphitron', 6, 'no.sikt.graphitron.model.derive.Nodes'),
+  ('federation-link', 'graphitron', 7, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
+  ('emitted', 'graphitron', 8, 'no.sikt.graphitron.model.capture.document.EmittedAnchor'),
+  ('federation-imports', 'graphitron', 9, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
+  ('federation-vocabulary', 'graphitron', 10, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
+  ('argmapping-candidates', 'graphitron', 11, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
+  ('node-key-columns', 'graphitron', 12, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
+  ('node-legacy-key-shapes', 'graphitron', 13, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
+  ('field-targets', 'graphitron', 14, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 15, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 16, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 17, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 18, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 19, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 20, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 21, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 22, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 23, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 24, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 25, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('field-key-rows', 'graphitron', 26, 'no.sikt.graphitron.model.derive.FieldKeyRows'),
+  ('occurrence-depths', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-node-ids', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceNodeIds'),
+  ('occurrence-columns', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceColumns'),
+  ('occurrence-call-parameters', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceCallParameters'),
+  ('occurrence-participants', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('entry-defects', 'graphitron', 32, 'no.sikt.graphitron.model.derive.EntryDefects');
+
+CREATE TABLE meta_stage_write (
+  stage_name    VARCHAR NOT NULL,
+  relation_name VARCHAR NOT NULL,
+  PRIMARY KEY (stage_name, relation_name),
+  FOREIGN KEY (stage_name) REFERENCES meta_stage (stage_name)
+);
+COMMENT ON TABLE meta_stage_write IS 'One relation a stage writes rows into: an insert, a merge, an update or a delete the stage issues, a sweep of its own relations included. For example occurrence-depths writes graphitron_path_need.';
+COMMENT ON COLUMN meta_stage_write.stage_name IS 'the writing stage, a meta_stage key';
+COMMENT ON COLUMN meta_stage_write.relation_name IS 'the base table written, lower case as declared; a gate in this module reads the stage writes the fact documents'' captures recorded and refuses one its stage does not declare here';
+
+-- Seeded from the anchor phase's writes over the fact documents, the classification corpus and the
+-- scaled fixture.
+INSERT INTO meta_stage_write VALUES
+  ('anchor', 'graphitron_deprecated'),
+  ('anchor', 'graphitron_routine_entry'),
+  ('code-references', 'graphitron_code_reference'),
+  ('argmapping-sites', 'graphitron_argmapping_site'),
+  ('argmapping-pairs', 'graphitron_argmapping_pair'),
+  ('call-context-keys', 'graphitron_call_context_key'),
+  ('table-types', 'graphitron_tabletype'),
+  ('nodes', 'graphitron_node'),
+  ('federation-link', 'graphitron_federation_link'),
+  ('emitted', 'graphitron_argument'),
+  ('emitted', 'graphitron_carrier_directive'),
+  ('emitted', 'graphitron_configured_tag'),
+  ('emitted', 'graphitron_directive_application'),
+  ('emitted', 'graphitron_directive_application_arg'),
+  ('emitted', 'graphitron_element'),
+  ('emitted', 'graphitron_enum_value'),
+  ('emitted', 'graphitron_field'),
+  ('emitted', 'graphitron_minted_coinage'),
+  ('emitted', 'graphitron_minted_conflict'),
+  ('emitted', 'graphitron_type'),
+  ('federation-imports', 'graphitron_federation_link_import'),
+  ('federation-vocabulary', 'graphitron_directive'),
+  ('federation-vocabulary', 'graphitron_directive_argument'),
+  ('federation-vocabulary', 'graphitron_element'),
+  ('federation-vocabulary', 'graphitron_federation_definition'),
+  ('federation-vocabulary', 'graphitron_type'),
+  ('argmapping-candidates', 'graphitron_argmapping_candidate'),
+  ('node-key-columns', 'graphitron_node_keycolumn'),
+  ('node-legacy-key-shapes', 'graphitron_node_legacy_key_defect'),
+  ('node-legacy-key-shapes', 'graphitron_node_legacy_keycolumn'),
+  ('field-targets', 'graphitron_field_target'),
+  ('producer-claims', 'graphitron_claim'),
+  ('binding-claims', 'graphitron_binding_claim'),
+  ('binding-claims', 'graphitron_claim'),
+  ('type-claims', 'graphitron_claim'),
+  ('spelled-tables', 'graphitron_spelled_table'),
+  ('path-elements', 'graphitron_path_element_key'),
+  ('path-elements', 'graphitron_path_element_method'),
+  ('path-elements', 'graphitron_path_element_primary_key'),
+  ('path-elements', 'graphitron_path_element_routine'),
+  ('path-elements', 'graphitron_path_element_table'),
+  ('routine-results', 'graphitron_routine_result'),
+  ('occurrences', 'graphitron_occurrence'),
+  ('argmapping-landings', 'graphitron_argmapping_landing'),
+  ('argmapping-landings', 'graphitron_argmapping_step'),
+  ('path-claims', 'graphitron_join_path_claim'),
+  ('type-backings', 'graphitron_type_backing'),
+  ('fetchers', 'graphitron_errors_field'),
+  ('fetchers', 'graphitron_fetcher'),
+  ('fetchers', 'graphitron_producer'),
+  ('fetchers', 'graphitron_producer_outcome'),
+  ('fetchers', 'graphitron_producer_routine'),
+  ('fetchers', 'graphitron_producer_service'),
+  ('fetchers', 'graphitron_producer_write'),
+  ('fetchers', 'graphitron_reader'),
+  ('fetchers', 'graphitron_result'),
+  ('fetchers', 'graphitron_result_class'),
+  ('fetchers', 'graphitron_result_pivot'),
+  ('fetchers', 'graphitron_result_table'),
+  ('fetchers', 'graphitron_service_holder'),
+  ('field-key-rows', 'graphitron_field_key_row'),
+  ('field-key-rows', 'graphitron_field_key_row_accessor'),
+  ('occurrence-depths', 'graphitron_entry_defect'),
+  ('occurrence-depths', 'graphitron_entry_defect_method'),
+  ('occurrence-depths', 'graphitron_join_path'),
+  ('occurrence-depths', 'graphitron_join_path_claimed'),
+  ('occurrence-depths', 'graphitron_join_path_step'),
+  ('occurrence-depths', 'graphitron_join_path_step_column'),
+  ('occurrence-depths', 'graphitron_join_path_step_inferred_key'),
+  ('occurrence-depths', 'graphitron_join_path_step_key'),
+  ('occurrence-depths', 'graphitron_join_path_step_matched_key'),
+  ('occurrence-depths', 'graphitron_join_path_step_method'),
+  ('occurrence-depths', 'graphitron_join_path_step_parameter'),
+  ('occurrence-depths', 'graphitron_join_path_step_primary_key'),
+  ('occurrence-depths', 'graphitron_join_path_step_routine'),
+  ('occurrence-depths', 'graphitron_join_path_stop'),
+  ('occurrence-depths', 'graphitron_occurrence_producer'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_key_row'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_result'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_routine'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_service'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_write'),
+  ('occurrence-depths', 'graphitron_occurrence_source'),
+  ('occurrence-depths', 'graphitron_occurrence_source_object'),
+  ('occurrence-depths', 'graphitron_occurrence_source_table'),
+  ('occurrence-depths', 'graphitron_path'),
+  ('occurrence-depths', 'graphitron_path_need'),
+  ('occurrence-node-ids', 'graphitron_occurrence_binding'),
+  ('occurrence-node-ids', 'graphitron_occurrence_node_id'),
+  ('occurrence-columns', 'graphitron_occurrence_binding'),
+  ('occurrence-columns', 'graphitron_occurrence_column'),
+  ('occurrence-call-parameters', 'graphitron_occurrence_binding'),
+  ('occurrence-call-parameters', 'graphitron_occurrence_call_parameter'),
+  ('occurrence-call-parameters', 'graphitron_occurrence_parameter'),
+  ('occurrence-participants', 'graphitron_occurrence_participant'),
+  ('entry-defects', 'graphitron_argmapping_pair_defect'),
+  ('entry-defects', 'graphitron_entry_defect'),
+  ('entry-defects', 'graphitron_entry_defect_claim'),
+  ('entry-defects', 'graphitron_entry_defect_member'),
+  ('entry-defects', 'graphitron_entry_defect_method'),
+  ('entry-defects', 'graphitron_entry_defect_path_step'),
+  ('entry-defects', 'graphitron_entry_defect_table');
 
 CREATE TABLE store_graph_progress (
   graph_name     VARCHAR   NOT NULL,
@@ -17092,6 +17245,33 @@ COMMENT ON COLUMN store_graph_write.table_name IS 'the table written, as the sta
 COMMENT ON COLUMN store_graph_write.statements IS 'how many insert, merge, update and delete statements wrote it, a batch counting once';
 COMMENT ON COLUMN store_graph_write.rows_written IS 'the rows those statements reported changing';
 COMMENT ON COLUMN store_graph_write.time_spent_ms IS 'the milliseconds those statements took between them, a stage''s rule being evaluated inside its write';
+
+CREATE TABLE store_graph_write_stage (
+  graph_name    VARCHAR   NOT NULL,
+  captured_at   TIMESTAMP NOT NULL,
+  gatherer_name VARCHAR   NOT NULL,
+  table_name    VARCHAR   NOT NULL,
+  stage_name    VARCHAR   NOT NULL,
+  statements    INT       NOT NULL,
+  rows_written  BIGINT    NOT NULL,
+  time_spent_ms BIGINT    NOT NULL,
+  PRIMARY KEY (graph_name, captured_at, gatherer_name, table_name, stage_name),
+  FOREIGN KEY (graph_name, captured_at, gatherer_name, table_name)
+    REFERENCES store_graph_write (graph_name, captured_at, gatherer_name, table_name) ON DELETE CASCADE,
+  FOREIGN KEY (stage_name) REFERENCES meta_stage (stage_name) ON DELETE CASCADE,
+  CHECK (statements > 0),
+  CHECK (rows_written >= 0),
+  CHECK (time_spent_ms >= 0)
+);
+COMMENT ON TABLE store_graph_write_stage IS 'One table one stage of a gatherer''s anchor phase wrote in one finished capture of a graph, and how long that stage spent on it. For example graphitron_path_need written by the occurrence-depths stage of the graphitron gatherer, once per depth.';
+COMMENT ON COLUMN store_graph_write_stage.graph_name IS 'the graph the capture read';
+COMMENT ON COLUMN store_graph_write_stage.captured_at IS 'when the capture began; with the graph, which capture this is';
+COMMENT ON COLUMN store_graph_write_stage.gatherer_name IS 'the gatherer whose anchor phase ran the stage; with the graph, the capture and the table, the store_graph_write row this details';
+COMMENT ON COLUMN store_graph_write_stage.table_name IS 'the table written, as the statement names it, in upper case';
+COMMENT ON COLUMN store_graph_write_stage.stage_name IS 'the stage running when the table was written, a meta_stage key';
+COMMENT ON COLUMN store_graph_write_stage.statements IS 'how many insert, merge, update and delete statements the stage wrote it with, a batch counting once';
+COMMENT ON COLUMN store_graph_write_stage.rows_written IS 'the rows those statements reported changing';
+COMMENT ON COLUMN store_graph_write_stage.time_spent_ms IS 'the milliseconds those statements took between them';
 
 CREATE TABLE store_graph_read (
   graph_name    VARCHAR   NOT NULL,
@@ -17653,6 +17833,9 @@ INSERT INTO meta_grain VALUES
   ('gatherer-table-write',
    'one table one gatherer wrote in one finished capture of a graph',
    'graph_name, captured_at, gatherer_name, table_name', 'configuration'),
+  ('stage-table-write',
+   'one table one stage of a gatherer wrote in one finished capture of a graph',
+   'graph_name, captured_at, gatherer_name, table_name, stage_name', 'configuration'),
   ('gatherer-relation-read',
    'one relation one gatherer read for a millisecond or more in one finished capture of a graph',
    'graph_name, captured_at, gatherer_name, relation_name', 'configuration'),
@@ -17781,21 +17964,21 @@ INSERT INTO graphitron_defect_type VALUES
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
    'A @routine write re-reads its committed row by the keys the write returned, which is not a page, so the generator emits nothing for a field @asConnection rewrote.', 'entry-defects'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
-   'A step reaches its destination by more than one route, a chain link naming a table two keys reach or a field with no path written between two tables more than one foreign key joins, so the generator has a join to emit and nothing to pick it by; naming the foreign key settles it.', 'steps'),
+   'A step reaches its destination by more than one route, a chain link naming a table two keys reach or a field with no path written between two tables more than one foreign key joins, so the generator has a join to emit and nothing to pick it by; naming the foreign key settles it.', 'occurrence-depths'),
   ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',
    'Two @referenceFor applications on one field name the same type, and only the first one written is used.', 'entry-defects'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
-   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all.', 'steps'),
+   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all.', 'occurrence-depths'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
-   'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.', 'steps'),
+   'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.', 'occurrence-depths'),
   ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROOT_REFERENCE_WITHOUT_ROUTINE',
    'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.', 'entry-defects'),
   ('NO_ROUTE_TO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
-   'A path does not arrive at the table the field''s rows were said to come from: a chain runs to its last link and arrives somewhere else, or a field with no path written starts on a table that shares no foreign key with its target''s, or on its target''s own table, so there is no join to infer and the path has to be written.', 'steps'),
+   'A path does not arrive at the table the field''s rows were said to come from: a chain runs to its last link and arrives somewhere else, or a field with no path written starts on a table that shares no foreign key with its target''s, or on its target''s own table, so there is no join to infer and the path has to be written.', 'occurrence-depths'),
   ('INHERITED_PATH_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_INHERITED_PATH_AMBIGUOUS',
    'A field with no path written implements the same-named field of two interfaces, neither extending the other, that each write a path for it, so nothing says which one it inherits: write the path on the field itself.', 'entry-defects'),
   ('CONDITION_NO_OVERLOAD_FOR_PAIR', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_NO_OVERLOAD_FOR_PAIR',
-   'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.', 'steps'),
+   'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.', 'occurrence-depths'),
   ('CONDITION_OVERLOAD_SHAPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_SHAPE_DISAGREES',
    'A @condition names a method whose overloads differ in more than their jOOQ table parameters, on the static modifier, the return type, the parameter count, the throws clause or a parameter that is a table in some and not others or differs in name or type, so the name stands for more than one call.', 'entry-defects'),
   ('CONTEXT_KEY_DUPLICATE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONTEXT_KEY_DUPLICATE',
@@ -17829,9 +18012,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('ARGMAPPING_PATH_PAST_CYCLE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ARGMAPPING_PATH_PAST_CYCLE',
    'An argMapping right-hand side follows an input type that nests itself further than its first repetition, which is not supported yet: bind the parameter at a shallower depth.', 'entry-defects'),
   ('CONDITION_OVERLOAD_TIE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_TIE',
-   'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'steps'),
+   'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'occurrence-depths'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
-   'A @routine parameter binds nothing: its name is no argument of the field, or its $source.<column> names no column of the table the routine is applied to, so the call has no value for it.', 'steps'),
+   'A @routine parameter binds nothing: its name is no argument of the field, or its $source.<column> names no column of the table the routine is applied to, so the call has no value for it.', 'occurrence-depths'),
   ('TABLE_NAMES_ROUTINE', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_NAMES_ROUTINE',
    'A @table names a table-valued function, and a type is not bound to a function: the field carrying @routine binds its return type to the routine''s result, so the directive is removed.', 'entry-defects'),
   ('REFERENCE_WITHOUT_TARGET_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_WITHOUT_TARGET_TABLE',
@@ -18218,6 +18401,10 @@ INSERT INTO meta_relation VALUES
    'How long one finished capture of a graph spent writing one table: one row per table each gatherer wrote, every capture keeping its own.',
    'For example graphitron_occurrence_column written by the graphitron gatherer in two statements, its rule evaluated inside the insert.',
    'Every capture-time regression has been one stage''s write, its rule evaluated inside the insert, and the per-gatherer times in store_graph_progress say which gatherer but not which table. Timed by the sink package''s WriteTimes, a listener on the writing connection that adds each insert, merge, update and delete to the table it names and the gatherer Progress last started, so no stage times itself. Written when the capture finishes, so a capture that stops partway writes nothing, its row in store_graph_progress saying where. No sweep: each capture keeps its rows beside the ones before it, so a slow round is read against the rounds before it, and a graph that goes takes its rows by cascade. Read by MCP status and the dev loop, which name the latest capture''s slowest.'),
+  ('store_graph_write_stage', 'stage-table-write', 'capture',
+   'One table one stage of a gatherer''s anchor phase wrote in one finished capture of a graph, and how long that stage spent on it.',
+   'For example graphitron_path_need written by the occurrence-depths stage of the graphitron gatherer, once per depth.',
+   'store_graph_write says which table a capture''s time went to and which gatherer wrote it, and a gatherer''s anchor phase is a sequence of stages, so this says which stage. Written by WriteTimes beside the row it details, from the stage AnchorStage names while it runs, and only for writes inside a stage. Two readers: the gate holding each stage to the relations meta_stage_write declares for it, which reads every fact document''s captures, and whoever prices a stage, the per-stage time being what a split of one stage''s work is measured by. No sweep: it goes with its store_graph_write row.'),
   ('store_graph_read', 'gatherer-relation-read', 'capture',
    'How long one finished capture of a graph spent reading one relation: one row per relation each gatherer read for a millisecond or more, every capture keeping its own.',
    'For example a rule view read by a stage that fetches it into Java and inserts the rows, the view evaluated in the read.',

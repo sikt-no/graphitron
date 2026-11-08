@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_READ;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE_STAGE;
 import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.noCondition;
 
@@ -46,11 +47,13 @@ public final class WriteTimes implements ExecuteListener {
         "(?s)^\\s*(?:select|with)\\b.*?\\bfrom\\s+(?:\"?PUBLIC\"?\\s*\\.\\s*)?\"?(\\w+)\"?",
         Pattern.CASE_INSENSITIVE);
     private static final Set<String> UNCOUNTED = Set.of("STORE_GRAPH_PROGRESS", "STORE_GRAPH_WRITE",
-        "STORE_GRAPH_READ");
+        "STORE_GRAPH_WRITE_STAGE", "STORE_GRAPH_READ");
     private static final long READ_FLOOR_NANOS = 1_000_000;
     private static final String STARTED = WriteTimes.class.getName() + ".started";
 
     private record Key(String gatherer, String table) {}
+
+    private record StageKey(String gatherer, String table, String stage) {}
 
     private static final class Total {
         int statements;
@@ -60,9 +63,11 @@ public final class WriteTimes implements ExecuteListener {
 
     private final transient Map<Key, Total> totals = new LinkedHashMap<>();
     private final transient Map<Key, Total> reads = new LinkedHashMap<>();
+    private final transient Map<StageKey, Total> stageTotals = new LinkedHashMap<>();
     private String graph;
     private LocalDateTime capturedAt;
     private String gatherer = Progress.CAPTURE;
+    private String stage;
 
     /** Whether a statement wrote the relation it names or read from it. */
     public enum Kind { WRITE, READ }
@@ -124,14 +129,34 @@ public final class WriteTimes implements ExecuteListener {
     synchronized void begin(String graphName, LocalDateTime startedAt) {
         totals.clear();
         reads.clear();
+        stageTotals.clear();
         graph = graphName;
         capturedAt = startedAt;
         gatherer = Progress.CAPTURE;
+        stage = null;
     }
 
     /** {@code name} is the gatherer now writing; {@link Progress#CAPTURE} between gatherers. */
     synchronized void gatherer(String name) {
         gatherer = name;
+        stage = null;
+    }
+
+    /**
+     * {@code stage}, a {@code meta_stage} key, is the stage of the running gatherer now writing, or
+     * null between stages; what it writes is also counted under it in
+     * {@code store_graph_write_stage}. Nothing where {@code dsl}'s store was built without the
+     * listener.
+     */
+    public static void stage(DSLContext dsl, String stage) {
+        var times = of(dsl);
+        if (times != null) {
+            times.stage(stage);
+        }
+    }
+
+    private synchronized void stage(String name) {
+        stage = name;
     }
 
     /** The capture finished: its totals are written under the instant it began. */
@@ -140,14 +165,17 @@ public final class WriteTimes implements ExecuteListener {
         LocalDateTime at;
         Map<Key, Total> written;
         Map<Key, Total> read;
+        Map<StageKey, Total> staged;
         synchronized (this) {
             graphName = graph;
             at = capturedAt;
             graph = null;
             written = new LinkedHashMap<>(totals);
             read = new LinkedHashMap<>(reads);
+            staged = new LinkedHashMap<>(stageTotals);
             totals.clear();
             reads.clear();
+            stageTotals.clear();
         }
         if (graphName == null) {
             return;
@@ -158,6 +186,14 @@ public final class WriteTimes implements ExecuteListener {
                 t.STATEMENTS, t.ROWS_WRITTEN, t.TIME_SPENT_MS);
             written.forEach((key, total) -> insert.values(graphName, at, key.gatherer(), key.table(),
                 total.statements, total.rows, total.nanos / 1_000_000));
+            insert.execute();
+        }
+        if (!staged.isEmpty()) {
+            var t = STORE_GRAPH_WRITE_STAGE;
+            var insert = dsl.insertInto(t, t.GRAPH_NAME, t.CAPTURED_AT, t.GATHERER_NAME, t.TABLE_NAME,
+                t.STAGE_NAME, t.STATEMENTS, t.ROWS_WRITTEN, t.TIME_SPENT_MS);
+            staged.forEach((key, total) -> insert.values(graphName, at, key.gatherer(), key.table(),
+                key.stage(), total.statements, total.rows, total.nanos / 1_000_000));
             insert.execute();
         }
         read.values().removeIf(total -> total.nanos < READ_FLOOR_NANOS);
@@ -219,6 +255,13 @@ public final class WriteTimes implements ExecuteListener {
             total.statements++;
             total.rows += rows;
             total.nanos += nanos;
+            if (writes && stage != null) {
+                var staged = stageTotals.computeIfAbsent(new StageKey(gatherer, relation, stage),
+                    k -> new Total());
+                staged.statements++;
+                staged.rows += rows;
+                staged.nanos += nanos;
+            }
         }
     }
 }
