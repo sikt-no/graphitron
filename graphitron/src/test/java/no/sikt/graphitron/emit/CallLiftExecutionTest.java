@@ -1,5 +1,6 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.model.test.FactGraphs;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.ParameterizedTypeName;
@@ -7,10 +8,6 @@ import com.palantir.javapoet.TypeSpec;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import no.sikt.graphitron.emit.stub.FillRuntime;
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.db.TestDatabase;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
@@ -22,12 +19,11 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,18 +31,20 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A service call's body with its lift composed in, emitted from the store's rows for
- * {@link LiftEmitterExecutionTest}'s schema and run against PostgreSQL: at a root the records the
+ * A service call's body with its lift composed in, emitted from the store's rows for the
+ * {@code scenarios/service-lift} fact document and run against PostgreSQL: at a root the records the
  * service hands back are lifted to their rows, one or a list in the service's order; under an object
  * every parent's records are lifted in one statement and each parent's rows come back under its key,
  * one row per parent or a list per parent.
  */
 @ExecutionTier
 class CallLiftExecutionTest {
+
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     private static final String PACKAGE = "calllift";
     private static final FillEmitter.Runtime RUNTIME = new FillEmitter.Runtime(
@@ -56,9 +54,6 @@ class CallLiftExecutionTest {
     private static final CallEmitter.FrameKey FILM_KEY = new CallEmitter.FrameKey(
         ParameterizedTypeName.get(ClassName.get(Record1.class), ClassName.get(Integer.class)),
         ClassName.get(Tables.class), "FILM");
-
-    @TempDir
-    static Path tmp;
 
     private static EmittedCodeHarness harness;
     private static Map<String, Method> bodies;
@@ -70,16 +65,12 @@ class CallLiftExecutionTest {
 
     @BeforeAll
     static void emit() throws Exception {
-        List<LiftQuery.Row> lifts;
-        List<CallQuery.Row> calls;
-        List<FillQuery.Row> fills;
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, LiftEmitterExecutionTest.SDL,
-                CatalogInput.of(testContext()), ClasspathCorpus.entries())) {
-            var handle = new StoreHandle(store.dsl(), CapturedStore.GRAPH);
-            lifts = LiftQuery.read(handle);
-            calls = CallQuery.read(handle);
-            fills = FillQuery.read(handle);
-        }
+        record Read(List<LiftQuery.Row> lifts, List<CallQuery.Row> calls, List<FillQuery.Row> fills) {}
+        var read = FACTS.read("scenarios/service-lift", graph -> new Read(
+            LiftQuery.read(graph.handle()), CallQuery.read(graph.handle()), FillQuery.read(graph.handle())));
+        var lifts = read.lifts();
+        var calls = read.calls();
+        var fills = read.fills();
         var liftHost = ClassName.get(PACKAGE, "Lifts");
         var selection = ClassName.get(PACKAGE, "SelectionOccurrences");
         var liftType = TypeSpec.classBuilder(liftHost).addModifiers(Modifier.PUBLIC);

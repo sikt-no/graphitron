@@ -4,7 +4,11 @@
 # departs from a table's record. ACCESSOR takes the table records a member of the object returns: of
 # the target's table, or of the table a union's members hang off.
 
-type Film @table(name: "film") { title: String }
+# A service under a table row takes its keys off that row, so it states no key row of its own.
+type Film @table(name: "film") {
+  title: String
+  titleUppercase: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
 type Language @table(name: "language") { name: String }
 type Address @table(name: "address") { address: String }
 type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }

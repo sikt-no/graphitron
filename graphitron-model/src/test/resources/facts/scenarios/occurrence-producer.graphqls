@@ -1,6 +1,6 @@
 # An occurrence that executes something and produces a result is a producer: a root field, which has
 # no source and runs from nothing, or a child that starts a query of its own, as a @splitQuery child
-# does from its parent's key. A field the query of its producer reads, a column or an inline child,
+# does from its parent's key and a service under a table batches on its parents' keys. A field the query of its producer reads, a column or an inline child,
 # produces nothing. What a producer calls is a subtype of it: a service's method and, for an instance
 # method, the constructor its object is made with.
 
@@ -8,6 +8,9 @@ type Language @table(name: "language") { name: String }
 type Film @table(name: "film") {
   title: String
   language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+  titleLowercase: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "titleLowercase"})
 }
 
 type Query {
@@ -26,6 +29,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_producer", rows: 
   Query.greetingByUser,           SERVICE, ROOT
   Query.titleByFilmIdViaInstance, SERVICE, ROOT
   Film.language,                  SELECT,  CHILD
+  Film.titleLowercase,            SERVICE, CHILD
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_producer", rows: """

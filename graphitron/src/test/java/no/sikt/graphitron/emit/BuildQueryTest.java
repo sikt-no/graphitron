@@ -1,65 +1,39 @@
 package no.sikt.graphitron.emit;
 
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@link BuildQuery}'s answers over a captured schema: an input object made into the record class a
  * service takes, one member per field; a list of input objects into a list of that record; a nested
  * input object built into its member's class; a grouping whose fields bind against the enclosing
- * class; and a jOOQ record built on the column axis, one column per field.
+ * class; and a jOOQ record built on the column axis, one column per field. Read over the
+ * {@code scenarios/service-input-build} fact document.
  */
 @PipelineTier
 class BuildQueryTest {
 
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
     private static final String SERVICES = "no.sikt.graphitron.rewrite.test.services.";
-
-    private static final String SDL = """
-        input FilmDraftInput { title: String! }
-        input FilmBundleLimitsInput { capacity: Int }
-        input FilmBundleDraftInput {
-          name: String
-          limits: FilmBundleLimitsInput
-          films: [FilmDraftInput!]
-        }
-        input FilmRecordDraftInput { title: String @field(name: "title") }
-        type FilmDraftsCountedPayload { count: Int }
-        type Query {
-          countFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload
-            @service(service: {className: "%1$sFilmDraftService", method: "count", argMapping: "drafts: in"})
-          countFilmBundleDraft(in: FilmBundleDraftInput!): FilmDraftsCountedPayload
-            @service(service: {className: "%1$sFilmBundleDraftService", method: "count", argMapping: "bundle: in"})
-          countFilmRecordDrafts(in: [FilmRecordDraftInput!]!): FilmDraftsCountedPayload
-            @service(service: {className: "%1$sFilmRecordDraftService", method: "count", argMapping: "drafts: in"})
-        }
-        """.formatted(SERVICES);
-
-    @TempDir
-    static Path tmp;
 
     private static Map<String, BuildQuery.Result> results;
 
     @BeforeAll
     static void read() {
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL,
-                CatalogInput.of(testContext()), ClasspathCorpus.entries())) {
-            results = BuildQuery.read(new StoreHandle(store.dsl(), CapturedStore.GRAPH)).entrySet().stream()
-                .collect(Collectors.toMap(e -> e.getKey().callCoordinate(), Map.Entry::getValue));
-        }
+        results = FACTS.read("scenarios/service-input-build", graph -> BuildQuery.read(graph.handle())
+            .entrySet().stream()
+            .collect(Collectors.toMap(e -> e.getKey().callCoordinate(), Map.Entry::getValue)));
     }
 
     private static BuildQuery.Build built(String call) {

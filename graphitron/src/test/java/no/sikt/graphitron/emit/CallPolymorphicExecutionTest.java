@@ -1,5 +1,6 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.model.test.FactGraphs;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.TypeSpec;
@@ -16,10 +17,6 @@ import no.sikt.graphitron.emit.stub.Selected;
 import no.sikt.graphitron.emit.stub.Selection;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.SelectionOccurrencesClassGenerator;
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.db.TestDatabase;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
@@ -29,18 +26,16 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -49,46 +44,33 @@ import static org.assertj.core.api.Assertions.assertThat;
  * told apart by its class, carrying its type name for the resolver, in the service's order. Each
  * member's projection is handed only its own occurrences of the fetched field's selection, through
  * the generated selection adapter, so a field another member's fragment selects never reaches it.
+ * Read over the {@code scenarios/multitable-interface} fact document.
  */
 @ExecutionTier
 class CallPolymorphicExecutionTest {
 
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
     private static final String PACKAGE = "callpoly";
-    private static final String SERVICE = "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService";
-    private static final String SDL = """
-        interface Searchable { id: Int }
-        type Film implements Searchable @table(name: "film") { id: Int @field(name: "FILM_ID") }
-        type Actor implements Searchable @table(name: "actor") { id: Int @field(name: "ACTOR_ID") }
-        type Query {
-          searchMany: [Searchable!]! @service(service: {className: "%1$s", method: "searchDocuments"})
-          searchOne: Searchable @service(service: {className: "%1$s", method: "searchOne"})
-        }
-        """.formatted(SERVICE);
     private static final FillEmitter.Runtime RUNTIME = new FillEmitter.Runtime(
         key -> CodeBlock.of("$T.contextArgument(env, $S)", FillRuntime.class, key),
         coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", FillRuntime.class, coordinate),
         (member, coordinate) -> CodeBlock.of("$T.sessionMember_$L(dsl, $S)", FillRuntime.class, member, coordinate));
-
-    @TempDir
-    static Path tmp;
 
     private static EmittedCodeHarness harness;
     private static Map<String, Method> bodies;
 
     @BeforeAll
     static void emit() throws Exception {
-        List<PolymorphicLiftQuery.Row> rows;
-        List<CallQuery.Row> calls;
-        List<FillQuery.Row> fills;
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL,
-                CatalogInput.of(testContext()), ClasspathCorpus.entries())) {
-            var handle = new StoreHandle(store.dsl(), CapturedStore.GRAPH);
-            rows = PolymorphicLiftQuery.read(handle);
-            calls = CallQuery.read(handle);
-            fills = FillQuery.read(handle);
-        }
+        record Read(List<PolymorphicLiftQuery.Row> rows, List<CallQuery.Row> calls, List<FillQuery.Row> fills) {}
+        var read = FACTS.read("scenarios/multitable-interface", graph -> new Read(
+            PolymorphicLiftQuery.read(graph.handle()), CallQuery.read(graph.handle()), FillQuery.read(graph.handle())));
+        var rows = read.rows();
+        var calls = read.calls();
+        var fills = read.fills();
         assertThat(rows).extracting(PolymorphicLiftQuery.Row::coordinate)
-            .containsExactly("Query.searchMany", "Query.searchOne");
+            .containsExactly("Query.search", "Query.searchOne");
         var liftHost = ClassName.get(PACKAGE, "Lifts");
         var selection = ClassName.get(PACKAGE + ".util", "SelectionOccurrences");
         var liftType = TypeSpec.classBuilder(liftHost).addModifiers(Modifier.PUBLIC);
@@ -188,7 +170,7 @@ class CallPolymorphicExecutionTest {
 
     @Test
     void eachMembersProjectionIsHandedOnlyItsOwnOccurrences() throws Exception {
-        bodies.get("searchMany").invoke(null, ENV, TestDatabase.dsl());
+        bodies.get("search").invoke(null, ENV, TestDatabase.dsl());
         assertThat(handed("Film")).containsExactly(
             Map.entry("id", List.of("id")), Map.entry("title", List.of("title")));
         assertThat(handed("Actor")).containsExactly(
@@ -198,7 +180,7 @@ class CallPolymorphicExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void eachRecordIsLiftedOntoItsOwnTableInTheServicesOrderWithItsType() throws Exception {
-        var rows = (List<Record>) bodies.get("searchMany").invoke(null, ENV, TestDatabase.dsl());
+        var rows = (List<Record>) bodies.get("search").invoke(null, ENV, TestDatabase.dsl());
         assertThat(rows).extracting(r -> r.get("__typename")).containsExactly("Film", "Actor");
         assertThat(rows.get(0).get(Tables.FILM.FILM_ID.getName())).isEqualTo(1);
         assertThat(rows.get(1).get(Tables.ACTOR.ACTOR_ID.getName())).isEqualTo(1);

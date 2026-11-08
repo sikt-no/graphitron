@@ -1,0 +1,21 @@
+# A node id decoded into a jOOQ record. Film's id carries the explicit type id F, which the decode
+# reads off the id. Into a record of the node's own table the id loads its key; into a record of a
+# table referencing the node, the one foreign key's columns. Film has two foreign keys to language,
+# so Language's id has nothing that says which of them it fills on a film record, and Inventory's
+# inventoryId carries no node id at all.
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node(typeId: "F") { id: ID! }
+type Language implements Node @table(name: "language") @node { id: ID! }
+type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+
+type Query {
+  inventories(filmId: ID @nodeId(typeName: "Film")): [Inventory!]!
+  languages: [Language!]!
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_node_id", rows: """
+  coordinate,                 bound,           position, basis,              node_type_name, column_name
+  Language.id,                public.language, 0,        OWN_ID_FIELD,       Language,       language_id
+  Query.inventories(filmId:), public.film,     0,        EXPLICIT_TYPE_NAME, Film,           film_id
+  """)

@@ -1,7 +1,7 @@
 # A multitable interface: each implementation is on a table of its own, so a row is told apart by
-# the table it is a row of. The service hands back records of either, and the participants are
-# stated at the occurrence returning the interface rather than at any child, a field under a
-# table-bound parent being spelled by its own type.
+# the table it is a row of. The service hands back records of either, a list of them or one, and
+# the participants are stated at the occurrence returning the interface rather than at any child,
+# a field under a table-bound parent being spelled by its own type.
 
 interface Searchable {
     title: String
@@ -18,12 +18,16 @@ type Actor implements Searchable @table(name: "actor") {
 type Query {
     search: [Searchable!]!
         @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
+    searchOne: Searchable
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchOne"})
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_participant", rows: """
   coordinate,   participant_type, recognized_by, table_name
   Query.search, Actor,            TABLE,         actor
   Query.search, Film,             TABLE,         film
+  Query.searchOne, Actor,         TABLE,         actor
+  Query.searchOne, Film,          TABLE,         film
   """)
 
 # A participant told apart by its table carries no column and no value.

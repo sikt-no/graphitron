@@ -1,0 +1,45 @@
+# A service whose target binds the table its records belong to lifts them onto their rows, keyed by
+# the table's primary key: one record or a list, at a root or under an object, one per parent or a
+# list per parent, a composite key in key order. Records handed down to a payload's data field, and a
+# scalar, lift nothing: FilmsPayload binds no table, and filmCount answers an Int.
+
+type Film @table(name: "film") {
+  title: String
+  languageByService: Language @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "languageByService"})
+  castMembers: [FilmActor!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+      method: "castMembersByFilm"})
+}
+type Language @table(name: "language") { name: String }
+type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
+type FilmsPayload { films: [Film] }
+
+type Query {
+  filmsByIds(ids: [Int!]!): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
+  filmById(id: Int!): Film @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById"})
+  filmActorsByIds(ids: [Int!]!): [FilmActor!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmActorCarrierService",
+      method: "filmActorsByIds"})
+  filmsAsPayload(ids: [Int!]!): FilmsPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
+  filmCount: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmCount"})
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_producer_result", rows: """
+  coordinate,             shape,         table_name
+  Query.filmsByIds,       RECORD_LIST,   film
+  Query.filmById,         SINGLE_RECORD, film
+  Query.filmActorsByIds,  RECORD_LIST,   film_actor
+  Film.languageByService, SINGLE_RECORD, language
+  Film.castMembers,       RECORD_LIST,   film_actor
+  Query.filmCount,        SCALAR,
+  """)

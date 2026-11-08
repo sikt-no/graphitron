@@ -1,6 +1,6 @@
 # What fills each parameter of a service call. Written fills come first: the session handle or one of
 # its members, a context key, and an argument path an argMapping pair names, which may land on an
-# input field. Where nothing is written, the jOOQ context fills a parameter of its type, DSLContext or
+# input field, through a list of input objects too. Where nothing is written, the jOOQ context fills a parameter of its type, DSLContext or
 # Configuration; an argument of the call fills the parameter of its name; and a collection at a call
 # with a source takes what the source hands it, in each shape a batched child service signs. Last, a
 # parameter and an argument that are each other's only match by type bind whatever their names: a
@@ -51,6 +51,8 @@ type FilmBlurbHolder {
 }
 
 input FilmIdsInput { ids: [Int!] }
+input FilmIdItem { id: Int! }
+input FilmIdsByItemInput { items: [FilmIdItem!]! }
 input FilmDraftIn { title: String }
 type FilmDraftsCountedPayload { count: Int }
 
@@ -64,6 +66,9 @@ type Query {
   callFilmsByPath(input: FilmIdsInput): [Film] @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByPath", argMapping: "filmIds: input.ids"})
+  callFilmsByListPath(input: FilmIdsByItemInput!): [Film] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByListPath", argMapping: "filmIds: input.items.id"})
   callGreeting: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
       method: "greet"}, contextArguments: ["userId"])
@@ -92,6 +97,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Query.callFilmsRenamed,       0,        dsl,            DSL_CONTEXT,    ,                              ,
   Query.callFilmsRenamed,       1,        filmIds,        ARGUMENT,       Query.callFilmsRenamed(ids:),  ,
   Query.callFilmsByPath,        1,        filmIds,        ARGUMENT,       Query.callFilmsByPath(input.ids:), ,
+  Query.callFilmsByListPath,    1,        filmIds,        ARGUMENT,       Query.callFilmsByListPath(input.items.id:), ,
   Query.callGreeting,           0,        userId,         CONTEXT_KEY,    ,                              userId,
   Query.callPrincipal,          0,        dsl,            DSL_CONTEXT,    ,                              ,
   Query.callPrincipal,          1,        summary,        SESSION,        ,                              ,

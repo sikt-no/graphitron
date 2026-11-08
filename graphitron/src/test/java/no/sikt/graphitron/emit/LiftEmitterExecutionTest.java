@@ -1,13 +1,10 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.model.test.FactGraphs;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeSpec;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.db.TestDatabase;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
@@ -20,18 +17,16 @@ import org.jooq.Record;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -40,47 +35,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  * whose row is gone lifts a null in its own slot. A composite key lifts the same way, and one record
  * lifts its row or a null. Under an object, one record per parent lifts one row per parent, and a
  * list per parent scatters back to its parent in the call's order, a parent with no list keeping
- * none.
+ * none. Read over the {@code scenarios/service-lift} fact document.
  */
 @ExecutionTier
 class LiftEmitterExecutionTest {
 
-    private static final String SERVICES = "no.sikt.graphitron.rewrite.test.services.";
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
     private static final String PACKAGE = "liftrun";
-
-    static final String SDL = """
-        type Film @table(name: "film") {
-          title: String
-          languageByService: Language
-            @service(service: {className: "%1$sFilmService", method: "languageByService"})
-          castMembers: [FilmActor!]!
-            @service(service: {className: "%1$sFilmService", method: "castMembersByFilm"})
-        }
-        type Language @table(name: "language") { name: String }
-        type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
-        type Query {
-          filmsByIds(ids: [Int!]!): [Film!]!
-            @service(service: {className: "%1$sFilmCarrierService", method: "filmsByIds"})
-          filmById(id: Int!): Film
-            @service(service: {className: "%1$sFilmCarrierService", method: "filmById"})
-          filmActorsByIds(ids: [Int!]!): [FilmActor!]!
-            @service(service: {className: "%1$sFilmActorCarrierService", method: "filmActorsByIds"})
-        }
-        """.formatted(SERVICES);
-
-    @TempDir
-    static Path tmp;
 
     private static EmittedCodeHarness harness;
     private static java.util.Map<String, Method> lifts;
 
     @BeforeAll
     static void emit() throws Exception {
-        List<LiftQuery.Row> rows;
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL,
-                CatalogInput.of(testContext()), ClasspathCorpus.entries())) {
-            rows = LiftQuery.read(new StoreHandle(store.dsl(), CapturedStore.GRAPH));
-        }
+        var rows = FACTS.read("scenarios/service-lift", graph -> LiftQuery.read(graph.handle()));
         var selection = ClassName.get(PACKAGE, "SelectionOccurrences");
         var host = TypeSpec.classBuilder("Lifts").addModifiers(Modifier.PUBLIC);
         var units = new HashMap<String, TypeSpec>();

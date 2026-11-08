@@ -1,75 +1,38 @@
 package no.sikt.graphitron.emit;
 
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@link FillQuery}'s rows over a captured schema: each call's fills in position order, an argument
  * fill's landing as the names from its argument down with the kind of type found there, and a call
- * whose every position is filled marked complete.
+ * whose every position is filled marked complete. Read over the
+ * {@code scenarios/occurrence-call-parameter} fact document, whose claims state which fill each
+ * position takes.
  */
 @PipelineTier
 class FillQueryTest {
 
-    private static final String SERVICES = "no.sikt.graphitron.rewrite.test.services.";
-
-    private static final String SDL = """
-        type Film @table(name: "film") {
-          title: String
-          titleUppercase: String
-            @service(service: {className: "%1$sFilmService", method: "titleUppercase"})
-        }
-        input FilmIdsInput { ids: [Int!] }
-        input FilmDraftIn { title: String }
-        input FilmIdItem { id: Int! }
-        input FilmIdsByItemInput { items: [FilmIdItem!]! }
-        type FilmDraftsCountedPayload { count: Int }
-        type Query {
-          films: [Film!]!
-          callFilms(ids: [Int!]): [Film]
-            @service(service: {className: "%1$sSampleQueryService", method: "filmsByService"})
-          callFilmsByPath(input: FilmIdsInput): [Film]
-            @service(service: {className: "%1$sSampleQueryService", method: "filmsByPath",
-                               argMapping: "filmIds: input.ids"})
-          callFilmsByListPath(input: FilmIdsByItemInput!): [Film]
-            @service(service: {className: "%1$sSampleQueryService", method: "filmsByListPath",
-                               argMapping: "filmIds: input.items.id"})
-          callGreeting: String @service(service: {className: "%1$sUserGreetingService",
-                                                  method: "greet"}, contextArguments: ["userId"])
-          countDrafts(in: [FilmDraftIn!]!): FilmDraftsCountedPayload
-            @service(service: {className: "%1$sFilmRecordDraftService", method: "count"})
-        }
-        """.formatted(SERVICES);
-
-    @TempDir
-    static Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     private static Map<String, FillQuery.Row> rows;
 
     @BeforeAll
     static void read() {
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL,
-                CatalogInput.of(testContext()), ClasspathCorpus.entries())) {
-            rows = FillQuery.read(new StoreHandle(store.dsl(), CapturedStore.GRAPH)).stream()
-                .collect(Collectors.toMap(FillQuery.Row::coordinate, Function.identity()));
-        }
+        rows = FACTS.read("scenarios/occurrence-call-parameter", graph -> FillQuery.read(graph.handle())
+            .stream().collect(Collectors.toMap(FillQuery.Row::coordinate, Function.identity())));
     }
 
     @Test
@@ -102,14 +65,5 @@ class FillQueryTest {
     void anInputObjectsLandingSaysSoForBuildingToTake() {
         assertThat(rows.get("Query.countDrafts").fills().getFirst().landing())
             .contains(new FillQuery.Landing(List.of("in"), Set.of(0), "INPUT_OBJECT", false));
-    }
-
-    @Test
-    void aContextKeyAndASourceNameNoLanding() {
-        var greeting = rows.get("Query.callGreeting").fills().getFirst();
-        assertThat(greeting.fill()).isEqualTo("CONTEXT_KEY");
-        assertThat(greeting.contextKey()).isEqualTo("userId");
-        assertThat(greeting.landing()).isEqualTo(Optional.empty());
-        assertThat(rows.get("Film.titleUppercase").fills().getFirst().fill()).isEqualTo("SOURCE");
     }
 }

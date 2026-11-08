@@ -1,0 +1,34 @@
+# An input object a service takes is built into the class the service's parameter holds, one member
+# per field: a list of input objects into a list of that class, a grouping whose fields bind against
+# the enclosing class (FilmBundleLimitsInput's capacity is FilmBundleDraft's own), a nested input
+# object into its member's class, and a jOOQ record on the column axis, one column per field.
+
+input FilmDraftInput { title: String! }
+input FilmBundleLimitsInput { capacity: Int }
+input FilmBundleDraftInput {
+  name: String
+  limits: FilmBundleLimitsInput
+  films: [FilmDraftInput!]
+}
+input FilmRecordDraftInput { title: String @field(name: "title") }
+type FilmDraftsCountedPayload { count: Int }
+
+type Query {
+  countFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService",
+      method: "count", argMapping: "drafts: in"})
+  countFilmBundleDraft(in: FilmBundleDraftInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService",
+      method: "count", argMapping: "bundle: in"})
+  countFilmRecordDrafts(in: [FilmRecordDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "count", argMapping: "drafts: in"})
+}
+
+# Each call's one parameter takes its argument whole; what the argument is built into is the build.
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter", rows: """
+  coordinate,                 position, parameter_name, fill,     landing_coordinate
+  Query.countFilmDrafts,      0,        drafts,         ARGUMENT, Query.countFilmDrafts(in:)
+  Query.countFilmBundleDraft, 0,        bundle,         ARGUMENT, Query.countFilmBundleDraft(in:)
+  Query.countFilmRecordDrafts, 0,       drafts,         ARGUMENT, Query.countFilmRecordDrafts(in:)
+  """)
