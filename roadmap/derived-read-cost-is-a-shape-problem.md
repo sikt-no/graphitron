@@ -535,14 +535,16 @@ static method needs no holder.
     than each spelling its own `instanceof Map` ladder over the wire (Alf, 2026-11-08). A node id
     decodes through one method per node type and policy beside `NodeIdEncoder`, strict or
     not-this-participant, rather than through private copies in every class that reads one.
-  * **The filter conditions are emitted from the store** `blocked`, on the reader and the
-    `@condition` call nodes. One condition per producer occurrence, named and aliased from its
-    coordinate, composing the generated predicates, the authored `@condition` calls and the path
-    steps' conditions with `override:` read as written, its behaviour today's; a faceted condition is
-    built term by term, the full condition the base and every facet's term, its facet sources
-    reusing the condition's paths, and facets back off to a node of their own if that proves hard.
-    Additive and uncalled until the flip, pinned by tests that compile the emitted code and run it
-    against the database (Alf, 2026-11-08).
+  * **The filter conditions are emitted from the store** `open`, the generated predicates first,
+    the authored calls on the `@condition` call node. One condition per field occurrence and table it
+    filters, named and aliased from its coordinate, composing the generated predicates, the authored
+    `@condition` calls and the path steps' conditions with `override:` read as written, its behaviour
+    today's; a faceted condition is built term by term, the full condition the base and every facet's
+    term, its facet sources reusing the condition's paths, and facets back off to a node of their own
+    if that proves hard. Additive and uncalled until the flip, which moves every caller at once, the
+    root, split and batched fetchers, the facets and `$project`'s multisets, so the old glue goes in
+    it; pinned by tests that compile the emitted code and run it against the database, and by
+    `ConditionEmissionCensusTest`, whose reasons are what is left (Alf, 2026-11-08).
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence and flips with `$project`, so the conditions' callers move

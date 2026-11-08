@@ -1,0 +1,57 @@
+# The filters a field's arguments and input fields write, where each binds a column on the table
+# the field returns rows of: a scalar compares by equality, a list by membership, and a value read
+# through an input object reads through it. The path from the field's table to the column is empty,
+# so each is a predicate on that table itself. A @lookupKey argument is a key, not a filter, and
+# binds its column too; the condition leaves it out.
+
+type Film @table(name: "film") {
+    title: String
+}
+
+input FilmFilter {
+    title: String
+    releaseYear: Int @field(name: "release_year")
+    inner: FilmLengthFilter
+}
+
+input FilmLengthFilter {
+    length: Int
+}
+
+type Query {
+    filmsByTitle(title: String): [Film!]!
+    filmById(filmId: Int! @field(name: "film_id")): Film
+    filmsByLengths(lengths: [Int!] @field(name: "length")): [Film!]!
+    filmsByFilter(filter: FilmFilter): [Film!]!
+    filmsByKey(film_id: [Int!] @lookupKey, title: String): [Film]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_column",
+    where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate,                                bound,       column_name,  matched_by
+  Query.filmById(filmId:),                   public.film, film_id,      SQL_NAME
+  Query.filmsByFilter(filter.inner.length:), public.film, length,       SQL_NAME
+  Query.filmsByFilter(filter.releaseYear:),  public.film, release_year, SQL_NAME
+  Query.filmsByFilter(filter.title:),        public.film, title,        SQL_NAME
+  Query.filmsByKey(film_id:),                public.film, film_id,      SQL_NAME
+  Query.filmsByKey(title:),                  public.film, title,        SQL_NAME
+  Query.filmsByLengths(lengths:),            public.film, length,       SQL_NAME
+  Query.filmsByTitle(title:),                public.film, title,        SQL_NAME
+  """)
+
+# Every one of them reaches its column over an empty path, as does each input object it is read
+# through.
+extend schema @expectEquals(relation: "graphitron_path",
+    where: "coordinate LIKE 'Query.%(%'", rows: """
+  coordinate,                                target_type, kind, origin
+  Query.filmById(filmId:),                   Film,        JOIN, EMPTY
+  Query.filmsByFilter(filter.inner.length:), Film,        JOIN, EMPTY
+  Query.filmsByFilter(filter.inner:),        Film,        JOIN, EMPTY
+  Query.filmsByFilter(filter.releaseYear:),  Film,        JOIN, EMPTY
+  Query.filmsByFilter(filter.title:),        Film,        JOIN, EMPTY
+  Query.filmsByFilter(filter:),              Film,        JOIN, EMPTY
+  Query.filmsByKey(film_id:),                Film,        JOIN, EMPTY
+  Query.filmsByKey(title:),                  Film,        JOIN, EMPTY
+  Query.filmsByLengths(lengths:),            Film,        JOIN, EMPTY
+  Query.filmsByTitle(title:),                Film,        JOIN, EMPTY
+  """)
