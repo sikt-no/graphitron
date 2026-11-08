@@ -538,6 +538,10 @@ static method needs no holder.
     reusing the condition's paths, and facets back off to a node of their own if that proves hard.
     Additive and uncalled until the flip, pinned by tests that compile the emitted code and run it
     against the database (Alf, 2026-11-08).
+  * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
+    the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
+    and facets, is read off its occurrence and flips with `$project`, so the conditions' callers move
+    in one pass; the hard part is `$project`, the root fetchers following it (Alf, 2026-11-08).
 * **What a filter means does not depend on where it is written** `open`, off the critical path.
   Today an empty list drops its predicate where a polymorphic participant's all-foreign ids answer
   `falseCondition()`, the lenient node-id decode drops a malformed id with one of another type, a
@@ -1101,8 +1105,8 @@ output package they are written to are settled.
   * **An absent emitted form is an invariant failure** `open`. `CarriesObjectForm.formOf`, the enum
     value source and the schema class's scalar form fail rather than fall back, ahead of the variants
     losing their forms.
-* **`TypeFetcherGenerator` reads the store, one family of field at a time** `open`. Root queries,
-  services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
+* **`TypeFetcherGenerator` reads the store, one family of field at a time** `open`. Root queries
+  (taken by "The root query fetchers are emitted from the store"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
   fields, pivots and the errors field each render from a query at the grain they emit, the
   launcher's routine row reading the facts R704 captured, with
   `ConditionGlueRenderer` and `ProjectionUnitRenderer` folded into the families that use them.
