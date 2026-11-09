@@ -497,9 +497,39 @@ static method needs no holder.
   * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
     `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
     parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
-  * **A field's or argument's `@condition` is a call at its occurrence** `open`. The overload is
-    pinned as `graphitron_join_path_step_method` pins a step's, rather than by name, with whether it
-    reads context or the session; the multiset's filter and the `dsl` closure read it there.
+  * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on the three
+    below. The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
+    name, with whether it reads context or the session; the multiset's filter and the `dsl` closure
+    read it there, and `graphitron_code_reference` is no longer read for a `@condition` (Alf,
+    2026-11-09, the shape weighed with the principles review the same day).
+    * **Every call an occurrence makes is a row of one supertype** `open`.
+      `graphitron_occurrence_call(graph, coordinate, call, call_kind)`, `call` spelled from the
+      subtype's own key as `graphitron_occurrence_binding.bound` is (`producer` for a producer's
+      service or routine, `condition:<target_type>`, later `step:<target_type>:<position>` and the
+      expression), each subtype keyed into it with a `call_kind` column of its own, so
+      `graphitron_occurrence_producer_service` is a subtype of both the producer and the call. The
+      parameter fills, `graphitron_occurrence_call_parameter` as the routine call node widens it, are
+      re-keyed by the call and position and carry `call_kind`, so a fill only some calls take is a
+      check (`TABLE` on a condition, `SOURCE` on a producer's call), and the `PARAMETER` binding's
+      place is spelled from the same key; nothing a reader sees changes.
+    * **A call's fills are stated per candidate overload, and its method is the one candidate every
+      position fills** `blocked`, on "Every call an occurrence makes is a row of one supertype". One
+      stage owns every fill: the candidates' fills, the pin and the stored fills, for producer calls
+      and conditions alike, placed after the join paths and before anything reading a fill, so
+      whether a parameter is fillable is decided once rather than by the pin and again by the fill.
+      A call with no candidate or several is a defect at its own grain, projected to the written
+      position naming the participant, since an inherited `@condition` can pin for one
+      implementation and not another.
+    * **A `@condition` is a call per type its occurrence's rows are** `blocked`, on "A call's fills are
+      stated per candidate overload". `graphitron_occurrence_condition(graph, coordinate,
+      target_type)`, a call subtype, one row per occurrence carrying a `@condition` and per type its
+      need reaches, the table read through the occurrence's join path where it has one and off the
+      target type where it has none (a root field's own `@condition`); the pin references
+      `code_condition_method` by `_ref` columns, `ON DELETE SET NULL`, as the step method does. It
+      carries `override_written`, the `override:` written, doomed with the consumption rule and kept
+      for the transition against the review's point that it is a definition-keyed fact repeated
+      per type (Alf, 2026-11-09). Fills are `TABLE`, an argument or input field by name, `argMapping`
+      landing or type, `contextArguments` as `CONTEXT_KEY`, `$session` and its members.
   * **An inline list's ordering is resolved at its occurrence** `open`. `@defaultOrder` and `@order`
     are stored as written today; the occurrence states its sort keys in order, each a column with
     direction and collation or an order-field method, read by the multiset's `orderBy`.
@@ -2427,10 +2457,10 @@ call's `$context` fills.
   connection's `totalCount` G's, with the connection model.
 * Whether a `@condition` under `UPDATE` and `DELETE` applies to the rows they match, and whether the
   defect for a condition that decides nothing exists already or is new.
-* Whether the call holders share a supertype for the parameter rows' one foreign key, or each holder
-  keeps its own parameter relation, as the routine step does today; the draft leans to the latter.
-* Whether one call per occurrence is right for a `@condition` reached under two tables, pinning a
-  different overload for each, as the join path step already does per implementation.
+* Settled (Alf, 2026-11-09): the call holders share a supertype, `graphitron_occurrence_call`, for
+  the parameter rows' one foreign key, and a `@condition` is one call per type its occurrence's rows
+  are, pinning an overload for each, as the join path step does per implementation; see "Every call
+  an occurrence makes is a row of one supertype".
 
 ## Tests
 
