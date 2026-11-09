@@ -14896,6 +14896,108 @@ COMMENT ON COLUMN graphitron_occurrence_producer_result.table_schema IS 'that ta
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_name IS 'that table, where the producer''s children''s source starts';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
+-- occurrence and table, beside the COLUMN and NODE_ID bindings that land on a table too.
+CREATE VIEW graphitron_occurrence_binding_table_rule
+  (graph_name, coordinate, bound, table_source_name, table_schema, table_name) AS
+WITH landing (graph_name, coordinate, target_type, source_name, schema_name, table_name) AS (
+  -- Where an occurrence's need lands: its join path's target where a path was walked, else the
+  -- need's own landing, none where a written path stopped.
+  SELECT n.graph_name, n.coordinate, n.target_type,
+         COALESCE(jp.target_source_name, n.landing_source_name),
+         COALESCE(jp.target_schema, n.landing_schema), COALESCE(jp.target_table, n.landing_table)
+    FROM graphitron_path_need_table n
+    LEFT JOIN graphitron_join_path jp
+      ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
+)
+SELECT DISTINCT graph_name, coordinate, schema_name || '.' || table_name, source_name, schema_name,
+       table_name
+  FROM (
+    -- A field below a source whose values are a table's rows: each table-bound type it reaches, where
+    -- its need lands.
+    SELECT l.graph_name, l.coordinate, l.source_name, l.schema_name, l.table_name
+      FROM landing l
+      JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
+      JOIN graphitron_tabletype tt ON tt.graph_name = l.graph_name AND tt.type_name = l.target_type
+     WHERE o.kind = 'FIELD' AND l.table_name IS NOT NULL
+    UNION ALL
+    -- A root field, which has no source and so no need: a service's the table its result's records
+    -- are rows of, which the lift reaches; any other's each participant's table, or its type's.
+    SELECT o.graph_name, o.coordinate, r.table_source_name, r.table_schema, r.table_name
+      FROM graphitron_occurrence o
+      JOIN graphitron_occurrence_producer p ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+      JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+     WHERE o.kind = 'FIELD' AND p.start = 'ROOT' AND p.kind = 'SERVICE' AND r.table_name IS NOT NULL
+    UNION ALL
+    SELECT o.graph_name, o.coordinate, pt.table_source_name, pt.table_schema, pt.table_name
+      FROM graphitron_occurrence o
+      JOIN graphitron_occurrence_producer p ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+      JOIN graphitron_occurrence_participant pt ON pt.graph_name = o.graph_name AND pt.coordinate = o.coordinate
+     WHERE o.kind = 'FIELD' AND p.start = 'ROOT' AND p.kind <> 'SERVICE'
+    UNION ALL
+    SELECT o.graph_name, o.coordinate, tt.table_source_name, tt.table_schema, tt.table_name
+      FROM graphitron_occurrence o
+      JOIN graphitron_occurrence_producer p ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+      JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+      JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.named_type
+     WHERE o.kind = 'FIELD' AND p.start = 'ROOT' AND p.kind <> 'SERVICE'
+       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
+                        WHERE pt.graph_name = o.graph_name AND pt.coordinate = o.coordinate)
+    UNION ALL
+    -- An argument or input field no column or node id takes, where its need lands: an input object,
+    -- whose fields filter there, or a scalar a @condition takes.
+    SELECT l.graph_name, l.coordinate, l.source_name, l.schema_name, l.table_name
+      FROM landing l
+      JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
+      LEFT JOIN graphitron_argument a ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+      LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+      JOIN graphitron_type t
+        ON t.graph_name = o.graph_name AND t.type_name = COALESCE(a.named_type, f.named_type)
+     WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND l.table_name IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
+                        WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate
+                          AND b.kind IN ('COLUMN', 'NODE_ID'))
+       AND (t.kind = 'INPUT_OBJECT'
+            OR EXISTS (SELECT 1 FROM graphitron_directive_application d
+                        WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                          AND d.directive_name = 'condition'))
+  ) bound (graph_name, coordinate, source_name, schema_name, table_name);
+COMMENT ON VIEW graphitron_occurrence_binding_table_rule IS 'One row the table binding rule computes, in the shape graphitron_occurrence_binding_table stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_binding and graphitron_occurrence_binding_table, which are the names every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.table_name';
+
+CREATE TABLE graphitron_occurrence_binding_table (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- The binding it details, pinned to the kind that takes a table.
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (kind = 'TABLE'),
+  CHECK (bound = table_schema || '.' || table_name)
+);
+COMMENT ON TABLE graphitron_occurrence_binding_table IS 'The table an occurrence''s rows or value land on: one row per TABLE binding. For example Query.films binds public.film, its rows, and Query.films(filter:), an input object whose fields filter film, binds public.film where its need lands.';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.coordinate IS 'the occurrence binding the table';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.bound IS 'the table, spelled schema.table as a COLUMN or NODE_ID binding''s is';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.kind IS 'always TABLE, pinned so the foreign key holds the row to a binding of that kind';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.table_source_name IS 'the catalog entry of the table, with the schema and the name a sql_table key';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.table_schema IS 'the table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.table_name IS 'the table';
+COMMENT ON COLUMN graphitron_occurrence_binding_table.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- A nullable list of a union or an interface with members, every one of them @error, or of one
 -- @error type itself. A field whose element is or lists an @error type and falls short of this is a
 -- defect where it was written.
@@ -16973,9 +17075,9 @@ INSERT INTO meta_stage VALUES
   ('type-backings', 'graphitron', 24, 'no.sikt.graphitron.model.derive.TypeBackings'),
   ('fetchers', 'graphitron', 25, 'no.sikt.graphitron.model.derive.Fetchers'),
   ('field-key-rows', 'graphitron', 26, 'no.sikt.graphitron.model.derive.FieldKeyRows'),
-  ('occurrence-depths', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-values', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('occurrence-participants', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-participants', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-depths', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-values', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
   ('outbox', 'graphitron', 30, 'no.sikt.graphitron.model.derive.Outboxes'),
   ('entry-defects', 'graphitron', 31, 'no.sikt.graphitron.model.derive.EntryDefects');
 
@@ -17071,6 +17173,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_binding'),
   ('occurrence-depths', 'graphitron_occurrence_column'),
   ('occurrence-depths', 'graphitron_occurrence_node_id'),
+  ('occurrence-depths', 'graphitron_occurrence_binding_table'),
   ('occurrence-depths', 'graphitron_occurrence_call'),
   ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_parameter'),
@@ -18238,6 +18341,14 @@ INSERT INTO meta_relation VALUES
    'One member call an accessor path makes: one row per path and position, naming the member''s code_read_slot row.',
    'For example Query.filmBlurbHolder.blurb calls FilmBlurbHolder.blurb() at position 0; a path where the object passes through calls nothing and has no step.',
    'What an accessor path calls, as a join path''s steps say what it joins, so a reader renders the call off the row rather than finding the member again. One step today, a bound name being one member. Written by the occurrence-depths stage with its path.'),
+  ('graphitron_occurrence_binding_table', 'graph-occurrence-binding', 'graphitron',
+   'The table an occurrence''s rows or value land on: one row per TABLE binding.',
+   'For example Query.films binds public.film, its rows, and Query.films(filter:), an input object whose fields filter film, binds public.film where its need lands.',
+   'The table side of a binding beside COLUMN and NODE_ID, so every occurrence that filters or is filtered binds a table and a @condition call is keyed by the binding rather than by a view re-deriving the table. Written per depth inside occurrence-depths by a writer of its own after the node id and column bindings, reading stored rows only: the landing is the join path''s target where a path was walked, else the need''s.'),
+  ('graphitron_occurrence_binding_table_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the table binding rule computes, in the shape graphitron_occurrence_binding_table stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_binding and graphitron_occurrence_binding_table, which are the names every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_binding_value', 'graph-occurrence-binding', 'graphitron',
    'The member an occurrence''s value is read by off the object it reads from: one row per VALUE binding, the class read from, the class of the value and the member''s code_read_slot row, none where the object passes through.',
    'For example Query.filmBlurbHolder.blurb binds FilmBlurbHolder#blurb, a FilmBlurb, and a payload''s data element that its producer''s class backs binds that class itself.',

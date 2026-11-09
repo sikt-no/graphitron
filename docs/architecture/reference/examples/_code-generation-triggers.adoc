@@ -235,6 +235,10 @@
 | `public.actor`
 | `COLUMN`
 
+| `Film.actors`
+| `public.actor`
+| `TABLE`
+
 | `Film.details.length`
 | `public.film`
 | `COLUMN`
@@ -242,6 +246,14 @@
 | `Film.details.releaseYear`
 | `public.film`
 | `COLUMN`
+
+| `Film.inventory`
+| `public.inventory`
+| `TABLE`
+
+| `Film.language`
+| `public.language`
+| `TABLE`
 
 | `Film.title`
 | `public.film`
@@ -254,6 +266,14 @@
 | `Language.name`
 | `public.language`
 | `COLUMN`
+
+| `Query.films`
+| `public.film`
+| `TABLE`
+
+| `Query.films(filter:)`
+| `public.film`
+| `TABLE`
 
 | `Query.films(filter.title:)`
 | `public.film`

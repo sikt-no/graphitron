@@ -95,11 +95,16 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate,                 bound,            kind
   Actor.lastName,             public.actor,     COLUMN
+  Film.actors,                public.actor,     TABLE
   Film.details.length,        public.film,      COLUMN
   Film.details.releaseYear,   public.film,      COLUMN
+  Film.inventory,             public.inventory, TABLE
+  Film.language,              public.language,  TABLE
   Film.title,                 public.film,      COLUMN
   Inventory.inventoryId,      public.inventory, COLUMN
   Language.name,              public.language,  COLUMN
+  Query.films,                public.film,      TABLE
+  Query.films(filter:),       public.film,      TABLE
   Query.films(filter.title:), public.film,      COLUMN
   """)
 

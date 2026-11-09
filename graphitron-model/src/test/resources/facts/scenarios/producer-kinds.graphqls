@@ -59,10 +59,17 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding",
     where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
   coordinate,                         bound,                  kind
   Film.title,                         public.film,            COLUMN
+  Film.language,                      public.language,        TABLE
+  Film.originalLanguage,              public.language,        TABLE
   Language.name,                      public.language,        COLUMN
   Mutation.createFilm(in.languageId:), public.film,           COLUMN
   Mutation.createFilm(in.title:),     public.film,            COLUMN
+  Mutation.createFilm,                public.film,            TABLE
+  Mutation.createFilm(in:),           public.film,            TABLE
+  Query.films,                        public.film,            TABLE
+  Query.filmsByKey,                   public.film,            TABLE
   Query.filmsByKey(film_id:),         public.film,            COLUMN
+  Query.filmsByService,               public.film,            TABLE
   Query.filmsByService(ids:),         "no.sikt.graphitron.rewrite.test.services.SampleQueryService#filmsByService(Lorg/jooq/DSLContext;Ljava/util/List;)Lorg/jooq/Result;:1", PARAMETER
   Query.rows.title,                   public.films_for_actor, COLUMN
   """)

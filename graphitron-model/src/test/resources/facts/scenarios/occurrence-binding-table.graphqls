@@ -1,0 +1,52 @@
+# The table an occurrence's rows or value land on, its TABLE binding. A field whose values are a
+# table's rows binds that table: below a source where its need lands, at a root, which has no need,
+# its type's table or each participant's. An argument or input field no column or node id takes
+# binds where its need lands when it is an input object, whose fields filter there, or a scalar a
+# @condition takes; a scalar with a column binds that column instead, and a scalar nothing filters
+# by, a page size, binds nothing.
+
+type Film @table(name: "film") {
+    title: String
+    language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+type Language @table(name: "language") {
+    name: String
+}
+
+type Actor @table(name: "actor") {
+    firstName: String @field(name: "first_name")
+}
+
+union Searchable = Film | Language
+
+input FilmFilter {
+    title: String
+    span: YearSpan
+}
+
+input YearSpan {
+    from: Int @field(name: "release_year")
+}
+
+type Query {
+    films(filter: FilmFilter, title: String, first: Int): [Film!]!
+    search: [Searchable!]!
+    filmsByPrefix(titlePrefix: String @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmTitlePrefixCondition"}, override: true)): [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_table", rows: """
+  coordinate,                       bound,           table_name
+  Film.actors,                      public.actor,    actor
+  Film.language,                    public.language, language
+  Query.films,                      public.film,     film
+  Query.films(filter.span:),        public.film,     film
+  Query.films(filter:),             public.film,     film
+  Query.filmsByPrefix,              public.film,     film
+  Query.filmsByPrefix(titlePrefix:), public.film,    film
+  Query.search,                     public.film,     film
+  Query.search,                     public.language, language
+  """)

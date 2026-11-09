@@ -130,6 +130,11 @@ public final class GraphitronAssemblyCapture {
         // just written and the path elements above; the walk departs from these.
         new AnchorStage("field-key-rows", FieldKeyRows.class,
             FieldKeyRows::derive),
+        // The types each polymorphic occurrence's rows may be and how a row is told apart as each, off
+        // the occurrences, the table types and the discriminator directives;
+        // before the depths, whose table bindings read them.
+        new AnchorStage("occurrence-participants", OccurrenceParticipants.class,
+            OccurrenceParticipants::derive),
         // Each occurrence's producer, its calls' pins and fills, source, needs, paths and the node id
         // and column it binds, a depth at a time, off the occurrences, the landings, the key rows and the claims above: one stage, each
         // depth reading what the depth above it wrote.
@@ -138,10 +143,6 @@ public final class GraphitronAssemblyCapture {
         // The member each occurrence with an object source reads, off the accessor paths above.
         new AnchorStage("occurrence-values", OccurrenceValues.class,
             OccurrenceValues::derive),
-        // The types each polymorphic occurrence's rows may be and how a row is told apart as each, off
-        // the occurrences, the table types and the discriminator directives.
-        new AnchorStage("occurrence-participants", OccurrenceParticipants.class,
-            OccurrenceParticipants::derive),
         // The outbox targets the configuration resolves to, and each @outbox as the message its
         // field's call writes, judged against the occurrences' producers above; then their defects.
         new AnchorStage("outbox", Outboxes.class, Outboxes::derive),
