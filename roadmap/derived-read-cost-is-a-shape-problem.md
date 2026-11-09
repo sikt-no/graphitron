@@ -803,14 +803,15 @@ pass and no stratum that clears and recomputes.
         reader's to judge. `graphitron_argmapping_pair_defect_rule`'s path arm leaves `@outbox` out
         until "A pair's source is judged once for every directive", so an outbox source keeps one
         verdict meanwhile. `outbox-applications` and `outbox-service-result` pin the landings.
-      * **A payload key is a filled parameter of its message** `open`. The key relation and its fills, the remaining `OUTBOX_*`
+      * **A payload key is a filled parameter of its message** `done`. The key relation and its fills, the remaining `OUTBOX_*`
         codes, and `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
         `graphitron_outbox_result_step` go. A `$result` key reads its landed occurrence's binding,
         `COLUMN` or `NODE_ID` table-side and `VALUE` object-side, so an unresolved path is one that
         lands on no binding and an unserializable one a binding whose type a payload cannot carry.
-        Done whole rather than with the service half waiting (Alf, 2026-11-08).
-      * **A pair's source is judged once for every directive** `blocked`, on "A payload key is a
-        filled parameter of its message". `graphitron_argmapping_pair_defect_rule` already judges a
+        Done whole rather than with the service half waiting (Alf, 2026-11-08). The common payload's
+        keys are crossed with the messages through an outer join, so the message drives and probes
+        the handful of entries rather than the reverse.
+      * **A pair's source is judged once for every directive** `open`. `graphitron_argmapping_pair_defect_rule` already judges a
         pair by the kind of source it binds, `$session`, `$context` and argument paths, whatever
         directive wrote it; the outbox's restatements fold into it (Alf, 2026-11-08): the argument
         half of `OUTBOX_SOURCE_UNRESOLVED` is `ARGMAPPING_PATH_UNRESOLVED` once `@outbox` lands, its

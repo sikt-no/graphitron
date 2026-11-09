@@ -12,9 +12,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_LEAF;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_MESSAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ROUTINE_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
@@ -23,10 +22,10 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.when;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
@@ -38,8 +37,8 @@ import static org.jooq.impl.DSL.selectOne;
  * <p>One driving statement at the grain of a coordinate, its messages and their leaves nested as
  * correlated {@code MULTISET}s on their own keys, a read of the node key of each node type a leaf
  * encodes, and a second statement, one row per graph, for the configured target. Nothing here decides
- * anything: membership is the write relation's row beside an {@code @outbox} application, a leaf is
- * a row the derivation kept, and the target is the row the derivation resolved. What failed to
+ * anything: membership is the write relation's row beside an {@code @outbox} message, a leaf is
+ * a key the derivation kept, and the target is the row the derivation resolved. What failed to
  * resolve left no row and is a build error before the generator runs, so every name read here is
  * captured rather than derived and a row is built with no live catalog.
  *
@@ -198,7 +197,7 @@ public final class OutboxQuery {
 
     private static List<Row> coordinates(StoreHandle store, Destination target) {
         var w = GRAPHITRON_PRODUCER_WRITE;
-        var o = GRAPHQL_DIRECTIVE_APPLICATION.as("outbox_application");
+        var o = GRAPHITRON_OUTBOX_MESSAGE.as("outbox_message");
         var wt = SQL_TABLE.as("written_table");
         var ws = SQL_SCHEMA.as("written_schema");
         return store.dsl()
@@ -210,8 +209,7 @@ public final class OutboxQuery {
             .join(ws).on(ws.SOURCE_NAME.eq(wt.SOURCE_NAME), ws.TABLE_SCHEMA.eq(wt.TABLE_SCHEMA))
             .where(w.GRAPH_NAME.eq(store.graphName()),
                 exists(selectOne().from(o).where(o.GRAPH_NAME.eq(w.GRAPH_NAME),
-                    o.COORDINATE.eq(concat(w.TYPE_NAME, inline("."), w.FIELD_NAME)),
-                    o.DIRECTIVE_NAME.eq("outbox"))))
+                    o.COORDINATE.eq(concat(w.TYPE_NAME, inline("."), w.FIELD_NAME)))))
             .orderBy(w.TYPE_NAME, w.FIELD_NAME)
             .fetch(r -> {
                 var table = new Table(r.value4(), r.value5(), r.value6(), r.value7());
@@ -260,18 +258,13 @@ public final class OutboxQuery {
     /** The field's messages in written order, each with its leaves. */
     private static Field<List<RawMessage>> messages(
             no.sikt.graphitron.model.tables.GraphitronProducerWrite w) {
-        // Each @outbox application at the field, with what it wrote; an event left out is the
-        // field's own coordinate.
-        var o = GRAPHQL_DIRECTIVE_APPLICATION.as("message");
-        var e = GRAPHITRON_AST_OUTBOX_ENTRY.as("message_written");
+        // Each message at the field, with the event it is published under.
+        var o = GRAPHITRON_OUTBOX_MESSAGE.as("message");
         return multiset(
-            select(o.ORDINAL, coalesce(e.EVENT_REF, o.COORDINATE), leaves(o, w))
+            select(o.ORDINAL, o.EVENT, leaves(o, w))
                 .from(o)
-                .join(e).on(e.GRAPH_NAME.eq(o.GRAPH_NAME), e.SOURCE_NAME.eq(o.SOURCE_NAME),
-                    e.SOURCE_LINE.eq(o.SOURCE_LINE), e.SOURCE_COLUMN.eq(o.SOURCE_COLUMN))
                 .where(o.GRAPH_NAME.eq(w.GRAPH_NAME),
-                    o.COORDINATE.eq(concat(w.TYPE_NAME, inline("."), w.FIELD_NAME)),
-                    o.DIRECTIVE_NAME.eq("outbox"))
+                    o.COORDINATE.eq(concat(w.TYPE_NAME, inline("."), w.FIELD_NAME)))
                 .orderBy(o.ORDINAL))
             .convertFrom(r -> r.map(Records.mapping(RawMessage::new)));
     }
@@ -282,19 +275,23 @@ public final class OutboxQuery {
      * join to it.
      */
     private static Field<List<RawLeaf>> leaves(
-            no.sikt.graphitron.model.tables.GraphqlDirectiveApplication o,
+            no.sikt.graphitron.model.tables.GraphitronOutboxMessage o,
             no.sikt.graphitron.model.tables.GraphitronProducerWrite w) {
-        var l = GRAPHITRON_OUTBOX_LEAF;
+        var l = GRAPHITRON_OUTBOX_KEY;
         var rc = SQL_COLUMN.as("result_column");
+        // What fills the key, in the emitter's terms: a result key by what it reads of the result.
+        Field<String> kind = when(l.FILL.eq("RESULT"), concat(inline("RESULT_"), l.READS))
+            .when(l.FILL.eq("SESSION_MEMBER"), inline("SESSION"))
+            .otherwise(l.FILL);
         return multiset(
-            select(l.KEY_NAME, l.ORIGIN, l.SOURCE_KIND, l.SOURCE_PATH, rc.COLUMN_NAME, rc.JOOQ_NAME,
+            select(l.KEY_NAME, l.ORIGIN, kind, l.SOURCE_PATH, rc.COLUMN_NAME, rc.JOOQ_NAME,
                     rc.BINDING_TYPE, l.NODE_TYPE_NAME)
                 .from(l)
                 .leftJoin(rc).on(rc.SOURCE_NAME.eq(w.TABLE_SOURCE_NAME),
                     rc.TABLE_SCHEMA.eq(w.TABLE_SCHEMA), rc.TABLE_NAME.eq(w.TABLE_NAME),
                     rc.COLUMN_NAME.eq(l.COLUMN_NAME))
-                .where(l.GRAPH_NAME.eq(o.GRAPH_NAME), l.TYPE_NAME.eq(w.TYPE_NAME),
-                    l.FIELD_NAME.eq(w.FIELD_NAME), l.ORDINAL.eq(o.ORDINAL))
+                .where(l.GRAPH_NAME.eq(o.GRAPH_NAME), l.COORDINATE.eq(o.COORDINATE),
+                    l.ORDINAL.eq(o.ORDINAL))
                 .orderBy(l.ORIGIN, l.POSITION))
             .convertFrom(r -> r.map(Records.mapping(RawLeaf::new)));
     }

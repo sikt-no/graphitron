@@ -1,4 +1,4 @@
-# A $session.<member> source is a leaf like any other: the member name rides as the source path, and
+# A $session.<member> source is a key like any other: the member name rides as the source path, and
 # the message reads it from the session handle the build's <sessionState> names. It resolves where
 # the handle offers the member once and what it yields is something a JSON payload can carry, here
 # the text label; the common payload may read one too, so every message carries the same identity.
@@ -27,10 +27,10 @@ type Mutation {
     @outbox(event: "FilmCreated", argMapping: "by: $session.label, title: in.title")
 }
 
-extend schema @expectEquals(relation: "graphitron_outbox_leaf", rows: """
-  type_name, field_name, ordinal, key_name,  origin,  position, source_kind, source_path,   column_name, node_type_name
-  Mutation,  createFilm, 0,       by,        MESSAGE, 0,        SESSION,     label,         ,
-  Mutation,  createFilm, 0,       title,     MESSAGE, 1,        ARGUMENT,    in.title,      ,
-  Mutation,  createFilm, 0,       who,       COMMON,  0,        SESSION,     label,         ,
-  Mutation,  createFilm, 0,       operation, COMMON,  1,        SCOPE,       operationName, ,
+extend schema @expectEquals(relation: "graphitron_outbox_key", rows: """
+  coordinate,          ordinal, key_name,  origin,  position, fill,           reads, source_path,   column_name, node_type_name
+  Mutation.createFilm, 0,       by,        MESSAGE, 0,        SESSION_MEMBER, ,      label,         ,
+  Mutation.createFilm, 0,       title,     MESSAGE, 1,        ARGUMENT,       ,      in.title,      ,
+  Mutation.createFilm, 0,       who,       COMMON,  0,        SESSION_MEMBER, ,      label,         ,
+  Mutation.createFilm, 0,       operation, COMMON,  1,        SCOPE,          ,      operationName, ,
   """)

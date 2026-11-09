@@ -10,6 +10,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_MESSAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_MESSAGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ROUTINE_TARGET;
@@ -26,7 +28,8 @@ import static org.jooq.impl.DSL.val;
  * in the catalog, and each {@code @outbox} as the message its field's call writes, then the defects
  * those break.
  *
- * <p>Each relation is written from its {@code _rule} view, marked with the reading's instant and
+ * <p>Then each message's keys, the parameters of its call, each read off its landing's binding. Each
+ * relation is written from its {@code _rule} view, marked with the reading's instant and
  * swept of the graph's rows a reading did not mark. The defects are this stage's own rule,
  * {@link EntryDefects#OUTBOX}, written last, so they read the rows this stage has just written. Runs
  * after the occurrences and their producers, which a message's placement is judged against.
@@ -42,6 +45,7 @@ public final class Outboxes {
         copy(dsl, graph, touchedAt, GRAPHITRON_OUTBOX_ROUTINE_TARGET,
             GRAPHITRON_OUTBOX_ROUTINE_TARGET_RULE, GRAPHITRON_OUTBOX_ROUTINE_TARGET.TOUCHED_AT);
         messages(dsl, graph, touchedAt);
+        keys(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.OUTBOX);
     }
 
@@ -67,6 +71,34 @@ public final class Outboxes {
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.OCCURRENCE_GRAPH_REF, excluded(t.OCCURRENCE_GRAPH_REF))
             .set(t.OCCURRENCE_COORDINATE_REF, excluded(t.OCCURRENCE_COORDINATE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph)).and(t.TOUCHED_AT.ne(touchedAt)).execute();
+    }
+
+    /** Each message's keys, from the key rule, marked and swept. */
+    private static void keys(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_OUTBOX_KEY;
+        var r = GRAPHITRON_OUTBOX_KEY_RULE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.ORDINAL, t.KEY_NAME, t.ORIGIN, t.POSITION, t.FILL,
+                t.READS, t.SOURCE_PATH, t.LANDING_COORDINATE, t.COLUMN_NAME, t.NODE_TYPE_NAME,
+                t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.ORDINAL, r.KEY_NAME, r.ORIGIN, r.POSITION,
+                    r.FILL, r.READS, r.SOURCE_PATH, r.LANDING_COORDINATE, r.COLUMN_NAME,
+                    r.NODE_TYPE_NAME, val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph)))
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.ORDINAL, t.KEY_NAME)
+            .doUpdate()
+            .set(t.ORIGIN, excluded(t.ORIGIN))
+            .set(t.POSITION, excluded(t.POSITION))
+            .set(t.FILL, excluded(t.FILL))
+            .set(t.READS, excluded(t.READS))
+            .set(t.SOURCE_PATH, excluded(t.SOURCE_PATH))
+            .set(t.LANDING_COORDINATE, excluded(t.LANDING_COORDINATE))
+            .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
+            .set(t.NODE_TYPE_NAME, excluded(t.NODE_TYPE_NAME))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
         dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph)).and(t.TOUCHED_AT.ne(touchedAt)).execute();

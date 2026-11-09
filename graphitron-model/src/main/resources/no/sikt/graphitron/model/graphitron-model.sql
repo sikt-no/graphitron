@@ -10027,127 +10027,6 @@ COMMENT ON VIEW graphitron_session_handle_member IS 'One accessor of the class a
 -- COMMENT ON COLUMN graphitron_session_handle_member.method_name IS 'the accessor, with the descriptor the key of the slot it reads through';
 -- COMMENT ON COLUMN graphitron_session_handle_member.descriptor IS 'the accessor''s descriptor, completing the slot''s key';
 
--- Each step a $result path takes over a service's returned value, read as the field's own facts say.
-CREATE VIEW graphitron_outbox_result_step
-  (graph_name, type_name, field_name, ordinal, key_name, position, segments, step_type_name,
-   step_field_name, step, class_name, slot_source_name, slot_method_name, slot_descriptor,
-   next_type_name) AS
-WITH RECURSIVE
--- The class a type's result holds, where it holds exactly one: which of several arrives is the
--- producer's, so no one member is the field's.
-held (graph_name, type_name, class_name) AS (
-  SELECT rc.graph_name, rc.type_name, rc.class_name
-    FROM graphitron_result_class rc
-   WHERE (SELECT COUNT(*) FROM graphitron_result_class o
-           WHERE o.graph_name = rc.graph_name AND o.type_name = rc.type_name) = 1
-),
--- One step off a field of such a type. The member the field's bound name finds on the class, where
--- exactly one does and it delivers one value; where that member returns a record of the field's
--- table-bound type, the step takes the record. Where no member is found and the field's type holds
--- the same class, the object passes through.
-step_of (graph_name, type_name, field_name, step, class_name, slot_source_name, slot_method_name,
-         slot_descriptor, next_type_name) AS (
-  SELECT h.graph_name, h.type_name, f.field_name,
-         CASE WHEN k.kind = 'ACCESSOR' AND k.arity = 'ONE' THEN 'RECORD' ELSE 'MEMBER' END,
-         h.class_name, sl.source_name, sl.method_name, sl.descriptor, ft.target_type_name
-    FROM held h
-    JOIN graphitron_field f
-      ON f.graph_name = h.graph_name AND f.type_name = h.type_name AND NOT f.is_list
-    JOIN graphitron_field_target ft
-      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-    JOIN store_graph_source g ON g.graph_name = h.graph_name
-    JOIN code_read_slot sl
-      ON sl.source_name = g.source_name AND sl.class_name = h.class_name
-     AND sl.slot_name = f.bound_name
-    LEFT JOIN graphitron_field_key_row k
-      ON k.graph_name = f.graph_name AND k.type_name = f.type_name AND k.field_name = f.field_name
-   WHERE COALESCE(sl.delivery, 'ONE') <> 'MANY'
-     AND (SELECT COUNT(*) FROM store_graph_source g2
-            JOIN code_read_slot s2
-              ON s2.source_name = g2.source_name AND s2.class_name = h.class_name
-             AND s2.slot_name = f.bound_name
-           WHERE g2.graph_name = h.graph_name) = 1
-  UNION ALL
-  SELECT h.graph_name, h.type_name, f.field_name, 'PASSES_THROUGH', h.class_name,
-         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), ft.target_type_name
-    FROM held h
-    JOIN graphitron_field f
-      ON f.graph_name = h.graph_name AND f.type_name = h.type_name AND NOT f.is_list
-    JOIN graphitron_field_target ft
-      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-    JOIN graphitron_result_class c
-      ON c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name
-     AND c.class_name = h.class_name
-   WHERE NOT EXISTS (SELECT 1 FROM store_graph_source g
-                       JOIN code_read_slot sl
-                         ON sl.source_name = g.source_name AND sl.class_name = h.class_name
-                        AND sl.slot_name = f.bound_name
-                      WHERE g.graph_name = h.graph_name)
-),
--- Every $result path a message on a service field writes, from the type the field returns.
-start (graph_name, type_name, field_name, ordinal, key_name, path, start_type_name) AS (
-  SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, p.param_name, SUBSTRING(p.bound_to, 9),
-         ft.target_type_name
-    FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-    JOIN graphitron_argmapping_site s
-      ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
-     AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
-    JOIN graphitron_ast_argmapping_pair_entry p
-      ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-     AND p.source_line = s.source_line AND p.source_column = s.source_column
-    JOIN graphitron_producer pr
-      ON pr.graph_name = o.graph_name AND pr.type_name = o.type_name AND pr.field_name = o.field_name
-     AND pr.kind = 'SERVICE'
-    JOIN graphitron_field rf
-      ON rf.graph_name = o.graph_name AND rf.type_name = o.type_name AND rf.field_name = o.field_name
-     AND NOT rf.is_list
-    JOIN graphitron_field_target ft
-      ON ft.graph_name = o.graph_name AND ft.type_name = o.type_name AND ft.field_name = o.field_name
-   WHERE p.bound_to LIKE '$result.%'
-),
--- The path walked a segment at a time, as long as each segment is a step.
-walked (graph_name, type_name, field_name, ordinal, key_name, position, segments, at_type_name,
-        segment, rest) AS (
-  SELECT graph_name, type_name, field_name, ordinal, key_name, 0,
-         LENGTH(path) - LENGTH(REPLACE(path, '.', '')) + 1, start_type_name,
-         CASE WHEN POSITION('.', path) > 0 THEN SUBSTRING(path, 1, POSITION('.', path) - 1)
-              ELSE path END,
-         CASE WHEN POSITION('.', path) > 0 THEN SUBSTRING(path, POSITION('.', path) + 1) END
-    FROM start
-  UNION ALL
-  SELECT w.graph_name, w.type_name, w.field_name, w.ordinal, w.key_name, w.position + 1,
-         w.segments, so.next_type_name,
-         CASE WHEN POSITION('.', w.rest) > 0 THEN SUBSTRING(w.rest, 1, POSITION('.', w.rest) - 1)
-              ELSE w.rest END,
-         CASE WHEN POSITION('.', w.rest) > 0 THEN SUBSTRING(w.rest, POSITION('.', w.rest) + 1) END
-    FROM walked w
-    JOIN step_of so
-      ON so.graph_name = w.graph_name AND so.type_name = w.at_type_name
-     AND so.field_name = w.segment
-   WHERE w.rest IS NOT NULL AND so.step <> 'RECORD'
-)
-SELECT w.graph_name, w.type_name, w.field_name, w.ordinal, w.key_name, w.position, w.segments,
-       w.at_type_name, w.segment, so.step, so.class_name, so.slot_source_name, so.slot_method_name,
-       so.slot_descriptor, so.next_type_name
-  FROM walked w
-  JOIN step_of so
-    ON so.graph_name = w.graph_name AND so.type_name = w.at_type_name AND so.field_name = w.segment;
-COMMENT ON VIEW graphitron_outbox_result_step IS 'One step a @outbox $result path takes over a @service field''s returned value, read as the field''s own facts say. For example $result.holder.blurb.description over a payload whose holder is the service''s object itself gives three rows: holder PASSES_THROUGH, blurb MEMBER, description MEMBER.';
--- COMMENT ON COLUMN graphitron_outbox_result_step.position IS 'the segment''s 0-based place in the path';
--- COMMENT ON COLUMN graphitron_outbox_result_step.segments IS 'how many segments the path has, so the last is the one at segments - 1';
--- COMMENT ON COLUMN graphitron_outbox_result_step.step_type_name IS 'the type the segment is a field of';
--- COMMENT ON COLUMN graphitron_outbox_result_step.step_field_name IS 'the field the segment names';
--- COMMENT ON COLUMN graphitron_outbox_result_step.step IS 'MEMBER, the member the field''s bound name finds on the class; RECORD, such a member returning a record of the field''s table-bound type; PASSES_THROUGH, no member, the field''s type holding the same class, so the object itself';
--- COMMENT ON COLUMN graphitron_outbox_result_step.class_name IS 'the one class the step''s type''s result holds, the one read off';
--- COMMENT ON COLUMN graphitron_outbox_result_step.slot_method_name IS 'the member''s accessor, with slot_source_name and slot_descriptor a code_read_slot key; NULL where the object passes through';
--- COMMENT ON COLUMN graphitron_outbox_result_step.next_type_name IS 'the type the next segment is a field of';
 
 
 CREATE VIEW graphitron_argmapping_parameter
@@ -11251,245 +11130,6 @@ COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence col
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.column_name IS 'the one column the spelling names there';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.matched_by IS 'which name it met';
 
--- The outbox leaf rule sits here, after the session handle's members and the occurrence bindings,
--- because it reads them: the view needs the relations it names to exist when it is created.
-CREATE VIEW graphitron_outbox_leaf
-  (graph_name, type_name, field_name, ordinal, key_name, origin, position, source_kind,
-   source_path, column_name, node_type_name) AS
-WITH written (graph_name, type_name, field_name, ordinal, key_name, origin, position, bound_to) AS (
-  SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, p.param_name, 'MESSAGE', p.position,
-         p.bound_to
-    FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-    JOIN graphitron_argmapping_site s
-      ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
-     AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
-    JOIN graphitron_ast_argmapping_pair_entry p
-      ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-     AND p.source_line = s.source_line AND p.source_column = s.source_column
-  UNION ALL
-  SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, c.key_name, 'COMMON', c.position,
-         c.bound_to
-    FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-    JOIN store_graph_outbox_payload_entry c ON c.graph_name = o.graph_name
-),
-ranked (graph_name, type_name, field_name, ordinal, key_name, origin, position, bound_to, rn) AS (
-  SELECT w.graph_name, w.type_name, w.field_name, w.ordinal, w.key_name, w.origin, w.position,
-         w.bound_to,
-         ROW_NUMBER() OVER (PARTITION BY w.graph_name, w.type_name, w.field_name, w.ordinal, w.key_name
-                            ORDER BY CASE w.origin WHEN 'MESSAGE' THEN 0 ELSE 1 END, w.position)
-    FROM written w
-),
--- The types a payload carries: text, the numbers, a boolean, a character, a BigDecimal, a
--- BigInteger, a UUID or a java.time value, boxed or not. Read by the session arm and the member arm.
-carriable (class_name) AS (
-  VALUES ('java.lang.String'),
-         ('java.lang.Boolean'),
-         ('java.lang.Byte'),
-         ('java.lang.Short'),
-         ('java.lang.Integer'),
-         ('java.lang.Long'),
-         ('java.lang.Float'),
-         ('java.lang.Double'),
-         ('java.lang.Character'),
-         ('java.math.BigDecimal'),
-         ('java.math.BigInteger'),
-         ('java.util.UUID'),
-         ('java.time.LocalDate'),
-         ('java.time.LocalDateTime'),
-         ('java.time.LocalTime'),
-         ('java.time.OffsetDateTime'),
-         ('java.time.Instant'),
-         ('boolean'),
-         ('byte'),
-         ('short'),
-         ('int'),
-         ('long'),
-         ('float'),
-         ('double'),
-         ('char')
-),
--- The one node type bound to a table, and whether its node key is the table's primary key.
-node_table (graph_name, table_source_name, table_schema, table_name, node_type_name, node_types,
-            key_is_primary) AS (
-  SELECT b.graph_name, b.table_source_name, b.table_schema, b.table_name,
-           MIN(n.type_name) AS node_type_name, COUNT(*) AS node_types,
-           -- The node key is the table's primary key, which is what the write captures
-           -- and so what a node id is encoded from without another read.
-           MIN(CASE WHEN (SELECT COUNT(*) FROM graphitron_node_keycolumn k
-                           WHERE k.graph_name = n.graph_name AND k.type_name = n.type_name)
-                       = (SELECT COUNT(*) FROM sql_primary_key pk
-                            JOIN sql_constraint_column cc
-                              ON cc.source_name = pk.source_name
-                             AND cc.table_schema = pk.table_schema
-                             AND cc.table_name = pk.table_name
-                             AND cc.constraint_name = pk.constraint_name
-                           WHERE pk.source_name = b.table_source_name
-                             AND pk.table_schema = b.table_schema
-                             AND pk.table_name = b.table_name)
-                     AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn k
-                                      WHERE k.graph_name = n.graph_name
-                                        AND k.type_name = n.type_name
-                                        AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
-                                                         JOIN sql_constraint_column cc
-                                                           ON cc.source_name = pk.source_name
-                                                          AND cc.table_schema = pk.table_schema
-                                                          AND cc.table_name = pk.table_name
-                                                          AND cc.constraint_name = pk.constraint_name
-                                                        WHERE pk.source_name = b.table_source_name
-                                                          AND pk.table_schema = b.table_schema
-                                                          AND pk.table_name = b.table_name
-                                                          AND cc.column_name = k.column_name))
-                    THEN TRUE ELSE FALSE END) AS key_is_primary
-      FROM graphitron_tabletype b
-      JOIN graphitron_node n ON n.graph_name = b.graph_name AND n.type_name = b.type_name
-     GROUP BY b.graph_name, b.table_source_name, b.table_schema, b.table_name
-)
-SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin, r.position,
-       CASE WHEN r.bound_to = '$result' THEN 'RESULT_ROOT'
-            WHEN r.bound_to LIKE '$result.%'
-              THEN CASE WHEN nid.coordinate IS NOT NULL THEN 'RESULT_NODE_ID' ELSE 'RESULT_COLUMN' END
-            WHEN r.bound_to LIKE '$scope.%' THEN 'SCOPE'
-            WHEN r.bound_to LIKE '$session.%' THEN 'SESSION'
-            ELSE 'ARGUMENT' END,
-       CASE WHEN r.bound_to = '$result' THEN CAST(NULL AS VARCHAR)
-            WHEN r.bound_to LIKE '$result.%' THEN SUBSTRING(r.bound_to, 9)
-            WHEN r.bound_to LIKE '$scope.%' THEN SUBSTRING(r.bound_to, 8)
-            WHEN r.bound_to LIKE '$session.%' THEN SUBSTRING(r.bound_to, 10)
-            ELSE r.bound_to END,
-       tc.column_name,
-       CASE WHEN r.bound_to = '$result' OR (r.bound_to LIKE '$result.%' AND nid.coordinate IS NOT NULL)
-            THEN nt.node_type_name END
-  FROM ranked r
-  LEFT JOIN graphitron_producer_write w
-    ON w.graph_name = r.graph_name AND w.type_name = r.type_name AND w.field_name = r.field_name
-  LEFT JOIN graphitron_field_target ft
-    ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name AND ft.field_name = r.field_name
-  LEFT JOIN node_table nt
-    ON nt.graph_name = r.graph_name AND nt.table_source_name = w.table_source_name
-   AND nt.table_schema = w.table_schema AND nt.table_name = w.table_name AND nt.node_types = 1
-  LEFT JOIN graphitron_binding_claim nid
-    ON nid.graph_name = r.graph_name AND nid.kind = 'NODE_ID'
-   AND nid.coordinate = ft.target_type_name || '.' || SUBSTRING(r.bound_to, 9)
-   AND r.bound_to LIKE '$result.%'
-  -- The column a $result leaf names, read off the written row: the field's column binding where it
-  -- lands on the written table.
-  LEFT JOIN graphitron_occurrence_column tc
-    ON tc.graph_name = r.graph_name
-   AND tc.coordinate = ft.target_type_name || '.' || SUBSTRING(r.bound_to, 9)
-   AND r.bound_to LIKE '$result.%'
-   AND tc.table_source_name = w.table_source_name AND tc.table_schema = w.table_schema
-   AND tc.table_name = w.table_name
-  LEFT JOIN graphitron_argmapping_candidate ca
-    ON ca.graph_name = r.graph_name AND ca.coordinate = r.type_name || '.' || r.field_name
-   AND ca.path = r.bound_to
- WHERE r.rn = 1
-   AND ((r.origin = 'MESSAGE' AND r.bound_to = '$result' AND w.kind IS NOT NULL
-         AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
-     OR (r.origin = 'MESSAGE' AND r.bound_to LIKE '$result.%' AND w.kind IS NOT NULL
-         AND POSITION('.', SUBSTRING(r.bound_to, 9)) = 0
-         AND ((nid.coordinate IS NOT NULL AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
-              OR (nid.coordinate IS NULL AND tc.column_name IS NOT NULL AND w.kind <> 'DELETE')))
-     OR (r.bound_to LIKE '$scope.%'
-         AND SUBSTRING(r.bound_to, 8) IN ('coordinate', 'operationName', 'alias'))
-     -- One member of the session handle, offered by exactly one accessor whose yield a payload can
-     -- carry: text, a number, a boolean, a character, a UUID or a java.time value, boxed or not.
-     OR (r.bound_to LIKE '$session.%'
-         AND (SELECT COUNT(*) FROM graphitron_session_handle_member m
-               WHERE m.graph_name = r.graph_name AND m.member_name = SUBSTRING(r.bound_to, 10)) = 1
-         AND EXISTS (SELECT 1 FROM graphitron_session_handle_member m
-                       JOIN code_read_slot cs
-                         ON cs.source_name = m.source_name AND cs.class_name = m.class_name
-                        AND cs.method_name = m.method_name AND cs.descriptor = m.descriptor
-                      WHERE m.graph_name = r.graph_name AND m.member_name = SUBSTRING(r.bound_to, 10)
-                        AND cs.slot_type IN (SELECT class_name FROM carriable)))
-     OR (r.origin = 'MESSAGE' AND r.bound_to NOT LIKE '$%' AND ca.path IS NOT NULL))
-UNION ALL
--- A $result over a service's returned value: the path's steps resolved to its last segment, ending
--- on a member a payload can carry, or after a record step on the @nodeId field of a node type whose
--- key is its table's primary key; bare, a scalar return a payload can carry.
-SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin, r.position,
-       CASE WHEN r.bound_to = '$result' THEN 'RESULT_ROOT'
-            WHEN rec.step IS NOT NULL THEN 'RESULT_NODE_ID' ELSE 'RESULT_MEMBER' END,
-       CASE WHEN r.bound_to = '$result' THEN CAST(NULL AS VARCHAR) ELSE SUBSTRING(r.bound_to, 9) END,
-       CAST(NULL AS VARCHAR),
-       CASE WHEN rec.step IS NOT NULL THEN rec.next_type_name END
-  FROM ranked r
-  JOIN graphitron_producer ps
-    ON ps.graph_name = r.graph_name AND ps.type_name = r.type_name AND ps.field_name = r.field_name
-   AND ps.kind = 'SERVICE'
-  JOIN graphitron_field rf
-    ON rf.graph_name = r.graph_name AND rf.type_name = r.type_name AND rf.field_name = r.field_name
-  JOIN graphitron_field_target rt
-    ON rt.graph_name = r.graph_name AND rt.type_name = r.type_name AND rt.field_name = r.field_name
-  LEFT JOIN graphitron_outbox_result_step last
-    ON last.graph_name = r.graph_name AND last.type_name = r.type_name
-   AND last.field_name = r.field_name AND last.ordinal = r.ordinal AND last.key_name = r.key_name
-   AND last.position = last.segments - 1 AND last.step = 'MEMBER'
-  LEFT JOIN graphitron_outbox_result_step rec
-    ON rec.graph_name = r.graph_name AND rec.type_name = r.type_name
-   AND rec.field_name = r.field_name AND rec.ordinal = r.ordinal AND rec.key_name = r.key_name
-   AND rec.position = rec.segments - 2 AND rec.step = 'RECORD'
- WHERE r.rn = 1 AND r.origin = 'MESSAGE' AND NOT rf.is_list
-   AND ((r.bound_to = '$result'
-         AND EXISTS (SELECT 1 FROM graphitron_type st
-                      WHERE st.graph_name = rt.graph_name AND st.type_name = rt.target_type_name
-                        AND st.kind IN ('SCALAR', 'ENUM'))
-         -- The method the field's @service reference resolved to, read off the reference itself.
-         AND EXISTS (SELECT 1 FROM graphitron_code_reference_site cr
-                       JOIN graphitron_code_reference rr
-                         ON rr.graph_name = cr.graph_name AND rr.coordinate = cr.coordinate
-                        AND rr.directive_name = cr.directive_name AND rr.ordinal = cr.ordinal AND rr.owner = cr.owner
-                       JOIN code_method m
-                         ON m.source_name = rr.method_source_name AND m.class_name = rr.method_class_name
-                        AND m.method_name = rr.method_name AND m.descriptor = rr.method_descriptor
-                      WHERE cr.graph_name = r.graph_name AND cr.type_name = r.type_name
-                        AND cr.field_name = r.field_name AND cr.directive_name = 'service'
-                        AND m.result_erased_class IN (SELECT class_name FROM carriable)))
-     OR (last.step IS NOT NULL
-         AND EXISTS (SELECT 1 FROM code_read_slot cs
-                      WHERE cs.source_name = last.slot_source_name
-                        AND cs.class_name = last.class_name
-                        AND cs.method_name = last.slot_method_name
-                        AND cs.descriptor = last.slot_descriptor
-                        AND cs.slot_type IN (SELECT class_name FROM carriable)))
-     OR (rec.step IS NOT NULL
-         AND EXISTS (SELECT 1 FROM graphitron_binding_claim nd
-                      WHERE nd.graph_name = rec.graph_name AND nd.kind = 'NODE_ID'
-                        AND nd.coordinate = rec.next_type_name || '.'
-                                            || REGEXP_REPLACE(r.bound_to, '^.*[.]', ''))
-         AND EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                       JOIN node_table nt
-                         ON nt.graph_name = tt.graph_name AND nt.table_source_name = tt.table_source_name
-                        AND nt.table_schema = tt.table_schema AND nt.table_name = tt.table_name
-                      WHERE tt.graph_name = rec.graph_name AND tt.type_name = rec.next_type_name
-                        AND nt.node_types = 1 AND nt.key_is_primary
-                        AND nt.node_type_name = rec.next_type_name)));
-COMMENT ON VIEW graphitron_outbox_leaf IS 'One key of one @outbox message''s payload, by the source it reads. For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two rows, filmId reading the node id of the result and title the argument path in.title, and a configured common payload entry adds its own row to every message.';
--- COMMENT ON COLUMN graphitron_outbox_leaf.graph_name IS 'the owning graph''s partition, carried from the message';
--- COMMENT ON COLUMN graphitron_outbox_leaf.type_name IS 'the mutation type declaring the field, carried from the message';
--- COMMENT ON COLUMN graphitron_outbox_leaf.field_name IS 'the field carrying the @outbox, carried from the message';
--- COMMENT ON COLUMN graphitron_outbox_leaf.ordinal IS 'the message''s place among the field''s @outbox applications, carried from the application';
--- COMMENT ON COLUMN graphitron_outbox_leaf.key_name IS 'the JSON key, the left side of the entry as written; one row per key of a message, a message''s own entry winning over a common one of the same name, and the first of two written entries winning over the second, whose pair is the key-conflict defect';
--- COMMENT ON COLUMN graphitron_outbox_leaf.origin IS 'MESSAGE where the entry is the directive''s own mapping, COMMON where it is the configured common payload''s';
--- COMMENT ON COLUMN graphitron_outbox_leaf.position IS 'the entry''s 0-based position in the mapping it was written in';
--- COMMENT ON COLUMN graphitron_outbox_leaf.source_kind IS 'ARGUMENT, RESULT_ROOT (the outcome as a whole: a write''s node id, or a service''s scalar return), RESULT_NODE_ID (a node id field: the written type''s, or one a service''s path reaches through a record step), RESULT_COLUMN (a field of the written type that reads one column), RESULT_MEMBER (a member a service''s path ends on, as graphitron_outbox_result_step reads it), SCOPE or SESSION (one member of the session handle); a source that resolves to none of them has no row here and is a defect';
--- COMMENT ON COLUMN graphitron_outbox_leaf.source_path IS 'the source without its sigil: the argument path, the result field or path, the scope member or the session member; NULL for RESULT_ROOT';
--- COMMENT ON COLUMN graphitron_outbox_leaf.column_name IS 'the SQL column a RESULT_COLUMN reads, from the written table; NULL for every other kind';
--- COMMENT ON COLUMN graphitron_outbox_leaf.node_type_name IS 'the node type whose id a RESULT_ROOT or RESULT_NODE_ID leaf encodes: the one node type bound to the written table, or the node type a service''s path reaches; NULL for every other kind and for a service''s scalar return, and a result leaf over a table with no single node type has no row';
 
 CREATE TABLE graphitron_occurrence_producer (
   graph_name VARCHAR   NOT NULL,
@@ -13350,178 +12990,6 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                     WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
                       AND m.source_line = da.source_line AND m.source_column = da.source_column)
 UNION ALL
--- A key bound twice in one mapping, or also a key of the common payload: one row per @outbox, the
--- first offending key as written; the author fixes it and the next one is reported.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT',
-       d.key_name
-  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, p.param_name AS key_name,
-               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
-                                               o.source_column ORDER BY p.position) AS rn
-          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-          JOIN graphitron_argmapping_site s
-            ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
-           AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
-          JOIN graphitron_ast_argmapping_pair_entry p
-            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-           AND p.source_line = s.source_line AND p.source_column = s.source_column
-         WHERE o.source_line IS NOT NULL
-           AND (EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry p2
-                         WHERE p2.graph_name = p.graph_name AND p2.source_name = p.source_name
-                           AND p2.source_line = p.source_line AND p2.source_column = p.source_column
-                           AND p2.param_name = p.param_name AND p2.position <> p.position)
-                OR EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c
-                            WHERE c.graph_name = o.graph_name AND c.key_name = p.param_name))) d
- WHERE d.rn = 1
-UNION ALL
--- A key bound to a source the message cannot read: no leaf, so nothing the emitter could render.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_SOURCE_UNRESOLVED',
-       d.key_name || ': ' || d.bound_to
-  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, p.param_name AS key_name,
-               p.bound_to,
-               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
-                                               o.source_column ORDER BY p.position) AS rn
-          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-          JOIN graphitron_argmapping_site s
-            ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
-           AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
-          JOIN graphitron_ast_argmapping_pair_entry p
-            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-           AND p.source_line = s.source_line AND p.source_column = s.source_column
-         WHERE o.source_line IS NOT NULL
-           -- A $session.<member> source has its own reasons: the session defects say what is wrong
-           -- with the configuration or the member, and the next arm says a member that cannot be
-           -- written. The whole handle is no member, and is reported here.
-           AND p.bound_to NOT LIKE '$session.%'
-           AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_leaf l
-                            WHERE l.graph_name = o.graph_name AND l.type_name = o.type_name
-                              AND l.field_name = o.field_name AND l.ordinal = o.ordinal
-                              AND l.key_name = p.param_name)
-           -- A $result path that resolves to its last segment is found, and the next arm says
-           -- what a payload cannot carry about it.
-           AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_result_step rs
-                            WHERE rs.graph_name = o.graph_name AND rs.type_name = o.type_name
-                              AND rs.field_name = o.field_name AND rs.ordinal = o.ordinal
-                              AND rs.key_name = p.param_name
-                              AND rs.position = rs.segments - 1)) d
- WHERE d.rn = 1
-UNION ALL
--- A $result path over a service's returned value that resolves to its last segment, ending on
--- something a payload cannot carry: an object, a record, or a member of another type. It has no
--- leaf; the type is named.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'OUTBOX_RESULT_MEMBER_UNSERIALIZABLE',
-       d.key_name || ': ' || d.bound_to || ' (' || d.type_name || ')'
-  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, p.param_name AS key_name,
-               p.bound_to, COALESCE(cs.slot_type, rs.class_name) AS type_name,
-               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
-                                               o.source_column ORDER BY p.position) AS rn
-          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-          JOIN graphitron_argmapping_site s
-            ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
-           AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
-          JOIN graphitron_ast_argmapping_pair_entry p
-            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-           AND p.source_line = s.source_line AND p.source_column = s.source_column
-          JOIN graphitron_outbox_result_step rs
-            ON rs.graph_name = o.graph_name AND rs.type_name = o.type_name
-           AND rs.field_name = o.field_name AND rs.ordinal = o.ordinal
-           AND rs.key_name = p.param_name AND rs.position = rs.segments - 1
-          LEFT JOIN code_read_slot cs
-            ON cs.source_name = rs.slot_source_name AND cs.class_name = rs.class_name
-           AND cs.method_name = rs.slot_method_name AND cs.descriptor = rs.slot_descriptor
-         WHERE o.source_line IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_leaf l
-                            WHERE l.graph_name = o.graph_name AND l.type_name = o.type_name
-                              AND l.field_name = o.field_name AND l.ordinal = o.ordinal
-                              AND l.key_name = p.param_name)) d
- WHERE d.rn = 1
-UNION ALL
--- A key bound to a session member the handle offers once, whose yield a payload cannot carry: the
--- member is found, so no session defect speaks, and it has no leaf. The yield is named.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'OUTBOX_SESSION_MEMBER_UNSERIALIZABLE',
-       d.key_name || ': ' || d.bound_to || ' (' || d.slot_type || ')'
-  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, p.param_name AS key_name,
-               p.bound_to,
-               (SELECT MAX(cs.slot_type) FROM graphitron_session_handle_member m
-                  JOIN code_read_slot cs
-                    ON cs.source_name = m.source_name AND cs.class_name = m.class_name
-                   AND cs.method_name = m.method_name AND cs.descriptor = m.descriptor
-                 WHERE m.graph_name = o.graph_name AND m.member_name = SUBSTRING(p.bound_to, 10)) AS slot_type,
-               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
-                                               o.source_column ORDER BY p.position) AS rn
-          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-          JOIN graphitron_argmapping_site s
-            ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
-           AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
-          JOIN graphitron_ast_argmapping_pair_entry p
-            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-           AND p.source_line = s.source_line AND p.source_column = s.source_column
-         WHERE o.source_line IS NOT NULL
-           AND p.bound_to LIKE '$session.%'
-           AND (SELECT COUNT(*) FROM graphitron_session_handle_member m
-                 WHERE m.graph_name = o.graph_name AND m.member_name = SUBSTRING(p.bound_to, 10)) = 1
-           AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_leaf l
-                            WHERE l.graph_name = o.graph_name AND l.type_name = o.type_name
-                              AND l.field_name = o.field_name AND l.ordinal = o.ordinal
-                              AND l.key_name = p.param_name)) d
- WHERE d.rn = 1
-UNION ALL
--- The configured common payload's faults, reported at every @outbox: a key it names twice, or an
--- entry no message could carry.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYLOAD_INVALID',
-       d.key_name || ': ' || d.bound_to
-  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, c.key_name,
-               c.bound_to,
-               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
-                                               o.source_column ORDER BY c.position) AS rn
-          FROM (SELECT a.graph_name, f.type_name, f.field_name, a.ordinal, a.source_name, a.source_line,
-                 a.source_column, COALESCE(e.event_ref, a.coordinate) AS event
-            FROM graphql_directive_application a
-            JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
-            JOIN graphitron_ast_outbox_entry e
-              ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-             AND e.source_line = a.source_line AND e.source_column = a.source_column
-           WHERE a.directive_name = 'outbox') o
-          JOIN store_graph_outbox_payload_entry c ON c.graph_name = o.graph_name
-         WHERE o.source_line IS NOT NULL
-           AND (EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c2
-                         WHERE c2.graph_name = c.graph_name AND c2.key_name = c.key_name
-                           AND c2.position <> c.position)
-                OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_leaf l
-                                WHERE l.graph_name = o.graph_name AND l.type_name = o.type_name
-                                  AND l.field_name = o.field_name AND l.ordinal = o.ordinal
-                                  AND l.key_name = c.key_name))) d
- WHERE d.rn = 1
-UNION ALL
 -- A $session binding the session configuration cannot answer, at the written position of the
 -- string, once per code however many of its entries offend. Which entries, and what is wrong with
 -- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
@@ -14391,8 +13859,323 @@ COMMENT ON COLUMN graphitron_occurrence_producer_write.table_schema IS 'that tab
 COMMENT ON COLUMN graphitron_occurrence_producer_write.table_name IS 'the table it writes';
 COMMENT ON COLUMN graphitron_occurrence_producer_write.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- Each key of each @outbox message's payload, as the call it is fills a parameter: by an argument the
+-- path lands on, by what the call returns, by the field's scope, or by a session member.
+CREATE TABLE graphitron_outbox_key (
+  graph_name         VARCHAR   NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  ordinal            INT       NOT NULL,
+  key_name           VARCHAR   NOT NULL,
+  origin             VARCHAR   NOT NULL,
+  position           INT       NOT NULL,
+  fill               VARCHAR   NOT NULL,
+  reads              VARCHAR,
+  source_path        VARCHAR,
+  landing_coordinate VARCHAR,
+  column_name        VARCHAR,
+  node_type_name     VARCHAR,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, ordinal, key_name),
+  FOREIGN KEY (graph_name, coordinate, ordinal)
+    REFERENCES graphitron_outbox_message (graph_name, coordinate, ordinal) ON DELETE CASCADE,
+  CHECK (origin IN ('MESSAGE', 'COMMON')),
+  CHECK (fill IN ('ARGUMENT', 'RESULT', 'SCOPE', 'SESSION_MEMBER')),
+  CHECK ((fill = 'RESULT') = (reads IS NOT NULL)),
+  CHECK (reads IS NULL OR reads IN ('ROOT', 'NODE_ID', 'COLUMN', 'MEMBER'))
+);
+COMMENT ON TABLE graphitron_outbox_key IS 'One key of one @outbox message''s payload, as the parameter of the message''s call it is, by what fills it. For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two keys, filmId filled by the result''s node id and title by the argument path in.title, and a configured common payload entry adds its own key to every message.';
+COMMENT ON COLUMN graphitron_outbox_key.graph_name IS 'the owning graph''s partition, carried from the message';
+COMMENT ON COLUMN graphitron_outbox_key.coordinate IS 'the field the message is written on';
+COMMENT ON COLUMN graphitron_outbox_key.ordinal IS 'which @outbox on the field; with the two columns before it, the message';
+COMMENT ON COLUMN graphitron_outbox_key.key_name IS 'the payload key; with the message, the key. A key the message and the common payload both name is the message''s';
+COMMENT ON COLUMN graphitron_outbox_key.origin IS 'MESSAGE where the @outbox''s own argMapping writes it, COMMON where the configured common payload does';
+COMMENT ON COLUMN graphitron_outbox_key.position IS 'its place in the mapping that writes it, the order the payload is built in';
+COMMENT ON COLUMN graphitron_outbox_key.fill IS 'what fills it, on graphitron_occurrence_call_parameter''s terms: ARGUMENT, an argument or input field its path lands on; RESULT, what the call returns; SCOPE, a member of the field''s scope; SESSION_MEMBER, a member of the session handle';
+COMMENT ON COLUMN graphitron_outbox_key.reads IS 'for a RESULT key, what it reads of the result: ROOT, the result whole; NODE_ID, a node''s id; COLUMN, a column of the written row; MEMBER, a member of the object a service returns. Null for every other fill';
+COMMENT ON COLUMN graphitron_outbox_key.source_path IS 'the source as written without its sigil, null for the result whole';
+COMMENT ON COLUMN graphitron_outbox_key.landing_coordinate IS 'the occurrence an ARGUMENT or RESULT path lands on, whose binding the key reads; null where no path is written';
+COMMENT ON COLUMN graphitron_outbox_key.column_name IS 'the written table''s column a COLUMN key reads, off the landed occurrence''s column binding';
+COMMENT ON COLUMN graphitron_outbox_key.node_type_name IS 'the node type whose id a ROOT or NODE_ID key encodes';
+COMMENT ON COLUMN graphitron_outbox_key.touched_at IS 'when the reading that stated this row ran; the outbox stage deletes the graph''s rows a reading did not mark';
+
+CREATE VIEW graphitron_outbox_key_rule
+  (graph_name, coordinate, ordinal, key_name, origin, position, fill, reads, source_path,
+   landing_coordinate, column_name, node_type_name) AS
+WITH written (graph_name, coordinate, ordinal, key_name, origin, position, bound_to) AS (
+  SELECT m.graph_name, m.coordinate, m.ordinal, p.param_name, 'MESSAGE', p.position, p.bound_to
+    FROM graphitron_outbox_message m
+    JOIN graphitron_argmapping_site s
+      ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
+     AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
+    JOIN graphitron_ast_argmapping_pair_entry p
+      ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+     AND p.source_line = s.source_line AND p.source_column = s.source_column
+  UNION ALL
+  SELECT m.graph_name, m.coordinate, m.ordinal, c.key_name, 'COMMON', c.position, c.bound_to
+    FROM graphitron_outbox_message m
+    -- Outer, so the message drives and each probes the handful of common entries; inner, the
+    -- planner drives from the entries and reads the graph's messages once for each.
+    LEFT JOIN store_graph_outbox_payload_entry c ON c.graph_name = m.graph_name
+   WHERE c.key_name IS NOT NULL
+),
+ranked (graph_name, coordinate, ordinal, key_name, origin, position, bound_to, rn) AS (
+  SELECT w.graph_name, w.coordinate, w.ordinal, w.key_name, w.origin, w.position, w.bound_to,
+         ROW_NUMBER() OVER (PARTITION BY w.graph_name, w.coordinate, w.ordinal, w.key_name
+                            ORDER BY CASE w.origin WHEN 'MESSAGE' THEN 0 ELSE 1 END, w.position)
+    FROM written w
+),
+-- The types a payload carries: text, the numbers, a boolean, a character, a BigDecimal, a
+-- BigInteger, a UUID or a java.time value, boxed or not.
+carriable (class_name) AS (
+  VALUES ('java.lang.String'), ('java.lang.Boolean'), ('java.lang.Byte'), ('java.lang.Short'),
+         ('java.lang.Integer'), ('java.lang.Long'), ('java.lang.Float'), ('java.lang.Double'),
+         ('java.lang.Character'), ('java.math.BigDecimal'), ('java.math.BigInteger'),
+         ('java.util.UUID'), ('java.time.LocalDate'), ('java.time.LocalDateTime'),
+         ('java.time.LocalTime'), ('java.time.OffsetDateTime'), ('java.time.Instant'),
+         ('boolean'), ('byte'), ('short'), ('int'), ('long'), ('float'), ('double'), ('char')
+),
+-- The one node type bound to a table, and whether its node key is the table's primary key: what
+-- a node id is encoded from without another read.
+node_table (graph_name, table_source_name, table_schema, table_name, node_type_name, node_types,
+            key_is_primary) AS (
+  SELECT b.graph_name, b.table_source_name, b.table_schema, b.table_name,
+         MIN(n.type_name), COUNT(*),
+         MIN(CASE WHEN (SELECT COUNT(*) FROM graphitron_node_keycolumn k
+                         WHERE k.graph_name = n.graph_name AND k.type_name = n.type_name)
+                     = (SELECT COUNT(*) FROM sql_primary_key pk
+                          JOIN sql_constraint_column cc
+                            ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
+                           AND cc.table_name = pk.table_name AND cc.constraint_name = pk.constraint_name
+                         WHERE pk.source_name = b.table_source_name AND pk.table_schema = b.table_schema
+                           AND pk.table_name = b.table_name)
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn k
+                                    WHERE k.graph_name = n.graph_name AND k.type_name = n.type_name
+                                      AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                                                       JOIN sql_constraint_column cc
+                                                         ON cc.source_name = pk.source_name
+                                                        AND cc.table_schema = pk.table_schema
+                                                        AND cc.table_name = pk.table_name
+                                                        AND cc.constraint_name = pk.constraint_name
+                                                      WHERE pk.source_name = b.table_source_name
+                                                        AND pk.table_schema = b.table_schema
+                                                        AND pk.table_name = b.table_name
+                                                        AND cc.column_name = k.column_name))
+                  THEN TRUE ELSE FALSE END)
+    FROM graphitron_tabletype b
+    JOIN graphitron_node n ON n.graph_name = b.graph_name AND n.type_name = b.type_name
+   GROUP BY b.graph_name, b.table_source_name, b.table_schema, b.table_name
+),
+-- Where each key's path lands under the call, whole: every name consumed.
+landed (graph_name, coordinate, ordinal, key_name, call_coordinate, landing_coordinate) AS (
+  SELECT l.graph_name, l.coordinate, l.ordinal, l.parameter_name, MIN(l.call_coordinate),
+         MIN(l.landing_coordinate)
+    FROM graphitron_argmapping_landing l
+   WHERE l.directive_name = 'outbox' AND l.trailing_name IS NULL
+   GROUP BY l.graph_name, l.coordinate, l.ordinal, l.parameter_name
+),
+-- Each step a $result path over a service's value takes, with what it reads there: the value at an
+-- accessor path's end, the record a member hands back and the field lifts onto its table, or neither.
+step_read (graph_name, coordinate, ordinal, key_name, consumed, segments, step_coordinate, is_list,
+           value_read, record_read) AS (
+  SELECT st.graph_name, st.coordinate, st.ordinal, st.parameter_name, st.consumed, st.segments,
+         st.step_coordinate, sf.is_list,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_binding_value v
+                            WHERE v.graph_name = st.graph_name AND v.coordinate = st.step_coordinate)
+              THEN 1 ELSE 0 END,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_key_row k
+                            WHERE k.graph_name = sf.graph_name AND k.type_name = sf.type_name
+                              AND k.field_name = sf.field_name AND k.kind = 'ACCESSOR'
+                              AND k.arity = 'ONE')
+              THEN 1 ELSE 0 END
+    FROM graphitron_argmapping_step st
+    JOIN graphitron_occurrence so ON so.graph_name = st.graph_name AND so.coordinate = st.step_coordinate
+    JOIN graphitron_field sf ON sf.graph_name = so.graph_name AND sf.coordinate = so.element_coordinate
+   WHERE st.directive_name = 'outbox' AND st.bound_to LIKE '$result.%'
+),
+-- The service paths read whole: every step before the last reads a value off its object and holds
+-- one, so the last is reached through members and objects passed through.
+service_path (graph_name, coordinate, ordinal, key_name, segments) AS (
+  SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, MIN(r.segments)
+    FROM step_read r
+   GROUP BY r.graph_name, r.coordinate, r.ordinal, r.key_name
+  HAVING COUNT(*) = MIN(r.segments)
+     AND SUM(CASE WHEN r.consumed < r.segments AND (r.is_list OR r.value_read = 0) THEN 1 ELSE 0 END) = 0
+)
+SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
+       CASE WHEN r.bound_to LIKE '$result%' THEN 'RESULT'
+            WHEN r.bound_to LIKE '$scope.%' THEN 'SCOPE'
+            WHEN r.bound_to LIKE '$session.%' THEN 'SESSION_MEMBER'
+            ELSE 'ARGUMENT' END,
+       CASE WHEN r.bound_to = '$result' THEN 'ROOT'
+            WHEN r.bound_to LIKE '$result.%'
+              THEN CASE WHEN nid.coordinate IS NOT NULL THEN 'NODE_ID' ELSE 'COLUMN' END END,
+       CASE WHEN r.bound_to = '$result' THEN CAST(NULL AS VARCHAR)
+            WHEN r.bound_to LIKE '$result.%' THEN SUBSTRING(r.bound_to, 9)
+            WHEN r.bound_to LIKE '$scope.%' THEN SUBSTRING(r.bound_to, 8)
+            WHEN r.bound_to LIKE '$session.%' THEN SUBSTRING(r.bound_to, 10)
+            ELSE r.bound_to END,
+       CASE WHEN r.bound_to NOT LIKE '$%' OR r.bound_to LIKE '$result.%' THEN ld.landing_coordinate END,
+       tc.column_name,
+       CASE WHEN r.bound_to = '$result' OR (r.bound_to LIKE '$result.%' AND nid.coordinate IS NOT NULL)
+            THEN nt.node_type_name END
+  FROM ranked r
+  JOIN graphitron_outbox_message m
+    ON m.graph_name = r.graph_name AND m.coordinate = r.coordinate AND m.ordinal = r.ordinal
+  LEFT JOIN graphitron_occurrence_producer_write w
+    ON w.graph_name = m.graph_name AND w.coordinate = m.occurrence_coordinate_ref
+  LEFT JOIN node_table nt
+    ON nt.graph_name = r.graph_name AND nt.table_source_name = w.table_source_name
+   AND nt.table_schema = w.table_schema AND nt.table_name = w.table_name AND nt.node_types = 1
+  LEFT JOIN landed ld
+    ON ld.graph_name = r.graph_name AND ld.coordinate = r.coordinate AND ld.ordinal = r.ordinal
+   AND ld.key_name = r.key_name
+  -- The node id a $result field packs, off its landed occurrence, at the written table.
+  LEFT JOIN (SELECT DISTINCT graph_name, coordinate, table_source_name, table_schema, table_name
+               FROM graphitron_occurrence_node_id) nid
+    ON nid.graph_name = r.graph_name AND nid.coordinate = ld.landing_coordinate
+   AND r.bound_to LIKE '$result.%'
+   AND nid.table_source_name = w.table_source_name AND nid.table_schema = w.table_schema
+   AND nid.table_name = w.table_name
+  -- The column a $result field reads, off its landed occurrence, at the written table.
+  LEFT JOIN graphitron_occurrence_column tc
+    ON tc.graph_name = r.graph_name AND tc.coordinate = ld.landing_coordinate
+   AND r.bound_to LIKE '$result.%'
+   AND tc.table_source_name = w.table_source_name AND tc.table_schema = w.table_schema
+   AND tc.table_name = w.table_name
+ WHERE r.rn = 1
+   AND ((r.origin = 'MESSAGE' AND r.bound_to = '$result' AND w.kind IS NOT NULL
+         AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
+     OR (r.origin = 'MESSAGE' AND r.bound_to LIKE '$result.%' AND w.kind IS NOT NULL
+         AND POSITION('.', SUBSTRING(r.bound_to, 9)) = 0
+         AND ((nid.coordinate IS NOT NULL AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
+              OR (nid.coordinate IS NULL AND tc.column_name IS NOT NULL AND w.kind <> 'DELETE')))
+     OR (r.bound_to LIKE '$scope.%'
+         AND SUBSTRING(r.bound_to, 8) IN ('coordinate', 'operationName', 'alias'))
+     -- One member of the session handle, offered by exactly one accessor whose yield a payload can
+     -- carry.
+     OR (r.bound_to LIKE '$session.%'
+         AND (SELECT COUNT(*) FROM graphitron_session_handle_member hm
+               WHERE hm.graph_name = r.graph_name AND hm.member_name = SUBSTRING(r.bound_to, 10)) = 1
+         AND EXISTS (SELECT 1 FROM graphitron_session_handle_member hm
+                       JOIN code_read_slot cs
+                         ON cs.source_name = hm.source_name AND cs.class_name = hm.class_name
+                        AND cs.method_name = hm.method_name AND cs.descriptor = hm.descriptor
+                      WHERE hm.graph_name = r.graph_name AND hm.member_name = SUBSTRING(r.bound_to, 10)
+                        AND cs.slot_type IN (SELECT class_name FROM carriable)))
+     OR (r.origin = 'MESSAGE' AND r.bound_to NOT LIKE '$%' AND ld.landing_coordinate IS NOT NULL))
+UNION ALL
+-- A $result over a service's returned value: bare, a scalar return a payload can carry; a path read
+-- whole ending on a member a payload can carry; or ending after a record lifted onto a node type's
+-- table, on that node's id whose key is the table's primary key.
+SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 'RESULT',
+       CASE WHEN r.bound_to = '$result' THEN 'ROOT'
+            WHEN rec.step_coordinate IS NOT NULL THEN 'NODE_ID' ELSE 'MEMBER' END,
+       CASE WHEN r.bound_to = '$result' THEN CAST(NULL AS VARCHAR) ELSE SUBSTRING(r.bound_to, 9) END,
+       ld.landing_coordinate, CAST(NULL AS VARCHAR),
+       CASE WHEN rec.step_coordinate IS NOT NULL
+            THEN (SELECT MIN(oni.node_type_name) FROM graphitron_occurrence_node_id oni
+                   WHERE oni.graph_name = r.graph_name AND oni.coordinate = ld.landing_coordinate) END
+  FROM ranked r
+  JOIN graphitron_outbox_message m
+    ON m.graph_name = r.graph_name AND m.coordinate = r.coordinate AND m.ordinal = r.ordinal
+  JOIN graphitron_occurrence_producer op
+    ON op.graph_name = m.graph_name AND op.coordinate = m.occurrence_coordinate_ref
+   AND op.kind = 'SERVICE'
+  JOIN graphitron_field rf ON rf.graph_name = m.graph_name AND rf.coordinate = m.coordinate
+  JOIN graphitron_field_target rt
+    ON rt.graph_name = rf.graph_name AND rt.type_name = rf.type_name AND rt.field_name = rf.field_name
+  LEFT JOIN landed ld
+    ON ld.graph_name = r.graph_name AND ld.coordinate = r.coordinate AND ld.ordinal = r.ordinal
+   AND ld.key_name = r.key_name
+  LEFT JOIN graphitron_occurrence_binding_value last
+    ON last.graph_name = r.graph_name AND last.coordinate = ld.landing_coordinate
+   AND last.slot_method_name IS NOT NULL
+  LEFT JOIN step_read rec
+    ON rec.graph_name = r.graph_name AND rec.coordinate = r.coordinate AND rec.ordinal = r.ordinal
+   AND rec.key_name = r.key_name AND rec.consumed = rec.segments - 1 AND rec.record_read = 1
+   AND NOT rec.is_list
+ WHERE r.rn = 1 AND r.origin = 'MESSAGE' AND NOT rf.is_list
+   AND ((r.bound_to = '$result'
+         AND EXISTS (SELECT 1 FROM graphitron_type st
+                      WHERE st.graph_name = rt.graph_name AND st.type_name = rt.target_type_name
+                        AND st.kind IN ('SCALAR', 'ENUM'))
+         -- The method the field's @service reference resolved to, read off the reference itself.
+         AND EXISTS (SELECT 1 FROM graphitron_code_reference_site cr
+                       JOIN graphitron_code_reference rr
+                         ON rr.graph_name = cr.graph_name AND rr.coordinate = cr.coordinate
+                        AND rr.directive_name = cr.directive_name AND rr.ordinal = cr.ordinal
+                        AND rr.owner = cr.owner
+                       JOIN code_method mm
+                         ON mm.source_name = rr.method_source_name AND mm.class_name = rr.method_class_name
+                        AND mm.method_name = rr.method_name AND mm.descriptor = rr.method_descriptor
+                      WHERE cr.graph_name = r.graph_name AND cr.type_name = rf.type_name
+                        AND cr.field_name = rf.field_name AND cr.directive_name = 'service'
+                        AND mm.result_erased_class IN (SELECT class_name FROM carriable)))
+     OR (r.bound_to LIKE '$result.%' AND last.coordinate IS NOT NULL
+         AND EXISTS (SELECT 1 FROM service_path sp
+                      WHERE sp.graph_name = r.graph_name AND sp.coordinate = r.coordinate
+                        AND sp.ordinal = r.ordinal AND sp.key_name = r.key_name)
+         AND NOT EXISTS (SELECT 1 FROM step_read lr
+                          WHERE lr.graph_name = r.graph_name AND lr.coordinate = r.coordinate
+                            AND lr.ordinal = r.ordinal AND lr.key_name = r.key_name
+                            AND lr.consumed = lr.segments AND lr.is_list)
+         AND EXISTS (SELECT 1 FROM code_read_slot cs
+                      WHERE cs.source_name = last.slot_source_name AND cs.class_name = last.slot_class_name
+                        AND cs.method_name = last.slot_method_name AND cs.descriptor = last.slot_descriptor
+                        AND COALESCE(cs.delivery, 'DIRECT') <> 'MANY'
+                        AND cs.slot_type IN (SELECT class_name FROM carriable)))
+     OR (r.bound_to LIKE '$result.%' AND rec.step_coordinate IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM step_read pr
+                          WHERE pr.graph_name = r.graph_name AND pr.coordinate = r.coordinate
+                            AND pr.ordinal = r.ordinal AND pr.key_name = r.key_name
+                            AND pr.consumed < pr.segments - 1 AND (pr.is_list OR pr.value_read = 0))
+         AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id oni
+                      JOIN node_table nt2
+                        ON nt2.graph_name = oni.graph_name AND nt2.table_source_name = oni.table_source_name
+                       AND nt2.table_schema = oni.table_schema AND nt2.table_name = oni.table_name
+                       AND nt2.node_types = 1 AND nt2.key_is_primary
+                       AND nt2.node_type_name = oni.node_type_name
+                     WHERE oni.graph_name = r.graph_name AND oni.coordinate = ld.landing_coordinate)));
+COMMENT ON VIEW graphitron_outbox_key_rule IS 'One row the outbox key rule computes, in the shape graphitron_outbox_key stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_key, which is the name every reader spells.';
+
 CREATE VIEW graphitron_outbox_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
+-- Each $result path over a service's value read whole to its last name: a step for every name, each
+-- before the last reading a value off its object and holding one, and the last holding one too and
+-- reading a value or a record its field lifts onto a table; with the type at its end, the member's
+-- yield or else the class it is read off.
+WITH result_read (graph_name, coordinate, ordinal, key_name, type_name) AS (
+  SELECT st.graph_name, st.coordinate, st.ordinal, st.parameter_name,
+         MAX(CASE WHEN st.consumed = st.segments
+                  THEN COALESCE(cs.slot_type, so_src.class_name) END)
+    FROM graphitron_argmapping_step st
+    JOIN graphitron_outbox_message m
+      ON m.graph_name = st.graph_name AND m.coordinate = st.coordinate AND m.ordinal = st.ordinal
+    JOIN graphitron_occurrence_producer op
+      ON op.graph_name = m.graph_name AND op.coordinate = m.occurrence_coordinate_ref
+     AND op.kind = 'SERVICE'
+    JOIN graphitron_field cf ON cf.graph_name = m.graph_name AND cf.coordinate = m.coordinate
+    JOIN graphitron_occurrence so ON so.graph_name = st.graph_name AND so.coordinate = st.step_coordinate
+    JOIN graphitron_field sf ON sf.graph_name = so.graph_name AND sf.coordinate = so.element_coordinate
+    LEFT JOIN graphitron_occurrence_binding_value v
+      ON v.graph_name = st.graph_name AND v.coordinate = st.step_coordinate
+    LEFT JOIN code_read_slot cs
+      ON cs.source_name = v.slot_source_name AND cs.class_name = v.slot_class_name
+     AND cs.method_name = v.slot_method_name AND cs.descriptor = v.slot_descriptor
+    LEFT JOIN graphitron_occurrence_source_object so_src
+      ON so_src.graph_name = st.graph_name AND so_src.coordinate = st.step_coordinate
+   WHERE st.directive_name = 'outbox' AND st.bound_to LIKE '$result.%' AND NOT cf.is_list
+   GROUP BY st.graph_name, st.coordinate, st.ordinal, st.parameter_name
+  HAVING COUNT(*) = MIN(st.segments)
+     AND SUM(CASE WHEN sf.is_list THEN 1 ELSE 0 END) = 0
+     AND SUM(CASE WHEN st.consumed < st.segments AND v.coordinate IS NULL THEN 1 ELSE 0 END) = 0
+     AND SUM(CASE WHEN st.consumed = st.segments AND v.coordinate IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field_key_row k
+                                    WHERE k.graph_name = sf.graph_name AND k.type_name = sf.type_name
+                                      AND k.field_name = sf.field_name AND k.kind = 'ACCESSOR'
+                                      AND k.arity = 'ONE')
+                  THEN 1 ELSE 0 END) = 0
+)
 -- An @outbox that is not on a field writing a table with @mutation: no write, no message. A field no
 -- occurrence reaches writes nothing either.
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_NOT_A_WRITE',
@@ -14435,7 +14218,126 @@ SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_DUPL
   FROM graphitron_outbox_message m
  WHERE EXISTS (SELECT 1 FROM graphitron_outbox_message o
                 WHERE o.graph_name = m.graph_name AND o.event = m.event
-                  AND (o.coordinate <> m.coordinate OR o.ordinal <> m.ordinal));
+                  AND (o.coordinate <> m.coordinate OR o.ordinal <> m.ordinal))
+UNION ALL
+-- A key bound twice in one mapping, or also a key of the common payload: one row per @outbox, the
+-- first offending key as written; the author fixes it and the next one is reported.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT', d.key_name
+  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.param_name AS key_name,
+               ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
+                                               m.source_column ORDER BY p.position) AS rn
+          FROM graphitron_outbox_message m
+          JOIN graphitron_argmapping_site s
+            ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
+           AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
+          JOIN graphitron_ast_argmapping_pair_entry p
+            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+           AND p.source_line = s.source_line AND p.source_column = s.source_column
+         WHERE EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry p2
+                        WHERE p2.graph_name = p.graph_name AND p2.source_name = p.source_name
+                          AND p2.source_line = p.source_line AND p2.source_column = p.source_column
+                          AND p2.param_name = p.param_name AND p2.position <> p.position)
+            OR EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c
+                        WHERE c.graph_name = m.graph_name AND c.key_name = p.param_name)) d
+ WHERE d.rn = 1
+UNION ALL
+-- A key bound to a source the message cannot read: no key, so nothing the emitter could render. A
+-- $session.<member> source has its own reasons, the session defects and the unserializable arm below;
+-- a $result path over a service's value read whole to its last name is found, and the arm after
+-- this says what a payload cannot carry about it.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_SOURCE_UNRESOLVED',
+       d.key_name || ': ' || d.bound_to
+  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.param_name AS key_name,
+               p.bound_to,
+               ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
+                                               m.source_column ORDER BY p.position) AS rn
+          FROM graphitron_outbox_message m
+          JOIN graphitron_argmapping_site s
+            ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
+           AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
+          JOIN graphitron_ast_argmapping_pair_entry p
+            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+           AND p.source_line = s.source_line AND p.source_column = s.source_column
+         WHERE p.bound_to NOT LIKE '$session.%'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
+                            WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
+                              AND k.ordinal = m.ordinal AND k.key_name = p.param_name)
+           AND NOT EXISTS (SELECT 1 FROM result_read rr
+                            WHERE rr.graph_name = m.graph_name AND rr.coordinate = m.coordinate
+                              AND rr.ordinal = m.ordinal AND rr.key_name = p.param_name)) d
+ WHERE d.rn = 1
+UNION ALL
+-- A $result path over a service's returned value read whole to its last name, ending on something a
+-- payload cannot carry: an object, a record, or a member of another type. It has no key; the type is
+-- named.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'OUTBOX_RESULT_MEMBER_UNSERIALIZABLE',
+       d.key_name || ': ' || d.bound_to || ' (' || d.type_name || ')'
+  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.param_name AS key_name,
+               p.bound_to, rr.type_name,
+               ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
+                                               m.source_column ORDER BY p.position) AS rn
+          FROM graphitron_outbox_message m
+          JOIN graphitron_argmapping_site s
+            ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
+           AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
+          JOIN graphitron_ast_argmapping_pair_entry p
+            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+           AND p.source_line = s.source_line AND p.source_column = s.source_column
+          JOIN result_read rr
+            ON rr.graph_name = m.graph_name AND rr.coordinate = m.coordinate
+           AND rr.ordinal = m.ordinal AND rr.key_name = p.param_name
+         WHERE NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
+                            WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
+                              AND k.ordinal = m.ordinal AND k.key_name = p.param_name)) d
+ WHERE d.rn = 1
+UNION ALL
+-- A key bound to a session member the handle offers once, whose yield a payload cannot carry: the
+-- member is found, so no session defect speaks, and it has no key. The yield is named.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'OUTBOX_SESSION_MEMBER_UNSERIALIZABLE',
+       d.key_name || ': ' || d.bound_to || ' (' || d.slot_type || ')'
+  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.param_name AS key_name,
+               p.bound_to,
+               (SELECT MAX(cs.slot_type) FROM graphitron_session_handle_member hm
+                  JOIN code_read_slot cs
+                    ON cs.source_name = hm.source_name AND cs.class_name = hm.class_name
+                   AND cs.method_name = hm.method_name AND cs.descriptor = hm.descriptor
+                 WHERE hm.graph_name = m.graph_name AND hm.member_name = SUBSTRING(p.bound_to, 10)) AS slot_type,
+               ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
+                                               m.source_column ORDER BY p.position) AS rn
+          FROM graphitron_outbox_message m
+          JOIN graphitron_argmapping_site s
+            ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
+           AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
+          JOIN graphitron_ast_argmapping_pair_entry p
+            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+           AND p.source_line = s.source_line AND p.source_column = s.source_column
+         WHERE p.bound_to LIKE '$session.%'
+           AND (SELECT COUNT(*) FROM graphitron_session_handle_member hm
+                 WHERE hm.graph_name = m.graph_name AND hm.member_name = SUBSTRING(p.bound_to, 10)) = 1
+           AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
+                            WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
+                              AND k.ordinal = m.ordinal AND k.key_name = p.param_name)) d
+ WHERE d.rn = 1
+UNION ALL
+-- The configured common payload's faults, reported at every @outbox: a key it names twice, or an
+-- entry no message could carry.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYLOAD_INVALID',
+       d.key_name || ': ' || d.bound_to
+  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, c.key_name, c.bound_to,
+               ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
+                                               m.source_column ORDER BY c.position) AS rn
+          FROM graphitron_outbox_message m
+          JOIN store_graph_outbox_payload_entry c ON c.graph_name = m.graph_name
+         WHERE EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c2
+                        WHERE c2.graph_name = c.graph_name AND c2.key_name = c.key_name
+                          AND c2.position <> c.position)
+            OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
+                            WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
+                              AND k.ordinal = m.ordinal AND k.key_name = c.key_name)) d
+ WHERE d.rn = 1;
+
 COMMENT ON VIEW graphitron_outbox_entry_defect_rule IS 'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.';
 
 CREATE VIEW graphitron_occurrence_producer_result_rule
@@ -16741,6 +16643,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-call-parameters', 'graphitron_occurrence_parameter'),
   ('occurrence-participants', 'graphitron_occurrence_participant'),
   ('outbox', 'graphitron_entry_defect'),
+  ('outbox', 'graphitron_outbox_key'),
   ('outbox', 'graphitron_outbox_message'),
   ('outbox', 'graphitron_outbox_routine_target'),
   ('outbox', 'graphitron_outbox_target'),
@@ -17088,10 +16991,7 @@ INSERT INTO meta_grain VALUES
    'graph_name, coordinate, ordinal', 'sdl'),
   ('outbox-message-key',
    'one key of one @outbox message''s payload, in one graph',
-   'graph_name, type_name, field_name, ordinal, key_name', 'sdl'),
-  ('outbox-message-key-segment',
-   'one segment of the path one key of one @outbox message''s payload reads, in one graph',
-   'graph_name, type_name, field_name, ordinal, key_name, position', 'sdl'),
+   'graph_name, coordinate, ordinal, key_name', 'sdl'),
   ('graph-outbox',
    'one graph whose build configures an outbox for its @outbox fields',
    'graph_name', 'configuration'),
@@ -17657,15 +17557,15 @@ INSERT INTO graphitron_defect_type VALUES
   ('OUTBOX_DUPLICATE_EVENT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_DUPLICATE_EVENT',
    'Two @outbox in the schema carry the same event, given or defaulted to the field''s coordinate, so a consumer could not tell their messages apart: give each its own event.', 'outbox'),
   ('OUTBOX_KEY_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_KEY_CONFLICT',
-   'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.', 'entry-defects'),
+   'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.', 'outbox'),
   ('OUTBOX_SOURCE_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_SOURCE_UNRESOLVED',
-   'An @outbox argMapping binds a key to a source the field does not have: an argument or input field it does not declare, a $result path that is not the written type''s node id or one of its column fields (after a DELETE, only the node id), or a $scope member that is not coordinate, operationName or alias.', 'entry-defects'),
+   'An @outbox argMapping binds a key to a source the field does not have: an argument or input field it does not declare, a $result path that is not the written type''s node id or one of its column fields (after a DELETE, only the node id), or a $scope member that is not coordinate, operationName or alias.', 'outbox'),
   ('OUTBOX_RESULT_MEMBER_UNSERIALIZABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_RESULT_MEMBER_UNSERIALIZABLE',
-   'An @outbox argMapping binds a key to a $result path over a service''s returned value that ends on something a JSON payload cannot carry: an object, a record, or a member of another type. End the path on a member that is text, a number, a boolean, a character, a UUID or a java.time value, or on a node''s @nodeId field.', 'entry-defects'),
+   'An @outbox argMapping binds a key to a $result path over a service''s returned value that ends on something a JSON payload cannot carry: an object, a record, or a member of another type. End the path on a member that is text, a number, a boolean, a character, a UUID or a java.time value, or on a node''s @nodeId field.', 'outbox'),
   ('OUTBOX_SESSION_MEMBER_UNSERIALIZABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_SESSION_MEMBER_UNSERIALIZABLE',
-   'An @outbox argMapping binds a key to a member of the session handle whose type a JSON payload cannot carry: bind a member that is text, a number, a boolean, a character, a UUID or a java.time value.', 'entry-defects'),
+   'An @outbox argMapping binds a key to a member of the session handle whose type a JSON payload cannot carry: bind a member that is text, a number, a boolean, a character, a UUID or a java.time value.', 'outbox'),
   ('OUTBOX_PAYLOAD_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_PAYLOAD_INVALID',
-   'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.', 'entry-defects'),
+   'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.', 'outbox'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.', 'entry-defects'),
   ('CLAIMS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_CLAIMS_CONFLICT',
@@ -18313,14 +18213,14 @@ INSERT INTO meta_relation VALUES
    'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
    'A view and not columns on the defect, the element being a fact of the position: a declaration is its own element, a directive application''s is its parent, and a value''s is reached through the node holding it, the climb graphitron_code_reference_site already takes. Every hop is a key the transcription declares, so the view states no decision of its own and a reader that wants the element joins it rather than the rule restating it per arm.'),
-  ('graphitron_outbox_result_step', 'outbox-message-key-segment', 'graphitron',
-   'One step a @outbox $result path takes over a @service field''s returned value, read as the field''s own facts say.',
-   'For example $result.holder.blurb.description over a payload whose holder is the service''s object itself gives three rows: holder PASSES_THROUGH, blurb MEMBER, description MEMBER.',
-   'A view, since nothing about a step is stored: a field reads the member its bound name finds on the one class its parent''s result holds, passes the object through where it finds none and its type holds the same class, or takes the record such a member returns of its table-bound type. A type holding several classes takes no part, and a step through a list is not built. The leaf rule and the emitter both read the steps, so the rule is stated once.'),
-  ('graphitron_outbox_leaf', 'outbox-message-key', 'graphitron',
-   'One key of one @outbox message''s payload, by the source it reads.',
-   'For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two rows, filmId reading the node id of the result and title the argument path in.title, and a configured common payload entry adds its own row to every message.',
-   'A view over the mapping pairs the generic writer captured, the configured common payload and what the store already holds about the field, all read before the graphitron gatherer anchors: its arguments, the written table and the columns and node ids of the type it returns. A key that resolves to nothing has no row, and the defect relation says why, so the emitter reads leaves it can render and nothing it must judge. One leaf per key, which no key enforces on a view, is the rule''s own: a message''s entry before a common one of the same name, and the first written before the second.'),
+  ('graphitron_outbox_key', 'outbox-message-key', 'graphitron',
+   'One key of one @outbox message''s payload, as the parameter of the message''s call it is, by what fills it.',
+   'For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two keys, filmId filled by the result''s node id and title by the argument path in.title, and a configured common payload entry adds its own key to every message.',
+   'A message is a call its field''s occurrence makes, and a key the parameter of it a fill reaches, in graphitron_occurrence_call_parameter''s vocabulary: an argument or a $result path lands under the occurrence as a service''s argument path does, and the key reads its landing''s binding, a column or a node id table-side and a member''s value object-side, rather than walking the result again. A key no fill reaches has no row and is a defect at its @outbox. Written by the outbox stage from graphitron_outbox_key_rule, marked and swept; read by OutboxQuery and the outbox''s defects.'),
+  ('graphitron_outbox_key_rule', 'outbox-message-key', 'graphitron',
+   'One row the outbox key rule computes, in the shape graphitron_outbox_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_key, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_outbox_message', 'outbox-message', 'graphitron',
    'One @outbox message: one application of @outbox on a field, the message the field''s call writes when it succeeds.',
    'For example @outbox(event: "FilmCreated") on Mutation.createFilm is the message at ordinal 0 of Mutation.createFilm, with the event FilmCreated, and a second @outbox beside it a second message.',

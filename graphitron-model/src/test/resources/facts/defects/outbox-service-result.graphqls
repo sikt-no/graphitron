@@ -97,23 +97,13 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding_value", whe
   Mutation.films.results,                         no.sikt.graphitron.rewrite.test.services.FilmWithActors
   """)
 
-extend schema @expectEquals(relation: "graphitron_outbox_result_step", rows: """
-  field_name, key_name, position, segments, step_type_name, step_field_name, step
-  blurb,      text,     0,        3,        BlurbPayload,   holder,          PASSES_THROUGH
-  blurb,      text,     1,        3,        HolderView,     blurb,           MEMBER
-  blurb,      text,     2,        3,        FilmBlurb,      description,     MEMBER
-  blurb,      whole,    0,        2,        BlurbPayload,   holder,          PASSES_THROUGH
-  blurb,      whole,    1,        2,        HolderView,     blurb,           MEMBER
-  card,       filmId,   0,        2,        FilmCardWrapper, film,           RECORD
-  """)
-
-extend schema @expectEquals(relation: "graphitron_outbox_leaf", where: """
-  type_name = 'Mutation'
+extend schema @expectEquals(relation: "graphitron_outbox_key", where: """
+  coordinate LIKE 'Mutation.%'
   """, rows: """
-  field_name, ordinal, key_name, origin,  position, source_kind,   source_path,             column_name, node_type_name
-  blurb,      0,       text,     MESSAGE, 0,        RESULT_MEMBER, holder.blurb.description, ,
-  card,       0,       filmId,   MESSAGE, 0,        RESULT_NODE_ID, film.id,                ,            Film
-  marker,     0,       value,    MESSAGE, 0,        RESULT_ROOT,   ,                        ,
+  coordinate,      ordinal, key_name, origin,  position, fill,   reads,   source_path,              column_name, node_type_name
+  Mutation.blurb,  0,       text,     MESSAGE, 0,        RESULT, MEMBER,  holder.blurb.description, ,
+  Mutation.card,   0,       filmId,   MESSAGE, 0,        RESULT, NODE_ID, film.id,                  ,            Film
+  Mutation.marker, 0,       value,    MESSAGE, 0,        RESULT, ROOT,    ,                         ,
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
