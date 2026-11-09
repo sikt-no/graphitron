@@ -26,6 +26,12 @@ type CreateFilmsPayload {
   films: [Film!]!
 }
 
+# Backed by a record nested in another class, NestedFilmsPayloadHolder.Payload, whose films() returns
+# a list of FilmRecord: a nested class is read for its members like any other.
+type NestedFilmsPayload {
+  films: [Film!]!
+}
+
 # Backed by FilmRecord, the target's own record: the field refetches it.
 type FilmServicePayload {
   film: Film
@@ -51,6 +57,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService", method: "recentlyCreatedFilmsBatched"})
   serviceFilmById(id: Int!): FilmServicePayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  nestedRecentlyCreatedFilms: [NestedFilmsPayload!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NestedFilmsPayloadService", method: "nestedRecentlyCreatedFilms"})
   filmKeySummaries: [FilmKeySummary!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
   occupantsBatch: [OccupantsBatchPayload!]!
@@ -61,6 +69,7 @@ extend schema @expectEquals(relation: "graphitron_field_key_row", rows: """
   type_name,             field_name, kind,     table_name, arity
   FilmDetailsCarrier,    language,   COLUMNS,  film,       ONE
   CreateFilmsPayload,    films,      ACCESSOR, film,       MANY
+  NestedFilmsPayload,    films,      ACCESSOR, film,       MANY
   FilmServicePayload,    film,       COLUMNS,  film,       ONE
   FilmServicePayload,    census,     COLUMNS,  film,       ONE
   FilmKeySummary,        keyCensus,  ACCESSOR, film,       ONE
@@ -74,5 +83,6 @@ extend schema @expectEquals(relation: "graphitron_field_key_row_accessor", rows:
   type_name,             field_name, slot_class_name,                                                slot_method_name, slot_descriptor
   CreateFilmsPayload,    films,      no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,    films,            ()Ljava/util/List;
   OccupantsBatchPayload, occupants,  no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload, addresses,        ()Ljava/util/List;
+  NestedFilmsPayload,    films,      no.sikt.graphitron.rewrite.test.services.NestedFilmsPayloadHolder$Payload, films, ()Ljava/util/List;
   FilmKeySummary,        keyCensus,  no.sikt.graphitron.rewrite.test.services.FilmKeySummary,        film,             ()Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/records/FilmRecord;
   """)

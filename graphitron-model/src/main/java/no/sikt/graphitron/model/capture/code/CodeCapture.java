@@ -170,6 +170,7 @@ public final class CodeCapture {
             throwables(dsl, census.classes(), ancestry, touchedAt);
             methods(dsl, reactor, ancestry, touchedAt);
         }
+        nestedSlots(dsl, reading, touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, reading.read(), touchedAt);
@@ -204,7 +205,45 @@ public final class CodeCapture {
             .filter(source -> !(source instanceof ClasspathSourceCapture.ClasspathSource.Skipped))
             .map(source -> java.nio.file.Path.of(source.sourceName()))
             .toList();
-        var at = ClassfileCensus.readNamed(entries, handle.get());
+        readWhole(dsl, entries, handle.get(), touchedAt);
+    }
+
+    /**
+     * The members of each nested class a census method returns or takes, read as the handle's are.
+     * The census leaves a nested class out by its name, its methods being reachable through the
+     * class declaring it; its slots are not, and a value a service hands back may be one, so a
+     * parent holding it reads its keys off them like any other class's.
+     */
+    private static void nestedSlots(DSLContext dsl, ClasspathSourceCapture.Reading reading,
+                                    LocalDateTime touchedAt) {
+        var m = CODE_METHOD;
+        var p = CODE_METHOD_PARAMETER;
+        var named = new java.util.TreeSet<String>();
+        named.addAll(dsl.selectDistinct(m.RESULT_ELEMENT_CLASS).from(m)
+            .where(m.RESULT_ELEMENT_CLASS.contains("$")).fetch(m.RESULT_ELEMENT_CLASS));
+        named.addAll(dsl.selectDistinct(m.RESULT_ERASED_CLASS).from(m)
+            .where(m.RESULT_ERASED_CLASS.contains("$")).fetch(m.RESULT_ERASED_CLASS));
+        named.addAll(dsl.selectDistinct(p.ELEMENT_CLASS).from(p)
+            .where(p.ELEMENT_CLASS.contains("$")).fetch(p.ELEMENT_CLASS));
+        if (named.isEmpty()) {
+            return;
+        }
+        var entries = reading.sources().stream()
+            .filter(source -> !(source instanceof ClasspathSourceCapture.ClasspathSource.Skipped))
+            .map(source -> java.nio.file.Path.of(source.sourceName()))
+            .toList();
+        for (String className : named) {
+            readWhole(dsl, entries, className, touchedAt);
+        }
+    }
+
+    /**
+     * {@code className} read whole from {@code entries}, its class and its slots written; nothing
+     * where no entry holds it.
+     */
+    private static void readWhole(DSLContext dsl, List<java.nio.file.Path> entries, String className,
+                                  LocalDateTime touchedAt) {
+        var at = ClassfileCensus.readNamed(entries, className);
         if (at.isEmpty()) {
             return;
         }
@@ -222,7 +261,12 @@ public final class CodeCapture {
             .onDuplicateKeyIgnore()
             .execute();
         classes(dsl, List.of(at.get()), touchedAt);
-        slots(dsl, List.of(at.get()), deliveryContainers(dsl), touchedAt);
+        var containers = deliveryContainers(dsl);
+        // The spellings its members declare, so a slot's type is in the dictionary as a method's is.
+        types(dsl, at.get().methods().stream()
+            .map(method -> new Member(at.get().source(), at.get().className(), method))
+            .toList(), containers, touchedAt);
+        slots(dsl, List.of(at.get()), containers, touchedAt);
     }
 
     /**

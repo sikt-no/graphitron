@@ -68,7 +68,10 @@ The `jvm_` family was eaten away as this proceeded, from thirteen relations to n
 The classes jOOQ generates are classes like any other, and the code family captures them as code
 facts, so a relation that names a record class or a parameter type can key into it with a foreign
 key. Today the census reads the generated package's classes without their members, and reading
-those is the same capture, not a new family. Nothing holds a second reference to them by catalog
+those is the same capture, not a new family. A nested class is no census class of its own, its methods reached
+through the class declaring it; where a census method returns or takes one, the census reads it by
+name for its members, as it reads the session handle, so a value a service hands back as a nested
+record is known like any other. Nothing holds a second reference to them by catalog
 name beside that. Which table a record
 class belongs to is a catalog fact, and the sql family states it in `sql_table.record_class_fqn`.
 Where a generated class is missing from the code family, the fix is capturing it there, not

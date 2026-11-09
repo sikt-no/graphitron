@@ -42,15 +42,6 @@ class FieldKeyRowPinTest {
     @TempDir
     Path tmp;
 
-    /**
-     * Fields the classifier lifts keys for and the store has no key row at, each for a fact a
-     * relation this rule reads does not yet state. Shrink-only: a gap closed upstream fails the
-     * last assertion until its line goes.
-     */
-    private static final Map<String, String> UPSTREAM_GAPS = Map.of(
-        "NestedFilmsPayload.films", "the code family reads no nested class, here NestedFilmsPayloadHolder$Payload, so the accessor is unknown",
-        "NestedOccupantCarrier.firstOccupant", "the same, NestedOccupantCarrierHolder$Carrier");
-
     @Test
     void theStoreTakesKeysAsTheClassifierLiftsThem() throws Exception {
         String sdl = Files.readString(Path.of("..", "graphitron-sakila-example", "src", "main",
@@ -80,9 +71,8 @@ class FieldKeyRowPinTest {
                 .containsOnlyKeys(agreed.keySet());
             assertThat(agreed.entrySet()).as("and the same way, field by field, where both do")
                 .allMatch(e -> e.getValue().equals(stored.get(e.getKey())));
-            assertThat(onlyWalked.keySet()).as("the fields only the classifier lifts are exactly the"
-                + " ones upstream relations do not yet state; one going away is a line to delete")
-                .containsExactlyInAnyOrderElementsOf(UPSTREAM_GAPS.keySet());
+            assertThat(onlyWalked.keySet()).as("no field the classifier lifts keys at goes without a key"
+                + " row in the store").isEmpty();
         }
     }
 
