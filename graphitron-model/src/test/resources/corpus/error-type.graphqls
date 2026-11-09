@@ -1,5 +1,5 @@
 enum Severity { LOW HIGH }
-type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
+type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.codereferences.dummyreferences.SeverityException"}])
     @classifiedType(as: ErrorType) {
   path: [String!]! @classified(source: Child, operations: [], target: List, targetShape: Field, sourceShape: Record)
   message: String!
