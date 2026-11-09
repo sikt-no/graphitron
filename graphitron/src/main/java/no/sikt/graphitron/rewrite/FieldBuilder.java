@@ -4930,37 +4930,34 @@ class FieldBuilder {
     }
 
     /**
-     * Lift attempt for an {@code errors}-shaped field whose resolved return type is
-     * {@link ReturnTypeRef.PolymorphicReturnType} (a union of, or interface implemented by,
-     * {@code @error} types). Returns:
+     * Lift attempt for an {@code errors}-shaped field: one whose element is a union of, or an
+     * interface implemented by, {@code @error} types, or one {@code @error} type itself (the
+     * members {@link BuildContext#errorsElementMembers} names). Takes the field's resolved return
+     * type of any variant, since a single {@code @error} type resolves to a
+     * {@link ReturnTypeRef.ScalarReturnType}. Returns:
      *
      * <ul>
-     *   <li>{@link ErrorsField} when every member of the polymorphic type is an
-     *       {@code @error} type and the field-level nullability rule is satisfied.</li>
+     *   <li>{@link ErrorsField} when every member is an {@code @error} type, the field-level
+     *       nullability rule is satisfied and the parent is an outcome.</li>
      *   <li>{@link UnclassifiedField} with a precise reason when the shape signals an
      *       errors channel (at least one member is {@code @error}) but a structural rule
-     *       fails: mixed {@code @error} / non-{@code @error} members, or a non-null list field.</li>
-     *   <li>{@code null} when no member is {@code @error} : the carrier is not an errors
-     *       channel; the caller's existing polymorphic-not-supported rejection fires.</li>
+     *       fails: mixed {@code @error} / non-{@code @error} members, a non-list field, or a
+     *       non-null list field.</li>
+     *   <li>{@code null} when no member is {@code @error}: the field is not an errors channel and
+     *       the caller's own arms classify it.</li>
      * </ul>
      *
-     * <p>The detection is structural, not name-based: any field whose return type is a
-     * polymorphic-of-{@code @error} shape lifts here, regardless of whether the schema
-     * author named it {@code errors} or something else. The same lift rules are read through
-     * {@link BuildContext#detectErrorsFieldShape} so the classifier paths agree.
+     * <p>The detection is structural, not name-based: any field of that shape lifts here,
+     * regardless of whether the schema author named it {@code errors} or something else. The same
+     * lift rules are read through {@link BuildContext#detectErrorsFieldShape} so the classifier
+     * paths agree.
      */
     GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
-                                              ReturnTypeRef.PolymorphicReturnType returnType) {
+                                              ReturnTypeRef returnType) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        var schemaType = ctx.schema.getType(returnType.returnTypeName());
-        java.util.List<String> memberNames = switch (schemaType) {
-            case GraphQLUnionType union -> union.getTypes().stream().map(GraphQLNamedType::getName).toList();
-            case GraphQLInterfaceType iface ->
-                ctx.schema.getImplementations(iface).stream().map(GraphQLObjectType::getName).toList();
-            case null, default -> java.util.List.of();
-        };
+        java.util.List<String> memberNames = ctx.errorsElementMembers(returnType.returnTypeName());
 
         java.util.List<ErrorType> errorTypes = new java.util.ArrayList<>();
         java.util.List<String> nonErrorMembers = new java.util.ArrayList<>();
@@ -7478,10 +7475,8 @@ class FieldBuilder {
             String elementTypeName0 = ctx.isConnectionType(rawTypeName0)
                 ? ctx.connectionElementTypeName(rawTypeName0) : rawTypeName0;
             var resolvedReturnType = ctx.resolveReturnType(elementTypeName0, buildWrapper(fieldDef));
-            if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                if (lift != null) return lift;
-            }
+            var lift = liftToErrorsField(fieldDef, parentTypeName, resolvedReturnType);
+            if (lift != null) return lift;
             if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 if (!binding.tableRef().equals(tb.table())) {
                     return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
@@ -7515,10 +7510,8 @@ class FieldBuilder {
             String elementTypeName1 = ctx.isConnectionType(rawTypeName1)
                 ? ctx.connectionElementTypeName(rawTypeName1) : rawTypeName1;
             var resolvedReturnType = ctx.resolveReturnType(elementTypeName1, buildWrapper(fieldDef));
-            if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                if (lift != null) return lift;
-            }
+            var lift = liftToErrorsField(fieldDef, parentTypeName, resolvedReturnType);
+            if (lift != null) return lift;
             if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 if (!binding.tableRef().equals(tb.table())) {
                     return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
@@ -7589,10 +7582,8 @@ class FieldBuilder {
             String elementTypeName2 = ctx.isConnectionType(rawTypeName2)
                 ? ctx.connectionElementTypeName(rawTypeName2) : rawTypeName2;
             var resolvedReturnType = ctx.resolveReturnType(elementTypeName2, buildWrapper(fieldDef));
-            if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                if (lift != null) return lift;
-            }
+            var lift = liftToErrorsField(fieldDef, parentTypeName, resolvedReturnType);
+            if (lift != null) return lift;
             if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
                 return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb, binding);
             }
@@ -7753,8 +7744,13 @@ class FieldBuilder {
             }
             case ReturnTypeRef.ResultReturnType r -> recordReadFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, r, columnName, parentResultType, parentBackingClass);
-            case ReturnTypeRef.ScalarReturnType s -> recordReadFieldOrUnclassified(
-                fieldDef, parentTypeName, name, location, s, columnName, parentResultType, parentBackingClass);
+            case ReturnTypeRef.ScalarReturnType s -> {
+                // A single @error element resolves here; it lifts like a union of @error types.
+                var lift = liftToErrorsField(fieldDef, parentTypeName, s);
+                if (lift != null) yield lift;
+                yield recordReadFieldOrUnclassified(
+                    fieldDef, parentTypeName, name, location, s, columnName, parentResultType, parentBackingClass);
+            }
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 if (lift != null) yield lift;

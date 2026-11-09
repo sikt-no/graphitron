@@ -1,4 +1,4 @@
-"A producer that hands back a value, a service, a write or a routine, at a root or below one, catches what it throws when the type it returns has exactly one errors field: a nullable list of a union or an interface whose every member is @error. That type is an outcome; the errors arrive at that field and the value at the rest. An errors field on a type no such producer returns is read off the value like any other field. An errors field that falls short of its shape, a type with two, a field of an outcome that may not be null and errors in a row are each a defect where they were written."
+"A producer that hands back a value, a service, a write or a routine, at a root or below one, catches what it throws when the type it returns has exactly one errors field: a nullable list of a union or an interface whose every member is @error, or of one @error type itself. That type is an outcome; the errors arrive at that field and the value at the rest. An errors field on a type no such producer returns is read off the value like any other field. An errors field that falls short of its shape, a type with two, a field of an outcome that may not be null and errors in a row are each a defect where they were written."
 
 type Film @table(name: "film") {
   title: String
@@ -30,7 +30,7 @@ type StrictValueOutcome { title: String!, titles: [String!]!, errors: [FilmFailu
 
 type ReviewPayload { text: String, errors: [FilmFailure] }
 
-"A list of one @error object rather than of a union or an interface: the value's own field, as anywhere else."
+"A list of one @error type rather than of a union or an interface: an errors field all the same, its one member the type itself."
 type DirectPayload { text: String, errors: [FilmInvalid] }
 
 "Two errors fields: which one the errors arrive at is not said."
@@ -41,6 +41,12 @@ type StrictPayload { text: String, errors: [FilmFailure]! }
 
 "One error where errors arrive as a list."
 type SinglePayload { text: String, error: FilmFailure }
+
+"One error of one @error type where errors arrive as a list."
+type SingleErrorTypePayload { text: String, error: FilmInvalid }
+
+"A list of one @error type that may not be null."
+type StrictSingleErrorTypePayload { text: String, errors: [FilmInvalid]! }
 
 "A member that is no @error makes the list a result, not errors."
 type MixedPayload { text: String, errors: [FilmOrError] }
@@ -67,11 +73,15 @@ type Mutation {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
   mixed: MixedPayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  singleErrorType: SingleErrorTypePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  strictSingleErrorType: StrictSingleErrorTypePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
 }
 
 # Every field whose value is a list of errors, whoever returns its type: the child service's and the
-# row's included, and both of the type with two. Not the list of one @error object, and none of the
-# three that fall short of the shape.
+# row's included, both of the type with two, and the list of one @error type. None of the five that
+# fall short of the shape.
 extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
   type_name,          field_name, container_name
   Film,               problems,   FilmFailure
@@ -82,6 +92,7 @@ extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
   ReviewPayload,      errors,     FilmFailure
   TwicePayload,       errors,     FilmFailure
   TwicePayload,       problems,   FilmFailure
+  DirectPayload,      errors,     FilmInvalid
   """)
 
 # The producers returning an outcome, the child service among them, and nothing else: not the type
@@ -93,6 +104,7 @@ extend schema @expectEquals(relation: "graphitron_producer_outcome", rows: """
   Mutation,  addFilm,     INSERT,  AddFilmOutcome,     errors
   Mutation,  strictValue, SERVICE, StrictValueOutcome, errors
   Film,      review,      SERVICE, ReviewPayload,      errors
+  Mutation,  direct,      SERVICE, DirectPayload,      errors
   """)
 
 # An errors field under an object reads through an accessor, an outcome's and a nested value's alike.
@@ -110,11 +122,13 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code IN ('ERRORS_FIELD_MIXED_MEMBERS', 'ERRORS_FIELD_NOT_A_LIST', 'ERRORS_FIELD_NON_NULL',
            'MULTIPLE_ERRORS_FIELDS', 'OUTCOME_FIELD_NON_NULL', 'ERRORS_IN_A_ROW')
   """, rows: """
-  coordinate,               code
-  MixedPayload.errors,      ERRORS_FIELD_MIXED_MEMBERS
-  SinglePayload.error,      ERRORS_FIELD_NOT_A_LIST
-  StrictPayload.errors,     ERRORS_FIELD_NON_NULL
-  TwicePayload.errors,      MULTIPLE_ERRORS_FIELDS
-  StrictValueOutcome.title, OUTCOME_FIELD_NON_NULL
-  Film.problems,            ERRORS_IN_A_ROW
+  coordinate,                          code
+  MixedPayload.errors,                 ERRORS_FIELD_MIXED_MEMBERS
+  SinglePayload.error,                 ERRORS_FIELD_NOT_A_LIST
+  SingleErrorTypePayload.error,        ERRORS_FIELD_NOT_A_LIST
+  StrictPayload.errors,                ERRORS_FIELD_NON_NULL
+  StrictSingleErrorTypePayload.errors, ERRORS_FIELD_NON_NULL
+  TwicePayload.errors,                 MULTIPLE_ERRORS_FIELDS
+  StrictValueOutcome.title,            OUTCOME_FIELD_NON_NULL
+  Film.problems,                       ERRORS_IN_A_ROW
   """)

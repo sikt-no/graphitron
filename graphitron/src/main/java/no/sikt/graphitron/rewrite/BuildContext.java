@@ -1136,9 +1136,33 @@ class BuildContext {
     }
 
     /**
-     * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field" (a
-     * polymorphic-of-all-{@code @error} list with the required nullable-list shape). Returns
-     * the resolved {@code List<ErrorType>} when the shape matches, {@code null} otherwise.
+     * The candidate members of an errors-shaped field's element, read from the element's SDL type:
+     * a union's members, an interface's implementations, or the element itself when it is an
+     * object type the {@link ErrorIndex} holds (the single-type carrier). Empty for any other
+     * element. Members are named whether or not they are {@code @error}; the callers decide what a
+     * mix means.
+     *
+     * <p>The one member-resolution rule {@link #detectErrorsFieldShape} and
+     * {@code FieldBuilder.liftToErrorsField} share, so the two classifier paths cannot disagree on
+     * which shapes are errors carriers. The store states the same rule in
+     * {@code graphitron_errors_field_rule}.
+     */
+    List<String> errorsElementMembers(String elementTypeName) {
+        return switch (schema.getType(elementTypeName)) {
+            case GraphQLUnionType union -> union.getTypes().stream().map(GraphQLNamedType::getName).toList();
+            case GraphQLInterfaceType iface ->
+                schema.getImplementations(iface).stream().map(GraphQLObjectType::getName).toList();
+            case GraphQLObjectType object when errors.forName(object.getName()).isPresent() ->
+                List.of(object.getName());
+            case null, default -> List.of();
+        };
+    }
+
+    /**
+     * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field": a nullable
+     * list whose element is a union or interface of {@code @error} types only, or one
+     * {@code @error} type itself (see {@link #errorsElementMembers}). Returns the resolved
+     * {@code List<ErrorType>} when the shape matches, {@code null} otherwise.
      *
      * <p>Mirrors the lift rules in {@code FieldBuilder.liftToErrorsField};
      * {@code FieldBuilder.detectStructuralDmlErrorChannel} and
@@ -1146,17 +1170,7 @@ class BuildContext {
      * classifier paths agree on what counts as an errors-shaped field.
      */
     List<GraphitronType.ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef) {
-        var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
-        if (!(returnType instanceof ReturnTypeRef.PolymorphicReturnType poly)) {
-            return null;
-        }
-        var schemaType = schema.getType(poly.returnTypeName());
-        List<String> memberNames = switch (schemaType) {
-            case GraphQLUnionType union -> union.getTypes().stream().map(GraphQLNamedType::getName).toList();
-            case GraphQLInterfaceType iface ->
-                schema.getImplementations(iface).stream().map(GraphQLObjectType::getName).toList();
-            case null, default -> List.of();
-        };
+        var memberNames = errorsElementMembers(baseTypeName(fieldDef));
         if (memberNames.isEmpty()) return null;
         var errorTypes = new ArrayList<GraphitronType.ErrorType>();
         for (String memberName : memberNames) {
@@ -1168,7 +1182,7 @@ class BuildContext {
             }
             errorTypes.add(et);
         }
-        if (!(poly.wrapper() instanceof FieldWrapper.List list) || !list.listNullable()) {
+        if (!(buildWrapper(fieldDef) instanceof FieldWrapper.List list) || !list.listNullable()) {
             return null;
         }
         return errorTypes;

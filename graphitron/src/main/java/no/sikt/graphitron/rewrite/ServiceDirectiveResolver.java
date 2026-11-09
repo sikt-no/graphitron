@@ -169,7 +169,10 @@ final class ServiceDirectiveResolver {
             /** Root-only by the child-polymorphic deferral above: no coordinate here holds a key. */
             @Override public ServiceKeySource keySource() { return null; }
         }
-        /** Polymorphic return type lifted to an {@code ErrorsField} (or rejected by lift rules). */
+        /**
+         * Errors-shaped return type (a union or interface of {@code @error} types, or one
+         * {@code @error} type) lifted to an {@code ErrorsField} (or rejected by lift rules).
+         */
         record ErrorsLifted(GraphitronField field) implements Resolved {}
         /** Any failed resolution path; caller surfaces as {@code UnclassifiedField}. */
         record Rejected(Rejection rejection) implements Resolved {
@@ -244,9 +247,7 @@ final class ServiceDirectiveResolver {
         // The errors lift is pure over SDL, so the probe moves ahead of binding together with the
         // child-polymorphic deferral it guards; a lifting return proceeds to bind and projects as
         // ErrorsLifted, unchanged in outcome.
-        GraphitronField lifted = returnType instanceof ReturnTypeRef.PolymorphicReturnType p
-            ? fb.liftToErrorsField(fieldDef, parentTypeName, p)
-            : null;
+        GraphitronField lifted = fb.liftToErrorsField(fieldDef, parentTypeName, returnType);
 
         ParentKeyResolution keyResolution =
             classify(parentTypeName, parent, returnType, signature, claims, lifted);
@@ -489,13 +490,12 @@ final class ServiceDirectiveResolver {
 
     private Resolved projectReturnType(ReturnTypeRef returnType, MethodRef method,
                                        GraphitronField lifted, ServiceKeySource keySource) {
+        if (lifted != null) return new Resolved.ErrorsLifted(lifted);
         return switch (returnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> new Resolved.TableBound(tb, method, keySource);
             case ReturnTypeRef.ResultReturnType r -> new Resolved.Result(r, method, keySource);
             case ReturnTypeRef.ScalarReturnType s -> new Resolved.Scalar(s, method, keySource);
-            case ReturnTypeRef.PolymorphicReturnType p -> lifted != null
-                ? new Resolved.ErrorsLifted(lifted)
-                : new Resolved.Polymorphic(p, method);
+            case ReturnTypeRef.PolymorphicReturnType p -> new Resolved.Polymorphic(p, method);
         };
     }
 

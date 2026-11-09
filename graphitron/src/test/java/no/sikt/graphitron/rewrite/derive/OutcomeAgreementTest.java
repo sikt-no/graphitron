@@ -24,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>One schema is classified by the walk and captured into a store, so the two answers are about
  * the same written fields. It holds a root service under each root operation, a root write with a
- * payload, a child service, and a payload no producer returns, whose errors field the walk reads
+ * payload, a child service, a root service whose payload lists one {@code @error} type directly
+ * rather than a union of it, and a payload no producer returns, whose errors field the walk reads
  * off the value and the store states no outcome for. What the outcome rule makes of each shape it refuses is the
  * fact document {@code producer-outcome.graphqls}.
  */
@@ -62,9 +63,12 @@ class OutcomeAgreementTest {
         input FilmInput { title: String }
         type FilmPayload { films: [Film!] errors: [CarrierError!] }
         type Unreturned { note: String errors: [CarrierError] }
+        type SingleTypePayload { data: String errors: [SimpleErr] }
         type Query {
             films: [Film!]
             sak: SakPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
+            single: SingleTypePayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
         }
         type Mutation {
@@ -88,7 +92,8 @@ class OutcomeAgreementTest {
             .toList();
         assertThat(walkProducers)
             .as("the fixture gives the walk an outcome at each root producer, so the comparison is not vacuous")
-            .containsExactlyInAnyOrder("Query.sak", "Mutation.behandleSak", "Mutation.createFilm", "Film.sak");
+            .containsExactlyInAnyOrder("Query.sak", "Query.single", "Mutation.behandleSak", "Mutation.createFilm",
+                "Film.sak");
 
         try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL, jooq(),
                 ClasspathCorpus.entries())) {

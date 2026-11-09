@@ -4,12 +4,12 @@ import java.util.List;
 
 /**
  * Mutable-bean sibling of {@link FilmReviewPayload}. Same SDL field set
- * ({@code reviewId}, {@code errors}) but no all-fields constructor. The carrier classifier
- * resolves the setter-shape predicate against this class: public no-arg constructor plus a
- * Java-bean setter ({@code setReviewId}, {@code setErrors}) per SDL field. The
- * {@code MutationServiceRecordField} fetcher emits the catch-arm payload-factory in
- * setter-shape form ({@code errors -> { var p = new ...; p.setReviewId(null); p.setErrors(errors);
- * return p; }}).
+ * ({@code reviewId}, {@code errors}) but no all-fields constructor: a public no-arg constructor
+ * and a Java-bean setter and getter per field, the shape a Graphitron 9 payload keeps. Graphitron
+ * never constructs it: the {@code MutationServiceRecordField} fetcher returns an {@code Outcome},
+ * the service's instance on success and the claimed errors on a throw. Its own
+ * {@link #getErrors()} is never read; the payload's {@code errors} field reads the
+ * {@code Outcome}.
  */
 public final class SetterShapeFilmReviewPayload {
 

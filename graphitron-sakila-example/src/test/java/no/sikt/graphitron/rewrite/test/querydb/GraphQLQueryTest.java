@@ -9024,8 +9024,7 @@ class GraphQLQueryTest {
     // engine: the per-fetcher catch arm into ErrorRouter.claim, the union's TypeResolver
     // re-running the members' dispatch mappings into the right @error type, and the synthesized path/message fetchers
     // populating the SDL's [String!]! / String! contract. The happy-path test pins the
-    // payload-factory's defaulted slot ('title' = null only on the catch arm; populated on the
-    // straight return).
+    // outcome's data slot ('title' = null only on the error arm; populated on the success arm).
     //
     // The fixture intentionally uses two GENERIC handlers (over a DATABASE/VALIDATION mix): the
     // shipped bug fired on every @error type the loop emitted, regardless of handler kind, and
@@ -10895,10 +10894,10 @@ class GraphQLQueryTest {
 
     // ===== Mutable-bean payload shape end-to-end =====
     //
-    // submitSetterShapeFilmReview returns a SetterShapeFilmReviewPayload (no-arg ctor +
-    // setters). The carrier classifier resolves the MutableBean shape; the emitter produces
-    // the catch-arm payload-factory in setter form. End-to-end round-trip through Sakila
-    // PostgreSQL pins that the mutable-bean emit changes don't regress the mutation pillar.
+    // submitSetterShapeFilmReview returns a SetterShapeFilmReviewPayload (no-arg ctor + setters,
+    // and a getErrors() of its own). Graphitron never constructs it: the fetcher returns an
+    // Outcome, the service's instance on success and the claimed errors on a throw, and the
+    // payload's errors field reads the Outcome, never the class's getErrors().
 
     @Test
     @SuppressWarnings("unchecked")
@@ -10916,9 +10915,8 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void submitSetterShapeFilmReview_invalidRating_routesThroughBadRatingErrorType() {
-        // Catch-arm payload-factory emits `errors -> { var p = new SetterShapeFilmReviewPayload();
-        // p.setReviewId(null); p.setErrors(errors); return p; }` in setter form. End-to-end
-        // round-trip places the bad-rating throwable into the errors list.
+        // The bad-rating throwable is claimed into the Outcome's error arm, which errors reads;
+        // reviewId reads null on that arm.
         Map<String, Object> data = execute("""
             mutation {
                 submitSetterShapeFilmReview(filmId: 1, rating: 11) {
@@ -10940,13 +10938,88 @@ class GraphQLQueryTest {
         only.containsEntry("message", "rating must be in [1, 10]; got 11");
     }
 
-    // ===== @field(name:) in setter-shape payload construction end-to-end =====
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitSetterShapeFilmReview_backingClassHasErrorsAccessor_claimedThrowIsTypedData() {
+        // The payload class has getErrors(), and the channel wins over it: a claimed throw arrives
+        // as a typed entry under errors, not as a redacted top-level error (execute asserts none).
+        Map<String, Object> data = execute("""
+            mutation {
+                submitSetterShapeFilmReview(filmId: 1, rating: 0) {
+                    errors { __typename ... on FilmReviewBadRating { message } }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitSetterShapeFilmReview", as(MAP));
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewBadRating");
+        only.containsEntry("message", "rating must be in [1, 10]; got 0");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitSetterShapeFilmReview_accessorPopulatedOnSuccess_isNotRead() {
+        // The service fills the payload's getErrors() on success; Graphitron does not read it, so
+        // errors is null on the wire while the data field reads the service's value.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitSetterShapeFilmReviewWithErrors(filmId: 42, rating: 5) {
+                    reviewId
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitSetterShapeFilmReviewWithErrors", as(MAP));
+        payload.containsEntry("reviewId", 50042);
+        payload.containsEntry("errors", null);
+    }
+
+    // ===== A single @error type as the errors field's element end-to-end =====
+    //
+    // SingleErrorFilmReviewPayload.errors lists FilmReviewBadRating directly, with no union. It is
+    // an error channel all the same: the claimed throw arrives under errors as data.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitSingleErrorFilmReview_invalidRating_isTypedDataUnderErrors() {
+        Map<String, Object> data = execute("""
+            mutation {
+                submitSingleErrorFilmReview(filmId: 1, rating: 11) {
+                    reviewId
+                    errors { path message }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitSingleErrorFilmReview", as(MAP));
+        payload.containsEntry("reviewId", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("message", "rating must be in [1, 10]; got 11");
+        only.containsEntry("path", List.of("submitSingleErrorFilmReview"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitSingleErrorFilmReview_validInput_returnsData() {
+        Map<String, Object> data = execute("""
+            mutation {
+                submitSingleErrorFilmReview(filmId: 42, rating: 5) { reviewId errors { message } }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitSingleErrorFilmReview", as(MAP));
+        payload.containsEntry("reviewId", 50042);
+        payload.containsEntry("errors", null);
+    }
+
+    // ===== @field(name:) on a setter-shape payload end-to-end =====
     //
     // submitFieldRenamedSetterShapeFilmReview returns a FieldRenamedSetterShapeFilmReviewPayload
     // whose Java member names (reviewIdentifier / problems) diverge from the SDL field names
-    // (reviewId / errors). @field(name:) bridges the divergence for construction as well as for the
-    // read side. The error path proves the catch-arm payload-factory binds the errors list through
-    // the remapped setter and defaults the remapped data setter.
+    // (reviewId / errors). @field(name:) bridges the divergence for the data field's read. The
+    // error path proves the claimed throw lands on errors and the data field reads null.
 
     @Test
     @SuppressWarnings("unchecked")
@@ -10965,9 +11038,8 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void submitFieldRenamedSetterShapeFilmReview_invalidRating_errorOnErrorsFieldDataDefaulted() {
-        // Catch-arm payload-factory emits (setter form, remapped names):
-        // errors -> { var p = new ...; p.setProblems(errors); p.setReviewIdentifier(null); return p; }
-        // The bad-rating throwable lands on `errors`, and `reviewId` reads the defaulted null.
+        // The bad-rating throwable lands on `errors` through the Outcome's error arm, and
+        // `reviewId` reads null on that arm.
         Map<String, Object> data = execute("""
             mutation {
                 submitFieldRenamedSetterShapeFilmReview(filmId: 1, rating: 11) {

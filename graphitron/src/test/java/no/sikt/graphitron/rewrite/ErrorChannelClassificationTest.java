@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -17,7 +19,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * Carrier classifier: every fetcher-emitting field variant that implements
  * {@link WithErrorChannel} carries an {@link ErrorChannel} when the payload type's field set
  * declares an {@code errors}-shaped field: a nullable list of a union or an interface whose every
- * member is {@code @error}. The channel rides the {@code Outcome} wrapper; no payload class is
+ * member is {@code @error}, or of one {@code @error} type itself. The channel rides the {@code Outcome} wrapper; no payload class is
  * constructed. The fixtures use {@code SakPayload} (in {@code dummyreferences}) as the payload a
  * service returns.
  */
@@ -847,6 +849,139 @@ class ErrorChannelClassificationTest {
         assertThat(errorType.accessorOverrides())
             .extracting(o -> o.sdlFieldName(), o -> o.accessorBase())
             .containsExactly(tuple("detail", "localizedMessage"));
+    }
+
+    // ===== The single @error type as the errors field's element =====
+
+    private static final String DB_ERR_SDL = """
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            """;
+
+    @Test
+    void singleErrorTypeElement_isAnErrorsCarrier() {
+        // No union, no interface and no implements clause: a list of one @error type is the
+        // channel exactly as a union of it would be.
+        var schema = build(DB_ERR_SDL + """
+            type SakPayload {
+                data: String
+                errors: [DbErr]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).get().isInstanceOf(ErrorChannel.Mapped.class);
+        assertThat(f.errorChannel().get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("DbErr");
+        var errors = schema.field("SakPayload", "errors");
+        assertThat(errors).isInstanceOf(ChildField.ErrorsField.class);
+        assertThat(((ChildField.ErrorsField) errors).errorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("DbErr");
+    }
+
+    @Test
+    void singleNonErrorObjectElement_staysADataField() {
+        var schema = build("""
+            type Note {
+                text: String
+            }
+            type SakPayload {
+                data: String
+                errors: [Note]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var f = schema.field("Query", "sak");
+        if (f instanceof WithErrorChannel carrier) {
+            assertThat(carrier.errorChannel()).isEmpty();
+        }
+        assertThat(schema.field("SakPayload", "errors")).isNotInstanceOf(ChildField.ErrorsField.class);
+    }
+
+    @Test
+    void singleErrorTypeElement_nonNullList_isRejected() {
+        var schema = build(DB_ERR_SDL + """
+            type SakPayload {
+                data: String
+                errors: [DbErr!]!
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var errors = schema.field("SakPayload", "errors");
+        assertThat(errors).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) errors).rejection())
+            .isEqualTo(new ErrorChannelWalkerError.NonNullableErrorsField("SakPayload", "errors"));
+    }
+
+    @Test
+    void singleErrorTypeElement_nonList_isRejected() {
+        var schema = build(DB_ERR_SDL + """
+            type SakPayload {
+                data: String
+                errors: DbErr
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var errors = schema.field("SakPayload", "errors");
+        assertThat(errors).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) errors).reason()).contains("must be a list");
+    }
+
+    @Test
+    void singleErrorTypeElement_onDmlPayload_isAnErrorsCarrier() {
+        // The widening is not @service's alone: a payload-returning DML @mutation whose payload
+        // lists one @error type catches into it too.
+        var schema = build(DB_ERR_SDL + """
+            type Film @table(name: "film") { title: String }
+            input FilmInput { filmId: Int! @field(name: "film_id") title: String @field(name: "title") }
+            type FilmPayload {
+                film: Film
+                errors: [DbErr]
+            }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): FilmPayload @mutation(typeName: UPDATE, table: "film") }
+            """);
+
+        var f = schema.field("Mutation", "updateFilm");
+        assertThat(f).isInstanceOf(WithErrorChannel.class);
+        assertThat(((WithErrorChannel) f).errorChannel()).get().isInstanceOf(ErrorChannel.Mapped.class);
+        assertThat(schema.field("FilmPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
+    }
+
+    @Test
+    void payloadBackingClassWithErrorsAccessor_stillPopulatesErrorChannel() {
+        // The channel is decided from the schema, never from the class: a backing class that
+        // carries its own errors (a record component on SakPayload, a bean getErrors() on
+        // BeanErrorsPayload) changes nothing, and the errors field is the outcome's, not a read
+        // of that accessor.
+        var schema = build(UNION_ERROR_PAYLOAD_SDL + """
+            type BeanPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Query {
+                sak: SakPayload %s
+                bean: BeanPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runBeanErrors"})
+            }
+            """.formatted(SERVICE_DECL));
+
+        for (var producer : java.util.List.of("sak", "bean")) {
+            var f = (QueryField.QueryServiceRecordField) schema.field("Query", producer);
+            assertThat(f.errorChannel()).as(producer).isPresent();
+        }
+        for (var payload : java.util.List.of("SakPayload", "BeanPayload")) {
+            assertThat(schema.field(payload, "errors")).as(payload)
+                .isInstanceOf(ChildField.ErrorsField.class)
+                .isNotInstanceOf(ChildField.RecordReadField.class);
+        }
     }
 
     private GraphitronSchema build(String schemaText) {

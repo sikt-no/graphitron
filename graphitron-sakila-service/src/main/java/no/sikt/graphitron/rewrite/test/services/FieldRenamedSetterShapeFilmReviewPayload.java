@@ -5,13 +5,10 @@ import java.util.List;
 /**
  * Fixture: {@code @field(name:)}-renamed sibling of {@link SetterShapeFilmReviewPayload}.
  * Same SDL field set ({@code reviewId}, {@code errors}) but the Java member names diverge, so
- * only {@code @field(name: "reviewIdentifier")} / {@code @field(name: "problems")} on the SDL
- * fields can bind the setters. The carrier classifier resolves the mutable-bean construction shape
- * against the remapped setter names ({@code setReviewIdentifier}, {@code setProblems}); the emitter
- * produces the catch-arm payload-factory as
- * {@code errors -> { var p = new ...; p.setProblems(errors); p.setReviewIdentifier(null);
- * return p; }}. The getters carry the same remapped names so the read side (already honoring
- * {@code @field(name:)}) resolves the payload's data fields.
+ * only {@code @field(name: "reviewIdentifier")} on the SDL data field binds its getter. Graphitron
+ * never constructs it: the fetcher returns an {@code Outcome}, the service's instance on success
+ * and the claimed errors on a throw, where {@code reviewId} reads null. The {@code errors} field
+ * reads the {@code Outcome}, so {@link #getProblems()} is never read, renamed or not.
  */
 public final class FieldRenamedSetterShapeFilmReviewPayload {
 

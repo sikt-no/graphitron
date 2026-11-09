@@ -19,7 +19,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
  * The error channels as the store states them: which outcome type each producer catches into
  * ({@code graphitron_producer_outcome}), and for each outcome type the {@code @error} types its
  * errors field holds, in the order a throw is matched against them ({@code graphitron_errors_field}
- * over {@code graphql_poly_member}).
+ * over {@code graphql_poly_member}). An errors field whose element is one {@code @error} type
+ * rather than a union or an interface has no {@code graphql_poly_member} row; its element is its
+ * one member.
  *
  * <p>A channel's dispatch table is a fact about its outcome type, since the handlers are the
  * errors field's members and every producer of one outcome type catches into the same field. So
@@ -60,14 +62,16 @@ public record ErrorChannelRelation(Map<String, String> outcomeByProducer,
         var e = GRAPHITRON_ERRORS_FIELD;
         var m = GRAPHQL_POLY_MEMBER;
         var membersByOutcome = new LinkedHashMap<String, List<String>>();
+        // Left join: a single @error element is no container, so it stands for itself.
+        var member = DSL.coalesce(m.MEMBER_TYPE_NAME, e.CONTAINER_NAME);
         store.dsl()
-            .select(e.TYPE_NAME, m.MEMBER_TYPE_NAME)
+            .select(e.TYPE_NAME, member)
             .from(e)
-            .join(m).on(m.GRAPH_NAME.eq(e.GRAPH_NAME), m.CONTAINER_NAME.eq(e.CONTAINER_NAME))
+            .leftJoin(m).on(m.GRAPH_NAME.eq(e.GRAPH_NAME), m.CONTAINER_NAME.eq(e.CONTAINER_NAME))
             .where(e.GRAPH_NAME.eq(store.graphName()))
             .orderBy(e.TYPE_NAME,
                 DSL.when(m.CONTAINER_KIND.eq("UNION"), m.POSITION).otherwise(DSL.inline(0)),
-                m.MEMBER_TYPE_NAME)
+                member)
             .forEach(r -> membersByOutcome
                 .computeIfAbsent(r.value1(), ignored -> new ArrayList<>())
                 .add(r.value2()));

@@ -276,4 +276,24 @@ public final class FilmReviewService {
         out.setProblems(java.util.List.of());
         return out;
     }
+
+    /**
+     * Fixture: the review submission whose payload lists one {@code @error} type as its errors
+     * field's element. Validates through {@link #submit}, so an out-of-range rating throws
+     * {@link FilmReviewBadRatingException}, which the single type's handler claims.
+     */
+    public static SingleErrorFilmReviewPayload submitSingleError(Integer filmId, Integer rating) {
+        return new SingleErrorFilmReviewPayload(submit(filmId, rating).reviewId());
+    }
+
+    /**
+     * Fixture: a successful submission whose payload's own {@code getErrors()} is populated, the
+     * Graphitron 9 habit of reporting errors on the success path. Graphitron never reads that
+     * accessor, so the payload's {@code errors} field resolves {@code null} all the same.
+     */
+    public static SetterShapeFilmReviewPayload submitSetterShapeWithErrors(Integer filmId, Integer rating) {
+        var out = submitSetterShape(filmId, rating);
+        out.setErrors(java.util.List.of(new FilmReviewBadRatingException("populated on success")));
+        return out;
+    }
 }

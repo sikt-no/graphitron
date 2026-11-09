@@ -1806,18 +1806,24 @@ type FilmReviewScoresPayload {
     errors: [FilmReviewError]
 }
 
-# R154 fixture: setter-shape sibling of FilmReviewPayload. The backing class is a hand-rolled
-# POJO with a public no-arg constructor and Java-bean setters; the carrier classifier resolves
-# R154's MutableBean construction shape against it.
+# Setter-shape sibling of FilmReviewPayload. The backing class is a hand-rolled POJO with a public
+# no-arg constructor, setters and a getErrors() of its own, the shape a Graphitron 9 payload keeps.
+# The errors field is the outcome's all the same: getErrors() is never read.
 type SetterShapeFilmReviewPayload {
     reviewId: Int
     errors: [FilmReviewError]
 }
 
-# R201 fixture: @field(name:)-renamed sibling of SetterShapeFilmReviewPayload. The backing class
-# exposes setReviewIdentifier / setProblems; @field(name:) on each SDL field names the Java member
-# for construction (mutable-bean arm) as well as for the read side. Proves the errors setter and
-# the defaulted data setter are resolved from the directive value, not the SDL field name.
+# A payload whose errors field lists one @error type directly rather than a union of it: the
+# single-type carrier, which catches into errors exactly as a union does.
+type SingleErrorFilmReviewPayload {
+    reviewId: Int
+    errors: [FilmReviewBadRating]
+}
+
+# @field(name:)-renamed sibling of SetterShapeFilmReviewPayload. The backing class exposes
+# getReviewIdentifier / getProblems; @field(name:) on the data field names the getter the read side
+# resolves. The errors field reads the outcome, so its @field(name:) names a member never read.
 type FieldRenamedSetterShapeFilmReviewPayload {
     reviewId: Int @field(name: "reviewIdentifier")
     errors: [FilmReviewError] @field(name: "problems")
@@ -6039,20 +6045,34 @@ type Mutation {
             method: "assignOccupantByArgument"
         })
 
-    # R154 execution-tier fixture: @service mutation whose payload class uses the mutable-bean
-    # shape (no-arg ctor + setters). The success arm round-trips reviewId/errors through the
-    # generated MutationServiceRecordField fetcher; thrown FilmReviewBadRatingException routes
-    # through the catch-arm payload-factory built from p.setErrors(errors).
+    # A @service mutation whose payload class is a mutable bean with its own getErrors(). The
+    # success arm returns the service's instance through the Outcome; a thrown
+    # FilmReviewBadRatingException is claimed into the Outcome's error arm, which errors reads.
     submitSetterShapeFilmReview(filmId: Int!, rating: Int!): SetterShapeFilmReviewPayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitSetterShape"
         })
 
-    # R201 execution-tier fixture: like submitSetterShapeFilmReview but the payload's Java member
-    # names diverge from the SDL field names, bridged by @field(name:). The catch-arm payload-factory
-    # binds the errors list through the remapped setter (setProblems) and defaults the remapped data
-    # setter (setReviewIdentifier(null)); the error surfaces on `errors` and `reviewId` reads null.
+    # Like submitSetterShapeFilmReview, but the service fills the payload's getErrors() on
+    # success. That list is never read: errors resolves null on the success arm.
+    submitSetterShapeFilmReviewWithErrors(filmId: Int!, rating: Int!): SetterShapeFilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submitSetterShapeWithErrors"
+        })
+
+    # The single-type carrier: the payload's errors field lists FilmReviewBadRating directly, and a
+    # thrown FilmReviewBadRatingException arrives there as data, as through a union.
+    submitSingleErrorFilmReview(filmId: Int!, rating: Int!): SingleErrorFilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submitSingleError"
+        })
+
+    # Like submitSetterShapeFilmReview but the payload's Java member names diverge from the SDL
+    # field names, bridged by @field(name:). A claimed throw surfaces on `errors` and `reviewId`
+    # reads null, as every data field of an outcome does on its error arm.
     submitFieldRenamedSetterShapeFilmReview(filmId: Int!, rating: Int!): FieldRenamedSetterShapeFilmReviewPayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",

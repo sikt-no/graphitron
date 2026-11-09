@@ -514,6 +514,15 @@ public class TestServiceStub {
     }
 
     /**
+     * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.BeanErrorsPayload}
+     * bean, whose class has its own {@code getErrors()}: the classifier still makes the payload's
+     * {@code errors} field the error channel.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.BeanErrorsPayload runBeanErrors() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Classification-tier witness: returns the <em>nested</em> dummy payload
      * {@link no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload}
      * (binary name {@code AccessorPayloads$NestedErrorsPayload}). A child {@code @service} field
