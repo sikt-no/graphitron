@@ -1,0 +1,33 @@
+# A producer catching into an outcome hands back one, its value or its errors, so a field declaring a
+# list of outcomes draws the defect at the field. The same child service under a field declaring one
+# outcome draws nothing.
+
+type VerdictRefused @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.VerdictRefusedException"}]) {
+  path: [String!]!
+  message: String!
+}
+union VerdictFailure = VerdictRefused
+
+type FilmVerdictOutcome { verdict: String, errors: [VerdictFailure] }
+
+type Film @table(name: "film") {
+  title: String
+  verdicts: [FilmVerdictOutcome]
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmVerdictService", method: "verdict"})
+  verdict: FilmVerdictOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmVerdictService", method: "verdict"})
+}
+
+type Query {
+  films: [Film]
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,              coordinate
+  OUTCOME_IN_A_LIST, Film.verdicts
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,              coordinate
+  OUTCOME_IN_A_LIST, Film.verdict
+  """)

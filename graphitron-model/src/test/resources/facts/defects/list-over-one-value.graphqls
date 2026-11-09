@@ -1,0 +1,33 @@
+# A field declaring a list over what its producer hands back once has nothing to list: a service
+# whose method returns one value, and a write returning an object, which it hands back once however
+# many rows it writes, draw the defect at the field. The same producers under a field declaring one
+# draw nothing.
+
+type Film @table(name: "film") { title: String }
+type FilmLookupPayload { title: String }
+type FilmEcho { film: Film }
+
+type Query {
+  films: [Film]
+  lookups(id: Int!): [FilmLookupPayload]
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+  lookup(id: Int!): FilmLookupPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+}
+
+type Mutation {
+  updateFilms(title: String): [FilmEcho] @mutation(typeName: UPDATE)
+  updateFilm(title: String): FilmEcho @mutation(typeName: UPDATE)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                coordinate
+  LIST_OVER_ONE_VALUE, Query.lookups
+  LIST_OVER_ONE_VALUE, Mutation.updateFilms
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                coordinate
+  LIST_OVER_ONE_VALUE, Query.lookup
+  LIST_OVER_ONE_VALUE, Mutation.updateFilm
+  """)

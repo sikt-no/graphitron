@@ -12869,6 +12869,88 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
  WHERE p.kind = 'DELETE'
 UNION ALL
+-- A list over one value, at the field: a service whose method hands back one value, or a write
+-- returning an object, which it hands back once however many rows it writes, under a field
+-- declaring a list. A list of what the producer delivers once has nothing to list.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer_service ps
+  JOIN graphitron_field f
+    ON f.graph_name = ps.graph_name AND f.type_name = ps.type_name AND f.field_name = ps.field_name
+  JOIN code_method m
+    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
+   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE f.is_list AND m.result_delivery IS NOT NULL AND m.result_delivery <> 'MANY'
+UNION ALL
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer p
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type tt
+    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name AND tt.kind = 'OBJECT'
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE') AND f.is_list
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
+                    WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
+UNION ALL
+-- Many keys into one, at the field: its key row takes many rows off what its parent holds, a write
+-- yielding many or a member delivering a collection, and the field declares one.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'MANY_KEYS_INTO_ONE', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_key_row k
+  JOIN graphitron_field f
+    ON f.graph_name = k.graph_name AND f.type_name = k.type_name AND f.field_name = k.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE k.arity = 'MANY' AND NOT f.is_list AND ft.wrapper_type_name IS NULL
+UNION ALL
+-- A field fetching its own rows under an object with no key to take off it, at the field: its
+-- parent holds an object, and nothing it holds, no column of a record and no member returning one,
+-- keys the rows the field reads. Judged only where the store has read the parent's class and its
+-- members, what it holds being unknown otherwise, and a field that class offers a member for reads
+-- that member's value instead, even where its type is a table's, so it fetches nothing.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'NO_KEY_FROM_PARENT', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer p
+  JOIN graphitron_result r
+    ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'LOOKUP'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_key_row k
+                    WHERE k.graph_name = p.graph_name AND k.type_name = p.type_name
+                      AND k.field_name = p.field_name)
+   AND EXISTS (SELECT 1 FROM graphitron_result_class rc
+                  JOIN code_read_slot known ON known.class_name = rc.class_name
+                WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                     JOIN code_read_slot cs
+                       ON cs.class_name = rc.class_name AND cs.slot_name = f.bound_name
+                    WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name)
+UNION ALL
+-- An outcome in a list, at the field: a producer catching into an outcome hands back one, its
+-- value or its errors, and a list of them would need one catch per element.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'OUTCOME_IN_A_LIST', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer_outcome po
+  JOIN graphitron_field f
+    ON f.graph_name = po.graph_name AND f.type_name = po.type_name AND f.field_name = po.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE f.is_list
+UNION ALL
 -- A read surface written on a write. Three sites state one, and each row sits at its own.
 -- On the field or on one of its arguments, each at its own application.
 SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
@@ -15318,13 +15400,27 @@ WITH field_at (graph_name, type_name, field_name, class_name, record_source_name
      AND (SELECT COUNT(*) FROM graphitron_result_class c2
            WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) <= 1
 ),
--- The payloads a write hands back: the types a mutation's or a routine's write returns.
-written (graph_name, type_name) AS (
-  SELECT DISTINCT wt.graph_name, wt.target_type_name
+-- The types a write returns as an object, with whether the write yields many rows: an insert, update
+-- or delete taking a list or matching many, and for a routine nothing said, its function's table
+-- result not saying how many rows a call writes.
+written (graph_name, type_name, yields_many) AS (
+  SELECT wt.graph_name, wt.target_type_name,
+         MAX(CASE WHEN wp.kind IN ('INSERT', 'UPDATE', 'DELETE')
+                    THEN CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument a
+                                            WHERE a.graph_name = wp.graph_name
+                                              AND a.type_name = wp.type_name
+                                              AND a.field_name = wp.field_name AND a.is_list)
+                                OR EXISTS (SELECT 1 FROM graphitron_producer_write pw
+                                            WHERE pw.graph_name = wp.graph_name
+                                              AND pw.type_name = wp.type_name
+                                              AND pw.field_name = wp.field_name
+                                              AND pw.matches = 'MANY')
+                              THEN 1 ELSE 0 END END)
     FROM graphitron_producer wp
     JOIN graphitron_field_target wt
       ON wt.graph_name = wp.graph_name AND wt.type_name = wp.type_name AND wt.field_name = wp.field_name
    WHERE wp.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE')
+   GROUP BY wt.graph_name, wt.target_type_name
 ),
 target (graph_name, type_name, field_name, source_name, table_schema, table_name) AS (
   SELECT fa.graph_name, fa.type_name, fa.field_name, b.table_source_name, b.table_schema, b.table_name
@@ -15350,7 +15446,9 @@ first_key (graph_name, type_name, field_name, source_name, table_schema, table_n
 ),
 -- A member of the parent's class named as the field reads, returning table records: of the target's
 -- table where the target is one table, of any table where it is several, that table being the hub the
--- members hang off. Its delivery agrees with the field's: a collection under a list, one under one.
+-- members hang off. Its arity is what the member delivers, a collection or one, whatever the field
+-- declares: a list field taking one row is a list of at most one, and a single field taking a
+-- collection is MANY_KEYS_INTO_ONE.
 accessor (graph_name, type_name, field_name, source_name, class_name, method_name, descriptor,
           table_source_name, table_schema, table_name, arity) AS (
   SELECT fa.graph_name, fa.type_name, fa.field_name, s.source_name, s.class_name, s.method_name,
@@ -15366,7 +15464,6 @@ accessor (graph_name, type_name, field_name, source_name, class_name, method_nam
    WHERE fa.record_table IS NULL
      AND (fa.polymorphic OR (et.source_name = t.source_name AND et.table_schema = t.table_schema
                              AND et.table_name = t.table_name))
-     AND ((s.delivery = 'MANY') = fa.many)
 )
 ,
 -- A service under a parent holding an OBJECT, and the table whose records its one source parameter
@@ -15395,16 +15492,20 @@ service_at (graph_name, type_name, field_name, class_name, record_source_name, r
              AND mp2.method_name = mp.method_name AND mp2.descriptor = mp.descriptor
              AND mp2.delivery = 'MANY') = 1
 )
--- A re-fetch: the parent is the payload a write hands back, or a record of the target's own table
--- a service produced, so the target's key is read straight off it.
+-- A re-fetch: the parent is the object a write hands back, or a record of the target's own table
+-- a service produced, so the target's key is read straight off it. Its arity is how many rows the
+-- write yields where the write says, and the field's own where it does not.
 SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.table_schema,
-       t.table_name, CASE WHEN fa.many THEN 'MANY' ELSE 'ONE' END,
+       t.table_name,
+       CASE WHEN w.yields_many = 1 THEN 'MANY' WHEN w.yields_many = 0 THEN 'ONE'
+            WHEN fa.many THEN 'MANY' ELSE 'ONE' END,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM field_at fa
   JOIN target t
     ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
- WHERE EXISTS (SELECT 1 FROM written w
-                WHERE w.graph_name = fa.graph_name AND w.type_name = fa.type_name)
+  LEFT JOIN written w
+    ON w.graph_name = fa.graph_name AND w.type_name = fa.type_name
+ WHERE w.type_name IS NOT NULL
     OR (fa.record_table = t.table_name AND fa.record_schema = t.table_schema
         AND fa.record_source_name = t.source_name)
 UNION ALL
@@ -17765,6 +17866,14 @@ INSERT INTO graphitron_defect_type VALUES
    'A mutation field carrying more than one @routine writes more than once, and the generator emits one write per field.', 'entry-defects'),
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
    'A write re-reads its committed rows by the keys it returned, which is not a page, so the generator emits nothing for a write @asConnection rewrote.', 'entry-defects'),
+  ('LIST_OVER_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_OVER_ONE_VALUE',
+   'A field declares a list over what its producer hands back once: a service whose method returns one value, or a write returning an object, so there is nothing to list; declare one.', 'entry-defects'),
+  ('MANY_KEYS_INTO_ONE', 'error', 'GRAPHITRON', 'GRAPHITRON_MANY_KEYS_INTO_ONE',
+   'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list.', 'entry-defects'),
+  ('NO_KEY_FROM_PARENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_KEY_FROM_PARENT',
+   'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.', 'entry-defects'),
+  ('OUTCOME_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTCOME_IN_A_LIST',
+   'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.', 'entry-defects'),
   ('WRITE_RESULT_HOLDS_ONLY_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_RESULT_HOLDS_ONLY_KEYS',
    'A field under the object type a write returns reads a member off what the write hands back, and a write hands back the keys of its rows, not an object of a class: re-read the rows by those keys, or encode them as an id.', 'entry-defects'),
   ('REREAD_OF_DELETED_ROWS', 'error', 'GRAPHITRON', 'GRAPHITRON_REREAD_OF_DELETED_ROWS',

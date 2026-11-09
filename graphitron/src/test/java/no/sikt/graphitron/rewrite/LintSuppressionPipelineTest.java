@@ -168,8 +168,8 @@ class LintSuppressionPipelineTest {
               language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query {
-              details: FilmDetails
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+              details(id: Int!): FilmDetails
+                @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
             }
             """;
 
@@ -198,8 +198,8 @@ class LintSuppressionPipelineTest {
               language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query {
-              details: FilmDetails
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+              details(id: Int!): FilmDetails
+                @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
             }
             """;
 

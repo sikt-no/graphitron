@@ -1,0 +1,27 @@
+# A field taking many rows off what its parent holds and declaring one: an insert taking a list
+# yields many rows, so a single field re-reading them draws the defect at that field. The same insert
+# re-read through a field declaring a list draws nothing.
+
+type Film @table(name: "film") { title: String }
+type FilmInserted { film: Film }
+type FilmsInserted { films: [Film] }
+input FilmIn { title: String }
+
+type Query {
+  films: [Film]
+}
+
+type Mutation {
+  insertFilmsIntoOne(in: [FilmIn!]!): FilmInserted @mutation(typeName: INSERT)
+  insertFilms(in: [FilmIn!]!): FilmsInserted @mutation(typeName: INSERT)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  MANY_KEYS_INTO_ONE, FilmInserted.film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  MANY_KEYS_INTO_ONE, FilmsInserted.films
+  """)

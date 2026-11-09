@@ -47,8 +47,8 @@ class BuildOutputReportPipelineTest {
         }
         type Query {
           film: Film
-          details: FilmDetails
-            @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+          details(id: Int!): FilmDetails
+            @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
         }
         """;
 

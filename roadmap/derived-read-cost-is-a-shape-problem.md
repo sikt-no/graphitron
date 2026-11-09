@@ -957,9 +957,15 @@ pass and no stratum that clears and recomputes.
         reading a member off it, `REREAD_OF_DELETED_ROWS` at a re-read of a delete's rows, and
         `CONNECTION_RETURN` on every write; a `@reference` on a routine write's object return keeps
         `REFERENCE_WITHOUT_TARGET_TABLE`, a true rule for it.
-      * **Arity and keys are codes** `open`. A list over one delivered value, many keys into one
-        field, key-row arity coming from the producer, a lookup under an object with no key row, and
-        an outcome in a list.
+      * **Arity and keys are codes** `done`. `LIST_OVER_ONE_VALUE`, `MANY_KEYS_INTO_ONE`,
+        `NO_KEY_FROM_PARENT` and `OUTCOME_IN_A_LIST` at the field, a key row's arity being what a
+        write yields or a member delivers, a routine's and a service record's the field's own.
+      * **A nested class's members are read** `open`. The classpath capture writes no
+        `code_read_slot` rows for a nested record such as `NestedFilmsPayloadHolder.Payload`, so its
+        `films()` keys no key row and `NO_KEY_FROM_PARENT` stands aside for a class with no members read.
+      * **A field read off its parent's member is no lookup** `open`. `graphitron_producer_rule`
+        calls `FilmBlurbHolder.blurb` a `LOOKUP` for its table-bound type though `blurb()` hands back
+        the value it reads, so `NO_KEY_FROM_PARENT` exempts it by the member rather than the claim.
       * **What the model admits the emitters follow** `open`. An id encoded from returned keys
         under an insert or update, a non-null single field under a routine with no errors field and
         a list field taking one row by an arity-one key row are no defect, so the emitter refusals
