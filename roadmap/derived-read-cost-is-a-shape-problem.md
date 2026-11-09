@@ -980,12 +980,24 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
-  * **An occurrence binds the table its rows or its value land on** `open`, F's.
-    `graphitron_occurrence_binding_table`, the `TABLE` subtype, written beside the needs: a field
-    whose values are a table's rows binds that table, a root field as a child does, one row per
-    participant; an argument or input field no column takes, an input object or an unmatched scalar,
-    binds the table its path lands on. With `COLUMN` and `NODE_ID`, every occurrence that filters or
-    is filtered binds a table, which a `@condition` call is keyed by (Alf, 2026-11-09).
+  * **An occurrence binds the table its rows or its value land on** `blocked`, on "The column and
+    node id bindings are written per depth". `graphitron_occurrence_binding_table`, the `TABLE`
+    subtype, by a writer of its own per depth after `Steps`, reading stored rows only and no rule
+    inside `PathNeeds`, whose rules and `OccurrenceSources`' lead the build's CPU. The landing is the
+    join path's target where a path was walked, else the need's landing, the expression
+    `graphitron_occurrence_column_rule` reads. A field whose values are a table's rows binds that
+    table, a root field as a child does, one row per participant, a root `@service` handing back a
+    table's records the table its producer's result names, which its rows reach through the lift; an
+    argument or input field no column or node id takes, an input object or an unmatched scalar,
+    binds the table its path lands on, a record-taking service argument the record's table it lands
+    on. A need whose path stops has no landing, so no binding, only the path's defect. With `COLUMN`
+    and `NODE_ID`, every occurrence that filters or is filtered binds a table, which a `@condition`
+    call is keyed by. Written by the session flipping the conditions, F reviewing the shape (Alf and
+    F, 2026-11-09).
+    * **The column and node id bindings are written per depth** `open`. `occurrence-columns` and
+      `occurrence-node-ids` fold into `occurrence-depths`, each depth's after its `Steps`, so a
+      binding that is written where no column or node id takes the value, and a condition's fills,
+      read them upstream; their rules read only needs and join paths already.
   * **A member's value off its parent's object binds `VALUE`** `done`. Every occurrence an accessor
     path meets binds `VALUE`, `Class#member` or the class alone where the object passes through,
     and `graphitron_occurrence_binding_value` names the class read off, the value's class and the
