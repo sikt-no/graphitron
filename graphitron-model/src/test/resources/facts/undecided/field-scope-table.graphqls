@@ -1,7 +1,7 @@
 # The table a field's own SQL is rooted in, which is where a predicate written at the coordinate
 # correlates and where a path departing it starts. Three rules answer in order: the table the
-# field's named type binds, then the data channel of a carrier payload a write returns, then the
-# table @mutation(table:) names. A field with no arguments resolves a scope too, which is the grain
+# field's named type binds, then the one table the fields of the type a write returns re-read its
+# rows on, then the table @mutation(table:) names. A field with no arguments resolves a scope too, which is the grain
 # this relation exists for; the argument-grain relation is it fanned over the arguments. A scalar
 # leaf resolves none, being a projection off its parent's row rather than a read of its own.
 
@@ -52,8 +52,8 @@ extend schema @expectEquals(relation: "graphitron_field_scope_table", rows: """
   Mutation,                  createFilm,      NAMED_TYPE_TABLE, film
   Mutation,                  createVenue,     MUTATION_TABLE,   film
   Mutation,                  deleteFilm,      MUTATION_TABLE,   film
-  Mutation,                  updateFilm,      PAYLOAD_TABLE,    film
-  Mutation,                  updateFilmOver,  PAYLOAD_TABLE,    film
+  Mutation,                  updateFilm,      REREAD_TABLE,    film
+  Mutation,                  updateFilmOver,  REREAD_TABLE,    film
   Query,                     allFilms,        NAMED_TYPE_TABLE, film
   Query,                     films,           NAMED_TYPE_TABLE, film
   Query,                     filmsConnection, NAMED_TYPE_TABLE, film
@@ -67,8 +67,8 @@ extend schema @expectEquals(relation: "graphitron_argument_scope_table", rows: "
   Mutation,  createFilm,     title,         NAMED_TYPE_TABLE, film
   Mutation,  createVenue,    name,          MUTATION_TABLE,   film
   Mutation,  deleteFilm,     title,         MUTATION_TABLE,   film
-  Mutation,  updateFilm,     title,         PAYLOAD_TABLE,    film
-  Mutation,  updateFilmOver, title,         PAYLOAD_TABLE,    film
+  Mutation,  updateFilm,     title,         REREAD_TABLE,    film
+  Mutation,  updateFilmOver, title,         REREAD_TABLE,    film
   Query,     films,          inActor,       NAMED_TYPE_TABLE, film
   Query,     films,          title,         NAMED_TYPE_TABLE, film
   """)

@@ -1,0 +1,37 @@
+# A @mutation writes one table, the one every table it is read on agrees on: the table its return
+# binds, or that the fields of the type it returns re-read the written rows on, however many such
+# fields there are, and the table @mutation(table:) names. Where they disagree nothing says which
+# table is written, at the @mutation. Two fields re-reading the same table agree, and the write
+# has its table.
+
+type Film @table(name: "film") { title: String }
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+
+type FilmEcho { film: Film, again: Film }
+type FilmActorEcho { film: Film, actor: Actor }
+
+type Query {
+  films: [Film]
+}
+
+type Mutation {
+  updateFilmTwice(title: String): FilmEcho @mutation(typeName: UPDATE)
+  updateFilmAsActor(title: String): FilmEcho @mutation(typeName: UPDATE, table: "actor")
+  updateFilmAndActor(title: String): FilmActorEcho @mutation(typeName: UPDATE)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                  coordinate
+  WRITE_TABLES_DISAGREE, Mutation.updateFilmAsActor
+  WRITE_TABLES_DISAGREE, Mutation.updateFilmAndActor
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                  coordinate
+  WRITE_TABLES_DISAGREE, Mutation.updateFilmTwice
+  """)
+
+extend schema @expectEquals(relation: "graphitron_producer_write", rows: """
+  type_name, field_name,      kind,   table_name
+  Mutation,  updateFilmTwice, UPDATE, film
+  """)

@@ -123,7 +123,7 @@ class StageAnswerAgreementTest {
                 .fetch(0, String.class))
             .as("the bases the fixture reaches; an agreement over one rung asserts a quarter of"
                 + " the rule and passes all the same")
-            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "PAYLOAD_TABLE", "MUTATION_TABLE",
+            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE",
                 "PARTICIPANT_TABLE"));
     }
 
@@ -147,7 +147,7 @@ class StageAnswerAgreementTest {
                 .fetch(0, String.class))
             .as("the bases the fan-out reaches; an agreement over one of them is an agreement over"
                 + " one arm of the relation being fanned out")
-            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "PAYLOAD_TABLE", "MUTATION_TABLE"));
+            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE"));
     }
 
     /**

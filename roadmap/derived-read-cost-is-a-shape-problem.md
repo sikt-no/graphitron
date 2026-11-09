@@ -891,10 +891,24 @@ pass and no stratum that clears and recomputes.
       * **What a write alone refuses is stated** `done`. A routine written after a `@reference` is
         `ROOT_REFERENCE_WITHOUT_ROUTINE`, a root field like any other, and a condition on the step out
         of the result is `CONDITION_ON_WRITE_RESULT`, the result being re-read by its key without it.
-      * **A payload's data field is judged for every producer that returns one** `open`. One data
-        field beside the errors field, an element the producer can lift, no non-null single and no
-        forbidden directive are the walk's rules for a `@mutation`, `@service` and `@routine` payload
-        alike, and none is a code yet (Alf, 2026-11-09).
+    * **What a producer's object result holds is judged by the families it is stated in** `open`.
+      The walk's single-channel rules for the type a write, a routine or a service returns are no
+      rule of the model: each field under the result is an occurrence with its own key row, so two
+      fields re-reading the same rows, a child `@service`, a filter on a re-read and a path from the
+      key table are each a field's own (Alf, 2026-11-09).
+      * **A write's table is the one the tables it is read on agree on** `done`. However many fields
+        re-read its rows, `WRITE_TABLES_DISAGREE` at the `@mutation` where they and
+        `@mutation(table:)` disagree, the scope's `REREAD_TABLE` rung likewise.
+      * **The gaps are codes** `open`. A field reading a class member off a write's result, which
+        holds only keys; a re-read under a DELETE, whose rows are gone; a list over one delivered
+        value, and many keys into one field, key-row arity coming from the producer; a lookup under
+        an object with no key row; an outcome in a list. `CONNECTION_RETURN` covers every keyed
+        re-read, and a `@reference` on a routine write's object return is refused for joining
+        onward rather than for its table.
+      * **What the model admits the emitters follow** `open`. An id encoded from returned keys
+        under an insert or update, a non-null single field under a routine with no errors field and
+        a list field taking one row by an arity-one key row are no defect, so the emitter refusals
+        join "The store, the generator and the emitters agree on what a service call can be".
     * **A name claimed that does not exist is one defect** `open`. `TABLE_UNRESOLVED`,
       `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
       written name resolving to nothing, the position saying what was named, so they fold into one

@@ -9862,7 +9862,7 @@ COMMENT ON COLUMN graphitron_producer_write.source_line IS 'the @mutation''s sou
 COMMENT ON COLUMN graphitron_producer_write.source_column IS 'the @mutation''s source column';
 COMMENT ON COLUMN graphitron_producer_write.table_source_name IS 'the catalog the mutated table is read from; with the schema and the name, an sql_table key';
 COMMENT ON COLUMN graphitron_producer_write.table_schema IS 'the mutated table''s schema';
-COMMENT ON COLUMN graphitron_producer_write.table_name IS 'the mutated table. The table the return''s @table names for an insert or an update, directly or through the one data field its payload re-reads by, and otherwise the table @mutation(table:) names. It is not the produced type, which is the field''s target: a delete mutates a table and produces ids';
+COMMENT ON COLUMN graphitron_producer_write.table_name IS 'the mutated table. The table every table the write is read on agrees on: for an insert or an update the one the return''s @table names, directly or through the fields of the type it returns that re-read the written rows, and the one @mutation(table:) names. It is not the produced type, which is the field''s target: a delete mutates a table and produces ids';
 COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The leaves of an @outbox message: one row per payload key, by the source it reads, resolved against
@@ -10233,9 +10233,10 @@ COMMENT ON COLUMN graphitron_producer_service.method_descriptor IS 'the method''
 COMMENT ON COLUMN graphitron_producer_service.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The write a mutation-root field runs and the table it mutates, by the generator's precedence:
--- for an insert or an update, the table the return's @table names, directly or through the one data field
--- its payload re-reads by; otherwise the table @mutation(table:) names. Where both are present and
--- disagree, or either is ambiguous, there is no row.
+-- the table every table it is read on agrees on: for an insert or an update, the table the return's
+-- @table names, directly or through the fields of the type it returns that re-read the written rows,
+-- however many; and the table @mutation(table:) names. Where they disagree there is no row, and
+-- WRITE_TABLES_DISAGREE is the defect; where a spelling is ambiguous it is not a table it is read on.
 CREATE VIEW graphitron_producer_write_rule
   (graph_name, type_name, field_name, kind, matches, source_name, source_line, source_column,
    table_source_name, table_schema, table_name) AS
@@ -10256,8 +10257,8 @@ WITH write_application (graph_name, type_name, field_name, kind, matches,
      AND m.source_line = da.source_line AND m.source_column = da.source_column
    WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE')
 ),
--- The table the return names with its own @table: the target's, or that of the one re-reading
--- data field of a payload the write returns. The author's binding and not the resolved one, which
+-- The table the return names with its own @table: the target's, or that of each field of the type the
+-- write returns that re-reads the written rows. The author's binding and not the resolved one, which
 -- also holds the table a @routine returning the same type lands on.
 returned (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
   SELECT w.graph_name, w.type_name, w.field_name, b.table_source_name, b.table_schema, b.table_name
@@ -10281,33 +10282,30 @@ returned (graph_name, type_name, field_name, table_source_name, table_schema, ta
     JOIN graphitron_tabletype b
       ON b.graph_name = rt.graph_name AND b.type_name = rt.target_type_name
    WHERE w.kind IN ('INSERT', 'UPDATE')
-     -- A payload has no @table of its own; a table type's lookups are its children, not a re-read.
+     -- A type of no table of its own; a table type's lookups are its children, not a re-read.
      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype own
                       WHERE own.graph_name = ft.graph_name AND own.type_name = ft.target_type_name)
-     AND (SELECT COUNT(*) FROM graphitron_producer r2
-           WHERE r2.graph_name = ft.graph_name AND r2.type_name = ft.target_type_name
-             AND r2.kind = 'LOOKUP') = 1
 ),
 named (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
   SELECT w.graph_name, w.type_name, w.field_name, s.table_source_name, s.table_schema, s.table_name
     FROM write_application w
     JOIN graphitron_spelled_table s
       ON s.graph_name = w.graph_name AND s.spelling = w.table_ref AND s.candidates = 1
+),
+-- The tables the write is read on, and the one they agree on where there is one.
+agreed (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
+  SELECT c.graph_name, c.type_name, c.field_name,
+         MIN(c.table_source_name), MIN(c.table_schema), MIN(c.table_name)
+    FROM (SELECT * FROM returned UNION SELECT * FROM named) c
+   GROUP BY c.graph_name, c.type_name, c.field_name
+  HAVING COUNT(DISTINCT c.table_source_name || '.' || c.table_schema || '.' || c.table_name) = 1
 )
 SELECT w.graph_name, w.type_name, w.field_name, w.kind, w.matches,
        w.source_name, w.source_line, w.source_column,
-       COALESCE(r.table_source_name, n.table_source_name),
-       COALESCE(r.table_schema, n.table_schema),
-       COALESCE(r.table_name, n.table_name)
+       a.table_source_name, a.table_schema, a.table_name
   FROM write_application w
-  LEFT JOIN returned r
-    ON r.graph_name = w.graph_name AND r.type_name = w.type_name AND r.field_name = w.field_name
-  LEFT JOIN named n
-    ON n.graph_name = w.graph_name AND n.type_name = w.type_name AND n.field_name = w.field_name
- WHERE COALESCE(r.table_name, n.table_name) IS NOT NULL
-   AND (r.table_name IS NULL OR n.table_name IS NULL
-        OR (r.table_source_name = n.table_source_name AND r.table_schema = n.table_schema
-            AND r.table_name = n.table_name));
+  JOIN agreed a
+    ON a.graph_name = w.graph_name AND a.type_name = w.type_name AND a.field_name = w.field_name;
 COMMENT ON VIEW graphitron_producer_write_rule IS 'One row the write rule computes, in the shape graphitron_producer_write stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_write, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_producer_write_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_producer_write_rule.type_name IS 'the mutation-root type declaring the field';
@@ -12970,6 +12968,42 @@ SELECT a.graph_name, el.source_name, el.source_line, el.source_column, 'INHERITE
     ON el.graph_name = a.graph_name AND el.coordinate = a.element_coordinate
  GROUP BY a.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
+-- A write the tables it is read on disagree about, at its @mutation: the table its return or the
+-- fields re-reading its written rows bind and the one @mutation(table:) names are not one table, so
+-- graphitron_producer_write states no table for it. A write read on no table at all is not this.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'WRITE_TABLES_DISAGREE', CAST(NULL AS VARCHAR)
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f
+    ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_producer p
+    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+ WHERE da.directive_name = 'mutation' AND da.ordinal = 0
+   AND p.kind IN ('INSERT', 'UPDATE', 'DELETE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_write w
+                    WHERE w.graph_name = p.graph_name AND w.type_name = p.type_name
+                      AND w.field_name = p.field_name)
+   AND da.source_name IS NOT NULL
+   AND (EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
+                  JOIN graphitron_spelled_table sp
+                    ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
+                   AND sp.candidates = 1
+                 WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
+                   AND m.source_line = da.source_line AND m.source_column = da.source_column)
+        OR (p.kind IN ('INSERT', 'UPDATE')
+            AND (EXISTS (SELECT 1 FROM graphitron_tabletype b
+                          WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
+                 OR EXISTS (SELECT 1 FROM graphitron_producer rr
+                              JOIN graphitron_field_target rt
+                                ON rt.graph_name = rr.graph_name AND rt.type_name = rr.type_name
+                               AND rt.field_name = rr.field_name
+                              JOIN graphitron_tabletype b
+                                ON b.graph_name = rt.graph_name AND b.type_name = rt.target_type_name
+                             WHERE rr.graph_name = ft.graph_name AND rr.type_name = ft.target_type_name
+                               AND rr.kind = 'LOOKUP'))))
+UNION ALL
 -- A condition on the step out of a @routine write's result, at the element that writes it. The
 -- write's statement holds its locks and joins nothing onward, so what it returns is re-read by its
 -- key in a statement of its own, which the function's result is not part of for a condition to
@@ -15280,11 +15314,11 @@ SELECT graph_name, type_name, field_name, basis,
                     ON bt.graph_name = nv.graph_name
                    AND bt.type_name = nv.navigated_type_name
                 UNION ALL
-                -- An insert or update returning a type whose one field beside its errors re-reads
-                -- the written row by key.
+                -- An insert or update returning a type whose fields re-read the written rows by
+                -- key, on the one table they agree on, however many there are.
                 SELECT p.graph_name, p.type_name, p.field_name,
-                       'PAYLOAD_TABLE', bt.table_source_name, bt.table_schema,
-                       bt.table_name, 1
+                       'REREAD_TABLE', MIN(bt.table_source_name), MIN(bt.table_schema),
+                       MIN(bt.table_name), 1
                   FROM graphitron_producer p
                   JOIN graphitron_field_target pt
                     ON pt.graph_name = p.graph_name AND pt.type_name = p.type_name
@@ -15297,14 +15331,9 @@ SELECT graph_name, type_name, field_name, basis,
                   JOIN graphitron_tabletype bt
                     ON bt.graph_name = df.graph_name AND bt.type_name = df.named_type
                  WHERE p.kind IN ('INSERT', 'UPDATE')
-                   AND NOT EXISTS (SELECT 1 FROM graphitron_field d2
-                                    WHERE d2.graph_name = df.graph_name
-                                      AND d2.type_name = df.type_name
-                                      AND d2.field_name <> df.field_name
-                                      AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
-                                                       WHERE e.graph_name = d2.graph_name
-                                                         AND e.type_name = d2.type_name
-                                                         AND e.field_name = d2.field_name))
+                 GROUP BY p.graph_name, p.type_name, p.field_name
+                HAVING COUNT(DISTINCT bt.table_source_name || '.' || bt.table_schema || '.'
+                             || bt.table_name) = 1
                 UNION ALL
                 SELECT m.graph_name, fe.type_name, fe.field_name,
                        'MUTATION_TABLE', sp.table_source_name, sp.table_schema,
@@ -15354,7 +15383,7 @@ COMMENT ON TABLE graphitron_field_scope_table IS 'Which table a field''s own gen
 COMMENT ON COLUMN graphitron_field_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field on the upper rung and the participant arm and from the @mutation application on the two mutation rungs';
 COMMENT ON COLUMN graphitron_field_scope_table.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_scope_table.field_name IS 'the field whose scope this row states; with the two columns above and the table below, the grain';
-COMMENT ON COLUMN graphitron_field_scope_table.basis IS 'which rule answered, in a closed vocabulary of four: NAMED_TYPE_TABLE from the field''s named type''s own binding, PAYLOAD_TABLE from the single data channel of a DML write''s carrier payload where the payload itself binds nothing, MUTATION_TABLE from the @mutation(table:) spelling where neither of those answers, PARTICIPANT_TABLE from one branch of a named type that is a polymorphic container binding no table of its own. The first three are ranked rungs and the fourth is disjoint from all of them; which of them a row carries is therefore not only provenance but the fork a consumer takes, PARTICIPANT_TABLE being exactly where the coordinate is several statements rather than one. What lets a test pin which rule fired rather than only that a table came out; a reader wanting one of them filters on it and owns having chosen';
+COMMENT ON COLUMN graphitron_field_scope_table.basis IS 'which rule answered, in a closed vocabulary of four: NAMED_TYPE_TABLE from the field''s named type''s own binding, REREAD_TABLE from the one table the fields of the type an insert or update returns re-read the written rows on, where that type binds nothing itself, MUTATION_TABLE from the @mutation(table:) spelling where neither of those answers, PARTICIPANT_TABLE from one branch of a named type that is a polymorphic container binding no table of its own. The first three are ranked rungs and the fourth is disjoint from all of them; which of them a row carries is therefore not only provenance but the fork a consumer takes, PARTICIPANT_TABLE being exactly where the coordinate is several statements rather than one. What lets a test pin which rule fired rather than only that a table came out; a reader wanting one of them filters on it and owns having chosen';
 COMMENT ON COLUMN graphitron_field_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN graphitron_field_scope_table.table_schema IS 'the scope table''s SQL schema';
 COMMENT ON COLUMN graphitron_field_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
@@ -17556,6 +17585,8 @@ INSERT INTO graphitron_claim_inclusion VALUES
   ('LOOKUP', 'ROUTINE', 'ROUTINE_LOOKUP_DEFERRED');
 
 INSERT INTO graphitron_defect_type VALUES
+  ('WRITE_TABLES_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_TABLES_DISAGREE',
+   'A @mutation writes one table, and the tables it is read on are not one: the table its return or the fields re-reading the written rows bind, and the one @mutation(table:) names, disagree, so nothing says which table is written.', 'entry-defects'),
   ('CONDITION_ON_WRITE_RESULT', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_ON_WRITE_RESULT',
    'A condition on the step out of a @routine write''s result: the write''s statement holds its locks and joins nothing onward, so its result is re-read by its key in a statement of its own, which the function''s result is not part of for a condition to join from. Leave the result by a table or a key, and put the condition on a later step.', 'entry-defects'),
   ('READ_SURFACE_ON_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_READ_SURFACE_ON_WRITE',
