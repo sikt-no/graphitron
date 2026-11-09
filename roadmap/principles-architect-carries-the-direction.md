@@ -164,3 +164,41 @@ on a valid schema; a view chain that cost the build), raises both from the pages
 * "stratum", "strata", in every form: "stratum one/two/three", "the three strata", "derivation
   stratum", "derived stratum", "capture stratum", "claim stratum", "diagnostics stratum"
 * `DerivationStratum`, retired by R876 rather than by this item
+
+## Reviewer findings
+
+### Round 1: Spec → Ready (session_01WkW2JEeeQCuEvkzNXeRSgW, 2026-11-09)
+
+Verdict: withhold, on one finding under question two. The goal reads on its own: a session anywhere
+meets the same rulings because they live in the pages the architect reads, and the architect judges a
+design by what it lets us delete. Every page, section, test, gate and symbol the plan names exists as
+named, and the defect ruling matches the code. The plan extends the shapes already there (the agent
+file, the owning pages, the existing doc gates) and stands nothing beside them. What stops it is the
+edge of the retirement, which the Done reviewer will be checking.
+
+**Finding 1 (question two: would an implementer take it as-is). The retired vocabulary reaches
+further than the plan's rewrite, and the plan does not say where the edge is.** Retired vocabulary
+says "stratum", "strata", "in every form", with only `DerivationStratum` excepted. Decided says what
+gets reworded is "the prose, DDL comments and javadoc". The retirement sweep in `roadmap/workflow.adoc`
+also checks test names and roadmap bodies. In the tree today, these sit between those two statements:
+
+* test identifiers: the `STRATUM` constant in `StageOrderGateTest`, the methods
+  `theStratumWritesNoMoreRelations`, `everyRelationHasOneWriterInTheStratum`,
+  `everyDerivedTableHasAWriterInTheStratum`, `theRosterIsTheStratumItChecks`,
+  `thePopulationIsTheEntryStratum` and `aStoppedFirstStratumIsRepairedByTheNextCapture`, and the
+  class `DerivationStratumCeilingGateTest`, which R876 also names as its ceiling gate;
+* a main-code string, `StageProgress`'s `"graphitron: derivation stratum done in "`. It prints in a
+  consumer's build output, and `.claude/skills/store-performance/SKILL.md` tells a reader to look for
+  that exact line;
+* other surfaces: the bodies of other roadmap items (R876's among them) and the slug
+  `roadmap/name-matching-stratum.md`, `roadmap/changelog.md` (permanent), `docs/history/`, and
+  `.claude/skills/store-performance/SKILL.md`.
+
+Without an edge, the implementer has to decide whether the build's log line changes and whether other
+items' plans get edited, and the Done reviewer has nothing to judge that decision against. The plan
+would satisfy this by saying which of these change, which stay, and why, and by making Retired
+vocabulary match. If the log line changes, the skill that matches on it changes in the same commit.
+
+Non-blocking: `development-principles.adoc` is at exactly 3,500 words by `DocSizeBudgetTest`'s count,
+so the sentence an axiom may gain has to displace one. The test's own message says so; the plan could
+say it too.
