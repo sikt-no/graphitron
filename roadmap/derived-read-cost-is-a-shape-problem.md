@@ -512,16 +512,17 @@ static method needs no holder.
       re-keyed by the call and position and carry `call_kind`, so a fill only some calls take is a
       check (`TABLE` on a condition, `SOURCE` on a producer's call), and the `PARAMETER` binding's
       place is spelled from the same key; nothing a reader sees changes.
-    * **A call's fills are stated per candidate overload, and its method is the one candidate every
-      position fills** `blocked`, on "Every call an occurrence makes is a row of one supertype". One
+    * **A call's fills are stated per candidate overload, and its method is the one candidate every position fills** `blocked`,
+      on "Every call an occurrence makes is a row of one supertype". One
       stage owns every fill: the candidates' fills, the pin and the stored fills, for producer calls
       and conditions alike, placed after the join paths and before anything reading a fill, so
       whether a parameter is fillable is decided once rather than by the pin and again by the fill.
       A call with no candidate or several is a defect at its own grain, projected to the written
       position naming the participant, since an inherited `@condition` can pin for one
       implementation and not another.
-    * **A `@condition` is a call per type its occurrence's rows are** `blocked`, on "A call's fills are
-      stated per candidate overload". `graphitron_occurrence_condition(graph, coordinate,
+    * **A `@condition` is a call per type its occurrence's rows are** `blocked`,
+      on "A call's fills are stated per candidate overload, and its method is the one candidate every position fills".
+      `graphitron_occurrence_condition(graph, coordinate,
       target_type)`, a call subtype, one row per occurrence carrying a `@condition` and per type its
       need reaches, the table read through the occurrence's join path where it has one and off the
       target type where it has none (a root field's own `@condition`); the pin references
@@ -2459,8 +2460,8 @@ call's `$context` fills.
   defect for a condition that decides nothing exists already or is new.
 * Settled (Alf, 2026-11-09): the call holders share a supertype, `graphitron_occurrence_call`, for
   the parameter rows' one foreign key, and a `@condition` is one call per type its occurrence's rows
-  are, pinning an overload for each, as the join path step does per implementation; see "Every call
-  an occurrence makes is a row of one supertype".
+  are, pinning an overload for each, as the join path step does per implementation; see
+  "Every call an occurrence makes is a row of one supertype".
 
 ## Tests
 
