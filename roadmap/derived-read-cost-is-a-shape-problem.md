@@ -536,8 +536,8 @@ static method needs no holder.
       `code_condition_method` by `_ref` columns, `ON DELETE SET NULL`, as the step method does. It
       carries `override_written`, the `override:` written, doomed with the consumption rule and kept
       for the transition against the review's point that it is a definition-keyed fact repeated
-      per type (Alf, 2026-11-09). Its fills follow "A `@condition`'s fills" under "Producer, bind and
-      call on the occurrence", today's rules reproduced; a parameter nothing fills is
+      per type (Alf, 2026-11-09). Its fills follow the manual's `@condition` reference, § How the
+      method's parameters are bound, today's rules reproduced; a parameter nothing fills is
       `CONDITION_PARAMETER_UNFILLED`, written per call and reported at the written `@condition` naming
       the participant (Alf, 2026-11-09).
     * **A `@condition` and a service pair a parameter with an argument by one rule** `open`, off the
@@ -2519,34 +2519,15 @@ or keys, `$context`, `$session`, `$tenant` or the jOOQ context. Each holder owns
 keyed by the holder, the method and the position, and a `PARAMETER` binding's place is spelled from
 the same key.
 
-**A `@condition`'s fills** (Alf, 2026-11-09). Today's rules, which the flip reproduces:
-
-* The method is static; overloads of one name are admitted only where they agree on every position
-  but their table parameters, and a `DSLContext` parameter is refused, the session being reached
-  through `$session`. Each admitted overload is a candidate at each type the occurrence's rows are,
-  and the pin is the one whose table parameter accepts that type's table, the other positions being
-  the same in every overload.
-* `TABLE`: a table parameter takes the table at the occurrence's path end, the field's own, each
-  participant's, or for an input field carrying `@nodeId` the foreign key's target, under an
-  `EXISTS` the field's presence guards.
-* Then, each parameter's first: a `$session` or `$session.<member>` pair; an `argMapping` path,
-  `ARGUMENT` at its landing; the slot of the parameter's name, where the slots are the field's
-  arguments for a field's `@condition`, the argument alone for an argument's and the input field
-  alone for an input field's, read through its argument's map; a `contextArguments` key of its
-  name, an argument of the same name winning; then by type, of what is left, one parameter and one
-  slot pair, else a Java type found once among the parameters and once among the slots.
-* What the value arrives as is the emitter's, from the landing and the parameter's type, as a
-  service's is: the scalar or enum as it arrives, an input object as a `Map` or a bean (no bean at an
-  input field's `@condition`, nor on an interface or union field), a whole `@nodeId` slot as its
-  decoded key (a `Row` for a composite key, a `List` for a list), a dotted path through one as a key
-  column.
-* Where the service's by-type rule differs, to be closed by "A `@condition` and a service pair a
-  parameter with an argument by one rule": the service pairs on list-ness and element type with each
-  other's only candidate and, failing that, the last open parameter and argument where type cannot
-  tell them apart, and reads an input object as any non-JDK class; the condition pairs one
-  remaining parameter with one remaining slot whatever their types, or a Java type once on each side
-  by its GraphQL scalar's mapping, skips a parameter named for a context key, and reads no element of a
-  collection.
+**A `@condition`'s fills** (Alf, 2026-11-09). The rules are the manual's, maintained in
+`reference/directives/condition.adoc` § How the method's parameters are bound, which the flip
+reproduces. Where its by-type rule differs from the service's, to be closed by "A `@condition` and a
+service pair a parameter with an argument by one rule": the service pairs on list-ness and element
+type with each other's only candidate and, failing that, the last open parameter and argument where
+type cannot tell them apart, and reads an input object as any non-JDK class; the condition pairs one
+remaining parameter with one remaining element whatever their types, or a Java type once on each
+side by its GraphQL scalar's mapping, skips a parameter named for a context key, and reads no element
+of a collection.
 
 **Stated so far.** `graphitron_occurrence_producer`, one row per producing occurrence with its kind
 and `ROOT` or `CHILD` start, and its subtypes `_key_row` (a child's start off its parent's object),

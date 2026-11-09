@@ -131,6 +131,25 @@ The method signature is `iRegelverksamling(Regelverksamling rs, Integer regelver
 
 The `EXISTS` applies only when the filter field carries a value. It is a semi-join: it keeps just the rows that have a matching row on the far side of the foreign key, so applying it for a value nobody supplied would silently narrow the query from "the whole collection" to "the part of the collection that has the relation at all". An omitted field, an explicit `null`, and an empty list therefore all leave the query unfiltered by this field, exactly as an implicit filter field with no value does. This holds whatever the method's signature binds, and when the field carries no value the method is not called: there is no value for it to map, and the wrapper is not yours to opt out of from inside it. If you want a far-side restriction that always applies, write a field-level `@condition` (it receives the consuming field's own table) and write the `EXISTS` yourself in jOOQ, where the semi-join is your SQL rather than the generator's.
 
+[#parameter-binding]
+== How the method's parameters are bound
+
+Every parameter of the method is given a value the generated code supplies, and a parameter none of the rules below reaches fails the build at the `@condition`, naming the parameter.
+
+The method must be `static`, and it takes at least one table parameter, `Table<?>` or a generated table class. A `DSLContext` parameter is not accepted: a condition reaches the session through `$session`, below. Several methods of the referenced name are one target only where they agree on every position but their table parameters; for each table the condition is applied to, the one whose table parameter accepts that table is called. That is how one declaration per participant of a multitable interface or union keeps its own typed columns.
+
+*The table.* A table parameter receives the table the condition is applied to: the consuming field's own table, each participant's table on a multitable field, or, on an input field carrying `@nodeId`, the table the decoded id identifies, under the `EXISTS` described above.
+
+*The other parameters*, each taking the first of these that applies:
+
+. `$session` or `$session.<member>` written for it in `argMapping:`, the session handle or one member of it.
+. A path written for it in `argMapping:`, the value that path reaches.
+. An element named like the parameter. Which elements a condition sees depends on where it is written: a field's `@condition` sees every argument of the field, an argument's `@condition` that argument alone, and an input field's `@condition` that input field alone, its value read through the argument enclosing it.
+. A `contextArguments:` key named like the parameter, the value the request context carries under it. An element of the same name wins over the key.
+. By type, among the parameters and elements still unbound: one parameter and one element left pair up whatever their types; otherwise a Java type found exactly once among the parameters and exactly once among the elements, by the element's GraphQL type, pairs those two.
+
+What a bound element arrives as follows from the parameter's declared type and the element's GraphQL type: a scalar or enum as graphql-java delivers it, an input object as a `Map` or a bean (see <<input-object-parameter>>), a whole `@nodeId` slot as its decoded key and a dotted path through one as a key column (see the constraints below).
+
 == Constraints
 
 * Applies on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION`. The element type fixes the predicate's scope: argument-level conditions can only see *their own* argument and any context arguments, field-level conditions see *all* of the field's arguments, input-field-level conditions see the input's enclosing argument map (the rewrite extracts the leaf value via the path from the outer argument).
