@@ -444,7 +444,7 @@ static method needs no holder.
 * **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
 * **The argMapping readers read the landing, and the candidate and match go** `open`, E's. R1099's step 2 stored where an argument path lands, `graphitron_argmapping_landing`, under each occurrence of its call; what follows is its readers.
-  `graphitron_outbox_leaf` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
+  `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
 * **`$tenant` in argMapping routes a service call** `open`, E's. The sigil on a pair's left side names
@@ -641,8 +641,17 @@ static method needs no holder.
     The store-emitted service fetcher calls R1113's companion after the service returns, reading the
     `$result` keys off the returned object through their `VALUE` bindings ("A payload key is a filled
     parameter of its message"), and the `OUTBOX_NOT_A_WRITE` arm admits a service write
-    in the same commit, so a service `@outbox` is never accepted without being emitted. It also waits
-    on R1101's phase 2, nested scopes joining the field's transaction.
+    in the same commit, so a service `@outbox` is never accepted without being emitted. R1101's phase
+    2, nested scopes joining the field's transaction, which it also needed, has shipped.
+* **An `@outbox` on a `@routine` mutation emits from the store** `open`, off the critical path.
+  R1113's phase 3 for routine writes. A routine write is emitted from the store already
+  (`RoutineWriteEmitter`), and like a DML write it captures, inside its transaction, what it reads
+  back by: the routine's own result columns. So a `$result` key reads those, where DML reads the
+  written row: a field whose landed column is a captured result column, or a node id whose key
+  columns all are; a field past the first hop needs a read and misfits. `graphitron_occurrence_producer_write`
+  admits `ROUTINE` (or `OUTBOX_NOT_A_WRITE` reads the routine producer beside it), the key rule gains
+  the routine arm, and `RoutineWriteEmitter` calls R1113's companion with the captured record, in
+  one commit, so a routine `@outbox` is never accepted without being emitted.
 * **A table class's column fields are stated** `blocked`, on "The generated jOOQ classes are read with their members". The code family keeps each generated table's public column fields, which
   the census reads and the capture drops.
 * **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
@@ -755,7 +764,7 @@ pass and no stratum that clears and recomputes.
       stage, `occurrence-depths`, each depth reading the one above. `StageRosterGateTest` refuses a
       stage rule view that reaches a relation a later stage writes; the sweep is the gatherer's,
       after its stages.
-    * **An outbox message is a call of its occurrence** `open`. The outbox views predate the
+    * **An outbox message is a call of its occurrence** `done`. The outbox views predate the
       occurrence model and derive at read time what it now states: the `@outbox` applications of a
       field, three times over by type and field; whether the field writes, off the field-keyed
       `graphitron_producer_write`; an argument source, off `graphitron_argmapping_candidate`; a
@@ -800,9 +809,8 @@ pass and no stratum that clears and recomputes.
         occurrences for them: a head under the call, or the returned type's own `Type.field` where
         that type is bound to a table and so starts a chain, and each later name the same way from
         what the step before returns. A path through a list lands as any other, a list being its
-        reader's to judge. `graphitron_argmapping_pair_defect_rule`'s path arm leaves `@outbox` out
-        until "A pair's source is judged once for every directive", so an outbox source keeps one
-        verdict meanwhile. `outbox-applications` and `outbox-service-result` pin the landings.
+        reader's to judge. `graphitron_argmapping_pair_defect_rule`'s path arm judges an `@outbox`
+        path as it does any other's. `outbox-applications` and `outbox-service-result` pin the landings.
       * **A payload key is a filled parameter of its message** `done`. The key relation and its fills, the remaining `OUTBOX_*`
         codes, and `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
         `graphitron_outbox_result_step` go. A `$result` key reads its landed occurrence's binding,
@@ -811,7 +819,7 @@ pass and no stratum that clears and recomputes.
         Done whole rather than with the service half waiting (Alf, 2026-11-08). The common payload's
         keys are crossed with the messages through an outer join, so the message drives and probes
         the handful of entries rather than the reverse.
-      * **A pair's source is judged once for every directive** `open`. `graphitron_argmapping_pair_defect_rule` already judges a
+      * **A pair's source is judged once for every directive** `done`. `graphitron_argmapping_pair_defect_rule` already judges a
         pair by the kind of source it binds, `$session`, `$context` and argument paths, whatever
         directive wrote it; the outbox's restatements fold into it (Alf, 2026-11-08): the argument
         half of `OUTBOX_SOURCE_UNRESOLVED` is `ARGMAPPING_PATH_UNRESOLVED` once `@outbox` lands, its
@@ -821,9 +829,15 @@ pass and no stratum that clears and recomputes.
         carried the outbox codes, so they retire without a deprecation; the outbox keeps placement,
         its targets, its events and its common payload. A message is the code's statement and its
         detail, read beside the directive it sits at, and a per-directive wording, should one be
-        wanted, is a statement keyed by code and directive.
-    * **An arm belongs to the last stage whose facts it reads** `blocked`, on "An outbox message is a
-      call of its occurrence". Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
+        wanted, is a statement keyed by code and directive. As landed (Alf, 2026-11-09): an argument
+        or `$result` path landing nowhere is `ARGMAPPING_PATH_UNRESOLVED`, a `$scope` member that is
+        not one `SCOPE_MEMBER_UNKNOWN` beside `SESSION_MEMBER_UNKNOWN`, and a source found that
+        cannot fill its place one `ARGMAPPING_SOURCE_MISFIT`, its detail naming the type or the
+        reason (a path through a list, a write's field off the written row), so a parameter-side
+        misfit joins it later rather than minting a code. Each is a row per entry; the views the pair
+        rule now reads come later in the DDL, so it and `graphitron_entry_defect_rule` sit after the
+        outbox's.
+    * **An arm belongs to the last stage whose facts it reads** `open`. Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
       that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every
       fact document and sis write the same `graphitron_entry_defect` rows before and after. The
       checks that read only the documents (`TYPE_NAME_CASE_COLLISION`, `CONNECTION_RETURN`,
@@ -1856,8 +1870,8 @@ that depend on the parent fall three ways.
   ** `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`, whose rules already decide
      per parent (a nested field is a re-read producer where a write, routine or service returns its
      parent; a reader only where its parent has one result shape).
-  ** Unsorted: `graphitron_result_pivot` and the view `graphitron_outbox_leaf`, which follows what it
-     reads; both are sorted when their readers are.
+  ** Unsorted: `graphitron_result_pivot`, which follows what it reads; it is sorted when its readers
+     are.
 
 **The relations, with their grains.**
 

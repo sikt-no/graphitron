@@ -3,8 +3,8 @@
 # parent's result holds; where it finds none and its type holds that class, the object passes through;
 # where the member returns a record of the field's table-bound type, the step takes that record, whose
 # @nodeId can end the path. A path ends on a member a payload can carry, on a node id, or, bare, on a
-# scalar return. A path that resolves to something a payload cannot carry is unserializable, naming the
-# type; one through a list, or through a field with no read, is unresolved.
+# scalar return. A path that lands but reads something a payload key cannot hold misfits, naming the
+# type, or the list it goes through; one that lands nowhere is unresolved, as any argMapping path is.
 
 extend schema @withConfiguration(outboxTable: "outbox")
 extend schema @withFacts(docs: [{path: "layouts/anchor"}])
@@ -107,10 +107,17 @@ extend schema @expectEquals(relation: "graphitron_outbox_key", where: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
-  code IN ('OUTBOX_RESULT_MEMBER_UNSERIALIZABLE', 'OUTBOX_SOURCE_UNRESOLVED')
+  code IN ('ARGMAPPING_SOURCE_MISFIT', 'ARGMAPPING_PATH_UNRESOLVED')
   """, rows: """
-  code,                                coordinate,           detail
-  OUTBOX_RESULT_MEMBER_UNSERIALIZABLE, Mutation.blurb,       "whole: $result.holder.blurb (no.sikt.graphitron.rewrite.test.services.FilmBlurb)"
-  OUTBOX_SOURCE_UNRESOLVED,            Mutation.blurbMissing, "missing: $result.nosuch"
-  OUTBOX_SOURCE_UNRESOLVED,            Mutation.films,       "first: $result.results.film.id"
+  code,                       coordinate,            detail
+  ARGMAPPING_SOURCE_MISFIT,   Mutation.blurb,
+  ARGMAPPING_PATH_UNRESOLVED, Mutation.blurbMissing,
+  ARGMAPPING_SOURCE_MISFIT,   Mutation.films,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
+  code,                       detail
+  ARGMAPPING_SOURCE_MISFIT,   "whole: $result.holder.blurb (no.sikt.graphitron.rewrite.test.services.FilmBlurb)"
+  ARGMAPPING_PATH_UNRESOLVED, $result.nosuch
+  ARGMAPPING_SOURCE_MISFIT,   "first: $result.results.film.id (through a list, where a key holds one value)"
   """)

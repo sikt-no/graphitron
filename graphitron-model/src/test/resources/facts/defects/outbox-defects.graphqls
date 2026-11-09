@@ -1,10 +1,10 @@
 # An @outbox is judged at its own application. An @outbox on a field that writes no table (a Query
 # field here) has no write to describe. A payload key written twice in one mapping, or one a
-# configured common payload also names, loses a value, and a source the field does not have (an
-# argument it does not declare, a result field that is not the written type's node id or a column
-# field, a scope member that is not one) binds nothing. Two @outbox with one event, given or
-# defaulted to the field's coordinate, cannot be told apart by a consumer. Each is one row per
-# @outbox and code, the first offending key as written.
+# configured common payload also names, loses a value. Two @outbox with one event, given or defaulted
+# to the field's coordinate, cannot be told apart by a consumer. Each is one row per @outbox and
+# code, the first offending key as written. A source the field does not have (an argument it does
+# not declare, a $result field it does not return, a scope member that is not one) is judged at its
+# entry as any directive's is, each entry a row under the string's one row per code.
 #
 # A message keeps one entry per key all the same, so what it emits stays well formed while the
 # defect stands: of two entries with one key the first written is the key, and a message's own
@@ -48,9 +48,17 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   OUTBOX_NOT_A_WRITE,       Query.films,
   OUTBOX_KEY_CONFLICT,      Mutation.keyTwice,  k
   OUTBOX_KEY_CONFLICT,      Mutation.collides,  operation
-  OUTBOX_SOURCE_UNRESOLVED, Mutation.unresolved, "x: nosuch"
+  ARGMAPPING_PATH_UNRESOLVED, Mutation.unresolved,
+  SCOPE_MEMBER_UNKNOWN,     Mutation.unresolved,
   OUTBOX_DUPLICATE_EVENT,   Mutation.sameA,     Same
   OUTBOX_DUPLICATE_EVENT,   Mutation.sameB,     Same
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
+  position, code,                       detail
+  0,        ARGMAPPING_PATH_UNRESOLVED, nosuch
+  1,        ARGMAPPING_PATH_UNRESOLVED, $result.nosuch
+  2,        SCOPE_MEMBER_UNKNOWN,       nope
   """)
 
 extend schema @expectEquals(relation: "graphitron_outbox_key", where: """
