@@ -19,7 +19,8 @@ import static org.jooq.impl.DSL.max;
  * child's object source at the next depth begins; the paths no claim covers, an empty one where the need starts on its
  * landing and an inferred one over the one foreign key; and the claimed needs walked into their
  * steps, each to its written or inherited path or to a stop, {@link Steps} writing the defects of
- * the walk as it takes it. A child field or an argument under a field that writes a path starts
+ * the walk as it takes it; then the node id and column each occurrence binds where its path lands. A
+ * child field or an argument under a field that writes a path starts
  * where that path's join path lands, so a depth reads the join paths of the depth above.
  */
 public final class OccurrenceDepths {
@@ -42,6 +43,8 @@ public final class OccurrenceDepths {
                 AccessorPaths.writeDepth(dsl, graph, depth, touchedAt);
                 Paths.writeDepth(dsl, graph, depth, touchedAt);
                 Steps.writeDepth(dsl, graph, depth, touchedAt);
+                OccurrenceNodeIds.writeDepth(dsl, graph, depth, touchedAt);
+                OccurrenceColumns.writeDepth(dsl, graph, depth, touchedAt);
             }
         }
         OccurrenceCallParameters.sweep(dsl, graph, touchedAt);
@@ -50,5 +53,7 @@ public final class OccurrenceDepths {
         PathNeeds.sweep(dsl, graph, touchedAt);
         Paths.sweep(dsl, graph, touchedAt);
         Steps.sweep(dsl, graph, touchedAt);
+        OccurrenceNodeIds.sweep(dsl, graph, touchedAt);
+        OccurrenceColumns.sweep(dsl, graph, touchedAt);
     }
 }

@@ -16974,12 +16974,10 @@ INSERT INTO meta_stage VALUES
   ('fetchers', 'graphitron', 25, 'no.sikt.graphitron.model.derive.Fetchers'),
   ('field-key-rows', 'graphitron', 26, 'no.sikt.graphitron.model.derive.FieldKeyRows'),
   ('occurrence-depths', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-node-ids', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceNodeIds'),
-  ('occurrence-columns', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceColumns'),
-  ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('occurrence-participants', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('outbox', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-values', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('occurrence-participants', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('outbox', 'graphitron', 30, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 31, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -17071,6 +17069,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_join_path_step_routine'),
   ('occurrence-depths', 'graphitron_join_path_stop'),
   ('occurrence-depths', 'graphitron_occurrence_binding'),
+  ('occurrence-depths', 'graphitron_occurrence_column'),
+  ('occurrence-depths', 'graphitron_occurrence_node_id'),
   ('occurrence-depths', 'graphitron_occurrence_call'),
   ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_parameter'),
@@ -17089,10 +17089,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_path_need'),
   ('occurrence-depths', 'graphitron_path_need_object'),
   ('occurrence-depths', 'graphitron_path_need_table'),
-  ('occurrence-node-ids', 'graphitron_occurrence_binding'),
-  ('occurrence-node-ids', 'graphitron_occurrence_node_id'),
-  ('occurrence-columns', 'graphitron_occurrence_binding'),
-  ('occurrence-columns', 'graphitron_occurrence_column'),
   ('occurrence-values', 'graphitron_occurrence_binding'),
   ('occurrence-values', 'graphitron_occurrence_binding_value'),
   ('occurrence-participants', 'graphitron_occurrence_participant'),

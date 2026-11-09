@@ -1037,8 +1037,8 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
-  * **An occurrence binds the table its rows or its value land on** `blocked`, on "The column and
-    node id bindings are written per depth". `graphitron_occurrence_binding_table`, the `TABLE`
+  * **An occurrence binds the table its rows or its value land on** `open`.
+    `graphitron_occurrence_binding_table`, the `TABLE`
     subtype, by a writer of its own per depth after `Steps`, reading stored rows only and no rule
     inside `PathNeeds`, whose rules and `OccurrenceSources`' lead the build's CPU. The landing is the
     join path's target where a path was walked, else the need's landing, the expression
@@ -1051,7 +1051,7 @@ classified records have no reader left and can go with the walk.
     and `NODE_ID`, every occurrence that filters or is filtered binds a table, which a `@condition`
     call is keyed by. Written by the session flipping the conditions, F reviewing the shape (Alf and
     F, 2026-11-09).
-    * **The column and node id bindings are written per depth** `open`. `occurrence-columns` and
+    * **The column and node id bindings are written per depth** `done`. `occurrence-columns` and
       `occurrence-node-ids` fold into `occurrence-depths`, each depth's after its `Steps`, so a
       binding that is written where no column or node id takes the value, and a condition's fills,
       read them upstream; their rules read only needs and join paths already.

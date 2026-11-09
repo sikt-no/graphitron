@@ -17,8 +17,6 @@ import no.sikt.graphitron.model.derive.OccurrenceDepths;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
 import no.sikt.graphitron.model.derive.OccurrenceValues;
 import no.sikt.graphitron.model.derive.Outboxes;
-import no.sikt.graphitron.model.derive.OccurrenceColumns;
-import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
 import no.sikt.graphitron.model.derive.PathClaims;
 import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.ProducerClaims;
@@ -132,17 +130,11 @@ public final class GraphitronAssemblyCapture {
         // just written and the path elements above; the walk departs from these.
         new AnchorStage("field-key-rows", FieldKeyRows.class,
             FieldKeyRows::derive),
-        // Each occurrence's producer, its calls' pins and fills, source, needs and paths, a depth at a
-        // time, off the occurrences, the landings, the key rows and the claims above: one stage, each
+        // Each occurrence's producer, its calls' pins and fills, source, needs, paths and the node id
+        // and column it binds, a depth at a time, off the occurrences, the landings, the key rows and the claims above: one stage, each
         // depth reading what the depth above it wrote.
         new AnchorStage("occurrence-depths", OccurrenceDepths.class,
             OccurrenceDepths::derive),
-        // The key columns each node id at an occurrence carries, where the needs just written land.
-        new AnchorStage("occurrence-node-ids", OccurrenceNodeIds.class,
-            OccurrenceNodeIds::derive),
-        // Then the column each other scalar occurrence reads or binds there.
-        new AnchorStage("occurrence-columns", OccurrenceColumns.class,
-            OccurrenceColumns::derive),
         // The member each occurrence with an object source reads, off the accessor paths above.
         new AnchorStage("occurrence-values", OccurrenceValues.class,
             OccurrenceValues::derive),

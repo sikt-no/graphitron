@@ -4,6 +4,7 @@ import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_RULE;
@@ -16,16 +17,18 @@ import static org.jooq.impl.DSL.val;
  * its path lands, from the rule view beside it, under a {@code COLUMN} row of
  * {@code graphitron_occurrence_binding}, marked and swept.
  *
- * <p>Runs after the path needs, whose landings it reads, the binding claims, whose written names it
- * reads, and the node ids, whose occurrences read no column. The sweep deletes the stale {@code COLUMN} bindings, and the subtype rows
+ * <p>A step of {@link OccurrenceDepths}' per-depth loop, after the depth's needs and join paths, whose
+ * landings it reads, and its node ids, whose occurrences read no column; the binding claims, whose
+ * written names it reads, are written before the loop. The sweep deletes the stale {@code COLUMN} bindings, and the subtype rows
  * under them go by the cascade.
  */
 public final class OccurrenceColumns {
 
     private OccurrenceColumns() {}
 
-    /** States the graph's column bindings and sweeps what the reading no longer finds. */
-    public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    /** States the column bindings of the occurrences at {@code depth}. */
+    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        var o = GRAPHITRON_OCCURRENCE;
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var c = GRAPHITRON_OCCURRENCE_COLUMN;
         var r = GRAPHITRON_OCCURRENCE_COLUMN_RULE;
@@ -34,7 +37,8 @@ public final class OccurrenceColumns {
             .select(dsl
                 .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("COLUMN"), val(touchedAt, b.TOUCHED_AT))
                 .from(r)
-                .where(r.GRAPH_NAME.eq(graph)))
+                .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
+                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
@@ -47,7 +51,8 @@ public final class OccurrenceColumns {
                     r.TABLE_SCHEMA, r.TABLE_NAME, r.COLUMN_NAME, r.MATCHED_BY,
                     val(touchedAt, c.TOUCHED_AT))
                 .from(r)
-                .where(r.GRAPH_NAME.eq(graph)))
+                .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
+                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
             .onConflict(c.GRAPH_NAME, c.COORDINATE, c.BOUND)
             .doUpdate()
             .set(c.TABLE_SOURCE_NAME, excluded(c.TABLE_SOURCE_NAME))
@@ -57,6 +62,11 @@ public final class OccurrenceColumns {
             .set(c.MATCHED_BY, excluded(c.MATCHED_BY))
             .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
             .execute();
+    }
+
+    /** Deletes the COLUMN bindings no depth of this reading marked, the subtype rows under them by the cascade. */
+    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var b = GRAPHITRON_OCCURRENCE_BINDING;
         dsl.deleteFrom(b)
             .where(b.GRAPH_NAME.eq(graph))
             .and(b.KIND.eq("COLUMN"))
