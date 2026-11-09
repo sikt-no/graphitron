@@ -34,7 +34,8 @@ import java.util.regex.Pattern;
  * <p>Each value is read off the argument map through the input objects above it, {@code null}
  * wherever one is absent, and typed at its column through the column's own data type, so a converter
  * on the column runs and a wire value of another Java type (an {@code ID}'s string for an integer key)
- * is converted the way jOOQ binds it. A scalar compares by equality and a list by membership. A value
+ * is converted the way jOOQ binds it; an enum on a column of a Java enum is the constant of its name.
+ * A scalar compares by equality and a list by membership. A value
  * that can be absent drops its predicate when it is, and a list drops it when it is empty too, so an
  * empty filter list filters nothing. A value every step of whose path is declared non-null is always
  * present and is compared unguarded.
@@ -66,7 +67,7 @@ public final class ConditionEmitter {
 
     /** The method's own names, and the pattern its read locals follow, which no term's local may take. */
     private static final Set<String> TAKEN = Set.of("table", "args", "conditions", "env", "dsl");
-    private static final Pattern READ_LOCAL = Pattern.compile("[mle]\\d+");
+    private static final Pattern READ_LOCAL = Pattern.compile("[mles]\\d+");
 
     /** The producers whose arguments a condition filters: a read, its lookup and its count. */
     private static final Set<String> FILTERED = Set.of("SELECT", "LOOKUP", "COUNT");
@@ -86,8 +87,6 @@ public final class ConditionEmitter {
          * id of another participant's type answers no row rather than a refusal.
          */
         NODE_ID_PARTICIPANT,
-        /** A term is an enum, converted from its GraphQL name to the column's value. */
-        ENUM,
         /** A term is read through a list of input objects, a match per element. */
         THROUGH_LIST,
         /** A term's column is of a Java type this emitter cannot spell. */
@@ -164,13 +163,14 @@ public final class ConditionEmitter {
             if (term.list()) {
                 var l = "l" + ++counter[0];
                 var e = "e" + ++counter[0];
-                method.addStatement("$T $L = $L instanceof $T<?> $L ? $L.stream().map($L -> $T.val($L, $L).getValue()).toList() : null",
-                    ParameterizedTypeName.get(LIST, type.box()), local, read, LIST, l, l, e, DSL, e, column);
+                method.addStatement("$T $L = $L instanceof $T<?> $L ? $L.stream().map($L -> $L).toList() : null",
+                    ParameterizedTypeName.get(LIST, type.box()), local, read, LIST, l, l, e,
+                    typed(term, type, CodeBlock.of("$L", e), column, counter));
                 compare = CodeBlock.of("$L.in($L)", column, local);
                 guard = term.present() ? CodeBlock.of("!$L.isEmpty()", local)
                     : CodeBlock.of("$L != null && !$L.isEmpty()", local, local);
             } else {
-                method.addStatement("$T $L = $T.val($L, $L).getValue()", type.box(), local, DSL, read, column);
+                method.addStatement("$T $L = $L", type.box(), local, typed(term, type, read, column, counter));
                 compare = CodeBlock.of("$L.eq($L)", column, local);
                 guard = term.present() ? null : CodeBlock.of("$L != null", local);
             }
@@ -199,7 +199,6 @@ public final class ConditionEmitter {
                 .anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
             return Optional.of(Reason.REACHED);
         }
-        if ("ENUM".equals(term.typeKind())) return Optional.of(Reason.ENUM);
         if (term.throughList()) return Optional.of(Reason.THROUGH_LIST);
         if (type(term.column().bindingType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
         return Optional.empty();
@@ -306,6 +305,20 @@ public final class ConditionEmitter {
         }
         if (parts.size() == 1) return parts.getFirst();
         return CodeBlock.of("$T.and($L)", DSL, CodeBlock.join(parts, ", "));
+    }
+
+    /**
+     * The wire value {@code value} as the column's Java type: an enum on a column of a Java enum by the
+     * constant of its name, graphql-java handing an enum value over as its name, and anything else
+     * through the column's own data type.
+     */
+    private static CodeBlock typed(ConditionQuery.Term term, TypeName type, CodeBlock value, CodeBlock column,
+                                   int[] counter) {
+        if ("ENUM".equals(term.typeKind()) && !"java.lang.String".equals(term.column().bindingType())) {
+            var name = "s" + ++counter[0];
+            return CodeBlock.of("$L instanceof $T $L ? $T.valueOf($L) : null", value, String.class, name, type, name);
+        }
+        return CodeBlock.of("$T.val($L, $L).getValue()", DSL, value, column);
     }
 
     /**

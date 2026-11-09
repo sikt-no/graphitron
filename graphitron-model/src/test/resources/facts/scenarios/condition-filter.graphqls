@@ -5,7 +5,8 @@
 # binds its column too; the condition leaves it out. A value whose declaration writes a path binds
 # the column where the path lands, each step joining on a key's columns or by a condition method.
 # A node id binds the node's key, which the condition compares on the table the id lands on: the
-# node's own key there, or the foreign key referencing it.
+# node's own key there, or the foreign key referencing it. An enum binds the column like any
+# scalar.
 
 interface Node { id: ID! }
 
@@ -13,6 +14,8 @@ type Film implements Node @table(name: "film") @node(typeId: "F") {
     id: ID!
     title: String
 }
+
+enum MpaaRating { G PG PG_13 R NC_17 }
 
 type FilmActor implements Node @table(name: "film_actor") @node {
     id: ID!
@@ -47,6 +50,7 @@ type Query {
     filmsByLengths(lengths: [Int!] @field(name: "length")): [Film!]!
     filmsByFilter(filter: FilmFilter): [Film!]!
     filmsByKey(film_id: [Int!] @lookupKey, title: String): [Film]!
+    filmsByRating(rating: MpaaRating, ratings: [MpaaRating!] @field(name: "rating")): [Film!]!
     filmByNodeId(id: ID! @nodeId(typeName: "Film")): Film
     filmsByNodeIds(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
     filmActorsByNodeIds(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
@@ -87,6 +91,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column",
   Query.filmsByKey(film_id:),                public.film, film_id,      SQL_NAME
   Query.filmsByKey(title:),                  public.film, title,        SQL_NAME
   Query.filmsByLengths(lengths:),            public.film, length,       SQL_NAME
+  Query.filmsByRating(rating:),              public.film, rating,       SQL_NAME
+  Query.filmsByRating(ratings:),             public.film, rating,       SQL_NAME
   Query.filmsByTitle(title:),                public.film, title,        SQL_NAME
   """)
 
@@ -102,6 +108,8 @@ extend schema @expectEquals(relation: "graphitron_path",
   Query.filmActorsByNodeIds(ids:),                 FilmActor,   JOIN, EMPTY
   Query.filmByNodeId(id:),                         Film,        JOIN, EMPTY
   Query.filmsByNodeIds(ids:),                      Film,        JOIN, EMPTY
+  Query.filmsByRating(rating:),                    Film,        JOIN, EMPTY
+  Query.filmsByRating(ratings:),                   Film,        JOIN, EMPTY
   Query.inventoriesByFilm(filmId:),                Inventory,   JOIN, INFERRED
   Query.filmById(filmId:),                   Film,        JOIN, EMPTY
   Query.filmsByFilter(filter.inner.length:), Film,        JOIN, EMPTY

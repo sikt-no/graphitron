@@ -116,7 +116,7 @@ class ConditionEmitterExecutionTest {
             assertThat(result).as(coordinate).isInstanceOf(ConditionEmitter.Result.Emitted.class));
         assertThat(conditions).containsOnlyKeys("filmsByTitle", "filmById", "filmsByLengths", "filmsByFilter",
             "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName", "filmByNodeId",
-            "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm");
+            "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm", "filmsByRating");
     }
 
     @Test
@@ -199,6 +199,16 @@ class ConditionEmitterExecutionTest {
         var outer = FILM.as("outer_film");
         var condition = (Condition) conditions.get("filmsByCast").invoke(null, outer, args("cast", args("firstName", "X")));
         assertThat(condition.toString()).contains("\"outer_film_firstName_0\"").contains("\"outer_film_firstName_1\"");
+    }
+
+    @Test
+    @DisplayName("an enum compares as the column's constant of its name, a list of them too, where name and literal differ")
+    void enums() throws Exception {
+        var pg13 = no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating.PG_13;
+        assertThat(films(condition("filmsByRating", args("rating", "PG_13")))).isNotEmpty()
+            .isEqualTo(films(FILM.RATING.eq(pg13)));
+        assertThat(films(condition("filmsByRating", args("ratings", List.of("PG_13", "G")))))
+            .isEqualTo(films(FILM.RATING.in(pg13, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating.G)));
     }
 
     private static String id(String typeId, Object... key) throws Exception {
