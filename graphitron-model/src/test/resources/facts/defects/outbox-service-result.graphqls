@@ -84,6 +84,19 @@ extend schema @expectEquals(relation: "graphitron_path", where: "kind = 'ACCESSO
   Mutation.films.results,                       FilmWithActorsResult, EMPTY
   """)
 
+# What each of those occurrences takes is the value at its accessor path's end, a VALUE binding: the member
+# read, Class#member, or the class itself where the object passes through.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_value", where: "coordinate LIKE 'Mutation.%'", rows: """
+  coordinate,                                     bound
+  Mutation.blurb.holder,                          no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder
+  Mutation.blurb.holder.blurb,                    no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder#blurb
+  Mutation.blurb.holder.blurb.description,        no.sikt.graphitron.rewrite.test.services.FilmBlurb#description
+  Mutation.blurbMissing.holder,                   no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder
+  Mutation.blurbMissing.holder.blurb,             no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder#blurb
+  Mutation.blurbMissing.holder.blurb.description, no.sikt.graphitron.rewrite.test.services.FilmBlurb#description
+  Mutation.films.results,                         no.sikt.graphitron.rewrite.test.services.FilmWithActors
+  """)
+
 extend schema @expectEquals(relation: "graphitron_outbox_result_step", rows: """
   field_name, key_name, position, segments, step_type_name, step_field_name, step
   blurb,      text,     0,        3,        BlurbPayload,   holder,          PASSES_THROUGH

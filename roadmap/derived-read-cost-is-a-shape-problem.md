@@ -769,8 +769,7 @@ pass and no stratum that clears and recomputes.
         reader's to judge. `graphitron_argmapping_pair_defect_rule`'s path arm leaves `@outbox` out
         until "A pair's source is judged once for every directive", so an outbox source keeps one
         verdict meanwhile. `outbox-applications` and `outbox-service-result` pin the landings.
-      * **A payload key is a filled parameter of its message** `blocked`, on "A member's value off
-        its parent's object binds `VALUE`". The key relation and its fills, the remaining `OUTBOX_*`
+      * **A payload key is a filled parameter of its message** `open`. The key relation and its fills, the remaining `OUTBOX_*`
         codes, and `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
         `graphitron_outbox_result_step` go. A `$result` key reads its landed occurrence's binding,
         `COLUMN` or `NODE_ID` table-side and `VALUE` object-side, so an unresolved path is one that
@@ -869,10 +868,12 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
-  * **A member's value off its parent's object binds `VALUE`** `open`. An occurrence whose accessor path ends on a value binds `VALUE`,
-    `graphitron_occurrence_binding_value` naming the class and the member read, none where the object
-    passes through; what an outbox `$result` key reads over a service's value, and what the service
-    flip's object-side reads read (Alf, 2026-11-08).
+  * **A member's value off its parent's object binds `VALUE`** `done`. Every occurrence an accessor
+    path meets binds `VALUE`, `Class#member` or the class alone where the object passes through,
+    and `graphitron_occurrence_binding_value` names the class read off, the value's class and the
+    member's `code_read_slot` row; the `occurrence-values` stage writes it after `occurrence-columns`,
+    marked and swept by kind; what an outbox `$result` key reads over a service's value, and what
+    the service flip's object-side reads read (Alf, 2026-11-08). `outbox-service-result` pins it.
 * **A field's source is its parent's result** `open`, F's.
   A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
   at a root, and its parent's path end below it; its readers read that source where they read

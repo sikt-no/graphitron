@@ -10787,6 +10787,59 @@ COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spell
 COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; PARAMETER, the parameter of a call that consumes the value; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The member each occurrence with an object source reads, off its accessor path.
+CREATE VIEW graphitron_occurrence_value_rule
+  (graph_name, coordinate, bound, source_class, value_class, slot_source_name, slot_class_name,
+   slot_method_name, slot_descriptor) AS
+SELECT a.graph_name, a.coordinate,
+       CASE WHEN s.slot_method_name IS NULL THEN n.start_class
+            ELSE n.start_class || '#' || s.slot_method_name END,
+       n.start_class, a.target_class_name, s.slot_source_name, s.slot_class_name,
+       s.slot_method_name, s.slot_descriptor
+  FROM graphitron_accessor_path a
+  JOIN graphitron_path_need_object n
+    ON n.graph_name = a.graph_name AND n.coordinate = a.coordinate AND n.target_type = a.target_type
+  LEFT JOIN graphitron_accessor_path_step s
+    ON s.graph_name = a.graph_name AND s.coordinate = a.coordinate AND s.target_type = a.target_type
+   AND s.position = 0;
+COMMENT ON VIEW graphitron_occurrence_value_rule IS 'One row the value rule computes, in the shape graphitron_occurrence_binding_value stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-values stage inserts this view''s rows for one graph into graphitron_occurrence_binding_value, which is the name every reader spells.';
+
+CREATE TABLE graphitron_occurrence_binding_value (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  bound            VARCHAR   NOT NULL,
+  kind             VARCHAR   NOT NULL,
+  source_class     VARCHAR   NOT NULL,
+  value_class      VARCHAR   NOT NULL,
+  slot_source_name VARCHAR,
+  slot_class_name  VARCHAR,
+  slot_method_name VARCHAR,
+  slot_descriptor  VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- The binding it details, pinned to the kind that reads a member off the parent's object.
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  FOREIGN KEY (slot_source_name, slot_class_name, slot_method_name, slot_descriptor)
+    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (kind = 'VALUE'),
+  -- A member read names its slot whole; an object passing through names none and is its own value.
+  CHECK ((slot_method_name IS NULL) = (slot_class_name IS NULL)),
+  CHECK (slot_method_name IS NOT NULL OR value_class = source_class)
+);
+COMMENT ON TABLE graphitron_occurrence_binding_value IS 'The member an occurrence''s value is read by off the object it reads from: one row per VALUE binding, the class read from, the class of the value and the member''s code_read_slot row, none where the object passes through. For example Query.filmBlurbHolder.blurb binds FilmBlurbHolder#blurb, a FilmBlurb, and a payload''s data element that its producer''s class backs binds that class itself.';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.graph_name IS 'the owning graph''s partition, carried from the binding';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.coordinate IS 'the occurrence that binds';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.bound IS 'the place bound, the class and the member read, Class#member, or the class alone where the object passes through; with the two columns before it, the binding''s key';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.kind IS 'always VALUE, pinned so the foreign key holds the row to a binding of that kind';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.source_class IS 'the class the value is read off, the occurrence''s object source''s';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.value_class IS 'the class of the value read, the member''s delivered class with its containers peeled off, or the source class where the object passes through';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.slot_source_name IS 'the classpath entry of the member''s code_read_slot row; null where the object passes through';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.slot_class_name IS 'the class the member is read on';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.slot_method_name IS 'the method that reads the member';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.slot_descriptor IS 'the method''s descriptor; with the three before it, the code_read_slot row';
+COMMENT ON COLUMN graphitron_occurrence_binding_value.touched_at IS 'when the reading that last stated this binding ran; the occurrence-values stage deletes the graph''s VALUE bindings a reading did not mark, this row going with its binding';
+
 -- The key columns a node id at an occurrence packs or unpacks: the NODE_ID subtype of the binding,
 -- one row per key position, keyed as the binding is with the position added and pinned to its kind
 -- through the binding's unique key.
@@ -17284,10 +17337,11 @@ INSERT INTO meta_stage VALUES
   ('occurrence-depths', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
   ('occurrence-node-ids', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceNodeIds'),
   ('occurrence-columns', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceColumns'),
-  ('occurrence-call-parameters', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceCallParameters'),
-  ('occurrence-participants', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('outbox', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('occurrence-call-parameters', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceCallParameters'),
+  ('occurrence-participants', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('outbox', 'graphitron', 33, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 34, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -17397,6 +17451,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-node-ids', 'graphitron_occurrence_node_id'),
   ('occurrence-columns', 'graphitron_occurrence_binding'),
   ('occurrence-columns', 'graphitron_occurrence_column'),
+  ('occurrence-values', 'graphitron_occurrence_binding'),
+  ('occurrence-values', 'graphitron_occurrence_binding_value'),
   ('occurrence-call-parameters', 'graphitron_occurrence_binding'),
   ('occurrence-call-parameters', 'graphitron_occurrence_call_parameter'),
   ('occurrence-call-parameters', 'graphitron_occurrence_parameter'),
@@ -18529,6 +18585,14 @@ INSERT INTO meta_relation VALUES
    'One member call an accessor path makes: one row per path and position, naming the member''s code_read_slot row.',
    'For example Query.filmBlurbHolder.blurb calls FilmBlurbHolder.blurb() at position 0; a path where the object passes through calls nothing and has no step.',
    'What an accessor path calls, as a join path''s steps say what it joins, so a reader renders the call off the row rather than finding the member again. One step today, a bound name being one member. Written by the occurrence-depths stage with its path.'),
+  ('graphitron_occurrence_binding_value', 'graph-occurrence-binding', 'graphitron',
+   'The member an occurrence''s value is read by off the object it reads from: one row per VALUE binding, the class read from, the class of the value and the member''s code_read_slot row, none where the object passes through.',
+   'For example Query.filmBlurbHolder.blurb binds FilmBlurbHolder#blurb, a FilmBlurb, and a payload''s data element that its producer''s class backs binds that class itself.',
+   'The object side of a binding, beside COLUMN and NODE_ID on the table side: what an occurrence takes is the value at its accessor path''s end, so a reader of the object side, the outbox''s $result over a service''s value and the service flip''s object reads, reads one binding rather than walking the object again. Written by the occurrence-values stage from graphitron_occurrence_value_rule, under a VALUE row of graphitron_occurrence_binding, marked and swept by kind.'),
+  ('graphitron_occurrence_value_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the value rule computes, in the shape graphitron_occurrence_binding_value stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-values stage inserts this view''s rows for one graph into graphitron_occurrence_binding_value, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_join_path_step', 'path-step', 'graphitron',
    'One step a join path takes: one row per need and position the path toward it stepped through, from one table to the next, with the place of the written element it resolved where one did.',
    'For example Customer.city over @reference(path: [{key: "customer_address_id_fkey"}, {key: "address_city_id_fkey"}]) is two steps, customer to address and address to city.',

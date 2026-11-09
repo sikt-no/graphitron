@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
+import no.sikt.graphitron.model.derive.OccurrenceValues;
 import no.sikt.graphitron.model.derive.Outboxes;
 import no.sikt.graphitron.model.derive.OccurrenceColumns;
 import no.sikt.graphitron.model.derive.OccurrenceNodeIds;
@@ -143,6 +144,9 @@ public final class GraphitronAssemblyCapture {
         // Then the column each other scalar occurrence reads or binds there.
         new AnchorStage("occurrence-columns", OccurrenceColumns.class,
             OccurrenceColumns::derive),
+        // The member each occurrence with an object source reads, off the accessor paths above.
+        new AnchorStage("occurrence-values", OccurrenceValues.class,
+            OccurrenceValues::derive),
         // What fills each parameter of each service call, off the calls, landings and sources above,
         // with the PARAMETER binding of each argument a call takes.
         new AnchorStage("occurrence-call-parameters", OccurrenceCallParameters.class,
