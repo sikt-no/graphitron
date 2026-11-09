@@ -2,10 +2,14 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
+import graphql.ExecutionResult;
 import graphql.GraphQL;
+import graphql.GraphQLError;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.generated.federated.Graphitron;
+import no.sikt.graphitron.generated.federated.schema.FetcherErrorResponse;
+import no.sikt.graphitron.generated.federated.schema.GraphitronClientException;
 import no.sikt.graphitron.generated.federated.schema.GraphitronContext;
 import no.sikt.graphitron.generated.federated.util.NodeIdEncoder;
 import org.jooq.DSLContext;
@@ -47,6 +51,31 @@ class FederationEntitiesDispatchTest {
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
+    }
+
+    /** Executes without asserting on errors, for the cases that answer with one. */
+    private ExecutionResult executeRaw(String query, Map<String, Object> variables) {
+        return graphql.execute(Graphitron.newExecutionInput(dsl)
+            .query(query)
+            .variables(variables)
+            .build());
+    }
+
+    private static final String TYPENAME_ONLY =
+        "query Q($reps: [_Any!]!) { _entities(representations: $reps) { __typename } }";
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> entitiesOf(ExecutionResult result) {
+        return (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("_entities");
+    }
+
+    /** The one error {@code result} carries, asserted to sit at slot {@code index}, unredacted. */
+    private static GraphQLError singleErrorAt(ExecutionResult result, int index) {
+        assertThat(result.getErrors()).hasSize(1);
+        var error = result.getErrors().get(0);
+        assertThat(error.getPath()).containsExactly("_entities", index);
+        assertThat(error.getMessage()).doesNotContain("Reference:");
+        return error;
     }
 
     /**
@@ -138,20 +167,78 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * Unknown {@code __typename} surfaces a federation-level resolution failure (null
-     * entry) rather than an NPE in the dispatcher. Federation lifts this into its own
-     * "entity resolution failed" error at the gateway.
+     * A {@code __typename} this subgraph does not declare means the supergraph and the subgraph
+     * disagree: the slot is {@code null} and a client error, unredacted and naming the type as
+     * received, sits at that slot's path. A {@code null} element of {@code [_Entity]!} is a legal
+     * answer, so nothing downstream would report it otherwise.
      */
     @Test
-    @SuppressWarnings("unchecked")
-    void entities_unknownTypename_yieldsNullSlot() {
-        Map<String, Object> data = execute(
-            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
-            + " __typename } }",
+    void entities_unknownTypename_nullSlotWithAnErrorAtItsPath() {
+        var result = executeRaw(TYPENAME_ONLY,
             Map.of("reps", List.of(Map.of("__typename", "DoesNotExist", "id", "garbage"))));
-        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
-        assertThat(entities).hasSize(1);
-        assertThat(entities.get(0)).isNull();
+        assertThat(entitiesOf(result)).containsExactly((Map<String, Object>) null);
+        assertThat(singleErrorAt(result, 0).getMessage())
+            .isEqualTo("Cannot resolve entity with __typename 'DoesNotExist'.");
+    }
+
+    /**
+     * The goal's example: an unknown type in the middle of a batch errors its own slot while the
+     * representations around it resolve as they would alone.
+     */
+    @Test
+    void entities_unknownTypenameInABatch_errorsItsSlotWhileTheRestResolve() {
+        var result = executeRaw(TYPENAME_ONLY,
+            Map.of("reps", List.of(
+                Map.of("__typename", "Customer", "id", NodeIdEncoder.encode("Customer", 1)),
+                Map.of("__typename", "DoesNotExist", "id", "x"),
+                Map.of("__typename", "Film", "id", NodeIdEncoder.encode("Film", 1)))));
+        var entities = entitiesOf(result);
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(0)).containsEntry("__typename", "Customer");
+        assertThat(entities.get(1)).isNull();
+        assertThat(entities.get(2)).containsEntry("__typename", "Film");
+        assertThat(singleErrorAt(result, 1).getMessage())
+            .isEqualTo("Cannot resolve entity with __typename 'DoesNotExist'.");
+    }
+
+    /**
+     * A representation with no {@code __typename} names no type to dispatch to: {@code null} with
+     * an error at its slot, the valid representation beside it resolving.
+     */
+    @Test
+    void entities_representationWithoutTypename_nullSlotWithAnError() {
+        var result = executeRaw(TYPENAME_ONLY,
+            Map.of("reps", List.of(
+                Map.of("__typename", "Film", "id", NodeIdEncoder.encode("Film", 1)),
+                Map.of("id", NodeIdEncoder.encode("Film", 2)))));
+        var entities = entitiesOf(result);
+        assertThat(entities).hasSize(2);
+        assertThat(entities.get(0)).containsEntry("__typename", "Film");
+        assertThat(entities.get(1)).isNull();
+        assertThat(singleErrorAt(result, 1).getMessage())
+            .isEqualTo("Cannot resolve entity: the representation has no __typename.");
+    }
+
+    /**
+     * The slot error is a client error, so the configured {@code FetcherErrorResponse} rewords it
+     * through {@code clientErrorMessage} like any other.
+     */
+    @Test
+    void entities_unknownTypename_errorIsRewordedByTheConfiguredResponse() {
+        FetcherErrorResponse rewording = new FetcherErrorResponse() {
+            @Override
+            public String clientErrorMessage(GraphitronClientException error, DataFetchingEnvironment env) {
+                return "reworded: " + error.getMessage();
+            }
+        };
+        var result = graphql.execute(Graphitron.newExecutionInput(dsl)
+            .query(TYPENAME_ONLY)
+            .variables(Map.of("reps", List.of(Map.of("__typename", "DoesNotExist", "id", "x"))))
+            .graphQLContext(b -> b.put(FetcherErrorResponse.class, rewording))
+            .build());
+        assertThat(entitiesOf(result)).containsExactly((Map<String, Object>) null);
+        assertThat(singleErrorAt(result, 0).getMessage())
+            .isEqualTo("reworded: Cannot resolve entity with __typename 'DoesNotExist'.");
     }
 
     /**
@@ -454,21 +541,17 @@ class FederationEntitiesDispatchTest {
 
     /**
      * {@code @key(fields: "languageId", resolvable: false)} on a non-{@code @node} type:
-     * Language declares the key for reference only. A rep that matches the alternative must
-     * yield {@code null} (federation surfaces "entity resolution failed"). Locks the
-     * dispatcher's {@code resolvable: false} skip path end-to-end.
+     * Language declares its only key for reference, so this subgraph resolves no Language. The
+     * router never sends one here, so receiving one is the same disagreement as an unknown type:
+     * {@code null} with the same error, even for a rep that matches the declared key.
      */
     @Test
-    @SuppressWarnings("unchecked")
-    void entities_nonResolvableKey_yieldsNullSlot() {
-        Map<String, Object> data = execute(
-            "query Q($reps: [_Any!]!) { _entities(representations: $reps) { __typename } }",
+    void entities_typeWithNoResolvableKey_nullSlotWithAnError() {
+        var result = executeRaw(TYPENAME_ONLY,
             Map.of("reps", List.of(Map.of("__typename", "Language", "languageId", 1))));
-        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
-        assertThat(entities).hasSize(1);
-        assertThat(entities.get(0))
-            .as("non-resolvable @key alternative must yield null for matching reps")
-            .isNull();
+        assertThat(entitiesOf(result)).containsExactly((Map<String, Object>) null);
+        assertThat(singleErrorAt(result, 0).getMessage())
+            .isEqualTo("Cannot resolve entity with __typename 'Language'.");
     }
 
     /**

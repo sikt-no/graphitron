@@ -272,6 +272,10 @@ public final class PlanCompileGraph {
                         // directly; a node-id-only dispatch reaches it through the encoder.
                         declared(dispatch.unit(), require(GlobalUnitKind.COLUMN_VALUES));
                         precise(dispatch.unit(), require(GlobalUnitKind.SELECTION_OCCURRENCES));
+                        // fetchEntities answers an unresolvable representation with a client
+                        // error at its slot, built by the router.
+                        precise(dispatch.unit(), require(GlobalUnitKind.ERROR_ROUTER));
+                        precise(dispatch.unit(), require(GlobalUnitKind.CLIENT_EXCEPTION));
                     }
                     case GlobalCommand.Fixed fixed -> addFixedKindEdges(fixed.kind(), fixed.units());
                 }

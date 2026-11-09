@@ -97,7 +97,7 @@ The synthesised alternative is always added; explicit `@key(fields: "id")` on a 
 
 == `resolvable: false`: keys for reference
 
-A federation entity can declare a key that this subgraph *does not* resolve. The federation spec calls this a non-resolvable key, and graphitron honours it: the dispatcher records the alternative but skips it at match time, so a representation matching this alternative yields `null` without firing a SELECT.
+A federation entity can declare a key that this subgraph *does not* resolve. The federation spec calls this a non-resolvable key, and graphitron honours it: the dispatcher records the alternative but skips it at match time, so it never fires a SELECT for it. When the entity has another, resolvable key, a representation matching only the non-resolvable one yields `null`. When every key of the entity is non-resolvable, as below, this subgraph resolves no representation of the type at all, and one that arrives anyway gets `null` and an error (see <<what-entities-answers>>).
 
 [source,graphql]
 ----
@@ -118,6 +118,26 @@ Two distinct uses:
 
 A stub this subgraph only decodes ids of goes further: xref:../reference/directives/node.adoc#federation-stubs[`@node(resolvable: false)`] makes it a node for its id, so xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`] can name it, while it implements no `Node`, `Query.node` does not dispatch it, and no `@key(fields: "id")` is synthesised for it.
 
+[[what-entities-answers]]
+== What `_entities` answers
+
+Each representation gets one slot in the answer, in the order sent.
+
+* A representation this subgraph resolves, naming a row that exists, gets the row.
+* A representation whose `__typename` this subgraph does not resolve gets `null` and an error at its slot: `Cannot resolve entity with __typename 'Foo'.` That covers a type this schema does not declare, and an entity whose every `@key` is `resolvable: false`. A representation with no `__typename` gets `null` and an error the same way. The router only sends a subgraph types it declared resolvable, so either error means the supergraph and this subgraph disagree, usually a subgraph deployed without recomposing.
+* A representation of a type this subgraph resolves, but whose key names no row, does not decode, or names a tenant outside the request's set, gets `null` with no error, exactly as a missing row does.
+
+The error is a client error, so it reaches the response as written; reword it through `FetcherErrorResponse.clientErrorMessage` like any other.
+
+For a request carrying an unknown type between two it resolves:
+
+[source,json]
+----
+{ "data": { "_entities": [ { "__typename": "Customer" }, null, { "__typename": "Film" } ] },
+  "errors": [ { "message": "Cannot resolve entity with __typename 'DoesNotExist'.",
+                "path": [ "_entities", 1 ] } ] }
+----
+
 == Keys without the tenant column
 
 In a database-per-tenant build (`<tenantColumn>`), `_entities` reads each representation's tenant out of its key, so a resolvable `@key` on a tenant-scoped type must include the tenant column. When the key cannot carry it, mark the type xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`] to resolve its representations on the request's entity default tenant instead, which is the default tenant unless the request names one separately.
@@ -136,7 +156,7 @@ Three wiring concerns surface once `@key` is in play. xref:apollo-federation.ado
 * *`@key` requires `@table`.* The dispatcher SELECTs from a table; a `@key` on a non-table-bound type is rejected at classify time. The exception is `@node` types (which always carry an entity entry for the `Query.node` path, regardless of `@key`).
 * *`@key` is rejected on interface types in graphitron.* The federation spec allows it, but graphitron's dispatcher does not yet support `@key` on interfaces; declare `@key` on the implementing types instead. The diagnostic mentions this explicitly.
 * *Most-specific-wins applies across keys, not within.* Within a single `@key`, all required fields are mandatory; the alternative matches only when *every* required field is supplied. Across alternatives, the dispatcher picks the largest matching one.
-* *`resolvable: false` is honoured but advisory.* The dispatcher skips the alternative; if no other alternative matches, the result is `null`. A non-resolvable key with no resolvable counterpart on any subgraph is a federation-graph composition error, not a graphitron build error; it surfaces at the gateway, not at build time.
+* *`resolvable: false` is honoured but advisory.* The dispatcher skips the alternative; if another, resolvable alternative exists but none matches, the result is `null`. If the entity has no resolvable key at all, a representation of it gets `null` and an error, as for a type this subgraph does not declare. A non-resolvable key with no resolvable counterpart on any subgraph is a federation-graph composition error, not a graphitron build error; it surfaces at the gateway, not at build time.
 * *Compound keys must list column-backed fields only.* A field that is `@externalField` or otherwise non-column can't participate in a `@key`; the diagnostic names the offending field. The fix: use a column-backed field, or restructure the key to avoid the non-column field.
 
 == See also

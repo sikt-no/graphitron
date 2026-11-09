@@ -170,7 +170,9 @@ class PlanCompileGraphTest {
         assertThat(refs(UNITS.singleton(GeneratedUnits.SUB_UTIL, "EntityFetcherDispatch"))).contains(
             PKG + ".types.Film",
             PKG + ".util.NodeIdEncoder",
-            PKG + ".schema.GraphitronContext");
+            PKG + ".schema.GraphitronContext",
+            PKG + ".schema.ErrorRouter",
+            PKG + ".schema.GraphitronClientException");
     }
 
     @Test

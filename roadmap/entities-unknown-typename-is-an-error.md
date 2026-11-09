@@ -126,6 +126,15 @@ takes no connection and fires no SQL, in single- and multi-tenant builds alike.
   `FixedRuntimeEmitter`.
 * Federation customizer: a consumer who replaces `fetchEntities` gets none of this, as today.
 
+### Implementation notes
+
+* `fetchEntities` hands `resolveByReps` a copy of the representations with every rejected one
+  replaced by `null`, which `resolveByReps` already skips. That is what makes "no connection, no
+  SQL" hold for `Language`-shaped types too: they are classified entities with a `handle<Type>`
+  method, so without the substitution `resolveByReps` would still dispatch them.
+* The gate reads the representations as `List<?>`, so a representation that is not an object at all
+  takes the "no `__typename`" error instead of the `ClassCastException` the old typed read raised.
+
 ## User documentation (first-client check)
 
 `docs/manual/how-to/federation-keys.adoc` gains a short section, and its two `resolvable: false`

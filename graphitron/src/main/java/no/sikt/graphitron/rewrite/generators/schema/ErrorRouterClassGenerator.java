@@ -22,9 +22,11 @@ import java.util.function.Supplier;
  * Generates the {@code ErrorRouter} class emitted at
  * {@code <outputPackage>.schema.ErrorRouter}, once per code-generation run: the runtime
  * entry points the per-fetcher try/catch wrappers call ({@code redact},
- * {@code surfaceClientErrorOrRedact}, {@code claim}), the consumer-hook calls every error path
+ * {@code surfaceClientErrorOrRedact}, {@code claim}), {@code clientErrorAt} for a client error at
+ * one element of a list field that otherwise resolves, the consumer-hook calls every error path
  * goes through ({@code toConfiguredLog} for {@code FetcherErrorLog}, {@code newReference},
- * {@code clientMessage} and the client-error arm of {@code surfaceClientErrorOrRedact} for
+ * {@code clientMessage} and the client-error message of {@code surfaceClientErrorOrRedact} and
+ * {@code clientErrorAt} for
  * {@code FetcherErrorResponse}, all contained by one private helper),
  * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
@@ -51,6 +53,9 @@ public final class ErrorRouterClassGenerator {
 
     /** The private static {@code FetcherErrorResponse} whose default methods answer when none is configured. */
     private static final String DEFAULT_RESPONSE = "DEFAULT_RESPONSE";
+
+    /** The private helper resolving a client error's message through the configured response. */
+    private static final String CLIENT_ERROR_MESSAGE_OF = "clientErrorMessageOf";
 
     /** The private helper spelling {@code DatabaseMapping}'s message walk. */
     private static final String MESSAGE_ON_PATH = "messageOnPathContains";
@@ -110,6 +115,11 @@ public final class ErrorRouterClassGenerator {
      */
     static ClassName tenantConnectionsClass(String outputPackage) {
         var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).tenantConnections();
+        return ClassName.get(unit.packageName(), unit.simpleName());
+    }
+
+    private static ClassName clientExceptionClass(String outputPackage) {
+        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
         return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
@@ -204,6 +214,8 @@ public final class ErrorRouterClassGenerator {
             .addMethod(buildNewReferenceMethod(fetcherErrorResponse))
             .addMethod(buildClientMessageMethod(fetcherErrorResponse))
             .addMethod(surfaceClientErrorOrRedact)
+            .addMethod(buildClientErrorAtMethod(clientExceptionClass(outputPackage)))
+            .addMethod(buildClientErrorMessageOfMethod(clientExceptionClass(outputPackage), fetcherErrorResponse))
             .addMethod(buildSettleFailureMethod(fetcherErrorResponse, outputPackage))
             .addMethod(claim)
             .addMethod(buildRecordClaimMethod(fetcherErrorLog, fetcherErrorResponse))
@@ -630,9 +642,7 @@ public final class ErrorRouterClassGenerator {
             ParameterizedTypeName resultOfP,
             String outputPackage,
             ClassName fetcherErrorResponse) {
-        var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
-        var clientException = ClassName.get(
-            clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
+        var clientException = clientExceptionClass(outputPackage);
 
         return MethodSpec.methodBuilder("surfaceClientErrorOrRedact")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -673,13 +683,10 @@ public final class ErrorRouterClassGenerator {
                 .endControlFlow()
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
                 .beginControlFlow("if (t instanceof $T clientError)", clientException)
-                .addStatement("$T message = answer(configured(env, $T.class),"
-                    + " response -> response.clientErrorMessage(clientError, env), () -> $S + pathOf(env))",
-                    STRING_CN, fetcherErrorResponse, "path = ")
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
                 .add("    .data(null)\n")
                 .add("    .error($T.newError(env)\n", GRAPHQL_ERROR_BUILDER)
-                .add("        .message(message)\n")
+                .add("        .message($L(clientError, env))\n", CLIENT_ERROR_MESSAGE_OF)
                 .add("        .errorType(clientError.getErrorType())\n")
                 .add("        .extensions(clientError.getExtensions())\n")
                 .add("        .build())\n")
@@ -688,6 +695,57 @@ public final class ErrorRouterClassGenerator {
                 .endControlFlow()
                 .addStatement("return redact(thrown, env)")
                 .build())
+            .build();
+    }
+
+    /**
+     * {@code clientErrorAt(clientError, env, index)}: a client error at one element of a list
+     * field, the field itself resolving. Its message resolves exactly as the client-error arm of
+     * {@code surfaceClientErrorOrRedact}'s does; the field is not marked failed.
+     */
+    private static MethodSpec buildClientErrorAtMethod(ClassName clientException) {
+        return MethodSpec.methodBuilder("clientErrorAt")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(GRAPHQL_ERROR_CN)
+            .addParameter(clientException, "clientError")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(int.class, "index")
+            .addJavadoc("A field error for one element of a list field that otherwise resolves: located at\n"
+                + "the field's path plus {@code index}, with the field's locations, and carrying\n"
+                + "{@code clientError}'s classification and extensions. The message is the configured\n"
+                + "{@code FetcherErrorResponse.clientErrorMessage}'s, else the exception's own, exactly as\n"
+                + "{@link #surfaceClientErrorOrRedact} answers a client error for a whole field. The field\n"
+                + "is not marked failed: one element failing does not roll back the field's work. The\n"
+                + "caller adds the error to the field's {@code DataFetcherResult} and leaves that\n"
+                + "element {@code null}.\n"
+                + "@param clientError the client error to surface\n"
+                + "@param env the list field's environment\n"
+                + "@param index the element's index in the list\n"
+                + "@return the error to add to the field's result\n")
+            .addCode("return $T.newError(env)\n", GRAPHQL_ERROR_BUILDER)
+            .addCode("    .path(env.getExecutionStepInfo().getPath().segment(index))\n")
+            .addCode("    .message($L(clientError, env))\n", CLIENT_ERROR_MESSAGE_OF)
+            .addCode("    .errorType(clientError.getErrorType())\n")
+            .addCode("    .extensions(clientError.getExtensions())\n")
+            .addCode("    .build();\n")
+            .build();
+    }
+
+    /**
+     * {@code clientErrorMessageOf(clientError, env)}: the client message for a client error, the
+     * configured {@code FetcherErrorResponse.clientErrorMessage}'s when it answers, contained.
+     */
+    private static MethodSpec buildClientErrorMessageOfMethod(ClassName clientException, ClassName fetcherErrorResponse) {
+        return MethodSpec.methodBuilder(CLIENT_ERROR_MESSAGE_OF)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(STRING_CN)
+            .addParameter(clientException, "clientError")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("The message a client error answers with: the configured\n"
+                + "{@code FetcherErrorResponse.clientErrorMessage}'s, contained, else the exception's own.\n")
+            .addStatement("return answer(configured(env, $T.class),"
+                + " response -> response.clientErrorMessage(clientError, env), () -> $S + pathOf(env))",
+                fetcherErrorResponse, "path = ")
             .build();
     }
 

@@ -1,8 +1,10 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
@@ -24,9 +26,11 @@ import java.util.List;
  * <p>Emitted only when the schema has at least one classified
  * {@link EntityResolution} entry. The generated class:
  * <ol>
- *   <li>{@code fetchEntities(env)}: reads {@code representations}, dispatches per
- *       {@code __typename} to a per-type handler, returns
- *       {@code CompletableFuture<List<Object>>} preserving exact rep order.</li>
+ *   <li>{@code fetchEntities(env)}: reads {@code representations}, answers every one this
+ *       subgraph cannot resolve (no {@code __typename}, or one outside
+ *       {@code RESOLVABLE_TYPENAMES}) with a {@code null} slot and a client error at that slot's
+ *       path, dispatches the rest per {@code __typename} to a per-type handler, and returns
+ *       {@code CompletableFuture<DataFetcherResult<List<Object>>>} preserving exact rep order.</li>
  *   <li>{@code handle<TypeName>(reps, indices, env, result)}: for each rep, selects the
  *       most-specific resolvable {@link KeyAlternative}, decodes the rep into a column-value
  *       row (DIRECT: {@code ColumnValues.coerce}; NODE_ID: {@code NodeIdEncoder.decodeColumns}), and groups
@@ -52,7 +56,7 @@ import java.util.List;
  * <p>{@code resolveType} is a separate static helper reading the synthetic {@code __typename}
  * column projected on every entity row (graphql-java has unwrapped any {@code DataFetcherResult}
  * by then). Consumers who override {@code fetchEntities} and return a non-{@link org.jooq.Record}
- * shape get {@code null} back; federation surfaces its own resolution-failure error.
+ * shape get {@code null} back, and graphql-java reports that it could not resolve the entity's type.
  */
 public final class EntityFetcherDispatchClassGenerator {
 
@@ -61,6 +65,15 @@ public final class EntityFetcherDispatchClassGenerator {
     public static final String RESOLVE_BY_REPS_METHOD = "resolveByReps";
     public static final String RESOLVE_TYPE_METHOD = "resolveType";
     public static final String TYPENAME_FOR_TYPE_ID_METHOD = "typenameForTypeId";
+    /** The emitted set of the entity typenames this subgraph resolves: the {@code fetchEntities} gate. */
+    public static final String RESOLVABLE_TYPENAMES_FIELD = "RESOLVABLE_TYPENAMES";
+    /**
+     * The client error for a representation whose {@code __typename} this subgraph does not resolve,
+     * a {@link String#format} pattern over the typename as received. Graphitron 9's text verbatim.
+     */
+    public static final String UNRESOLVABLE_TYPENAME_MESSAGE = "Cannot resolve entity with __typename '%s'.";
+    /** The client error for a representation that is not an object carrying a string {@code __typename}. */
+    public static final String MISSING_TYPENAME_MESSAGE = "Cannot resolve entity: the representation has no __typename.";
     /**
      * Synthetic result-set column carrying the participant typename. The {@code __}-wrapping is a
      * deliberate collision-avoidance device (the alias shares the column namespace with
@@ -76,6 +89,9 @@ public final class EntityFetcherDispatchClassGenerator {
     private static final ClassName OBJ_TYPE     = ClassName.get("graphql.schema", "GraphQLObjectType");
     private static final ClassName LIST         = ClassName.get("java.util", "List");
     private static final ClassName MAP          = ClassName.get("java.util", "Map");
+    private static final ClassName SET          = ClassName.get("java.util", "Set");
+    private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
+    private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
     private static final ClassName ARRAYS       = ClassName.get("java.util", "Arrays");
     private static final ClassName ARRAY_LIST   = ClassName.get("java.util", "ArrayList");
     private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
@@ -111,8 +127,9 @@ public final class EntityFetcherDispatchClassGenerator {
             .addJavadoc("Runtime dispatcher for the Apollo Federation\n"
                 + "{@code Query._entities(representations:)} field. See\n"
                 + "{@link EntityFetcherDispatchClassGenerator} for emission semantics.\n")
+            .addField(buildResolvableTypenamesField(entities))
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
-            .addMethod(buildFetchEntitiesMethod())
+            .addMethod(buildFetchEntitiesMethod(outputPackage))
             .addMethod(buildResolveByRepsMethod(entities, multiTenant))
             .addMethod(buildResolveTypeMethod())
             .addMethod(buildTypenameForTypeIdMethod(entities))
@@ -139,18 +156,70 @@ public final class EntityFetcherDispatchClassGenerator {
 
     // ----- Method emitters -----
 
-    private static MethodSpec buildFetchEntitiesMethod() {
+    /**
+     * {@code RESOLVABLE_TYPENAMES}: the entities with at least one resolvable key alternative,
+     * sorted. A type outside it is one the router should never send here.
+     */
+    private static FieldSpec buildResolvableTypenamesField(List<EntityResolution> entities) {
+        var names = entities.stream()
+            .filter(EntityResolution::resolvable)
+            .map(EntityResolution::typeName)
+            .sorted()
+            .map(name -> CodeBlock.of("$S", name))
+            .collect(CodeBlock.joining(", "));
+        return FieldSpec.builder(ParameterizedTypeName.get(SET, ClassName.get(String.class)),
+                RESOLVABLE_TYPENAMES_FIELD, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$T.of($L)", SET, names)
+            .build();
+    }
+
+    private static MethodSpec buildFetchEntitiesMethod(String outputPackage) {
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var clientExceptionUnit = units.clientException();
+        var clientException = ClassName.get(clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
+        var errorRouter = no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.routerClass(outputPackage);
+        var listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+
         var b = CodeBlock.builder();
-        b.addStatement("$T<$T<String, Object>> reps = env.getArgument($S)",
-            LIST, MAP, "representations");
-        b.addStatement("if (reps == null || reps.isEmpty()) return $T.completedFuture($T.of())",
-            CF, LIST);
+        b.addStatement("$T<?> received = env.getArgument($S)", LIST, "representations");
+        b.beginControlFlow("if (received == null || received.isEmpty())");
+        b.addStatement("return $T.completedFuture($T.<$T>newResult().data($T.of()).build())",
+            CF, DATA_FETCHER_RESULT, listOfObject, LIST);
+        b.endControlFlow();
+        b.add("// A representation this subgraph does not resolve keeps its slot null and gets an error\n");
+        b.add("// there; it reaches the dispatch as null, so it takes no connection and fires no SQL.\n");
+        b.addStatement("$T<$T<String, Object>> reps = new $T<>(received.size())", LIST, MAP, ARRAY_LIST);
+        b.addStatement("$T<$T> errors = new $T<>()", LIST, GRAPHQL_ERROR, ARRAY_LIST);
+        b.beginControlFlow("for (int i = 0; i < received.size(); i++)");
+        b.addStatement("Object rep = received.get(i)");
+        b.addStatement("Object tn = rep instanceof $T<?, ?> fields ? fields.get($S) : null", MAP, TYPENAME_COLUMN);
+        b.beginControlFlow("if (tn instanceof String typeName && $L.contains(typeName))", RESOLVABLE_TYPENAMES_FIELD);
+        b.addStatement("reps.add(($T<String, Object>) rep)", MAP);
+        b.addStatement("continue");
+        b.endControlFlow();
+        b.addStatement("reps.add(null)");
+        b.addStatement("String message = tn instanceof String named ? String.format($S, named) : $S",
+            UNRESOLVABLE_TYPENAME_MESSAGE, MISSING_TYPENAME_MESSAGE);
+        b.addStatement("errors.add($T.clientErrorAt(new $T(message), env, i))", errorRouter, clientException);
+        b.endControlFlow();
         b.addStatement("Object[] result = $L(reps, env)", RESOLVE_BY_REPS_METHOD);
-        b.addStatement("return $T.completedFuture($T.asList(result))", CF, ARRAYS);
+        b.addStatement("return $T.completedFuture($T.<$T>newResult().data($T.asList(result)).errors(errors).build())",
+            CF, DATA_FETCHER_RESULT, listOfObject, ARRAYS);
         return MethodSpec.methodBuilder(FETCH_ENTITIES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(CF, ParameterizedTypeName.get(LIST, ClassName.get(Object.class))))
+            .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class).addMember("value", "$S", "unchecked").build())
+            .returns(ParameterizedTypeName.get(CF, ParameterizedTypeName.get(DATA_FETCHER_RESULT, listOfObject)))
             .addParameter(ENV, "env")
+            .addJavadoc("The {@code _entities} data fetcher. Answers one slot per representation, in the\n"
+                + "order received. A representation that is not an object with a string\n"
+                + "{@code __typename}, or whose {@code __typename} is not in {@link #$L} (a type this\n"
+                + "schema does not declare, or an entity whose every key is {@code resolvable: false}),\n"
+                + "gets {@code null} and a client error located at its slot\n"
+                + "({@code [\"_entities\", <index>]}); the router only sends a subgraph the types it\n"
+                + "declared resolvable, so either means the supergraph and this subgraph disagree. Every\n"
+                + "other representation goes to {@link #$L}, which answers {@code null} with no error\n"
+                + "for one that names no row.\n",
+                RESOLVABLE_TYPENAMES_FIELD, RESOLVE_BY_REPS_METHOD)
             .addCode(b.build())
             .build();
     }
