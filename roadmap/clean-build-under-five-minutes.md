@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-10-30
+last-updated: 2026-11-09
 ---
 
 # A clean build runs in under five minutes
@@ -198,6 +198,27 @@ to 1.2 s. So a store that is cold, small-cached or reset pays about 1.2 to 1.4 s
 capture, about a second of it from those six statements, and the level that would move the build is
 making them cheaper to plan, which is the derivation work, with keeping the cache warm and booting
 fewer cold stores second.
+
+### Re-profile 2026-11-09, on a laptop
+
+One recorded sequential `mvn clean install` at `f6403c10a` on an Intel Core Ultra 7 165U (15 W,
+2 performance, 8 efficiency and 2 low-power cores) took 34:36, every test passing; the evidence is
+`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`. The build's own processes burned
+7,366 CPU-seconds, 526 s if spread perfectly over the chip's 14 threads, so this target is out of
+reach on such a machine without cutting the work. Three findings bear on this item's steps:
+
+* **63% of the machine was idle.** Step 8's pool of 4 holds every store-heavy test JVM to 3.8 to 6.3
+  cores on a sequential reactor. That step was priced on a 4-core VM and has not been priced on a
+  machine with more cores.
+* **About 600 s is four serial tails at one to one and a half cores**: `EmittedRegistryAgreementTest`
+  running alone for the last ~220 s of `graphitron`'s test phase (one method looping over every
+  corpus document), the `generate-test-schemas` exec (183 s, about 80 scenarios in one thread, 2.2
+  times as many as at the first profile), `GeneratorDeterminismTest` (120 s, all of
+  `sakila-example`'s test window) and `GraphCountGrowthGateTest` (the last ~70 s of the model's).
+  Step 7 names the heavy suites; these four are where the wall clock goes on this machine.
+* **The six statements step 1's analysis ranked are half gone**, and the per-depth occurrence loop's
+  rules now lead: `PathNeeds` and `OccurrenceSources` are a sixth to a fifth of the build's CPU, all of it
+  planning. That is R876's to fix; the H2 mechanism is in the audit.
 
 ## Implementation
 
