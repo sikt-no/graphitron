@@ -1,13 +1,13 @@
 ---
 id: R1133
 title: "A single @error type as the errors field's element is not recognised as an error channel"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: error-channel
 depends-on: []
 created: 2026-10-30
-last-updated: 2026-11-06
+last-updated: 2026-11-09
 ---
 
 # A single @error type as the errors field's element is not recognised as an error channel
