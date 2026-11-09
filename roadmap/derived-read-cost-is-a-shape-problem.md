@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-11-08
+last-updated: 2026-11-09
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -1065,6 +1065,13 @@ generated Java or SQL as text.
 * **Operation members and delivery are read from their relations alone** `open`. The readers of
   `OperationMembers.membersOf` and `DeliveryFact.leafDerivedOf` move to the relations,
   `LauncherCommands`' two productions merge, and the crosswalk goes.
+* **The store, the generator and the emitters agree on what a service call can be** `open`. The
+  emitters handle four shapes that the store refuses or the generator refuses with no defect stored:
+  a node id decoded into a service parameter (any but the node's own record a defect, that one the
+  generator's refusal), three node ids filling one member, a checked exception no `@error` handler
+  covers, and a service under a table taking no source. Each becomes a located defect or a supported
+  shape, its emitter path following, and the tests stating it by hand (`NodeIdFillEmitterTest`,
+  `NodeIdBuildEmitterTest`, `CallEmitterTest`, `ServiceEmissionCensusTest`) read it from a document.
 * **No emitter reads a leaf** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". `CommandSeamRatchetTest` counts no leaf `instanceof`, case pattern or `plan`
   reference left in the generator.
 
