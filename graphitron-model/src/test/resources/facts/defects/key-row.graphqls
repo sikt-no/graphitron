@@ -1,0 +1,36 @@
+# A @service under a parent holding an object takes its keys through the one member of the object's
+# class returning records of the table its source parameter collects, and where the store can state
+# no key row for it the service is refused at its definition, the detail the parent's class. A
+# selection's keyless field is no-key-from-parent's and many-keys-into-one's.
+
+type Stint @table(name: "stint") { personId: Int @field(name: "person_id") }
+
+# FilmBlurbHolder has no member returning a film record, so keyCensus's keys come from nowhere.
+type FilmBlurbHolder {
+  keyCensus: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
+}
+
+# FilmPair has two members returning a film record, so neither is the one the service's keys come
+# through.
+type FilmPair {
+  keyCensus: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
+}
+
+# StintBatch.stints() hands over stint records, and stint has no primary key to batch by.
+type StintBatch { stints: [Stint!]! }
+
+type Query {
+  holder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  pairs: [FilmPair!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmPairService", method: "pairs"})
+  batches: [StintBatch!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.StintBatchService", method: "batches"})
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                          coordinate
+  NO_KEY_FROM_PARENT,            FilmBlurbHolder.keyCensus
+  KEY_ROW_AMBIGUOUS,             FilmPair.keyCensus
+  KEY_TABLE_WITHOUT_PRIMARY_KEY, StintBatch.stints
+  """)

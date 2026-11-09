@@ -8,8 +8,7 @@
 # List<Integer>; and where one named parameter and one argument are all that is left and type cannot
 # tell them apart, they pair too, as Film.titlesSince's Date argument takes its LocalDate. A scalar
 # a @scalarType binds has the Java type its constant coerces to, so Film.titlesLabelledSince's Day
-# argument takes its LocalDate by type beside a String that takes the String. A call
-# under a type with no table of its own is made once per parent and filled under each. An argument a
+# argument takes its LocalDate by type beside a String that takes the String. An argument a
 # call takes is bound to the parameter that takes it, seen from the argument. An enum argument fills a
 # String with its name or a Java enum with its constant, and through a list of input objects an
 # argument path may run under two lists; FillShapeService's calls each take one family of these.
@@ -44,13 +43,8 @@ type Film @table(name: "film") {
       method: "labelledFilms", argMapping: "label: $session.label"})
 }
 
-type FilmBlurb @table(name: "film") { description: String }
-type FilmBlurbHolder {
-  blurb: FilmBlurb
-  filmCount: Int @service(service: {
-      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-      method: "filmCount"})
-}
+type FilmBlurbHolder { blurb: FilmBlurbText }
+type FilmBlurbText { description: String }
 
 input FilmIdsInput { ids: [Int!] }
 input FilmIdItem { id: Int! }
@@ -110,8 +104,6 @@ type Query {
       method: "count"})
   holderOne(filmId: Int!): FilmBlurbHolder @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
-  holderTwo(filmId: Int!): FilmBlurbHolder @service(service: {
-      className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
 }
 
 extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", rows: """
@@ -130,8 +122,6 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Query.countDrafts,            0,        drafts,         ARGUMENT,       Query.countDrafts(in:),        ,
   Query.holderOne,              0,        filmId,         ARGUMENT,       Query.holderOne(filmId:),      ,
   Query.holderOne,              1,        dsl,            DSL_CONTEXT,    ,                              ,
-  Query.holderOne.filmCount,    0,        dsl,            DSL_CONTEXT,    ,                              ,
-  Query.holderTwo.filmCount,    0,        dsl,            DSL_CONTEXT,    ,                              ,
   Film.titleUppercase,          0,        filmIds,        SOURCE,         ,                              ,
   Film.titleUppercase,          1,        dsl,            DSL_CONTEXT,    ,                              ,
   Film.titleLowercase,          0,        filmIds,        SOURCE,         ,                              ,

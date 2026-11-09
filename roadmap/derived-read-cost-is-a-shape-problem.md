@@ -311,13 +311,6 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_field_path_method_candidate` goes with the old family.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
-  * **A nested service with no key is refused at its `@service`** `open`, E's, on Alf's `@service`-first path.
-    A `@service` under a parent holding an object takes its batch as records of the table its source
-    parameter collects, keyed off the parent or the one member of its class returning such a record
-    (its key row). Where none is stated the store raises what the classifier refuses today, at the
-    application: no source parameter, a source of rows or records of no table, a key table with no
-    primary key, no member returning the record, two such members, or one returning a collection; the
-    reference page states each, and a fact document pins them.
   * **A value object is reached by its accessor path** `done`, taken over from F with the path
     model (Alf, 2026-11-08), for the outbox's service results. A field read off an object has a
     need that starts on the object, `graphitron_path_need_object`, and an `ACCESSOR` path meets it,

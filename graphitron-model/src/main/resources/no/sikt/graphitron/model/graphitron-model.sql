@@ -14133,6 +14133,84 @@ SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY
                   AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
                        OR o.origin_position <> w.origin_position))
 UNION ALL
+-- A service under a parent holding one class of object takes its keys through the one member of that
+-- class returning records of the table its source parameter collects, which graphitron_field_key_row
+-- states; where it states none, at the field's definition: NO_KEY_FROM_PARENT where no member returns
+-- such a record, KEY_ROW_AMBIGUOUS where two do, the detail the class. A selection's keyless field is
+-- NO_KEY_FROM_PARENT's arm above, and one taking many keys into one MANY_KEYS_INTO_ONE's.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN c.found > 1 THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
+       c.class_name
+  FROM (SELECT p.graph_name, p.type_name, p.field_name, rc.class_name,
+               (SELECT COUNT(*) FROM code_read_slot s
+                 WHERE s.class_name = rc.class_name AND s.delivery = 'DIRECT' AND s.element_class IN (
+                         SELECT kt.record_class_fqn FROM code_method_parameter mp
+                           JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
+                          WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+                            AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
+                            AND mp.delivery = 'MANY')) AS found
+          FROM graphitron_producer p
+          JOIN graphitron_producer_service ps
+            ON ps.graph_name = p.graph_name AND ps.type_name = p.type_name AND ps.field_name = p.field_name
+          JOIN graphitron_result r
+            ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
+          JOIN graphitron_result_class rc ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
+         WHERE (SELECT COUNT(*) FROM graphitron_result_class c2
+                 WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) = 1
+           -- Judged only where the store has read the class and its members, what it holds being
+           -- unknown otherwise, as NO_KEY_FROM_PARENT's selection arm judges.
+           AND EXISTS (SELECT 1 FROM code_read_slot known WHERE known.class_name = rc.class_name)
+           -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a key row's.
+           AND EXISTS (SELECT 1 FROM code_method_parameter mp JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
+                        WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+                          AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
+                          AND mp.delivery = 'MANY')
+           -- The record's own table is the key: read straight off it, so no member is wanted.
+           AND NOT EXISTS (SELECT 1 FROM sql_table rt JOIN code_method_parameter mp
+                             ON mp.element_class = rt.record_class_fqn AND mp.delivery = 'MANY'
+                            WHERE rt.record_class_fqn = rc.class_name
+                              AND mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+                              AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor)) c
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_field_key_row k
+                    WHERE k.graph_name = c.graph_name AND k.type_name = c.type_name
+                      AND k.field_name = c.field_name)
+UNION ALL
+-- A key row on a table with no primary key, at the field's definition: a batch is keyed by the
+-- table's primary key, so there is nothing to key it by. The detail is the table.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_TABLE_WITHOUT_PRIMARY_KEY',
+       k.table_name
+  FROM graphitron_field_key_row k
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = k.graph_name AND d.type_name = k.type_name AND d.name = k.field_name
+ WHERE NOT EXISTS (SELECT 1 FROM sql_constraint pk
+                    WHERE pk.source_name = k.table_source_name AND pk.table_schema = k.table_schema
+                      AND pk.table_name = k.table_name AND pk.constraint_type = 'PRIMARY KEY')
+UNION ALL
+-- A service under a table's row or an object of a known class whose method has no parameter the
+-- batch's keys reach, at the field's definition: it is fetched for many parents at once, and its keys
+-- have nowhere to go. The detail is the method.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, 'SOURCE_PARAMETER_MISSING',
+       ps.method_name
+  FROM graphitron_occurrence_producer op
+  JOIN graphitron_occurrence o ON o.graph_name = op.graph_name AND o.coordinate = op.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_producer_service ps
+    ON ps.graph_name = f.graph_name AND ps.type_name = f.type_name AND ps.field_name = f.field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE op.kind = 'SERVICE' AND op.start = 'CHILD'
+   -- Under a parent the batch is keyed by: a table's row, or an object of a known class. A type
+   -- nothing hands a value to has no parents to batch.
+   AND (EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                 WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name)
+        OR EXISTS (SELECT 1 FROM graphitron_result_class rc
+                    WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
+                    WHERE cp.graph_name = op.graph_name AND cp.coordinate = op.coordinate
+                      AND cp.fill = 'SOURCE')
+UNION ALL
 -- An instance @service method whose class has no constructor the run can call, at the reference:
 -- an abstract class or an interface has none, and one taking anything but the jOOQ context is not
 -- buildable. The detail is the class.
@@ -18019,6 +18097,12 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service method''s parameter could take more than one of the call''s arguments by type, or an argument it could take could go to another parameter as well, so nothing says which: name it after its argument, or bind it in argMapping.', 'entry-defects'),
   ('PARAMETER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_FILLED_TWICE',
    'A @service method''s parameter is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.', 'entry-defects'),
+  ('KEY_ROW_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ROW_AMBIGUOUS',
+   'A @service under a parent holding an object takes its keys through the member of the object''s class returning records of the table its source parameter collects, and more than one member does, so nothing says which: keep one.', 'entry-defects'),
+  ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
+   'A field fetching its own rows under a parent holding an object is batched by the primary key of the table its keys are records of, and that table has none: give the table a primary key, or fetch the field another way.', 'entry-defects'),
+  ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',
+   'A @service under an object type is fetched for many parents at once, and its method has no parameter taking their keys: add a Set or List parameter of the records the parents are keyed by, and return a Map by those keys or a List in their order.', 'entry-defects'),
   ('SERVICE_HOLDER_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_HOLDER_UNBUILDABLE',
    'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.', 'entry-defects'),
   ('ARGMAPPING_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED',
