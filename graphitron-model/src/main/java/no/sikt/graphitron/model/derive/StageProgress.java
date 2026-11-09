@@ -5,29 +5,29 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
- * What the derivation stratum says about itself while it runs: the observer
+ * What the derivation gatherer says about itself while it runs: the observer
  * {@link DerivationStratum#run} reports to.
  *
  * <p>An observer rather than a logger, for three reasons. The one property the instrument exists to
  * hold is that a stage's name is emitted <em>before</em> its statements are issued, so that a
  * statement which never returns has already named itself; that property is a sequence, and a
  * sequence is a list a test reads where a log is an appender a test has to install. This module
- * carries jOOQ and H2 and no logging framework, and every caller of the stratum already owns a place
+ * carries jOOQ and H2 and no logging framework, and every caller of the stages already owns a place
  * to print. And progress written as rows is ruled out by the failure this instruments: on a warm
- * store the stratum runs inside one transaction, so rows are invisible until a commit the stuck run
+ * store the stages run inside one transaction, so rows are invisible until a commit the stuck run
  * never reaches.
  *
  * <p>An observer that throws is a programming error and propagates: containing an exception here
- * would hide a broken caller behind a stratum that looks silent for the ordinary reason.
+ * would hide a broken caller behind a pass that looks silent for the ordinary reason.
  */
 @FunctionalInterface
 public interface StageProgress {
 
-    /** Takes one event, in the order the stratum emits them. */
+    /** Takes one event, in the order the stages emit them. */
     void observe(Event event);
 
     /**
-     * What the stratum reports. Sealed so a caller mapping events onto a surface writes one switch and
+     * What the stages report. Sealed so a caller mapping events onto a surface writes one switch and
      * the compiler names the site when an event kind is added.
      *
      * <p>Every event carrying a name is emitted before the statements it names, and every event
@@ -39,7 +39,7 @@ public interface StageProgress {
     sealed interface Event {
 
         /**
-         * The stratum is about to issue its first statement.
+         * The first stage is about to issue its first statement.
          *
          * @param stages how many steps it will run, in order
          * @param graph the graph whose partitions they rewrite
@@ -52,8 +52,8 @@ public interface StageProgress {
          * One step is about to issue its first statement.
          *
          * @param step the step, carrying its name and what it writes
-         * @param position its 1-based place in the stratum
-         * @param total how many steps the stratum runs
+         * @param position its 1-based place in the stage order
+         * @param total how many steps there are
          */
         record StageStarted(DerivationStratum.Step step, int position, int total) implements Event {}
 
@@ -67,7 +67,7 @@ public interface StageProgress {
          */
         record StageFinished(DerivationStratum.Step step, long nanos, int rows) implements Event {}
 
-        /** The stratum's last step has returned. */
+        /** The last step has returned. */
         record PassFinished(long nanos) implements Event {}
     }
 
@@ -83,7 +83,7 @@ public interface StageProgress {
      * <p>Two tiers because the two differ by an order of magnitude in how often a line is worth
      * printing. The pass boundary is two lines per capture and belongs wherever a person watching a
      * build can see it: a run that prints the first line and never the second is stuck inside the
-     * stratum. The per-stage tier is two lines per step, which is more than any default would keep,
+     * stages. The per-stage tier is two lines per step, which is more than any default would keep,
      * and it is what a person who has already killed a run turns on to have the stage named within
      * seconds.
      *
@@ -91,8 +91,8 @@ public interface StageProgress {
      * @param stage takes the per-stage lines
      */
     static StageProgress lines(Consumer<String> pass, Consumer<String> stage) {
-        // The finished line repeats the position of the line that announced the step; the stratum
-        // emits the pair back to back on one thread, so the announcement is what it is read off.
+        // The finished line repeats the position of the line that announced the step; the stages
+        // emit the pair back to back on one thread, so the announcement is what it is read off.
         var announced = new AtomicReference<Event.StageStarted>();
         return event -> {
             switch (event) {

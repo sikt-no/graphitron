@@ -93,12 +93,12 @@ class WarmStartRefreshTest {
         """;
 
     /**
-     * A schema that fills the stratum tables, which {@link #SDL} does not: the derived relations are
+     * A schema that fills the stage tables, which {@link #SDL} does not: the derived relations are
      * classifications of bound coordinates, so a schema with no table binding leaves every one of
      * them empty and a case about a stale target would have nothing to make stale.
      *
      * <p>It carries a {@code @reference} path between two bound types as well, and that half is
-     * load-bearing rather than scenery. The reference stratum keys at a path element, so a schema
+     * load-bearing rather than scenery. The stages resolving written references key at a path element, so a schema
      * that authors no path leaves the spelling resolution and the join path's steps empty, and a
      * case asserting that a second capture changes no row count would pass on them without ever
      * writing one. With the path here it fails on a stage that appends instead of reconciling,
@@ -168,7 +168,7 @@ class WarmStartRefreshTest {
      * nothing to duplicate. The census is what tells a stage that reconciles from one that appends.
      *
      * <p>{@link #TABLE_BOUND_SDL} rather than {@link #SDL}, and its {@code @reference} path is why:
-     * the reference stratum's relations are keyed at a path element, so on a schema authoring none
+     * the relations resolving written references are keyed at a path element, so on a schema authoring none
      * this case would count zero against zero on exactly the relations it exists to hold. Its
      * mutation carrier is there for the same reason one rung up: the column-scope family's stages
      * are keyed at a mutation payload's data channel, so a schema declaring no payload leaves them
@@ -249,30 +249,30 @@ class WarmStartRefreshTest {
     }
 
     /**
-     * The recovery the stratum's analysing cadence leans on, and the one shape of stopped run this
-     * family did not already cover. A capture into a store none of whose stratum tables holds a row
-     * commits its facts and then runs the derivation stratum one committed step at a time, because
-     * on such a store every stratum table is empty and a step inside one transaction cannot be given
+     * The recovery the analysing cadence leans on, and the one shape of stopped run this
+     * family did not already cover. A capture into a store none of whose stage tables holds a row
+     * commits its facts and then runs the derivation gatherer's stages one committed step at a time, because
+     * on such a store every stage table is empty and a step inside one transaction cannot be given
      * statistics on the tables an earlier step wrote; {@code DerivationStratum} carries that
      * argument and {@code DerivationStratum.analysingCadenceApplies} is where the condition is asked.
      * The cost is that this is the one capture that can stop having left the facts complete and a
-     * stratum table stale, and what makes that acceptable is the round below.
+     * stage table stale, and what makes that acceptable is the round below.
      *
      * <p>The stopped state is constructed rather than reached, the stop being a kill inside a
-     * transaction sequence with no seam to inject one at. Both halves are set: a stratum table
+     * transaction sequence with no seam to inject one at. Both halves are set: a stage table
      * emptied, and every source's stamp nulled, which is what a pass that never reached its
      * {@code commitStamps} leaves.
      *
      * <p>What this does <em>not</em> hold, so nobody reads it as more than it is: it does not fail if
-     * the stamps move back ahead of the stratum, because every capture runs every step for its graph
+     * the stamps move back ahead of the stages, because every capture runs every step for its graph
      * unconditionally, so a stale table comes back either way. The stamp placement is a consistency
      * requirement on what a stamp claims, which the stamp states, rather than a defence against a
      * reachable stale store. What this would catch is a capture that stopped rewriting a table it
-     * had emptied, the shape any future narrowing of the stratum would take.
+     * had emptied, the shape any future narrowing of the stages would take.
      */
     @Test
-    @DisplayName("a store stopped part-way through its first stratum is repaired by the next capture")
-    void aStoppedFirstStratumIsRepairedByTheNextCapture(@TempDir Path tmp) {
+    @DisplayName("a store whose first capture stopped part-way is repaired by the next capture")
+    void aCaptureStoppedPartWayIsRepairedByTheNext(@TempDir Path tmp) {
         var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
         Path directory = tmp.resolve("graphitron-model");
 
@@ -718,7 +718,7 @@ class WarmStartRefreshTest {
      * <p>With the corpus rather than {@code SubjectConfig.none()}, which is what makes that
      * sentence true. The document gatherer re-reads the corpus from configuration, and the entry
      * relations it anchors are swept against what it wrote, so a pass given no corpus loses every
-     * {@code @table} binding to that sweep and leaves the whole intent stratum empty however bound
+     * {@code @table} binding to that sweep and leaves the whole intent_ family empty however bound
      * the schema is. {@code CapturedStore.corpusOf} exists for exactly this and its own comment
      * names the silence.
      */
@@ -735,11 +735,11 @@ class WarmStartRefreshTest {
     }
 
     /**
-     * The latest stratum table in step order that holds a row, which is the one a stopped pass
-     * would have left emptied: the stratum empties and refills in that order, so the last populated
+     * The latest stage table in step order that holds a row, which is the one a stopped pass
+     * would have left emptied: the stages empty and refill in that order, so the last populated
      * table is the one furthest from having been reached.
      *
-     * @return the folded relation name, or null when no stratum table holds a row
+     * @return the folded relation name, or null when no stage table holds a row
      */
     private static String lastPopulatedTarget(DSLContext dsl) {
         var steps = DerivationStratum.steps(null);

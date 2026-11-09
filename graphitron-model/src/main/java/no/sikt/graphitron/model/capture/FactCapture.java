@@ -12,7 +12,7 @@ import java.util.Objects;
 
 
 /**
- * The derivations the capture pass leaves behind: the graphitron gatherer's derivation stratum, run
+ * The derivations the capture pass leaves behind: the derivation gatherer's stages, run
  * after every gatherer has flushed because every step reads what they wrote.
  *
  * <p>It captures nothing. Every fact it used to write is written by
@@ -20,7 +20,7 @@ import java.util.Objects;
  * order and the two cadences they run on are {@link DerivationStratum}'s; what is left here is the
  * entry point and the log lines.
  *
- * @deprecated the last of the walk. The stratum it runs belongs to the graphitron gatherer, and
+ * @deprecated the last of the walk. The stages it runs belong to the derivation gatherer, and
  *     this class goes when {@link no.sikt.graphitron.model.run.ModelCapture} calls
  *     {@link DerivationStratum} itself. Nothing new belongs here.
  */
@@ -32,9 +32,9 @@ public final class FactCapture {
     private FactCapture() {}
 
     /**
-     * The derivation stratum for one graph, reporting to this class's log lines.
+     * The derivation gatherer's stages for one graph, reporting to this class's log lines.
      *
-     * <p>Takes no instant, unlike every gatherer in the pass. Each relation the stratum writes is
+     * <p>Takes no instant, unlike every gatherer in the pass. Each relation the stages write is
      * emptied and refilled for the graph rather than marked and swept, so there is nothing here a
      * reading's instant would date.
      *
@@ -50,10 +50,10 @@ public final class FactCapture {
      * rather than to this class's log lines.
      *
      * <p>The events are the same either way, {@link #stageLines} being one rendering of them. It
-     * exists because which cadence the stratum took is only observable from inside: both leave the
+     * exists because which cadence the stages took is only observable from inside: both leave the
      * same rows behind.
      *
-     * @param progress what the stratum reports to, never null; {@link StageProgress#none()} for a
+     * @param progress what the stages report to, never null; {@link StageProgress#none()} for a
      *                 caller that wants silence
      */
     public static void derive(DSLContext dsl, GraphIdentity graph, SchemaAssembly assembly,
@@ -65,7 +65,7 @@ public final class FactCapture {
     }
 
     /**
-     * What the stratum says on the way past: two lines per capture at info naming the pass, and the
+     * What the stages say on the way past: two lines per capture at info naming the pass, and the
      * per-stage tier at debug, which {@code mvn -X} turns on. Named once because both cadences report
      * the same way, and a cadence reporting differently would make the two paths' logs incomparable
      * on exactly the runs anybody reads them for.

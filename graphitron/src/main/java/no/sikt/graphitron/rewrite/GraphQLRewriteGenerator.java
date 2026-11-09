@@ -183,7 +183,7 @@ public class GraphQLRewriteGenerator {
 
     /**
      * One dev pass's two halves: the editor-facing {@link BuildOutput} (the diagnostics the store's
-     * stratum is written from) and the {@link IncrementalGeneration} the compile driver reads.
+     * diagnostic relations are written from) and the {@link IncrementalGeneration} the compile driver reads.
      *
      * <p>The generation is present exactly when {@code output().report().errors()} is empty: a
      * rejected schema emits nothing and reports everything.
@@ -265,7 +265,7 @@ public class GraphQLRewriteGenerator {
      * The editor-facing products with nothing emitted: the {@link ValidationReport} carrying every
      * {@link ValidationError} and {@link BuildWarning} the validator produces on the classified
      * model. Same parse throughout;
-     * the dev goal writes the report's two pre-fuse lists to the store's diagnostics stratum, which
+     * the dev goal writes the report's two pre-fuse lists to the store's diagnostic relations, which
      * is where the language server reads them.
      *
      * <p>Two callers, both of which want the report without a tree: a consumer {@code .class}
@@ -289,7 +289,7 @@ public class GraphQLRewriteGenerator {
      * {@link #buildOutput()} on its own and by {@link #runPass()} beside the generation, both from
      * the one body, so the two cannot disagree about a round.
      *
-     * <p>The two pre-fuse lists ride alongside the fused report for the diagnostics-stratum
+     * <p>The two pre-fuse lists ride alongside the fused report for the diagnostic relations'
      * loaders, each carrying a partition the report cannot express once fused:
      * {@code walkErrors} is the walk's own error stream before the detection violations are
      * appended (so a detection-minted family is structurally absent from the residue loader's

@@ -53,15 +53,15 @@ So, in order of what counts as evidence:
   entry on the run that put this here, so ask for more entries than you mean to read.
 - **A derivation stage that never returns has already named itself, on the console you are
   looking at.** The cheapest evidence in the whole procedure, cheaper than the entry below it,
-  because it needs no interrupt and no re-run: the derivation stratum prints one line before its
+  because it needs no interrupt and no re-run: the derivation gatherer prints one line before its
   first statement and one when the pass returns, so a build showing `graphitron: deriving N stages
-  for graph '...'` and never `derivation stratum done in ...` is stuck inside the stratum, and one
+  for graph '...'` and never `derivation stratum done in ...` is stuck inside its stages, and one
   that never printed the first line is stuck somewhere else. Getting from there to the stage is one
   re-run with `-X`, which turns on a line per stage printed *before* its statements: the last
   `n/N` line with no `done in` line under it is the stage. So this class of hang is a name in the
   first seconds and needs no thread dump at all. The recipe is in
   `docs/architecture/how-to/dev-loop-internals.adoc`.
-- **A statement that never returns names itself, for free.** For a statement outside the stratum,
+- **A statement that never returns names itself, for free.** For a statement outside those stages,
   and still cheap: interrupt the build and the failure carries
   the SQL it was executing, or read the last `Executing query` line in jOOQ's DEBUG log. A hang is
   one statement, not a slow succession of them, and knowing which statement collapses the search
@@ -111,7 +111,7 @@ multiplies through it. Two specific ways this bites:
   that has one. If your reproduction does not reproduce, suspect this first.
 - **A seeded store of a dozen rows will tell you nothing about cost**, because every shape on the
   fact-model page is cheap at that size. And a derived read against a seeded store returns nothing
-  until `SeededStore.derive` has run, stage-written tables holding rows only once the stratum fills
+  until `SeededStore.derive` has run, stage-written tables holding rows only once their stages fill
   them.
 
 When you must build a store rather than borrow one, the harness ladder is documented per subject and
@@ -459,7 +459,7 @@ measured case; the test to apply is:
    the failure you are chasing, which makes it the most tempting wrong answer available.
 2. **Price its stage.** The rule is evaluated once per capture of a graph, so the stage is a cost
    you are adding and not only one you are avoiding. State the number in the rationale, and state it
-   as the trade it is when it is the most expensive stage in the stratum; the per-stage debug lines
+   as the trade it is when it is the most expensive stage in the capture; the per-stage debug lines
    time every stage for you.
 3. **Prefer the deepest relation whose storage removes re-evaluation for more readers than
    the one you started from.** Store the relation the cost multiplies *through*, not the one
@@ -468,18 +468,21 @@ measured case; the test to apply is:
 4. **Weigh the cheapest stage against the one you can land.** The deepest candidate is
    sometimes a CTE local to one view rather than a named relation, and storing it means promoting
    it to a first-class relation with a name and comments first. When the shallower stage
-   removes the failure and the deeper one only makes the stratum cheaper, landing the first and
+   removes the failure and the deeper one only makes the capture cheaper, landing the first and
    recording the second in its rationale as measured follow-up is a defensible split. Say which one
    you did and why, with both numbers.
 
-Store it as a stage of the graphitron gatherer's derivation stratum. The rule stays a stored view
+Store it as a stage of the graphitron gatherer. The rule stays a stored view
 named after the table with a `_rule` suffix; the `graphitron_` table it fills carries a primary key
 equal to its grain's key; both are declared in `meta_relation` against the graphitron gatherer, with
 the grain sentence and, as the table's rationale, the case you just made, in this relation's own
 terms and with its own arithmetic. The stage class goes in `no.sikt.graphitron.model.derive` and is
 one `DELETE` of the graph's partition and one `INSERT ... SELECT` over the rule; any existing stage is
-the template. Add it to `DerivationStratum.steps` after every step that writes what its rule reads.
-That order is yours to state and `StageOrderGateTest` checks it against the rule's parsed reads, and
+the template. Add it to the anchor phase's stage list (`GraphitronAstCapture.STAGES`, or
+`GraphitronAssemblyCapture.STAGES` when it resolves against the catalog and classpath) and to
+`meta_stage`, after every stage that writes what its rule reads; never to `DerivationStratum.steps`,
+which only shrinks. That order is yours to state and `StageOrderGateTest` checks it against the
+rule's parsed reads, and
 the rule may read only the families the graphitron gatherer's declared dependencies allow.
 
 Converting an existing named view is the cheap shape: the view keeps its text under the `_rule`

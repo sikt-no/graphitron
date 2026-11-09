@@ -75,7 +75,7 @@ class GathererIsolationTest {
         roll.put("capture/sdl", Set.of("SdlFactCapture"));
         // Four gatherers in this package, one per stage of reading the corpus: the corpus reader
         // owns the store's record of what was read and hands the documents on, the two
-        // transcription faces write the as-written strata off that list, the graphitron one
+        // transcription faces write the as-written relations off that list, the graphitron one
         // anchoring and resolving what it decoded, and the assembly asks the two questions no
         // single document can answer and writes the verdicts down.
         roll.put("capture/document", Set.of("GraphQLSourceCapture", "GraphQLAstCapture",

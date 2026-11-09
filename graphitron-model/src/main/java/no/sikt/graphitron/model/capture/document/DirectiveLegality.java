@@ -29,7 +29,7 @@ import java.util.Set;
 
 /**
  * Whether the directive definition admits an application, which is what decides whether the entry
- * stratum transcribes it.
+ * relations transcribe it.
  *
  * <p>An entry says what an author wrote, and the population it is a bag of is legal input. Input the
  * definition does not admit is not a fact about the schema an entry can hold: it is a defect, it is
@@ -42,7 +42,7 @@ import java.util.Set;
  * does. A {@link graphql.schema.idl.TypeDefinitionRegistry} is partial by construction, holding what
  * has parsed so far, so a library checking an application against a definition the registry might
  * not hold yet would refuse legal input for an ordering reason; assembly, where the corpus is whole,
- * is the first place the library can speak. Every directive this stratum transcribes is graphitron's
+ * is the first place the library can speak. Every directive these relations transcribe is graphitron's
  * own and ships beside it, so the definitions are in hand before the first user document is read,
  * which is a position the library is never in.
  *
@@ -50,7 +50,7 @@ import java.util.Set;
  * one definition and nothing else, so nothing here needs the corpus, the catalog or the classpath.
  * And it must agree with assembly in both directions: looser and an illegal application becomes an
  * entry carrying nonsense, stricter and entries vanish for schemas that are perfectly legal, which
- * is the worse failure because the readers of this stratum join to it inwardly and report nothing
+ * is the worse failure because the readers of these relations join to them inwardly and report nothing
  * when a row is missing.
  */
 final class DirectiveLegality {
@@ -113,7 +113,7 @@ final class DirectiveLegality {
      * {@code location}.
      *
      * <p>True for a directive the bundled vocabulary does not declare. Those are the author's own
-     * and graphql's built-ins, which this stratum does not transcribe and has no definition for;
+     * and graphql's built-ins, which these relations do not transcribe and has no definition for;
      * judging them here would be judging input against a definition we do not hold, which is the
      * position this class exists to be out of.
      */

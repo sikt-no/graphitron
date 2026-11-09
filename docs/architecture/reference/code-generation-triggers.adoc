@@ -128,6 +128,33 @@ A need nothing meets is a defect at the written position. Had `Film.language` wr
 two keys `film` has to `language` would leave its need unmet, and the store would state a
 `ROUTE_AMBIGUOUS` defect at the field naming both.
 
+A word on vocabulary. One written or inferred route resolved between one table it starts on and one
+table it lands on is a _path_. "The walk" names only the classification walk being dissolved; a
+`@reference` chain is never called one.
+
+=== Paths on arguments and input fields
+
+Inputs follow the output rules with fewer forms; a filter will extend them. The author-facing
+wording is the manual's xref:../../manual/reference/directives/reference.adoc#path-rules[path
+rules], and a rule changes in the same commit as its code and that page.
+
+* An input is bound to a table record: the field's target table, or under a `@service` the table of
+  the record type of the parameter it fills. An input type is never table-bound itself.
+* Without `@reference` an input's path is `EMPTY`: a nested input is the same row, unnested into
+  the bound record.
+* On an input that filters, a written path is a join in the condition, a correlated `EXISTS`,
+  single- or multi-hop by the output rules. On an input that fills a record, `@reference` goes with
+  `@nodeId` only, since a jOOQ record does not nest; anywhere else it is a defect.
+* `@nodeId(typeName:)` is bound to its node's table, so it always has a path from the bound table
+  to it, inferred exactly as between two table-bound output types: one foreign key, either direction,
+  one hop; none or several is `NODE_ID_LANDS_ON_TABLE` and the author writes it. Inference never
+  spans hops, and a self-referencing key is never inferred on an input. Where the node's table is
+  the bound table and nothing is written, there is no path: the id is the record's own key.
+* On an input that fills a record, a written path may span several hops only where identity passes
+  along composite keys: every column of the record's first-hop key traces through the path's column
+  pairs to a column of the node's key, so the decoded id carries the values. A column that does not
+  trace through is a defect naming it.
+
 '''
 
 == Bind
@@ -226,6 +253,17 @@ what fills each parameter of a call: an argument, which then binds that paramete
 `Query.filmsByService(ids:)` binds the second parameter of `filmsByService`, or a value graphitron
 supplies, such as the jOOQ context. `graphitron_occurrence_producer_key_row` states where a child
 producer under an object starts: the key it takes off that object, lifted onto the key's table.
+
+A table record a `@service` or a write returns carries only its primary key. Every table-bound
+field under it is a new producer that lifts from that key and re-selects; none is answered by a
+same-table rule, a path or inference off the record. A design that asks whether such a field is
+"the same row or a join" is asking the wrong relation: the key row and the lift answer it.
+
+A field returning a `@table` type on its parent's own table is refused unless the schema says how
+it is reached: a nesting type, with no table of its own, or a `@reference` keyed on the table's
+primary key (xref:../../manual/how-to/map-types-to-tables.adoc#parents-own-row[the parent's own
+row]). Graphitron never infers the parent's row; an unwritten same-table path rides the
+self-referencing key or fails. The fix for a schema that meets the refusal is in the schema.
 
 '''
 

@@ -3,9 +3,9 @@ package no.sikt.graphitron.model.test;
 import java.util.stream.IntStream;
 
 /**
- * An SDL fixture that scales with a unit count and populates the derivation stratum's tables in
+ * An SDL fixture that scales with a unit count and populates the derivation gatherer's tables in
  * proportion to schema size, for the cases that need a population rather than a boundary: the
- * stage oracle's @nodeId fixture, the partition-selectivity worth test, and the stratum's statistics
+ * stage oracle's @nodeId fixture, the partition-selectivity worth test, and the stage statistics
  * test. A case over this fixture that needs a populated table should establish it per table rather
  * than read the property here as universal: a case over empty relations measures its instrument's
  * floor and reports a number.
@@ -32,11 +32,11 @@ public final class ScaledSchemaFixture {
      * root, and {@code Film0}'s {@code @reference} fields disqualify it from the carrier view. Scaled with the
      * units so those targets hold rows proportional to schema size, like everything else here.
      *
-     * <p>Every stratum table but the two named on this class is populated by this schema, and so is
+     * <p>Every stage table but the two named on this class is populated by this schema, and so is
      * every view reading them except the defect relations, which hold rows only on a schema with the
      * defect in it and whose emptiness here is the fixture being well-formed rather than being thin.
      * A schema of {@code @table}-bound types with a single scalar field, which is what the scaled
-     * fixtures elsewhere in the reactor use, leaves much of the stratum empty, and a case over empty
+     * fixtures elsewhere in the reactor use, leaves many stage tables empty, and a case over empty
      * relations measures the instrument's floor and nothing else.
      *
      * <p>The per-unit filter input is in that list for the same reason and is the second such arm.

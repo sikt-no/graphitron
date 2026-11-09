@@ -33,11 +33,11 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The entry index: one row per written position the entry stratum holds, each naming the schema
+ * The entry index: one row per written position the entry relations hold, each naming the schema
  * element it sits in.
  *
  * <p>The population claim is asserted against the entry relations themselves rather than against a
- * count this file carries, so an arm added to the stratum and forgotten in the union fails here
+ * count this file carries, so a relation added to the entry family and forgotten in the union fails here
  * instead of leaving a position nothing can reference. The resolution claim is asserted at the
  * depth that makes it worth having: a string written three levels inside a directive's argument
  * names the field the directive was applied to, because that is the element an author reading the
@@ -66,7 +66,7 @@ class AstEntryIndexTest {
 
     @Test
     @DisplayName("every entry position is indexed exactly once")
-    void thePopulationIsTheEntryStratum() {
+    void everyEntryPositionIsIndexedOnce() {
         withCapture(dsl -> {
             for (var arm : ENTRY_RELATIONS) {
                 var missing = dsl.fetchCount(dsl.selectFrom(arm)

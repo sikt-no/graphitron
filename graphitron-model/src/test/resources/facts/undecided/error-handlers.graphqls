@@ -115,7 +115,7 @@ extend schema @expectEquals(relation: "graphitron_ast_error_handler_entry", wher
   """)
 
 # Which is why the position is a copy rather than a reference: the lone object is the argument's
-# root value, and the value stratum numbers no root.
+# root value, and graphql_ast_value_entry numbers no root.
 extend schema @expectEquals(relation: "graphql_ast_value_entry", where: """
   (graph_name, source_name, source_line, source_column) IN (
     SELECT h.graph_name, h.source_name, h.source_line, h.source_column
@@ -142,7 +142,7 @@ extend schema @assertEmpty(relation: "graphitron_ast_error_handler_entry", where
      WHERE t.coordinate = 'Empty')
   """)
 
-# Where the element was written in a list, the copy agrees with the value stratum's number.
+# Where the element was written in a list, the copy agrees with graphql_ast_value_entry's number.
 extend schema @assertEmpty(relation: "graphitron_ast_error_handler_entry", where: """
   EXISTS (
     SELECT 1

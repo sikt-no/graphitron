@@ -36,9 +36,9 @@ import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
 
 /**
- * Whether each stage of the derivation stratum is planned against statistics on the stage tables
- * its rule reads, which is what the stratum's analysing cadence exists to make true on a store none
- * of whose stratum tables holds a row.
+ * Whether each stage of the derivation gatherer is planned against statistics on the stage tables
+ * its rule reads, which is what the analysing cadence exists to make true on a store none
+ * of whose stage tables holds a row.
  *
  * <p><b>What this asserts and why it is the right thing to assert.</b> Not a wall clock: a tier
  * that must not fail for being slow cannot hold a figure. What a stage is entitled to is statistics
@@ -46,7 +46,7 @@ import static org.jooq.impl.DSL.table;
  * {@link ViewReferences#tablesReachedBy(DSLContext, String)}, and whether it has them at the moment
  * its statements go out is a fact about statistics rather than about plans: cheap to observe,
  * exact, and unaffected by how fast the machine is. The instant is the stage's started event, which
- * the stratum emits before a statement is issued and which is exactly the instant this needs.
+ * the stages emit before a statement is issued and which is exactly the instant this needs.
  *
  * <p><b>Two legs on the cadences themselves, because one of them is the control.</b> An assertion
  * that the analysing cadence analyses its prerequisites is a tautology unless something says the
@@ -58,7 +58,7 @@ import static org.jooq.impl.DSL.table;
  * each cadence does and nothing about which one a capture takes. A cold capture into a fresh store
  * has to take the analysing one; a warm capture takes the one-transaction cadence and meets its
  * prerequisites analysed anyway, the capture having stated statistics over the previous capture's
- * rows before the stratum began.
+ * rows before the stages began.
  */
 @PipelineTier
 class StagePrerequisiteStatisticsTest {
@@ -82,7 +82,7 @@ class StagePrerequisiteStatisticsTest {
      * differ in their transactions and their {@code ANALYZE} placement, and a store per cadence would
      * differ in its rows as well.
      *
-     * <p>The stratum runs without the classification domain's producer, which is the one step that
+     * <p>The stages run without the classification domain's producer, which is the one step that
      * reads an executable schema rather than rows and would clear the domain if handed none. Its
      * table stays as the capture wrote it, which is all the steps after it need of it.
      */

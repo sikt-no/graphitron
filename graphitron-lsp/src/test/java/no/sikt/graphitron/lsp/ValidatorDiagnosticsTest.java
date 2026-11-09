@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The replay of what a build said about a document. The companion {@link DiagnosticsTest} covers the
  * verdicts the walk reaches about the buffer itself; every case here is about a finding some earlier
- * build reached, written to the store's diagnostics stratum by the loaders a dev round runs and read
+ * build reached, written to the store's diagnostic relations by the loaders a dev round runs and read
  * back through the {@code diagnostic} view.
  *
  * <p>Every fixture writes through the real loaders, so a case cannot pin a row shape a build does not
@@ -88,7 +88,7 @@ class ValidatorDiagnosticsTest {
 
     @Test
     void aLintFindingReplaysAsAWarningAtItsOwnRange() {
-        // Parity for free: an engine lint rule's finding rides the same stratum as a rejection and
+        // Parity for free: an engine lint rule's finding rides the same relations as a rejection and
         // replays into a Warning squiggle at its own range, with no second evaluator in the editor.
         var source = """
             type Widget {

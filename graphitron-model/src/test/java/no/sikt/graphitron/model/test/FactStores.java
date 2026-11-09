@@ -129,7 +129,7 @@ public final class FactStores {
     /**
      * How many captures {@link CapturedStore} has run so far in this JVM, across every thread and
      * every arm: each one is a {@link no.sikt.graphitron.model.run.ModelCapture} pass, derivation
-     * stratum included, and is the price a boot is small beside. Monotonic, like {@link #boots()}.
+     * gatherer included, and is the price a boot is small beside. Monotonic, like {@link #boots()}.
      *
      * <p>What it cannot see is a capture that does not pass through {@link CapturedStore}: the
      * generator's own {@code GraphitronStore.captured} path, which a built store and a rendered

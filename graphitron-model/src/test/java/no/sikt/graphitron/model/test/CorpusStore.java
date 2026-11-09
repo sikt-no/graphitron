@@ -27,7 +27,7 @@ import java.util.stream.Stream;
  * <p>Every {@link CorpusDocuments} document is captured as its own graph, named by
  * {@link CorpusDocuments.Document#id()}, from {@link CorpusDocuments#prelude()} followed by the
  * document, against the generated jOOQ catalog. Several classes sweep that same population and
- * each used to capture it for itself, sixty captures and a derivation stratum apiece, which made a
+ * each used to capture it for itself, sixty captures and a derivation pass apiece, which made a
  * handful of cases the most expensive part of a module's run. One capture serves them all now.
  *
  * <p><b>Populations, keyed.</b> {@link #over(Path)} names a population by the class root its first
@@ -39,7 +39,7 @@ import java.util.stream.Stream;
  * <p><b>Readers only.</b> Classes run concurrently and the capturing connection is single-threaded,
  * so neither the {@link CapturedStore} nor its context is handed out. {@link #reader()} mints a
  * {@link StoreReader}, a connection of its own onto the same in-memory database, and {@link #read}
- * wraps one for a caller that wants an answer rather than a reader. The capture, stratum included,
+ * wraps one for a caller that wants an answer rather than a reader. The capture, derivation stages included,
  * completes under this object's lock before the first reader is minted, so a reader sees the whole
  * population.
  *

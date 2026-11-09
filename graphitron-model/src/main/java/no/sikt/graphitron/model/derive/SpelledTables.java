@@ -14,7 +14,7 @@ import static org.jooq.impl.SQLDataType.INTEGER;
  * The capture-cadence writer of {@code graphitron_spelled_table}: what every table name this graph
  * authors resolves to against the catalog census, once per distinct spelling.
  *
- * <p>The bottom rung of the reference stratum and the first stage of the graphitron gatherer to
+ * <p>The base of the stages resolving written references, and the first stage of the graphitron gatherer to
  * write a resolution rather than a transcription. Everything it reads is captured by the time it
  * runs: the spellings are the walk's own entry relation, flushed before the first stage, and the
  * catalog side is the jooq gatherer's, written before this gatherer starts.

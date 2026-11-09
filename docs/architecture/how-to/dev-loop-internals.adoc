@@ -260,10 +260,10 @@ To get at the per-site cost, subtract `diagnostics.validatorReport` from its
 enclosing `diagnostics.compute` and divide by the `directives=` count on the same
 line.
 
-== A build or a dev start that goes quiet in the derivation stratum
+== A build or a dev start that goes quiet in the derivation gatherer
 
-The derivation stratum, the stages the capture runs after its gatherers have
-flushed, prints its own pass boundary, so a run stuck inside it says so without
+The derivation gatherer, whose stages the capture runs after the other gatherers
+have flushed, prints its own pass boundary, so a run stuck inside it says so without
 any instrument being turned on. Two lines per pass, on a capture and on a
 `graphitron:dev` start alike:
 
@@ -273,7 +273,7 @@ any instrument being turned on. Two lines per pass, on a capture and on a
 [INFO] graphitron: derivation stratum done in 3.4 s
 ----
 
-A console showing the first line and not the second is inside the stratum. That
+A console showing the first line and not the second is inside its stages. That
 alone is worth having, because the phases either side of it print nothing that
 would distinguish them. On a store none of whose stage tables holds a row yet, the
 first line ends `, committing and analysing each`: that capture commits each stage
@@ -296,7 +296,7 @@ mvn generate-sources -X | grep 'graphitron: *[0-9]*/'
 
 The name is printed before the stage's statements are issued and the duration
 after they return, so the last `n/N` line with no `done in` line under it is the
-stage the run is stuck in. `N` is how many steps the stratum runs, and it moves as
+stage the run is stuck in. `N` is how many steps the derivation gatherer runs, and it moves as
 stages are added and retired, so read the denominator off the run rather than off
 this page. That is the whole recipe: no thread dump, no profiler, and no
 reconstruction of the stage order. Two lines per stage per graph is why this tier

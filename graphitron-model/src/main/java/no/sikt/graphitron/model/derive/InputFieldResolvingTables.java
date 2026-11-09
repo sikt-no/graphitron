@@ -13,7 +13,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_INPUT_FIELD_RESOLVING_T
  * stays stated once, in SQL, in the catalog where {@link ViewReferences} can read what it reads;
  * what this class adds is who evaluates it and when.
  *
- * <p>Its position in the stratum is two dependencies rather than a preference: the rule reads
+ * <p>Its position in the stage order is two dependencies rather than a preference: the rule reads
  * {@code graphitron_argument_scope_table}, which {@link ArgumentScopeTables} writes, and
  * {@code graphitron_occurrence}, which {@link Occurrences} writes.
  */

@@ -151,7 +151,7 @@ Every change moves Backlog → Spec → Ready → In Progress → In Review → 
 
 When transitioning a roadmap item between states, or unsure of the file conventions for a new item, consult `roadmap/workflow.adoc` for the full state table and canonical paths.
 
-Consult the `principles-architect` subagent while drafting (Backlog → Spec, design forks in In Progress, or as a self-check before `srp`); it's read-only and produces no verdict. Reviewer-rule gates stay with `srp` / `reviewer-prompt`, which hand off to a *different* Claude Code session; identity is the `https://claude.ai/code/session_<id>` trailer on each commit, not git author.
+**Consult the `principles-architect` subagent; it is a step, not an option.** Consult it when a node or item is taken up, at a design fork, and before handing work over for harvest or review; the handover names what it raised and what the author did with it. It is read-only and advisory and gives no verdict: the author weighs it, and Alf and Filip decide. A design ruling from Alf or Filip enters the page under `docs/architecture/` that owns its subject the day it is given, as a `docs` commit to trunk, by whoever heard it; the architect reads those pages, so that is how the ruling reaches every session. Reviewer-rule gates stay with `srp` / `reviewer-prompt`, which hand off to a *different* Claude Code session; identity is the `https://claude.ai/code/session_<id>` trailer on each commit, not git author.
 
 ## Git Workflow
 

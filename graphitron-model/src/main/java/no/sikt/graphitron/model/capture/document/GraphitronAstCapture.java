@@ -48,7 +48,7 @@ public final class GraphitronAstCapture {
      * documents now say.
      *
      * <p>The instant is the caller's, and it is the same instant the transcription above ran on:
-     * one reading writes both strata, and a sweep that could not tell them apart would take the
+     * one reading writes both the transcription and its decode, and a sweep that could not tell them apart would take the
      * decode of an application the reading had just rewritten.
      */
     public static void capture(DSLContext dsl, GraphIdentity graph,

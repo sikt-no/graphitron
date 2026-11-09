@@ -148,7 +148,7 @@ class GraphitronEnumValueEntriesTest {
      * the list is written at all.
      *
      * <p>This case used to pin the opposite, that such an element spent its index and left the ones
-     * after it where the author would count them. That was the reading before the entry stratum
+     * after it where the author would count them. That was the reading before the entry relations
      * judged an application against its definition, when a list could be part legal and part not
      * and the numbering had to say which. It cannot be now: {@code FieldSort} declares
      * {@code name} as {@code String!}, so a list carrying a bare string is not a list of

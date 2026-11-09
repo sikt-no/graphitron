@@ -11,7 +11,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The routine site anchor the walk used to be the only producer of, derived from the entry stratum
+ * The routine site anchor the walk used to be the only producer of, derived from the entry relations
  * and held to what the walk writes.
  *
  * <p>Two readings of one corpus in one store, which is what makes this a comparison rather than a

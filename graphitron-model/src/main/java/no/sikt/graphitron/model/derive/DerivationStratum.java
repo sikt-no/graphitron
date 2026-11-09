@@ -15,7 +15,7 @@ import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
 
 /**
- * The graphitron gatherer's derivation stratum as data: every step the capture pass runs after the
+ * The derivation gatherer's stages as data: every step the capture pass runs after the
  * gatherers have flushed, in the one order they may run, and what each writes.
  *
  * <p>A step is a stage or a producer. A stage is one {@code INSERT} over the stored view stating its
@@ -31,10 +31,10 @@ import static org.jooq.impl.DSL.table;
  * jOOQ code no stored definition exposes.
  *
  * <p><b>Two cadences, chosen by the store's state rather than by the caller.</b> On a store any stage
- * table holds a row in, the stratum runs inside one transaction, so no reader ever observes an
+ * table holds a row in, the stages run inside one transaction, so no reader ever observes an
  * emptied partition; H2's {@code ANALYZE} commits, so nothing inside can be analysed, and the
  * statistics the steps plan against are the ones the capture stated before it began. On a store no
- * stage table holds a row in, every table the stratum writes is empty when the capture's statistics
+ * stage table holds a row in, every table the stages write is empty when the capture's statistics
  * are taken, so a step reading an earlier step's table would plan against a relation the planner has
  * been told is empty; the steps then commit one at a time and each analyses what it wrote before the
  * next plans. Committing between two steps there empties nothing anybody committed, every partition
@@ -85,7 +85,7 @@ public final class DerivationStratum {
     }
 
     /**
-     * Runs the stratum for one graph on the cadence the store's state calls for, reporting to
+     * Runs the stages for one graph on the cadence the store's state calls for, reporting to
      * {@code progress}.
      */
     public static void run(DSLContext dsl, String graphName, GraphQLSchema schema,
@@ -104,7 +104,7 @@ public final class DerivationStratum {
     private static final String GATHERER = "derivation";
 
     /**
-     * Whether no table the stratum writes holds a row, which is the store the analysing cadence is
+     * Whether no table the stages write holds a row, which is the store the analysing cadence is
      * for. Asked of the tables themselves rather than inferred from the anchor row a capture has
      * already written by the time this runs.
      */
@@ -115,7 +115,7 @@ public final class DerivationStratum {
     }
 
     /**
-     * Every step on the caller's {@link DSLContext}, which is how a warm capture keeps the stratum
+     * Every step on the caller's {@link DSLContext}, which is how a warm capture keeps the stages
      * inside one transaction: no reader observes an emptied partition.
      */
     public static void runInOne(DSLContext dsl, String graphName, List<Step> steps,

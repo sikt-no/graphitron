@@ -18,11 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Pins what the derivation stratum reports, and how its two cadences commit, on synthetic steps over
- * scratch tables: a stage whose statements fail is a shape the shipped stratum does not produce, and
+ * Pins what the derivation gatherer reports, and how its two cadences commit, on synthetic steps over
+ * scratch tables: a stage whose statements fail is a shape the shipped stages do not produce, and
  * it is the one the instrument exists for.
  *
- * <p>The first case is the subject and the rest are its ordinary-case company. A stratum that timed
+ * <p>The first case is the subject and the rest are its ordinary-case company. A pass that timed
  * each step and reported afterwards would pass every other case here while emitting nothing at all
  * for the step that never returns, so the emission order is asserted directly rather than inferred
  * from a healthy pass. Durations are read for their existence and never for their size: this is a

@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The rule views checked are the owner stages' defect rules, {@link EntryDefects#RULES}; a stage
  * whose rule is Java code states no read set this gate can see, as {@code StageOrderGateTest} says of
- * the derivation stratum.
+ * the derivation gatherer.
  */
 class StageRosterGateTest {
 

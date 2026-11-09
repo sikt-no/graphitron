@@ -86,7 +86,7 @@ class FieldSetDecodeTest {
     /**
      * A field set that never closes its brace still yields the leaves it reached, still under the
      * parent it had opened, and the capture completes. Rejecting it here would put a validation in
-     * the decode, which is the detection stratum's business and not capture's.
+     * the decode, which is the detection rules' business and not capture's.
      */
     @Test
     @DisplayName("an unclosed field set yields the prefix that parsed")

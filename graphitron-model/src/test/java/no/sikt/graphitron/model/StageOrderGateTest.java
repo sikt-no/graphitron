@@ -28,7 +28,7 @@ import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
 
 /**
- * The derivation stratum's order, against what each step of it reads and writes.
+ * The derivation gatherer's stage order, against what each step of it reads and writes.
  *
  * <p><b>The invariant.</b> No step of the pass may read a table a <em>later</em> step writes,
  * because it would read the previous capture's rows. It is what a stage order has to satisfy by
@@ -44,9 +44,9 @@ import static org.jooq.impl.DSL.table;
  * hand-written producers whose rule is a Java loop rather than a statement, whose write sets are
  * declared in {@link DerivationStratum} beside the steps that run them.
  *
- * <p><b>What the roster below is, and what holds it.</b> {@link #STRATUM} carries what the stratum
- * does not: which view states each stage's rule, or which statements a jOOQ stage runs. Its names
- * and write sets are the stratum's own, and {@link #theRosterIsTheStratumItChecks} holds them equal
+ * <p><b>What the roster below is, and what holds it.</b> {@link #STRATUM} carries what the stages
+ * do not: which view states each stage's rule, or which statements a jOOQ stage runs. Its names
+ * and write sets are the stages' own, and {@link #theRosterIsTheStratumItChecks} holds them equal
  * in order, so a step added to {@link DerivationStratum} and not here fails the build rather than
  * running unchecked, and {@link #everyDeclaredWriteIsAnObservedTable} keeps both from rotting
  * against a rename.
@@ -54,7 +54,7 @@ import static org.jooq.impl.DSL.table;
 class StageOrderGateTest {
 
     /**
-     * One step of the derivation stratum: what it is called, the view stating its rule where it has
+     * One step of the derivation gatherer: what it is called, the view stating its rule where it has
      * one, and the base tables it writes.
      *
      * @param ruleView the stored view a stage inserts from, or null for a step whose rule is jOOQ
@@ -79,7 +79,7 @@ class StageOrderGateTest {
     private static final String GRAPH = "the stage order gate's graph";
 
     /**
-     * The stratum in the order {@code DerivationStratum.steps} lists it.
+     * The stages in the order {@code DerivationStratum.steps} lists them.
      *
      * <p>The stages go ahead of the producers where their rules allow it and after them where they
      * do not, which is a property of each rule's read set rather than a convention: a rule reaching
@@ -98,8 +98,8 @@ class StageOrderGateTest {
             Set.of("graphitron_input_field_resolving_table")));
 
     /**
-     * The roster is the stratum, name for name and write set for write set, in order. Without this
-     * the roster would be a transcription the gate trusted, and a step added to the stratum and not
+     * The roster is the stages, name for name and write set for write set, in order. Without this
+     * the roster would be a transcription the gate trusted, and a step added to the stages and not
      * here would run with nothing checking where it sits.
      */
     @Test
@@ -269,7 +269,7 @@ class StageOrderGateTest {
     }
 
     /**
-     * Every stored relation under the derived family's prefix is written by a step this stratum
+     * Every stored relation under the derived family's prefix is written by a step this roster
      * names, so a base table no step writes fails here rather than sitting in the schema filled by
      * nobody or by a writer standing outside the order: a derived table is a step's, or it is a
      * defect.

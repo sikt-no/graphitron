@@ -166,7 +166,7 @@ public final class GraphQLAstCapture {
      * reading did not mark being the one way to delete rows that are still true.
      *
      * <p>Separate from {@link #anchor} because the incumbent walk needs one and writes the other
-     * itself. What this half writes meets nothing that pass produces, the entry stratum being keyed
+     * itself. What this half writes meets nothing that pass produces, the entry relations being keyed
      * by written position and the walk writing no row of it.
      *
      * <p>Every document it rewrites also leaves the coordinates it named before and after the
@@ -1215,7 +1215,7 @@ public final class GraphQLAstCapture {
      * <p>One relation, where this was five. The five stated one fact and keyed it five ways because
      * each carried its site's decomposed key, three columns at the schema block and seven at a
      * field argument; none of them carried the coordinate, which is the one thing every site has.
-     * The entry stratum had already collapsed both halves of the join this needs:
+     * The entry relations had already collapsed both halves of the join this needs:
      * {@code graphql_ast_directive_application_entry} is the supertype over the five application
      * kinds, and {@code graphql_ast_element_entry} says what coordinate a written position
      * declares. So the site is one join and not five, and the application is what the author wrote

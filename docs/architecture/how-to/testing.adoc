@@ -260,7 +260,16 @@ mvn test -Plocal-db
 
 # Skip execution tier for fast inner loops
 mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
+
+# LSP tests at a CI-sized heap (after installing its upstream: -DskipTests -pl graphitron-lsp -am)
+JDK_JAVA_OPTIONS=-Xmx2g mvn test -pl graphitron-lsp
 ----
+
+Local builds often run with a large heap (`-Xmx6g` through `JDK_JAVA_OPTIONS` on agent machines),
+while CI's test JVMs take the default share of the runner's memory. A heap regression, typically in
+H2's planner over a new view or join, passes locally and runs out of memory on CI. So a
+change that adds or reshapes views or joins over the path or occurrence relations runs the LSP tests
+at `-Xmx2g` as above before it is handed over.
 
 See `.claude/web-environment.md` for database setup prerequisites and the fixtures-jar footgun recovery.
 

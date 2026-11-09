@@ -15,7 +15,7 @@ import java.util.Objects;
  * <p>Exactly one canonical rendering, {@link #sourceName()}, and it is load-bearing well past this
  * type. It is the string {@link no.sikt.graphitron.model.schema.SchemaLoader#load} hands
  * the parser and the string graphql-java returns as {@code SourceLocation.getSourceName()}, so
- * {@link SchemaInputAttribution}'s map, capture's stamp lookup, the diagnostics stratum's
+ * {@link SchemaInputAttribution}'s map, capture's stamp lookup, the diagnostic relations'
  * {@code file} columns and the LSP's URI equality all match byte-for-byte with no renormalisation.
  * The diagnostics columns store this string as read; a wire whose protocol names a document by URI
  * renders one from it at its own boundary, through

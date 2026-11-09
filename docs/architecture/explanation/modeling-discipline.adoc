@@ -16,7 +16,7 @@ Either it comes from a **corpus** outside the store, which is the SDL documents,
 jOOQ catalog, the configuration, the Java sources. Or it is **derived** from facts the store already
 holds.
 
-That is the whole fork. It is the same cut `fact-model.adoc` calls stratum one against stratum two,
+That is the whole fork. It is the same cut as a gatherer's capture phase against its anchor phase,
 asked about one relation instead of about the store.
 
 == A corpus is captured into a family shaped by the questions
@@ -39,7 +39,7 @@ one per place an author can name a method, so the fact a consumer wanted was a r
 predicate it had to re-derive. Only then was it normalized: supertypes extracted and shared facts
 lifted out, driven by the queries the generator, the LSP and the MCP server actually make against it.
 
-Each use-site arm is its key and nothing else:
+Each use-site relation is its key and nothing else:
 
 [source,sql]
 ----
@@ -60,10 +60,24 @@ and `code_external_field_method` are the same shape for the other two sites.
 So a family carries **both the base facts and the aggregated and derived facts we know we need**.
 `code_type`, `code_method` and `code_method_parameter` are read off the classfiles; `code_type_element`
 peels a generic signature down to what it delivers, `code_throwable_supertype` closes a hierarchy
-transitively, and the three arms answer the use-site question the census would never have answered.
+transitively, and the three use-site relations answer the question the census would never have answered.
 One family, both kinds, because the questions are what the family is for.
 
 The `jvm_` family was eaten away as this proceeded, from thirteen relations to none.
+
+The classes jOOQ generates are classes like any other, and the code family captures them as code
+facts, so a relation that names a record class or a parameter type can key into it with a foreign
+key. Today the census reads the generated package's classes without their members, and reading
+those is the same capture, not a new family. Nothing holds a second reference to them by catalog
+name beside that. Which table a record
+class belongs to is a catalog fact, and the sql family states it in `sql_table.record_class_fqn`.
+Where a generated class is missing from the code family, the fix is capturing it there, not
+reaching for the catalog name instead.
+
+A relation may land before its reader, when that reader is named. `code_throwable` has no reader in
+the tree yet; the editor's completion for `@error` is the one it waits for, and it cannot complete
+against a fact nobody captured. What makes such a relation more than inventory is that its
+reader is named.
 
 Normalizing is mostly mechanical once you know which facts you
 are holding: extract the supertype, lift out what does not vary, key it. Deciding **which facts the
@@ -116,6 +130,13 @@ held whole. Capture it in the form the question needs, not the form the directiv
 When the inputs are already in the store, the fact is a derivation. Nothing has to be read again and
 nothing outside the store is consulted.
 
+A derived fact is stored too: its owner's stage writes it from a rule view into a relation with
+keys and foreign keys, and marks and sweeps it like any other. Stored at a grain an existing
+relation already keys, it is a derived relation; establishing a key no relation has yet is
+anchoring. A plain view is only for a trivial join and filter of stored relations, no view reads
+another view, and a rule view that grows complex is a sign a derivation was skipped upstream and
+belongs stored there. xref:fact-model.adoc#grain[The fact model] states the rule in full.
+
 == Gathering and deriving are kept apart
 
 The discipline that makes the two provenances tractable is that a gatherer does not mix them. Put the
@@ -135,7 +156,7 @@ the aggregation is a statement rather than code.
 Gathering reads one corpus. Anchoring may read what earlier gatherers have settled, and that
 permission is declared rather than assumed: `meta_gatherer_dependency` names the upstream families
 each gatherer may reach. The `code` gatherer declares `classpath-source` and `jooq`, which is what
-lets an arm of its anchoring step key a method's parameter to the catalog table the parameter names.
+lets a rule of its anchor phase key a method's parameter to the catalog table the parameter names.
 
 Upstream is the operative word. Reading a family that runs later does not work: best case the rows
 are not there yet, worst case they are there and subtly wrong.
@@ -155,7 +176,7 @@ graphql_field                        PRIMARY KEY (graph_name, type_name, field_n
 ----
 
 Two documents declaring `Film.title` are two entry rows and one anchor row. The anchor is at the
-grain a consumer asks at, and the anchoring phase is what gets there.
+grain a consumer asks at, a key no entry has, and establishing that new grain is what anchoring is.
 
 How a collision resolves is the decision that matters, and it differs from family to family. In this
 one the oldest file wins: the newer definition is the one a developer changed most recently, so that
@@ -193,9 +214,13 @@ sweeps what it did not, so a thing removed from a corpus is removed from the sto
 `ON DELETE CASCADE` collects everything that hung off it. The sweep is the root of that collection:
 without it the cascade never fires, because nothing ever deletes the parent.
 
-Where an orphan should not vanish quietly, the reference uses `ON DELETE SET NULL` instead. The row
-stands with its reference emptied, so a source going away flags every reading of it rather than
-silently deleting them, and the owner can reclaim them deliberately on its next pass.
+So a deleted row unwinds everything downstream: an entry, and a derived relation, references what
+it hangs off `ON DELETE CASCADE`. An anchor is the exception. It establishes a new key and may
+aggregate several sources, so it can outlive any one of them, and its foreign key to what it was
+built from is `ON DELETE SET NULL`. The row stands with its reference emptied, so a source going
+away flags every reading of it rather than silently deleting them, and the owner reclaims them
+deliberately on its next pass. Review a foreign key against this: cascade downstream, set null
+from an anchor.
 
 == Where it pinches
 
@@ -208,6 +233,12 @@ family's facts moves into that family, and the ones this work has reached have b
 than improved. It is the second largest family in the store, so a reader will meet it early. Do not
 model on it, and do not take a shape found there as precedent.
 
+New work builds new and clean. It reads no `intent_` relation or view, even as a stopgap: a fact
+that exists only there is captured or derived properly first. And it adds nothing to the derivation
+gatherer, which is dissolving too, unless the change dissolves something there; a derivation step
+moves to its owner's anchor phase. Both rules exist because a new reader or step in a dissolving
+family is one more thing to dissolve later. Before placing a change, check the owner in
+`meta_relation` and the writing stage of every relation it touches.
 
 What holds, and holds well, is that a **new** relation cannot arrive without an owner and a grain.
 `MetaDeclarationGateTest` compares every observed relation against the declarations and a frozen

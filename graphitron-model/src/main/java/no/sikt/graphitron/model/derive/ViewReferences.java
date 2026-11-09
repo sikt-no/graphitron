@@ -48,7 +48,7 @@ import static org.jooq.impl.DSL.table;
  * discards.
  *
  * <p>{@link #relationsReadBy} and the two reach walks built on it want only the relation names:
- * {@link #tablesReachedBy} is what the derivation stratum's order is gated against, and
+ * {@link #tablesReachedBy} is what the derivation gatherer's stage order is gated against, and
  * {@link #viewsEvaluatedBy} is the reach a cost claim about a reader ranges over. All of them go
  * through here so the normalization rules are stated once: a real relation reference is the one H2
  * spells schema-qualified ({@code "PUBLIC"."NAME"}), while aliases and common table expression names

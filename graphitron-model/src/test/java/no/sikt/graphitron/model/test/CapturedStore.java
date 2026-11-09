@@ -631,7 +631,7 @@ public final class CapturedStore implements AutoCloseable {
         FactStores.countCapture();
         ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
-        // classpath families where there is a classpath, every document stratum, and runs the
+        // classpath families where there is a classpath, every document family, and runs the
         // derivations at its tail.
         var corpus = corpusOf(files, directory);
         var subject = new SubjectConfig(corpus.recipe(), configuration.jooqPackage(),

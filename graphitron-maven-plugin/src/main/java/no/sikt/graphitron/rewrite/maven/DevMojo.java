@@ -402,7 +402,7 @@ public class DevMojo extends AbstractRewriteMojo {
 
     // What the session has said about stale workspace modules; see reportStaleModules.
     private final StaleModules staleModules = new StaleModules();
-    // The diagnostics stratum's schema-side writers over the same handle, constructed beside
+    // The diagnostic relations' schema-side writers over the same handle, constructed beside
     // compileFacts and fed the pre-fuse lists wherever the build output is published: the
     // rejection residue off the walk's error stream, the warning arms off the
     // suppression-filtered list.
@@ -1103,8 +1103,8 @@ public class DevMojo extends AbstractRewriteMojo {
 
     /**
      * One save's round, inside a live codegen scope: one generator pass, whose emitted half feeds
-     * the incremental recompile and whose reporting half is published to the store's diagnostics
-     * stratum and replayed to every open file. One pass rather than two, so the graph's partition
+     * the incremental recompile and whose reporting half is published to the store's diagnostic
+     * relations and replayed to every open file. One pass rather than two, so the graph's partition
      * is written once and the round's tree and its facts describe the same read of the schema.
      *
      * <p>Package-private so {@code DevMojoTest} can drive a whole round against a context it builds
@@ -1214,7 +1214,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * Carrier for {@link #buildOutputQuietly}'s output. {@code classified} says whether the round
      * got as far as classifying, which is the whole of what the caller needs to know: a round that
      * threw has no findings to publish and nothing to enqueue. The two lists are the
-     * diagnostics-stratum loaders' input, published only on that path, so a failed build writes
+     * diagnostic relations' loaders' input, published only on that path, so a failed build writes
      * nothing and the store keeps the last good round's rows rather than an empty partition that
      * would read as a clean schema. The assembled report does not ride along, the language server
      * reading a build's own findings from the store those lists are written to.

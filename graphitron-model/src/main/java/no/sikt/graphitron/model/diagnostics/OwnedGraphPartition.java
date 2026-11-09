@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 
 /**
- * The graph-ownership preamble every diagnostics-stratum loader shares, on the exact terms
+ * The graph-ownership preamble every diagnostic relation's loader shares, on the exact terms
  * {@link no.sikt.graphitron.model.capture.compile.CompileFacts} established for the {@code javac_}
  * family: mint the minimal {@code store_graph} anchor where no capture ever reached this store
  * under the graph (the in-memory session fallback, or a session that has not generated yet),

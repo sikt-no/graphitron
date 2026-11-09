@@ -23,8 +23,8 @@ xref:../explanation/typed-rejection.adoc[Typed rejection]; additive-then-cutover
 
 *Before implementing a feature, ensure the model carries what the feature needs ; pre-resolved,
 ready to consume.* Capture transcribes every external input once into the fact store's keyed base
-relations ; provenance kept, not overwritten ; and the derived strata carry each decision as views
-over that base, so the resolved answer never replaces the authored fact beneath it. During the
+relations ; provenance kept, not overwritten ; and anchor phases store each decision as derived
+relations over that base, so the resolved answer never replaces the authored fact beneath it. During the
 strangler window the classification walk (`GraphitronSchemaBuilder`) is the same boundary in
 transitional form. Every consumer receives "what to do", never "what to interpret"; the modeling
 discipline behind the store is xref:../explanation/fact-model.adoc[The fact model].

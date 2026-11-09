@@ -11,7 +11,7 @@ import java.util.Optional;
  * directions.
  *
  * <p>Every stored column holds a path: capture writes a schema file's {@code source_name} as the
- * absolute normalized path it read, and the diagnostics stratum's {@code file} columns hold the same
+ * absolute normalized path it read, and the diagnostic relations' {@code file} columns hold the same
  * form. The URI is a wire spelling and lives only on the wires that require it, the language server
  * protocol's document identity and the MCP tools' published locations, so a boundary holding one
  * spelling and needing the other converts here.

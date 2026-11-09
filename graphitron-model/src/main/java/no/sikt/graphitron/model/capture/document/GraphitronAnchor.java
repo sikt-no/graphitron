@@ -290,12 +290,12 @@ public final class GraphitronAnchor {
      * applications by the merge order of the declaration each was written in. A field coordinate is
      * declared once, two declarations of one field being a duplicate-field error rather than an
      * order to settle, so all of a field's applications sit in one definition in one file and their
-     * written positions already order them. The coordinate comes off the entry stratum's own index
+     * written positions already order them. The coordinate comes off the entry relations' own index
      * instead.
      *
      * <p>Numbered over the applications and joined to the decode afterwards, which is what keeps the
      * ordinals agreeing with the walk this replaces: {@code routine_ref} is NOT NULL, so an
-     * application naming nothing writes no row in either stratum, and it consumed its ordinal all
+     * application naming nothing writes no row in either the decode or this relation, and it consumed its ordinal all
      * the same. Ranking after the join would close that gap and renumber every application behind
      * it.
      */

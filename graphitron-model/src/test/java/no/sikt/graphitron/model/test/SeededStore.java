@@ -97,11 +97,11 @@ public final class SeededStore {
      * Runs the derivations, which a case calls once its rows are seeded and before it reads a
      * derived relation. Every read helper in this fixture's tests starts with this line.
      *
-     * <p>The store's architecture has three strata: capture transcribes facts, derivation computes
-     * further facts from them, and queries read. This class models the first and the third, and
-     * under derive-on-read the middle one is implicit and free, so its absence never cost anything.
-     * Store one derivation and the missing stratum becomes visible at once: a table holds rows
-     * only once something fills it. This is that stratum, running the stages production runs by the
+     * <p>Each gatherer works in two phases: a capture phase transcribes facts and an anchor phase
+     * derives further facts from them, which queries then read. A seeded case writes the captured
+     * rows itself, and under derive-on-read the anchor phase was implicit and free, so leaving it
+     * out never cost anything. Store one derivation and the missing phase becomes visible at once:
+     * a table holds rows only once something fills it. This is that phase, running the stages production runs by the
      * calls production makes, so the two cannot drift apart in what a stage computes; a test never
      * names a stage, and a rule becoming one costs this fixture one line.
      *
@@ -139,12 +139,12 @@ public final class SeededStore {
             NodeKeyColumns.derive(dsl, graph);
             NodeLegacyKeyShapes.derive(dsl, graph);
             ArgMappingCandidates.derive(dsl, graph);
-            // The reference stratum's own resolution of a spelling. Here for the reason the name
+            // The resolution of a written reference's spelling. Here for the reason the name
             // matches above are here, that the rows are a stage's now where they used to be a
             // rule computed on read, and a harness that seeds the catalog by hand gets nothing
             // from a stage nobody ran.
             SpelledTables.derive(dsl, graph);
-            // The derivation stratum's stages, after the gatherer's own above because that is
+            // The derivation gatherer's stages, after the gatherer's own above because that is
             // where each one's rule reads from, in the order DerivationStratum runs them. The
             // hand-written producers are not among them: a seeded case writes their tables itself.
             FieldScopeTables.derive(dsl, graph);

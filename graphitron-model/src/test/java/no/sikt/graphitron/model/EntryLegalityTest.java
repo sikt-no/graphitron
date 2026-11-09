@@ -36,12 +36,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The entry stratum holds what the directive definition admits, and holds it only then.
+ * The entry relations hold what the directive definition admits, and holds it only then.
  *
  * <p>Each case here is a corpus an author can type and a parser accepts, carrying one application
  * the definition does not admit. The assertion is in two halves and both matter. The entry is
  * absent, which is the rule. And assembly refused the same application, which is what says the rule
- * agrees with the authority rather than merely being strict: an entry this stratum drops for a
+ * agrees with the authority rather than merely being strict: an entry these relations drop for a
  * schema assembly is happy with would vanish from every reader that joins to it, reporting nothing.
  *
  * <p>The generic application census is the control. A row in
@@ -204,8 +204,8 @@ class EntryLegalityTest {
      * The other direction, and the one worth most. Everything here is legal, including the parts a
      * predicate written slightly too tightly would refuse: an optional argument omitted, a
      * one-element list written without brackets, an enum token, and a defaulted argument left out.
-     * A rule stricter than assembly deletes these rows and reports nothing, readers of this stratum
-     * joining to it inwardly.
+     * A rule stricter than assembly deletes these rows and reports nothing, readers of these relations
+     * joining to them inwardly.
      */
     @Test
     @DisplayName("every legal spelling is transcribed, including the ones a tight rule would refuse")

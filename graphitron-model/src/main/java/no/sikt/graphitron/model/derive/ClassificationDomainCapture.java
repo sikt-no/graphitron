@@ -42,7 +42,7 @@ import static org.jooq.impl.DSL.val;
  * graphql-java's own child semantics: field targets, argument types, input-object fields, union
  * members, and {@code implements} in both directions with the interface-to-implementor edge read
  * off the schema. A SQL closure restates that rule edge kind by edge kind and has to track every
- * SDL feature by hand. What decides the stratum is what a relation's rows are a function of, never
+ * SDL feature by hand. What decides a relation's phase is what its rows are a function of, never
  * which program computes them, and these rows stay a function of the captured sources alone.
  *
  * <h3>The seeds are SDL facts</h3>

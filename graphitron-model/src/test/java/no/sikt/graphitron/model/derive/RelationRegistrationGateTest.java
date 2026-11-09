@@ -526,7 +526,7 @@ class RelationRegistrationGateTest {
         // read; StaleModuleTest states it.
         registrations.put("build_warning_stale_module", Arm.DERIVED);
         registrations.put("build_warning_stale_module_hint", Arm.DERIVED);
-        // The schema self-description stratum: views over row values authored in the DDL itself,
+        // The schema's self-description, the meta_ family: views over row values authored in the DDL itself,
         // so capture never writes them and agreement with the walk is vacuous by construction.
         // Their anchors are the roster gates in FactSchemaGateTest, which close the family rows
         // against the observed relations in both directions on every build, and the roster gates
@@ -539,7 +539,7 @@ class RelationRegistrationGateTest {
         registrations.put("meta_prefixless_relation", Arm.DERIVED);
         registrations.put("meta_relation_family", Arm.DERIVED);
         registrations.put("meta_relation_reference", Arm.DERIVED);
-        // The declaration rosters sit in the same stratum as tables whose rows an INSERT in the
+        // The declaration rosters sit in the same family as tables whose rows an INSERT in the
         // DDL supplies, so capture never writes them either. Their anchors are the DDL's own
         // keys, foreign keys and CHECK constraints, the declaration gates in
         // no.sikt.graphitron.model.MetaDeclarationGateTest (which close the undeclared roster,

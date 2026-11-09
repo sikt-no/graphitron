@@ -328,7 +328,7 @@ class DevMojoTest {
 
     /**
      * One save's whole round, through the merged pass: the generator runs once and its reporting
-     * half is published to the store's diagnostics stratum and replayed to every open file. Before
+     * half is published to the store's diagnostic relations and replayed to every open file. Before
      * the merge these were two generator calls, the second existing only to produce the facts this
      * asserts; a round that stopped publishing them would have gone unnoticed here.
      *

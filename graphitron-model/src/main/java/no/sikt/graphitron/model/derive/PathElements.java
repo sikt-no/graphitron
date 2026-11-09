@@ -23,7 +23,7 @@ import static org.jooq.impl.DSL.val;
  * and candidate, each filled from its rule view beside it.
  *
  * <p>Reads only the element entries, written before the first stage, and the catalog and classpath
- * families, written before this gatherer starts, so it runs at the bottom of the reference stratum.
+ * families, written before this gatherer starts, so it runs at the base of the stages resolving written references.
  * Marked and swept: upserted on the reading's instant, then the rows this reading did not name are
  * deleted, so a relation keyed into these cascades only what is really gone.
  */

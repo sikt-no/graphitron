@@ -58,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The diagnostics stratum's content anchors and derived-column pins, asserted where the DDL
+ * The diagnostic relations' content anchors and derived-column pins, asserted where the DDL
  * says they live: the loaders' typed columns against hand-written expectations (the same
  * snapshot reduced two ways, at the loaders' cadence), and the {@code diagnostic} union view's
  * derived columns against the Java spellings they restate. The parity pins here are the ones
@@ -67,7 +67,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@link CompileDiagnostic#severity()}, the compile sentinels normalising to the uniform NULL
  * absent bucket, and the pilot arm's rendered {@code message} against the report's own. The file
  * axis has its own pin here too, and it is a property rather than a parity: no arm stores or
- * projects a URI, so no spelling is computed in this stratum at all.
+ * projects a URI, so no spelling is computed in these relations at all.
  */
 @PipelineTier
 class DiagnosticFactsTest {
@@ -433,7 +433,7 @@ class DiagnosticFactsTest {
 
     /**
      * The file axis is a path wherever it is stored and wherever the view projects one, so nothing
-     * in this stratum computes a spelling and the two wires that name a document by URI render one
+     * in these relations computes a spelling and the two wires that name a document by URI render one
      * at their own boundary. Stated over rows, which takes three fixtures rather
      * than one build: the three loaders share a store, while the pilot arm and the SDL toolchain's
      * arm each need their own capture (a capture clears the graph's partition on the way in), and no

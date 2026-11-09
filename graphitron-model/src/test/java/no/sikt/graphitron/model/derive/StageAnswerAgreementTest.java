@@ -48,7 +48,7 @@ class StageAnswerAgreementTest {
     private record Stage(String target, String ruleView) {}
 
     /**
-     * The stage-written tables and their rules, in the stratum's order.
+     * The stage-written tables and their rules, in stage order.
      */
     private static final List<Stage> STAGES = List.of(
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),

@@ -506,7 +506,7 @@ class GraphitronTypeEntriesTest {
 
     /**
      * An omitted {@code resolvable} stays NULL rather than becoming the directive's declared
-     * default, on the rule every optional argument in this stratum takes: a default is a generator
+     * default, on the rule every optional argument in these entry relations takes: a default is a generator
      * constant, and NULL is what says the author did not choose.
      */
     @Test

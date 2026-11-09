@@ -69,18 +69,18 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       lifecycle anchor is partitioned by source file where the oracle families' are partitioned
  *       by graph, and there is no fixture here that would fill it.</li>
  *   <li>{@link Arm#DERIVED} for shipped derivations: views, the tables the derivation
- *       stratum's steps write, and the authored rows describing the schema itself. A producer's
+ *       gatherer's steps write, and the authored rows describing the schema itself. A producer's
  *       table ({@code intent_type_domain}) has a writer that re-derives it inside every
  *       capture, stored only because H2 has no safe recursive view form for a
  *       cyclic type graph; its cadence and clearing follow the derivation, not an oracle, and the
  *       warm/cold census anchors its lifecycle like any capture-written rows. A stage is two
  *       relations under one rule and both are derived: the {@code _rule} view stating it, and the
- *       table its stage writes from that view inside the derivation stratum. The {@code meta_}
+ *       table its stage writes from that view inside the derivation gatherer. The {@code meta_}
  *       rows are derived in the widest sense of the arm, being rows the DDL alone determines
  *       rather than anything a run reads, which is why the rosters sit here. A pure re-projection
  *       (the {@code diagnostic} union) registers the base relations it projects and its
  *       agreement is vacuous by construction; a semantic derivation (the {@code intent_} claim
- *       views and the demand stratum) registers with its own anchor instead, which lives with
+ *       views and the demand relations) registers with its own anchor instead, which lives with
  *       its reader's test
  *       (the authored-claim views carry their reason in two places, because a rule reading what an
  *       author wrote is asked both what it makes of a set of applications and whether real SDL
@@ -174,8 +174,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       {@code no.sikt.graphitron.rewrite.derive.ClaimConflictsTest} binds the claim defects to
  *       hand-written per-fixture expectations the store does not produce, the messages a build
  *       reports, and the claims and the defects themselves are pinned by the {@code claim} and
- *       {@code claims-conflict} fact documents). Later derivation
- *       strata land as registrations here, not as exemptions.</li>
+ *       {@code claims-conflict} fact documents). Later derived
+ *       relations land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#UNSHADOWED} for relations the shadowed model has no counterpart for, so that
  *       agreement with it is not a question that can be asked of them. Every other arm answers
  *       "does this match what {@code GraphitronSchema} says"; these are part of what replaces it,
@@ -225,7 +225,7 @@ class FactCaptureAgreementTest {
      * <p>A capture used to empty this partition, and the property was the wholesale graph-scoped
      * clear's rather than anyone's design: that clear emptied every graph-keyed relation it did
      * not know the owner of, which is how a relation capture does not write came to be emptied by
-     * one. It reached across a stratum boundary to do it. A javac verdict is a fact about a
+     * one. It reached across a family boundary to do it. A javac verdict is a fact about a
      * compile, and between a capture and the compile that follows it an emptied partition says the
      * last compile was clean, which is a wrong answer where the previous round's rows are a stale
      * one.

@@ -38,13 +38,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Four directives the specification admits at {@code FIELD_DEFINITION} and nowhere else moved
  * here, which is what lets each of them derive from one entry relation. A directive also legal on
  * an input object's field has its applications split across two, an input object's field being an
- * input value in the entry stratum rather than a field, and its anchor is a union with a
+ * input value in the entry relations rather than a field, and its anchor is a union with a
  * parent-kind test rather than a select. That distinction is the reason this batch is these four.
  *
  * <p>What the cases are about is the same two things the type site's are, plus one the field site
  * adds. The choosing, which here has to reach through two declarations to find merge order. The
  * absence, where a join's polarity is the relation's own shape. And the ordering, which is the one
- * value the two strata have to agree about rather than a row one of them declines.
+ * value the entry relation and the anchor have to agree about rather than a row one of them declines.
  */
 class GraphitronFieldAnchorsTest {
 

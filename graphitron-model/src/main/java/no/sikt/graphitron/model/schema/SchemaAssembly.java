@@ -34,7 +34,7 @@ public sealed interface SchemaAssembly {
      *
      * <p>Carried so a caller holding the outcome need not compose the corpus a second time to say
      * what was composed. Transitional: the readers that still want a registry rather than the
-     * entry stratum are the reason it is here, and it goes with them.
+     * entry relations are the reason it is here, and it goes with them.
      */
     TypeDefinitionRegistry registry();
 

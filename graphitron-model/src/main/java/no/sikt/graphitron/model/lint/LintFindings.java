@@ -150,7 +150,7 @@ public final class LintFindings {
      * arguments, its insertion point being the character after the directive's own name.
      *
      * <p>Withholding is the whole remedy and not a step towards one. Offering to replace the blank
-     * description would need the extent it was written across, and the entry stratum holds the
+     * description would need the extent it was written across, and the entry relations hold the
      * decoded value rather than the spelling: {@code ""}, {@code "   "} and a block string of
      * newlines all arrive here as a blank, and nothing in the store says which was written. The
      * finding still lands on the description, which is the line the author has to edit.

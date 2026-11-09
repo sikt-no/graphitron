@@ -15,7 +15,7 @@ a|
 
 I want to understand why the generator is shaped the way it is.
 
-The dispatch-axis model, the typed-rejection contract, the fact model behind the store, and how the fact-oriented pipeline fits together end to end: capture into the fact store, the derived strata, planning into commands, and the render fold.
+The dispatch-axis model, the typed-rejection contract, the fact model behind the store, and how the fact-oriented pipeline fits together end to end: capture into the fact store, the gatherers' anchor phases, planning into commands, and the render fold.
 
 a|
 [.quadrant-title]*xref:reference/index.adoc[Reference]*

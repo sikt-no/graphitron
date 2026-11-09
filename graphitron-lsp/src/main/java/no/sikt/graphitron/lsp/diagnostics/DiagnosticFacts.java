@@ -881,8 +881,8 @@ final class DiagnosticFacts {
     }
 
     /**
-     * What the last build recorded about the batch's files, read from the one surface the diagnostics
-     * stratum publishes. Every schema-side arm of that view rides in: the walk's rejection residue,
+     * What the last build recorded about the batch's files, read from the one surface the diagnostic
+     * relations publish. Every schema-side arm of that view rides in: the walk's rejection residue,
      * the entry defects with a claim conflict's directives quoted back from its claims, the lint
      * findings and the advisory warnings, and the parser's and
      * the schema assembler's own refusals, which the language server never surfaced before because a

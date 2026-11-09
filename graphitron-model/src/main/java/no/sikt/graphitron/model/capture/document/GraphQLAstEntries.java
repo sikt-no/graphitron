@@ -179,7 +179,7 @@ public final class GraphQLAstEntries {
      *
      * <p>Not an anchor, whatever the position grain is classified as. The anchors are what
      * {@link GraphQLAstCapture#anchor} writes, resolving what several documents said into one answer, and this
-     * runs before any of that: the entry stratum's claim is that it exists before anything is
+     * runs before any of that: the entry relations' claim is that they exist before anything is
      * composed, and a row here is one document saying it wrote something at a position.
      *
      * <p>One method for all nineteen, because graphql-java already gives them the supertype: every

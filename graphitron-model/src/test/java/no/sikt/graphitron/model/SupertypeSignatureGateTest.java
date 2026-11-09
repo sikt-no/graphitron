@@ -224,8 +224,8 @@ class SupertypeSignatureGateTest {
         // spelled out here rather than exempted by a rule over the name.
         Set.of("graphitron_ast_field_condition_entry", "graphitron_ast_input_value_condition_entry"),
         // Five, and they arrived by being stamped: an @enum application records a class, a method
-        // and an argMapping, which is what a service and an external field record too, at either
-        // stratum. One of them is a path's method-call segment, at every site and under either
+        // and an argMapping, which is what a service and an external field record too, in either
+        // half, entry or anchor. One of them is a path's method-call segment, at every site and under either
         // directive: it is written the way every method call is, and its own relation is what says
         // the method is a join at that position, which a @condition's method is not. What it would
         // take to collapse them is a supertype at a coordinate none of them has, so the entry half

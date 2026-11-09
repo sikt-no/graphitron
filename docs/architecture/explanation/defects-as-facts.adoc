@@ -14,10 +14,16 @@ document stops writing that position. Everything that reports defects reads one 
 
 * the editor, through the `diagnostic` view;
 * the MCP server, through the same view;
-* the build, through the readers `StoreDetections` gathers, each of which turns the rows of its
-  codes into located build errors.
+* the build, through `EntryDefectVerdict`, which turns every error-severity row into a located
+  build error with the message the editor shows for it.
 
 One relation and one verdict means the three cannot drift apart.
+
+The store's verdict is authoritative. `validate` and `generate` read it first, before the schema is
+classified, and stop on it: a graph with an error-severity defect is not classified and nothing is
+emitted, so an author meets the stored defect and never a second account of the same fault. `dev`
+reports the same verdict and keeps running. A warning-severity defect shows in the editor and the
+MCP server and does not stop a build.
 
 == The supertype
 
@@ -50,7 +56,7 @@ judge are in: from a rule view of its own that `EntryDefects` writes for it, or 
 rule needs work a view cannot state, as the `occurrence-depths` stage writes the route defects of
 the walk it takes. So no one statement reaches every relation a gatherer derives, and a stage's rule
 reads only what that stage and the stages before it wrote; one that read a later stage's relation
-would read the previous reading's rows. An arm reading several stages' facts belongs to the last of
+would read the previous reading's rows. A rule reading several stages' facts belongs to the last of
 them. Every row carries `touched_at`, the instant of the reading that found it. When its stages have
 run, the gatherer sweeps the codes its stages own once, deleting the rows of
 those codes the reading did not mark. Another gatherer's rows are never touched.
@@ -72,8 +78,9 @@ is one `meta_stage_write` declares.
 
 A defect often has more to say than a code and a string. Where it does, its owner adds a relation
 keyed by the defect's key plus whatever the detail is about, with a foreign key to
-`graphitron_entry_defect` `ON DELETE CASCADE`. When the owner sweeps a defect, its details go with
-it. A detail no longer found under a defect still found is the owner's to remove as well, by
+`graphitron_entry_defect` `ON DELETE CASCADE`, and any code it carries is registered in
+`graphitron_defect_type` like any other. When the owner sweeps a defect, its details go with it.
+The detail goes in such a relation, not packed into the detail string. A detail no longer found under a defect still found is the owner's to remove as well, by
 marking and sweeping the detail rows or by rewriting them each reading.
 
 The condition overload defects are the example. `CONDITION_OVERLOAD_TIE` names the overloads that
@@ -91,9 +98,17 @@ a reader lists them without parsing the detail.
 . Write it as the stage's last statement, as a branch of the stage's rule view or directly, marked
   with the reading's instant and swept by the gatherer.
 . Add a detail relation where the defect has more to say, keyed and cascaded as above.
-. Add a build reader to `StoreDetections` if the defect must fail the build, not only show in the
-  editor.
-. Pin it in a fact document: the rows it draws and, beside them, a near miss that draws nothing.
+. Pin it in a fact document: the schema, then the expected rows of each relation the case touches
+  with the defect rows beside the fact rows, since the defect is half the answer for that field;
+  and beside them a near miss that draws nothing.
+
+No build reader is needed: once declared with `error` severity, the code stops `validate` and
+`generate` through the store's verdict.
+
+A defect raised on a valid schema is a regression, whatever its age and whether or not planned work
+already names it. The editor shows it to an author as a fault in a correct schema, so it is never
+left as a known gap: count what it hits, and fix it ahead of the planned work it was found during,
+as its own commit.
 
 See xref:modeling-discipline.adoc[The modeling discipline] for what any stored relation owes.
 
@@ -101,11 +116,12 @@ See xref:modeling-discipline.adoc[The modeling discipline] for what any stored r
 
 The classification walk still refuses schemas on its own, with typed rejections that reach the
 build as validation errors; xref:typed-rejection.adoc[Typed rejection] describes them. Those are
-not rows here. Where a rule has both a stored defect and a walk rejection, both report it until the
-walk's rejection goes.
+not rows here, and the walk runs only on a graph the store's verdict accepts. A walk refusal that
+duplicates a stored defect is removed where it untangles simply; otherwise it is replaced in effect,
+since the verdict stops first, and goes with the walk.
 
-Nor does every stored defect fail a build today. A defect fails the build only where a
-`StoreDetections` reader reads its code; the rest show in the editor and MCP. Making every error
-code stop a build is planned, and until then the build reader is a step of its own.
+Some rule families still judge in Java outside the defect family, the ones `StoreDetections`
+gathers; their violations join the walk's errors once the verdict has accepted the graph. They are
+what remains to move into the family.
 
 xref:index.adoc[← Explanation index]

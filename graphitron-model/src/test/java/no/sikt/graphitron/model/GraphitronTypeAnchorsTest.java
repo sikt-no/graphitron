@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The type site's anchors, now that they are derived rather than walked.
  *
  * <p>Three relations moved off the incumbent decode and onto {@code GraphitronAnchor}, which selects
- * them out of the entry stratum. What the move has to preserve is not the payload, which is a column
+ * them out of the entry relations. What the move has to preserve is not the payload, which is a column
  * copy, but the two things the walk was doing implicitly and a statement has to do out loud: it
  * chose one application per type by arriving first, and it wrote a row for an application that
  * named nothing.

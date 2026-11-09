@@ -93,7 +93,7 @@ public final class GraphitronAssemblyCapture {
         // And what each type's written directives claim it stands for, off the same applications.
         new AnchorStage("type-claims", TypeClaims.class,
             TypeClaims::derive),
-        // The reference stratum's own resolutions, bottom rung first: what a written table name
+        // The resolutions of written references, the base one first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could
         // take, which read it.
         new AnchorStage("spelled-tables", SpelledTables.class,

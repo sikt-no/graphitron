@@ -68,7 +68,7 @@ import static org.jooq.impl.DSL.when;
  * namespace the defaults are generator constants rather than captured facts.
  *
  * @deprecated the decode as a visitor of a registry; it goes when the decode reads the
- *     entry stratum instead.
+ *     entry relations instead.
  */
 @Deprecated
 // Acknowledges FactSink's deprecation. This is the decode, which is what the sink is for
@@ -178,7 +178,7 @@ public final class GraphitronFactCapture {
                 spelling(string(directive, "table"));
             }
             case "routine" -> {
-                // The relation is derived now, by GraphitronAnchor over the entry stratum: the
+                // The relation is derived now, by GraphitronAnchor over the entry relations: the
                 // application at its coordinate. The claim stays, reading each application once,
                 // and the spelling stays for @table's reason, its relation being keyed by the value
                 // across the sites that write one.

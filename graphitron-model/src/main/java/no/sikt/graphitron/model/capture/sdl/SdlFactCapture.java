@@ -85,7 +85,7 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * character. The registry validates nothing: it retains undeclared directives, unknown argument
  * names, wrong-typed literals, missing required arguments, and duplicate declarations without
  * error. Capture is therefore <em>tolerant by construction</em> and never throws on author input;
- * a duplicate element loses nothing, both occurrences being rows of the entry stratum already,
+ * a duplicate element loses nothing, both occurrences being rows of the entry relations already,
  * keyed where each was written. An argument's literal is transcribed exactly
  * as {@code AstPrinter} renders it, for a reader that wants the authored text; the decode beside it
  * reads the parsed value rather than that rendering, and what it makes of a literal that does not
@@ -97,7 +97,7 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * That is a review rule on this code, not something a test can catch after the fact.
  *
  * @deprecated the traversal the decode rides on; it goes when the decode reads the
-     *     entry stratum instead of a registry.
+     *     entry relations instead of a registry.
  */
 @Deprecated
 // Acknowledges FactSink's deprecation. This is the decode, which is what the sink is for
@@ -153,7 +153,7 @@ public final class SdlFactCapture {
      * <p>A walk with nothing of its own left to write. Every relation it once held is written by
      * the gatherers that read the documents, and what remains is the traversal the decode rides
      * on: it visits each directive application in the merged corpus and hands it over. It leaves
-     * when the decode reads the entry stratum instead of a registry.
+     * when the decode reads the entry relations instead of a registry.
      */
     public static void capture(FactSink sink, TypeDefinitionRegistry registry) {
         new SdlFactCapture(sink, registry).run();

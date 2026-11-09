@@ -13,7 +13,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_SCOPE_TABLE_RU
  * stays stated once, in SQL, in the catalog where {@link ViewReferences} can read what it reads;
  * what this class adds is who evaluates it and when.
  *
- * <p>After {@link FieldScopeTables} in the stratum, and that is a dependency rather than a
+ * <p>After {@link FieldScopeTables} in the stage order, and that is a dependency rather than a
  * preference: the fan-out reads {@code graphitron_field_scope_table}, so a stage ahead of the one
  * that writes it would read the previous capture's rows.
  */
