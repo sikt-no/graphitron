@@ -1,7 +1,7 @@
 ---
 id: R1163
 title: "The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete"
-status: Backlog
+status: Spec
 bucket: dx
 theme: tooling
 depends-on: []
@@ -51,6 +51,113 @@ Every session working on the rewrite, on this machine, in the cloud or elsewhere
     stored relations.
   * A rule view is simple. A complex rule view means a derivation was skipped at an earlier stage,
     and the fix is to store that derivation upstream, not to grow the rule.
+
+## Where each ruling lands
+
+A census on 2026-11-09 checked 29 design rulings, most of them held only in local agent memory,
+against the docs: 6 are stated in docs the architect reads, 3 only in the user manual, 10 in part or
+only in R876's plan, 8 nowhere. Each lands once, in the page that owns its subject, stated with why
+and how to apply it; the architect reaches it by reading that page. `development-principles.adoc`
+keeps its 3,500-word budget (`DocSizeBudgetTest`), so rulings go to the explanation and reference
+pages and an axiom there gains at most a sentence pointing at them.
+
+`fact-model.adoc`:
+
+* § "The three strata" is replaced by the gatherer account under Decided, and § "Which stratum each
+  family is in" becomes which gatherer and which phase owns each family.
+* § "Derived reads are views, not stored facts" is rewritten to the grain ruling under Decided: grain,
+  derived relations, anchors as new grains, plain views for trivial joins and filters, no view over a
+  view, simple rule views.
+* § "Ownership" gains: nothing is added to the derivation family, whose steps move to their owners'
+  anchor phases; a dissolving relation (`intent_`, a retiring stage) is never re-keyed, migrated onto
+  or extended, and a list touching one is sorted into stays, re-keys and dissolves first; a claim that
+  nothing reads a relation also checks foreign keys, view bodies and rule `EXISTS` clauses, not only
+  Java.
+* § "The key discipline" gains: a line and column key a fact inside one document only; a reference
+  across files anchors to a name, a list index or an `as:`.
+* § "One base, many views" gains: each use of the store (a planner, an emitter's query, the LSP, the
+  MCP surface) owns its own query, and what two uses share moves into the model as a relation.
+* The "Enforced by:" paragraph closing § "Provenance" is restated as Decided says.
+* Calling a `@reference` chain "a walk" goes: a resolved route from one table to another is a path;
+  "the walk" names only the classifier being dissolved.
+
+`modeling-discipline.adoc`:
+
+* Stratum wording becomes capture phase and anchor phase.
+* § "A corpus is captured into a family shaped by the questions" gains: the code family captures the
+  generated jOOQ classes as code facts like any class, with no second reference to them, while which
+  table a record class belongs to is the sql family's; and a relation may land before its reader when
+  that reader is named.
+* § "What a stored relation owes" gains the cascade rule: an entry and a derived relation cascade from
+  what they hang off; an anchor's foreign key to its sources is `SET NULL`.
+* § "Where it pinches" says new work reads no `intent_` relation, not only that it takes no shape from
+  one.
+
+`defects-as-facts.adoc`:
+
+* The paragraph on a stored defect and a walk rejection both reporting goes. The store's verdict is
+  authoritative: `validate` and `generate` read it first and stop, so an author meets one error.
+* § "Adding a defect" gains: a defect raised on a valid schema is a regression, fixed ahead of planned
+  work, never left as a known gap; and a defect's fact document shows the defect rows beside the fact
+  rows.
+
+`code-generation-triggers.adoc`, the rulings now stated only in the user manual:
+
+* § "Path" gains the input path rules: inputs follow the output path rules with fewer forms; a
+  `@nodeId(typeName:)` is table-bound and inferred as on output; a written path on an input may span
+  several hops only where identity passes along composite keys.
+* § "Producer" gains: a table record a `@service` or a write returns carries only its primary key, and
+  its fields resolve by the lifts that follow, never by same-table rules; a `@table` child on its
+  parent's table is refused unless the schema says how it is reached, by a nesting type or a
+  `@reference` keyed on the primary key.
+
+`testing.adoc`:
+
+* § "Build commands" gains: a local build's large heap hides a heap regression that CI's default heap
+  meets, so a change that adds or reshapes views over the path or occurrence relations runs the LSP
+  tests at `-Xmx2g`.
+
+Not carried: process rules of one machine (build turns, local repositories, harvest protocol), how
+agents address Alf, and promises between two co-authors about a single change.
+
+## The architect
+
+`.claude/agents/principles-architect.md` changes from a referee of designs to the voice of the
+direction:
+
+* **Read first** is every invocation, in order: the strategic and technical principles, `fact-model.adoc`,
+  `modeling-discipline.adoc`, `defects-as-facts.adoc`, `code-generation-triggers.adoc`, `testing.adoc`,
+  then the pipeline overview and the index. Touched-only: the manual's directive reference when the
+  design changes what an author writes, `naming-the-row.adoc` when it names relations, and the R876
+  nodes it touches. The duplicate listing of `code-generation-triggers.adoc` goes.
+* **The first question is what the design lets us delete.** For each design it names what dissolves
+  (a classified-model type, a walk branch, an `intent_` or derivation relation, a command arm) and,
+  where the design extends one instead, the store-side shape that replaces it, citing the page and
+  section where the rule lives.
+* **The modelling checks follow the grain ruling:** what grain a fact is about and whether a relation
+  already keys it; whether a derivation is trivial enough for a view; whether any view reads a view;
+  whether a rule view is complex enough that a derivation was skipped upstream. The "A derivation
+  stored where a view belongs" check goes.
+* **It stays advisory and read-only.** It gives no verdict; the author weighs it, and Alf and Filip,
+  who work with the author, decide. It may say a design is clean.
+* Its description names when it is called, so a session reading only the agent list knows.
+
+## The workflow
+
+* `CLAUDE.md` § "Development Workflow" and `roadmap/workflow.adoc` name the consultation as a step,
+  not an option: when a node or item is taken up, at a design fork, and before work is handed over for
+  harvest or review. The handover names what the architect raised and what the author did with it.
+* A ruling enters the docs the day it is given: whoever hears it (normally the session harvesting for
+  the item) commits it to the owning page, as a `docs` commit straight to trunk.
+
+## Tests
+
+The change is prose, and the existing gates hold it: `check-schema-identifiers` (every relation the
+pages cite exists), `ArchitectureDocSymbolGuardTest` (every Java type they name exists),
+`DocSizeBudgetTest`, `check-adoc-xrefs`, and `check-transient-citations` for `CLAUDE.md`. It reaches
+`graphitron` and `graphitron-sakila-example` tests, so it owes the full verification build. Acceptance
+is a trial: the rewritten architect, given two designs that recently went wrong (a defect that fired
+on a valid schema; a view chain that cost the build), raises both from the pages alone.
 
 ## Retired vocabulary
 
