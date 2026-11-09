@@ -9340,7 +9340,9 @@ CREATE VIEW graphitron_join_path_step_rule
 -- Each claim on a field or an input field: where it was written, which of its places the path starts at, a
 -- root field's leading @routine being its producer's call and so no step, whether the field reads
 -- one row, which is the way a key from a table to itself is ridden, and whether it is a mutation's,
--- which never takes the step after a routine. The flags are CASE expressions rather than bare
+-- which never takes the step after a routine: the write's statement holds its locks, so nothing is
+-- joined onward in it, and what the write returns is lifted onto its table's rows, or read off by a
+-- payload's data field, in a statement of its own. The flags are CASE expressions rather than bare
 -- EXISTS: H2 pushes a predicate onto a view's boolean column and writes one over a bare EXISTS it
 -- cannot parse back.
 WITH claim (graph_name, claim_coordinate, claim_target_type, source_name, anchor_line,
@@ -17392,7 +17394,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',
    'Two @referenceFor applications on one field name the same type, and only the first one written is used.', 'entry-defects'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
-   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all.', 'occurrence-depths'),
+   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all; a root field''s leading @routine naming no routine is the same name claimed in vain, and the field calls nothing.', 'occurrence-depths'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
    'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.', 'occurrence-depths'),
   ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROOT_REFERENCE_WITHOUT_ROUTINE',

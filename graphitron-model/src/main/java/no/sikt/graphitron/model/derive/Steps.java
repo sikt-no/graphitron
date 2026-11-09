@@ -25,6 +25,8 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
@@ -48,11 +50,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
@@ -94,7 +99,8 @@ import static org.jooq.impl.DSL.when;
  * claim: {@code ROUTE_AMBIGUOUS} for several moves, {@code NO_ROUTE_FROM_DEPARTURE} or
  * {@code ELEMENT_UNRESOLVED} for none, the first naming why where a condition alone takes any table
  * as its second parameter, {@code NO_ROUTE_TO_TARGET} where a walk takes every step and
- * ends off its target, {@code ROUTINE_PARAMETER_UNBOUND}, and the two overload defects with the
+ * ends off its target, {@code ELEMENT_UNRESOLVED} too at a root field's leading {@code @routine}
+ * naming no routine, which no walk stands on, {@code ROUTINE_PARAMETER_UNBOUND}, and the two overload defects with the
  * declarations under each in {@code graphitron_entry_defect_method}. Each row is marked with the
  * reading's instant as its depth is written, an overload defect's detail naming the pairs of every
  * depth; {@link EntryDefects#sweep} takes the rows of the gatherer's codes a reading did not mark.
@@ -202,7 +208,38 @@ public final class Steps {
         parameters(dsl, graph, touchedAt, routines, defects);
         paths(dsl, graph, touchedAt, walks.values(), defects);
         wildcardArrivals(dsl, graph, defects);
+        if (depth == 0) {
+            unresolvedRootRoutines(dsl, graph, defects);
+        }
         writeDefects(dsl, graph, touchedAt, defects, methodDefects);
+    }
+
+    /**
+     * A root field's leading {@code @routine} naming no routine: {@code ELEMENT_UNRESOLVED} at the
+     * element, as a child's draws where its walk reaches it. A root's leading routine is its
+     * producer's call rather than a step, so no walk stands on it and it is stated here instead.
+     */
+    private static void unresolvedRootRoutines(DSLContext dsl, String graph, Map<DefectKey, String> defects) {
+        var f = GRAPHITRON_FIELD.as("rr_f");
+        var ro = GRAPHQL_ROOT_OPERATION.as("rr_ro");
+        var el = GRAPHQL_AST_ELEMENT_ENTRY.as("rr_el");
+        var ap = GRAPHITRON_AST_PATH_ENTRY.as("rr_ap");
+        var re = GRAPHITRON_AST_ROUTINE_ENTRY.as("rr_re");
+        var er = GRAPHITRON_PATH_ELEMENT_ROUTINE.as("rr_er");
+        dsl.selectDistinct(ap.SOURCE_NAME, ap.ELEMENT_LINE, ap.ELEMENT_COLUMN)
+            .from(f)
+            .join(ro).on(ro.GRAPH_NAME.eq(f.GRAPH_NAME), ro.TYPE_NAME.eq(f.TYPE_NAME))
+            .join(el).on(el.GRAPH_NAME.eq(f.GRAPH_NAME), el.COORDINATE.eq(f.COORDINATE))
+            .join(ap).on(ap.GRAPH_NAME.eq(el.GRAPH_NAME), ap.SOURCE_NAME.eq(el.SOURCE_NAME),
+                ap.ANCHOR_LINE.eq(el.SOURCE_LINE), ap.ANCHOR_COLUMN.eq(el.SOURCE_COLUMN), ap.PLACE.eq(0))
+            .join(re).on(re.GRAPH_NAME.eq(ap.GRAPH_NAME), re.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                re.SOURCE_LINE.eq(ap.ELEMENT_LINE), re.SOURCE_COLUMN.eq(ap.ELEMENT_COLUMN))
+            .where(f.GRAPH_NAME.eq(graph))
+            .andNotExists(selectOne().from(er).where(er.GRAPH_NAME.eq(ap.GRAPH_NAME),
+                er.SOURCE_NAME.eq(ap.SOURCE_NAME), er.SOURCE_LINE.eq(ap.ELEMENT_LINE),
+                er.SOURCE_COLUMN.eq(ap.ELEMENT_COLUMN)))
+            .forEach(r -> defects.putIfAbsent(
+                new DefectKey(new Pos(r.value1(), r.value2(), r.value3()), ELEMENT_UNRESOLVED), null));
     }
 
     /** Whether the occurrence at {@code coordinate} sits at {@code depth}. */

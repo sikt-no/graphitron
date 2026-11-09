@@ -77,9 +77,11 @@ extend schema @assertAbsent(relation: "graphitron_spelled_table", rows: """
   """)
 
 # What stops the graph generating: the chain's second routine, rent_film, departs from
-# films_for_actor's result and finds no value there for its parameters. The names that resolve to
-# nothing state no defect of their own.
+# films_for_actor's result and finds no value there for its parameters, and the two names that
+# resolve to nothing are each a name claimed that does not exist, at the @routine that claims it.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                      coordinate
   ROUTINE_PARAMETER_UNBOUND, Query.chained
+  ELEMENT_UNRESOLVED,        Query.missing
+  ELEMENT_UNRESOLVED,        Query.notCallable
   """)

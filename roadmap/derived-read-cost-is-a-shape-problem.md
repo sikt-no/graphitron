@@ -103,8 +103,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
   "`DerivationStratum` is gone, each step anchored by its owner".
 * A field's departure table in `graphitron_field_source_table`'s interim rules and in
   `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
-* A routine write's carrier refusals in `intent_mutation_routine_seat` and in the walk's routine
-  classification. Ends at "The routine seat's refusals are codes a stage writes".
+* A routine write's refusals in `RoutineWriteQuery`'s verdict and in the walk's routine
+  classification. Ends at "A routine write's refusals are codes a stage writes".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
 * The walk's own schema beside the emitted one capture builds. Ends at "The generator builds no schema".
@@ -855,8 +855,25 @@ pass and no stratum that clears and recomputes.
       `ConditionShapeDefectMethods` and `ArgMappingPairDefects` each write their rows in the stage
       that owns the codes they detail, so no defect writer runs after the stages but the gatherer's
       one sweep.
-    * **The routine seat's refusals are codes a stage writes** `open`.
-      `intent_mutation_routine_seat` and the walk's routine classification still make them.
+    * **A routine write's refusals are codes a stage writes** `open`. A path the write's result
+      leads on is the path family's to judge, `NO_ROUTE_TO_TARGET` at a landing or a payload data
+      field no hop reaches and `REFERENCE_WITHOUT_TARGET_TABLE` at a path on a payload return, so
+      only what a write alone refuses is a code of its own, and `RoutineWriteQuery`'s verdict and
+      the walk's routine refusals go as each lands.
+      * **A root `@routine` naming no routine is `ELEMENT_UNRESOLVED`** `done`. As a child's is, at
+        the element, though no walk stands on a root's leading routine, it being the producer's call.
+      * **A table-bound return with no written path is a lift** `open`. The store states the
+        write's result as records of the return's table re-read by its key in a statement of their
+        own, a write's statement joining nothing onward since it holds its locks, and the emitter
+        refuses the shape only because it has no lift for a write.
+      * **What a write alone refuses is stated** `open`. More than one `@routine`, a connection
+        return and a read surface move from `entry-defects`; a routine written after a `@reference`,
+        a method on the first step out of the result, a payload holding no single data field, a data
+        field that is no table lookup and a non-null single data field are new.
+    * **A name claimed that does not exist is one defect** `open`. `TABLE_UNRESOLVED`,
+      `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
+      written name resolving to nothing, the position saying what was named, so they fold into one
+      code (Alf, 2026-11-09).
   * **A defect is keyed by the occurrence it judges, with the written position where there is one** `blocked`, on "An arm belongs to the last stage whose facts it reads".
     The split by stage comes first, writing the same rows, so the re-keying changes one grain inside
     rule views that are already small rather than a shape and a grain at once.
