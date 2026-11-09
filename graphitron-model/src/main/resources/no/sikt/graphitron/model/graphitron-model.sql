@@ -12887,6 +12887,31 @@ SELECT a.graph_name, el.source_name, el.source_line, el.source_column, 'INHERITE
     ON el.graph_name = a.graph_name AND el.coordinate = a.element_coordinate
  GROUP BY a.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
+-- A condition on the step out of a @routine write's result, at the element that writes it. The
+-- write's statement holds its locks and joins nothing onward, so what it returns is re-read by its
+-- key in a statement of its own, which the function's result is not part of for a condition to
+-- join from; a later step's condition joins two tables of that statement and is no defect.
+SELECT ce.graph_name, ce.source_name, ce.source_line, ce.source_column,
+       'CONDITION_ON_WRITE_RESULT', CAST(NULL AS VARCHAR)
+  FROM graphitron_field gf
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = gf.graph_name AND ro.type_name = gf.type_name AND ro.operation = 'MUTATION'
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = gf.graph_name AND el.coordinate = gf.coordinate
+  JOIN graphitron_ast_path_entry head
+    ON head.graph_name = el.graph_name AND head.source_name = el.source_name
+   AND head.anchor_line = el.source_line AND head.anchor_column = el.source_column AND head.place = 0
+  JOIN graphitron_ast_routine_entry re
+    ON re.graph_name = head.graph_name AND re.source_name = head.source_name
+   AND re.source_line = head.element_line AND re.source_column = head.element_column
+  JOIN graphitron_ast_path_entry first_step
+    ON first_step.graph_name = head.graph_name AND first_step.source_name = head.source_name
+   AND first_step.anchor_line = head.anchor_line AND first_step.anchor_column = head.anchor_column
+   AND first_step.place = 1
+  JOIN graphitron_ast_reference_condition_step_entry ce
+    ON ce.graph_name = first_step.graph_name AND ce.source_name = first_step.source_name
+   AND ce.source_line = first_step.element_line AND ce.source_column = first_step.element_column
+UNION ALL
 -- A root field's path with nothing to depart from, at the @reference that starts it.
 SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
        'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR)
@@ -17446,6 +17471,8 @@ INSERT INTO graphitron_claim_inclusion VALUES
   ('LOOKUP', 'ROUTINE', 'ROUTINE_LOOKUP_DEFERRED');
 
 INSERT INTO graphitron_defect_type VALUES
+  ('CONDITION_ON_WRITE_RESULT', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_ON_WRITE_RESULT',
+   'A condition on the step out of a @routine write''s result: the write''s statement holds its locks and joins nothing onward, so its result is re-read by its key in a statement of its own, which the function''s result is not part of for a condition to join from. Leave the result by a table or a key, and put the condition on a later step.', 'entry-defects'),
   ('READ_SURFACE_ON_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_READ_SURFACE_ON_WRITE',
    'A mutation field carrying @routine writes, and neither write shape has a filter or an ordering to resolve a @condition or an @orderBy against, so the generator emits nothing for one written here.', 'entry-defects'),
   ('MULTIPLE_ROUTINE_NODES', 'error', 'GRAPHITRON', 'GRAPHITRON_MULTIPLE_ROUTINE_NODES',

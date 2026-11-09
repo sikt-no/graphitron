@@ -874,10 +874,13 @@ pass and no stratum that clears and recomputes.
         write's result as records of the return's table re-read by its key in a statement of their
         own, a write's statement joining nothing onward since it holds its locks, and the emitter
         refuses the shape only because it has no lift for a write.
-      * **What a write alone refuses is stated** `open`. More than one `@routine`, a connection
-        return and a read surface move from `entry-defects`; a routine written after a `@reference`,
-        a method on the first step out of the result, a payload holding no single data field, a data
-        field that is no table lookup and a non-null single data field are new.
+      * **What a write alone refuses is stated** `done`. A routine written after a `@reference` is
+        `ROOT_REFERENCE_WITHOUT_ROUTINE`, a root field like any other, and a condition on the step out
+        of the result is `CONDITION_ON_WRITE_RESULT`, the result being re-read by its key without it.
+      * **A payload's data field is judged for every producer that returns one** `open`. One data
+        field beside the errors field, an element the producer can lift, no non-null single and no
+        forbidden directive are the walk's rules for a `@mutation`, `@service` and `@routine` payload
+        alike, and none is a code yet (Alf, 2026-11-09).
     * **A name claimed that does not exist is one defect** `open`. `TABLE_UNRESOLVED`,
       `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
       written name resolving to nothing, the position saying what was named, so they fold into one

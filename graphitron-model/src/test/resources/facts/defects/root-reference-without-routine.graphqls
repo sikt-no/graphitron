@@ -2,7 +2,8 @@
 # so the path departs from nothing, and the field is told that, at the @reference, rather than the
 # chain break its first element would otherwise draw. A @routine written first gives the path its
 # start, and the same @reference after it draws nothing; a @routine written only after it does not,
-# a @reference having to be part of the table-bound producer a @routine establishes.
+# a @reference having to be part of the table-bound producer a @routine establishes. A write is a
+# root field like any other here.
 
 type Film @table(name: "film") @node {
   title: String
@@ -25,10 +26,21 @@ type Query {
     @routine(name: "public.films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
 }
 
+type Rental @table(name: "rental") {
+  rentalId: Int! @field(name: "rental_id")
+}
+
+type Mutation {
+  trailingWrite(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @reference(path: [{table: "rental"}])
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+}
+
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                           coordinate
   ROOT_REFERENCE_WITHOUT_ROUTINE, Query.storeForFilm
   ROOT_REFERENCE_WITHOUT_ROUTINE, Query.trailing
+  ROOT_REFERENCE_WITHOUT_ROUTINE, Mutation.trailingWrite
   """)
 
 # One defect for each field: none of the three chain breaks beside it.
