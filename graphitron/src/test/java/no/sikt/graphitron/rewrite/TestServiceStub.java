@@ -523,6 +523,14 @@ public class TestServiceStub {
     }
 
     /**
+     * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.DataOnlyPayload}
+     * record, which has no errors member: the payload binds to it without one.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.DataOnlyPayload runDataOnly() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Classification-tier witness: returns the <em>nested</em> dummy payload
      * {@link no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload}
      * (binary name {@code AccessorPayloads$NestedErrorsPayload}). A child {@code @service} field

@@ -47,6 +47,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_ERROR;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
@@ -453,10 +454,10 @@ final class RecordBindingResolver {
     /**
      * The single data field of a candidate two-level carrier payload: a payload SDL field whose
      * unwrapped type is a GraphQL Object that does not carry {@code @table}. Returns null when
-     * there is not exactly one such field. Errors-shaped fields (a union of / interface implemented
-     * by {@code @error} types) are excluded by the {@link GraphQLObjectType} check, mirroring
-     * {@link #groundServicePayloadBinding}; this runs during the binding phase, before the error
-     * index exists, so it reads {@code ctx.schema} directly. The {@code @table}-typed object data
+     * there is not exactly one such field. Errors-shaped fields are excluded structurally: a union
+     * of or interface implemented by {@code @error} types by the {@link GraphQLObjectType} check,
+     * and a list of one {@code @error} type by its directive. This runs during the binding phase,
+     * before the error index exists, so it reads {@code ctx.schema} directly. The {@code @table}-typed object data
      * field (the single-level carrier) is skipped so that shape keeps its {@code BindsWrapper} +
      * {@code ServiceEmitted} grounding.
      */
@@ -468,6 +469,7 @@ final class RecordBindingResolver {
             if (unwrapped == null) continue;
             if (!(ctx.schema.getType(unwrapped) instanceof GraphQLObjectType fieldObj)) continue;
             if (fieldObj.hasAppliedDirective(DIR_TABLE)) continue;
+            if (fieldObj.hasAppliedDirective(DIR_ERROR)) continue;
             if (found != null) return null;
             found = f;
         }
@@ -534,8 +536,8 @@ final class RecordBindingResolver {
      * reads directly from {@code ctx.schema} (the assembled GraphQL schema) and the catalog
      * via {@link ServiceCatalog#resolveTable}. The {@code @table}-typed predicate is "the
      * field's return type unwraps to a GraphQL Object that carries the {@code @table}
-     * directive"; errors-shaped fields (polymorphic-of-{@code @error}) are excluded by the
-     * "must be a GraphQL Object" check.
+     * directive"; errors-shaped fields are excluded by it, a union or interface of {@code @error}
+     * types being no GraphQL Object and an {@code @error} object carrying no {@code @table}.
      */
     private void groundServicePayloadBinding(GraphQLObjectType parent, GraphQLFieldDefinition field,
             Method method, String className, String methodName, String resultSdl, SourceLocation loc) {
@@ -706,7 +708,7 @@ final class RecordBindingResolver {
      *
      * <p>{@link ProducerBinding.ServiceEmitted} stays in {@link #groundRootProducers}, deliberately.
      * Its carrier detection excludes errors-shaped fields structurally (the data field must be a
-     * GraphQL Object), so it never reads the {@link ErrorIndex} and has no bug forcing the move;
+     * {@code @table}-typed GraphQL Object), so it never reads the {@link ErrorIndex} and has no bug forcing the move;
      * and {@link #groundServiceField} also grounds result- and input-axis observations that must
      * feed the fold, so it could not move wholesale in any case. Do not "complete" the migration by
      * moving it.

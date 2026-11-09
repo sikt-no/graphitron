@@ -885,6 +885,27 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
+    void singleErrorTypeElement_backingClassWithoutErrorsMember_bindsAndCarries() {
+        // The backing class declares the data field only. The binding pass runs before the error
+        // index exists and reads the SDL alone, so it must not take the @error-typed list for the
+        // payload's one data field: the payload binds to DataOnlyPayload and the channel forms.
+        var schema = build(DB_ERR_SDL + """
+            type ReviewPayload {
+                data: String
+                errors: [DbErr]
+            }
+            type Query {
+                review: ReviewPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDataOnly"})
+            }
+            """);
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "review");
+        assertThat(f.errorChannel()).get().isInstanceOf(ErrorChannel.Mapped.class);
+        assertThat(schema.field("ReviewPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
+        assertThat(schema.field("ReviewPayload", "data")).isNotInstanceOf(UnclassifiedField.class);
+    }
+
+    @Test
     void singleNonErrorObjectElement_staysADataField() {
         var schema = build("""
             type Note {
