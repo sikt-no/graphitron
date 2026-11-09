@@ -13,6 +13,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch, or to the same pull request, supersedes the run in flight. A
+# trunk push lands every few minutes on a busy day and a run takes over an hour, so without this
+# the superseded runs pile up on the shared runner pool for a result nobody reads.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
