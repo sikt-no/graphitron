@@ -21,6 +21,8 @@ import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -68,7 +70,16 @@ final class StoreFixture implements AutoCloseable {
     /** SDL for a fixture whose whole subject is the classpath, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
-    private final CapturedStore captured;
+    /**
+     * Cleared on close: a {@code @BeforeAll} fixture sits in a static field until the JVM exits, and
+     * through the store it would keep every H2 session's cached view queries alive with it.
+     */
+    private CapturedStore captured;
+    /**
+     * The readers this fixture minted, each its own connection, closed with the fixture; a reader
+     * left open stays registered with H2 and holds its session's caches after the store shuts down.
+     */
+    private final List<StoreReader> readers = Collections.synchronizedList(new ArrayList<>());
     private final String graphName;
     private final Path file;
     private final Path directory;
@@ -429,12 +440,17 @@ final class StoreFixture implements AutoCloseable {
      * threshold in a tier that must not fail for being slow.
      */
     StoreReader reader() {
-        return captured.reader();
+        return minted(captured.reader());
     }
 
     /** A reader of this store under a stated budget, for the cases whose subject is the budget. */
     StoreReader reader(ReadBudget budget) {
-        return captured.reader(budget);
+        return minted(captured.reader(budget));
+    }
+
+    private StoreReader minted(StoreReader reader) {
+        readers.add(reader);
+        return reader;
     }
 
     /**
@@ -501,6 +517,9 @@ final class StoreFixture implements AutoCloseable {
 
     @Override
     public void close() {
+        readers.forEach(StoreReader::close);
+        readers.clear();
         captured.close();
+        captured = null;
     }
 }
