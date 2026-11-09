@@ -623,9 +623,9 @@ static method needs no holder.
   `EmissionCensusTest` pins the count, 104 of the example schema's services on 2026-11-09, the 19
   left being the `RECORD_BUILD`, `BUILD_REFUSED` and `VALIDATION` lines its two children and the
   validation pass clear.
-  * **A record argument's input fields bind the record's columns** `blocked`, on F's `call_parameter`
-    widening, where an argument whose parameter is a jOOQ record of table T lands on T, its input fields
-    too. Then `BuildQuery`'s columns and the decode read it, and the ten `RECORD_BUILD` services and the
+  * **A record argument's input fields bind the record's columns** `open`. An argument whose
+    parameter is a jOOQ record of table T lands on T, its input fields too, each scalar one binding a
+    column of T in `graphitron_occurrence_column`. Then `BuildQuery`'s columns and the decode read it, and the ten `RECORD_BUILD` services and the
     two that validate a record leave the census's exclusions.
   * **A built argument decodes what `BuildQuery` refuses today** `blocked`, on F's `NodeIdDecodeQuery`
     change. A list of node ids, an id of several node types and a decode into one key value; the seven

@@ -157,7 +157,7 @@ class EmissionCensusTest {
             "Query.xlatChildByParentId xlat_child", "Query.xlatChildrenByFilter xlat_child",
             "Query.xlatChildrenByParentIds xlat_child", "Query.xlatCompChildrenByParentIds xlat_comp_child",
             "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer");
-        assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(93);
+        assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(105);
         // Each line goes as its shape is emitted from the store; a field moving between lines is a
         // change to look at, not to re-pin.
         assertThat(census)

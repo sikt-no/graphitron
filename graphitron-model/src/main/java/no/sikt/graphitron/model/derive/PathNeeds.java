@@ -13,6 +13,7 @@ import org.jooq.impl.SQLDataType;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
@@ -20,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
@@ -274,7 +276,11 @@ public final class PathNeeds {
             return fields;
         }
         var p = GRAPHITRON_OCCURRENCE.as("p");
+        // An occurrence a service call takes as a table's record reaches that table and nothing else.
+        Condition record = at.and(takesRecord(o, touchedAt));
+        at = at.andNot(takesRecord(o, touchedAt));
         return fields
+            .union(recordParameter(o, record, touchedAt))
             .union(argumentCopy(o, p, at, touchedAt))
             .union(argumentTableBound(o, p, at, touchedAt))
             .union(argumentMember(o, p, at, touchedAt))
@@ -443,6 +449,43 @@ public final class PathNeeds {
                 j.TARGET_TYPE.eq(pn.TARGET_TYPE), j.TOUCHED_AT.eq(touchedAt))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"), startTable.isNotNull())
             .and(sourcedAt(o, touchedAt));
+    }
+
+    /**
+     * Whether a service call made this reading takes the argument or input field {@code o} as a
+     * table's jOOQ record, as its fill states.
+     */
+    private static Condition takesRecord(GraphitronOccurrence o, LocalDateTime touchedAt) {
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER.as("tc");
+        return exists(selectOne().from(c)
+            .where(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.LANDING_COORDINATE.eq(o.COORDINATE),
+                c.TOUCHED_AT.eq(touchedAt), c.RECORD_TABLE.isNotNull()));
+    }
+
+    /**
+     * An argument, or an input field an argMapping entry names, that a service call takes as a jOOQ
+     * record reaches its own input type, starting and landing on the table its source states, the
+     * record's: the input fills that record, so the fields under it bind its columns. Where it writes
+     * a path the path decides the landing. Its type is an input type, no node, so a bare
+     * {@code @nodeId} under it takes the landing table's node.
+     */
+    private static Select<Record> recordParameter(GraphitronOccurrence o, Condition at,
+                                                  LocalDateTime touchedAt) {
+        var st = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("st");
+        var a = GRAPHITRON_ARGUMENT.as("ra");
+        var f = GRAPHITRON_FIELD.as("rf");
+        Field<String> target = coalesce(a.NAMED_TYPE, f.NAMED_TYPE);
+        Condition written = claims(o, target);
+        return row(o, target, st.TABLE_SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
+                when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SOURCE_NAME),
+                when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SCHEMA),
+                when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_NAME))
+            .from(o)
+            .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE),
+                st.TOUCHED_AT.eq(touchedAt))
+            .leftJoin(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME), a.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .leftJoin(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .where(at, o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"), target.isNotNull());
     }
 
     /** Whether the parent occurrence {@code p} has no need this reading stated. */

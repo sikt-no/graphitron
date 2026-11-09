@@ -11465,7 +11465,13 @@ CREATE TABLE graphitron_occurrence_call_parameter (
   landing_coordinate VARCHAR,
   context_key        VARCHAR,
   session_member     VARCHAR,
+  record_source_name VARCHAR,
+  record_schema      VARCHAR,
+  record_table       VARCHAR,
   touched_at         TIMESTAMP NOT NULL,
+  record_source_ref  VARCHAR,
+  record_schema_ref  VARCHAR,
+  record_table_ref   VARCHAR,
   PRIMARY KEY (graph_name, coordinate, call, position),
   -- The call it fills, of whatever kind, so a fill cannot outlive it.
   FOREIGN KEY (graph_name, coordinate, call, call_kind)
@@ -11478,7 +11484,17 @@ CREATE TABLE graphitron_occurrence_call_parameter (
   CHECK (fill <> 'SOURCE' OR call_kind = 'SERVICE'),
   CHECK ((landing_coordinate IS NOT NULL) = (fill = 'ARGUMENT')),
   CHECK ((context_key IS NOT NULL) = (fill = 'CONTEXT_KEY')),
-  CHECK ((session_member IS NOT NULL) = (fill = 'SESSION_MEMBER'))
+  CHECK ((session_member IS NOT NULL) = (fill = 'SESSION_MEMBER')),
+  -- The table whose jOOQ record the parameter takes, through the fill's own copy of its key: the
+  -- sweep removes the fill the reading no longer finds.
+  FOREIGN KEY (record_source_ref, record_schema_ref, record_table_ref)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE SET NULL,
+  CHECK (record_table IS NULL OR fill = 'ARGUMENT'),
+  CHECK ((record_source_name IS NULL) = (record_table IS NULL)),
+  CHECK ((record_schema IS NULL) = (record_table IS NULL)),
+  CHECK (record_source_ref IS NULL OR record_source_ref = record_source_name),
+  CHECK (record_schema_ref IS NULL OR record_schema_ref = record_schema),
+  CHECK (record_table_ref IS NULL OR record_table_ref = record_table)
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter IS 'What fills one parameter of one call: one row per call and parameter position some fill reaches. For example Query.filmsByPath''s parameter ids takes Query.filmsByPath(input.ids:), and a DSLContext parameter takes the jOOQ context.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.graph_name IS 'the owning graph''s partition';
@@ -11491,6 +11507,12 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.fill IS 'what supplies th
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.landing_coordinate IS 'on ARGUMENT, the argument or input-field occurrence taken, whose PARAMETER binding is the same fact seen from the occurrence';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.context_key IS 'on CONTEXT_KEY, the key the request context carries the value under';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.session_member IS 'on SESSION_MEMBER, the member of the session handle, as written after $session.';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_source_name IS 'on ARGUMENT, the catalog partition of the table whose generated jOOQ record the parameter takes, itself or as its element type; NULL where it takes no table''s record';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_schema IS 'on ARGUMENT, the SQL schema of that table';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_table IS 'on ARGUMENT, the table whose record the parameter takes, where the occurrence taken lands: the input fills that record. NULL where the parameter takes no table''s record';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_source_ref IS 'the catalog half of the record table''s sql_table key, nullable so the table''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_schema_ref IS 'the schema half of the record table''s key, equal to record_schema while the table stands';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_table_ref IS 'the table half of the record table''s key, equal to record_table while the table stands';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The parameter an argument or input field is taken by: the PARAMETER subtype of the binding, one

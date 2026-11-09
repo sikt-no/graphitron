@@ -26,6 +26,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE;
@@ -67,7 +68,8 @@ import static org.jooq.impl.DSL.val;
  * that writes a path, a child field or an argument reads the tables the parent's join path reaches,
  * and a path that stops gives them none. A child whose own service hands back a table's records
  * reads, at any depth, the table its producer's result names, where its rows come from, and nothing
- * its parent gives. Each relation is one {@code INSERT .. SELECT} per depth over the rows the rules
+ * its parent gives; likewise an argument or input field a service call takes as a table's jOOQ
+ * record reads that table, the record it fills. Each relation is one {@code INSERT .. SELECT} per depth over the rows the rules
  * give for that depth, the instant and the depth bound as parameters; {@link #sweep} runs after the
  * last depth.
  *
@@ -75,8 +77,9 @@ import static org.jooq.impl.DSL.val;
  * deleted before it is written again, taking its subtypes.
  *
  * <p>A step of the assembly's per-depth loop: reads the key rows {@link FieldKeyRows} writes before
- * the loop, the producers {@link OccurrenceProducers} writes for the same depth, and the join paths
- * {@link Steps} wrote for the depth above.
+ * the loop, the producers {@link OccurrenceProducers} writes for the same depth, the call parameters
+ * {@link OccurrenceCallParameters} wrote for the calls above, and the join paths {@link Steps} wrote
+ * for the depth above.
  */
 public final class OccurrenceSources {
 
@@ -193,7 +196,11 @@ public final class OccurrenceSources {
                 .union(ownServiceRecord(o, atDepth, touchedAt));
         }
         var p = GRAPHITRON_OCCURRENCE.as("p");
+        // An occurrence a service call takes as a table's record reads that table and no other.
+        Condition record = at.and(takesRecord(o, touchedAt));
+        at = at.andNot(takesRecord(o, touchedAt));
         return ownServiceRecord(o, atDepth, touchedAt)
+            .union(recordParameter(o, record, touchedAt))
             .union(keyRow(o, p, at, touchedAt))
             .union(record(o, p, at, touchedAt))
             .union(object(o, p, at, touchedAt))
@@ -628,6 +635,32 @@ public final class OccurrenceSources {
             .and(notExists(selectOne().from(pw)
                 .where(pw.GRAPH_NAME.eq(pf.GRAPH_NAME), pw.TYPE_NAME.eq(pf.TYPE_NAME),
                     pw.FIELD_NAME.eq(pf.FIELD_NAME), pw.WRAPPER_TYPE_NAME.isNotNull())));
+    }
+
+    /**
+     * Whether a service call made this reading takes the argument or input field {@code o} as a
+     * table's jOOQ record, as its fill states.
+     */
+    private static Condition takesRecord(GraphitronOccurrence o, LocalDateTime touchedAt) {
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER.as("tc");
+        return exists(selectOne().from(c)
+            .where(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.LANDING_COORDINATE.eq(o.COORDINATE),
+                c.TOUCHED_AT.eq(touchedAt), c.RECORD_TABLE.isNotNull()));
+    }
+
+    /**
+     * An argument, or an input field an argMapping entry names, that a service call takes as a jOOQ
+     * record reads the table the record is a row of, whatever its field's target: the input fills
+     * that record.
+     */
+    private static Select<Record> recordParameter(GraphitronOccurrence o, Condition at,
+                                                  LocalDateTime touchedAt) {
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER.as("rc");
+        return row(o, TABLE, c.RECORD_SOURCE_NAME, c.RECORD_SCHEMA, c.RECORD_TABLE, null)
+            .from(o)
+            .join(c).on(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.LANDING_COORDINATE.eq(o.COORDINATE),
+                c.TOUCHED_AT.eq(touchedAt), c.RECORD_TABLE.isNotNull())
+            .where(at, o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"));
     }
 
     /**

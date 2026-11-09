@@ -1,0 +1,82 @@
+# An argument a service takes as a jOOQ record lands on the table the record is a row of, whatever
+# the field returns, and the input fields under it start and land there too, so each binds a column
+# of that record: describeEndorsement's in lands on film_endorsement, describeEmailReply's on email,
+# and a list of records (countFilmRecordDrafts) on film. inReplyTo writes its path from email, so it
+# lands where the self-referencing key takes it. An argument the service takes as a plain class
+# (countFilmDrafts) reaches no table. A column an input field names is judged once what consumes the
+# record is stated, not here.
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! }
+type Mailbox implements Node @table(name: "mailbox") @node { id: ID! }
+type Email implements Node @table(name: "email") @node { id: ID! }
+
+input EndorseFilmInput {
+  filmId: ID @nodeId(typeName: "Film")
+  note: String @field(name: "note")
+}
+input InsertEmailReplyInput {
+  mailboxRef: ID! @nodeId(typeName: "Mailbox")
+  messageNo: Int! @field(name: "message_no")
+  subject: String @field(name: "subject")
+  inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
+}
+input FilmRecordDraftInput { title: String @field(name: "title") }
+input FilmDraftInput { title: String! }
+type FilmDraftsCountedPayload { count: Int }
+
+type Query {
+  describeEndorsement(in: EndorseFilmInput!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmEndorsementRecordService",
+      method: "describeEndorsement"})
+  describeEmailReply(in: InsertEmailReplyInput!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.EmailReplyRecordService",
+      method: "describeReply"})
+  countFilmRecordDrafts(in: [FilmRecordDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "count", argMapping: "drafts: in"})
+  countFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService",
+      method: "count", argMapping: "drafts: in"})
+  films: [Film!]!
+}
+
+# The record's table is where each of these starts and lands; inReplyTo, writing its path, lands on
+# no table yet.
+extend schema @expectEquals(relation: "graphitron_path_need_table",
+    where: "coordinate LIKE 'Query.%(%'", rows: """
+  coordinate,                                  target_type,           start_table,      landing_table
+  Query.countFilmRecordDrafts(in:),            FilmRecordDraftInput,  film,             film
+  Query.countFilmRecordDrafts(in.title:),      FilmRecordDraftInput,  film,             film
+  Query.describeEmailReply(in:),               InsertEmailReplyInput, email,            email
+  Query.describeEmailReply(in.inReplyTo:),     InsertEmailReplyInput, email,
+  Query.describeEmailReply(in.mailboxRef:),    InsertEmailReplyInput, email,            email
+  Query.describeEmailReply(in.messageNo:),     InsertEmailReplyInput, email,            email
+  Query.describeEmailReply(in.subject:),       InsertEmailReplyInput, email,            email
+  Query.describeEndorsement(in:),              EndorseFilmInput,      film_endorsement, film_endorsement
+  Query.describeEndorsement(in.filmId:),       EndorseFilmInput,      film_endorsement, film_endorsement
+  Query.describeEndorsement(in.note:),         EndorseFilmInput,      film_endorsement, film_endorsement
+  """)
+
+
+# Each scalar input field under such an argument binds a column of the record's table; a node id is
+# the node id rule's, and inReplyTo's columns are its path's.
+extend schema @expectEquals(relation: "graphitron_occurrence_column",
+    where: "coordinate LIKE 'Query.%(%'", rows: """
+  coordinate,                              table_name,       column_name
+  Query.countFilmRecordDrafts(in.title:),  film,             title
+  Query.describeEmailReply(in.messageNo:), email,            message_no
+  Query.describeEmailReply(in.subject:),   email,            subject
+  Query.describeEndorsement(in.note:),     film_endorsement, note
+  """)
+
+# The fill states the table whose record its parameter takes, itself or as a list's element; a
+# parameter taking a plain class states none.
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
+    where: "fill = 'ARGUMENT'", rows: """
+  coordinate,                  position, landing_coordinate,                record_table
+  Query.countFilmDrafts,       0,        Query.countFilmDrafts(in:),
+  Query.countFilmRecordDrafts, 0,        Query.countFilmRecordDrafts(in:),  film
+  Query.describeEmailReply,    0,        Query.describeEmailReply(in:),     email
+  Query.describeEndorsement,   0,        Query.describeEndorsement(in:),    film_endorsement
+  """)
