@@ -14,8 +14,8 @@ public final class OutboxExtensions {
 
     private OutboxExtensions() {}
 
-    /** The message's aggregate type in lower case, visibly distinct from the column. */
-    public static Field<String> aggregateKind(Outbox table) {
-        return DSL.lower(table.AGGREGATETYPE);
+    /** The message's event in lower case, visibly distinct from the column. */
+    public static Field<String> eventKind(Outbox table) {
+        return DSL.lower(table.TYPE);
     }
 }

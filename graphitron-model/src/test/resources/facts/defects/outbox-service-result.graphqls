@@ -46,6 +46,19 @@ type Mutation {
     @outbox(argMapping: "first: $result.results.film.id")
 }
 
+# A @service answering a mutation field writes what it writes, so its @outbox is a message; one
+# answering a query writes nothing and is no place for one.
+type Query {
+  blurbRead(filmId: Int!): BlurbPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+    @outbox(argMapping: "at: $scope.coordinate")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'OUTBOX_NOT_A_WRITE'", rows: """
+  code,               coordinate
+  OUTBOX_NOT_A_WRITE, Query.blurbRead
+  """)
+
 # A $result path lands on the occurrences of the fields it names, nested under the call while what it
 # returns has no table, and on the bound type's own field once it reaches Film. A path through a list
 # lands as any other: what it may read there is its reader's to judge. A name no field has lands nowhere.

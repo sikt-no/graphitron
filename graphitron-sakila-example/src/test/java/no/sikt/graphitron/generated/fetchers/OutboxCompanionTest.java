@@ -76,12 +76,12 @@ class OutboxCompanionTest {
     }
 
     private static List<Map<String, Object>> messages(DSLContext tx, String type) {
-        return tx.fetch("select aggregatetype, payload ->> 'operation' as operation,"
+        return tx.fetch("select written_by, payload ->> 'operation' as operation,"
                 + " payload ->> 'alias' as alias, payload ->> 'at' as at, payload ->> 'filmId' as film_id,"
                 + " payload ->> 'title' as title, payload ->> 'requested' as requested"
-                // created_at defaults to now(), the transaction's own start inside one, so this reads only
+                // occurred_at defaults to now(), the transaction's own start inside one, so this reads only
                 // what this case wrote and none of the committed rows other tests left behind.
-                + " from outbox where type = ? and created_at = now()", type)
+                + " from outbox where type = ? and occurred_at = now()", type)
             .intoMaps();
     }
 
@@ -97,7 +97,7 @@ class OutboxCompanionTest {
             var created = messages(tx, "FilmCreated");
             assertThat(created).hasSize(1);
             assertThat(created.getFirst())
-                .containsEntry("aggregatetype", "film")
+                .containsEntry("written_by", "insert")
                 .containsEntry("operation", "Op")
                 .containsEntry("film_id", NodeIdEncoder.encodeFilm(id))
                 .containsEntry("title", "companion-written")

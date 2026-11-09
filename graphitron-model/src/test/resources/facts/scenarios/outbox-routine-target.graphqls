@@ -7,7 +7,7 @@
 
 extend schema @withConfiguration(
   outboxFunction: "outbox_emit",
-  outboxParameters: ["type=p_type", "aggregatetype=p_aggregatetype", "aggregateid=p_aggregateid", "payload=p_payload"]
+  outboxParameters: ["type=p_type", "payload=p_payload"]
 )
 extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
@@ -27,8 +27,8 @@ type Mutation {
 }
 
 extend schema @expectEquals(relation: "graphitron_outbox_routine_target", rows: """
-  routine_schema, routine_name, type_position, aggregatetype_position, aggregateid_position, payload_position, payload_kind
-  public,         outbox_emit,  0,             1,                      2,                    3,                JSON
+  routine_schema, routine_name, type_position, payload_position, payload_kind
+  public,         outbox_emit,  0,             1,                JSON
   """)
 
 extend schema @assertEmpty(relation: "graphitron_outbox_target")

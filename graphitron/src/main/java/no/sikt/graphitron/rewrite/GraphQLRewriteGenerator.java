@@ -453,7 +453,34 @@ public class GraphQLRewriteGenerator {
      * that the module does not declare, which the defect itself cannot know. An unknown
      * {@code $session} member is explained by the members the handle does offer.
      */
-    private List<ValidationError> refusals() {
+    private List<ValidationError> refusals(no.sikt.graphitron.emit.ServiceEmission services) {
+        var stored = storedRefusals();
+        return stored.isEmpty() ? unemittedOutboxes(services) : stored;
+    }
+
+    /**
+     * A {@code @service} mutation's {@code @outbox} whose field the store does not emit yet: its
+     * messages are written by the store-emitted fetcher alone, so the field is refused, naming why
+     * the fetcher is not emitted, rather than accepted without its messages. The refusal goes with
+     * the last service the classified emitters still build.
+     */
+    private List<ValidationError> unemittedOutboxes(no.sikt.graphitron.emit.ServiceEmission services) {
+        return no.sikt.graphitron.emit.OutboxQuery.read(store).rows().stream()
+            .filter(row -> row.producer() instanceof no.sikt.graphitron.emit.OutboxQuery.Service)
+            .filter(row -> !services.emits(row.typeName() + "." + row.fieldName()))
+            .map(row -> {
+                String coordinate = row.typeName() + "." + row.fieldName();
+                var rejection = no.sikt.graphitron.model.diagnostics.Rejection.structural(
+                    "An @outbox on a @service is written by the fetcher the store emits, and this field's is not"
+                    + " emitted from the store yet ("
+                    + services.verdict(coordinate) + "): remove the @outbox until it is.");
+                return ValidationError.forField(coordinate, rejection,
+                    new graphql.language.SourceLocation(row.at().line(), row.at().column(), row.at().sourceName()));
+            })
+            .toList();
+    }
+
+    private List<ValidationError> storedRefusals() {
         var nameability = new ClasspathNameability(ctx.classpathRoots());
         return EntryDefectVerdict.rows(store.dsl(), store.graphName()).stream()
             .map(row -> EntryDefectVerdict.error(row, switch (row.code()) {
@@ -479,7 +506,10 @@ public class GraphQLRewriteGenerator {
         var accepted = acceptedSchema(attributed);
         // The store's verdict comes next: a graph it refuses is not classified, so an author meets
         // the stored defect and never the walk's account of the same fault.
-        var refused = refusals();
+        // The @service fetchers the store emits, read once: the outbox refusal asks it which fields
+        // it emits, and the fetcher generator emits them in the classified ones' place.
+        var services = no.sikt.graphitron.emit.ServiceEmission.read(store);
+        var refused = refusals(services);
         if (!refused.isEmpty()) {
             return new PassProducts(List.of(), refused,
                 suppressed(storeWarnings(store, schemas.narrowings())), null);
@@ -514,8 +544,7 @@ public class GraphQLRewriteGenerator {
             plan.errorChannels(),
             plan.outboxes(),
             recordAccessors,
-            // The @service fetchers the store emits, read once, which take the classified ones' place.
-            no.sikt.graphitron.emit.ServiceEmission.read(store));
+            services);
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());

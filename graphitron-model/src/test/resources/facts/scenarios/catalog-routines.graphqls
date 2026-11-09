@@ -43,9 +43,7 @@ extend schema @assertContains(relation: "sql_routine_parameter", rows: """
   table_schema, routine_name,              position, jooq_name,       sql_name,        binding_type
   public,       rental_count_for_customer, 0,        pCustomerId,     p_customer_id,   java.lang.Integer
   public,       outbox_emit,               0,        pType,           p_type,          java.lang.String
-  public,       outbox_emit,               1,        pAggregatetype,  p_aggregatetype, java.lang.String
-  public,       outbox_emit,               2,        pAggregateid,    p_aggregateid,   java.lang.String
-  public,       outbox_emit,               3,        pPayload,        p_payload,       org.jooq.JSONB
+  public,       outbox_emit,               1,        pPayload,        p_payload,       org.jooq.JSONB
   """)
 
 extend schema @assertContains(relation: "sql_routine_parameter", rows: """

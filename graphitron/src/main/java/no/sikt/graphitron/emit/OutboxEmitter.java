@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Emits the companion method of one {@code @outbox}-carrying write coordinate, and the call to it,
@@ -126,12 +127,16 @@ public final class OutboxEmitter {
     public static MethodSpec render(Row row, boolean listResult, List<String> capturedColumns,
                                     String outputPackage, Runtime runtime) {
         Objects.requireNonNull(row, "row");
+        if (!(row.producer() instanceof OutboxQuery.Write write)) {
+            throw new IllegalStateException(row.typeName() + "." + row.fieldName()
+                + " is no write; a service's messages are rendered by renderService");
+        }
         if (capturedColumns.isEmpty()) {
             throw new IllegalStateException("the write at " + row.typeName() + "." + row.fieldName()
                 + " captures no column, so its messages cannot read the written rows back");
         }
-        var table = CatalogRefs.className(row.writtenTable().tableClassName());
-        var constants = CatalogRefs.className(row.writtenTable().constantsClassName());
+        var table = CatalogRefs.className(write.table().tableClassName());
+        var constants = CatalogRefs.className(write.table().constantsClassName());
         TypeName writtenType = listResult
             ? ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(JOOQ_RECORD))
             : JOOQ_RECORD;
@@ -144,11 +149,51 @@ public final class OutboxEmitter {
                 + "transaction of the write that produced {@code written}. Nothing is written when\n"
                 + "the write matched nothing.\n", row.typeName(), row.fieldName());
         method.addStatement(listResult ? "if (written.isEmpty()) return" : "if (written == null) return");
-        method.addStatement("$T t = $T.$L", table, constants, row.writtenTable().javaFieldName());
+        method.addStatement("$T t = $T.$L", table, constants, write.table().javaFieldName());
         var body = CodeBlock.builder();
         var keyed = keyCondition(capturedColumns, listResult);
         body.addStatement("$T keyed = $L", CONDITION, keyed);
 
+        body.add(prelude(row));
+        for (var message : row.messages()) {
+            body.add(message(row, message, listResult, capturedColumns, outputPackage, runtime));
+        }
+        return wrapped(method, body.build(), runtime);
+    }
+
+    /**
+     * Renders the companion method for {@code row}, a mutation field a {@code @service} answers: it
+     * takes what the service handed back and reads its {@code $result} keys off it, a member through
+     * the methods its path calls and a node id from the record a member returns, so no statement
+     * reads anything back. Called inside the transaction the service was handed.
+     *
+     * @param resultType what the service's call answers, the type the companion takes it as
+     */
+    public static MethodSpec renderService(Row row, TypeName resultType, String outputPackage, Runtime runtime) {
+        Objects.requireNonNull(row, "row");
+        if (!(row.producer() instanceof OutboxQuery.Service)) {
+            throw new IllegalStateException(row.typeName() + "." + row.fieldName()
+                + " is a write; its messages are rendered by render");
+        }
+        var method = MethodSpec.methodBuilder(methodName(row))
+            .addModifiers(Modifier.STATIC)
+            .addParameter(DSL_CONTEXT, "tx")
+            .addParameter(ENV, "env")
+            .addParameter(resultType, "result")
+            .addJavadoc("Writes the messages of {@code $L.$L}, one statement each in directive order, on the\n"
+                + "transaction the service was handed, reading its keys off what the service returned.\n",
+                row.typeName(), row.fieldName());
+        var body = CodeBlock.builder();
+        body.add(prelude(row));
+        for (var message : row.messages()) {
+            body.add(message(row, message, false, List.of(), outputPackage, runtime));
+        }
+        return wrapped(method, body.build(), runtime);
+    }
+
+    /** The locals the messages share: the scope members they read and the arguments at their roots. */
+    private static CodeBlock prelude(Row row) {
+        var body = CodeBlock.builder();
         var needsOperation = anyLeaf(row, l -> l.kind() == LeafKind.SCOPE && "operationName".equals(l.path()));
         var needsAlias = anyLeaf(row, l -> l.kind() == LeafKind.SCOPE && "alias".equals(l.path()));
         if (needsOperation) {
@@ -160,16 +205,19 @@ public final class OutboxEmitter {
         for (var argument : argumentRoots(row)) {
             body.addStatement("$T $L = env.getArgument($S)", Object.class, argLocal(argument), argument);
         }
-        for (var message : row.messages()) {
-            body.add(message(row, message, listResult, capturedColumns, outputPackage, runtime));
-        }
+        return body.build();
+    }
+
+    /** The statements inside a try that wraps a failing one in the outbox's own exception. */
+    private static MethodSpec wrapped(MethodSpec.Builder method, CodeBlock body, Runtime runtime) {
         method.beginControlFlow("try");
-        method.addCode(body.build());
+        method.addCode(body);
         method.nextControlFlow("catch ($T e)", RuntimeException.class);
         method.addStatement("throw new $T(e)", runtime.emitException());
         method.endControlFlow();
         return method.build();
     }
+
 
     /**
      * What the emitter takes from the generated runtime and may not name itself: the exception a
@@ -271,10 +319,6 @@ public final class OutboxEmitter {
         var values = new ArrayList<CodeBlock>();
         columns.add(typeColumn);
         values.add(CodeBlock.of("$T.val($S)", DSL, message.event()));
-        target.aggregateTypeColumn().ifPresent(c -> {
-            columns.add(columnRef(target, c));
-            values.add(CodeBlock.of("$T.val($S)", DSL, row.writtenTable().sqlName()));
-        });
         columns.add(columnRef(target, target.payloadColumn()));
         values.add(payload);
         var select = CodeBlock.of("$T.select($L)", DSL, CodeBlock.join(values, ", "));
@@ -290,8 +334,7 @@ public final class OutboxEmitter {
     /**
      * A message written through the outbox routine: the payload is evaluated once, by a select of its
      * JSON constructor (from the written rows where a leaf reads a column of them), and the routine is
-     * called with it and the event, the written table's name and no aggregate id, each argument at the
-     * position of the parameter its role landed in. A written row the select cannot find passes
+     * called with it and the event, each at the position of the parameter its role landed in. A written row the select cannot find passes
      * nothing, as the table form inserts nothing.
      */
     private static CodeBlock routineCall(Row row, Message message, OutboxQuery.RoutineTarget routine,
@@ -310,12 +353,6 @@ public final class OutboxEmitter {
         for (int position = 0; position < routine.parameterCount(); position++) {
             if (position == routine.typePosition()) {
                 arguments.add(CodeBlock.of("$S", message.event()));
-            } else if (routine.aggregateTypePosition().isPresent()
-                    && position == routine.aggregateTypePosition().getAsInt()) {
-                arguments.add(CodeBlock.of("$S", row.writtenTable().sqlName()));
-            } else if (routine.aggregateIdPosition().isPresent()
-                    && position == routine.aggregateIdPosition().getAsInt()) {
-                arguments.add(CodeBlock.of("($T) null", String.class));
             } else {
                 arguments.add(CodeBlock.of("$L", body));
             }
@@ -349,12 +386,55 @@ public final class OutboxEmitter {
                     listResult ? CodeBlock.of("$T.jsonbArrayAgg(t.$L)", DSL, leaf.column().javaName())
                                : CodeBlock.of("t.$L", leaf.column().javaName()))
                 .build();
-            case RESULT_ROOT, RESULT_NODE_ID -> CodeBlock.builder()
-                .addStatement("$L.add($L.value($L))", entries, key,
-                    nodeIds(row, leaf, listResult, outputPackage))
-                .build();
+            case RESULT_ROOT, RESULT_NODE_ID, RESULT_MEMBER -> row.producer() instanceof OutboxQuery.Service
+                ? valueLeaf(row, leaf, entries, key, local, outputPackage)
+                : CodeBlock.builder()
+                    .addStatement("$L.add($L.value($L))", entries, key,
+                        nodeIds(row, leaf, listResult, outputPackage))
+                    .build();
         };
     }
+
+    /**
+     * A {@code $result} key over a service's returned value: the value itself, a member read through
+     * the methods its path calls, or a node id encoded from the record the last of them returns. A
+     * value missing on the way is a JSON null.
+     */
+    private static CodeBlock valueLeaf(Row row, Leaf leaf, String entries, CodeBlock key, String local,
+                                       String outputPackage) {
+        var b = CodeBlock.builder();
+        String current = "result";
+        int step = 0;
+        for (var accessor : leaf.accessors()) {
+            String next = local + "_" + step++;
+            // A member's declared yield, boxed so a missing parent reads as null; the member a field
+            // takes a record's keys through is read as a jOOQ record, which the encoding reads.
+            TypeName type = accessor.slotType() == null ? JOOQ_RECORD
+                : SessionIdentityRows.typeOf(accessor.slotType()).box();
+            b.addStatement("$T $L = $L == null ? null : $L.$L()", type, next, current, current,
+                accessor.method());
+            current = next;
+        }
+        if (leaf.kind() != LeafKind.RESULT_NODE_ID) {
+            return b.addStatement("$L.add($L.value($L($L)))", entries, key, JSON_VALUE_HELPER, current).build();
+        }
+        var node = row.nodeKeys().get(leaf.nodeType());
+        if (node == null || node.columns().isEmpty()) {
+            throw new IllegalStateException("the node type " + leaf.nodeType() + " read by "
+                + row.typeName() + "." + row.fieldName() + " states no key column");
+        }
+        var encoder = ClassName.get(outputPackage + ".util", "NodeIdEncoder");
+        String record = current;
+        var args = CodeBlock.join(node.columns().stream()
+            .map(c -> CodeBlock.of("$L.get($T.$L.$L)", record,
+                CatalogRefs.className(node.table().constantsClassName()), node.table().javaFieldName(),
+                c.javaName())).toList(), ", ");
+        return b.addStatement("$L.add($L.value($L == null ? $T.val(($T) null, $T.class) : $T.val($T.$L($L))))",
+                entries, key, current, DSL, String.class, String.class, DSL, encoder,
+                "encode" + leaf.nodeType(), args)
+            .build();
+    }
+
 
     private static CodeBlock scopeLeaf(Row row, Leaf leaf, String entries, CodeBlock key) {
         return switch (leaf.path()) {
@@ -415,7 +495,8 @@ public final class OutboxEmitter {
     /** The encoded node id(s) of the written rows: a value, or an array of them for a list result. */
     private static CodeBlock nodeIds(Row row, Leaf leaf, boolean listResult, String outputPackage) {
         var encoder = ClassName.get(outputPackage + ".util", "NodeIdEncoder");
-        var columns = row.nodeColumns().get(leaf.nodeType());
+        var node = row.nodeKeys().get(leaf.nodeType());
+        var columns = node == null ? null : node.columns();
         if (columns == null || columns.isEmpty()) {
             throw new IllegalStateException("the node type " + leaf.nodeType() + " read by "
                 + row.typeName() + "." + row.fieldName() + " states no key column");

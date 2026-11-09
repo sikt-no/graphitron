@@ -65,7 +65,8 @@ class OutboxExecutionTest {
 
     /** The messages of one type whose payload carries {@code marker} under {@code key}. */
     private List<Map<String, Object>> messages(String type, String key, String marker) {
-        return dsl.fetch("select type, aggregatetype, aggregateid, payload::text as payload,"
+        return dsl.fetch("select type, id is not null as has_id, occurred_at is not null as has_time,"
+                + " payload::text as payload,"
                 + " payload ->> 'operation' as operation, payload ->> 'at' as at,"
                 + " payload ->> 'alias' as alias, payload ->> 'filmId' as film_id,"
                 + " payload ->> 'title' as title, payload ->> 'id' as id"
@@ -91,7 +92,8 @@ class OutboxExecutionTest {
         var message = created.getFirst();
         assertThat(message.get("film_id")).as("the node id of the row the write produced").isEqualTo(film.get("id"));
         assertThat(message.get("operation")).as("the common payload entry").isEqualTo("Create");
-        assertThat(message.get("aggregatetype")).as("the written table").isEqualTo("film");
+        assertThat(message.get("has_id")).as("the database gave the event its id").isEqualTo(true);
+        assertThat(message.get("has_time")).as("and the time it occurred").isEqualTo(true);
 
         var audit = messages("FilmAudit", "requested", title);
         assertThat(audit).as("a second directive is a second message").hasSize(1);

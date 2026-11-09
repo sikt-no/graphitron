@@ -26,7 +26,7 @@ type Mutation {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                  coordinate,      detail
-  OUTBOX_TARGET_INVALID, Mutation.create, "<function> rental_count_for_customer is not one procedure or function of the jOOQ catalog, no table, whose every parameter is the type, the payload (JSON, JSONB or text) or an aggregatetype or aggregateid, text"
+  OUTBOX_TARGET_INVALID, Mutation.create, "<function> rental_count_for_customer is not one procedure or function of the jOOQ catalog, no table, whose parameters are the type, text, and the payload, JSON, JSONB or text"
   """)
 
 extend schema @assertEmpty(relation: "graphitron_outbox_routine_target")

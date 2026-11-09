@@ -312,7 +312,7 @@ Shipped: the capture of routines that are no table, the routine target and its d
 
 ### Phase 3: `@service` and routine writes
 
-Taken over by R876 (Alf, 2026-11-08), under "An `@outbox` on a `@service` mutation emits from the store": the `$result` source over a service's returned value reads the occurrence model's `VALUE` binding, which R876 builds first.
+Taken over by R876 (Alf, 2026-11-08), under "An `@outbox` on a `@service` mutation emits from the store": the `$result` source over a service's returned value reads the occurrence model's `VALUE` binding, which R876 builds first. Services shipped there (2026-11-09), field by field with the service flip; routine writes are R876's "An `@outbox` on a `@routine` mutation emits from the store". The same change made a message a business event: graphitron fills its type and payload only, `aggregatetype` and `aggregateid` stopped being roles, and the table target needs a primary key and a default for every column it does not fill, which overrides open decision 1 and the layout described above.
 
 Owned by the work that moves `@service` generation onto the store, which builds it on the store-row seam phases 1 and 2 shipped (`OutboxQuery` reads the rows, `OutboxEmitter` renders the companion, and the DML sites call it through `outboxHook`) rather than on a second walk-driven call site. What is left for it to settle is the `$result` source: the companion reads the written rows back by a captured key, and a service return has none.
 

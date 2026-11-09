@@ -1654,7 +1654,15 @@ public class TypeFetcherGenerator {
      */
     private static boolean emitFromStore(TypeFetcherEmissionContext ctx, TypeSpec.Builder builder,
                                          GraphitronField field, String outputPackage) {
-        var emitted = ctx.services().emit(field.qualifiedName(), field.name(), storeRuntime(ctx, outputPackage));
+        var outbox = ctx.outboxFor(field.name())
+            .filter(row -> row.producer() instanceof no.sikt.graphitron.emit.OutboxQuery.Service)
+            .map(row -> {
+                ctx.requestOutboxJsonValue();
+                return new no.sikt.graphitron.emit.ServiceEmission.Outbox(row, outboxRuntime(outputPackage),
+                    outputPackage, no.sikt.graphitron.emit.OwnedScope.provider(outputPackage));
+            });
+        var emitted = ctx.services().emit(field.qualifiedName(), field.name(), storeRuntime(ctx, outputPackage),
+            outbox);
         if (emitted.isEmpty()) {
             return false;
         }
@@ -6209,16 +6217,20 @@ public class TypeFetcherGenerator {
         return ctx.outboxFor(fieldName).map(row -> {
             ctx.addCompanionMethod(no.sikt.graphitron.emit.OutboxEmitter.render(row, listResult,
                 capturedColumns.stream().map(no.sikt.graphitron.model.jooq.ColumnRef::javaName).toList(),
-                outputPackage,
-                new no.sikt.graphitron.emit.OutboxEmitter.Runtime(
-                    ErrorRouterClassGenerator.routerClass(outputPackage)
-                        .nestedClass(ErrorRouterClassGenerator.OUTBOX_EMIT_EXCEPTION),
-                    (member, coordinate) -> CodeBlock.of("$T.$L(tx, $S)",
-                        TenantDslEmitter.tenantConnectionsClass(outputPackage),
-                        no.sikt.graphitron.command.SessionAccessors.memberMethod(member), coordinate))));
+                outputPackage, outboxRuntime(outputPackage)));
             ctx.requestOutboxJsonValue();
             return new OutboxHook(row);
         });
+    }
+
+    /** What an outbox companion takes from the generated runtime: its exception and the session read. */
+    private static no.sikt.graphitron.emit.OutboxEmitter.Runtime outboxRuntime(String outputPackage) {
+        return new no.sikt.graphitron.emit.OutboxEmitter.Runtime(
+            ErrorRouterClassGenerator.routerClass(outputPackage)
+                .nestedClass(ErrorRouterClassGenerator.OUTBOX_EMIT_EXCEPTION),
+            (member, coordinate) -> CodeBlock.of("$T.$L(tx, $S)",
+                TenantDslEmitter.tenantConnectionsClass(outputPackage),
+                no.sikt.graphitron.command.SessionAccessors.memberMethod(member), coordinate));
     }
 
     /**

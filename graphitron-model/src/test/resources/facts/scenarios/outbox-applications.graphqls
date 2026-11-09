@@ -54,8 +54,8 @@ extend schema @expectEquals(relation: "graphitron_outbox_key", rows: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_outbox_target", rows: """
-  table_name, type_column, aggregatetype_column, aggregateid_column, payload_column, payload_kind
-  outbox,     type,        aggregatetype,        aggregateid,        payload,        JSON
+  table_name, type_column, payload_column, payload_kind
+  outbox,     type,        payload,        JSON
   """)
 
 extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", where: "bound_to LIKE '$result%' OR bound_to LIKE '$scope%' OR bound_to = 'in.title'", rows: """

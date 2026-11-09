@@ -547,8 +547,6 @@
                                 <function>outbox_emit</function>
                                 <parameters>
                                     <type>p_type</type>
-                                    <aggregatetype>p_aggregatetype</aggregatetype>
-                                    <aggregateid>p_aggregateid</aggregateid>
                                     <payload>p_payload</payload>
                                 </parameters>
                                 <payload>operation: $scope.operationName</payload>

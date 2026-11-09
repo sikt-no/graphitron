@@ -2363,28 +2363,40 @@ AS $$
     SELECT c.seq, c.label FROM singleschema.solo_child c WHERE c.parent_id = p_parent_id
 $$;
 
--- The outbox table @outbox messages are written to, in Debezium's outbox layout: the event as type,
--- the written table as aggregatetype and the JSON payload. aggregateid is left to the writer.
+-- The outbox table @outbox messages are written to, one business event per row: graphitron fills
+-- type, the event, and payload; the id a consumer drops a second delivery by and the time the event
+-- occurred are the database's. written_by tells a row the routine below wrote from one inserted.
 CREATE TABLE outbox (
-    id            uuid         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    aggregatetype varchar(255) NOT NULL,
-    aggregateid   varchar(255),
-    type          varchar(255) NOT NULL,
-    payload       jsonb        NOT NULL,
-    created_at    timestamptz  NOT NULL DEFAULT now()
+    id          uuid         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    type        varchar(255) NOT NULL,
+    payload     jsonb        NOT NULL,
+    occurred_at timestamptz  NOT NULL DEFAULT now(),
+    written_by  varchar(32)  NOT NULL DEFAULT 'insert'
 );
 
--- A stored-routine outbox: the same message layout as the outbox table, reached through a function
--- the application role may call without being allowed to insert into the table. It stamps the
--- aggregate id it was not given, which is how a row it wrote is told from one written directly.
+-- A stored-routine outbox: the same event, reached through a function the application role may call
+-- without being allowed to insert into the table.
 CREATE OR REPLACE FUNCTION public.outbox_emit(
-    p_type          varchar,
-    p_aggregatetype varchar,
-    p_aggregateid   varchar,
-    p_payload       jsonb
+    p_type    varchar,
+    p_payload jsonb
 ) RETURNS void
 LANGUAGE sql
 AS $$
-    INSERT INTO outbox (type, aggregatetype, aggregateid, payload)
-    VALUES (p_type, p_aggregatetype, COALESCE(p_aggregateid, 'via-routine'), p_payload)
+    INSERT INTO outbox (type, payload, written_by) VALUES (p_type, p_payload, 'routine')
 $$;
+
+-- Outbox tables an @outbox is refused against. One has no id, so a consumer could not tell a message
+-- delivered twice from two; the other is Debezium's layout, whose aggregatetype is NOT NULL with no
+-- default and is not a role graphitron fills.
+CREATE TABLE outbox_without_id (
+    type    varchar(255) NOT NULL,
+    payload jsonb        NOT NULL
+);
+
+CREATE TABLE outbox_debezium (
+    id            uuid         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    aggregatetype varchar(255) NOT NULL,
+    aggregateid   varchar(255) NOT NULL,
+    type          varchar(255) NOT NULL,
+    payload       jsonb        NOT NULL
+);

@@ -3,11 +3,8 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 
 /**
- * Orphaned compilation-tier fixture. It produced the {@code SingleFilmCardCarrier} /
- * {@code createFilmCard} carrier path that has since been removed (the NoBacking carrier promotion
- * is retired; carriers now bind to {@code JooqTableRecordType}). No schema field or test references
- * this factory any more; it is a deletion candidate. {@code FilmCardData} itself is still live
- * (used by {@code InventoryExtensions} and the schema), so only this factory is dead.
+ * Execution-tier fixture for an {@code @outbox} on a {@code @service} mutation: the message reads the
+ * node id of the {@link FilmRecord} the returned {@link FilmCardData}'s {@code film()} hands back.
  */
 public final class FilmCardFactoryService {
 

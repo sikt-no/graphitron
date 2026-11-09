@@ -2116,6 +2116,12 @@ type FilmBlurbHolder {
     blurb: FilmBlurb
 }
 
+# What Mutation.outboxFilmCard returns: the FilmCardData whose film() hands back a FilmRecord, read
+# by the message's node id key.
+type FilmCardOutbox {
+    film: Film
+}
+
 # R370 fixture: the nested-carrier counterpart of AddressOccupantCarrier. Produced by
 # Query.nestedOccupantCarrier, which returns NestedOccupantCarrierHolder.Carrier (a NESTED Java
 # record holding an AddressRecord), so this type binds as a PojoResultType whose fqClassName has a
@@ -5474,6 +5480,34 @@ type Mutation {
     deleteFilmsOutbox(in: [FilmDeleteInput!]!): [ID!]!
         @mutation(typeName: DELETE, table: "film")
         @outbox(event: "FilmsDeleted", argMapping: "ids: $result")
+    # @outbox on a @service mutation (ServiceOutboxExecutionTest): the service runs in one owned
+    # transaction with its messages, which read their $result keys off what it returned: the value
+    # itself, a member through the methods its path calls, and a node id from the record a member
+    # hands back. A service that throws takes its writes and its messages with it.
+    outboxScopeWriteOne(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeOne"
+        })
+        @outbox(event: "MarkerWritten", argMapping: "value: $result, marker: marker, at: $scope.coordinate")
+    outboxScopeWriteTwiceThenThrow(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeTwiceThenThrow"
+        })
+        @outbox(event: "MarkerThrown", argMapping: "marker: marker")
+    outboxFilmBlurb(filmId: Int!): FilmBlurbHolder
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService",
+            method: "byId"
+        })
+        @outbox(event: "FilmBlurbRead", argMapping: "text: $result.blurb.description, filmId: filmId")
+    outboxFilmCard(filmId: Int!): FilmCardOutbox
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCardFactoryService",
+            method: "create"
+        })
+        @outbox(event: "FilmCardMade", argMapping: "film: $result.film.id")
 
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$project>).fetchOne(r -> r)`.

@@ -4,6 +4,8 @@
 
 Tells graphitron to write a message to your transactional outbox every time a mutation field succeeds, inside the transaction that made the change, so the message exists if and only if the write committed. A *transactional outbox* is the pattern where a service records "this happened" in its own database, in the transaction that made it happen, and a separate relay (a poller, or change data capture such as Debezium) publishes it to a message broker afterwards.
 
+A message is a business event: what happened, named by you (`FilmCreated`, `RentalReturned`), and a body you shape for the systems that consume it. It is not a record of which rows changed, and an event may mention any number of ids in its payload. Graphitron writes the event's type and its payload; your table or routine gives it an id and a time, and your relay decides where it goes.
+
 The directive is repeatable: each `@outbox` on a field is one message, written once per successful call, in the order the directives appear. To publish something new, add another `@outbox` beside the ones you have; the published messages do not change, so their consumers are not affected. That includes a new version of an event: add `@outbox(event: "FilmCreated.v2", ...)` beside the old one, and remove the old one when its last consumer has moved.
 
 == SDL signature
@@ -28,7 +30,7 @@ directive @outbox(event: String, argMapping: String) repeatable on FIELD_DEFINIT
 |===
 | Source | Meaning
 | `title`, `in.title` | A field argument, walking into nested input fields with dots, as in every `argMapping`. An input-object argument yields an object of the fields the client sent, and a list yields an array. A field the client left out is absent from the payload; a field set to `null` is `null`.
-| `$result`, `$result.id` | The field's success outcome: what the write produced. For an `@mutation` field that is the written type's node id and its own column fields, read from the rows the write wrote. A path that would need another query (a `@reference`, a `@splitQuery` field, a `@service` child) is rejected at build. A list result yields an array. After a `DELETE` there are no rows left to read, so only the node id can be named.
+| `$result`, `$result.id` | The field's success outcome: what the write produced. For an `@mutation` field that is the written type's node id and its own column fields, read from the rows the write wrote. A path that would need another query (a `@reference`, a `@splitQuery` field, a `@service` child) is rejected at build. A list result yields an array. After a `DELETE` there are no rows left to read, so only the node id can be named. For a `@service` field it is the value the service returned: `$result` itself where that is a scalar, a member read through the fields your path names (`$result.holder.blurb.description`), or the node id of a record a member returns (`$result.film.id`). A path through a list, or ending on an object or a record, is rejected at build.
 | `$session.userId` | One member of the session handle your `<sessionState>` mount returned, read on the write's own transaction. The handle must be configured, the member named exactly as in xref:../mojo-configuration.adoc#consuming-the-handle[`@service` and `@condition`], and its type must be one a JSON payload carries: text, a number, a boolean, a character, a UUID or a `java.time` value. A member that is not, an unknown or ambiguous one, and the whole handle `$session` are rejected at build. Only the owned acquisition mounts a handle, so a field that reads one fails on a caller-supplied `DSLContext` and rolls its write back.
 | `$scope.coordinate`, `$scope.operationName`, `$scope.alias` | The field and its operation. `operationName` and `alias` are absent when there is none.
 |===
@@ -50,14 +52,26 @@ Right after the field's write succeeds and before its payload is resolved, as on
 
 A call that wrote no rows (an `UPDATE` that matched nothing, or one whose input sets no column) writes no message.
 
+On a `@service` field the service runs inside the same transaction as its messages: graphitron opens it and hands the service a `DSLContext` on it. What the service writes through that `DSLContext`, nested transactions included, commits with the messages or rolls back with them. A write the service makes some other way, through a connection of its own or a call to another system, is outside the transaction, and no message can be made atomic with it.
+
 == Constraints
 
-* Valid on Mutation fields that write a table with `@mutation` (`INSERT`, `UPDATE` or `DELETE`); every other placement is a build error naming the field.
+* Valid on Mutation fields that write a table with `@mutation` (`INSERT`, `UPDATE` or `DELETE`), and on Mutation fields a `@service` answers; every other placement is a build error naming the field.
+* On a `@service` field, the field's fetcher must be one graphitron generates from its model of the schema. A service taking a jOOQ record built from its input is not yet, and its `@outbox` is a build error naming why, until it is.
 * Where the messages go is configured once, in the plugin's `<outbox>` block. A schema with an `@outbox` field and no `<outbox>` block fails the build, naming the field.
+
+== What is yours, and what is the relay's
+
+The outbox makes a message exist exactly when its write commits. What happens after that is the relay's and the consumers', and the mistakes outboxes are known for happen there:
+
+* *Every message is delivered at least once.* A relay that crashes after publishing and before recording it publishes again. Consumers must drop a message they have seen, by its id, which is why the build requires the table's primary key.
+* *Order holds per key, never globally.* Two fields committing at once can publish in either order. Where order matters, have the relay key messages by something in the payload (`filmId`), so one film's events stay in order on one partition.
+* *The table is a conduit.* Rows a relay has published can be deleted or archived; how long they stay is your relay's setting, not graphitron's.
+* *A payload is a contract.* Change it by adding a new `@outbox` beside the old one (see above), and put in it what a consumer needs, no more: the common payload goes on every message, so a secret or a personal detail there goes to everyone subscribed.
 
 == See also
 
-* xref:mutation.adoc[`@mutation`] picks the write the messages describe.
+* xref:mutation.adoc[`@mutation`] picks the write the messages describe; xref:service.adoc[`@service`] runs a write of your own.
 * xref:../mojo-configuration.adoc[Plugin configuration] holds the `<outbox>` block.
 
 xref:../index.adoc[← Reference index]

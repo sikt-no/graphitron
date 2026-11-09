@@ -1,0 +1,29 @@
+# A message is a business event, its type and its payload: graphitron fills those two and leaves a
+# table's other columns to the database. Debezium's outbox layout makes an aggregate type and id NOT
+# NULL with no default, so an insert graphitron writes into it would fail; it is refused at every
+# @outbox it serves, naming the first such column.
+
+extend schema @withConfiguration(outboxTable: "outbox_debezium")
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+type Mutation {
+  create(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                  coordinate,      detail
+  OUTBOX_TARGET_INVALID, Mutation.create, "<table> outbox_debezium's column aggregateid is NOT NULL with no default, and graphitron fills only the type and the payload"
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_outbox_target")

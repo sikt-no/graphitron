@@ -65,16 +65,16 @@ class OutboxRoutineCompanionTest {
             .fetchOne();
     }
 
-    /** The messages this transaction wrote, which is what {@code created_at = now()} reads inside one. */
+    /** The messages this transaction wrote, which is what {@code occurred_at = now()} reads inside one. */
     private static List<Map<String, Object>> messages(DSLContext tx) {
-        return tx.fetch("select aggregatetype, aggregateid, payload ->> 'operation' as operation,"
+        return tx.fetch("select written_by, payload ->> 'operation' as operation,"
                 + " payload ->> 'title' as title from outbox where type = 'FilmCreated'"
-                + " and created_at = now()")
+                + " and occurred_at = now()")
             .intoMaps();
     }
 
     @Test
-    void callsTheRoutineWithTheEventTheTableAndTheEvaluatedPayload() {
+    void callsTheRoutineWithTheEventAndTheEvaluatedPayload() {
         inRolledBackTransaction(tx -> {
             var written = insertedFilm(tx, "routine-companion");
 
@@ -83,8 +83,7 @@ class OutboxRoutineCompanionTest {
             var rows = messages(tx);
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst())
-                .containsEntry("aggregatetype", "film")
-                .containsEntry("aggregateid", "via-routine")
+                .containsEntry("written_by", "routine")
                 .containsEntry("operation", "Op")
                 .containsEntry("title", "routine-companion");
         });

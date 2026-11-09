@@ -197,10 +197,11 @@ final class FactWrites {
                          t.BINDING_TYPE,
                          t.DATABASE_TYPE,
                          t.NULLABLE,
+                         t.DEFAULTED,
                          t.DECLARED_LENGTH,
                          t.DESCRIPTION,
                          t.TOUCHED_AT)
-                .values(markers(13)))
+                .values(markers(14)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -213,6 +214,7 @@ final class FactWrites {
                                row.get(t.BINDING_TYPE),
                                row.get(t.DATABASE_TYPE),
                                row.get(t.NULLABLE),
+                               row.get(t.DEFAULTED),
                                row.get(t.DECLARED_LENGTH),
                                row.get(t.DESCRIPTION),
                                row.get(t.TOUCHED_AT));

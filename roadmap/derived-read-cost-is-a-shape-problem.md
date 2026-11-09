@@ -655,12 +655,35 @@ static method needs no holder.
   * **A split child `@routine` is a path routine** `blocked`, F's, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
     `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
     the walk's first step from the parent's keys.
-* **An `@outbox` on a `@service` mutation emits from the store** `open`, off the critical path.
+* **An outbox message is a business event: graphitron fills its type and payload** `done`, off the
+  critical path. `@outbox` was never meant to take on Debezium's semantics (Alf, 2026-11-09), yet the
+  table target filled `aggregatetype` with the written table and named `aggregateid` as a role,
+  which made a message one aggregate instance's change: a service has no table to name, and an event
+  changing several ids has no one key. A message is a business fact instead, what happened as the
+  author names it and a body they shape, and graphitron fills only those two, `type` and `payload`,
+  on a table or a routine. Everything else a target has (an event id, a timestamp, routing columns)
+  is the database's, filled by its defaults; routing and partitioning are the relay's, configured
+  on `type` or a payload field by whoever runs it. The practice it keeps, against the common
+  mistakes of naive outboxes:
+  ** a message is written in the write's own transaction and published by a relay, never sent from
+     the request (graphitron already does);
+  ** every message has a unique id, since a relay delivers at least once and a consumer drops
+     duplicates by it: a table target needs a primary key, refused otherwise;
+  ** a `NOT NULL` column graphitron does not fill has a default, refused otherwise, which needs
+     `sql_column` to state a column's default (jOOQ's `defaulted()` or an identity);
+  ** order is per key and the relay's, never global, and a new version of an event is a new
+     `@outbox` beside the published one;
+  ** the manual says what the relay owns: deleting or archiving sent rows, keying, and what a payload
+     must not carry.
+  `aggregatetype` and `aggregateid` stop being roles, on the table, the routine and in `<columns>`;
+  no author has used `@outbox`, so nothing is deprecated. The example's table becomes an event table
+  (an `id` and an `occurred_at` by default, `type`, `payload`), its routine takes the two.
+* **An `@outbox` on a `@service` mutation emits from the store** `done`, off the critical path.
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **The outbox on a service is emitted where the service call is** `open`. Field by field with
+  * **The outbox on a service is emitted where the service call is** `done`. Field by field with
     the flip rather than after it (Alf, 2026-11-09): a service `@outbox` is emitted wherever
     `ServiceEmission` emits its field, and refused at generation, naming the census verdict,
     wherever it does not yet, so a service `@outbox` is never accepted without being emitted and
@@ -670,7 +693,12 @@ static method needs no holder.
     `$result` key off the returned value through its `VALUE` bindings' members, a node id from the
     record a member hands back; a lifted service's keys read no result, which no key rule admits.
     R1101's phase 2, nested scopes joining the field's transaction, which it also needed, has
-    shipped.
+    shipped. As landed: `ServiceEmission` wraps the body in `<field>Written`, which opens the owned
+    transaction, calls the body on `DSL.using(tx)` and then the companion; `OutboxQuery` reads a
+    service row with each key's accessor chain off `graphitron_argmapping_step`'s value bindings and
+    the key row's accessor; the refusal reads `ServiceEmission.verdict`. `ServiceOutboxExecutionTest`
+    pins the transaction and the three `$result` reads, `ServiceOutboxRejectionPipelineTest` the
+    refusal.
 * **An `@outbox` on a `@routine` mutation emits from the store** `open`, off the critical path.
   R1113's phase 3 for routine writes. A routine write is emitted from the store already
   (`RoutineWriteEmitter`), and like a DML write it captures, inside its transaction, what it reads

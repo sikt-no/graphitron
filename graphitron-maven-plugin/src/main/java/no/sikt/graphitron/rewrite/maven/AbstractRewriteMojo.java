@@ -184,8 +184,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * Where the messages of every {@code @outbox} field go: an {@code <outbox>} block naming
-     * either a {@code <table>} graphitron inserts one row per message into (Debezium's outbox
-     * layout by default, {@code <columns>} naming other columns) or a {@code <function>} it calls
+     * either a {@code <table>} graphitron inserts one row per message into, filling its
+     * {@code type} and {@code payload} columns ({@code <columns>} naming others) and leaving the rest
+     * to their defaults, or a {@code <function>} it calls
      * once per message ({@code <parameters>} naming other parameters), and an optional
      * {@code <payload>} argMapping every message carries. Threaded through {@link RunContext} as
      * authored strings and resolved against the jOOQ catalog by the store's derivation; a schema

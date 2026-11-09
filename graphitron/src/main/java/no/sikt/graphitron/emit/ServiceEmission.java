@@ -257,10 +257,35 @@ public final class ServiceEmission {
     }
 
     /**
+     * What an emitted mutation's {@code @outbox} messages need: the store's row for the field, what
+     * the companion takes from the generated runtime, the package its node-id encoder is under, and
+     * the provider an owned transaction is opened through.
+     */
+    public record Outbox(OutboxQuery.Row row, OutboxEmitter.Runtime runtime, String outputPackage,
+                         ClassName provider) {
+        public Outbox {
+            Objects.requireNonNull(row, "row");
+            Objects.requireNonNull(runtime, "runtime");
+            Objects.requireNonNull(outputPackage, "outputPackage");
+            Objects.requireNonNull(provider, "provider");
+        }
+    }
+
+    /**
      * The fetcher of the field at {@code coordinate} named {@code fieldName}, or empty where it is not
      * emitted here, {@link #verdict} saying why.
      */
     public Optional<Emitted> emit(String fieldCoordinate, String fieldName, Runtime runtime) {
+        return emit(fieldCoordinate, fieldName, runtime, Optional.empty());
+    }
+
+    /**
+     * {@link #emit}, writing {@code outbox}'s messages where it is present: the body runs inside one
+     * owned transaction whose context the service is handed, and the companion writes the messages on
+     * it from what the service returned, so they commit exactly when its writes do.
+     */
+    public Optional<Emitted> emit(String fieldCoordinate, String fieldName, Runtime runtime,
+                                  Optional<Outbox> outbox) {
         if (!emits(fieldCoordinate)) {
             return Optional.empty();
         }
@@ -324,15 +349,63 @@ public final class ServiceEmission {
                 ? ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get("org.jooq", "Record"))
                 : ClassName.get("org.jooq", "Record"))
             : answered(SessionIdentityRows.typeOf(call.resultType()).box(), frameKey.isPresent());
+        String framed = bodyName;
+        var written = new ArrayList<MethodSpec>();
+        if (outbox.isPresent()) {
+            if (frameKey.isPresent()) {
+                throw new IllegalStateException(coordinate + " carries an @outbox under an object; the store"
+                    + " admits one on a mutation field only");
+            }
+            framed = fieldName + "Written";
+            written.addAll(written(outbox.get(), emitted.body(), framed, runtime.fetchersClass(), validates));
+        }
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
-            bodyName, runtime.frame(), needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
+            framed, runtime.frame(),
+            outbox.isPresent() || needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
             validates);
         var all = new ArrayList<MethodSpec>();
         all.add(frame);
+        all.addAll(written);
         all.add(emitted.body());
         all.addAll(emitted.helpers());
         all.addAll(methods);
         return Optional.of(new Emitted(all, nested, emitted.constants()));
+    }
+
+    /**
+     * The owned transaction an {@code @outbox} field's body runs in, and the companion writing its
+     * messages on it from the value the body answers: the success's value where the body answers an
+     * outcome, and nothing where it answers a failure, since then the service was never called.
+     */
+    private static List<MethodSpec> written(Outbox outbox, MethodSpec body, String name, ClassName host,
+                                            boolean validates) {
+        TypeName answered = body.returnType();
+        TypeName value = validates ? ((ParameterizedTypeName) answered).typeArguments().getFirst() : answered;
+        var companion = OutboxEmitter.renderService(outbox.row(), value, outbox.outputPackage(), outbox.runtime());
+        var dsl = ClassName.get("org.jooq.impl", "DSL");
+        var lambda = CodeBlock.builder()
+            .add("return $L{\n", OwnedScope.transactionResult(outbox.provider(), "dsl")).indent()
+            .addStatement("$T answered = $T.$L(env, $T.using(tx))", answered, host, body.name(), dsl);
+        if (validates) {
+            var success = ((ParameterizedTypeName) answered).rawType().nestedClass("Success");
+            lambda.beginControlFlow("if (answered instanceof $T<$T> success)", success, value.box())
+                .add(OutboxEmitter.call(outbox.row(), "tx", "success.value()"))
+                .endControlFlow();
+        } else {
+            lambda.add(OutboxEmitter.call(outbox.row(), "tx", "answered"));
+        }
+        lambda.addStatement("return answered").unindent().add("});\n");
+        var wrapper = MethodSpec.methodBuilder(name)
+            .addModifiers(javax.lang.model.element.Modifier.STATIC)
+            .returns(answered)
+            .addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "env")
+            .addParameter(ClassName.get("org.jooq", "DSLContext"), "dsl")
+            .addException(Exception.class)
+            .addJavadoc("Runs {@code $L} and writes its {@code @outbox} messages in one owned transaction.\n",
+                body.name())
+            .addCode(lambda.build())
+            .build();
+        return List.of(wrapper, companion);
     }
 
     /**

@@ -3444,7 +3444,7 @@ class BuildContext {
                 .findFirst())
             .orElseGet(() -> new JooqCatalog.ColumnFacts(
                 column.sqlName(), column.javaName(), null, column.columnClass(), column.databaseType(),
-                true, "", null));
+                true, false, "", null));
     }
 
     /**

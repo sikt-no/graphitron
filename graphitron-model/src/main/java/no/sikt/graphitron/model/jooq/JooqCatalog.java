@@ -1570,6 +1570,7 @@ public class JooqCatalog {
                     col.getType().getName(),
                     col.getConverter().fromType().getName(),
                     dataType.nullable(),
+                    dataType.defaulted() || dataType.identity(),
                     comment == null ? "" : comment,
                     dataType.lengthDefined() && dataType.length() > 0 ? dataType.length() : null);
             })
@@ -1629,7 +1630,8 @@ public class JooqCatalog {
      * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name, the Java
      * type jOOQ binds the column to, the Java type it exchanges with the database (the converter's
      * {@code fromType()}, equal to the binding type with no converter), nullability, comment (empty
-     * when codegen captured none), and the length the column's type declares (null when it
+     * when codegen captured none), whether the database fills it when an insert leaves it out (a
+     * default or an identity), and the length the column's type declares (null when it
      * declares none). See {@link #columnFactsOf}.
      *
      * <p>Carries every fact {@link ColumnEntry} does. The one thing it does not carry is that
@@ -1640,7 +1642,7 @@ public class JooqCatalog {
      * is what {@link ColumnEntry} is not.
      */
     public record ColumnFacts(String sqlName, String javaName, String sqlType, String bindingType,
-                              String databaseType, boolean nullable, String comment,
+                              String databaseType, boolean nullable, boolean defaulted, String comment,
                               Integer declaredLength) {}
 
     /**

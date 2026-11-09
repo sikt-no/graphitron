@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Execution-tier coverage for {@code @outbox} through the {@code <function>} target, against
  * PostgreSQL: the messages reach the outbox through the stored routine {@code outbox_emit} rather
- * than an insert of their own. The routine stamps the aggregate id it is not given with
- * {@code via-routine}, which is how a row it wrote is told from one written directly.
+ * than an insert of their own. The routine marks the row {@code written_by = 'routine'}, which is how
+ * a row it wrote is told from one written directly.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -59,7 +59,7 @@ class OutboxFunctionExecutionTest {
     }
 
     private List<Map<String, Object>> messages(String type, String key, String marker) {
-        return dsl.fetch("select aggregatetype, aggregateid, payload ->> 'operation' as operation,"
+        return dsl.fetch("select written_by, payload ->> 'operation' as operation,"
                 + " payload ->> 'filmId' as film_id, payload ->> 'title' as title, payload ->> 'id' as id"
                 + " from outbox where type = ? and payload ->> ? = ?", type, key, marker)
             .intoMaps();
@@ -74,8 +74,7 @@ class OutboxFunctionExecutionTest {
         var written = messages("FilmCreated", "title", title);
         assertThat(written).hasSize(1);
         assertThat(written.getFirst())
-            .containsEntry("aggregateid", "via-routine")
-            .containsEntry("aggregatetype", "film")
+            .containsEntry("written_by", "routine")
             .containsEntry("operation", "Make")
             .containsEntry("film_id", film.get("id"))
             .containsEntry("title", title);
@@ -102,6 +101,6 @@ class OutboxFunctionExecutionTest {
 
         var written = messages("FilmDeleted", "id", deleted);
         assertThat(written).hasSize(1);
-        assertThat(written.getFirst()).containsEntry("aggregateid", "via-routine");
+        assertThat(written.getFirst()).containsEntry("written_by", "routine");
     }
 }

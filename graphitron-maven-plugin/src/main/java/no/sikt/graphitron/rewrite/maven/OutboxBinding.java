@@ -15,8 +15,8 @@ import java.util.Map;
  *   <payload>operation: $scope.operationName</payload>
  * </outbox>
  * }</pre>
- * <p>One of {@code <table>} (an outbox table graphitron inserts into, by default in Debezium's
- * layout) or {@code <function>} (a database function or procedure graphitron calls once per
+ * <p>One of {@code <table>} (an outbox table graphitron inserts the event's type and payload into,
+ * the rest of its columns filled by their defaults) or {@code <function>} (a database function or procedure graphitron calls once per
  * message) names the target. A block naming both or neither is recorded as written and reported at
  * each {@code @outbox} it affects.
  */
@@ -25,7 +25,7 @@ public class OutboxBinding {
     String table;
     /** The database function or procedure graphitron calls once per message. */
     String function;
-    /** Role to column name of the table target: type, aggregatetype, aggregateid, payload. */
+    /** Role to column name of the table target: type and payload, the two graphitron fills. */
     Map<String, String> columns;
     /** Role to parameter name of the function target. */
     Map<String, String> parameters;

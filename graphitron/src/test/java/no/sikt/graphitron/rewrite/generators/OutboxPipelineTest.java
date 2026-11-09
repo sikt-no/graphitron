@@ -81,8 +81,7 @@ class OutboxPipelineTest {
     void functionTarget_callsTheRoutineOncePerMessageWithTheEvaluatedPayload() {
         var ctx = TestConfiguration.testContext().withOutboxConfig(OutboxConfig.from(
             null, "outbox_emit", Map.of(),
-            Map.of("type", "p_type", "aggregatetype", "p_aggregatetype", "aggregateid", "p_aggregateid",
-                "payload", "p_payload"),
+            Map.of("type", "p_type", "payload", "p_payload"),
             "operation: $scope.operationName"));
         var body = method(TestSchemaHelper.storeBackedFetchers(tmp, SDL, ctx), "outboxCreateFilm");
 
@@ -91,7 +90,7 @@ class OutboxPipelineTest {
                 + " select has no from")
             .contains("org.jooq.JSONB body0 = tx.select(org.jooq.impl.DSL.jsonbObject(m0)).fetchOne(0, org.jooq.JSONB.class)")
             .as("one call per message, the arguments at the positions of the parameters their roles landed in")
-            .contains("Routines.outboxEmit(tx.configuration(), \"FilmCreated\", \"film\", (java.lang.String) null, body0)")
+            .contains("Routines.outboxEmit(tx.configuration(), \"FilmCreated\", body0)")
             .as("a payload that could not be evaluated is passed on to nobody")
             .contains("if (body0 != null)")
             .doesNotContain("insertInto(");

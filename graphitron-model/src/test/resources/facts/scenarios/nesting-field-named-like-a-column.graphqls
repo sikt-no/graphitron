@@ -12,7 +12,7 @@ type OutboxPayload {
   "A column of the parent's row."
   type: String
   "An expression computed in the parent's query."
-  aggregateKind: String
+  eventKind: String
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.OutboxExtensions"})
 }
 
@@ -32,5 +32,5 @@ extend schema @expectEquals(relation: "graphitron_reader", where: "type_name IN 
   OutboxMessage, payload,       NESTED
   OutboxMessage, envelope,      NESTED
   OutboxPayload, type,          COLUMN
-  OutboxPayload, aggregateKind, EXPRESSION
+  OutboxPayload, eventKind, EXPRESSION
   """)
