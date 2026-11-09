@@ -502,7 +502,7 @@ static method needs no holder.
     name, with whether it reads context or the session; the multiset's filter and the `dsl` closure
     read it there, and `graphitron_code_reference` is no longer read for a `@condition` (Alf,
     2026-11-09, the shape weighed with the principles review the same day).
-    * **Every call an occurrence makes is a row of one supertype** `open`.
+    * **Every call an occurrence makes is a row of one supertype** `done`.
       `graphitron_occurrence_call(graph, coordinate, call, call_kind)`, `call` spelled from the
       subtype's own key as `graphitron_occurrence_binding.bound` is (`producer` for a producer's
       service or routine, `condition:<target_type>`, later `step:<target_type>:<position>` and the
@@ -515,8 +515,7 @@ static method needs no holder.
       (`CallQuery`, `BuildQuery`, `FillQuery`) keep filtering to service calls, and a routine
       parameter filled from a `$source` column is a fill of its own, never `SOURCE`, which is the
       batch's keys; the routine call node rebases onto this one (Alf and F, 2026-11-09).
-    * **A call's fills are stated per candidate overload, and its method is the one candidate every position fills** `blocked`,
-      on "Every call an occurrence makes is a row of one supertype". One
+    * **A call's fills are stated per candidate overload, and its method is the one candidate every position fills** `open`. One
       stage owns every fill: the candidates' fills, the pin and the stored fills, for producer calls
       and conditions alike, placed after the join paths and before anything reading a fill, so
       whether a parameter is fillable is decided once rather than by the pin and again by the fill.
@@ -617,7 +616,7 @@ static method needs no holder.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
-* **A routine call is stated per occurrence and emitted from the store, as a service call is** `blocked`, F's, on "Every call an occurrence makes is a row of one supertype".
+* **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
   A root `@routine` is the producer call: its parameters are filled per occurrence in
   `graphitron_occurrence_call_parameter`, widened from service calls to any producer's call, and its
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
