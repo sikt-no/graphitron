@@ -1,7 +1,7 @@
 ---
 id: R1133
 title: "A single @error type as the errors field's element is not recognised as an error channel"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: error-channel
@@ -320,6 +320,40 @@ pins the sentence added to the manual.
 
 Build: the verification build is the full `mvn install -Plocal-db`, since generator code, tests,
 fixtures and the manual change.
+
+## Implementation notes (In Progress → In Review)
+
+Landed as planned in the `fix(R1133)` and `test(R1133)` commits; where the landing departs from or
+adds to the plan:
+
+* A sixth site the plan did not name: `RecordBindingResolver.singleNonTableObjectDataField`, the
+  binding pass's two-level carrier probe, runs before the `ErrorIndex` exists and kept errors
+  fields out only because a union or interface is no `GraphQLObjectType`. A single `@error` object
+  is one, so a payload whose backing class has no errors member (the sakila fixture, unlike kreg's,
+  which had `getErrors()`) was read as a carrier over its errors field and failed to bind. The probe
+  now skips an object type carrying `@error`, read off the directive.
+  `singleErrorTypeElement_backingClassWithoutErrorsMember_bindsAndCarries` pins it over a new
+  `DataOnlyPayload` stub.
+* `ServiceDirectiveResolver.projectReturnType` returns `ErrorsLifted` whenever the lift produced a
+  field, before its switch, rather than only from the `PolymorphicReturnType` arm, so a single-type
+  lift on a `ScalarReturnType` is not projected as `Resolved.Scalar`.
+* The execution case `submitSetterShapeFilmReview_backingClassHasErrorsAccessor_claimedThrowIsTypedData`
+  is a new method beside the existing `invalidRating` one (renaming nothing), driven with rating 0
+  so it is not a verbatim copy. A success-path twin, `submitSingleErrorFilmReview_validInput_returnsData`,
+  joins the planned single-type error case. The success-populated case runs against a new field,
+  `submitSetterShapeFilmReviewWithErrors`, over `FilmReviewService.submitSetterShapeWithErrors`.
+* The bean-accessor half of `payloadBackingClassWithErrorsAccessor_stillPopulatesErrorChannel` uses
+  a new test stub, `BeanErrorsPayload` (`dummyreferences`, returned by
+  `TestServiceStub.runBeanErrors`), since the module boundary allows one.
+* `corpus/error-type.graphqls` did change verdict as predicted: `Query.sak` became an
+  `UnclassifiedField` with `HandlerSourceAccessorMissing` for `severity`. Its handler class is now
+  `dummyreferences.SeverityException` (an `IllegalArgumentException` with `getSeverity()`); the
+  check is unchanged.
+* `DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED` still rejects on `data: String`, unchanged.
+* `EmissionCensusTest.theCensusOfTheExampleSchemasServices` pins the emitted service count, which
+  the two new sakila fields raise by two.
+* The sakila SDL comments over the setter-shape fixtures lost their item citations along with the
+  payload-factory wording.
 
 ## Other solutions we've considered
 
