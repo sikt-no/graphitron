@@ -11043,21 +11043,323 @@ COMMENT ON COLUMN graphitron_occurrence_producer_key_row.table_name IS 'the key'
 COMMENT ON COLUMN graphitron_occurrence_producer_key_row.arity IS 'ONE or MANY keys per parent, as graphitron_field_key_row says';
 COMMENT ON COLUMN graphitron_occurrence_producer_key_row.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
-CREATE VIEW graphitron_occurrence_producer_service_rule
-  (graph_name, coordinate, kind, call, call_kind, method_source_name, method_class_name, method_name,
-   method_descriptor, constructor_source_name, constructor_class_name, constructor_descriptor) AS
--- The method a SERVICE producer calls and, where it is an instance method, the constructor its
--- object is made with: the producer's call.
-SELECT p.graph_name, p.coordinate, p.kind, 'producer', 'SERVICE', s.method_source_name, s.method_class_name,
-       s.method_name, s.method_descriptor, h.constructor_source_name, h.constructor_class_name,
-       h.constructor_descriptor
+-- A call's candidate methods, each of whose parameters the fills below are stated for, and the one
+-- the call pins: the fills decide the pin, so a call with several candidates takes the one every
+-- position fills.
+CREATE VIEW graphitron_occurrence_call_candidate
+  (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
+   method_descriptor) AS
+-- A service producer's call: the one method its reference names, its name unique in its class.
+SELECT p.graph_name, p.coordinate, 'producer', 'SERVICE', s.method_source_name, s.method_class_name,
+       s.method_name, s.method_descriptor
   FROM graphitron_occurrence_producer p
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphitron_producer_service s
     ON s.graph_name = f.graph_name AND s.type_name = f.type_name AND s.field_name = f.field_name
+ WHERE p.kind = 'SERVICE';
+COMMENT ON VIEW graphitron_occurrence_call_candidate IS 'One method one call of one occurrence could be: one row per call and candidate method. For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.';
+
+CREATE VIEW graphitron_occurrence_call_parameter_written
+  (graph_name, coordinate, call, method_descriptor, position, parameter_name, fill, landing_coordinate,
+   context_key, session_member) AS
+WITH call_parameter (graph_name, coordinate, call, method_descriptor, element_coordinate, position,
+                     parameter_name) AS (
+  SELECT s.graph_name, s.coordinate, s.call, s.method_descriptor, o.element_coordinate, p.position,
+         p.parameter_name
+    FROM graphitron_occurrence_call_candidate s
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    JOIN code_method_parameter p
+      ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
+     AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+)
+-- $session, or one member of it, named by a pair.
+SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.parameter_name,
+       CASE WHEN pr.bound_to = '$session' THEN 'SESSION' ELSE 'SESSION_MEMBER' END,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CASE WHEN pr.bound_to <> '$session' THEN SUBSTRING(pr.bound_to, 10) END
+  FROM call_parameter c
+  JOIN graphitron_argmapping_pair pr
+    ON pr.graph_name = c.graph_name AND pr.coordinate = c.element_coordinate
+   AND pr.directive_name = 'service' AND pr.owner = 'service'
+   AND pr.parameter_name = c.parameter_name
+ WHERE pr.bound_to = '$session' OR pr.bound_to LIKE '$session.%'
+UNION ALL
+-- An argument path a pair names, where it lands under this occurrence of the call.
+SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.parameter_name, 'ARGUMENT',
+       l.landing_coordinate,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM call_parameter c
+  JOIN graphitron_argmapping_landing l
+    ON l.graph_name = c.graph_name AND l.coordinate = c.element_coordinate
+   AND l.directive_name = 'service' AND l.owner = 'service'
+   AND l.parameter_name = c.parameter_name AND l.call_coordinate = c.coordinate
+UNION ALL
+-- A context key, from a $context pair or a contextArguments element.
+SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.parameter_name, 'CONTEXT_KEY',
+       CAST(NULL AS VARCHAR), k.context_key, CAST(NULL AS VARCHAR)
+  FROM call_parameter c
+  JOIN graphitron_call_context_key k
+    ON k.graph_name = c.graph_name AND k.coordinate = c.element_coordinate
+   AND k.directive_name = 'service' AND k.owner = 'service'
+   AND k.parameter_name = c.parameter_name;
+COMMENT ON VIEW graphitron_occurrence_call_parameter_written IS 'A fill an author wrote for one parameter of one candidate method of one service call: a $session pair, an argument path a pair lands, or a context key. For example argMapping: "ids: input.ids" on @service at Query.filmsByPath draws an ARGUMENT row landing on Query.filmsByPath(input.ids:).';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.coordinate IS 'the producer occurrence making the call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.position IS 'the parameter''s position in the resolved method';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.parameter_name IS 'the parameter''s name, which the written fill names';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.fill IS 'SESSION, SESSION_MEMBER, ARGUMENT or CONTEXT_KEY';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.landing_coordinate IS 'on ARGUMENT, the argument or input-field occurrence the pair''s path lands on';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.context_key IS 'on CONTEXT_KEY, the key the request context carries the value under';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.session_member IS 'on SESSION_MEMBER, the member of the session handle';
+
+CREATE VIEW graphitron_occurrence_call_parameter_candidate
+  (graph_name, coordinate, call, method_descriptor, position, parameter_name, argument_coordinate) AS
+-- A parameter no written fill, no type, no name and no source fills, paired with each argument of
+-- the call no pair has taken and no parameter is named after, where the two agree on type: the
+-- same list-ness, and an element the argument's value can arrive as. An input object arrives as a
+-- class the input is built into, which nothing in the schema names, so any class outside the JDK
+-- qualifies; an enum as a class or a String; a scalar as its Java type, a built-in's by graphql-java
+-- and any other's by the constant its @scalarType names. A primitive erases to no class, so its
+-- element is the declared type, int for int. Where one named parameter and one argument are all
+-- that is left of the call, they pair whenever their list-ness agrees and type cannot tell them
+-- apart: an input object, or a scalar no Java type is known for.
+WITH open_parameter (graph_name, coordinate, call, method_descriptor, position, parameter_name, element,
+                     many) AS (
+  SELECT s.graph_name, s.coordinate, s.call, s.method_descriptor, p.position, p.parameter_name,
+         COALESCE(p.element_class, p.erased_class, p.parameter_type), COALESCE(p.delivery, '') = 'MANY'
+    FROM graphitron_occurrence_call_candidate s
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    JOIN code_method_parameter p
+      ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
+     AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+   WHERE p.role NOT IN ('DSL_CONTEXT', 'CONFIGURATION')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
+                      WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
+                        AND pr.directive_name = 'service' AND pr.owner = 'service'
+                        AND pr.parameter_name = p.parameter_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_call_context_key k
+                      WHERE k.graph_name = s.graph_name AND k.coordinate = o.element_coordinate
+                        AND k.directive_name = 'service' AND k.owner = 'service'
+                        AND k.parameter_name = p.parameter_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence a
+                      WHERE a.graph_name = s.graph_name AND a.parent_coordinate = s.coordinate
+                        AND a.name = p.parameter_name AND a.kind = 'FIELD_ARGUMENT')
+     -- A child producer's call has a source, whose keys fill a collection.
+     AND NOT (COALESCE(p.delivery, '') = 'MANY'
+              AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer pp
+                           WHERE pp.graph_name = s.graph_name AND pp.coordinate = s.coordinate
+                             AND s.call = 'producer' AND pp.start = 'CHILD'))
+),
+open_argument (graph_name, call_coordinate, call, method_descriptor, coordinate, kind, named_type,
+               is_list) AS (
+  SELECT a.graph_name, a.parent_coordinate, s.call, s.method_descriptor, a.coordinate, t.kind, ga.named_type,
+         ga.is_list
+    FROM graphitron_occurrence a
+    JOIN graphitron_occurrence_call_candidate s
+      ON s.graph_name = a.graph_name AND s.coordinate = a.parent_coordinate
+    JOIN graphitron_argument ga ON ga.graph_name = a.graph_name AND ga.coordinate = a.element_coordinate
+    JOIN graphitron_type t ON t.graph_name = ga.graph_name AND t.type_name = ga.named_type
+   WHERE a.kind = 'FIELD_ARGUMENT'
+     AND NOT EXISTS (SELECT 1 FROM code_method_parameter p
+                      WHERE p.source_name = s.method_source_name AND p.class_name = s.method_class_name
+                        AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+                        AND p.parameter_name = a.name)
+     -- A pair's path landing on the argument or under it takes the argument.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                      JOIN graphitron_occurrence lo
+                        ON lo.graph_name = l.graph_name AND lo.coordinate = l.landing_coordinate
+                     WHERE l.graph_name = a.graph_name AND l.call_coordinate = a.parent_coordinate
+                       AND l.directive_name = 'service' AND l.owner = 'service'
+                       AND lo.argument_coordinate = a.coordinate)
+)
+SELECT p.graph_name, p.coordinate, p.call, p.method_descriptor, p.position, p.parameter_name, a.coordinate
+  FROM open_parameter p
+  JOIN open_argument a ON a.graph_name = p.graph_name AND a.call_coordinate = p.coordinate
+   AND a.call = p.call AND a.method_descriptor = p.method_descriptor
+ WHERE a.is_list = p.many
+   AND (CASE a.kind
+         WHEN 'INPUT_OBJECT' THEN POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%'
+         WHEN 'ENUM' THEN (POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%')
+                          OR p.element = 'java.lang.String'
+         WHEN 'SCALAR' THEN EXISTS (
+           SELECT 1 FROM (VALUES ('ID', 'java.lang.String'), ('String', 'java.lang.String'),
+                                 ('Int', 'java.lang.Integer'), ('Int', 'int'),
+                                 ('Float', 'java.lang.Double'), ('Float', 'double'),
+                                 ('Boolean', 'java.lang.Boolean'), ('Boolean', 'boolean'))
+                         b (scalar, java_class)
+            WHERE b.scalar = a.named_type AND b.java_class = p.element)
+           OR EXISTS (SELECT 1 FROM graphql_directive_application da
+                        JOIN graphitron_ast_scalar_type_entry e
+                          ON e.graph_name = da.graph_name AND e.source_name = da.source_name
+                         AND e.source_line = da.source_line AND e.source_column = da.source_column
+                        JOIN code_scalar_constant k
+                          ON k.class_name = e.scalar_ref_class_part
+                         AND k.field_name = e.scalar_ref_field_part
+                       WHERE da.graph_name = a.graph_name AND da.coordinate = a.named_type
+                         AND da.directive_name = 'scalarType' AND da.ordinal = 0
+                         AND k.input_type = p.element)
+         ELSE FALSE END
+        OR (p.parameter_name IS NOT NULL
+            AND (a.kind = 'INPUT_OBJECT'
+                 OR (a.kind = 'SCALAR'
+                     AND a.named_type NOT IN ('ID', 'String', 'Int', 'Float', 'Boolean')
+                     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
+                                       JOIN graphitron_ast_scalar_type_entry e
+                                         ON e.graph_name = da.graph_name
+                                        AND e.source_name = da.source_name
+                                        AND e.source_line = da.source_line
+                                        AND e.source_column = da.source_column
+                                       JOIN code_scalar_constant k
+                                         ON k.class_name = e.scalar_ref_class_part
+                                        AND k.field_name = e.scalar_ref_field_part
+                                      WHERE da.graph_name = a.graph_name
+                                        AND da.coordinate = a.named_type
+                                        AND da.directive_name = 'scalarType'
+                                        AND da.ordinal = 0)))
+            AND NOT EXISTS (SELECT 1 FROM open_parameter p2
+                             WHERE p2.graph_name = p.graph_name AND p2.coordinate = p.coordinate
+                               AND p2.call = p.call AND p2.method_descriptor = p.method_descriptor
+                               AND p2.position <> p.position AND p2.parameter_name IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM open_argument a2
+                             WHERE a2.graph_name = a.graph_name
+                               AND a2.call_coordinate = a.call_coordinate
+                               AND a2.call = a.call AND a2.method_descriptor = a.method_descriptor
+                               AND a2.coordinate <> a.coordinate)));
+COMMENT ON VIEW graphitron_occurrence_call_parameter_candidate IS 'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, candidate method, open parameter and argument whose list-ness and element type agree, or that are the call''s last open parameter and argument where type cannot tell them apart. For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two, and a child call whose source fills its Set of records pairs its one Date argument with its one LocalDate parameter, whatever the two are named.';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.coordinate IS 'the producer occurrence making the call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.position IS 'the open parameter''s position';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.parameter_name IS 'the open parameter''s name, what a message names';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.argument_coordinate IS 'the argument occurrence it could take';
+
+CREATE VIEW graphitron_occurrence_call_parameter_rule
+  (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name, fill,
+   landing_coordinate, context_key, session_member) AS
+-- What fills each parameter of each candidate method of each call; the call's kind is its candidate's.
+SELECT r.graph_name, r.coordinate, r.call, k.call_kind, r.method_descriptor, r.position, r.parameter_name,
+       r.fill, r.landing_coordinate, r.context_key, r.session_member
+  FROM (
+-- A parameter with one written fill takes it.
+SELECT w.graph_name, w.coordinate, w.call, w.method_descriptor, w.position, w.parameter_name, w.fill,
+       w.landing_coordinate, w.context_key, w.session_member
+  FROM graphitron_occurrence_call_parameter_written w
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_written o
+                    WHERE o.graph_name = w.graph_name AND o.coordinate = w.coordinate
+                      AND o.call = w.call AND o.method_descriptor = w.method_descriptor
+                      AND o.position = w.position
+                      AND (o.fill <> w.fill
+                           OR o.landing_coordinate IS DISTINCT FROM w.landing_coordinate
+                           OR o.context_key IS DISTINCT FROM w.context_key
+                           OR o.session_member IS DISTINCT FROM w.session_member))
+UNION
+-- A parameter nothing written names is inferred, in this order: the jOOQ context by its type, then
+-- an argument of the call by the parameter's name, then the call's source by a collection's shape
+-- where the call has one, then an argument by type. A parameter a pair names is the pair's to fill even where the pair fills
+-- nothing, so a pair whose path does not land is the pair's defect and no inference stands in.
+SELECT s.graph_name, s.coordinate, s.call, s.method_descriptor, p.position, p.parameter_name,
+       CASE WHEN p.role IN ('DSL_CONTEXT', 'CONFIGURATION') THEN 'DSL_CONTEXT'
+            WHEN a.coordinate IS NOT NULL THEN 'ARGUMENT'
+            ELSE 'SOURCE' END,
+       CASE WHEN p.role NOT IN ('DSL_CONTEXT', 'CONFIGURATION') THEN a.coordinate END,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_call_candidate s
+  JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+  JOIN code_method_parameter p
+    ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
+   AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+  -- The call's own argument of the parameter's name, one step below the call.
+  LEFT JOIN graphitron_occurrence a
+    ON a.graph_name = s.graph_name AND a.parent_coordinate = s.coordinate
+   AND a.name = p.parameter_name AND a.kind = 'FIELD_ARGUMENT'
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
+                    WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
+                      AND pr.directive_name = 'service' AND pr.owner = 'service'
+                      AND pr.parameter_name = p.parameter_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_call_context_key k
+                    WHERE k.graph_name = s.graph_name AND k.coordinate = o.element_coordinate
+                      AND k.directive_name = 'service' AND k.owner = 'service'
+                      AND k.parameter_name = p.parameter_name)
+   AND (p.role IN ('DSL_CONTEXT', 'CONFIGURATION') OR a.coordinate IS NOT NULL
+        -- A child producer's call has a source, whose keys fill a collection.
+        OR (p.delivery = 'MANY'
+            AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer pp
+                         WHERE pp.graph_name = s.graph_name AND pp.coordinate = s.coordinate
+                           AND s.call = 'producer' AND pp.start = 'CHILD')))
+UNION
+-- Last, by type: a parameter and an argument that are each other's only candidate.
+SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.parameter_name, 'ARGUMENT',
+       c.argument_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_call_parameter_candidate c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate o
+                    WHERE o.graph_name = c.graph_name AND o.coordinate = c.coordinate
+                      AND o.call = c.call AND o.method_descriptor = c.method_descriptor
+                      AND o.position = c.position AND o.argument_coordinate <> c.argument_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate o
+                    WHERE o.graph_name = c.graph_name AND o.argument_coordinate = c.argument_coordinate
+                      AND o.call = c.call AND o.method_descriptor = c.method_descriptor
+                      AND o.position <> c.position)
+  ) r (graph_name, coordinate, call, method_descriptor, position, parameter_name, fill, landing_coordinate,
+       context_key, session_member)
+  JOIN graphitron_occurrence_call_candidate k
+    ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.call = r.call
+   AND k.method_descriptor = r.method_descriptor;
+COMMENT ON VIEW graphitron_occurrence_call_parameter_rule IS 'One row the call-parameter rule computes for one candidate method, in the shape graphitron_occurrence_call_parameter stores for the method the call pins: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.';
+
+CREATE VIEW graphitron_occurrence_call_pin
+  (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
+   method_descriptor) AS
+-- A call with one candidate pins it, filled or not, so a parameter nothing fills is that method's
+-- defect rather than no call at all.
+SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_source_name, c.method_class_name,
+       c.method_name, c.method_descriptor
+  FROM graphitron_occurrence_call_candidate c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_candidate o
+                    WHERE o.graph_name = c.graph_name AND o.coordinate = c.coordinate
+                      AND o.call = c.call AND o.method_descriptor <> c.method_descriptor)
+UNION ALL
+-- A call with several pins the one candidate every position of which a fill reaches.
+SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_source_name, c.method_class_name,
+       c.method_name, c.method_descriptor
+  FROM (SELECT f.*
+          FROM graphitron_occurrence_call_candidate f
+         WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_call_candidate o
+                        WHERE o.graph_name = f.graph_name AND o.coordinate = f.coordinate
+                          AND o.call = f.call AND o.method_descriptor <> f.method_descriptor)
+           AND NOT EXISTS (SELECT 1 FROM code_method_parameter p
+                            WHERE p.source_name = f.method_source_name AND p.class_name = f.method_class_name
+                              AND p.method_name = f.method_name AND p.descriptor = f.method_descriptor
+                              AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_rule r
+                                               WHERE r.graph_name = f.graph_name AND r.coordinate = f.coordinate
+                                                 AND r.call = f.call AND r.method_descriptor = f.method_descriptor
+                                                 AND r.position = p.position))) c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_candidate o
+                    WHERE o.graph_name = c.graph_name AND o.coordinate = c.coordinate
+                      AND o.call = c.call AND o.method_descriptor <> c.method_descriptor
+                      AND NOT EXISTS (SELECT 1 FROM code_method_parameter p
+                                       WHERE p.source_name = o.method_source_name AND p.class_name = o.method_class_name
+                                         AND p.method_name = o.method_name AND p.descriptor = o.method_descriptor
+                                         AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_rule r
+                                                          WHERE r.graph_name = o.graph_name AND r.coordinate = o.coordinate
+                                                            AND r.call = o.call AND r.method_descriptor = o.method_descriptor
+                                                            AND r.position = p.position)));
+COMMENT ON VIEW graphitron_occurrence_call_pin IS 'The method one call of one occurrence makes: one row per call some candidate pins. For example Query.filmsByPath''s producer call pins FilmService#filmsByIds, its one candidate.';
+
+CREATE VIEW graphitron_occurrence_producer_service_rule
+  (graph_name, coordinate, kind, call, call_kind, method_source_name, method_class_name, method_name,
+   method_descriptor, constructor_source_name, constructor_class_name, constructor_descriptor) AS
+-- The method a SERVICE producer calls and, where it is an instance method, the constructor its
+-- object is made with: the producer's call.
+SELECT p.graph_name, p.coordinate, p.kind, c.call, c.call_kind, c.method_source_name, c.method_class_name,
+       c.method_name, c.method_descriptor, h.constructor_source_name, h.constructor_class_name,
+       h.constructor_descriptor
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_call_pin c
+    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate AND c.call = 'producer'
   LEFT JOIN graphitron_service_holder h
-    ON h.graph_name = s.graph_name AND h.type_name = s.type_name AND h.field_name = s.field_name
+    ON h.graph_name = f.graph_name AND h.type_name = f.type_name AND h.field_name = f.field_name
  WHERE p.kind = 'SERVICE';
 COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_service, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.graph_name';
@@ -11076,9 +11378,9 @@ COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the serv
 -- Every call an occurrence makes, of whatever kind: the supertype each call's own relation hangs
 -- under, so a call's parameter fills have one foreign key to reference whichever call they fill.
 CREATE VIEW graphitron_occurrence_call_rule (graph_name, coordinate, call, call_kind) AS
--- A service producer's call.
+-- Each call's pinned method's call.
 SELECT graph_name, coordinate, call, call_kind
-  FROM graphitron_occurrence_producer_service_rule;
+  FROM graphitron_occurrence_call_pin;
 COMMENT ON VIEW graphitron_occurrence_call_rule IS 'One row the call rule computes, in the shape graphitron_occurrence_call stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_call, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_call_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call.coordinate';
@@ -11154,233 +11456,6 @@ COMMENT ON COLUMN graphitron_occurrence_producer_service.touched_at IS 'the read
 -- A service call's parameters and what fills each one: the fills an author wrote, the rule over
 -- them and the inferred fills, the stored answer, the PARAMETER binding of an argument a call
 -- consumes, and the parameters no fill or two fills reach.
-CREATE VIEW graphitron_occurrence_call_parameter_written
-  (graph_name, coordinate, position, parameter_name, fill, landing_coordinate, context_key,
-   session_member) AS
-WITH call_parameter (graph_name, coordinate, element_coordinate, position, parameter_name) AS (
-  SELECT s.graph_name, s.coordinate, o.element_coordinate, p.position, p.parameter_name
-    FROM graphitron_occurrence_producer_service s
-    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
-    JOIN code_method_parameter p
-      ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
-     AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
-)
--- $session, or one member of it, named by a pair.
-SELECT c.graph_name, c.coordinate, c.position, c.parameter_name,
-       CASE WHEN pr.bound_to = '$session' THEN 'SESSION' ELSE 'SESSION_MEMBER' END,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-       CASE WHEN pr.bound_to <> '$session' THEN SUBSTRING(pr.bound_to, 10) END
-  FROM call_parameter c
-  JOIN graphitron_argmapping_pair pr
-    ON pr.graph_name = c.graph_name AND pr.coordinate = c.element_coordinate
-   AND pr.directive_name = 'service' AND pr.owner = 'service'
-   AND pr.parameter_name = c.parameter_name
- WHERE pr.bound_to = '$session' OR pr.bound_to LIKE '$session.%'
-UNION ALL
--- An argument path a pair names, where it lands under this occurrence of the call.
-SELECT c.graph_name, c.coordinate, c.position, c.parameter_name, 'ARGUMENT', l.landing_coordinate,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM call_parameter c
-  JOIN graphitron_argmapping_landing l
-    ON l.graph_name = c.graph_name AND l.coordinate = c.element_coordinate
-   AND l.directive_name = 'service' AND l.owner = 'service'
-   AND l.parameter_name = c.parameter_name AND l.call_coordinate = c.coordinate
-UNION ALL
--- A context key, from a $context pair or a contextArguments element.
-SELECT c.graph_name, c.coordinate, c.position, c.parameter_name, 'CONTEXT_KEY',
-       CAST(NULL AS VARCHAR), k.context_key, CAST(NULL AS VARCHAR)
-  FROM call_parameter c
-  JOIN graphitron_call_context_key k
-    ON k.graph_name = c.graph_name AND k.coordinate = c.element_coordinate
-   AND k.directive_name = 'service' AND k.owner = 'service'
-   AND k.parameter_name = c.parameter_name;
-COMMENT ON VIEW graphitron_occurrence_call_parameter_written IS 'A fill an author wrote for one parameter of one service call: a $session pair, an argument path a pair lands, or a context key. For example argMapping: "ids: input.ids" on @service at Query.filmsByPath draws an ARGUMENT row landing on Query.filmsByPath(input.ids:).';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.coordinate IS 'the producer occurrence making the call';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.position IS 'the parameter''s position in the resolved method';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.parameter_name IS 'the parameter''s name, which the written fill names';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.fill IS 'SESSION, SESSION_MEMBER, ARGUMENT or CONTEXT_KEY';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.landing_coordinate IS 'on ARGUMENT, the argument or input-field occurrence the pair''s path lands on';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.context_key IS 'on CONTEXT_KEY, the key the request context carries the value under';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_written.session_member IS 'on SESSION_MEMBER, the member of the session handle';
-
-CREATE VIEW graphitron_occurrence_call_parameter_candidate
-  (graph_name, coordinate, position, parameter_name, argument_coordinate) AS
--- A parameter no written fill, no type, no name and no source fills, paired with each argument of
--- the call no pair has taken and no parameter is named after, where the two agree on type: the
--- same list-ness, and an element the argument's value can arrive as. An input object arrives as a
--- class the input is built into, which nothing in the schema names, so any class outside the JDK
--- qualifies; an enum as a class or a String; a scalar as its Java type, a built-in's by graphql-java
--- and any other's by the constant its @scalarType names. A primitive erases to no class, so its
--- element is the declared type, int for int. Where one named parameter and one argument are all
--- that is left of the call, they pair whenever their list-ness agrees and type cannot tell them
--- apart: an input object, or a scalar no Java type is known for.
-WITH open_parameter (graph_name, coordinate, position, parameter_name, element, many) AS (
-  SELECT s.graph_name, s.coordinate, p.position, p.parameter_name,
-         COALESCE(p.element_class, p.erased_class, p.parameter_type), COALESCE(p.delivery, '') = 'MANY'
-    FROM graphitron_occurrence_producer_service s
-    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
-    JOIN code_method_parameter p
-      ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
-     AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
-   WHERE p.role NOT IN ('DSL_CONTEXT', 'CONFIGURATION')
-     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
-                      WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
-                        AND pr.directive_name = 'service' AND pr.owner = 'service'
-                        AND pr.parameter_name = p.parameter_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_call_context_key k
-                      WHERE k.graph_name = s.graph_name AND k.coordinate = o.element_coordinate
-                        AND k.directive_name = 'service' AND k.owner = 'service'
-                        AND k.parameter_name = p.parameter_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence a
-                      WHERE a.graph_name = s.graph_name AND a.parent_coordinate = s.coordinate
-                        AND a.name = p.parameter_name AND a.kind = 'FIELD_ARGUMENT')
-     AND NOT (COALESCE(p.delivery, '') = 'MANY'
-              AND EXISTS (SELECT 1 FROM graphitron_occurrence_source os
-                           WHERE os.graph_name = s.graph_name AND os.coordinate = s.coordinate))
-),
-open_argument (graph_name, call_coordinate, coordinate, kind, named_type, is_list) AS (
-  SELECT a.graph_name, a.parent_coordinate, a.coordinate, t.kind, ga.named_type, ga.is_list
-    FROM graphitron_occurrence a
-    JOIN graphitron_occurrence_producer_service s
-      ON s.graph_name = a.graph_name AND s.coordinate = a.parent_coordinate
-    JOIN graphitron_argument ga ON ga.graph_name = a.graph_name AND ga.coordinate = a.element_coordinate
-    JOIN graphitron_type t ON t.graph_name = ga.graph_name AND t.type_name = ga.named_type
-   WHERE a.kind = 'FIELD_ARGUMENT'
-     AND NOT EXISTS (SELECT 1 FROM code_method_parameter p
-                      WHERE p.source_name = s.method_source_name AND p.class_name = s.method_class_name
-                        AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
-                        AND p.parameter_name = a.name)
-     -- A pair's path landing on the argument or under it takes the argument.
-     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                      JOIN graphitron_occurrence lo
-                        ON lo.graph_name = l.graph_name AND lo.coordinate = l.landing_coordinate
-                     WHERE l.graph_name = a.graph_name AND l.call_coordinate = a.parent_coordinate
-                       AND l.directive_name = 'service' AND l.owner = 'service'
-                       AND lo.argument_coordinate = a.coordinate)
-)
-SELECT p.graph_name, p.coordinate, p.position, p.parameter_name, a.coordinate
-  FROM open_parameter p
-  JOIN open_argument a ON a.graph_name = p.graph_name AND a.call_coordinate = p.coordinate
- WHERE a.is_list = p.many
-   AND (CASE a.kind
-         WHEN 'INPUT_OBJECT' THEN POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%'
-         WHEN 'ENUM' THEN (POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%')
-                          OR p.element = 'java.lang.String'
-         WHEN 'SCALAR' THEN EXISTS (
-           SELECT 1 FROM (VALUES ('ID', 'java.lang.String'), ('String', 'java.lang.String'),
-                                 ('Int', 'java.lang.Integer'), ('Int', 'int'),
-                                 ('Float', 'java.lang.Double'), ('Float', 'double'),
-                                 ('Boolean', 'java.lang.Boolean'), ('Boolean', 'boolean'))
-                         b (scalar, java_class)
-            WHERE b.scalar = a.named_type AND b.java_class = p.element)
-           OR EXISTS (SELECT 1 FROM graphql_directive_application da
-                        JOIN graphitron_ast_scalar_type_entry e
-                          ON e.graph_name = da.graph_name AND e.source_name = da.source_name
-                         AND e.source_line = da.source_line AND e.source_column = da.source_column
-                        JOIN code_scalar_constant k
-                          ON k.class_name = e.scalar_ref_class_part
-                         AND k.field_name = e.scalar_ref_field_part
-                       WHERE da.graph_name = a.graph_name AND da.coordinate = a.named_type
-                         AND da.directive_name = 'scalarType' AND da.ordinal = 0
-                         AND k.input_type = p.element)
-         ELSE FALSE END
-        OR (p.parameter_name IS NOT NULL
-            AND (a.kind = 'INPUT_OBJECT'
-                 OR (a.kind = 'SCALAR'
-                     AND a.named_type NOT IN ('ID', 'String', 'Int', 'Float', 'Boolean')
-                     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
-                                       JOIN graphitron_ast_scalar_type_entry e
-                                         ON e.graph_name = da.graph_name
-                                        AND e.source_name = da.source_name
-                                        AND e.source_line = da.source_line
-                                        AND e.source_column = da.source_column
-                                       JOIN code_scalar_constant k
-                                         ON k.class_name = e.scalar_ref_class_part
-                                        AND k.field_name = e.scalar_ref_field_part
-                                      WHERE da.graph_name = a.graph_name
-                                        AND da.coordinate = a.named_type
-                                        AND da.directive_name = 'scalarType'
-                                        AND da.ordinal = 0)))
-            AND NOT EXISTS (SELECT 1 FROM open_parameter p2
-                             WHERE p2.graph_name = p.graph_name AND p2.coordinate = p.coordinate
-                               AND p2.position <> p.position AND p2.parameter_name IS NOT NULL)
-            AND NOT EXISTS (SELECT 1 FROM open_argument a2
-                             WHERE a2.graph_name = a.graph_name
-                               AND a2.call_coordinate = a.call_coordinate
-                               AND a2.coordinate <> a.coordinate)));
-COMMENT ON VIEW graphitron_occurrence_call_parameter_candidate IS 'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree, or that are the call''s last open parameter and argument where type cannot tell them apart. For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two, and a child call whose source fills its Set of records pairs its one Date argument with its one LocalDate parameter, whatever the two are named.';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.coordinate IS 'the producer occurrence making the call';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.position IS 'the open parameter''s position';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.parameter_name IS 'the open parameter''s name, what a message names';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_candidate.argument_coordinate IS 'the argument occurrence it could take';
-
-CREATE VIEW graphitron_occurrence_call_parameter_rule
-  (graph_name, coordinate, position, parameter_name, fill, landing_coordinate, context_key,
-   session_member, call, call_kind) AS
--- Every fill the rule states is a service producer's call's.
-SELECT r.graph_name, r.coordinate, r.position, r.parameter_name, r.fill, r.landing_coordinate,
-       r.context_key, r.session_member, 'producer', 'SERVICE'
-  FROM (
--- A parameter with one written fill takes it.
-SELECT w.graph_name, w.coordinate, w.position, w.parameter_name, w.fill, w.landing_coordinate,
-       w.context_key, w.session_member
-  FROM graphitron_occurrence_call_parameter_written w
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_written o
-                    WHERE o.graph_name = w.graph_name AND o.coordinate = w.coordinate
-                      AND o.position = w.position
-                      AND (o.fill <> w.fill
-                           OR o.landing_coordinate IS DISTINCT FROM w.landing_coordinate
-                           OR o.context_key IS DISTINCT FROM w.context_key
-                           OR o.session_member IS DISTINCT FROM w.session_member))
-UNION
--- A parameter nothing written names is inferred, in this order: the jOOQ context by its type, then
--- an argument of the call by the parameter's name, then the call's source by a collection's shape
--- where the call has one, then an argument by type. A parameter a pair names is the pair's to fill even where the pair fills
--- nothing, so a pair whose path does not land is the pair's defect and no inference stands in.
-SELECT s.graph_name, s.coordinate, p.position, p.parameter_name,
-       CASE WHEN p.role IN ('DSL_CONTEXT', 'CONFIGURATION') THEN 'DSL_CONTEXT'
-            WHEN a.coordinate IS NOT NULL THEN 'ARGUMENT'
-            ELSE 'SOURCE' END,
-       CASE WHEN p.role NOT IN ('DSL_CONTEXT', 'CONFIGURATION') THEN a.coordinate END,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM graphitron_occurrence_producer_service s
-  JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
-  JOIN code_method_parameter p
-    ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
-   AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
-  -- The call's own argument of the parameter's name, one step below the call.
-  LEFT JOIN graphitron_occurrence a
-    ON a.graph_name = s.graph_name AND a.parent_coordinate = s.coordinate
-   AND a.name = p.parameter_name AND a.kind = 'FIELD_ARGUMENT'
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
-                    WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
-                      AND pr.directive_name = 'service' AND pr.owner = 'service'
-                      AND pr.parameter_name = p.parameter_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_call_context_key k
-                    WHERE k.graph_name = s.graph_name AND k.coordinate = o.element_coordinate
-                      AND k.directive_name = 'service' AND k.owner = 'service'
-                      AND k.parameter_name = p.parameter_name)
-   AND (p.role IN ('DSL_CONTEXT', 'CONFIGURATION') OR a.coordinate IS NOT NULL
-        OR (p.delivery = 'MANY'
-            AND EXISTS (SELECT 1 FROM graphitron_occurrence_source os
-                         WHERE os.graph_name = s.graph_name AND os.coordinate = s.coordinate)))
-UNION
--- Last, by type: a parameter and an argument that are each other's only candidate.
-SELECT c.graph_name, c.coordinate, c.position, c.parameter_name, 'ARGUMENT', c.argument_coordinate,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM graphitron_occurrence_call_parameter_candidate c
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate o
-                    WHERE o.graph_name = c.graph_name AND o.coordinate = c.coordinate
-                      AND o.position = c.position AND o.argument_coordinate <> c.argument_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate o
-                    WHERE o.graph_name = c.graph_name AND o.argument_coordinate = c.argument_coordinate
-                      AND o.position <> c.position)
-  ) r (graph_name, coordinate, position, parameter_name, fill, landing_coordinate, context_key,
-       session_member);
-COMMENT ON VIEW graphitron_occurrence_call_parameter_rule IS 'One row the call-parameter rule computes, in the shape graphitron_occurrence_call_parameter stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.';
-
 CREATE TABLE graphitron_occurrence_call_parameter (
   graph_name         VARCHAR   NOT NULL,
   coordinate         VARCHAR   NOT NULL,
@@ -11455,6 +11530,9 @@ CREATE VIEW graphitron_occurrence_call_parameter_defect
 -- Two written fills for one parameter: nothing says which, so the rule takes neither.
 SELECT DISTINCT w.graph_name, w.coordinate, w.position, w.parameter_name, 'PARAMETER_FILLED_TWICE'
   FROM graphitron_occurrence_call_parameter_written w
+  JOIN graphitron_occurrence_producer_service ps
+    ON ps.graph_name = w.graph_name AND ps.coordinate = w.coordinate AND ps.call = w.call
+   AND ps.method_descriptor = w.method_descriptor
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter c
                     WHERE c.graph_name = w.graph_name AND c.coordinate = w.coordinate
                       AND c.call = 'producer' AND c.position = w.position)
@@ -11463,6 +11541,9 @@ UNION ALL
 -- an argument it could take could go to another parameter, so nothing says which.
 SELECT DISTINCT c.graph_name, c.coordinate, c.position, c.parameter_name, 'PARAMETER_AMBIGUOUS'
   FROM graphitron_occurrence_call_parameter_candidate c
+  JOIN graphitron_occurrence_producer_service ps
+    ON ps.graph_name = c.graph_name AND ps.coordinate = c.coordinate AND ps.call = c.call
+   AND ps.method_descriptor = c.method_descriptor
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter s
                     WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
                       AND s.call = 'producer' AND s.position = c.position)
@@ -11480,6 +11561,7 @@ SELECT s.graph_name, s.coordinate, p.position, p.parameter_name, 'PARAMETER_UNFI
                       AND c.call = s.call AND c.position = p.position)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_written w
                     WHERE w.graph_name = s.graph_name AND w.coordinate = s.coordinate
+                      AND w.call = s.call AND w.method_descriptor = s.method_descriptor
                       AND w.position = p.position)
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
@@ -11487,6 +11569,7 @@ SELECT s.graph_name, s.coordinate, p.position, p.parameter_name, 'PARAMETER_UNFI
                       AND pr.parameter_name = p.parameter_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate c
                     WHERE c.graph_name = s.graph_name AND c.coordinate = s.coordinate
+                      AND c.call = s.call AND c.method_descriptor = s.method_descriptor
                       AND c.position = p.position);
 COMMENT ON VIEW graphitron_occurrence_call_parameter_defect IS 'A parameter of a service call that no fill or two fills reach: one row per producer occurrence, parameter and code. For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
@@ -16594,10 +16677,9 @@ INSERT INTO meta_stage VALUES
   ('occurrence-node-ids', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceNodeIds'),
   ('occurrence-columns', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceColumns'),
   ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('occurrence-call-parameters', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceCallParameters'),
-  ('occurrence-participants', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('outbox', 'graphitron', 33, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 34, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-participants', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('outbox', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -16688,7 +16770,10 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_join_path_step_primary_key'),
   ('occurrence-depths', 'graphitron_join_path_step_routine'),
   ('occurrence-depths', 'graphitron_join_path_stop'),
+  ('occurrence-depths', 'graphitron_occurrence_binding'),
   ('occurrence-depths', 'graphitron_occurrence_call'),
+  ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
+  ('occurrence-depths', 'graphitron_occurrence_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_producer'),
   ('occurrence-depths', 'graphitron_occurrence_producer_key_row'),
   ('occurrence-depths', 'graphitron_occurrence_producer_result'),
@@ -16710,9 +16795,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-columns', 'graphitron_occurrence_column'),
   ('occurrence-values', 'graphitron_occurrence_binding'),
   ('occurrence-values', 'graphitron_occurrence_binding_value'),
-  ('occurrence-call-parameters', 'graphitron_occurrence_binding'),
-  ('occurrence-call-parameters', 'graphitron_occurrence_call_parameter'),
-  ('occurrence-call-parameters', 'graphitron_occurrence_parameter'),
   ('occurrence-participants', 'graphitron_occurrence_participant'),
   ('outbox', 'graphitron_entry_defect'),
   ('outbox', 'graphitron_outbox_key'),
@@ -17142,15 +17224,18 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence-call',
    'one call one occurrence makes, in one graph',
    'graph_name, coordinate, call', 'sdl'),
+  ('graph-occurrence-call-candidate',
+   'one method one call of one occurrence could be, in one graph',
+   'graph_name, coordinate, call, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('graph-occurrence-call-parameter',
    'one parameter position of one call one occurrence makes, in one graph',
    'graph_name, coordinate, call, position', 'sdl'),
   ('graph-occurrence-call-parameter-fill',
    'one fill an author wrote for one parameter position of one producer occurrence''s call, in one graph',
-   'graph_name, coordinate, position, fill, landing_coordinate, context_key, session_member', 'sdl'),
+   'graph_name, coordinate, call, method_descriptor, position, fill, landing_coordinate, context_key, session_member', 'sdl'),
   ('graph-occurrence-call-parameter-candidate',
    'one argument one open parameter of one producer occurrence''s call could take by type, in one graph',
-   'graph_name, coordinate, position, argument_coordinate', 'sdl'),
+   'graph_name, coordinate, call, method_descriptor, position, argument_coordinate', 'sdl'),
   ('graph-occurrence-call-parameter-defect',
    'one parameter position of one producer occurrence''s call that one rule refuses, in one graph',
    'graph_name, coordinate, position, code', 'sdl'),
@@ -17700,11 +17785,11 @@ INSERT INTO meta_relation VALUES
    'For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.',
    'The COLUMN subtype of graphitron_occurrence_binding, on its key and pinned to its kind by the unique key beside it. Read at the occurrence rather than at the field, since one field read through a nesting type reached from two tables lands on each, and at the landing rather than the start, since the path decides where the column is. Stored because a foreign key can reference a column only where it is written down, and every reader of a scalar''s column, the generator''s projection, the editor''s scope and the defects alike, asks this one question. The column is referenced directly and the binding cascades with it, a derivation going with what it was derived from.'),
   ('graphitron_occurrence_call_parameter_written', 'graph-occurrence-call-parameter-fill', 'graphitron',
-   'A fill an author wrote for one parameter of one service call: a $session pair, an argument path a pair lands, or a context key.',
+   'A fill an author wrote for one parameter of one candidate method of one service call: a $session pair, an argument path a pair lands, or a context key.',
    'For example argMapping: "ids: input.ids" on @service at Query.filmsByPath draws an ARGUMENT row landing on Query.filmsByPath(input.ids:).',
    'A view because both the rule and the defect read it: the rule takes a parameter''s one written fill, and two written fills are the defect''s, so the written fills are stated once beneath both.'),
   ('graphitron_occurrence_call_parameter_candidate', 'graph-occurrence-call-parameter-candidate', 'graphitron',
-   'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, open parameter and argument whose list-ness and element type agree, or that are the call''s last open parameter and argument where type cannot tell them apart.',
+   'An argument of a service call a parameter nothing else fills could take by type: one row per producer occurrence, candidate method, open parameter and argument whose list-ness and element type agree, or that are the call''s last open parameter and argument where type cannot tell them apart.',
    'For example a root call whose one argument input is a list of an input object and whose one parameter inputs is a List of a record class pairs the two, and a child call whose source fills its Set of records pairs its one Date argument with its one LocalDate parameter, whatever the two are named.',
    'A view because both the rule and the defect read it: a pair that is each other''s only candidate binds, and a parameter whose candidates do not pair off is ambiguous.'),
   ('graphitron_occurrence_participant_rule', 'graph-occurrence-participant', 'graphitron',
@@ -17716,7 +17801,7 @@ INSERT INTO meta_relation VALUES
    'For example Query.search, returning Searchable, has Film told apart by its table film and Actor by actor, and Query.content, returning Content, has FilmContent told apart by content_type holding FILM.',
    'Stored because the polymorphic re-read and the generated type resolver both ask it, and a foreign key can reference the discriminating column only where it is written down. Keyed at the occurrence rather than the type, since a polymorphic parent is spelled by its participant and no child of the occurrence states them; derived from the type''s directives, so two occurrences of one container agree.'),
   ('graphitron_occurrence_call_parameter_rule', 'graph-occurrence-call-parameter', 'graphitron',
-   'One row the call-parameter rule computes, in the shape graphitron_occurrence_call_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
+   'One row the call-parameter rule computes for one candidate method, in the shape graphitron_occurrence_call_parameter stores for the method the call pins: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_parameter', 'graph-occurrence-call-parameter', 'graphitron',
@@ -17763,6 +17848,14 @@ INSERT INTO meta_relation VALUES
    'One call an occurrence makes: one row per occurrence and call, of whatever kind.',
    'For example Query.filmsByPath''s service call is its producer call, and each parameter of FilmService#filmsByIds is filled under it.',
    'The supertype every call''s own relation hangs under, keyed the way graphitron_occurrence_binding is, so the parameter fills have one foreign key to whichever call they fill and a fill only some calls take is a check on the kind they carry. Written with the producers, per depth, before the call subtypes that reference it.'),
+  ('graphitron_occurrence_call_candidate', 'graph-occurrence-call-candidate', 'graphitron',
+   'One method one call of one occurrence could be: one row per call and candidate method.',
+   'For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.',
+   'The methods the fills are stated for before a call is pinned, so whether a parameter is fillable is decided once, by the fill rule, and the pin reads it. A service call has the one method its reference names; a condition has each overload of its name.'),
+  ('graphitron_occurrence_call_pin', 'graph-occurrence-call', 'graphitron',
+   'The method one call of one occurrence makes: one row per call some candidate pins.',
+   'For example Query.filmsByPath''s producer call pins FilmService#filmsByIds, its one candidate.',
+   'A call with one candidate pins it, so a parameter nothing fills is that method''s defect; a call with several pins the one every position of which a fill reaches. Read by the call and its subtypes'' rules, which store the pin.'),
   ('graphitron_occurrence_call_rule', 'graph-occurrence-call', 'graphitron',
    'One row the call rule computes, in the shape graphitron_occurrence_call stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_call, which is the name every reader spells.',

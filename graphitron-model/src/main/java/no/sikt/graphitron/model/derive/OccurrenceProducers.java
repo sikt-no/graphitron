@@ -32,8 +32,9 @@ import static org.jooq.impl.DSL.val;
  * beside each, marking what this reading states; and {@code graphitron_occurrence_call} for each
  * producer's call, the supertype the call is a subtype of too.
  *
- * <p>The first step of the assembly's per-depth loop, before {@link OccurrenceSources} states the
- * depth's sources, which read the producers of their depth. The rules read today's field-keyed
+ * <p>The first step of the assembly's per-depth loop, before {@link OccurrenceCallParameters} fills the
+ * depth's calls and {@link OccurrenceSources} states the depth's sources, which read the producers
+ * of their depth and what they produce. The rules read today's field-keyed
  * producer relations through each occurrence's declared field, so nothing they read is written in
  * the loop; reading the parent's source is what the per-depth placement is for. {@link #sweep} runs
  * once after the loop.
@@ -42,7 +43,10 @@ public final class OccurrenceProducers {
 
     private OccurrenceProducers() {}
 
-    /** States the producers of the occurrences at {@code depth}, then their starts and calls. */
+    /**
+     * States the producers of the occurrences at {@code depth}, then their starts and the calls they
+     * pin; {@link #writeResults} states what they produce once the calls are filled.
+     */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var r = GRAPHITRON_OCCURRENCE_PRODUCER_RULE;
@@ -65,7 +69,13 @@ public final class OccurrenceProducers {
             graph, depth, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE_RULE,
             graph, depth, touchedAt);
-        // What it produces, after the call, which a service's result reads.
+    }
+
+    /**
+     * States what the producers at {@code depth} produce, after their calls are pinned and filled:
+     * a service's result reads the method its call pinned.
+     */
+    public static void writeResults(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT_RULE,
             graph, depth, touchedAt);
     }

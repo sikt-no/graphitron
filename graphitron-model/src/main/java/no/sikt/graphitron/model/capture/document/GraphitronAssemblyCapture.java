@@ -13,7 +13,6 @@ import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
-import no.sikt.graphitron.model.derive.OccurrenceCallParameters;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
 import no.sikt.graphitron.model.derive.OccurrenceValues;
@@ -133,9 +132,9 @@ public final class GraphitronAssemblyCapture {
         // just written and the path elements above; the walk departs from these.
         new AnchorStage("field-key-rows", FieldKeyRows.class,
             FieldKeyRows::derive),
-        // Each occurrence's producer, source, needs and paths, a depth at a time, off the
-        // occurrences, the key rows and the claims above: one stage, each depth reading what the
-        // depth above it wrote.
+        // Each occurrence's producer, its calls' pins and fills, source, needs and paths, a depth at a
+        // time, off the occurrences, the landings, the key rows and the claims above: one stage, each
+        // depth reading what the depth above it wrote.
         new AnchorStage("occurrence-depths", OccurrenceDepths.class,
             OccurrenceDepths::derive),
         // The key columns each node id at an occurrence carries, where the needs just written land.
@@ -147,10 +146,6 @@ public final class GraphitronAssemblyCapture {
         // The member each occurrence with an object source reads, off the accessor paths above.
         new AnchorStage("occurrence-values", OccurrenceValues.class,
             OccurrenceValues::derive),
-        // What fills each parameter of each service call, off the calls, landings and sources above,
-        // with the PARAMETER binding of each argument a call takes.
-        new AnchorStage("occurrence-call-parameters", OccurrenceCallParameters.class,
-            OccurrenceCallParameters::derive),
         // The types each polymorphic occurrence's rows may be and how a row is told apart as each, off
         // the occurrences, the table types and the discriminator directives.
         new AnchorStage("occurrence-participants", OccurrenceParticipants.class,

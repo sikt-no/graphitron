@@ -515,15 +515,20 @@ static method needs no holder.
       (`CallQuery`, `BuildQuery`, `FillQuery`) keep filtering to service calls, and a routine
       parameter filled from a `$source` column is a fill of its own, never `SOURCE`, which is the
       batch's keys; the routine call node rebases onto this one (Alf and F, 2026-11-09).
-    * **A call's fills are stated per candidate overload, and its method is the one candidate every position fills** `open`. One
-      stage owns every fill: the candidates' fills, the pin and the stored fills, for producer calls
-      and conditions alike, placed after the join paths and before anything reading a fill, so
-      whether a parameter is fillable is decided once rather than by the pin and again by the fill.
-      A call with no candidate or several is a defect at its own grain, projected to the written
-      position naming the participant, since an inherited `@condition` can pin for one
-      implementation and not another.
-    * **A `@condition` is a call per type its occurrence's rows are** `blocked`,
-      on "A call's fills are stated per candidate overload, and its method is the one candidate every position fills".
+    * **A call's fills are stated per candidate overload, and its method is the one candidate every position fills** `done`.
+      `graphitron_occurrence_call_candidate` states each call's candidate methods and the fill views
+      are keyed by candidate; `graphitron_occurrence_call_pin` takes a call's one candidate, filled or
+      not, so an unfilled parameter stays its method's defect, or of several the one every position
+      fills. `occurrence-call-parameters` folds into `occurrence-depths`, each depth's producers, then
+      its calls' pins and fills, then what they produce, then its sources: `SOURCE` is inferred from
+      the producer starting as `CHILD` rather than read off the call's source, which read the result
+      the pin decides. A service keeps the one candidate its name-unique reference resolves, so
+      nothing a reader sees changes; overloaded services are their own node (Alf, 2026-11-09).
+    * **An overloaded `@service` method is pinned by its fills** `open`, off the critical path. A
+      service's candidates are every method of its reference's class and name rather than the one a
+      name-unique reference resolves, so an overload set the store refuses today pins the overload every
+      position fills, agreeing with `ServiceCatalog`'s choice where the walk has one; a capability change.
+    * **A `@condition` is a call per type its occurrence's rows are** `open`.
       `graphitron_occurrence_condition(graph, coordinate,
       target_type)`, a call subtype, one row per occurrence carrying a `@condition` and per type its
       need reaches, the table read through the occurrence's join path where it has one and off the
