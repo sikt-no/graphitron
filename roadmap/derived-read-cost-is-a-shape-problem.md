@@ -600,9 +600,13 @@ static method needs no holder.
   so graphql-java converts arguments both ways and every `valueOf` in the emitters goes; the store
   states each enum's Java class and whether a class is an enum, and uses that disagree are decided
   there. Output serializes unchanged, graphql-java matching a constant or its name either way.
-* **The service fields are emitted from the store** `blocked`, E's, on "A producer's fetcher parts are emitted from the store". The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
+* **The service fields are emitted from the store** `open`, E's. The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
   the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
-  changes on purpose, its behaviour does not.
+  changes on purpose, its behaviour does not. It goes field by field as the parts land:
+  `ServiceEmission` emits a field the store states whole, the classified emitters the rest, and
+  `EmissionCensusTest` pins the count, 104 of the example schema's services on 2026-11-09, the 19
+  left being the `RECORD_BUILD`, `BUILD_REFUSED` and `VALIDATION` lines its two children and the
+  validation pass clear.
   * **A record argument's input fields bind the record's columns** `blocked`, on F's `call_parameter`
     widening, where an argument whose parameter is a jOOQ record of table T lands on T, its input fields
     too. Then `BuildQuery`'s columns and the decode read it, and the ten `RECORD_BUILD` services and the
@@ -635,17 +639,22 @@ static method needs no holder.
   * **A split child `@routine` is a path routine** `blocked`, F's, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
     `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
     the walk's first step from the parent's keys.
-* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "The outbox on a service is emitted where the service call is".
+* **An `@outbox` on a `@service` mutation emits from the store** `open`, off the critical path.
   R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
   It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
   `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
   off the returned value, since a service has no written key to read rows back by.
-  * **The outbox on a service is emitted where the service call is** `blocked`, on "The service fields are emitted from the store".
-    The store-emitted service fetcher calls R1113's companion after the service returns, reading the
-    `$result` keys off the returned object through their `VALUE` bindings ("A payload key is a filled
-    parameter of its message"), and the `OUTBOX_NOT_A_WRITE` arm admits a service write
-    in the same commit, so a service `@outbox` is never accepted without being emitted. R1101's phase
-    2, nested scopes joining the field's transaction, which it also needed, has shipped.
+  * **The outbox on a service is emitted where the service call is** `open`. Field by field with
+    the flip rather than after it (Alf, 2026-11-09): a service `@outbox` is emitted wherever
+    `ServiceEmission` emits its field, and refused at generation, naming the census verdict,
+    wherever it does not yet, so a service `@outbox` is never accepted without being emitted and
+    the refusal shrinks with the census and goes with the flip's last field.
+    `OUTBOX_NOT_A_WRITE` admits a `@service` on a mutation; the emitted body runs inside one owned
+    transaction whose `DSLContext` the service is handed, then R1113's companion, which reads each
+    `$result` key off the returned value through its `VALUE` bindings' members, a node id from the
+    record a member hands back; a lifted service's keys read no result, which no key rule admits.
+    R1101's phase 2, nested scopes joining the field's transaction, which it also needed, has
+    shipped.
 * **An `@outbox` on a `@routine` mutation emits from the store** `open`, off the critical path.
   R1113's phase 3 for routine writes. A routine write is emitted from the store already
   (`RoutineWriteEmitter`), and like a DML write it captures, inside its transaction, what it reads
