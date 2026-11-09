@@ -1505,7 +1505,7 @@ in capture, and a path is one forward walk from source to target.
 
 * **The data model is an architecture page beside the fact model** `open`. A page under
   `docs/architecture/explanation/` states the coordinate, its small facts and the emitter decision,
-  rewritten from R333 rather than copied, landing with or after R983's vocabulary.
+  rewritten from R333 rather than copied, landing with or after R1163's vocabulary.
 * **The documentation examples render without the walk** `open`. `QueryViewRenderer` builds its
   schema with `GraphitronSchemaBuilder`; it reads the emitted schema capture builds instead, so a
   page's examples outlive the walk.

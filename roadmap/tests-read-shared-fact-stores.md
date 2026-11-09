@@ -237,7 +237,7 @@ The migration runs as a pipeline of agents, carried by one skill (`fact-document
 ### Coordination with other items
 
 * **R876** deletes `SeededStore` and the classification corpus, and plans emitters "unit-tested from captured fact documents". This item delivers that half and describes neither deletion as done.
-* **R983** rewrites `fact-model.adoc`'s "Enforced by" paragraph; whichever lands second rebases on the other's wording.
+* **R1163** rewrites `fact-model.adoc`'s "Enforced by" paragraph; whichever lands second rebases on the other's wording.
 * **R1131** step 7 would move suites into separate test modules and update `testing.adoc`. Where both are open, this item owns `testing.adoc`'s structure and step 7 restates module locations into it.
 * **R764** settles which `junit-platform.properties` each module sees. `FactGraphs` reads nothing from it, so the two are independent.
 * **R851** retires the corpus's verdict directives and is affected by the corpus retiring, not by this item.
