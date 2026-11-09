@@ -39,6 +39,12 @@ import java.util.regex.Pattern;
  * empty filter list filters nothing. A value every step of whose path is declared non-null is always
  * present and is compared unguarded.
  *
+ * <p>A value whose path steps from the field's table to another compares at the table the path lands
+ * on, inside a correlated {@code EXISTS}: the first step correlates to the condition's table, each later
+ * step joins the one before on its key's columns and its condition method where it has them, so a
+ * path to many rows filters without multiplying the field's own. Each step's table is aliased under
+ * the table the condition is handed, so a condition applied inside another statement stays distinct.
+ *
  * <p>A {@code @lookupKey} argument is the lookup's key, not a filter, and writes nothing here. What
  * this emitter does not write yet it says, and emits nothing for the occurrence: see {@link Reason}.
  * The method name is the caller's.
@@ -66,7 +72,7 @@ public final class ConditionEmitter {
         CONSUMED,
         /** A {@code @condition} is written on the field or under it, composed with the generated terms. */
         AUTHORED,
-        /** A term reaches its column over a path from the field's table, a correlated {@code EXISTS}. */
+        /** A term reaches its column over a path the store states no steps for, or one calling a routine. */
         REACHED,
         /** A term is a node id, decoded into its key columns. */
         NODE_ID,
@@ -98,7 +104,7 @@ public final class ConditionEmitter {
             return new Result.Nothing();
         }
         for (var term : terms) {
-            var reason = reasonFor(term);
+            var reason = reasonFor(row, term);
             if (reason.isPresent()) {
                 return new Result.NotYet(reason.get(), term.coordinate());
             }
@@ -114,24 +120,31 @@ public final class ConditionEmitter {
         var adds = CodeBlock.builder();
         for (var term : terms) {
             var local = local(term, locals);
-            var column = CodeBlock.of("table.$L", term.column().javaName());
+            var hops = hops(method, term, local);
+            var alias = hops.isEmpty() ? "table" : hops.getLast();
+            var column = CodeBlock.of("$L.$L", alias, term.column().javaName());
             var type = type(term.column().bindingType()).orElseThrow();
             var read = read(term.names(), counter);
+            CodeBlock compare;
+            CodeBlock guard;
             if (term.list()) {
                 var l = "l" + ++counter[0];
                 var e = "e" + ++counter[0];
                 method.addStatement("$T $L = $L instanceof $T<?> $L ? $L.stream().map($L -> $T.val($L, $L).getValue()).toList() : null",
                     ParameterizedTypeName.get(LIST, type.box()), local, read, LIST, l, l, e, DSL, e, column);
-                var guard = term.present() ? CodeBlock.of("!$L.isEmpty()", local)
+                compare = CodeBlock.of("$L.in($L)", column, local);
+                guard = term.present() ? CodeBlock.of("!$L.isEmpty()", local)
                     : CodeBlock.of("$L != null && !$L.isEmpty()", local, local);
-                adds.addStatement("if ($L) conditions.add($L.in($L))", guard, column, local);
             } else {
                 method.addStatement("$T $L = $T.val($L, $L).getValue()", type.box(), local, DSL, read, column);
-                if (term.present()) {
-                    adds.addStatement("conditions.add($L.eq($L))", column, local);
-                } else {
-                    adds.addStatement("if ($L != null) conditions.add($L.eq($L))", local, column, local);
-                }
+                compare = CodeBlock.of("$L.eq($L)", column, local);
+                guard = term.present() ? null : CodeBlock.of("$L != null", local);
+            }
+            var predicate = hops.isEmpty() ? compare : reached(term, hops, compare);
+            if (guard == null) {
+                adds.addStatement("conditions.add($L)", predicate);
+            } else {
+                adds.addStatement("if ($L) conditions.add($L)", guard, predicate);
             }
         }
         method.addStatement("$T<$T> conditions = new $T<>()", LIST, CONDITION, ARRAY_LIST);
@@ -140,13 +153,63 @@ public final class ConditionEmitter {
         return new Result.Emitted(method.build());
     }
 
-    private static Optional<Reason> reasonFor(ConditionQuery.Term term) {
-        if (term.origin() != null && !"EMPTY".equals(term.origin())) return Optional.of(Reason.REACHED);
+    private static Optional<Reason> reasonFor(ConditionQuery.Row row, ConditionQuery.Term term) {
         if (term.nodeId()) return Optional.of(Reason.NODE_ID);
+        boolean ownTable = term.column().tableSqlName().equals(row.table().sqlName());
+        if (term.steps().isEmpty() ? !ownTable : term.steps().stream()
+                .anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
+            return Optional.of(Reason.REACHED);
+        }
         if ("ENUM".equals(term.typeKind())) return Optional.of(Reason.ENUM);
         if (term.throughList()) return Optional.of(Reason.THROUGH_LIST);
         if (type(term.column().bindingType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
         return Optional.empty();
+    }
+
+    /**
+     * Declares the table each step of a reached term's path lands on, aliased under the table the
+     * condition is handed so a condition applied inside another statement's alias stays distinct, and
+     * returns their locals in step order; none for a term on the field's own table.
+     */
+    private static List<String> hops(MethodSpec.Builder method, ConditionQuery.Term term, String local) {
+        var hops = new java.util.ArrayList<String>();
+        for (var step : term.steps()) {
+            var hop = local + "Hop" + step.position();
+            method.addStatement("$T $L = $T.$L.as(table.getName() + $S)", ClassName.bestGuess(step.to().tableClassName()),
+                hop, ClassName.bestGuess(step.to().constantsClassName()), step.to().javaFieldName(),
+                "_" + local + "_" + step.position());
+            hops.add(hop);
+        }
+        return hops;
+    }
+
+    /**
+     * A predicate on the last table of a term's path, as a correlated {@code EXISTS} from the condition's
+     * table: the first step correlates to it, each later step joins the one before, on its column pairs
+     * and its condition method where it has them.
+     */
+    private static CodeBlock reached(ConditionQuery.Term term, List<String> hops, CodeBlock compare) {
+        var steps = term.steps();
+        var select = CodeBlock.builder().add("$T.exists($T.selectOne().from($L)", DSL, DSL, hops.getFirst());
+        for (int i = 1; i < steps.size(); i++) {
+            select.add(".join($L).on($L)", hops.get(i), on(steps.get(i), hops.get(i - 1), hops.get(i)));
+        }
+        select.add(".where($L).and($L))", on(steps.getFirst(), "table", hops.getFirst()), compare);
+        return select.build();
+    }
+
+    /** What a step joins on: its column pairs and its condition method, from the table before to its own. */
+    private static CodeBlock on(ConditionQuery.Step step, String from, String to) {
+        var parts = new java.util.ArrayList<CodeBlock>();
+        for (var pair : step.pairs()) {
+            parts.add(CodeBlock.of("$L.$L.eq($L.$L)", from, pair.fromJavaName(), to, pair.toJavaName()));
+        }
+        if (step.method() != null) {
+            parts.add(CodeBlock.of("$T.$L($L, $L)", ClassName.bestGuess(step.method().className()),
+                step.method().methodName(), from, to));
+        }
+        if (parts.size() == 1) return parts.getFirst();
+        return CodeBlock.of("$T.and($L)", DSL, CodeBlock.join(parts, ", "));
     }
 
     /**

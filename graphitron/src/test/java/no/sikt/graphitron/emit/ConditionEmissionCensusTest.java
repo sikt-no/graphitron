@@ -63,18 +63,24 @@ class ConditionEmissionCensusTest {
         EmittedCodeHarness.compileStrictly(Map.of("census.Conditions", type.build())).close();
         assertThat(census.get(EMITTED)).as("the conditions the store emits").containsExactly(
             "Film.actorsBySplitLookupGenerated actor", "Film.actorsGenerated actor",
-            "Query.computedTitleFilm film", "Query.converterCampusesByOrgCode converter_campus",
+            "Query.addressesByCountryName address", "Query.citiesByCountryFilter city",
+            "Query.citiesByCountryName city", "Query.citiesFaceted city", "Query.computedTitleFilm film",
+            "Query.converterCampusesByOrgCode converter_campus",
             "Query.converterCampusesByOrgCodes converter_campus", "Query.customerByPk customer",
-            "Query.customers customer", "Query.customersByTwoNames customer", "Query.fanItem fan_base",
-            "Query.filmsByEffectiveNullability film", "Query.filmsByOneOf film",
-            "Query.filmsWithImplicitInput film", "Query.filmsWithMultiImplicit film",
-            "Query.filmsWithNestedImplicit film", "Query.languagesByKeyGenerated language",
-            "Query.occupantsByName customer", "Query.occupantsByName staff",
-            "Query.occupantsByNameConnection customer", "Query.occupantsByNameConnection staff",
-            "Query.occupantsByStoreId customer", "Query.occupantsByStoreId staff",
-            "Query.presenceDetail presence_detail", "Query.presenceDetailNode presence_detail",
-            "Query.presenceDetailRequired presence_detail", "Query.presenceHostRefs presence_host",
-            "Query.presenceHosts presence_host");
+            "Query.customers customer", "Query.customersByCityFilter customer",
+            "Query.customersByCityId customer", "Query.customersByConditionDistrict customer",
+            "Query.customersByTwoNames customer", "Query.fanItem fan_base",
+            "Query.filmActorsFaceted film_actor", "Query.filmsByBridgedActorFirstName film",
+            "Query.filmsByEffectiveNullability film", "Query.filmsByJunctionActorId film",
+            "Query.filmsByOneOf film", "Query.filmsWithImplicitInput film",
+            "Query.filmsWithMultiImplicit film", "Query.filmsWithNestedImplicit film",
+            "Query.languagesByKeyGenerated language", "Query.occupantsByName customer",
+            "Query.occupantsByName staff", "Query.occupantsByNameConnection customer",
+            "Query.occupantsByNameConnection staff", "Query.occupantsByStoreId customer",
+            "Query.occupantsByStoreId staff", "Query.presenceDetail presence_detail",
+            "Query.presenceDetailNode presence_detail", "Query.presenceDetailRequired presence_detail",
+            "Query.presenceHostRefs presence_host", "Query.presenceHosts presence_host",
+            "Query.splitFilterParentsByTargetLabel split_filter_parent");
         assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(93);
         // Each line goes as its shape is emitted from the store; a field moving between lines is a
         // change to look at, not to re-pin.
@@ -97,22 +103,30 @@ class ConditionEmissionCensusTest {
                 "Query.projectNotesByProject project_note", "Query.stockByLanguageOverride film",
                 "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
                 "Store.customersByAddressDistrictSplit customer"))
-            .containsEntry("ENUM", List.of("Query.films film", "Query.filmsOrderedConnection film"))
-            .containsEntry("NODE_ID", List.of("Query.converterCampusTermByNodeId converter_campus_term",
+            .containsEntry("ENUM", List.of("Query.films film", "Query.filmsFaceted film", "Query.filmsOrderedConnection film"))
+            .containsEntry("NODE_ID", List.of("Query.actorsByFilmFilter actor", "Query.actorsByFilmFilterConnection actor",
+                "Query.actorsByFilmIds actor", "Query.addressesByCustomerIds address",
+                "Query.addressesByCustomerIdsInferred address",
+                "Query.converterCampusTermByNodeId converter_campus_term",
                 "Query.converterCampusTermsByNodeIds converter_campus_term",
                 "Query.converterIdChangeByNodeId converter_id_change",
-                "Query.endorsementsByNodeId film_endorsement",
+                "Query.customersByNullableAddressIds customer", "Query.endorsementsByNodeId film_endorsement",
                 "Query.filmActorBySingularCompositeNodeId film_actor",
                 "Query.filmActorsByCompositeNodeIds film_actor", "Query.filmActorsByNullableNodeIds film_actor",
                 "Query.filmsByNodeIdArg film", "Query.filmsByNodeIdArgWithTitleFilter film",
                 "Query.filmsByNullableNodeIds film", "Query.filmsBySameTableNodeId film",
                 "Query.filmsConnectionByOptionalIds film", "Query.filmsConnectionByRequiredIds film",
-                "Query.inventoryItemsByIds inventory", "Query.occupantById customer", "Query.occupantById staff",
-                "Query.occupantByOptionalId customer", "Query.occupantByOptionalId staff",
-                "Query.occupantsByIds customer", "Query.occupantsByIds staff",
+                "Query.inventoryItemsByIds inventory", "Query.levelIntervals level_interval",
+                "Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",
+                "Query.occupantByOptionalId staff", "Query.occupantsByAddress customer",
+                "Query.occupantsByAddress staff", "Query.occupantsByIds customer", "Query.occupantsByIds staff",
                 "Query.occupantsByIdsConnection customer", "Query.occupantsByIdsConnection staff",
                 "Query.occupantsByNullableIds customer", "Query.occupantsByNullableIds staff",
-                "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer"))
+                "Query.rentalsByInventoryItem rental", "Query.stockByLanguage film",
+                "Query.stockByLanguage inventory", "Query.xlatChildByParentId xlat_child",
+                "Query.xlatChildrenByFilter xlat_child", "Query.xlatChildrenByParentIds xlat_child",
+                "Query.xlatCompChildrenByParentIds xlat_comp_child", "Store.customersByNodeId customer",
+                "Store.customersByNodeIdSplit customer"))
             .containsEntry("NOTHING", List.of("Film.actors actor", "Film.actorsBySplitLookup actor", "Film.actorsOrderedBySplitLookup actor",
                 "Film.filmDetails.actorsByLookup actor", "Film.info.castByKey actor",
                 "Film.inlineBundle.actorsByKey actor", "Film.inlineBundle.actorsByKeyViaJunctionCondition actor",
@@ -122,25 +136,11 @@ class ConditionEmissionCensusTest {
                 "Query.languageByKey language", "Query.languageBySingleKey language",
                 "Query.presenceDetailByKey presence_detail", "Query.storeById store",
                 "RoleHolder.rolesByCode role_assignment"))
-            .containsEntry("REACHED", List.of("Query.actorsByFilmFilter actor", "Query.actorsByFilmFilterConnection actor",
-                "Query.actorsByFilmIds actor", "Query.addressesByCountryName address",
-                "Query.addressesByCustomerIds address", "Query.addressesByCustomerIdsInferred address",
-                "Query.citiesByCountryFilter city", "Query.citiesByCountryName city", "Query.citiesFaceted city",
-                "Query.customersByAddresses customer", "Query.customersByCityFilter customer",
-                "Query.customersByCityId customer", "Query.customersByConditionDistrict customer",
-                "Query.customersByNullableAddressIds customer", "Query.filmActorsFaceted film_actor",
-                "Query.filmsByBridgedActorFirstName film", "Query.filmsByCastNames film",
-                "Query.filmsByJunctionActorId film", "Query.filmsByOriginalLanguages film",
-                "Query.filmsFaceted film", "Query.levelIntervals level_interval",
-                "Query.occupantsByAddress customer", "Query.occupantsByAddress staff",
-                "Query.rentalsByInventoryItem rental", "Query.splitFilterParentsByTargetLabel split_filter_parent",
-                "Query.stockByLanguage film", "Query.stockByLanguage inventory",
-                "Query.xlatChildByParentId xlat_child", "Query.xlatChildrenByFilter xlat_child",
-                "Query.xlatChildrenByParentIds xlat_child", "Query.xlatCompChildrenByParentIds xlat_comp_child"))
-            .containsEntry("THROUGH_LIST", List.of("Query.filmActorsByKey film_actor", "Query.filmActorsByPairList film_actor",
-                "Query.filmActorsByPairs film_actor", "Query.filmsByLanguagePairs film",
-                "Query.filmsByOptionalLanguages film"))
-            .containsOnlyKeys("AUTHORED", "CONSUMED", EMITTED, "ENUM", "NODE_ID", "NOTHING", "REACHED", "THROUGH_LIST");
+            .containsEntry("THROUGH_LIST", List.of("Query.customersByAddresses customer", "Query.filmActorsByKey film_actor",
+                "Query.filmActorsByPairList film_actor", "Query.filmActorsByPairs film_actor",
+                "Query.filmsByCastNames film", "Query.filmsByLanguagePairs film",
+                "Query.filmsByOptionalLanguages film", "Query.filmsByOriginalLanguages film"))
+            .containsOnlyKeys("AUTHORED", "CONSUMED", EMITTED, "ENUM", "NODE_ID", "NOTHING", "THROUGH_LIST");
     }
 
     /** The sakila service and catalog modules read as the sakila example reads them. */

@@ -2,7 +2,8 @@
 # the field returns rows of: a scalar compares by equality, a list by membership, and a value read
 # through an input object reads through it. The path from the field's table to the column is empty,
 # so each is a predicate on that table itself. A @lookupKey argument is a key, not a filter, and
-# binds its column too; the condition leaves it out.
+# binds its column too; the condition leaves it out. A value whose declaration writes a path binds
+# the column where the path lands, each step joining on a key's columns or by a condition method.
 
 type Film @table(name: "film") {
     title: String
@@ -18,17 +19,40 @@ input FilmLengthFilter {
     length: Int
 }
 
+type Customer @table(name: "customer") {
+    firstName: String @field(name: "first_name")
+}
+
+input FilmCastFilter {
+    firstName: String @field(name: "first_name")
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
 type Query {
     filmsByTitle(title: String): [Film!]!
     filmById(filmId: Int! @field(name: "film_id")): Film
     filmsByLengths(lengths: [Int!] @field(name: "length")): [Film!]!
     filmsByFilter(filter: FilmFilter): [Film!]!
     filmsByKey(film_id: [Int!] @lookupKey, title: String): [Film]!
+    customersByCityId(cityId: ID @field(name: "city_id") @reference(path: [{key: "customer_address_id_fkey"}])): [Customer!]!
+    filmsByCast(cast: FilmCastFilter): [Film!]!
+    filmsByBridgedActorFirstName(
+        firstName: String @field(name: "first_name") @reference(path: [
+            {key: "film_actor_film_id_fkey"},
+            {condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+                method: "filmActorJunctionToActor"
+            }}
+        ])
+    ): [Film!]!
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_column",
     where: "coordinate LIKE 'Query.%'", rows: """
-  coordinate,                                bound,       column_name,  matched_by
+  coordinate,                                         bound,          column_name,  matched_by
+  Query.customersByCityId(cityId:),                   public.address, city_id,      SQL_NAME
+  Query.filmsByBridgedActorFirstName(firstName:),     public.actor,   first_name,   SQL_NAME
+  Query.filmsByCast(cast.firstName:),                 public.actor,   first_name,   SQL_NAME
   Query.filmById(filmId:),                   public.film, film_id,      SQL_NAME
   Query.filmsByFilter(filter.inner.length:), public.film, length,       SQL_NAME
   Query.filmsByFilter(filter.releaseYear:),  public.film, release_year, SQL_NAME
@@ -39,11 +63,15 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column",
   Query.filmsByTitle(title:),                public.film, title,        SQL_NAME
   """)
 
-# Every one of them reaches its column over an empty path, as does each input object it is read
-# through.
+# Every unwritten one reaches its column over an empty path, as does each input object it is read
+# through; a written path is its steps.
 extend schema @expectEquals(relation: "graphitron_path",
     where: "coordinate LIKE 'Query.%(%'", rows: """
-  coordinate,                                target_type, kind, origin
+  coordinate,                                      target_type, kind, origin
+  Query.customersByCityId(cityId:),                Customer,    JOIN, WRITTEN
+  Query.filmsByBridgedActorFirstName(firstName:),  Film,        JOIN, WRITTEN
+  Query.filmsByCast(cast.firstName:),              Film,        JOIN, WRITTEN
+  Query.filmsByCast(cast:),                        Film,        JOIN, EMPTY
   Query.filmById(filmId:),                   Film,        JOIN, EMPTY
   Query.filmsByFilter(filter.inner.length:), Film,        JOIN, EMPTY
   Query.filmsByFilter(filter.inner:),        Film,        JOIN, EMPTY

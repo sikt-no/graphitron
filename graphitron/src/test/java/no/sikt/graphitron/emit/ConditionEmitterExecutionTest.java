@@ -88,7 +88,7 @@ class ConditionEmitterExecutionTest {
         assertThat(results).allSatisfy((coordinate, result) ->
             assertThat(result).as(coordinate).isInstanceOf(ConditionEmitter.Result.Emitted.class));
         assertThat(conditions).containsOnlyKeys("filmsByTitle", "filmById", "filmsByLengths", "filmsByFilter",
-            "filmsByKey");
+            "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName");
     }
 
     @Test
@@ -135,6 +135,48 @@ class ConditionEmitterExecutionTest {
     void lookupKey() throws Exception {
         assertThat(condition("filmsByKey", args("film_id", List.of(1, 2), "title", "X")))
             .hasToString(FILM.TITLE.eq("X").toString());
+    }
+
+    @Test
+    @DisplayName("a value whose path steps over a key filters by a correlated EXISTS, converted at the reached column")
+    void reachedOverOneKey() throws Exception {
+        var customer = Tables.CUSTOMER;
+        var address = Tables.ADDRESS;
+        var city = TestDatabase.dsl().select(address.CITY_ID).from(customer).join(address)
+            .on(address.ADDRESS_ID.eq(customer.ADDRESS_ID)).orderBy(customer.CUSTOMER_ID).limit(1).fetchOne(address.CITY_ID);
+        // An ID arrives as a string, and binds as the integer column it lands on.
+        var condition = (Condition) conditions.get("customersByCityId").invoke(null, customer, args("cityId", String.valueOf(city)));
+        var expected = customer.ADDRESS_ID.in(DSL.select(address.ADDRESS_ID).from(address).where(address.CITY_ID.eq(city)));
+        assertThat(customers(condition)).isNotEmpty().isEqualTo(customers(expected));
+        assertThat(customers((Condition) conditions.get("customersByCityId").invoke(null, customer, args())))
+            .isEqualTo(customers(DSL.noCondition()));
+    }
+
+    @Test
+    @DisplayName("a path over two keys, read through an input object, comes back once per film however many actors match")
+    void reachedOverTwoKeys() throws Exception {
+        var actorName = TestDatabase.dsl().select(Tables.ACTOR.FIRST_NAME).from(Tables.ACTOR).orderBy(Tables.ACTOR.ACTOR_ID)
+            .limit(1).fetchOne(Tables.ACTOR.FIRST_NAME);
+        var expected = FILM.FILM_ID.in(DSL.select(Tables.FILM_ACTOR.FILM_ID).from(Tables.FILM_ACTOR).join(Tables.ACTOR)
+            .on(Tables.ACTOR.ACTOR_ID.eq(Tables.FILM_ACTOR.ACTOR_ID)).where(Tables.ACTOR.FIRST_NAME.eq(actorName)));
+        assertThat(films(condition("filmsByCast", args("cast", args("firstName", actorName))))).isNotEmpty()
+            .isEqualTo(films(expected));
+        assertThat(films(condition("filmsByBridgedActorFirstName", args("firstName", actorName))))
+            .isEqualTo(films(expected));
+    }
+
+    @Test
+    @DisplayName("a reached condition applied inside an aliased statement aliases its steps under that alias")
+    void reachedUnderAnAlias() throws Exception {
+        var outer = FILM.as("outer_film");
+        var condition = (Condition) conditions.get("filmsByCast").invoke(null, outer, args("cast", args("firstName", "X")));
+        assertThat(condition.toString()).contains("\"outer_film_firstName_0\"").contains("\"outer_film_firstName_1\"");
+    }
+
+    private static List<Integer> customers(Condition condition) {
+        var customer = Tables.CUSTOMER;
+        return TestDatabase.dsl().select(customer.CUSTOMER_ID).from(customer).where(condition).orderBy(customer.CUSTOMER_ID)
+            .fetch(customer.CUSTOMER_ID);
     }
 
     @Test

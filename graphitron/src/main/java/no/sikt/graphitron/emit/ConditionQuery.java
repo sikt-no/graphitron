@@ -1,11 +1,13 @@
 package no.sikt.graphitron.emit;
 
 import no.sikt.graphitron.model.read.StoreHandle;
+import org.jooq.Records;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -13,6 +15,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
@@ -27,6 +33,8 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -46,7 +54,7 @@ public final class ConditionQuery {
     private ConditionQuery() {}
 
     /** The column a term compares, where it binds one. */
-    public record Column(String sqlName, String javaName, String bindingType) {
+    public record Column(String tableSqlName, String sqlName, String javaName, String bindingType) {
         public Column {
             Objects.requireNonNull(sqlName, "sqlName");
             Objects.requireNonNull(javaName, "javaName");
@@ -56,14 +64,16 @@ public final class ConditionQuery {
 
     /**
      * One argument or input field's filter: its occurrence, its path of names from the argument, the
-     * column it binds where it binds one rather than a node id, its type's kind, whether it is a node id or a {@code @lookupKey}, and its path's
-     * origin.
+     * column it binds where it binds one rather than a node id, its type's kind, whether it is a node
+     * id or a {@code @lookupKey}, its path's origin and the steps the path takes from the field's table
+     * to the column's, none on an empty path.
      */
     public record Term(String coordinate, ArgumentPaths.Path path, Column column, String typeKind,
-                       boolean nodeId, boolean lookupKey, String origin) {
+                       boolean nodeId, boolean lookupKey, String origin, List<Step> steps) {
         public Term {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(path, "path");
+            steps = List.copyOf(steps);
         }
 
         /** The names from the argument down to this term. */
@@ -87,6 +97,23 @@ public final class ConditionQuery {
         }
     }
 
+    /** A column pair a step joins on: the column on the table it departs and on the one it reaches. */
+    public record Pair(String fromJavaName, String toJavaName) {}
+
+    /** The condition method a step joins by: its class and name, taking the departed and reached tables. */
+    public record StepMethod(String className, String methodName) {}
+
+    /**
+     * One step a term's path takes: its position, the table it reaches, the column pairs it joins on,
+     * the condition method it joins by where it has one, and whether it calls a routine.
+     */
+    public record Step(int position, LiftQuery.Table to, List<Pair> pairs, StepMethod method, boolean routine) {
+        public Step {
+            Objects.requireNonNull(to, "to");
+            pairs = List.copyOf(pairs);
+        }
+    }
+
     /**
      * One field occurrence's filters on one table: the occurrence, what it produces where it produces
      * anything, whether a {@code @condition} is written on it or under it, the table and the terms in
@@ -103,7 +130,8 @@ public final class ConditionQuery {
 
     private record Raw(String field, String coordinate, String producerKind, String tableSqlName,
                        String tableClass, String constantsClass, String tableJavaName, String recordClass,
-                       Column column, String typeKind, boolean nodeId, boolean lookupKey, String origin) {}
+                       Column column, String typeKind, boolean nodeId, boolean lookupKey, String origin,
+                       String targetType) {}
 
     /** The graph's field occurrences with filters, by coordinate and table. */
     public static List<Row> read(StoreHandle store) {
@@ -121,6 +149,7 @@ public final class ConditionQuery {
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
         var graph = store.graphName();
         var paths = ArgumentPaths.read(store);
+        var steps = steps(store);
         var authored = authored(store);
         var st = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
         var pn = GRAPHITRON_PATH_NEED_TABLE;
@@ -137,7 +166,7 @@ public final class ConditionQuery {
                 t.JOOQ_NAME, t.RECORD_CLASS_FQN, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, ty.KIND, nodeId,
                 field(exists(selectOne().from(d).where(d.GRAPH_NAME.eq(o.GRAPH_NAME),
                     d.COORDINATE.eq(o.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey")))),
-                p.ORIGIN)
+                p.ORIGIN, pn.TARGET_TYPE, oc.TABLE_NAME)
             .from(o)
             .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))
             .join(t).on(t.SOURCE_NAME.eq(st.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(st.TABLE_SCHEMA),
@@ -163,8 +192,9 @@ public final class ConditionQuery {
                 oc.COORDINATE.isNotNull().or(nodeId))
             .orderBy(o.FIELD_COORDINATE, t.TABLE_NAME, o.COORDINATE)
             .fetch(r -> new Raw(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(),
-                r.value7(), r.value8(), r.value9() == null ? null : new Column(r.value9(), r.value10(), r.value11()),
-                r.value12(), Boolean.TRUE.equals(r.value13()), Boolean.TRUE.equals(r.value14()), r.value15()));
+                r.value7(), r.value8(), r.value9() == null ? null : new Column(r.value17(), r.value9(), r.value10(), r.value11()),
+                r.value12(), Boolean.TRUE.equals(r.value13()), Boolean.TRUE.equals(r.value14()), r.value15(),
+                r.value16()));
         var rows = new LinkedHashMap<List<String>, List<Raw>>();
         for (var raw : raws) {
             rows.computeIfAbsent(List.of(raw.field(), raw.tableSqlName()), k -> new ArrayList<>()).add(raw);
@@ -175,7 +205,8 @@ public final class ConditionQuery {
             var table = new LiftQuery.Table(first.tableSqlName(), first.tableClass(), first.constantsClass(),
                 first.tableJavaName(), first.recordClass());
             var terms = group.stream().map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()),
-                raw.column(), raw.typeKind(), raw.nodeId(), raw.lookupKey(), raw.origin())).toList();
+                raw.column(), raw.typeKind(), raw.nodeId(), raw.lookupKey(), raw.origin(),
+                steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()))).toList();
             out.add(new Row(first.field(), first.producerKind(), authored.contains(first.field()), table, terms));
         });
         return out;
@@ -195,5 +226,46 @@ public final class ConditionQuery {
                 d.DIRECTIVE_NAME.eq("condition"))
             .where(o.GRAPH_NAME.eq(store.graphName()))
             .fetch(r -> r.value1()));
+    }
+
+    /** Every join path's steps in order, by the need's coordinate and target type. */
+    private static Map<List<String>, List<Step>> steps(StoreHandle store) {
+        var js = GRAPHITRON_JOIN_PATH_STEP;
+        var jc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        var jm = GRAPHITRON_JOIN_PATH_STEP_METHOD;
+        var jr = GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
+        var t = SQL_TABLE;
+        var s = SQL_SCHEMA;
+        var fc = SQL_COLUMN.as("fc");
+        var tc = SQL_COLUMN.as("tc");
+        var pairs = multiset(
+            select(fc.JOOQ_NAME, tc.JOOQ_NAME)
+                .from(jc)
+                .join(fc).on(fc.SOURCE_NAME.eq(jc.FROM_SOURCE_NAME), fc.TABLE_SCHEMA.eq(jc.FROM_SCHEMA),
+                    fc.TABLE_NAME.eq(jc.FROM_TABLE), fc.COLUMN_NAME.eq(jc.FROM_COLUMN))
+                .join(tc).on(tc.SOURCE_NAME.eq(jc.TO_SOURCE_NAME), tc.TABLE_SCHEMA.eq(jc.TO_SCHEMA),
+                    tc.TABLE_NAME.eq(jc.TO_TABLE), tc.COLUMN_NAME.eq(jc.TO_COLUMN))
+                .where(jc.GRAPH_NAME.eq(js.GRAPH_NAME), jc.COORDINATE.eq(js.COORDINATE),
+                    jc.TARGET_TYPE.eq(js.TARGET_TYPE), jc.POSITION.eq(js.POSITION))
+                .orderBy(jc.ORDINAL))
+            .convertFrom(r -> r.map(Records.mapping(Pair::new)));
+        var routine = field(exists(selectOne().from(jr).where(jr.GRAPH_NAME.eq(js.GRAPH_NAME),
+            jr.COORDINATE.eq(js.COORDINATE), jr.TARGET_TYPE.eq(js.TARGET_TYPE), jr.POSITION.eq(js.POSITION))));
+        var out = new LinkedHashMap<List<String>, List<Step>>();
+        store.dsl()
+            .select(js.COORDINATE, js.TARGET_TYPE, js.POSITION, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
+                t.JOOQ_NAME, t.RECORD_CLASS_FQN, pairs, jm.METHOD_CLASS_NAME, jm.METHOD_NAME, routine)
+            .from(js)
+            .join(t).on(t.SOURCE_NAME.eq(js.TO_SOURCE_NAME), t.TABLE_SCHEMA.eq(js.TO_SCHEMA), t.TABLE_NAME.eq(js.TO_TABLE))
+            .join(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
+            .leftJoin(jm).on(jm.GRAPH_NAME.eq(js.GRAPH_NAME), jm.COORDINATE.eq(js.COORDINATE),
+                jm.TARGET_TYPE.eq(js.TARGET_TYPE), jm.POSITION.eq(js.POSITION))
+            .where(js.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(js.COORDINATE, js.TARGET_TYPE, js.POSITION)
+            .forEach(r -> out.computeIfAbsent(List.of(r.value1(), r.value2()), k -> new ArrayList<>())
+                .add(new Step(r.value3(), new LiftQuery.Table(r.value4(), r.value5(), r.value6(), r.value7(), r.value8()),
+                    r.value9(), r.value10() == null ? null : new StepMethod(r.value10(), r.value11()),
+                    Boolean.TRUE.equals(r.value12()))));
+        return out;
     }
 }
