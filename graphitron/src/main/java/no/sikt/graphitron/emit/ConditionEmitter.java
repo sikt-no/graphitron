@@ -45,6 +45,11 @@ import java.util.regex.Pattern;
  * path to many rows filters without multiplying the field's own. Each step's table is aliased under
  * the table the condition is handed, so a condition applied inside another statement stays distinct.
  *
+ * <p>A node id is decoded through a helper of its own into a record, refused as the client's error
+ * where it is not an id of its type, and its key compared as a row value where it has several
+ * columns: on the condition's own table where the id decodes onto it, its own key or the one foreign
+ * key referencing the node, and otherwise on the table its path lands on.
+ *
  * <p>A {@code @lookupKey} argument is the lookup's key, not a filter, and writes nothing here. What
  * this emitter does not write yet it says, and emits nothing for the occurrence: see {@link Reason}.
  * The method name is the caller's.
@@ -74,8 +79,13 @@ public final class ConditionEmitter {
         AUTHORED,
         /** A term reaches its column over a path the store states no steps for, or one calling a routine. */
         REACHED,
-        /** A term is a node id, decoded into its key columns. */
+        /** A term is a node id the store cannot state a decode of into the table it lands on. */
         NODE_ID,
+        /**
+         * A term is a node id under a field whose rows are participants on tables of their own, where an
+         * id of another participant's type answers no row rather than a refusal.
+         */
+        NODE_ID_PARTICIPANT,
         /** A term is an enum, converted from its GraphQL name to the column's value. */
         ENUM,
         /** A term is read through a list of input objects, a match per element. */
@@ -86,13 +96,21 @@ public final class ConditionEmitter {
 
     /** What the emitter makes of a row: the method, nothing to filter, or why it is not emitted yet. */
     public sealed interface Result {
-        record Emitted(MethodSpec method) implements Result {}
+        record Emitted(MethodSpec method, List<MethodSpec> helpers) implements Result {
+            public Emitted {
+                helpers = List.copyOf(helpers);
+            }
+        }
         record Nothing() implements Result {}
         record NotYet(Reason reason, String term) implements Result {}
     }
 
-    /** The row's condition as the method {@code name}, or why it is not emitted. */
-    public static Result emit(ConditionQuery.Row row, String name) {
+    /**
+     * The row's condition as the method {@code name}, with the helpers that decode its node ids beside
+     * it, or why it is not emitted.
+     */
+    public static Result emit(ConditionQuery.Row row, String name, NodeIdDecodeQuery decodes,
+                              NodeIdDecodeEmitter.Runtime runtime) {
         if (row.producerKind() != null && !FILTERED.contains(row.producerKind())) {
             return new Result.NotYet(Reason.CONSUMED, row.coordinate());
         }
@@ -104,7 +122,7 @@ public final class ConditionEmitter {
             return new Result.Nothing();
         }
         for (var term : terms) {
-            var reason = reasonFor(row, term);
+            var reason = reasonFor(row, term, decodes);
             if (reason.isPresent()) {
                 return new Result.NotYet(reason.get(), term.coordinate());
             }
@@ -118,8 +136,24 @@ public final class ConditionEmitter {
         var locals = new HashSet<String>();
         var counter = new int[1];
         var adds = CodeBlock.builder();
+        var helpers = new java.util.ArrayList<MethodSpec>();
         for (var term : terms) {
             var local = local(term, locals);
+            if (term.nodeId()) {
+                var decode = decodeOnto(row, term, decodes).orElseThrow();
+                var onOwn = decode.recordClass().equals(row.table().recordClassName());
+                var hops = onOwn ? List.<String>of() : hops(method, term, local);
+                var alias = hops.isEmpty() ? "table" : hops.getLast();
+                var compare = nodeId(method, helpers, term, decode, name + "_" + local, local, alias, counter, runtime);
+                var guard = term.list()
+                    ? (term.present() ? CodeBlock.of("!$L.isEmpty()", local)
+                        : CodeBlock.of("$L != null && !$L.isEmpty()", local, local))
+                    : (term.present() ? null : CodeBlock.of("$L != null", local));
+                var predicate = hops.isEmpty() ? compare : reached(term, hops, compare);
+                adds.addStatement(guard == null ? CodeBlock.of("conditions.add($L)", predicate)
+                    : CodeBlock.of("if ($L) conditions.add($L)", guard, predicate));
+                continue;
+            }
             var hops = hops(method, term, local);
             var alias = hops.isEmpty() ? "table" : hops.getLast();
             var column = CodeBlock.of("$L.$L", alias, term.column().javaName());
@@ -150,11 +184,16 @@ public final class ConditionEmitter {
         method.addStatement("$T<$T> conditions = new $T<>()", LIST, CONDITION, ARRAY_LIST);
         method.addCode(adds.build());
         method.addStatement("return $T.and(conditions)", DSL);
-        return new Result.Emitted(method.build());
+        return new Result.Emitted(method.build(), helpers);
     }
 
-    private static Optional<Reason> reasonFor(ConditionQuery.Row row, ConditionQuery.Term term) {
-        if (term.nodeId()) return Optional.of(Reason.NODE_ID);
+    private static Optional<Reason> reasonFor(ConditionQuery.Row row, ConditionQuery.Term term,
+                                              NodeIdDecodeQuery decodes) {
+        if (term.nodeId()) {
+            if (row.tables() > 1) return Optional.of(Reason.NODE_ID_PARTICIPANT);
+            if (term.throughList() || decodeOnto(row, term, decodes).isEmpty()) return Optional.of(Reason.NODE_ID);
+            return Optional.empty();
+        }
         boolean ownTable = term.column().tableSqlName().equals(row.table().sqlName());
         if (term.steps().isEmpty() ? !ownTable : term.steps().stream()
                 .anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
@@ -164,6 +203,63 @@ public final class ConditionEmitter {
         if (term.throughList()) return Optional.of(Reason.THROUGH_LIST);
         if (type(term.column().bindingType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
         return Optional.empty();
+    }
+
+    /**
+     * Where a node id term's id decodes to: onto the condition's own table where the store states that
+     * decode, the node's own key there or the one foreign key referencing it, so an id whose path is a
+     * single step over that key compares on the table itself; otherwise onto the table its path lands
+     * on, reached over the path's steps. Empty where neither decode is stated, or the path is longer
+     * than a step and lands on no table.
+     */
+    private static Optional<NodeIdDecodeQuery.Decode> decodeOnto(ConditionQuery.Row row, ConditionQuery.Term term,
+                                                                 NodeIdDecodeQuery decodes) {
+        if (term.steps().size() <= 1 && term.steps().stream().allMatch(step -> step.method() == null && !step.routine())
+                && decodes.resolve(term.coordinate(), row.table().recordClassName())
+                    instanceof NodeIdDecodeQuery.Resolution.Resolved own) {
+            return Optional.of(own.decode());
+        }
+        if (term.steps().isEmpty() || term.landingRecordClass() == null
+                || term.steps().stream().anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
+            return Optional.empty();
+        }
+        return decodes.resolve(term.coordinate(), term.landingRecordClass())
+            instanceof NodeIdDecodeQuery.Resolution.Resolved landed ? Optional.of(landed.decode()) : Optional.empty();
+    }
+
+    /**
+     * A node id term: its id decoded, through a helper of its own, into a record of the table its path
+     * lands on, or a list of them, whose key columns are compared with the same columns of that table:
+     * by equality or membership, as a row value where the key has several columns. An id the decode
+     * refuses is a client error; a null element of a list compares as a key of nulls, matching nothing.
+     */
+    private static CodeBlock nodeId(MethodSpec.Builder method, List<MethodSpec> helpers, ConditionQuery.Term term,
+                                    NodeIdDecodeQuery.Decode decode, String helper, String local, String alias,
+                                    int[] counter, NodeIdDecodeEmitter.Runtime runtime) {
+        var record = SessionIdentityRows.classOf(decode.recordClass());
+        var type = term.list() ? ParameterizedTypeName.get(LIST, record) : record;
+        helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decode, "RECORD", term.names().getLast(), runtime));
+        method.addStatement("$T $L = $L($L)", type, local, helper, read(term.names(), counter));
+        var tables = SessionIdentityRows.classOf(decode.tablesClass());
+        var keys = decode.columnJavaNames().stream()
+            .map(c -> CodeBlock.of("$T.$L.$L", tables, decode.tableField(), c)).toList();
+        var columns = CodeBlock.join(decode.columnJavaNames().stream()
+            .map(c -> CodeBlock.of("$L.$L", alias, c)).toList(), ", ");
+        boolean single = keys.size() == 1;
+        if (!term.list()) {
+            return single
+                ? CodeBlock.of("$L.eq($L.get($L))", columns, local, keys.getFirst())
+                : CodeBlock.of("$T.row($L).eq($T.row($L))", DSL, columns, DSL,
+                    CodeBlock.join(keys.stream().map(k -> CodeBlock.of("$L.get($L)", local, k)).toList(), ", "));
+        }
+        var e = "e" + ++counter[0];
+        if (single) {
+            return CodeBlock.of("$L.in($L.stream().map($L -> $L == null ? null : $L.get($L)).toList())",
+                columns, local, e, e, e, keys.getFirst());
+        }
+        return CodeBlock.of("$T.row($L).in($L.stream().map($L -> $L == null ? new $T() : $L).map($L -> $T.row($L)).toList())",
+            DSL, columns, local, e, e, record, e, e, DSL,
+            CodeBlock.join(keys.stream().map(k -> CodeBlock.of("$L.get($L)", e, k)).toList(), ", "));
     }
 
     /**

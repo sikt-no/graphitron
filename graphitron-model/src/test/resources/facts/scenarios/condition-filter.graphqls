@@ -4,9 +4,22 @@
 # so each is a predicate on that table itself. A @lookupKey argument is a key, not a filter, and
 # binds its column too; the condition leaves it out. A value whose declaration writes a path binds
 # the column where the path lands, each step joining on a key's columns or by a condition method.
+# A node id binds the node's key, which the condition compares on the table the id lands on: the
+# node's own key there, or the foreign key referencing it.
 
-type Film @table(name: "film") {
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node(typeId: "F") {
+    id: ID!
     title: String
+}
+
+type FilmActor implements Node @table(name: "film_actor") @node {
+    id: ID!
+}
+
+type Inventory @table(name: "inventory") {
+    inventoryId: Int @field(name: "inventory_id")
 }
 
 input FilmFilter {
@@ -34,6 +47,10 @@ type Query {
     filmsByLengths(lengths: [Int!] @field(name: "length")): [Film!]!
     filmsByFilter(filter: FilmFilter): [Film!]!
     filmsByKey(film_id: [Int!] @lookupKey, title: String): [Film]!
+    filmByNodeId(id: ID! @nodeId(typeName: "Film")): Film
+    filmsByNodeIds(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
+    filmActorsByNodeIds(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor!]!
+    inventoriesByFilm(filmId: ID @nodeId(typeName: "Film")): [Inventory!]!
     customersByCityId(cityId: ID @field(name: "city_id") @reference(path: [{key: "customer_address_id_fkey"}])): [Customer!]!
     filmsByCast(cast: FilmCastFilter): [Film!]!
     filmsByBridgedActorFirstName(
@@ -46,6 +63,16 @@ type Query {
         ])
     ): [Film!]!
 }
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id",
+    where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate,                          bound,             position, basis,              node_type_name, column_name
+  Query.filmActorsByNodeIds(ids:),     public.film_actor, 0,        EXPLICIT_TYPE_NAME, FilmActor,      actor_id
+  Query.filmActorsByNodeIds(ids:),     public.film_actor, 1,        EXPLICIT_TYPE_NAME, FilmActor,      film_id
+  Query.filmByNodeId(id:),             public.film,       0,        EXPLICIT_TYPE_NAME, Film,           film_id
+  Query.filmsByNodeIds(ids:),          public.film,       0,        EXPLICIT_TYPE_NAME, Film,           film_id
+  Query.inventoriesByFilm(filmId:),    public.film,       0,        EXPLICIT_TYPE_NAME, Film,           film_id
+  """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_column",
     where: "coordinate LIKE 'Query.%'", rows: """
@@ -72,6 +99,10 @@ extend schema @expectEquals(relation: "graphitron_path",
   Query.filmsByBridgedActorFirstName(firstName:),  Film,        JOIN, WRITTEN
   Query.filmsByCast(cast.firstName:),              Film,        JOIN, WRITTEN
   Query.filmsByCast(cast:),                        Film,        JOIN, EMPTY
+  Query.filmActorsByNodeIds(ids:),                 FilmActor,   JOIN, EMPTY
+  Query.filmByNodeId(id:),                         Film,        JOIN, EMPTY
+  Query.filmsByNodeIds(ids:),                      Film,        JOIN, EMPTY
+  Query.inventoriesByFilm(filmId:),                Inventory,   JOIN, INFERRED
   Query.filmById(filmId:),                   Film,        JOIN, EMPTY
   Query.filmsByFilter(filter.inner.length:), Film,        JOIN, EMPTY
   Query.filmsByFilter(filter.inner:),        Film,        JOIN, EMPTY

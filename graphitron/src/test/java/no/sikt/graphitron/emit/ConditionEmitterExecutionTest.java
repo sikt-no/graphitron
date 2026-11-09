@@ -1,6 +1,11 @@
 package no.sikt.graphitron.emit;
 
+import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.db.TestDatabase;
@@ -21,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Field occurrences' conditions emitted from the store's rows, compiled and run against PostgreSQL:
@@ -37,27 +43,48 @@ class ConditionEmitterExecutionTest {
     private static final String PACKAGE = "conditions";
     private static final no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film FILM = Tables.FILM;
 
+    private static final ClassName ENCODER = ClassName.get(PACKAGE + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
+    private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(ENCODER, PACKAGE);
+
     private static EmittedCodeHarness harness;
+    private static Method encode;
     private static Map<String, Method> conditions;
     private static Map<String, ConditionEmitter.Result> results;
 
     @BeforeAll
     static void emit() throws Exception {
-        var rows = FACTS.read("scenarios/condition-filter", graph -> ConditionQuery.read(graph.handle()));
+        record Read(List<ConditionQuery.Row> rows, NodeIdDecodeQuery decodes) {}
+        var read = FACTS.read("scenarios/condition-filter",
+            graph -> new Read(ConditionQuery.read(graph.handle()), NodeIdDecodeQuery.read(graph.handle())));
+        var rows = read.rows();
         var type = TypeSpec.classBuilder("Conditions").addModifiers(Modifier.PUBLIC);
         results = new HashMap<>();
         for (var row : rows) {
             var name = row.coordinate().substring(row.coordinate().indexOf('.') + 1);
-            var result = ConditionEmitter.emit(row, name);
+            var result = ConditionEmitter.emit(row, name, read.decodes(), RUNTIME);
             results.put(row.coordinate(), result);
             if (result instanceof ConditionEmitter.Result.Emitted emitted) {
                 type.addMethod(emitted.method());
+                emitted.helpers().forEach(type::addMethod);
             }
         }
-        harness = EmittedCodeHarness.compileStrictly(Map.of(PACKAGE + ".Conditions", type.build()));
+        var units = new HashMap<String, TypeSpec>();
+        units.put(PACKAGE + ".Conditions", type.build());
+        var schema = TestSchemaHelper.buildSchema("type Query { x: Int }");
+        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(schema, PACKAGE, List.of())) {
+            units.put(PACKAGE + ".util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
+            units.put(PACKAGE + ".schema." + spec.name(), spec);
+        }
+        for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
+            units.put(PACKAGE + ".util." + spec.name(), spec);
+        }
+        harness = EmittedCodeHarness.compileStrictly(units);
+        encode = harness.load(ENCODER.reflectionName()).getMethod("encode", String.class, Object[].class);
         conditions = new HashMap<>();
         for (var m : harness.load(PACKAGE + ".Conditions").getDeclaredMethods()) {
-            if (!m.isSynthetic()) conditions.put(m.getName(), m);
+            if (java.lang.reflect.Modifier.isPublic(m.getModifiers())) conditions.put(m.getName(), m);
         }
     }
 
@@ -88,7 +115,8 @@ class ConditionEmitterExecutionTest {
         assertThat(results).allSatisfy((coordinate, result) ->
             assertThat(result).as(coordinate).isInstanceOf(ConditionEmitter.Result.Emitted.class));
         assertThat(conditions).containsOnlyKeys("filmsByTitle", "filmById", "filmsByLengths", "filmsByFilter",
-            "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName");
+            "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName", "filmByNodeId",
+            "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm");
     }
 
     @Test
@@ -171,6 +199,49 @@ class ConditionEmitterExecutionTest {
         var outer = FILM.as("outer_film");
         var condition = (Condition) conditions.get("filmsByCast").invoke(null, outer, args("cast", args("firstName", "X")));
         assertThat(condition.toString()).contains("\"outer_film_firstName_0\"").contains("\"outer_film_firstName_1\"");
+    }
+
+    private static String id(String typeId, Object... key) throws Exception {
+        return (String) encode.invoke(null, typeId, key);
+    }
+
+    @Test
+    @DisplayName("a node id compares its key on its own table, and an id of another type is the client's error")
+    void nodeId() throws Exception {
+        assertThat(films(condition("filmByNodeId", args("id", id("F", 3))))).containsExactly(3);
+        assertThatThrownBy(() -> condition("filmByNodeId", args("id", id("FilmActor", 1, 1))))
+            .hasRootCauseMessage("Invalid node id \"" + id("FilmActor", 1, 1)
+                + "\" for this argument: decodes to type \"FilmActor\", expected a Film id");
+    }
+
+    @Test
+    @DisplayName("a list of node ids compares by membership, and an empty one filters nothing")
+    void nodeIds() throws Exception {
+        assertThat(films(condition("filmsByNodeIds", args("ids", List.of(id("F", 1), id("F", 2)))))).containsExactly(1, 2);
+        assertThat(films(condition("filmsByNodeIds", args("ids", List.of())))).isEqualTo(films(DSL.noCondition()));
+    }
+
+    @Test
+    @DisplayName("a node id of a composite key compares as a row value")
+    void compositeNodeIds() throws Exception {
+        var filmActor = Tables.FILM_ACTOR;
+        var pair = TestDatabase.dsl().selectFrom(filmActor).orderBy(filmActor.ACTOR_ID, filmActor.FILM_ID).limit(1).fetchOne();
+        var condition = (Condition) conditions.get("filmActorsByNodeIds").invoke(null, filmActor,
+            args("ids", List.of(id("FilmActor", pair.getActorId(), pair.getFilmId()))));
+        assertThat(TestDatabase.dsl().selectFrom(filmActor).where(condition).fetch())
+            .singleElement().satisfies(r -> assertThat(r.getFilmId()).isEqualTo(pair.getFilmId()));
+    }
+
+    @Test
+    @DisplayName("a node id on a table referencing the node compares that table's foreign key")
+    void nodeIdThroughForeignKey() throws Exception {
+        var inventory = Tables.INVENTORY;
+        var condition = (Condition) conditions.get("inventoriesByFilm").invoke(null, inventory, args("filmId", id("F", 1)));
+        assertThat(TestDatabase.dsl().select(inventory.INVENTORY_ID).from(inventory).where(condition).orderBy(inventory.INVENTORY_ID)
+                .fetch(inventory.INVENTORY_ID))
+            .isNotEmpty()
+            .isEqualTo(TestDatabase.dsl().select(inventory.INVENTORY_ID).from(inventory).where(inventory.FILM_ID.eq(1))
+                .orderBy(inventory.INVENTORY_ID).fetch(inventory.INVENTORY_ID));
     }
 
     private static List<Integer> customers(Condition condition) {

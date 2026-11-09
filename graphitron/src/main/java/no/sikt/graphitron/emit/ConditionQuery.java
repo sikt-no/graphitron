@@ -65,11 +65,13 @@ public final class ConditionQuery {
     /**
      * One argument or input field's filter: its occurrence, its path of names from the argument, the
      * column it binds where it binds one rather than a node id, its type's kind, whether it is a node
-     * id or a {@code @lookupKey}, its path's origin and the steps the path takes from the field's table
-     * to the column's, none on an empty path.
+     * id or a {@code @lookupKey}, its path's origin, the steps the path takes from the field's table
+     * to the column's, none on an empty path, and the record class of the table the path lands on,
+     * which a node id decodes into.
      */
     public record Term(String coordinate, ArgumentPaths.Path path, Column column, String typeKind,
-                       boolean nodeId, boolean lookupKey, String origin, List<Step> steps) {
+                       boolean nodeId, boolean lookupKey, String origin, List<Step> steps,
+                       String landingRecordClass) {
         public Term {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(path, "path");
@@ -117,10 +119,11 @@ public final class ConditionQuery {
     /**
      * One field occurrence's filters on one table: the occurrence, what it produces where it produces
      * anything, whether a {@code @condition} is written on it or under it, the table and the terms in
-     * coordinate order.
+     * coordinate order, and how many tables the field filters, more than one where its rows are a
+     * polymorphic type's participants on tables of their own.
      */
     public record Row(String coordinate, String producerKind, boolean authored, LiftQuery.Table table,
-                      List<Term> terms) {
+                      List<Term> terms, int tables) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(table, "table");
@@ -131,7 +134,7 @@ public final class ConditionQuery {
     private record Raw(String field, String coordinate, String producerKind, String tableSqlName,
                        String tableClass, String constantsClass, String tableJavaName, String recordClass,
                        Column column, String typeKind, boolean nodeId, boolean lookupKey, String origin,
-                       String targetType) {}
+                       String targetType, String landingRecordClass) {}
 
     /** The graph's field occurrences with filters, by coordinate and table. */
     public static List<Row> read(StoreHandle store) {
@@ -160,13 +163,14 @@ public final class ConditionQuery {
         var landingSource = coalesce(jp.TARGET_SOURCE_NAME, pn.LANDING_SOURCE_NAME);
         var landingSchema = coalesce(jp.TARGET_SCHEMA, pn.LANDING_SCHEMA);
         var landingTable = coalesce(jp.TARGET_TABLE, pn.LANDING_TABLE);
+        var lt = SQL_TABLE.as("lt");
         var nodeId = field(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE))));
         var raws = store.dsl()
             .select(o.FIELD_COORDINATE, o.COORDINATE, pr.KIND, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
                 t.JOOQ_NAME, t.RECORD_CLASS_FQN, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, ty.KIND, nodeId,
                 field(exists(selectOne().from(d).where(d.GRAPH_NAME.eq(o.GRAPH_NAME),
                     d.COORDINATE.eq(o.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey")))),
-                p.ORIGIN, pn.TARGET_TYPE, oc.TABLE_NAME)
+                p.ORIGIN, pn.TARGET_TYPE, oc.TABLE_NAME, lt.RECORD_CLASS_FQN)
             .from(o)
             .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))
             .join(t).on(t.SOURCE_NAME.eq(st.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(st.TABLE_SCHEMA),
@@ -179,6 +183,8 @@ public final class ConditionQuery {
                 p.TARGET_TYPE.eq(pn.TARGET_TYPE))
             .leftJoin(jp).on(jp.GRAPH_NAME.eq(pn.GRAPH_NAME), jp.COORDINATE.eq(pn.COORDINATE),
                 jp.TARGET_TYPE.eq(pn.TARGET_TYPE))
+            .leftJoin(lt).on(lt.SOURCE_NAME.eq(landingSource), lt.TABLE_SCHEMA.eq(landingSchema),
+                lt.TABLE_NAME.eq(landingTable))
             .leftJoin(oc).on(oc.GRAPH_NAME.eq(o.GRAPH_NAME), oc.COORDINATE.eq(o.COORDINATE),
                 oc.TABLE_SOURCE_NAME.eq(landingSource), oc.TABLE_SCHEMA.eq(landingSchema),
                 oc.TABLE_NAME.eq(landingTable))
@@ -194,7 +200,7 @@ public final class ConditionQuery {
             .fetch(r -> new Raw(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(),
                 r.value7(), r.value8(), r.value9() == null ? null : new Column(r.value17(), r.value9(), r.value10(), r.value11()),
                 r.value12(), Boolean.TRUE.equals(r.value13()), Boolean.TRUE.equals(r.value14()), r.value15(),
-                r.value16()));
+                r.value16(), r.value18()));
         var rows = new LinkedHashMap<List<String>, List<Raw>>();
         for (var raw : raws) {
             rows.computeIfAbsent(List.of(raw.field(), raw.tableSqlName()), k -> new ArrayList<>()).add(raw);
@@ -206,8 +212,10 @@ public final class ConditionQuery {
                 first.tableJavaName(), first.recordClass());
             var terms = group.stream().map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()),
                 raw.column(), raw.typeKind(), raw.nodeId(), raw.lookupKey(), raw.origin(),
-                steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()))).toList();
-            out.add(new Row(first.field(), first.producerKind(), authored.contains(first.field()), table, terms));
+                steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
+                raw.landingRecordClass())).toList();
+            out.add(new Row(first.field(), first.producerKind(), authored.contains(first.field()), table, terms,
+                (int) rows.keySet().stream().filter(k -> k.getFirst().equals(first.field())).count()));
         });
         return out;
     }
