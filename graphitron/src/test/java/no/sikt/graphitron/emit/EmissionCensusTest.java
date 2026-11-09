@@ -5,54 +5,98 @@ import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
+import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.lang.model.element.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Which of the sakila example's field occurrences the store emits a condition for, and why each of
- * the rest is not emitted yet: a census the condition flip moves through, one reason at a time. Every
- * condition emitted compiles.
+ * Which of the sakila example's services and conditions the store emits, and why each of the rest
+ * stays with the classified model's emitters: censuses the flips move through, one exclusion at a
+ * time, over one capture of the example's schema. Every condition emitted compiles.
  */
 @PipelineTier
-class ConditionEmissionCensusTest {
+class EmissionCensusTest {
 
-    private static final String EMITTED = "EMITTED";
+    private static final String EMITTED = ServiceEmission.EMITTED;
     private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(
         ClassName.get("census.util", NodeIdEncoderClassGenerator.CLASS_NAME), "census");
 
     @TempDir
+    static Path shared;
+
+    /** The sakila example's schema, captured once for every census. */
+    private static CapturedStore sakila;
+
+    @TempDir
     Path tmp;
+
+    @BeforeAll
+    static void capture() throws Exception {
+        String sdl = Files.readString(Path.of("..", "graphitron-sakila-example", "src", "main",
+            "resources", "graphql", "schema.graphqls"));
+        sakila = CapturedStore.ofCatalogWith(shared, CapturedStore.GRAPH, sdl,
+            CatalogInput.of(testContext()), sakilaClasspath());
+    }
+
+    @AfterAll
+    static void close() {
+        if (sakila != null) sakila.close();
+    }
+
+    private static StoreHandle handle() {
+        return new StoreHandle(sakila.dsl(), CapturedStore.GRAPH);
+    }
+
+    @Test
+    void theCensusOfTheExampleSchemasServices() {
+        Map<String, String> census = ServiceEmission.read(handle()).census();
+        var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
+            Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
+        byVerdict.values().forEach(java.util.Collections::sort);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(96);
+        // Each line goes as its shape is emitted from the store; a service moving between lines is
+        // a change to look at, not to re-pin.
+        assertThat(byVerdict).containsEntry("RECORD_BUILD", List.of("Film.modifiedLanguage", "Mutation.agreeStorageBin", "Mutation.describeEmailReply",
+                "Mutation.describeEndorsement", "Mutation.endorseFilm", "Mutation.modifyFilmActorRecord",
+                "Mutation.modifyFilmRecord", "Mutation.modifyFilmRecords", "Mutation.staffAliasUpsert",
+                "Mutation.upsertAddress"))
+            .containsEntry("BUILD_REFUSED", List.of("Mutation.assignFilmActorRecordList",
+                "Mutation.assignFilmRecordList", "Mutation.assignOccupantByArgument", "Mutation.assignOccupantRecord",
+                "Mutation.assignOccupantRecordList", "Mutation.customerUpsert", "Query.filmsByNodeIdService"))
+            .containsEntry("VALIDATION", List.of("Mutation.countFilmRecordDraft", "Mutation.countFilmRecordDrafts"))
+            .containsEntry("DISCRIMINATED", List.of("Mutation.contentSearchManyMutation", "Query.contentSearchMany",
+                "Query.contentSearchOne"))
+            .containsEntry("POLYMORPHIC", List.of("Mutation.searchManyMutation", "Query.searchManyService",
+                "Query.searchOneService"))
+            .containsOnlyKeys(ServiceEmission.EMITTED, "RECORD_BUILD", "BUILD_REFUSED",
+                "VALIDATION", "DISCRIMINATED", "POLYMORPHIC");
+    }
+
 
     @Test
     void theCensusOfTheExampleSchemasConditions() throws Exception {
-        String sdl = Files.readString(Path.of("..", "graphitron-sakila-example", "src", "main",
-            "resources", "graphql", "schema.graphqls"));
-        List<ConditionQuery.Row> rows;
-        NodeIdDecodeQuery decodes;
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-                CatalogInput.of(testContext()), sakilaClasspath())) {
-            var handle = new StoreHandle(store.dsl(), CapturedStore.GRAPH);
-            rows = ConditionQuery.read(handle);
-            decodes = NodeIdDecodeQuery.read(handle);
-        }
+        var rows = ConditionQuery.read(handle());
+        var decodes = NodeIdDecodeQuery.read(handle());
         var census = new TreeMap<String, List<String>>();
         var type = TypeSpec.classBuilder("Conditions").addModifiers(Modifier.PUBLIC);
         int n = 0;
@@ -97,21 +141,23 @@ class ConditionEmissionCensusTest {
             "Query.endorsementsByNodeId film_endorsement", "Query.fanItem fan_base",
             "Query.filmActorBySingularCompositeNodeId film_actor",
             "Query.filmActorsByCompositeNodeIds film_actor", "Query.filmActorsByNullableNodeIds film_actor",
-            "Query.filmActorsFaceted film_actor", "Query.filmsByBridgedActorFirstName film",
-            "Query.filmsByEffectiveNullability film", "Query.filmsByJunctionActorId film",
-            "Query.filmsByNodeIdArg film", "Query.filmsByNodeIdArgWithTitleFilter film",
-            "Query.filmsByNullableNodeIds film", "Query.filmsByOneOf film",
-            "Query.filmsBySameTableNodeId film", "Query.filmsConnectionByOptionalIds film",
-            "Query.filmsConnectionByRequiredIds film", "Query.filmsWithImplicitInput film",
-            "Query.filmsWithMultiImplicit film", "Query.filmsWithNestedImplicit film",
-            "Query.inventoryItemsByIds inventory", "Query.languagesByKeyGenerated language",
-            "Query.levelIntervals level_interval", "Query.occupantsByName customer",
-            "Query.occupantsByName staff", "Query.occupantsByNameConnection customer",
-            "Query.occupantsByNameConnection staff", "Query.occupantsByStoreId customer",
-            "Query.occupantsByStoreId staff", "Query.presenceDetail presence_detail",
-            "Query.presenceDetailNode presence_detail", "Query.presenceDetailRequired presence_detail",
-            "Query.presenceHostRefs presence_host", "Query.presenceHosts presence_host",
-            "Query.rentalsByInventoryItem rental", "Query.splitFilterParentsByTargetLabel split_filter_parent",
+            "Query.filmActorsFaceted film_actor", "Query.films film",
+            "Query.filmsByBridgedActorFirstName film", "Query.filmsByEffectiveNullability film",
+            "Query.filmsByJunctionActorId film", "Query.filmsByNodeIdArg film",
+            "Query.filmsByNodeIdArgWithTitleFilter film", "Query.filmsByNullableNodeIds film",
+            "Query.filmsByOneOf film", "Query.filmsBySameTableNodeId film",
+            "Query.filmsConnectionByOptionalIds film", "Query.filmsConnectionByRequiredIds film",
+            "Query.filmsFaceted film", "Query.filmsOrderedConnection film",
+            "Query.filmsWithImplicitInput film", "Query.filmsWithMultiImplicit film",
+            "Query.filmsWithNestedImplicit film", "Query.inventoryItemsByIds inventory",
+            "Query.languagesByKeyGenerated language", "Query.levelIntervals level_interval",
+            "Query.occupantsByName customer", "Query.occupantsByName staff",
+            "Query.occupantsByNameConnection customer", "Query.occupantsByNameConnection staff",
+            "Query.occupantsByStoreId customer", "Query.occupantsByStoreId staff",
+            "Query.presenceDetail presence_detail", "Query.presenceDetailNode presence_detail",
+            "Query.presenceDetailRequired presence_detail", "Query.presenceHostRefs presence_host",
+            "Query.presenceHosts presence_host", "Query.rentalsByInventoryItem rental",
+            "Query.splitFilterParentsByTargetLabel split_filter_parent",
             "Query.xlatChildByParentId xlat_child", "Query.xlatChildrenByFilter xlat_child",
             "Query.xlatChildrenByParentIds xlat_child", "Query.xlatCompChildrenByParentIds xlat_comp_child",
             "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer");
@@ -137,7 +183,6 @@ class ConditionEmissionCensusTest {
                 "Query.projectNotesByProject project_note", "Query.stockByLanguageOverride film",
                 "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
                 "Store.customersByAddressDistrictSplit customer"))
-            .containsEntry("ENUM", List.of("Query.films film", "Query.filmsFaceted film", "Query.filmsOrderedConnection film"))
             .containsEntry("NODE_ID", List.of("Query.converterCampusTermByNodeId converter_campus_term",
                 "Query.converterCampusTermsByNodeIds converter_campus_term",
                 "Query.converterIdChangeByNodeId converter_id_change"))
@@ -160,7 +205,31 @@ class ConditionEmissionCensusTest {
                 "Query.filmActorsByPairList film_actor", "Query.filmActorsByPairs film_actor",
                 "Query.filmsByCastNames film", "Query.filmsByLanguagePairs film",
                 "Query.filmsByOptionalLanguages film", "Query.filmsByOriginalLanguages film"))
-            .containsOnlyKeys("AUTHORED", "CONSUMED", EMITTED, "ENUM", "NODE_ID", "NODE_ID_PARTICIPANT", "NOTHING", "THROUGH_LIST");
+            .containsOnlyKeys("AUTHORED", "CONSUMED", EMITTED, "NODE_ID", "NODE_ID_PARTICIPANT", "NOTHING", "THROUGH_LIST");
+    }
+
+    /**
+     * A refusal the call emitter makes on its own, past every exclusion the census reads off the
+     * store, is censused as one: a service under an object taking no keys is not emitted here, and
+     * the generator leaves it to the classified model rather than failing on it.
+     */
+    @Test
+    void aBodyTheCallEmitterRefusesIsCensusedAsRefused() throws Exception {
+        String sdl = """
+            type Film @table(name: "film") {
+              title: String
+              greeting: String @service(service: {
+                className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"},
+                contextArguments: ["userId"])
+            }
+            type Query { films: [Film!]! }
+            """;
+        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
+                CatalogInput.of(testContext()), sakilaClasspath())) {
+            var services = ServiceEmission.read(new StoreHandle(store.dsl(), CapturedStore.GRAPH));
+            assertThat(services.census()).containsEntry("Film.greeting", "CALL_REFUSED");
+            assertThat(services.emits("Film.greeting")).isFalse();
+        }
     }
 
     /** The sakila service and catalog modules read as the sakila example reads them. */

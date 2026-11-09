@@ -204,11 +204,11 @@ class ConditionEmitterExecutionTest {
     @Test
     @DisplayName("an enum compares as the column's constant of its name, a list of them too, where name and literal differ")
     void enums() throws Exception {
-        var pg13 = no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating.PG_13;
-        assertThat(films(condition("filmsByRating", args("rating", "PG_13")))).isNotEmpty()
-            .isEqualTo(films(FILM.RATING.eq(pg13)));
-        assertThat(films(condition("filmsByRating", args("ratings", List.of("PG_13", "G")))))
-            .isEqualTo(films(FILM.RATING.in(pg13, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating.G)));
+        var nc17 = no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating.NC_17;
+        assertThat(films(condition("filmsByRating", args("rating", "NC_17")))).isNotEmpty()
+            .isEqualTo(films(FILM.RATING.eq(nc17)));
+        assertThat(films(condition("filmsByRating", args("filter", args("ratings", List.of("NC_17", "G"))))))
+            .isEqualTo(films(FILM.RATING.in(nc17, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating.G)));
     }
 
     private static String id(String typeId, Object... key) throws Exception {

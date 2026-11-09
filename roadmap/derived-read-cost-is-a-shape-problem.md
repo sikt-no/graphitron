@@ -553,7 +553,8 @@ static method needs no holder.
   Today an empty list drops its predicate where a polymorphic participant's all-foreign ids answer
   `falseCondition()`, the lenient node-id decode drops a malformed id with one of another type, a
   non-object list element is false in one matcher and a row of nulls in another, and a faceted enum
-  list is cast where a scalar one is converted by `valueOf`, untested beyond `G`. Each gets a test
+  list is cast where a scalar one is converted by `valueOf`, untested beyond `G`, and a top-level enum
+  list argument on an enum column emits glue that does not compile. Each gets a test
   first, then a fix or a stated breaking change, after the flip, which keeps them as they are.
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
