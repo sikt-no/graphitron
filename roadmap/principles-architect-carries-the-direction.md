@@ -36,13 +36,21 @@ Every session working on the rewrite, on this machine, in the cloud or elsewhere
   that most defects do not fail the build: `validate` and `generate` read the store's verdict first and
   stop on it, so an author meets one error. The page is updated here.
 
-## Open
-
-* **Relation, anchor and rule view** (Alf, 2026-11-09, being worked through). Experience says a fact is
-  captured into a relation so it has referential integrity, which brings mark and sweep with it, and a
-  derivation rule is usually best stated as a rule view. `fact-model.adoc` § "Derived reads are views,
-  not stored facts" and the architect's "A derivation stored where a view belongs" pull the other way;
-  the balance the architect carries is settled with Alf before the page is rewritten.
+* **Grain, derived relations, anchors and views** (Alf, 2026-11-09). This replaces the account in
+  `fact-model.adoc` § "Derived reads are views, not stored facts" and the architect's "A derivation
+  stored where a view belongs".
+  * Every relation has a grain, and every fact is about a grain: the grain is what the primary key
+    says one row is.
+  * A derived fact is stored in a relation too, written by its owner's stage from a rule view and
+    marked and swept like any other, so it has keys, foreign keys and referential integrity.
+  * Anchoring is establishing a new grain, a relation whose composite primary key keys something no
+    existing relation does. A derived fact stored at an existing grain is a derived relation, not an
+    anchor.
+  * A plain view is for a trivial join and filter of existing relations.
+  * No view reads another view, rule views included: H2's planner pays for it. A view's inputs are
+    stored relations.
+  * A rule view is simple. A complex rule view means a derivation was skipped at an earlier stage,
+    and the fix is to store that derivation upstream, not to grow the rule.
 
 ## Retired vocabulary
 
