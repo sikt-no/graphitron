@@ -105,7 +105,7 @@ class CallParameterFillPinTest {
             // Outer, so a method with no parameters is a call with an empty list rather than no call.
             .leftJoin(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR))
-            .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE),
+            .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.CALL.eq(s.CALL),
                 c.POSITION.eq(p.POSITION))
             .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(s.COORDINATE, p.POSITION)

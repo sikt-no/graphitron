@@ -148,7 +148,7 @@ public final class BuildQuery {
         store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
             .from(c)
             // The service producer's join keeps another kind's fills out.
-            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE))
+            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL))
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
             .where(c.GRAPH_NAME.eq(store.graphName()), c.FILL.eq("ARGUMENT"),
@@ -196,7 +196,7 @@ public final class BuildQuery {
                 coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
             .from(c)
             // The service producer's join keeps another kind's fills out.
-            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE))
+            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL))
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
             .join(lo).on(lo.GRAPH_NAME.eq(c.GRAPH_NAME), lo.COORDINATE.eq(c.LANDING_COORDINATE))

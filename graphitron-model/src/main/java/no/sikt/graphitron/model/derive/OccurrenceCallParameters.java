@@ -14,8 +14,8 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes {@code graphitron_occurrence_call_parameter}: what fills each parameter of each service
- * call, from the rule view beside it, and for each {@code ARGUMENT} fill the {@code PARAMETER} row of
+ * Writes {@code graphitron_occurrence_call_parameter}: what fills each parameter of each call, today
+ * a service producer's, from the rule view beside it, and for each {@code ARGUMENT} fill the {@code PARAMETER} row of
  * {@code graphitron_occurrence_binding} at the occurrence taken, marked and swept.
  *
  * <p>Runs after the producers and their calls, whose methods it reads the parameters of, the
@@ -32,15 +32,16 @@ public final class OccurrenceCallParameters {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var r = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
         dsl.insertInto(c)
-            .columns(c.GRAPH_NAME, c.COORDINATE, c.POSITION, c.PARAMETER_NAME, c.FILL,
+            .columns(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.CALL_KIND, c.POSITION, c.PARAMETER_NAME, c.FILL,
                 c.LANDING_COORDINATE, c.CONTEXT_KEY, c.SESSION_MEMBER, c.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.POSITION, r.PARAMETER_NAME, r.FILL,
+                .select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.CALL_KIND, r.POSITION, r.PARAMETER_NAME, r.FILL,
                     r.LANDING_COORDINATE, r.CONTEXT_KEY, r.SESSION_MEMBER, val(touchedAt, c.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(c.GRAPH_NAME, c.COORDINATE, c.POSITION)
+            .onConflict(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.POSITION)
             .doUpdate()
+            .set(c.CALL_KIND, excluded(c.CALL_KIND))
             .set(c.PARAMETER_NAME, excluded(c.PARAMETER_NAME))
             .set(c.FILL, excluded(c.FILL))
             .set(c.LANDING_COORDINATE, excluded(c.LANDING_COORDINATE))
@@ -64,9 +65,9 @@ public final class OccurrenceCallParameters {
         var bound = s.METHOD_CLASS_NAME.concat(inline("#"), s.METHOD_NAME, s.METHOD_DESCRIPTOR,
             inline(":"), c.POSITION.cast(String.class));
         var taken = dsl
-            .select(c.GRAPH_NAME, c.LANDING_COORDINATE, bound.as("bound"), c.COORDINATE, c.POSITION)
+            .select(c.GRAPH_NAME, c.LANDING_COORDINATE, bound.as("bound"), c.COORDINATE, c.CALL, c.POSITION)
             .from(c)
-            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE))
+            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL))
             .where(c.GRAPH_NAME.eq(graph), c.FILL.eq(inline("ARGUMENT")))
             .asTable("taken");
         var graphName = taken.field(c.GRAPH_NAME);
@@ -82,14 +83,16 @@ public final class OccurrenceCallParameters {
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
             .execute();
         dsl.insertInto(p)
-            .columns(p.GRAPH_NAME, p.COORDINATE, p.BOUND, p.KIND, p.CALL_COORDINATE, p.POSITION,
+            .columns(p.GRAPH_NAME, p.COORDINATE, p.BOUND, p.KIND, p.CALL_COORDINATE, p.CALL, p.POSITION,
                 p.TOUCHED_AT)
             .select(dsl.select(graphName, coordinate, boundName, inline("PARAMETER"),
-                    taken.field(c.COORDINATE), taken.field(c.POSITION), val(touchedAt, p.TOUCHED_AT))
+                    taken.field(c.COORDINATE), taken.field(c.CALL), taken.field(c.POSITION),
+                    val(touchedAt, p.TOUCHED_AT))
                 .from(taken))
             .onConflict(p.GRAPH_NAME, p.COORDINATE, p.BOUND)
             .doUpdate()
             .set(p.CALL_COORDINATE, excluded(p.CALL_COORDINATE))
+            .set(p.CALL, excluded(p.CALL))
             .set(p.POSITION, excluded(p.POSITION))
             .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT))
             .execute();

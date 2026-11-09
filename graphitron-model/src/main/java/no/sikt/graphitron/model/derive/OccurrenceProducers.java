@@ -16,6 +16,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RES
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_WRITE;
@@ -27,7 +29,8 @@ import static org.jooq.impl.DSL.val;
 /**
  * Writes {@code graphitron_occurrence_producer} and its subtypes, the start, the call and the result: which
  * occurrences execute something and produce a result, one depth at a time, from the rule view
- * beside each, marking what this reading states.
+ * beside each, marking what this reading states; and {@code graphitron_occurrence_call} for each
+ * producer's call, the supertype the call is a subtype of too.
  *
  * <p>The first step of the assembly's per-depth loop, before {@link OccurrenceSources} states the
  * depth's sources, which read the producers of their depth. The rules read today's field-keyed
@@ -54,6 +57,8 @@ public final class OccurrenceProducers {
         refresh(dsl, p, r, graph, depth, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW, GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW_RULE,
             graph, depth, touchedAt);
+        // The calls, before the subtypes that are calls as well as producers.
+        refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_RULE, graph, depth, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE,
             graph, depth, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE_RULE,
@@ -69,7 +74,7 @@ public final class OccurrenceProducers {
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE,
                 GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE,
-                GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_PRODUCER)) {
+                GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_PRODUCER, GRAPHITRON_OCCURRENCE_CALL)) {
             dsl.deleteFrom(t)
                 .where(t.field("GRAPH_NAME", String.class).eq(graph))
                 .and(t.field("TOUCHED_AT", LocalDateTime.class).ne(touchedAt))
