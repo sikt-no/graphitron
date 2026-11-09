@@ -163,7 +163,37 @@ on a valid schema; a view chain that cost the build), raises both from the pages
 
 * "stratum", "strata", in every form: "stratum one/two/three", "the three strata", "derivation
   stratum", "derived stratum", "capture stratum", "claim stratum", "diagnostics stratum"
-* `DerivationStratum`, retired by R876 rather than by this item
+* `DerivationStratum`, retired by R876 rather than by this item, with everything named after it
+
+**The edge.** The rule is what the word names. Where "stratum" names the retired three-strata model,
+it goes here. Where it names `DerivationStratum` and its steps, a class still standing that R876
+dissolves, it goes with the class, so that R876's dissolution leaves no name behind and this item
+renames nothing R876 is about to delete.
+
+Changes here:
+
+* prose in `docs/` outside `docs/history/`, `CLAUDE.md`, `.claude/agents/` and `.claude/skills/`;
+* DDL comments in `graphitron-model.sql`, javadoc and comments in main and test sources;
+* the test identifiers that name the retired model, with their `@DisplayName` text:
+  `AstEntryIndexTest.thePopulationIsTheEntryStratum` and
+  `WarmStartRefreshTest.aStoppedFirstStratumIsRepairedByTheNextCapture`.
+
+Stays, and why:
+
+* identifiers and strings naming `DerivationStratum`'s roster, which go with the class in R876:
+  `StageOrderGateTest`'s `STRATUM` constant, `theRosterIsTheStratumItChecks`,
+  `everyDerivedTableHasAWriterInTheStratum` and `everyRelationHasOneWriterInTheStratum`,
+  `DerivationStratumCeilingGateTest` and its `theStratumWritesNoMoreRelations`, and their
+  `@DisplayName` and `.as(...)` text;
+* `StageProgress`'s log line `"graphitron: derivation stratum done in "`, which reports that class's
+  run; it changes when the class goes, and `.claude/skills/store-performance/SKILL.md`, which tells a
+  reader to look for that exact line, keeps quoting it until then;
+* other roadmap items' bodies, corrected when each is next edited rather than in bulk, as the stage
+  order gate's retired names were; a slug (`name-matching-stratum`) is an item's identity and is not
+  renamed; `roadmap/changelog.md` is permanent and `docs/history/` is a record of the past.
+
+`development-principles.adoc` sits at its 3,500-word budget by `DocSizeBudgetTest`'s count, so any
+sentence an axiom gains displaces one.
 
 ## Reviewer findings
 
