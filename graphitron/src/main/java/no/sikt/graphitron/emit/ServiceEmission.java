@@ -96,7 +96,7 @@ public final class ServiceEmission {
     private final Map<String, FillQuery.Row> fills;
     private final Map<String, Map<Integer, BuildQuery.Result>> builds;
     private final Map<String, LiftQuery.Row> lifts;
-    private final Set<String> polymorphic;
+    private final Map<String, PolymorphicLiftQuery.Row> polymorphic;
     private final Map<String, String> excluded;
     /** The services whose outcome claims validation, by coordinate. */
     private final Set<String> validating;
@@ -105,7 +105,8 @@ public final class ServiceEmission {
 
     private ServiceEmission(Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
-                            Map<String, LiftQuery.Row> lifts, Set<String> polymorphic, Map<String, String> excluded,
+                            Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
+                            Map<String, String> excluded,
                             Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated) {
         this.frames = frames;
         this.calls = calls;
@@ -120,7 +121,7 @@ public final class ServiceEmission {
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
-        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of(), Map.of());
+        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of());
     }
 
     /** Reads every part's rows for the graph once. */
@@ -137,8 +138,7 @@ public final class ServiceEmission {
             byCoordinate(FillQuery.read(store), FillQuery.Row::coordinate),
             builds,
             lifts,
-            PolymorphicLiftQuery.read(store).stream().map(PolymorphicLiftQuery.Row::coordinate)
-                .collect(Collectors.toSet()),
+            byCoordinate(PolymorphicLiftQuery.read(store), PolymorphicLiftQuery.Row::coordinate),
             excluded(store),
             validating(store),
             DiscriminatedQuery.read(store, targets));
@@ -227,7 +227,6 @@ public final class ServiceEmission {
             return "VALIDATION";
         }
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
-        if (polymorphic.contains(coordinate)) return "POLYMORPHIC";
         var told = discriminated.get(coordinate);
         if (told != null && (told.refusal().isPresent() || !lifts.containsKey(coordinate)
                 || !lifts.get(coordinate).root())) {
@@ -246,7 +245,10 @@ public final class ServiceEmission {
         var lift = Optional.ofNullable(lifts.get(coordinate))
             .map(row -> new CallEmitter.Lift(CENSUS_HOST, "lift", row.list()));
         if (CallEmitter.body(call, filled, builds.getOrDefault(coordinate, Map.of()), CENSUS_FILL, "census",
-                frame.parent().map(ServiceEmission::frameKey), lift, Optional.empty(),
+                frame.parent().map(ServiceEmission::frameKey), lift,
+                Optional.ofNullable(polymorphic.get(coordinate)).map(row -> new CallEmitter.Polymorphic(row.list(),
+                    row.participants().stream().map(p -> new CallEmitter.Polymorphic.Member(p.typeName(),
+                        CENSUS_HOST, CENSUS_HOST, "lift")).toList())),
                 validating.contains(coordinate) ? Optional.of(CENSUS_VALIDATION) : Optional.empty())
                 instanceof CallEmitter.Result.NeedsBuilding) {
             return "CALL_REFUSED";
@@ -286,22 +288,45 @@ public final class ServiceEmission {
                 runtime.selectionOccurrences()));
             liftRef = Optional.of(new CallEmitter.Lift(runtime.fetchersClass(), liftName, row.list()));
         }
+        // A record that may be a row of several members' tables is lifted by its own member's lift,
+        // each row carrying its type's name and projecting only its type's occurrences.
+        Optional<CallEmitter.Polymorphic> members = Optional.empty();
+        var poly = polymorphic.get(coordinate);
+        if (poly != null) {
+            var each = new ArrayList<CallEmitter.Polymorphic.Member>();
+            for (var participant : poly.participants()) {
+                var source = runtime.fetchersClass().nestedClass(sourceName(participant.table()));
+                nested.add(LiftEmitter.sourceTable(source, participant.table(), participant.key()).toBuilder()
+                    .addModifiers(javax.lang.model.element.Modifier.STATIC).build());
+                String liftName = fieldName + participant.typeName() + "Lift";
+                var liftRow = new LiftQuery.Row(coordinate, participant.typeName(), true, true,
+                    participant.table(), participant.key());
+                methods.add(LiftEmitter.lift(liftRow, liftName, source,
+                    runtime.projectionClass().apply(participant.typeName()), runtime.selectionOccurrences(),
+                    Optional.of(participant.typeName())));
+                each.add(new CallEmitter.Polymorphic.Member(participant.typeName(),
+                    ClassName.bestGuess(participant.table().recordClassName()), runtime.fetchersClass(), liftName));
+            }
+            members = Optional.of(new CallEmitter.Polymorphic(poly.list(), each));
+        }
         boolean validates = validating.contains(coordinate);
         var body = CallEmitter.body(call, fills.get(coordinate), builds.getOrDefault(coordinate, Map.of()),
-            runtime.fill(), bodyName, frameKey, liftRef, Optional.empty(),
+            runtime.fill(), bodyName, frameKey, liftRef, members,
             validates ? Optional.of(runtime.validation()) : Optional.empty());
         if (!(body instanceof CallEmitter.Result.Emitted emitted)) {
             throw new IllegalStateException(coordinate + " is censused as emitted but its body is not, "
                 + "though the census asks the same emitter: "
                 + ((CallEmitter.Result.NeedsBuilding) body).reason());
         }
-        TypeName valueType = liftRef.isPresent()
-            ? (liftRef.get().list()
+        boolean listed = liftRef.map(CallEmitter.Lift::list).orElse(members.map(CallEmitter.Polymorphic::list).orElse(false));
+        TypeName valueType = liftRef.isPresent() || members.isPresent()
+            ? (listed
                 ? ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get("org.jooq", "Record"))
                 : ClassName.get("org.jooq", "Record"))
             : answered(SessionIdentityRows.typeOf(call.resultType()).box(), frameKey.isPresent());
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
-            bodyName, runtime.frame(), needsContext(call, fills.get(coordinate), lift.isPresent()), validates);
+            bodyName, runtime.frame(), needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
+            validates);
         var all = new ArrayList<MethodSpec>();
         all.add(frame);
         all.add(emitted.body());
