@@ -699,6 +699,29 @@ static method needs no holder.
     the key row's accessor; the refusal reads `ServiceEmission.verdict`. `ServiceOutboxExecutionTest`
     pins the transaction and the three `$result` reads, `ServiceOutboxRejectionPipelineTest` the
     refusal.
+* **An `@outbox` binds its target's columns, its payload a selection set** `open`, off the critical
+  path. `argMapping` binds a call's parameters on `@service` and `@routine`, its left side a name the
+  store checks; on `@outbox` it names JSON keys nothing declared, and the target's columns are two
+  roles graphitron fills (Alf, 2026-11-09). A message is a call of its occurrence, so its parameters
+  are the target's: a table's columns or a routine's parameters, each bound by name, a scalar one to
+  a path and a JSON one to a selection set, so `payload: { filmId: $result.id, title: in.title }`
+  builds the body and `aggregateid: $result.id` fills a routing column an author keeps. `type` takes
+  the event unless bound. A key naming no column is the unresolved-name defect, and a `NOT NULL`
+  column with no default that nothing binds is an unbound parameter, as `ROUTINE_PARAMETER_UNBOUND`
+  is; the default check this replaces carries over as that.
+  The grammar is one for every `argMapping`, a strict subset of Apollo Connectors' `JSONSelection`
+  (`apollo-federation/src/connectors/json_selection/README.md` in `apollographql/router`), whose
+  principle that a selection's output shape is static is the store's own: shorthand (`title`),
+  alias (`filmId: $result.id`), nested objects (`key: { ... }`), a path's sub-selection
+  (`in { title releaseYear }`), string, number and boolean literals, and whitespace or commas
+  between entries, `#` comments allowed. Our sigils stay (`$result`, `$session`, `$scope`, valid
+  `VarPath`s there), and a bare name stays relative to the call's arguments. Left out: `->` methods,
+  `??` and `?!`, `@`, `$(...)`, spread (a payload following an input type's every change is the
+  contract coupling a payload must not have) and `?` (an argument a client left out is already
+  absent). Each site admits what its parameters take: a nested object at a non-JSON parameter is a
+  defect, not a parse error, and today's flat strings are already valid. Slices: the parser; the
+  store's landing of nested keys and sub-selections; the column and parameter binding with its
+  defects; the companion.
 * **An `@outbox` on a `@routine` mutation emits from the store** `open`, off the critical path.
   R1113's phase 3 for routine writes. A routine write is emitted from the store already
   (`RoutineWriteEmitter`), and like a DML write it captures, inside its transaction, what it reads
