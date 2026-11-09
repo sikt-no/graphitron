@@ -528,18 +528,21 @@ static method needs no holder.
       service's candidates are every method of its reference's class and name rather than the one a
       name-unique reference resolves, so an overload set the store refuses today pins the overload every
       position fills, agreeing with `ServiceCatalog`'s choice where the walk has one; a capability change.
-    * **A `@condition` is a call per type its occurrence's rows are** `open`.
-      `graphitron_occurrence_condition(graph, coordinate,
-      target_type)`, a call subtype, one row per occurrence carrying a `@condition` and per type its
-      need reaches, the table read through the occurrence's join path where it has one and off the
-      target type where it has none (a root field's own `@condition`); the pin references
+    * **A `@condition` is a call per table its occurrence binds** `blocked`, on "An occurrence binds
+      the table its rows or its value land on". `graphitron_occurrence_condition(graph, coordinate,
+      bound)`, a call subtype keyed into `graphitron_occurrence_binding`, one row per occurrence
+      carrying a `@condition` and per table it binds: a field's `TABLE`, root or child, one per
+      participant; a scalar argument's or input field's `COLUMN`; an `@nodeId` one's `NODE_ID` at the
+      foreign key's target; an input object's or an unmatched one's `TABLE`, so the table is the
+      binding's and no view derives it. `call` is `condition:<bound>`; the pin references
       `code_condition_method` by `_ref` columns, `ON DELETE SET NULL`, as the step method does. It
       carries `override_written`, the `override:` written, doomed with the consumption rule and kept
       for the transition against the review's point that it is a definition-keyed fact repeated
-      per type (Alf, 2026-11-09). Its fills follow the manual's `@condition` reference, § How the
-      method's parameters are bound, today's rules reproduced; a parameter nothing fills is
-      `CONDITION_PARAMETER_UNFILLED`, written per call and reported at the written `@condition` naming
-      the participant (Alf, 2026-11-09).
+      per table (Alf, 2026-11-09). Its fills follow the manual's `@condition` reference, § How the
+      method's parameters are bound, today's rules reproduced, condition fills written per depth
+      after the bindings they read. A parameter nothing fills is `PARAMETER_UNFILLED`, the call
+      parameter defects stated for every pinned call off `graphitron_occurrence_call_pin` and worded
+      for any call, reported at the written directive naming the participant (Alf, 2026-11-09).
     * **A `@condition` and a service pair a parameter with an argument by one rule** `open`, off the
       critical path. The condition keeps its own by-type pairing through the flip; the differences
       from the service's, listed under "A `@condition`'s fills", are closed then, one rule for every
@@ -977,6 +980,12 @@ classified records have no reader left and can go with the walk.
   subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
   `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
   producer's value object being bound.
+  * **An occurrence binds the table its rows or its value land on** `open`, F's.
+    `graphitron_occurrence_binding_table`, the `TABLE` subtype, written beside the needs: a field
+    whose values are a table's rows binds that table, a root field as a child does, one row per
+    participant; an argument or input field no column takes, an input object or an unmatched scalar,
+    binds the table its path lands on. With `COLUMN` and `NODE_ID`, every occurrence that filters or
+    is filtered binds a table, which a `@condition` call is keyed by (Alf, 2026-11-09).
   * **A member's value off its parent's object binds `VALUE`** `done`. Every occurrence an accessor
     path meets binds `VALUE`, `Class#member` or the class alone where the object passes through,
     and `graphitron_occurrence_binding_value` names the class read off, the value's class and the
