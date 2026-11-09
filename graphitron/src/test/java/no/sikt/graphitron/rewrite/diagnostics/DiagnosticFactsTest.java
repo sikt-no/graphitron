@@ -457,8 +457,10 @@ class DiagnosticFactsTest {
                 .orderBy(DIAGNOSTIC.LSP_CODE)
                 .fetch();
             assertThat(rows.map(r -> r.getLspCode()))
-                .as("both written-entry defects reach the surface, under the defect type's code")
-                .containsExactly("GRAPHITRON_CONNECTION_RETURN", "GRAPHITRON_MULTIPLE_ROUTINE_NODES");
+                .as("every written-entry defect reaches the surface, under the defect type's code:"
+                    + " the two root routines name nothing in a capture with no catalog")
+                .containsExactly("GRAPHITRON_CONNECTION_RETURN", "GRAPHITRON_ELEMENT_UNRESOLVED",
+                    "GRAPHITRON_ELEMENT_UNRESOLVED", "GRAPHITRON_MULTIPLE_ROUTINE_NODES");
 
             var row = rows.get(0);
             assertThat(row.getSeverity()).as("the defect type's own severity, already the wire's word")
@@ -508,10 +510,10 @@ class DiagnosticFactsTest {
             assertThat(dsl.fetchCount(GRAPHITRON_ENTRY_DEFECT,
                     GRAPHITRON_ENTRY_DEFECT.GRAPH_NAME.eq(GRAPH)))
                 .as("the fixture reaches the arm, so the comparison below is not between two zeroes")
-                .isEqualTo(2);
+                .isEqualTo(4);
             assertThat(dsl.fetchCount(DIAGNOSTIC,
                     DIAGNOSTIC.GRAPH_NAME.eq(GRAPH).and(DIAGNOSTIC.SOURCE.eq("schema"))))
-                .isEqualTo(2);
+                .isEqualTo(4);
         });
     }
 
