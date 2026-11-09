@@ -1,0 +1,33 @@
+# A delete's rows are gone once it runs, so nothing re-reads them: a field under the object type a
+# delete returns re-reading its rows by key draws the defect at that field, and a delete returning a
+# @table type draws it at its own field. A delete handing back the ids of what it removed draws
+# nothing, directly or through a field of the type it returns.
+
+type Film @table(name: "film") { title: String }
+
+type FilmGone { film: Film }
+type FilmGoneIds { id: ID }
+
+type Query {
+  films: [Film]
+}
+
+type Mutation {
+  deleteFilmReread(title: String): FilmGone @mutation(typeName: DELETE)
+  deleteFilmRow(title: String): Film @mutation(typeName: DELETE)
+  deleteFilmIds(title: String): [ID] @mutation(typeName: DELETE, table: "film")
+  deleteFilmIdEcho(title: String): FilmGoneIds @mutation(typeName: DELETE, table: "film")
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                   coordinate
+  REREAD_OF_DELETED_ROWS, FilmGone.film
+  REREAD_OF_DELETED_ROWS, Mutation.deleteFilmRow
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                   coordinate
+  REREAD_OF_DELETED_ROWS, Mutation.deleteFilmIds
+  REREAD_OF_DELETED_ROWS, Mutation.deleteFilmIdEcho
+  REREAD_OF_DELETED_ROWS, FilmGoneIds.id
+  """)

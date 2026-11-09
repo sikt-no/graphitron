@@ -12699,6 +12699,76 @@ SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
   JOIN graphitron_connection_element_type ce
     ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
 UNION ALL
+-- A paginated return on an insert, update or delete, at its @mutation: the write's rows are re-read
+-- by the keys it returned, which is not a page, as a @routine write's are.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'CONNECTION_RETURN', CAST(NULL AS VARCHAR)
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f
+    ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_producer p
+    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
+   AND p.kind IN ('INSERT', 'UPDATE', 'DELETE')
+  JOIN graphitron_connection_element_type ce
+    ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
+ WHERE da.directive_name = 'mutation' AND da.ordinal = 0 AND da.source_name IS NOT NULL
+UNION ALL
+-- A field reading a member off what a write hands back, at the field: an insert, update, delete or
+-- @routine write hands back its keys and not an object of a class, so a field under the object type
+-- it returns reads nothing there. A field re-reading the written rows by those keys, an id encoded
+-- from them and the errors field are what such a type holds.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'WRITE_RESULT_HOLDS_ONLY_KEYS', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer p
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_reader rd
+    ON rd.graph_name = ft.graph_name AND rd.type_name = ft.target_type_name AND rd.reads = 'ACCESSOR'
+  JOIN graphitron_field f
+    ON f.graph_name = rd.graph_name AND f.type_name = rd.type_name AND f.field_name = rd.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE')
+   AND f.named_type <> 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
+                    WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                    WHERE rc.graph_name = ft.graph_name AND rc.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                      AND e.field_name = f.field_name)
+UNION ALL
+-- A re-read of what a delete removed, at the field that would re-read it: a field under the object
+-- type a delete returns re-reading its rows by key, or the delete's own field returning a @table
+-- type. The rows are gone once the delete runs; what it hands back is their keys.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer p
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_field_key_row k
+    ON k.graph_name = ft.graph_name AND k.type_name = ft.target_type_name
+  JOIN graphitron_field f
+    ON f.graph_name = k.graph_name AND f.type_name = k.type_name AND f.field_name = k.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'DELETE'
+UNION ALL
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer p
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_tabletype b
+    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'DELETE'
+UNION ALL
 -- A read surface written on a write. Three sites state one, and each row sits at its own.
 -- On the field or on one of its arguments, each at its own application.
 SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
@@ -17594,7 +17664,11 @@ INSERT INTO graphitron_defect_type VALUES
   ('MULTIPLE_ROUTINE_NODES', 'error', 'GRAPHITRON', 'GRAPHITRON_MULTIPLE_ROUTINE_NODES',
    'A mutation field carrying more than one @routine writes more than once, and the generator emits one write per field.', 'entry-defects'),
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
-   'A @routine write re-reads its committed row by the keys the write returned, which is not a page, so the generator emits nothing for a field @asConnection rewrote.', 'entry-defects'),
+   'A write re-reads its committed rows by the keys it returned, which is not a page, so the generator emits nothing for a write @asConnection rewrote.', 'entry-defects'),
+  ('WRITE_RESULT_HOLDS_ONLY_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_RESULT_HOLDS_ONLY_KEYS',
+   'A field under the object type a write returns reads a member off what the write hands back, and a write hands back the keys of its rows, not an object of a class: re-read the rows by those keys, or encode them as an id.', 'entry-defects'),
+  ('REREAD_OF_DELETED_ROWS', 'error', 'GRAPHITRON', 'GRAPHITRON_REREAD_OF_DELETED_ROWS',
+   'A field re-reads the rows a delete removed, and they are gone once it runs: a delete hands back the keys of its rows, so return their ids.', 'entry-defects'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
    'A step reaches its destination by more than one route, a chain link naming a table two keys reach or a field with no path written between two tables more than one foreign key joins, so the generator has a join to emit and nothing to pick it by; naming the foreign key settles it.', 'occurrence-depths'),
   ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',

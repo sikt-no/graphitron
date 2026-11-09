@@ -899,12 +899,13 @@ pass and no stratum that clears and recomputes.
       * **A write's table is the one the tables it is read on agree on** `done`. However many fields
         re-read its rows, `WRITE_TABLES_DISAGREE` at the `@mutation` where they and
         `@mutation(table:)` disagree, the scope's `REREAD_TABLE` rung likewise.
-      * **The gaps are codes** `open`. A field reading a class member off a write's result, which
-        holds only keys; a re-read under a DELETE, whose rows are gone; a list over one delivered
-        value, and many keys into one field, key-row arity coming from the producer; a lookup under
-        an object with no key row; an outcome in a list. `CONNECTION_RETURN` covers every keyed
-        re-read, and a `@reference` on a routine write's object return is refused for joining
-        onward rather than for its table.
+      * **What a write's result holds is stated** `done`. `WRITE_RESULT_HOLDS_ONLY_KEYS` at a field
+        reading a member off it, `REREAD_OF_DELETED_ROWS` at a re-read of a delete's rows, and
+        `CONNECTION_RETURN` on every write; a `@reference` on a routine write's object return keeps
+        `REFERENCE_WITHOUT_TARGET_TABLE`, a true rule for it.
+      * **Arity and keys are codes** `open`. A list over one delivered value, many keys into one
+        field, key-row arity coming from the producer, a lookup under an object with no key row, and
+        an outcome in a list.
       * **What the model admits the emitters follow** `open`. An id encoded from returned keys
         under an insert or update, a non-null single field under a routine with no errors field and
         a list field taking one row by an arity-one key row are no defect, so the emitter refusals

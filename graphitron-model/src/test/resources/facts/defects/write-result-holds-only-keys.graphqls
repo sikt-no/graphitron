@@ -1,0 +1,35 @@
+# A write hands back the keys of its rows and not an object of a class, so a field under the object
+# type it returns reading a member off that result reads nothing there, at the field: an update's, and
+# a @routine write's. What such a type holds is a field re-reading the written rows by those keys, an
+# id encoded from them and an errors field, and each of those draws nothing.
+
+type Film @table(name: "film") { title: String }
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+
+type FilmTitleEcho { title: String }
+type FilmReread { film: Film, id: ID }
+type RentalStamp { stamp: String }
+
+type Query {
+  films: [Film]
+  rentals: [Rental]
+}
+
+type Mutation {
+  updateFilmTitle(title: String): FilmTitleEcho @mutation(typeName: UPDATE, table: "film")
+  updateFilm(title: String): FilmReread @mutation(typeName: UPDATE)
+  rentFilmStamp(inventoryId: Int!, customerId: Int!): RentalStamp
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                         coordinate
+  WRITE_RESULT_HOLDS_ONLY_KEYS, FilmTitleEcho.title
+  WRITE_RESULT_HOLDS_ONLY_KEYS, RentalStamp.stamp
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                         coordinate
+  WRITE_RESULT_HOLDS_ONLY_KEYS, FilmReread.film
+  WRITE_RESULT_HOLDS_ONLY_KEYS, FilmReread.id
+  """)

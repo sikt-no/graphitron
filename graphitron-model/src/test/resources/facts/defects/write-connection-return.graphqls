@@ -1,0 +1,24 @@
+# A write re-reads its committed rows by the keys it returned, which is not a page, so a write
+# @asConnection rewrote draws CONNECTION_RETURN at its @mutation, as a @routine write does at its
+# @routine. The same write returning a plain list draws nothing.
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  films: [Film]
+}
+
+type Mutation {
+  updateFilmsPaged(title: String): [Film] @asConnection @mutation(typeName: UPDATE)
+  updateFilms(title: String): [Film] @mutation(typeName: UPDATE)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,              coordinate
+  CONNECTION_RETURN, Mutation.updateFilmsPaged
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,              coordinate
+  CONNECTION_RETURN, Mutation.updateFilms
+  """)
