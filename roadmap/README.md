@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R920` | a failed batch logs once, without its SQL, and a consumer can cap batch size | Spec | 2026-11-05 <sub>created 2026-09-04</sub> | [plan](batch-failure-logs-once-not-per-field.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1076` | _entities answers a representation with an unknown __typename with an error, not a silent null | In Progress | 2026-11-09 <sub>created 2026-10-20</sub> | [plan](entities-unknown-typename-is-an-error.md) |
+| `R1076` | _entities answers a representation with an unknown __typename with an error, not a silent null | In Review | 2026-11-09 <sub>created 2026-10-20</sub> | [plan](entities-unknown-typename-is-an-error.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -662,7 +662,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R935` [**Lower a client-supplied ordering onto an inline child list, or refuse the shape**](inline-child-list-orderby-argument-not-lowered.md) — Backlog, architecture
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
-- `R1076` [**_entities answers a representation with an unknown __typename with an error, not a silent null**](entities-unknown-typename-is-an-error.md) — In Progress, bug
+- `R1076` [**_entities answers a representation with an unknown __typename with an error, not a silent null**](entities-unknown-typename-is-an-error.md) — In Review, bug
 - `R1111` [**A routine argument mapped from a computed $source column looks up a parentInput field typed with its generator**](routine-source-column-strips-generator.md) — Backlog, bug
 - `R1078` [**An enum-typed output field over a jOOQ-enum column is not checked against the Java enum constants**](enum-output-over-jooq-enum-column-unchecked.md) — Backlog, bug
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture

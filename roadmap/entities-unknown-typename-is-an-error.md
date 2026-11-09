@@ -1,7 +1,7 @@
 ---
 id: R1076
 title: "_entities answers a representation with an unknown __typename with an error, not a silent null"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: codegen-correctness
