@@ -1,7 +1,7 @@
 ---
 id: R1163
 title: "The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete"
-status: Spec
+status: Ready
 bucket: dx
 theme: tooling
 depends-on: []
@@ -232,3 +232,11 @@ vocabulary match. If the log line changes, the skill that matches on it changes 
 Non-blocking: `development-principles.adoc` is at exactly 3,500 words by `DocSizeBudgetTest`'s count,
 so the sentence an axiom may gain has to displace one. The test's own message says so; the plan could
 say it too.
+
+### Round 2: Spec → Ready (session_01WkW2JEeeQCuEvkzNXeRSgW, 2026-11-10)
+
+Verdict: sign off. Finding 1 is met. Retired vocabulary now draws the edge by what the word names:
+the retired three-strata model goes here, and `DerivationStratum`'s roster goes with the class.
+Every identifier on both lists exists in the class named, every `Stratum` identifier in the Java
+tree is on one list or the other, and R876's "`DerivationStratum` is gone" node already takes
+`StageProgress` and `StageOrderGateTest`, so what stays has an owner. The budget note is taken up.
