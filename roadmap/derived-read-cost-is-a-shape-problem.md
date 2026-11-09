@@ -511,7 +511,10 @@ static method needs no holder.
       parameter fills, `graphitron_occurrence_call_parameter` as the routine call node widens it, are
       re-keyed by the call and position and carry `call_kind`, so a fill only some calls take is a
       check (`TABLE` on a condition, `SOURCE` on a producer's call), and the `PARAMETER` binding's
-      place is spelled from the same key; nothing a reader sees changes.
+      place is spelled from the same key; nothing a reader sees changes. The service readers
+      (`CallQuery`, `BuildQuery`, `FillQuery`) keep filtering to service calls, and a routine
+      parameter filled from a `$source` column is a fill of its own, never `SOURCE`, which is the
+      batch's keys; the routine call node rebases onto this one (Alf and F, 2026-11-09).
     * **A call's fills are stated per candidate overload, and its method is the one candidate every position fills** `blocked`,
       on "Every call an occurrence makes is a row of one supertype". One
       stage owns every fill: the candidates' fills, the pin and the stored fills, for producer calls
@@ -610,7 +613,7 @@ static method needs no holder.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
-* **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
+* **A routine call is stated per occurrence and emitted from the store, as a service call is** `blocked`, F's, on "Every call an occurrence makes is a row of one supertype".
   A root `@routine` is the producer call: its parameters are filled per occurrence in
   `graphitron_occurrence_call_parameter`, widened from service calls to any producer's call, and its
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
