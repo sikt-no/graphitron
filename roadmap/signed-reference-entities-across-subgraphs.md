@@ -285,3 +285,67 @@ caller, mutations and the tenant interaction open. Settled here:
 * The caller read from a member of the mount's handle (`$session.<member>`, checked against
   `graphitron_session_handle_member`): no new `SessionState` parameter, but B would have to mount the
   request's own connection before it could verify, and a build without `<handle>` would have no caller.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready (session_01WkW2JFv9qFDgNA4RommHSq, 2026-11-09)
+
+Verdict: withhold. The goal reads without the step list and the design extends shapes already in the
+tree rather than standing beside them: checked against trunk, `NodeIdEncoder`, `TenantHandDown`,
+`LocalContextOwnershipGuardTest`, `TenantConnections`, `MountedSession` (`tenant()` only in a
+`<tenantColumn>` build), `SessionMountException` (thrown out of `GraphQL.execute`, first rejection
+remembered for the operation), `graphitron_directive_application_minted` and its arg relation,
+`graphitron_federation_link_import_rule` (imports every minted directive the link's version allows, so
+`@inaccessible` needs no change), `graphitron_ast_node_id_entry`, `store_graph_session_supplied` and
+the "a rolled-back mutation field is `null`" rule all exist as described. The dispatcher already picks the
+most-specific resolvable key alternative (`federation-keys.adoc`), so a `{id, voucher}` representation
+does reach the voucher alternative once it arrives. Two blocking findings, both on question one, and two
+smaller ones.
+
+**Finding 1 (question one: viability). Nothing makes the router use the voucher key, and if it does not,
+the feature fails silently.** Step 2 says the router sends `{id, voucher}` to B. But B publishes two
+resolvable keys, the authored `@key(fields: "id")` and the minted `@key(fields: "id voucher")`, and A can
+supply the fields of both. The query planner may take either key for the jump from A to B, and the spec
+keeps the plain key on purpose ("the type still resolves by plain `id`"). If the planner takes `id`, B
+resolves the entity under the caller's own RLS, the policy hides the rows, and the client gets `null` or
+missing entities with no error. That is the quiet denial the spec rules out for a bad voucher ("fails the
+request ... nothing in that request is answered"). The execution test runs A and B in one fixture with no
+router, so it feeds B the representation the spec assumes and cannot catch this. The spec needs to do one
+of two things. Either show how the planner chooses between the two keys (documented composition or
+query-planner behaviour, plus a test that plans a query over the composed supergraph of the two fixture
+subgraphs and asserts the voucher key is used). Or change the design so the plain key cannot carry the
+jump for vouched data, for example by having B's protected fields require the voucher
+(`@requires(fields: "voucher")` with the field `@external`) rather than relying on key choice. Which one
+it is changes what gets built.
+
+**Finding 2 (question one: viability). The minted key's `resolvable` is unspecified, and in A it must be
+`false`.** In the example, A's authored key is `@key(fields: "id", resolvable: false)`. The spec says
+the minted key is "the authored key's fields plus the marked field" and says nothing about `resolvable`.
+If it defaults to `true`, A claims to the supergraph that it can resolve `VgsResultat` by `id voucher`.
+`EntityResolutionBuilder` then wants a SELECT path for that key on A's side, and A has nothing to resolve
+`voucher` from: on A the field is computed by signing, not decoded from a representation. State that the
+minted key copies the authored key's `resolvable` (so `false` in A, `true` in B, through
+`graphitron_directive_application_arg_minted`). Also say which authored key it extends when a type has
+more than one. "Either marker on a type with no authored `@key`" covers zero keys, not two. Add the
+reference-only case to the pipeline test that already names "a reference-only row type".
+
+**Finding 3 (question one: viability). The signed form of the key fields is undefined across the two
+sides.** A signs "the row's key fields in their own scalar form", read from its column
+(`vgs_resultat_id`, whatever its jOOQ type). B "recomputes them from the representation", which is JSON
+off the wire, so for an `ID` it is a string. If A signs the column's Java value and B the decoded
+representation value, verification fails for every row whose column type does not print the same way as
+its wire form (an integer key under `ID`, a UUID, a composite key's field order). Specify one canonical
+input, presumably each key field's serialized GraphQL value in key-selection order with the type name, and
+add a codec or execution test with a non-`String` key column.
+
+**Finding 4 (question one, non-blocking). Close the per-row signing question rather than leaving it open.**
+The voucher is a field: it is computed only when selected, and the router selects it only when it plans
+the voucher key. So "sign lazily only for rows the router actually asks the key of" is already what the
+fetcher does, once Finding 1 is settled. Whether a ceiling is still wanted is then a small decision, and
+better made here than at implementation time.
+
+Notes, not blocking: the docs draft should say that both subgraphs must put the same string on
+`SessionState.of` as the caller (for example the token subject), since router header propagation is out
+of scope and a mismatch shows up as every voucher being rejected. A sentence on clock skew between A's
+expiry and B's check (a tolerance, or none on purpose) would answer a question the implementer will
+otherwise answer alone.
