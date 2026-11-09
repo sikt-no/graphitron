@@ -1186,6 +1186,10 @@ someone to profile.
     on a large schema unseen. `store_graph_read` records, per capture, each relation a gatherer
     read for a millisecond or more, beside `store_graph_write`, and MCP `status`, the `graphitron:dev`
     line and the backstop rank both.
+  * **A stage's time includes its preparation** `open`. `WriteTimes` starts its clock at jOOQ's
+    `executeStart`, after H2 has parsed and planned, so every stage figure, the backstop's among
+    them, misses what is about 70% of the store-heavy test JVMs' samples
+    (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
   * **A stage's rows written count every row a batch writes** `open`. `store_graph_write.rows_written`
     undercounts writes that bind one row per batch entry: on sis it records 22 rows for
     `graphitron_ast_field_path_entry`, which holds 828, and 23 for `graphitron_ast_path_entry`, which
@@ -1203,8 +1207,9 @@ someone to profile.
     whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
     what still grew was its two column-match parts, 2 to 32 ms, which read
     `graphitron_field_target_column_match`, since gone. Inside the backstop's slack, so not on its known list.
-    Its merge is also the costliest statement to plan in the build: the rule reaches 116 relations
-    through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
+    Its merge was also the costliest statement to plan in the build: the rule reaches 116 relations
+    through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`);
+    at the 2026-11-09 re-profile it is 4% of that JVM, and each of the path-need rule's two upserts is 12%.
   * **An upsert finds the row it updates through one key** `done`.
   * **An upsert into a table with an independent unique key is decided per table** `open`.
     `graphitron_federation_definition` is unique by local name, and `graphitron_ast_reference_element_entry` and
@@ -1214,6 +1219,14 @@ someone to profile.
 * **A stage's statement reads tables, not a chain of views** `open`. A gate holds the cost of
   preparing each stage's statement, since on a fresh store most of a capture's time goes to H2
   expanding views rather than executing them.
+* **A per-depth rule is planned once per depth** `open`. `PathNeeds.write` inlines its rule's union
+  into two upserts and `OccurrenceSources.write` into four, so H2 plans the whole union that many
+  times a depth; together they are a sixth to a fifth of the verification build's CPU, all of it
+  planning (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
+* **A one-capture store's statement cache holds a depth of the loop** `open`. `StoreUse.ONE_CAPTURE`
+  keeps 8 statements and one depth of `OccurrenceDepths` runs more, so each depth re-prepares
+  statements whose text repeats from depth 1 on; `StoreUse`'s premise that a first capture repeats
+  nothing predates the loop.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's
   own shutdown hook closes the database, so a long session's store does not keep growing.
 
