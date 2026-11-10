@@ -219,11 +219,9 @@ final class JooqRecordInstantiationEmitter {
      * <p>Flag-reset side effect: the decode loads key columns via {@code Record.fromArray}, and jOOQ's
      * {@code from()} null-skip semantics reset the touched flag of every null-valued column
      * record-wide. Key decodes are emitted after the column bindings, so a running decode erases any
-     * explicit-null column write made earlier in the helper (a non-null value survives). The
-     * execution tier pins both halves: {@code GraphQLQueryTest}'s
-     * {@code customerUpsert_explicitNullNestedLeaf_collapsesToOmitted} (decode present, NULL write
-     * erased) and {@code customerUpsert_explicitNullNestedLeaf_noIdentityDecode_writesNull} (no
-     * decode, NULL write survives).
+     * explicit-null column write made earlier in the helper (a non-null value survives). This is a
+     * defect: {@link no.sikt.graphitron.emit.BuildEmitter#recordHelper} loads every value before any
+     * explicit null and does not reproduce it.
      */
     private static void emitKeyDecode(MethodSpec.Builder b, CallSiteExtraction.RecordKeyDecode kd,
             ClassName tablesClass, String tableField, ClassName clientException) {

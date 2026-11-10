@@ -75,13 +75,17 @@ public final class BuildEmitter {
             .returns(type)
             .addParameter(ANY_MAP, "in")
             .addStatement("$T out = new $T()", type, type);
-        // The values first, then the explicit nulls, each column from the first of its fields sent.
+        // The values first, then the explicit nulls, each column from the first of its fields sent. A
+        // field under a grouping is read through it, and an absent or null grouping sends nothing.
+        var groups = new int[] {0};
         for (boolean nulls : new boolean[] {false, true}) {
             for (var column : build.columns()) {
                 var field = CodeBlock.of("$T.$L.$L", table, build.tableField(), column.columnJavaName());
                 boolean first = true;
                 for (var path : column.paths()) {
-                    var condition = CodeBlock.of("in.containsKey($S)", path.getLast());
+                    var reach = reach(path, groups);
+                    var sent = path.getLast();
+                    var condition = CodeBlock.of("$L$L.containsKey($S)", reach.condition(), reach.map(), sent);
                     if (first) {
                         method.beginControlFlow("if ($L)", condition);
                         first = false;
@@ -89,12 +93,12 @@ public final class BuildEmitter {
                         method.nextControlFlow("else if ($L)", condition);
                     }
                     if (nulls) {
-                        method.beginControlFlow("if (in.get($S) == null)", path.getLast())
+                        method.beginControlFlow("if ($L.get($S) == null)", reach.map(), sent)
                             .addStatement("out.set($L, null)", field)
                             .endControlFlow();
                     } else {
-                        method.beginControlFlow("if (in.get($S) != null)", path.getLast())
-                            .addStatement("out.fromArray(new $T[] {in.get($S)}, $L)", Object.class, path.getLast(),
+                        method.beginControlFlow("if ($L.get($S) != null)", reach.map(), sent)
+                            .addStatement("out.fromArray(new $T[] {$L.get($S)}, $L)", Object.class, reach.map(), sent,
                                 field)
                             .endControlFlow();
                     }
@@ -105,7 +109,9 @@ public final class BuildEmitter {
         var counter = new int[] {0};
         for (var member : build.decodes()) {
             var id = "id" + (++counter[0]);
-            method.beginControlFlow("if (in.get($S) instanceof $T $L)", member.path().getLast(), STRING, id);
+            var reach = reach(member.path(), groups);
+            method.beginControlFlow("if ($L$L.get($S) instanceof $T $L)", reach.condition(), reach.map(),
+                member.path().getLast(), STRING, id);
             NodeIdDecodeEmitter.into(method, CodeBlock.of("out"), member.decode().orElseThrow(), id,
                 conflictLabel(build, member), runtime);
             method.endControlFlow();
@@ -113,7 +119,9 @@ public final class BuildEmitter {
         for (var member : build.decodes()) {
             var decode = member.decode().orElseThrow();
             var sent = member.path().getLast();
-            method.beginControlFlow("if (in.containsKey($S) && in.get($S) == null)", sent, sent);
+            var reach = reach(member.path(), groups);
+            method.beginControlFlow("if ($L$L.containsKey($S) && $L.get($S) == null)", reach.condition(), reach.map(),
+                sent, reach.map(), sent);
             for (var column : decode.columnJavaNames()) {
                 var field = CodeBlock.of("$T.$L.$L", SessionIdentityRows.classOf(decode.tablesClass()),
                     decode.tableField(), column);
@@ -124,6 +132,25 @@ public final class BuildEmitter {
             method.endControlFlow();
         }
         return method.addStatement("return out").build();
+    }
+
+    /** Where a path's last name is read: the map it is in, and what must hold to reach that map. */
+    private record Reach(CodeBlock condition, String map) {}
+
+    /**
+     * Reaches the map a path's last name is in, through each grouping before it: {@code in} at the
+     * top, else a fresh pattern variable bound by an {@code instanceof} chain the condition ends
+     * ready for {@code &&}.
+     */
+    private static Reach reach(List<String> path, int[] groups) {
+        var condition = CodeBlock.builder();
+        var map = "in";
+        for (var group : path.subList(0, path.size() - 1)) {
+            var next = "group" + (++groups[0]);
+            condition.add("$L.get($S) instanceof $T $L && ", map, group, ANY_MAP, next);
+            map = next;
+        }
+        return new Reach(condition.build(), map);
     }
 
     /**

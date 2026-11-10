@@ -8503,16 +8503,12 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void customerUpsert_explicitNullNestedLeaf_collapsesToOmitted() {
-        // A nested explicit-null alongside a PRESENT identity group collapses to omitted
-        // (changed=false). Not a coercion effect: graphql-java retains the nested null (variables,
-        // used here, and inline literals alike), and the emitted guard takes its present-null
-        // branch and set()s the column to NULL — but the identity group's trailing fromArray key
-        // decode then resets the touched flag of every null-valued column record-wide (jOOQ from()
-        // null-skip semantics), erasing the write.
+    void customerUpsert_explicitNullNestedLeaf_besideADecodedNodeId_writesNull() {
+        // A nested explicit null alongside a PRESENT identity group is written as NULL
+        // (changed=true): graphql-java retains the nested null (variables, used here, and inline
+        // literals alike), and the identity group's key decode does not drop it.
         // customerUpsert_explicitNullNestedLeaf_noIdentityDecode_writesNull is the counterpart
-        // without the decode, where the NULL write survives; a set VALUE survives the decode (see
-        // customerUpsert_nestedLeafSet_landsOnColumn_omittedSiblingUntouched).
+        // without the decode.
         String customerId1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         var details = new java.util.HashMap<String, Object>();
         details.put("firstName", null);
@@ -8523,18 +8519,14 @@ class GraphQLQueryTest {
             "mutation($in: CustomerUpsertInput!) { customerUpsert(in: $in) }",
             java.util.Map.of("in", in));
         assertThat(data).extractingByKey("customerUpsert")
-            .isEqualTo("customerId[changed=true,val=1] first[changed=false,val=null] last[changed=false,val=null]");
+            .isEqualTo("customerId[changed=true,val=1] first[changed=true,val=null] last[changed=false,val=null]");
     }
 
     @Test
     void customerUpsert_explicitNullNestedLeaf_noIdentityDecode_writesNull() {
-        // Counterpart of customerUpsert_explicitNullNestedLeaf_collapsesToOmitted, isolating the
-        // cause. graphql-java RETAINS a nested explicit-null (inline literal and variables alike),
-        // so the leaf takes the emitted present-null → NULL branch: changed=true, val=null. The
-        // sibling test's collapse to changed=false is not coercion: its present identity group runs
-        // a trailing fromArray key decode, and jOOQ's from() null-skip semantics reset the touched
-        // flag of every null-valued column record-wide, erasing the earlier NULL write. No identity
-        // group here, so no decode runs and the write survives.
+        // Counterpart of customerUpsert_explicitNullNestedLeaf_besideADecodedNodeId_writesNull, with
+        // no identity group and so no decode. graphql-java RETAINS a nested explicit-null (inline
+        // literal and variables alike), so the leaf is written as NULL: changed=true, val=null.
         Map<String, Object> data = execute(
             "mutation { customerUpsert(in: {details: {firstName: null}}) }");
         assertThat(data).extractingByKey("customerUpsert")

@@ -301,58 +301,86 @@ public final class BuildQuery {
      * node id field decodes into the record's own key or its foreign key to the node's table; and
      * where several fields name one column a live one is preferred over a deprecated one, the latest
      * declared among deprecated ones, two live ones being refused for nothing saying which the author
-     * meant.
+     * meant. A nested input object is a grouping, its fields writing the record as if they were
+     * declared where it is, read through it.
      */
     private static Result columns(String occurrence, String recordClass, Map<String, List<InputField>> children,
                                   Catalog catalog) {
         var table = catalog.tables().get(recordClass);
-        var tableKey = Catalog.key(table.source(), table.schema(), table.name());
-        var byColumn = new java.util.LinkedHashMap<String, List<InputField>>();
+        var byColumn = new java.util.LinkedHashMap<String, List<Placed>>();
         var properties = new HashMap<String, Optional<String>>();
         var decodes = new ArrayList<Member>();
-        for (var field : children.getOrDefault(occurrence, List.of())) {
-            if (field.nodeId()) {
-                if (field.list()) {
-                    return new Result.Refused("input field " + field.name() + " is a list of node ids, which is not built here yet");
-                }
-                var resolution = catalog.decodes().resolve(field.coordinate(), recordClass);
-                if (resolution instanceof NodeIdDecodeQuery.Resolution.Refused refused) {
-                    return new Result.Refused("input field " + field.name() + ": " + refused.reason());
-                }
-                var decode = ((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode();
-                var slot = new Slot(null, null, 0, field.boundName(), recordClass, recordClass, null);
-                decodes.add(new Member(slot, List.of(field.name()), field.typeKind(), false, Optional.empty(),
-                    Optional.of(decode)));
-                continue;
-            }
-            if ("INPUT_OBJECT".equals(field.typeKind())) {
-                return new Result.Refused("input field " + field.name() + " is an input object inside a jOOQ record, "
-                    + "which is not built here yet");
-            }
-            // The column the store binds the field's occurrence to on the record's table.
-            var column = catalog.occurrenceColumns().get(field.coordinate() + "|" + tableKey);
-            if (column == null) {
-                return new Result.Refused("input field " + field.name() + " binds no column of " + table.name());
-            }
-            byColumn.computeIfAbsent(column.javaName(), k -> new ArrayList<>()).add(field);
-            properties.put(column.javaName(), column.property());
+        var reason = place(occurrence, recordClass, table, List.of(), children, catalog, byColumn, properties, decodes);
+        if (reason != null) {
+            return new Result.Refused(reason);
         }
         var writes = new ArrayList<ColumnWrite>();
         for (var entry : byColumn.entrySet()) {
             var fields = entry.getValue();
-            var live = fields.stream().filter(f -> !f.deprecated()).toList();
+            var live = fields.stream().filter(f -> !f.field().deprecated()).toList();
             if (live.size() > 1) {
-                return new Result.Refused("input fields " + live.stream().map(InputField::name).toList()
+                return new Result.Refused("input fields " + live.stream().map(f -> String.join(".", f.path())).toList()
                     + " both write column " + entry.getKey() + " and neither is deprecated");
             }
-            var ordered = new ArrayList<InputField>(live);
-            fields.stream().filter(InputField::deprecated)
-                .sorted(java.util.Comparator.comparingInt(InputField::ordinal).reversed())
+            var ordered = new ArrayList<Placed>(live);
+            fields.stream().filter(f -> f.field().deprecated())
+                .sorted(java.util.Comparator.comparingInt((Placed f) -> f.field().ordinal()).reversed())
                 .forEach(ordered::add);
-            writes.add(new ColumnWrite(entry.getKey(), ordered.stream().map(f -> List.of(f.name())).toList(),
+            writes.add(new ColumnWrite(entry.getKey(), ordered.stream().map(Placed::path).toList(),
                 properties.get(entry.getKey())));
         }
         return new Result.Columns(new RecordBuild(recordClass, table.tablesClass(), table.tableField(), writes, decodes));
+    }
+
+    /** An input field writing a record, with the path it is read through. */
+    private record Placed(InputField field, List<String> path) {}
+
+    /**
+     * Places the fields under {@code occurrence} on the record's columns and decodes, a grouping's
+     * fields under its name; the reason the first one cannot be placed, or null.
+     */
+    private static String place(String occurrence, String recordClass, Table table, List<String> prefix,
+                                Map<String, List<InputField>> children, Catalog catalog,
+                                Map<String, List<Placed>> byColumn, Map<String, Optional<String>> properties,
+                                List<Member> decodes) {
+        var tableKey = Catalog.key(table.source(), table.schema(), table.name());
+        for (var field : children.getOrDefault(occurrence, List.of())) {
+            var path = new ArrayList<>(prefix);
+            path.add(field.name());
+            var named = String.join(".", path);
+            if (field.nodeId()) {
+                if (field.list()) {
+                    return "input field " + named + " is a list of node ids, which is not built here yet";
+                }
+                var resolution = catalog.decodes().resolve(field.coordinate(), recordClass);
+                if (resolution instanceof NodeIdDecodeQuery.Resolution.Refused refused) {
+                    return "input field " + named + ": " + refused.reason();
+                }
+                var decode = ((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode();
+                var slot = new Slot(null, null, 0, field.boundName(), recordClass, recordClass, null);
+                decodes.add(new Member(slot, path, field.typeKind(), false, Optional.empty(), Optional.of(decode)));
+                continue;
+            }
+            if ("INPUT_OBJECT".equals(field.typeKind())) {
+                if (field.list()) {
+                    return "input field " + named + " is a list of input objects inside a jOOQ record, so it cannot group";
+                }
+                var reason = place(field.coordinate(), recordClass, table, path, children, catalog, byColumn,
+                    properties, decodes);
+                if (reason != null) {
+                    return reason;
+                }
+                continue;
+            }
+            // The column the store binds the field's occurrence to on the record's table.
+            var column = catalog.occurrenceColumns().get(field.coordinate() + "|" + tableKey);
+            if (column == null) {
+                return "input field " + named + " binds no column of " + table.name();
+            }
+            byColumn.computeIfAbsent(column.javaName(), k -> new ArrayList<>()).add(new Placed(field, path));
+            properties.put(column.javaName(), column.property());
+        }
+        return null;
     }
 
     /**

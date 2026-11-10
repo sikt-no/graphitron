@@ -117,6 +117,10 @@ column, each input field writing the column it binds on that table:
   `null`, it writes `NULL` to those of its columns no other field wrote.
 * Where two fields write one column, the values must agree, or the request fails with
   "Conflicting values supplied for input fields 'a', 'b'", naming every field writing it.
+* A nested input object groups its fields: they write the record as if they were declared beside
+  it. A grouping not sent, or sent as `null`, leaves every column under it untouched and decodes
+  nothing, so a `@nodeId` field declared `ID!` inside it is only required when the grouping is sent.
+  A list of input objects cannot group.
 * In a list of input objects, built into records or classes, a `null` element is refused: the
   method is handed the objects, not gaps.
 
