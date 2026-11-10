@@ -140,7 +140,7 @@ class DevPassProjectionPipelineTest {
                 .as("the verdict is a value on the report, not an exception out of the pass")
                 .anyMatch(m -> m.contains("languageName") || m.contains("no_such_fk"));
             assertThat(pass.output().walkErrors())
-                .as("a round the store refuses never reaches the walk, so the diagnostics stratum"
+                .as("a round the store refuses never reaches the walk, so the diagnostic relations"
                     + " holds the refusal once, as the entry defect")
                 .isEmpty();
             assertThat(pass.generation())

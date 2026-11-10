@@ -186,7 +186,7 @@ class WarmStartRefreshTest {
             once = census(store.dsl());
         }
         assertThat(once)
-            .as("the reference stratum takes rows on this schema, without which this case counts"
+            .as("the reference relations take rows on this schema, without which this case counts"
                 + " zero against zero on the relations it is here for")
             .containsEntry("GRAPHITRON_SPELLED_TABLE", 2)
             .hasEntrySatisfying("GRAPHITRON_JOIN_PATH_STEP_KEY",

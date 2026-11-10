@@ -365,7 +365,7 @@ class DevMojoTest {
 
             var d = no.sikt.graphitron.model.Tables.DIAGNOSTIC;
             assertThat(store.dsl().fetchCount(d, d.COORDINATE.eq("Film.languageName")))
-                .as("the store's refusal reaches the stratum the language server reads, once")
+                .as("the store's refusal reaches the diagnostic relation the language server reads, once")
                 .isOne();
             assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR))
                 .as("the walk never ran, so it adds no account of the same fault")
