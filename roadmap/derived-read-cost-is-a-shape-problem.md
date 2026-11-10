@@ -1318,10 +1318,6 @@ someone to profile.
   into two upserts and `OccurrenceSources.write` into four, so H2 plans the whole union that many
   times a depth; together they are a sixth to a fifth of the verification build's CPU, all of it
   planning (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
-* **A one-capture store's statement cache holds a depth of the loop** `open`. `StoreUse.ONE_CAPTURE`
-  keeps 8 statements and one depth of `OccurrenceDepths` runs more, so each depth re-prepares
-  statements whose text repeats from depth 1 on; `StoreUse`'s premise that a first capture repeats
-  nothing predates the loop.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's
   own shutdown hook closes the database, so a long session's store does not keep growing.
 

@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What a {@link StoreUse} buys: a store opened {@link StoreUse#LONG_LIVED} keeps the statements it
- * has prepared, and one opened {@link StoreUse#ONE_CAPTURE} keeps only H2's default few. Preparing
+ * has prepared, and one opened {@link StoreUse#ONE_CAPTURE} keeps only the last few dozen. Preparing
  * is the parser and the optimizer, and over repeated captures and the reads after them it is most of
  * what the store spends, so a regression to re-preparing fails the build here instead of slowing it,
  * and a default that quietly grew would put the memory on every caller.
@@ -35,7 +35,7 @@ class StoreStatementReuseTest {
 
     private static final ReadBudget UNBOUNDED = new ReadBudget.Unbounded();
 
-    /** More distinct statements than H2's default cache holds, fewer than the long-lived one's. */
+    /** More distinct statements than the one-capture cache holds, fewer than the long-lived one's. */
     private static final int OTHER_STATEMENTS = 200;
 
     private static final String SUBJECT = "SELECT COUNT(*) FROM store_graph WHERE graph_name = 'subject'";

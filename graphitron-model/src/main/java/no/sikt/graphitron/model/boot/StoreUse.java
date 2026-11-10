@@ -6,13 +6,21 @@ package no.sikt.graphitron.model.boot;
  *
  * <p>A capture runs roughly six hundred distinct statements, a set the code fixes rather than the
  * schema captured, in the same order every round. A statement cache holds a statement only while
- * it is among the last few used, so a cache smaller than that set evicts each statement just before
- * it comes round again and saves nothing, and one big enough saves about 30% of every capture after
- * the first. The first capture saves nothing at all: every statement in it is new. The cache costs
- * memory, about 50 KB a statement and so roughly 30 MB per session that fills it, paid by every
- * session whether or not anything is ever captured on it twice. A caller that captures once should
- * not pay it, a build running modules in parallel holds one session per module, and a caller that
- * captures repeatedly on one connection should, so which it is is the caller's to say.
+ * it is among the last few used, so a cache smaller than a set that repeats evicts each statement
+ * just before it comes round again and saves nothing.
+ *
+ * <p>Two sets repeat. Within one capture, {@link no.sikt.graphitron.model.derive.OccurrenceDepths}
+ * runs the same few dozen statements once per depth of the occurrence tree, the depth a bound
+ * parameter, so from the second depth on each statement's text is one the capture has already
+ * prepared, and a cache with room for one depth's statements plans each of them once rather than
+ * once a depth. Across captures on one connection the whole set repeats, and a cache with room for
+ * all of it saves about 30% of every capture after the first.
+ *
+ * <p>The cache costs memory, about 50 KB a statement, paid by every session that fills it, and a
+ * build running modules in parallel holds one session per module. Room for one depth is about
+ * 3 MB a session and room for the whole set roughly 30 MB, so a caller that captures once keeps the
+ * first and a caller that captures repeatedly on one connection the second, and which it is is the
+ * caller's to say.
  *
  * <p>The size is a database-level setting that H2 reads when the first connection opens the
  * database and never again, so it belongs to whoever opens a database first: a store reopened by
@@ -24,10 +32,12 @@ package no.sikt.graphitron.model.boot;
 public enum StoreUse {
 
     /**
-     * One capture per connection, then close: a build's module, a one-shot run. H2's own default,
-     * which keeps almost nothing and costs almost nothing.
+     * One capture per connection, then close: a build's module, a one-shot run. Room for the
+     * statements one depth of {@link no.sikt.graphitron.model.derive.OccurrenceDepths} runs, so
+     * each depth after the first reuses what the depth before it prepared, and no more: a capture's
+     * other statements run once each, and keeping them would only cost memory.
      */
-    ONE_CAPTURE(8),
+    ONE_CAPTURE(64),
 
     /**
      * A connection that captures again and again, or reads again and again, and lives long enough
