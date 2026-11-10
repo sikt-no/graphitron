@@ -162,10 +162,13 @@ public final class BuildEmitter {
         var counter = new int[] {0};
         // The node ids, one record per member however many fields decode into it: declared and
         // filled first at POSITIONAL, where they are constructor arguments, and after every plain
-        // setter at SETTERS, so the decode's agreement check sees each plain write.
+        // setter at SETTERS, so the decode's agreement check sees each plain write. A list of node ids
+        // is a value of its own, each id decoded into a record of its own.
         var decoded = new java.util.LinkedHashMap<String, List<BuildQuery.Member>>();
         for (var member : build.members()) {
-            member.decode().ifPresent(d -> decoded.computeIfAbsent(member.slot().slotName(), k -> new ArrayList<>()).add(member));
+            if (member.decode().isPresent() && !member.list()) {
+                decoded.computeIfAbsent(member.slot().slotName(), k -> new ArrayList<>()).add(member);
+            }
         }
         if ("POSITIONAL".equals(build.shape())) {
             var records = decodes(method, decoded, runtime, counter);
@@ -174,14 +177,15 @@ public final class BuildEmitter {
                 var member = build.members().stream()
                     .filter(m -> m.slot().position() == slot.position()).findFirst();
                 arguments.add(member.isEmpty() ? defaultOf(SessionIdentityRows.typeOf(slot.slotType()))
-                    : member.get().decode().isPresent() ? CodeBlock.of("$L", records.get(slot.slotName()))
+                    : member.get().decode().isPresent() && !member.get().list()
+                        ? CodeBlock.of("$L", records.get(slot.slotName()))
                     : value(member.get(), name, runtime, counter, out));
             }
             method.addStatement("return new $T($L)", type, CodeBlock.join(arguments, ", "));
         } else {
             method.addStatement("$T out = new $T()", type, type);
             for (var member : build.members()) {
-                if (member.decode().isPresent()) {
+                if (member.decode().isPresent() && !member.list()) {
                     continue;
                 }
                 var sent = sent(member.path(), counter);
@@ -246,7 +250,13 @@ public final class BuildEmitter {
         var maps = maps(member.path(), counter);
         var read = CodeBlock.of("$L.get($S)", maps.last(), member.path().getLast());
         CodeBlock made;
-        if (member.nested().isPresent()) {
+        if (member.decode().isPresent()) {
+            // A list of node ids: each decoded into a record of its own, as a list parameter's are.
+            var helperName = name + "_" + member.slot().slotName();
+            out.add(NodeIdDecodeEmitter.parameterHelper(helperName, slotType, member.decode().get(), "RECORD",
+                String.join(".", member.path()), runtime));
+            made = CodeBlock.of("$L($L)", helperName, read);
+        } else if (member.nested().isPresent()) {
             var helperName = name + "_" + member.slot().slotName();
             helper(member.nested().get(), helperName, runtime, out);
             made = member.list()

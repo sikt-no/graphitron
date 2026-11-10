@@ -381,9 +381,7 @@ public final class BuildQuery {
             Optional<Build> nested = Optional.empty();
             Optional<NodeIdDecodeQuery.Decode> decode = Optional.empty();
             if (field.nodeId()) {
-                if (field.list()) {
-                    return "input field " + String.join(".", path) + " is a list of node ids, which is not built here yet";
-                }
+                // A list of node ids decodes each into a record of its own, the member's element.
                 var resolution = catalog.decodes().resolve(field.coordinate(), memberClass);
                 if (resolution instanceof NodeIdDecodeQuery.Resolution.Refused refused) {
                     return "input field " + String.join(".", path) + ": " + refused.reason();
