@@ -59,8 +59,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-09-17 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
+| `R1163` | The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete | Ready | 2026-11-10 <sub>created 2026-11-09</sub> | [plan](principles-architect-carries-the-direction.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1163` | The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete | In Review | 2026-11-10 <sub>created 2026-11-09</sub> | [plan](principles-architect-carries-the-direction.md) |
 
 ---
 
@@ -797,7 +797,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R806` [**Derive the docs staging css/docinfo fan-out from the staged tree**](derive-docs-staging-asset-fanout.md) — Backlog, dx
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
-- `R1163` [**The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete**](principles-architect-carries-the-direction.md) — In Review, dx
+- `R1163` [**The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete**](principles-architect-carries-the-direction.md) — Ready, dx
 
 ### testing
 

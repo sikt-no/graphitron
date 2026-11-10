@@ -1,7 +1,7 @@
 ---
 id: R1163
 title: "The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete"
-status: In Review
+status: Ready
 bucket: dx
 theme: tooling
 depends-on: []
@@ -240,3 +240,42 @@ the retired three-strata model goes here, and `DerivationStratum`'s roster goes 
 Every identifier on both lists exists in the class named, every `Stratum` identifier in the Java
 tree is on one list or the other, and R876's "`DerivationStratum` is gone" node already takes
 `StageProgress` and `StageOrderGateTest`, so what stays has an owner. The budget note is taken up.
+
+### Round 3: In Review → Done (session_01WkW2JEeeQCuEvkzNXeRSgW, 2026-11-10)
+
+Verdict: rework, on one finding under question three. The implementation is the change the spec
+approved: every ruling lands in the page and section the plan names, the architect's brief, read
+order and checks are as planned, `CLAUDE.md` and `workflow.adoc` name the consultation as a step,
+`development-principles.adoc` stays within its budget, and no roadmap-internal marker reaches `docs/`.
+
+Question four. Nothing recorded the acceptance trial, so the reviewer ran it: two fresh
+`principles-architect` runs, each given one design written as an author would propose it, with no
+hint of the fault.
+
+* A defect on a valid schema (an `OUTCOME_FIELD_NON_NULL` refusing every non-null outcome field,
+  22 hits on example schemas that build, to be recorded as a known gap): raised. The architect named
+  the hits false positives, refused the known-gap framing, and said a new refusal on schemas that
+  build is evidence the rule is wrong. It reasoned from "validator mirrors classifier invariants"
+  and the code, and did not cite `defects-as-facts.adoc` § "Adding a defect", which carries the
+  ruling.
+* A view chain (one entry-defect rule, a union of about 40 arms reaching 116 relations through 18
+  views): raised, from `fact-model.adoc`'s grain section: no view reads a view, a complex rule view
+  means a derivation was skipped upstream, the arm belongs in its owning stage reading stored tables.
+
+Both are raised, which demonstrates the goal.
+
+**Finding 1 (question three: the change the spec approved). Three assertion messages still name the
+retired model.** The edge says "stratum" goes wherever it names the retired three-strata model. These
+name it, and none names `DerivationStratum`'s roster:
+
+* `DevPassProjectionPipelineTest`, line 143: "the diagnostics stratum", a term Retired vocabulary
+  lists by name;
+* `DevMojoTest`, line 368: "the stratum the language server reads", the same sense;
+* `WarmStartRefreshTest`, line 189: "the reference stratum", a section of the DDL.
+
+The implementation reworded comments and javadoc but no `.as(...)` message outside the roster, so
+these fell between the edge's two lists. Rewording the three satisfies it.
+
+Non-blocking: the handover the new `workflow.adoc` paragraph asks for, naming what the architect
+raised and what the author did with it, is in neither the In Review commit nor this file; the
+`docs(R1163)` commit on `undecided/` records one such point.
