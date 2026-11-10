@@ -257,6 +257,12 @@ what fills each parameter of a call: an argument, which then binds that paramete
 supplies, such as the jOOQ context. `graphitron_occurrence_producer_key_row` states where a child
 producer under an object starts: the key it takes off that object, lifted onto the key's table.
 
+An argument filling a parameter with a table's jOOQ record writes, for each column, what the input
+sent for it: a value, or an explicit `null` written as `NULL`, whatever else the input decodes into
+the record. The classified emitter erased that `null` beside a decoded node id; that is a defect,
+and the store's build corrects it rather than reproducing it, its execution pin changed with it
+(Alf, 2026-11-10).
+
 A table record a `@service` or a write returns carries only its primary key. Every table-bound
 field under it is a new producer that lifts from that key and re-selects; none is answered by a
 same-table rule, a path or inference off the record. A design that asks whether such a field is
