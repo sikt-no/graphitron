@@ -31,7 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R920` | a failed batch logs once, without its SQL, and a consumer can cap batch size | Spec | 2026-11-05 <sub>created 2026-09-04</sub> | [plan](batch-failure-logs-once-not-per-field.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | Ready | 2026-11-10 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
+| `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | In Progress | 2026-11-10 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
 | `R1165` | Error handlers are matched narrowest first, and an unreachable one fails the build | Spec | 2026-11-10 | [plan](error-handlers-ordered-by-narrowness.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -536,7 +536,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
-- `R1119` [**Signed voucher handover: one subgraph vouches, another grants through RLS**](signed-reference-entities-across-subgraphs.md) — Ready, feature
+- `R1119` [**Signed voucher handover: one subgraph vouches, another grants through RLS**](signed-reference-entities-across-subgraphs.md) — In Progress, feature
 - `R1004` [**Read consumer method signatures from classfiles so an unrelated sibling method cannot fail reflection**](reflect-consumer-signatures-from-classfiles.md) — Backlog, architecture
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R837` [**A jOOQ record with no table cannot be a @service input parameter**](table-less-jooq-record-input.md) — Spec, feature

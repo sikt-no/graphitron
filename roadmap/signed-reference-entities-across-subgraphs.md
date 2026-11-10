@@ -1,7 +1,7 @@
 ---
 id: R1119
 title: "Signed voucher handover: one subgraph vouches, another grants through RLS"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: service
@@ -154,6 +154,17 @@ result and is not what this item builds.
 Because the voucher carries and signs the keys it covers, B needs no notion of application or subject: the
 policies test the covered keys, for example `id = any(covered)` on the result table and a join from each
 child to its result row, where `covered` is the session setting the mount wrote from `vouch().keys()`.
+`keys()` is a list with one entry per vouched key, each a map from the key's field name to its value as B's
+key field parsed it, so a key of several fields arrives whole.
+
+The policy may test any part of the key, and what it tests is what the vouch grants. A first client
+vouches for documents together with their owner: B carries a second authored key `@key(fields: "id
+eierId")` beside its plain `@key(fields: "id")`, the accepting field names it (`@accept(scope:
+"dokumenter", key: "id eierId")`), and A's issuing type absorbs `id` and `eierId`, both read off A's own
+row. The decode is then `WHERE id = ? AND eier_id = ?`, so a voucher pairing a document with another
+owner finds no row. A policy testing `eier_id = any(vouched_owners)` admits every document of the vouched
+owners on the vouched connection, not only the vouched documents; a policy testing the pairs, or `id`
+alone, admits only those. Either is the consumer's choice, and both are covered by the same voucher.
 
 ## What exists today, and what is missing
 
@@ -199,7 +210,8 @@ child to its result row, where `covered` is the session setting the mount wrote 
   `graphitron_occurrence` and `graphitron_claim` all reference it), and a second population axis, modelled
   but not emitted, is something nothing in the model has. So the decode decides what the declaration is,
   in two stored relations of the `graphitron_` family, written by one new stage of the graphitron anchor
-  between `table-types` and `emitted` in `meta_stage`:
+  between `nodes` and `emitted` in `meta_stage` (named `vouchers`, class `derive.Vouchers`), after `nodes`
+  because its node-type refusal reads `graphitron_node`:
   * the *membership*, one row per field declaration an `@issue` absorbs, keyed on its
     `graphql_field_element` row (`ON DELETE CASCADE`) and carrying the issuing field. It is decided by
     structure alone, from the issue entry and the type's transcribed fields, so a component whose column
@@ -215,8 +227,8 @@ child to its result row, where `covered` is the session setting the mount wrote 
   `graphitron_connection_carrier`, and each `meta_relation` description gains the reason. The set states
   its own stand-down rule, as each element set does; it is a decision, not a provenance arm. The
   transcription (`graphql_*`) keeps the declarations as written. Every relation the new stage reads is
-  upstream of it (`graphql_*`, `graphitron_ast_*`, `graphitron_tabletype`, the column-name relation), so
-  the stage order is sound.
+  upstream of it (`graphql_*`, `graphitron_ast_*`, `graphitron_tabletype`, `graphitron_node`, the
+  column-name relation), so the stage order is sound.
 * *The voucher binding.* The voucher field, on A and on B, is a scalar occurrence on a table-bound type,
   and today the column rule would seek a `voucher` column and raise `COLUMN_UNRESOLVED` on a valid schema.
   It binds by a kind of its own, `VOUCHER`, added to the kinds `graphitron_occurrence_binding` and
@@ -230,7 +242,10 @@ child to its result row, where `covered` is the session setting the mount wrote 
   `graphitron_directive_application_arg_minted` both read it, so the argument set stops reading the
   application view and stops hardcoding `fields: "id"` and `resolvable: true`. `@inaccessible` on the
   marked field is one more arm of the minted application set. Existing fact documents for node keys stay
-  row-identical.
+  row-identical. A stage of its own owns it, `minted-keys` (class `derive.MintedKeys`), after
+  `federation-link` and `vouchers`, since its `NODE` rows read `graphitron_node` and the federation link
+  and its `ISSUE` and `ACCEPT` rows read the voucher stage and the accept entry, and before `emitted`,
+  which reads the minted applications.
 * *Entity key alternatives, stated.* A stored relation, one row per key alternative of an entity: the
   entity, the key's field set, `resolvable`, and how its representation reaches the SELECT (`DIRECT`
   columns, a `NODE_ID` decode, a `VOUCHER` decode with the authored key it decodes to), with the
@@ -238,7 +253,10 @@ child to its result row, where `covered` is the session setting the mount wrote 
   the accept entry; the direct and node-id alternatives move onto the same relation from the facts
   `EntityResolutionBuilder` reads today. The entity dispatch reads the relation, and
   `EntityResolutionBuilder`'s re-derivation of `KeyAlternative` from the classified model goes. This is
-  the "Entity resolution is stated" node of R876's graph, taken here.
+  the "Entity resolution is stated" node of R876's graph, taken here. A stage of its own owns it,
+  `entity-key-alternatives` (class `derive.EntityKeyAlternatives`), after `binding-claims`, since the
+  per-field column bindings read the binding claims; its exact position is fixed by the last relation its
+  rows read, and `meta_relation` and `meta_stage_write` name it.
 * *The readers.* Everything built on the emitted population drops the declarations by construction: the
   directive applications through `graphitron_directive_application_authored`'s join to
   `graphitron_element`, the fields and arguments through the part sets' anti-joins above. Three readers
@@ -266,12 +284,12 @@ child to its result row, where `covered` is the session setting the mount wrote 
     field whose column does not resolve (a member with no component row); both markers on one type; either
     marker in a graph with no `<sessionState>` (no `store_graph_session_supplied` row), since the caller
     rides on `SessionState`.
-  * Owned by a stage at or after `emitted`, since what a root field returns is an element-keyed fact:
-    `@issue` on a type a root operation field returns (a
+  * Owned by `entry-defects`, since what a root field returns is an element-keyed fact the voucher stage
+    runs too early to read: `@issue` on a type a root operation field returns (a
     `Query`, `Mutation` or `Subscription` field, directly or as a list), because the vouched decision is
     the path from a parent A's rules admitted. A field of a mutation payload is not a root field and may
     return `@issue` rows.
-  * Owned by the stage that writes the entity key alternatives: `@accept` on a type with no authored
+  * Owned by `entity-key-alternatives`: `@accept` on a type with no authored
     resolvable `@key`, or with several and no `key:`, or a `key:` naming no authored key; `@accept` whose
     `key:` is an authored key with a nested selection (`@key(fields: "org { id }")`), since absorbed fields
     are top-level scalars.
@@ -413,7 +431,10 @@ read simply once the spellings are chosen, the design is wrong.
   covered rows; every verification failure above, and a mount that throws on a vouched connection, fails
   the request and the policy hides the rows; in a multi-tenant fixture a voucher does not reach a tenant
   outside the request tenant set; a mutation payload issues vouchers on commit and none from a field that
-  rolled back; vouched connections are unmounted and released at the end.
+  rolled back; vouched connections are unmounted and released at the end; with a two-field accepting key
+  beside the plain one (`id eierId`), the mount sees each key whole in `vouch().keys()`, a policy on the
+  owner admits the owner's other documents on the vouched connection, and a voucher whose owner does not
+  match its document finds no row.
 * Served SDL: `_service { sdl }` shows `@key(fields: "voucher")` and `@inaccessible` on the voucher field
   on both sides, with the `@link` importing `@inaccessible`, and A's issuing type publishing `voucher` and
   nothing else, in the served SDL and in the runtime schema (an introspection of A's own endpoint). That
@@ -549,6 +570,12 @@ item returns to Spec for a fresh sign-off.
   the readers.
 * Slicing, and the temporary refusal that keeps a valid `@issue` schema from reaching a missing emitter
   (*Slices*).
+
+Round 4's two notes, taken at In Progress: the voucher stage runs after `nodes`, and the minted keys and
+the entity key alternatives each have a named owning stage with a stated position (*Voucher membership and
+components*, *Minted keys, stored*, *Entity key alternatives, stated*, *Rejections*). At the same point the
+user confirmed the first client's case, a voucher carrying a document and its owner, which the
+two-field accepting key covers as written; *How it works* now states it and the shape of `vouch().keys()`.
 
 ## Retired vocabulary
 
