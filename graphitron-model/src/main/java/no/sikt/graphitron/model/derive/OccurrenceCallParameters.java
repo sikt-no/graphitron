@@ -1,6 +1,8 @@
 package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
+import org.jooq.Field;
+import org.jooq.Table;
 
 import java.time.LocalDateTime;
 
@@ -8,6 +10,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARAMETER;
@@ -41,8 +44,22 @@ public final class OccurrenceCallParameters {
      * each pinned, and the {@code PARAMETER} binding of each argument a fill takes.
      */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
+    }
+
+    /**
+     * States what fills each parameter of the {@code @condition} calls the occurrences at
+     * {@code depth} make, after the depth's bindings decide which tables they are applied to.
+     */
+    public static void writeConditions(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE);
+    }
+
+    /** The fills {@code rule} states for the pinned methods of the calls at {@code depth}, and their bindings. */
+    private static void write(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt,
+                              Table<?> rule) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
-        var r = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
+        var r = RuleColumns.of(rule);
         var made = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var o = GRAPHITRON_OCCURRENCE;
         var mp = CODE_METHOD_PARAMETER;
@@ -57,7 +74,7 @@ public final class OccurrenceCallParameters {
                     r.LANDING_COORDINATE, r.CONTEXT_KEY, r.SESSION_MEMBER, st.SOURCE_NAME, st.TABLE_SCHEMA,
                     st.TABLE_NAME, val(touchedAt, c.TOUCHED_AT), st.SOURCE_NAME, st.TABLE_SCHEMA,
                     st.TABLE_NAME)
-                .from(r)
+                .from(rule)
                 // The fills of the method the call pinned, of the calls at this depth.
                 .join(made).on(made.GRAPH_NAME.eq(r.GRAPH_NAME), made.COORDINATE.eq(r.COORDINATE),
                     made.CALL.eq(r.CALL), made.METHOD_DESCRIPTOR.eq(r.METHOD_DESCRIPTOR))
@@ -147,5 +164,21 @@ public final class OccurrenceCallParameters {
             .set(p.POSITION, excluded(p.POSITION))
             .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT))
             .execute();
+    }
+
+    /** A fill rule's columns, read by name: every fill rule has graphitron_occurrence_call_parameter_rule's shape. */
+    private record RuleColumns(Field<String> GRAPH_NAME, Field<String> COORDINATE, Field<String> CALL,
+                               Field<String> CALL_KIND, Field<String> METHOD_DESCRIPTOR,
+                               Field<Integer> POSITION, Field<String> PARAMETER_NAME, Field<String> FILL,
+                               Field<String> LANDING_COORDINATE, Field<String> CONTEXT_KEY,
+                               Field<String> SESSION_MEMBER) {
+        static RuleColumns of(Table<?> rule) {
+            return new RuleColumns(rule.field("GRAPH_NAME", String.class), rule.field("COORDINATE", String.class),
+                rule.field("CALL", String.class), rule.field("CALL_KIND", String.class),
+                rule.field("METHOD_DESCRIPTOR", String.class), rule.field("POSITION", Integer.class),
+                rule.field("PARAMETER_NAME", String.class), rule.field("FILL", String.class),
+                rule.field("LANDING_COORDINATE", String.class), rule.field("CONTEXT_KEY", String.class),
+                rule.field("SESSION_MEMBER", String.class));
+        }
     }
 }

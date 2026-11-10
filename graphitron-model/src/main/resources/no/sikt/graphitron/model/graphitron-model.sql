@@ -11075,14 +11075,15 @@ CREATE TABLE graphitron_occurrence_call_candidate (
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
     REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
-  CHECK (call_kind IN ('SERVICE')),
-  CHECK (call_kind <> 'SERVICE' OR call = 'producer')
+  CHECK (call_kind IN ('SERVICE', 'CONDITION')),
+  CHECK (call_kind <> 'SERVICE' OR call = 'producer'),
+  CHECK (call_kind <> 'CONDITION' OR call LIKE 'condition:%')
 );
 COMMENT ON TABLE graphitron_occurrence_call_candidate IS 'One method one call of one occurrence could be: one row per call and candidate method. For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.coordinate IS 'the occurrence making the call, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.call IS 'which of the occurrence''s calls, spelled as graphitron_occurrence_call.call is; the call row exists only once a candidate is pinned';
-COMMENT ON COLUMN graphitron_occurrence_call_candidate.call_kind IS 'SERVICE, a service producer''s call';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.call_kind IS 'SERVICE, a service producer''s call, or CONDITION, a @condition''s on one table';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_class_name IS 'the class declaring the method';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_name IS 'the method';
@@ -11101,6 +11102,7 @@ WITH call_parameter (graph_name, coordinate, call, method_descriptor, element_co
     JOIN code_method_parameter p
       ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
      AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+   WHERE s.call_kind = 'SERVICE'
 )
 -- $session, or one member of it, named by a pair.
 SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.parameter_name,
@@ -11162,7 +11164,7 @@ WITH open_parameter (graph_name, coordinate, call, method_descriptor, position, 
     JOIN code_method_parameter p
       ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
      AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
-   WHERE p.role NOT IN ('DSL_CONTEXT', 'CONFIGURATION')
+   WHERE s.call_kind = 'SERVICE' AND p.role NOT IN ('DSL_CONTEXT', 'CONFIGURATION')
      AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                       WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                         AND pr.directive_name = 'service' AND pr.owner = 'service'
@@ -11186,7 +11188,7 @@ open_argument (graph_name, call_coordinate, call, method_descriptor, coordinate,
          ga.is_list
     FROM graphitron_occurrence a
     JOIN graphitron_occurrence_call_candidate s
-      ON s.graph_name = a.graph_name AND s.coordinate = a.parent_coordinate
+      ON s.graph_name = a.graph_name AND s.coordinate = a.parent_coordinate AND s.call_kind = 'SERVICE'
     JOIN graphitron_argument ga ON ga.graph_name = a.graph_name AND ga.coordinate = a.element_coordinate
     JOIN graphitron_type t ON t.graph_name = ga.graph_name AND t.type_name = ga.named_type
    WHERE a.kind = 'FIELD_ARGUMENT'
@@ -11301,7 +11303,8 @@ SELECT s.graph_name, s.coordinate, s.call, s.method_descriptor, p.position, p.pa
   LEFT JOIN graphitron_occurrence a
     ON a.graph_name = s.graph_name AND a.parent_coordinate = s.coordinate
    AND a.name = p.parameter_name AND a.kind = 'FIELD_ARGUMENT'
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
+ WHERE s.call_kind = 'SERVICE'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'service' AND pr.owner = 'service'
                       AND pr.parameter_name = p.parameter_name)
@@ -11397,15 +11400,17 @@ CREATE TABLE graphitron_occurrence_call (
   UNIQUE (graph_name, coordinate, call, call_kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (call_kind IN ('SERVICE')),
-  -- The call spelled from its subtype's own key: a producer makes one call.
-  CHECK (call_kind <> 'SERVICE' OR call = 'producer')
+  CHECK (call_kind IN ('SERVICE', 'CONDITION')),
+  -- The call spelled from its subtype's own key: a producer makes one call, a condition one per
+  -- table it is applied to.
+  CHECK (call_kind <> 'SERVICE' OR call = 'producer'),
+  CHECK (call_kind <> 'CONDITION' OR call LIKE 'condition:%')
 );
 COMMENT ON TABLE graphitron_occurrence_call IS 'One call an occurrence makes: one row per occurrence and call, of whatever kind. For example Query.filmsByPath''s service call is its producer call, and each parameter of FilmService#filmsByIds is filled under it.';
 COMMENT ON COLUMN graphitron_occurrence_call.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_call.coordinate IS 'the occurrence making the call, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_call.call IS 'which of the occurrence''s calls, spelled from its subtype''s own key as graphitron_occurrence_binding.bound is: producer for a producer''s call; completing the key';
-COMMENT ON COLUMN graphitron_occurrence_call.call_kind IS 'SERVICE, a service producer''s call; the kind a subtype pins so its foreign key holds it to a call of that kind, and a parameter fill carries so a fill only some calls take is a check';
+COMMENT ON COLUMN graphitron_occurrence_call.call_kind IS 'SERVICE, a service producer''s call, or CONDITION, a @condition''s on one table; the kind a subtype pins so its foreign key holds it to a call of that kind, and a parameter fill carries so a fill only some calls take is a check';
 COMMENT ON COLUMN graphitron_occurrence_call.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The method a call makes, the candidate it pinned: a fact of every call that makes a method, stated
@@ -11541,9 +11546,12 @@ CREATE TABLE graphitron_occurrence_call_parameter (
   -- The argument it takes, so a place the corpus no longer reaches takes the fill with it.
   FOREIGN KEY (graph_name, landing_coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (fill IN ('DSL_CONTEXT', 'SESSION', 'SESSION_MEMBER', 'CONTEXT_KEY', 'ARGUMENT', 'SOURCE')),
+  CHECK (fill IN ('DSL_CONTEXT', 'SESSION', 'SESSION_MEMBER', 'CONTEXT_KEY', 'ARGUMENT', 'SOURCE',
+                  'TABLE')),
   -- What a call's source hands it, the batch's keys, fills only a producer's call.
   CHECK (fill <> 'SOURCE' OR call_kind = 'SERVICE'),
+  -- The table a condition is applied to, the call's own bound table, fills only a condition's.
+  CHECK (fill <> 'TABLE' OR call_kind = 'CONDITION'),
   CHECK ((landing_coordinate IS NOT NULL) = (fill = 'ARGUMENT')),
   CHECK ((context_key IS NOT NULL) = (fill = 'CONTEXT_KEY')),
   CHECK ((session_member IS NOT NULL) = (fill = 'SESSION_MEMBER')),
@@ -11565,7 +11573,7 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.call IS 'which of the occ
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.call_kind IS 'the call''s kind, carried so a fill only some calls take is a check';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.position IS 'the parameter''s position in the method the call resolved, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.parameter_name IS 'the parameter''s name, NULL where the class was compiled without -parameters, which only a fill decided by type or shape can then reach';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter.fill IS 'what supplies the value. Written: SESSION, the session handle; SESSION_MEMBER, one member of it; CONTEXT_KEY, a value the request context carries; ARGUMENT, an argument or input field a pair names. Inferred where nothing is written: DSL_CONTEXT, the jOOQ context, by the parameter''s type; ARGUMENT, the call''s own argument of the parameter''s name; SOURCE, what the call''s source hands it, by a collection''s shape at a call with a source: the source''s keys, or the target''s where the source states them, which the split decides and building judges';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.fill IS 'what supplies the value. Written: SESSION, the session handle; SESSION_MEMBER, one member of it; CONTEXT_KEY, a value the request context carries; ARGUMENT, an argument or input field a pair names. Inferred where nothing is written: DSL_CONTEXT, the jOOQ context, by the parameter''s type; ARGUMENT, the call''s own argument of the parameter''s name; SOURCE, what the call''s source hands it, by a collection''s shape at a call with a source: the source''s keys, or the target''s where the source states them, which the split decides and building judges; TABLE, on a @condition''s call, the table it is applied to, by a table parameter';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.landing_coordinate IS 'on ARGUMENT, the argument or input-field occurrence taken, whose PARAMETER binding is the same fact seen from the occurrence';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.context_key IS 'on CONTEXT_KEY, the key the request context carries the value under';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.session_member IS 'on SESSION_MEMBER, the member of the session handle, as written after $session.';
@@ -15148,6 +15156,165 @@ COMMENT ON COLUMN graphitron_occurrence_binding_table.table_schema IS 'the table
 COMMENT ON COLUMN graphitron_occurrence_binding_table.table_name IS 'the table';
 COMMENT ON COLUMN graphitron_occurrence_binding_table.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- A @condition is a call per table its occurrence binds: the table an argument's column, a node id's
+-- key or a field's rows sit in, so the overload whose table parameter takes that table is the one
+-- called, and one declaration per participant of a multitable field keeps its own typed columns.
+CREATE VIEW graphitron_occurrence_condition_candidate_rule
+  (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
+   method_descriptor) AS
+WITH bound_table (graph_name, coordinate, bound, source_name, schema_name, table_name) AS (
+  -- Each table an occurrence binds, whichever binding names it.
+  SELECT graph_name, coordinate, bound, table_source_name, table_schema, table_name
+    FROM graphitron_occurrence_binding_table
+  UNION
+  SELECT graph_name, coordinate, bound, table_source_name, table_schema, table_name
+    FROM graphitron_occurrence_column
+  UNION
+  SELECT graph_name, coordinate, bound, table_source_name, table_schema, table_name
+    FROM graphitron_occurrence_node_id
+),
+written (graph_name, element_coordinate, class_name, method_name) AS (
+  -- The class and method a @condition's condition: names, by the application it is written in.
+  SELECT app.graph_name, app.coordinate, r.class_name, r.method
+    FROM graphitron_ast_code_reference_entry r
+    JOIN graphql_ast_value_entry v
+      ON v.graph_name = r.graph_name AND v.source_name = r.source_name
+     AND v.source_line = r.source_line AND v.source_column = r.source_column
+    JOIN graphql_ast_entry arg
+      ON arg.graph_name = v.graph_name AND arg.source_name = v.source_name
+     AND arg.source_line = v.holder_line AND arg.source_column = v.holder_column
+    JOIN graphql_directive_application app
+      ON app.graph_name = arg.graph_name AND app.source_name = arg.source_name
+     AND app.source_line = arg.parent_line AND app.source_column = arg.parent_column
+   WHERE app.directive_name = 'condition' AND r.argument_name = 'condition'
+     AND r.argument_index IS NULL
+),
+offered (graph_name, coordinate, bound, method_source_name, method_class_name, method_name,
+         method_descriptor, exact) AS (
+  -- Each overload of the name with a table parameter taking the bound table, and whether it takes
+  -- it by the table's own class rather than as any table.
+  SELECT b.graph_name, b.coordinate, b.bound, cm.source_name, cm.class_name, cm.method_name,
+         cm.descriptor, MAX(CASE WHEN p.role = 'TABLE_CONCRETE' THEN 1 ELSE 0 END)
+    FROM bound_table b
+    JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+    JOIN written w ON w.graph_name = o.graph_name AND w.element_coordinate = o.element_coordinate
+    JOIN store_graph_source m ON m.graph_name = o.graph_name
+    JOIN code_condition_method cm
+      ON cm.source_name = m.source_name AND cm.class_name = w.class_name AND cm.method_name = w.method_name
+    JOIN sql_table st
+      ON st.source_name = b.source_name AND st.table_schema = b.schema_name AND st.table_name = b.table_name
+    JOIN code_method_parameter p
+      ON p.source_name = cm.source_name AND p.class_name = cm.class_name
+     AND p.method_name = cm.method_name AND p.descriptor = cm.descriptor
+   WHERE p.role = 'TABLE_ANY' OR (p.role = 'TABLE_CONCRETE' AND p.erased_class = st.class_fqn)
+   GROUP BY b.graph_name, b.coordinate, b.bound, cm.source_name, cm.class_name, cm.method_name,
+            cm.descriptor
+)
+-- The overloads taking the table by its own class where any does, else those taking any table.
+SELECT f.graph_name, f.coordinate, 'condition:' || f.bound, 'CONDITION', f.method_source_name,
+       f.method_class_name, f.method_name, f.method_descriptor
+  FROM offered f
+ WHERE NOT EXISTS (SELECT 1 FROM offered g
+                    WHERE g.graph_name = f.graph_name AND g.coordinate = f.coordinate
+                      AND g.bound = f.bound AND g.exact > f.exact);
+COMMENT ON VIEW graphitron_occurrence_condition_candidate_rule IS 'One row the condition candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.method_source_name IS 'the method_source_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.method_class_name IS 'the method_class_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.method_name IS 'the method_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.method_descriptor IS 'the method_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_descriptor';
+
+CREATE VIEW graphitron_occurrence_condition_rule
+  (graph_name, coordinate, bound, call, call_kind, override_written) AS
+WITH bound_table (graph_name, coordinate, bound) AS (
+  SELECT graph_name, coordinate, bound FROM graphitron_occurrence_binding_table
+  UNION
+  SELECT graph_name, coordinate, bound FROM graphitron_occurrence_column
+  UNION
+  SELECT graph_name, coordinate, bound FROM graphitron_occurrence_node_id
+),
+written (graph_name, element_coordinate, override_written) AS (
+  -- The override: a @condition was written with, false where it was not written.
+  SELECT da.graph_name, da.coordinate,
+         COALESCE((SELECT a.value_sdl = 'true' FROM graphql_directive_application_arg a
+                    WHERE a.graph_name = da.graph_name AND a.coordinate = da.coordinate
+                      AND a.directive_name = da.directive_name AND a.ordinal = da.ordinal
+                      AND a.directive_argument_name = 'override'), FALSE)
+    FROM graphql_directive_application da
+   WHERE da.directive_name = 'condition'
+)
+-- Each table an occurrence carrying a @condition binds, where the call on it pinned a method.
+SELECT b.graph_name, b.coordinate, b.bound, c.call, c.call_kind, w.override_written
+  FROM bound_table b
+  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+  JOIN written w ON w.graph_name = o.graph_name AND w.element_coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_call c
+    ON c.graph_name = b.graph_name AND c.coordinate = b.coordinate AND c.call = 'condition:' || b.bound
+   AND c.call_kind = 'CONDITION';
+COMMENT ON VIEW graphitron_occurrence_condition_rule IS 'One row the condition call rule computes, in the shape graphitron_occurrence_condition stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_condition, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_condition.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_condition.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_condition.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_condition.call';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_condition.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_rule.override_written IS 'the override_written of a row of this rule, which the stage writes into graphitron_occurrence_condition.override_written';
+
+CREATE TABLE graphitron_occurrence_condition (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  bound            VARCHAR   NOT NULL,
+  call             VARCHAR   NOT NULL,
+  call_kind        VARCHAR   NOT NULL,
+  override_written BOOLEAN   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  UNIQUE (graph_name, coordinate, call),
+  -- The table it is applied to, the occurrence's binding, so a condition cannot outlive it.
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound) ON DELETE CASCADE,
+  -- The call it is, a call subtype.
+  FOREIGN KEY (graph_name, coordinate, call, call_kind)
+    REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
+  CHECK (call_kind = 'CONDITION'),
+  -- The call spelled from the bound table; a reader joins on bound, never parsing call.
+  CHECK (call = 'condition:' || bound)
+);
+COMMENT ON TABLE graphitron_occurrence_condition IS 'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method. For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.';
+COMMENT ON COLUMN graphitron_occurrence_condition.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_condition.coordinate IS 'the occurrence carrying the @condition, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_condition.bound IS 'the table it is applied to, as the occurrence''s binding spells it; completing the key';
+COMMENT ON COLUMN graphitron_occurrence_condition.call IS 'the call it is, condition: and the bound table';
+COMMENT ON COLUMN graphitron_occurrence_condition.call_kind IS 'always CONDITION, pinned so the foreign key holds the row to a call of that kind';
+COMMENT ON COLUMN graphitron_occurrence_condition.override_written IS 'whether the @condition was written with override: true, false where override: was not written; carried for the transition and retired with the rule that decides what a condition consumes';
+COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_condition_parameter_rule
+  (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name, fill,
+   landing_coordinate, context_key, session_member) AS
+-- A table parameter takes the table the condition is applied to, the call's bound table.
+SELECT k.graph_name, k.coordinate, k.call, k.call_kind, k.method_descriptor, p.position,
+       p.parameter_name, 'TABLE', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_call_candidate k
+  JOIN code_method_parameter p
+    ON p.source_name = k.method_source_name AND p.class_name = k.method_class_name
+   AND p.method_name = k.method_name AND p.descriptor = k.method_descriptor
+ WHERE k.call_kind = 'CONDITION' AND p.role IN ('TABLE_CONCRETE', 'TABLE_ANY');
+COMMENT ON VIEW graphitron_occurrence_condition_parameter_rule IS 'One row the condition parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.call';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.method_descriptor IS 'the method_descriptor of a row of this rule, the candidate it fills';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.position';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.parameter_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.fill IS 'the fill of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.fill';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.landing_coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.context_key IS 'the context_key of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.context_key';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.session_member IS 'the session_member of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.session_member';
+
 -- A nullable list of a union or an interface with members, every one of them @error, or of one
 -- @error type itself. A field whose element is or lists an @error type and falls short of this is a
 -- defect where it was written.
@@ -17327,6 +17494,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_call'),
   ('occurrence-depths', 'graphitron_occurrence_call_candidate'),
   ('occurrence-depths', 'graphitron_occurrence_call_method'),
+  ('occurrence-depths', 'graphitron_occurrence_condition'),
   ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_producer'),
@@ -18521,6 +18689,22 @@ INSERT INTO meta_relation VALUES
    'One member call an accessor path makes: one row per path and position, naming the member''s code_read_slot row.',
    'For example Query.filmBlurbHolder.blurb calls FilmBlurbHolder.blurb() at position 0; a path where the object passes through calls nothing and has no step.',
    'What an accessor path calls, as a join path''s steps say what it joins, so a reader renders the call off the row rather than finding the member again. One step today, a bound name being one member. Written by the occurrence-depths stage with its path.'),
+  ('graphitron_occurrence_condition', 'graph-occurrence-binding', 'graphitron',
+   'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method.',
+   'For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.',
+   'A call subtype keyed into the binding rather than a view re-deriving the table, so a condition goes when the table it was applied to does; the overload is the one whose table parameter takes the bound table, its own class over any table. Written per depth inside occurrence-depths after that depth''s bindings, with its candidates, call, method and fills.'),
+  ('graphitron_occurrence_condition_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the condition call rule computes, in the shape graphitron_occurrence_condition stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_condition, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_condition_candidate_rule', 'graph-occurrence-call-candidate', 'graphitron',
+   'One row the condition candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.',
+   'The condition''s own candidate rule beside the service''s, so neither kind''s rule branches on the other; the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_condition_parameter_rule', 'graph-occurrence-call-parameter', 'graphitron',
+   'One row the condition parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter, which is the name every reader spells.',
+   'The condition''s own fill rule beside the service''s, its rules the manual''s @condition reference, so neither kind''s rule branches on the other; the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_binding_table', 'graph-occurrence-binding', 'graphitron',
    'The table an occurrence''s rows or value land on: one row per TABLE binding.',
    'For example Query.films binds public.film, its rows, and Query.films(filter:), an input object whose fields filter film, binds public.film where its need lands.',

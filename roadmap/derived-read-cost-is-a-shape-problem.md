@@ -532,7 +532,8 @@ static method needs no holder.
       with `CHECK (call = 'condition:' || bound)`, and readers join on `bound`, never parsing `call`.
       It carries `override_written`, the `override:` written, doomed with the consumption rule and
       kept for the transition against the review's point that it is a definition-keyed fact repeated
-      per table (Alf, 2026-11-09); it is the entry's only new reader. Its fills follow the manual's
+      per table (Alf, 2026-11-09), read off `graphql_directive_application_arg` so no reader moves onto the
+      condition entries, whose two relations a reader would have to union. Its fills follow the manual's
       `@condition` reference, § How the method's parameters are bound, today's rules reproduced, by
       rule views of the condition's own beside the service's, never one view branching on
       `call_kind`, into the one stored `graphitron_occurrence_call_parameter`, whose check gains a
@@ -2824,8 +2825,8 @@ went into `graphitron_occurrence`, a holder being just a coordinate. The anchor'
 `Store.people[Staff]` and the argument spelling `Query.people.storeId` are retired with them.
 
 **Transitional columns.** `graphitron_occurrence_condition.override_written` copies the `override:` a
-`@condition` was written with off `graphitron_ast_field_condition_entry`; the consumption-rule node
-removes the column and the entry together.
+`@condition` was written with off `graphql_directive_application_arg`; the consumption-rule node
+removes the column.
 
 **The claim conflict moved into the claim supertype.** `AuthoredClaimConflicts`, its
 `FieldVerdict`, `FieldCoordinate` and `fieldConflicts`, `FieldClaim`, `AuthoredClaimRejectionRows`

@@ -1,0 +1,60 @@
+# A @condition is a call per table its occurrence binds: a field's rows' table, each participant's on
+# a multitable field, an argument's column's table, or the table a scalar it takes lands on. The
+# overload called on a table is the one whose table parameter takes that table by its own class, else
+# the one taking any table; the table parameter is filled with the table the call is applied to.
+
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+type Film @table(name: "film") { title: String }
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+
+union AddressOccupant = Customer | Staff
+
+type Query {
+  # On the field: one call, on the field's own table.
+  actorsM: [Actor!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
+      method: "firstNameStartsWithM"})
+  # On a scalar argument no column takes: one call, on the table the argument lands on.
+  filmsByPrefix(titlePrefix: String @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)): [Film!]!
+  # On an argument whose column each participant has: one call per participant's table, each
+  # calling the declaration taking that table.
+  occupantsByTypedNamePrefix(firstName: String @field(name: "first_name") @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
+      method: "occupantTypedNamePrefix"}, override: true)): [AddressOccupant!]!
+  # A table's own declaration where there is one, the one taking any table where there is not.
+  occupantsByMixedNamePrefix(firstName: String @field(name: "first_name") @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
+      method: "occupantMixedNamePrefix"})): [AddressOccupant!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_condition", rows: """
+  coordinate,                                   bound,           call,                     override_written
+  Query.actorsM,                                public.actor,    condition:public.actor,    FALSE
+  Query.filmsByPrefix(titlePrefix:),            public.film,     condition:public.film,     TRUE
+  Query.occupantsByMixedNamePrefix(firstName:), public.customer, condition:public.customer, FALSE
+  Query.occupantsByMixedNamePrefix(firstName:), public.staff,    condition:public.staff,    FALSE
+  Query.occupantsByTypedNamePrefix(firstName:), public.customer, condition:public.customer, TRUE
+  Query.occupantsByTypedNamePrefix(firstName:), public.staff,    condition:public.staff,    TRUE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_method", where: "call_kind = 'CONDITION'", rows: """
+  coordinate,                                   call,                      method_name,               method_descriptor
+  Query.actorsM,                                condition:public.actor,    firstNameStartsWithM,      (Lorg/jooq/Table;)Lorg/jooq/Condition;
+  Query.filmsByPrefix(titlePrefix:),            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.occupantsByMixedNamePrefix(firstName:), condition:public.customer, occupantMixedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.occupantsByMixedNamePrefix(firstName:), condition:public.staff,    occupantMixedNamePrefix,   (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.occupantsByTypedNamePrefix(firstName:), condition:public.customer, occupantTypedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.occupantsByTypedNamePrefix(firstName:), condition:public.staff,    occupantTypedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Staff;Ljava/lang/String;)Lorg/jooq/Condition;
+  """)
+
+# The table parameter takes the table the call is applied to.
+extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", rows: """
+  coordinate,                                   call,                      position, fill
+  Query.actorsM,                                condition:public.actor,    0,        TABLE
+  Query.filmsByPrefix(titlePrefix:),            condition:public.film,     0,        TABLE
+  Query.occupantsByTypedNamePrefix(firstName:), condition:public.customer, 0,        TABLE
+  Query.occupantsByTypedNamePrefix(firstName:), condition:public.staff,    0,        TABLE
+  """)

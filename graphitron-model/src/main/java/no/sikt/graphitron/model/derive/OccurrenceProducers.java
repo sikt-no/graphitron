@@ -71,7 +71,7 @@ public final class OccurrenceProducers {
         var k = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
         var kr = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_RULE;
         dsl.deleteFrom(k)
-            .where(k.GRAPH_NAME.eq(graph))
+            .where(k.GRAPH_NAME.eq(graph), k.CALL_KIND.eq("SERVICE"))
             .and(atDepth(k.GRAPH_NAME, k.COORDINATE, depth))
             .andNotExists(selectOne().from(kr)
                 .where(kr.GRAPH_NAME.eq(k.GRAPH_NAME), kr.COORDINATE.eq(k.COORDINATE), kr.CALL.eq(k.CALL),
@@ -79,10 +79,12 @@ public final class OccurrenceProducers {
                     kr.METHOD_NAME.eq(k.METHOD_NAME), kr.METHOD_DESCRIPTOR.eq(k.METHOD_DESCRIPTOR)))
             .execute();
         refresh(dsl, k, kr, graph, depth, touchedAt);
-        // The calls and the methods they pin, before the subtypes that are calls as well as producers.
-        refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_RULE, graph, depth, touchedAt);
+        // The calls and the methods they pin, before the subtypes that are calls as well as producers;
+        // a service's only, a condition's call waiting on the depth's bindings.
+        refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_RULE, graph, depth, touchedAt,
+            GRAPHITRON_OCCURRENCE_CALL_RULE.CALL_KIND.eq("SERVICE"));
         refresh(dsl, GRAPHITRON_OCCURRENCE_CALL_METHOD, GRAPHITRON_OCCURRENCE_CALL_METHOD_RULE, graph, depth,
-            touchedAt);
+            touchedAt, GRAPHITRON_OCCURRENCE_CALL_METHOD_RULE.CALL_KIND.eq("SERVICE"));
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE,
             graph, depth, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE_RULE,
@@ -119,6 +121,12 @@ public final class OccurrenceProducers {
      */
     private static void refresh(DSLContext dsl, Table<?> target, Table<?> rule, String graph, int depth,
                                 LocalDateTime touchedAt) {
+        refresh(dsl, target, rule, graph, depth, touchedAt, org.jooq.impl.DSL.noCondition());
+    }
+
+    /** {@link #refresh} of the rule's rows that {@code only} admits. */
+    static void refresh(DSLContext dsl, Table<?> target, Table<?> rule, String graph, int depth,
+                        LocalDateTime touchedAt, org.jooq.Condition only) {
         var key = target.getPrimaryKey().getFields();
         var columns = new java.util.ArrayList<Field<?>>();
         var selected = new java.util.ArrayList<Field<?>>();
@@ -142,7 +150,8 @@ public final class OccurrenceProducers {
         dsl.insertInto(target).columns(columns)
             .select(dsl.select(selected).from(rule)
                 .where(ruleGraph.eq(graph))
-                .and(atDepth(ruleGraph, ruleCoordinate, depth)))
+                .and(atDepth(ruleGraph, ruleCoordinate, depth))
+                .and(only))
             .onConflict(key)
             .doUpdate()
             .set(updates)
@@ -150,7 +159,7 @@ public final class OccurrenceProducers {
     }
 
     /** Whether the occurrence at {@code coordinate} sits at {@code depth}. */
-    private static org.jooq.Condition atDepth(Field<String> graph, Field<String> coordinate, int depth) {
+    static org.jooq.Condition atDepth(Field<String> graph, Field<String> coordinate, int depth) {
         var o = GRAPHITRON_OCCURRENCE;
         return org.jooq.impl.DSL.exists(selectOne().from(o)
             .where(o.GRAPH_NAME.eq(graph), o.COORDINATE.eq(coordinate), o.DEPTH.eq(depth)));
