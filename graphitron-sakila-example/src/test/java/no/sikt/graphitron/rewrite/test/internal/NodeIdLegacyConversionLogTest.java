@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,9 +25,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The encoder remembers the type ids it has logged in a static set, so this converts the one type
  * id no other test does, {@code PaymentLegacyProbe}, and reads back only the records naming it. The
- * records are read off the JBoss logger on {@code NodeIdFoldWarningTest}'s terms.
+ * records are read off the JBoss logger on {@link NodeIdFoldWarningTest}'s terms, and the logger's
+ * level is set under {@link EncoderLoggerLevelLock}.
  */
 @UnitTier
+@ResourceLock(EncoderLoggerLevelLock.KEY)
 class NodeIdLegacyConversionLogTest {
 
     private static final String TYPE_ID = "PaymentLegacyProbe";

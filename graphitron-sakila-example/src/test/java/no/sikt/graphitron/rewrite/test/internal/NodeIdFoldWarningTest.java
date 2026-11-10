@@ -10,6 +10,7 @@ import org.jooq.impl.SQLDataType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -34,8 +35,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * classes run concurrently. This module's slf4j binds to the JBoss LogManager that Quarkus brings,
  * so the records are read off that logger with a {@code java.util.logging} handler; the binding
  * formats the slf4j message before the record is published.
+ *
+ * <p>Each test raises the encoder logger's level and puts back what it found, under
+ * {@link EncoderLoggerLevelLock}.
  */
 @UnitTier
+@ResourceLock(EncoderLoggerLevelLock.KEY)
 class NodeIdFoldWarningTest {
 
     private static final String TYPE_ID = "Fold";
