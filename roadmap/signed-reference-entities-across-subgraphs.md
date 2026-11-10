@@ -21,8 +21,8 @@ The two ends are different acts and get different markers. In subgraph A, which 
 the caseworker, a field marked `@issue` makes Graphitron attach a *voucher* to each reference row it
 returns below a parent; reaching those rows under A's own access rules is the decision being vouched for.
 The voucher is Graphitron's own artifact: it carries the row's key values for B's entity, signed together
-with the scope, the caller and an expiry, and it is the only thing A publishes about the row, so the only
-way a router can reach B's entity from A is through the voucher. Graphitron later decodes and verifies it
+with the scope, the caller and an expiry, and A publishes no field under the name of a key field of B, so
+the only way a router can reach B's entity from A is through the voucher. Graphitron later decodes and verifies it
 the way it encodes and decodes a node id. In subgraph B, which owns the data, the matching field is marked
 `@accept`. B takes a *vouched connection* for each verified vouch: a
 database connection on which the consumer's ordinary session mount runs, told what the vouch covers, so
@@ -35,16 +35,17 @@ keys, the RLS policies, the caller on the per-request `SessionState`, and, in B,
 vouch it is told.
 
 ```graphql
-# Subgraph A: the issuer. VgsResultat is A's own table of references to results. The type publishes the
-# voucher and nothing else; `key:` says which of B's key fields the voucher carries and which of A's columns
-# holds each. Graphitron computes `voucher` per row; no service, no token code, no `@key` written.
+# Subgraph A: the issuer. VgsResultat is A's own table of references to results. `key:` is an argMapping
+# string, "<B's key field>: <a field of this type>": B's `id` takes the value of `resultatId`. The type keeps
+# its ordinary fields, as long as none is named like a field on the left of `key:`. Graphitron computes
+# `voucher` per row; no service, no token code, no `@key` written.
 type Soknad @table(name: "soknad") @key(fields: "id") {
   id: ID! @nodeId
   vgsResultater: [VgsResultat!]! @reference(path: [{key: "soknad_vgs_resultat_soknad_fkey"}])
 }
 type VgsResultat @table(name: "soknad_vgs_resultat") {
-  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M",
-                          key: [{field: "id", column: "vgs_resultat_id"}])
+  resultatId: ID! @field(name: "vgs_resultat_id")
+  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", key: "id: resultatId")
 }
 
 # Subgraph B: the owner. The real, table-bound entity. `voucher` is the proof field: not a column, not selected.
@@ -57,8 +58,11 @@ type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
 }
 ```
 
-The values the voucher carries must be the values B keys on, as for any federation key: here A reads the
-result id from `vgs_resultat_id` and B keys on its own `id` column.
+The voucher carries each value as A's field publishes it, which is what a plain representation would have
+carried, and B parses it as its own key field, as it parses any representation. So the values must agree
+as for any federation key: here A's `resultatId` reads the result id from `vgs_resultat_id` and B's `id`
+reads its own `id` column, both as an `ID`. A client that wants the result's `id` gets it from B, through
+the voucher, like `fag`.
 
 What both subgraphs publish is derived, not written. On a type with an `@issue` or `@accept` field
 Graphitron mints `@key(fields: "voucher")` and puts `@inaccessible` on the voucher field: in A the key is
@@ -68,11 +72,15 @@ the `@link` imports `@inaccessible` with no extra step. The author writes neithe
 disagree about the key shape because both derive it from their marker.
 
 Why the voucher is the whole key. A router plans a jump from A to B through any key of B whose fields A
-can supply. If A published the result's `id`, B's authored `@key(fields: "id")` would carry the jump just as
-well, B would resolve the entity under the caller's own RLS, the policy would hide the rows, and the client
-would get `null` with no error: the quiet denial this item rules out. Because A's type publishes only
-`voucher`, no plan from A can use the plain key; the voucher key is the only way in, by construction rather
-than by planner preference. B's authored key is untouched, so the type still resolves by plain `id` from
+can supply, and any field A publishes on the type counts, whether or not it is in A's own `@key`
+(`@inaccessible` hides a field from clients, not from the planner). If A published a field named `id`, B's
+authored `@key(fields: "id")` would carry the jump just as well, B would resolve the entity under the
+caller's own RLS, the policy would hide the rows, and the client would get `null` with no error: the quiet
+denial this item rules out. What matters is the field's name, not its value: A may publish the result id as
+`resultatId`, because no key of B has a field by that name. Graphitron rejects a field of the issuing type
+named like a field on the left of `key:`, so no plan from A can use that key of B; the voucher key is the
+only way in, by construction rather than by planner preference. The left of `key:` is all A knows of B,
+so a field named like a field of some other key of B is the author's to avoid, and the how-to says so. B's authored key is untouched, so the type still resolves by plain `id` from
 anywhere else under the caller's own RLS; a voucher only ever adds access. This is federation only:
 `Query.node`, `@node` and the relay id are unaffected and know nothing about vouchers.
 
@@ -81,7 +89,8 @@ anywhere else under the caller's own RLS; a voucher only ever adds access. This 
 1. *Issue (A).* A's field is an ordinary read below a parent; the `voucher` field of each returned row is
    not a column but computed, and only when selected, which a router does only when it plans the jump to
    B. For each returned row Graphitron builds the token (version, vouch id, scope, caller, expires, key id,
-   and the key values named by `@issue(key:)`, read from their columns) and signs it, with the entity type
+   and, for each `@issue(key:)` entry, B's key field name with the value of the A field it names, serialized
+   as that field's scalar serializes it on the wire) and signs it, with the entity type
    name, using the runtime's signing key. The *caller* is the value the consumer put on the request's
    `SessionState`. The *vouch id* is
    a random 128-bit value Graphitron mints once per operation and scope, and every row issued under them
@@ -90,8 +99,8 @@ anywhere else under the caller's own RLS; a voucher only ever adds access. This 
    returned and never signed. Under a mutation payload the rows are read and signed inside the mutation
    field's transaction; a field that rolls back is `null`, so a voucher for rows that are gone never
    reaches the router.
-2. *Carry.* The router fetches `voucher` from A, the only key field A has, and sends `_entities`
-   representations `{voucher}` to B. The voucher stays out of the client schema because the field is
+2. *Carry.* The router fetches `voucher` from A, the only field there that satisfies a key of B, and
+   sends `_entities` representations `{voucher}` to B. The voucher stays out of the client schema because the field is
    `@inaccessible`.
 3. *Verify (B).* The dispatcher resolves the representations through the voucher key, the way it resolves
    a node-id key: decode the opaque value into the authored key's columns, then the ordinary SELECT.
@@ -146,26 +155,31 @@ child to its result row, where `covered` is the session setting the mount wrote 
 | Encode and decode an opaque value in a key | `NodeIdEncoder` encodes and decodes node ids, and the node-id key alternative decodes one into the key's columns before the SELECT. | A voucher codec beside it: encode `(vouch id, scope, caller, expires, key values)`, sign it with the type name, decode, verify, and hand the key values to the authored key's columns. Owned by Graphitron, versioned in the encoding so the format can change. |
 | Signing and verification keys | None. | A runtime-level key provider: a signing key on A, verification keys by key id on B, so the public key can sit in B and rotation adds a key id. A default implementation over JDK Ed25519 (in the JDK since 15, so valid in emitted Java 17); an interface so a consumer can sign remotely, for example through Vault Transit. In a build with a marker it is a required parameter of every `Graphitron.runtime(...)` overload, so omitting it is a compile error. |
 | The caller the voucher is bound to | `SessionState.of(mount, unmount)` carries the request's callbacks; whatever the request knows is captured in their closures, and Graphitron never sees it. | In a build with a marker, `SessionState.of(caller, mount, unmount)`: the caller as a `String`, read by both subgraphs, so the voucher is useless to another user. Still one `of` form per build, so a lambda never meets an overload. |
-| Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. | `@issue` is a computed, non-column projection whose value comes from the codec, one signature per returned row that selects it, carrying the values of the `key:` columns. |
+| Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. | `@issue` is a computed, non-column projection whose value comes from the codec, one signature per returned row that selects it, carrying the values of the fields `key:` names. |
 | Per-subtree routing value | `TenantHandDown` is the one writer of the `localContext` slot, which carries the tenant key; `LocalContextOwnershipGuardTest` keeps every other writer out; the carrier's `handDown(row, tenantKey)` stamps entity and node dispatch. | In a build with an `@accept` field the slot carries a generated `ConnectionKey` (the tenant part only in multi-tenant builds, the vouch id part only with `@accept`). The hand-down, the guard's owner list, the loader naming and `handDown` take it. A build with no `@accept` keeps `Optional<K>` exactly. |
 | One connection per routing key | `TenantConnections` keys its entries by `Optional<tenantKey>`, mints lazily, one mount per entry, unmounts and resets at release; its entry resolution is the one enforcer of the request tenant set. | Key the entries by `ConnectionKey`; the cap of one vouched entry; the tenant part of a vouched key goes through the same enforcer, so a voucher never adds a tenant. |
 | Telling the mount what the connection is for | `MountedSession` carries `configuration()` and, in multi-tenant builds only, `tenant()`. | `vouch()`, returning `Optional<Vouch>` (id, scope, expiry, covered keys), declared only in a build with an `@accept` field, the way `tenant()` is declared only in multi-tenant builds. |
-| Entity with a non-column key field | Every `@key` field must resolve to a column-backed field (`EntityResolutionBuilder`), except the node-id alternative, which decodes to the key's columns. | An `@accept` field: the whole minted key, in the SDL, excluded from the SELECT and projection, decoded to the columns of B's authored key like a node id. In A, an `@issue` field on a type that publishes nothing else. |
+| Entity with a non-column key field | Every `@key` field must resolve to a column-backed field (`EntityResolutionBuilder`), except the node-id alternative, which decodes to the key's columns. | An `@accept` field: the whole minted key, in the SDL, excluded from the SELECT and projection, decoded to the columns of B's authored key like a node id. In A, an `@issue` field whose type publishes no field named like B's key fields. |
+| Naming where a value comes from | An `argMapping` string, `"target: path"`, is parsed by one grammar (`ArgMappingSigil`) and captured per site (`graphitron_ast_argmapping_pair_entry`, `graphitron_argmapping_site`, `graphitron_argmapping_pair`); its paths resolve against the field's arguments and input fields, `$session` and `$context`. | `@issue(key:)` as one more argMapping site, its targets B's key field names and its paths resolved against the fields of the issuing type. |
 | Schema alteration from one marker | `graphitron_directive_application_minted` mints `@key(fields: "id")` on a node type of a federated graph; `graphitron_federation_link_import_rule` imports every minted directive the link's version allows. | Two more arms of the minted view: `@key(fields: "voucher")`, with `resolvable` from the role (`false` for `@issue`, `true` for `@accept`), and `@inaccessible` on the marked field. The import needs no change. |
 | Children of the entity | Table-bound children run through generated fetchers that honour the inherited routing. | Verify that a `@service` child and a connection-typed child under the entity also acquire from the inherited key. |
 
 ## Implementation
 
-* *Directives.* `@issue(scope:, ttl:, key: [{field:, column:}])` on the one field of a table-bound type
-  (A): `key:` names each field of B's key the voucher carries and the column of A's table that holds its
-  value. `@accept(scope:, key:)` on a field of a table-bound, resolvable type (B): `key:` is the field set
+* *Directives.* `@issue(scope:, ttl:, key:)` on a field of a table-bound type (A). `key:` is a required
+  argMapping string, `"<B's key field>: <path>"` entries, comma-separated: the target names a field of B's
+  key the voucher carries, the path names a field of the issuing type whose value it carries. There is no
+  default, since the obvious one, `"id: id"`, is the form the name rule forbids. `@accept(scope:, key:)` on a field of a table-bound, resolvable type (B): `key:` is the field set
   of the authored `@key` whose columns the voucher decodes to, and may be omitted when the type has exactly
   one authored resolvable key. Graphitron defines both in `directives.graphqls`, as it does `@node`;
   consumers do not write the definitions.
 * *Facts.* Capture writes one entry per application, keyed by the directive application as
-  `graphitron_ast_node_id_entry` is: `graphitron_ast_issue_entry` (scope, ttl) with one
-  `graphitron_ast_issue_key_entry` row per `key:` element (field, column), and
-  `graphitron_ast_accept_entry` (scope, the `key:` field set as written). Everything else is derived from these and from facts the store
+  `graphitron_ast_node_id_entry` is: `graphitron_ast_issue_entry` (scope, ttl) and
+  `graphitron_ast_accept_entry` (scope, the `key:` field set as written). `@issue(key:)` is captured as an
+  argMapping site like any other, its pairs in `graphitron_ast_argmapping_pair_entry`, so the grammar, the
+  pair relations and the LSP's parsing are shared; what is new is the scope its paths resolve in, the
+  fields of the enclosing type rather than the field's arguments, which the path resolution and the LSP's
+  completions both take as a new root. Everything else is derived from these and from facts the store
   already holds: the minted key and `@inaccessible` (two arms of `graphitron_directive_application_minted`,
   their arguments in `graphitron_directive_application_arg_minted`), the rejections below as entry
   defects, and the build-shape questions the emitters ask (does this graph issue, does it accept). The
@@ -174,28 +188,33 @@ child to its result row, where `covered` is the session setting the mount wrote 
   `EntityResolutionBuilder` the way the node-id alternative is derived there today; it shares that
   alternative's decode-then-SELECT path.
 * *Rejections.* `@accept` on a type with no authored resolvable `@key`, or with several and no `key:`, or
-  a `key:` naming no authored key; `@issue` on a type with an authored `@key` or any field besides the
-  marked one (either would let a router reach B without the voucher); an `@issue` `key:` column that is
-  not on the type's table, or a field named twice; either marker on a field that is also a column; both
+  a `key:` naming no authored key; `@issue` on a type with an authored `@key`, or with a field named like
+  a target of its `key:` (either would let a router reach B without the voucher; `"id: id"` gets its own
+  message saying so and naming the rename); an `@issue` `key:` path that names no field of the type, a
+  field that is not a scalar read from the row (a `$session` or `$context` path, a list, an object, a
+  `@nodeId` field, whose published value is an encoded id rather than the key value), or a target named
+  twice; either marker on a field that is also a column; both
   markers on one type; either marker in a graph with no `<sessionState>` (no `store_graph_session_supplied`
   row), since the caller rides on `SessionState`; `@issue` on a type a root operation field returns (a
   `Query`, `Mutation` or `Subscription` field, directly or as a list), because the vouched decision is
   the path from a parent A's rules admitted. A field of a mutation payload is not a root field and may
   return `@issue` rows.
 * *Voucher codec.* One class owns the format: version byte, vouch id, scope, caller, expiry, key id, the
-  key values, signature. The key values have one canonical form, so A and B never have to agree on how a
-  value prints: field names sorted, each value the string jOOQ's data type for A's column converts it to
-  (an integer as its decimal digits, a UUID in its canonical form). The signature covers every byte before
-  it plus the entity type name, which the token does not carry: B takes it from the representation's
-  `__typename`, so a voucher for one type cannot be presented as another's. On B each string is coerced by
-  the column type of B's authored key, as a node id's decoded values are. A decode failure, unknown
-  version, unknown key id, a field set other than B's authored key or a value that does not coerce is a
-  verification failure, not an exception to the caller.
+  key values, signature. The key values travel in GraphQL's own wire form, so A and B never have to agree
+  on how a column prints: entries sorted by B's key field name, each value the result of the A field's
+  scalar serializing it, exactly what a plain representation would have carried. On B each value is parsed
+  by the scalar of B's key field, as a representation's value is, and reaches the authored key's columns
+  the way a node id's decoded values do. The signature covers every byte before it plus the entity type
+  name, which the token does not carry: B takes it from the representation's `__typename`, so a voucher
+  for one type cannot be presented as another's. A decode failure, unknown version, unknown key id, a
+  field set other than B's authored key or a value B's scalar does not parse is a verification failure,
+  not an exception to the caller.
 * *Key synthesis.* The minted key and `@inaccessible` show in the served `_service.sdl` on both sides. B's
   authored keys, `@node` and the relay id are not touched.
 * *Clock skew.* B accepts a voucher up to a fixed 30 seconds past its expiry, so a small difference
   between A's and B's clocks does not reject fresh vouchers. The constant lives beside the vouch cap.
-* *Issue.* The fetcher that reads an `@issue` row selects the `key:` columns and computes the token after
+* *Issue.* The fetcher that reads an `@issue` row selects the columns of the fields `key:` names, whether
+  or not the client selected those fields, and computes the token after
   the rows are read, one signature per row, the caller read from the carrier's `SessionState`. A row is
   signed only when `voucher` is selected, which a router does only when it plans the jump to B, so the
   signing cost follows what B is asked for; no ceiling beyond the page size the parent field already
@@ -222,8 +241,10 @@ child to its result row, where `covered` is the session setting the mount wrote 
 
 ## First-client docs draft (for `federation-keys.adoc` and the security guide)
 
-"To let another subgraph read data your user's token does not cover, give the row type one field,
-`voucher: String! @issue(...)`, naming which of your columns hold the other subgraph's key. Graphitron
+"To let another subgraph read data your user's token does not cover, give the row type a field
+`voucher: String! @issue(..., key: "id: resultatId")`, saying which of your fields holds each field of the
+other subgraph's key. Don't publish a field under the other subgraph's key field name: a router could use
+it to skip the voucher, so the build refuses it and asks you to rename it. Graphitron
 signs a voucher for each row your own rules let the caller see, bound to the caller you pass to
 `SessionState.of`; both subgraphs must pass the same caller for the same user (for example the token's
 subject), or every voucher is rejected. In the subgraph that owns the data, add the field
@@ -235,14 +256,16 @@ read simply once the spellings are chosen, the design is wrong.
 
 ## Tests
 
-* Codec: round trip, including an integer key column under `ID`, a UUID key and a two-field key written
-  in either order; tampered signature or key value, wrong key id, unknown version, expired beyond the skew
+* Codec: round trip, including an `ID` field over an integer column on A against an integer key column on
+  B, a UUID key, an `Int` key and a two-field key whose `key:` entries are written in either order; tampered signature or key value, wrong key id, unknown version, expired beyond the skew
   tolerance (and accepted within it), wrong scope, wrong caller, a voucher presented under another
   `__typename`, a field set other than B's key, a value that does not coerce, and two vouchers sharing a
   vouch id but disagreeing on scope, caller or expiry each fail verification and nothing else does.
 * Pipeline tier: capture of both markers and each rejection above, including `@issue` on a type a root
-  field returns, on a type with an authored `@key` or a second field, and its acceptance under a mutation
-  payload; `@accept` with two authored keys with and without `key:`; the minted key with
+  field returns, on a type with an authored `@key` or a field named like a `key:` target (`"id: id"` with
+  its own message), a `key:` path naming no field, a `@nodeId`, list or object field, or `$session`, and
+  its acceptance under a mutation payload and beside ordinary fields renamed away from the targets;
+  `key:` captured as an argMapping site with its pairs; `@accept` with two authored keys with and without `key:`; the minted key with
   `resolvable: false` and as the only key on A's issuing type, with `resolvable: true` beside the authored
   key on B's entity, and `@inaccessible` on both; the connection key in emitted fetchers; output for
   a build with no marker unchanged; `SessionState.of` gains the caller, `MountedSession` gains `vouch()`
@@ -258,9 +281,9 @@ read simply once the spellings are chosen, the design is wrong.
   outside the request tenant set; a mutation payload issues vouchers on commit and none from a field that
   rolled back; vouched connections are unmounted and released at the end.
 * Served SDL: `_service { sdl }` shows `@key(fields: "voucher")` and `@inaccessible` on the voucher field
-  on both sides, with the `@link` importing `@inaccessible`, and A's issuing type publishing no field but
-  `voucher`. That last assertion is the guard on the router's choice: with no other field of the type in
-  A, no plan from A can use B's plain key. Composing the two fixture subgraphs and planning a query over the
+  on both sides, with the `@link` importing `@inaccessible`, and A's issuing type publishing no field named
+  like a target of its `key:`. That last assertion is the guard on the router's choice: with no field of
+  the type in A under the name of B's key field, no plan from A can use B's plain key. Composing the two fixture subgraphs and planning a query over the
   supergraph would show the same thing end to end, but no composition or planning tool is in the build;
   the how-to names `rover supergraph compose` for consumers who want to see the plan.
 
@@ -280,8 +303,9 @@ read simply once the spellings are chosen, the design is wrong.
   vouched mount and every rejection, so a redemption traces back to an issuance. A consumer that wants
   single use can record the id its mount receives in B's own database, accepting that router retries then
   fail.
-* The spelling of `@issue(key:)`: a list of `{field, column}` pairs as written, or a field set string with
-  the columns resolved by `@field`-style naming.
+* Paths that walk: `@issue(key:)` takes one field of the issuing type per entry. An argMapping path could
+  walk further, for example to a value reached through a `@reference`, with no new syntax; left out until a
+  consumer needs it, and rejected meanwhile.
 * Isolation: one connection per vouch scopes a subtree by graph shape, not by connection. If a consumer
   needs a connection per row, the connection key can include the key fields at the cost of the cap.
 
@@ -321,6 +345,14 @@ caller, mutations and the tenant interaction open. Settled here:
   router's plan, and the parent's page size bounds it; no further ceiling.
 * Notes. The docs draft says both subgraphs must pass the same caller; B tolerates 30 seconds of clock skew.
 
+After round 1, with the user (2026-11-10): the round-1 answer to Finding 1 forbade every field on the
+issuing type but `voucher`. A router can use any field A publishes on the type, not only A's own `@key`,
+but only by name: what reaches B's key is a field *named* like B's key field. So the rule is now exactly
+that, a field named like a target of `key:`, and the issuing type keeps its ordinary fields. `key:` became
+an argMapping string, `"id: resultatId"`, naming B's key fields on the left and fields of the issuing type
+on the right: no column names in the SDL, the existing grammar and capture, and the values travel as the
+fields publish them, so Finding 3's canonical form is GraphQL's own wire form rather than a jOOQ string.
+
 ## Other solutions we've considered
 
 * A consumer-written issue method and an opaque token the consumer parses: needs a hand-written resolver
@@ -341,6 +373,9 @@ caller, mutations and the tenant interaction open. Settled here:
 * The caller read from a member of the mount's handle (`$session.<member>`, checked against
   `graphitron_session_handle_member`): no new `SessionState` parameter, but B would have to mount the
   request's own connection before it could verify, and a build without `<handle>` would have no caller.
+* `@issue(key:)` as a list of `{field, column}` pairs: names A's columns in the SDL, which no other
+  directive beside `@field`, `@table` and its kin does, needs a canonical string form per column type, and
+  pushed the issuing type to publish nothing but `voucher`.
 * A second key `@key(fields: "id voucher")` beside the plain one, with A publishing `id`: a router can
   satisfy B's plain key from A as well, and a plan that takes it denies quietly under RLS.
 * B's protected fields declaring `@requires(fields: "voucher")` with the voucher `@external`: makes the
