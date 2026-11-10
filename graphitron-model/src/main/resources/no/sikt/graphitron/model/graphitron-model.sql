@@ -15197,6 +15197,462 @@ COMMENT ON COLUMN graphitron_occurrence_producer_result.touched_at IS 'the readi
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_source_ref IS 'the classpath entry half of the class''s code_class key, the first of the graph''s own entries by name where two declare it, so a reader joins the class''s members on their key; nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
 
+-- A path need whose join path is one step riding one key, with no condition and no routine on it:
+-- the values on one side of that key name the rows on the other, so a query restarting at either
+-- end reaches the same rows the join would.
+CREATE TABLE graphitron_join_path_one_key (
+  graph_name             VARCHAR   NOT NULL,
+  coordinate             VARCHAR   NOT NULL,
+  target_type            VARCHAR   NOT NULL,
+  direction              VARCHAR   NOT NULL,
+  constraint_source_name VARCHAR   NOT NULL,
+  constraint_schema      VARCHAR   NOT NULL,
+  constraint_table       VARCHAR   NOT NULL,
+  constraint_name        VARCHAR   NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, target_type),
+  FOREIGN KEY (graph_name, coordinate, target_type)
+    REFERENCES graphitron_path_need (graph_name, coordinate, target_type) ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+    ON DELETE CASCADE,
+  CHECK (direction IN ('FORWARD', 'REVERSE'))
+);
+COMMENT ON TABLE graphitron_join_path_one_key IS 'A path need whose join path is one step riding one foreign key, with no condition and no routine on it: one row per such need. For example Film.language''s path is film_language_id_fkey, held by film, forward; Language.films''s the same key, held by film, reverse.';
+COMMENT ON COLUMN graphitron_join_path_one_key.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_join_path_one_key.coordinate IS 'the occurrence whose need it is';
+COMMENT ON COLUMN graphitron_join_path_one_key.target_type IS 'the need''s target type, with the coordinate its key';
+COMMENT ON COLUMN graphitron_join_path_one_key.direction IS 'FORWARD, the key is on the table the step leaves, pointing at the one it reaches; REVERSE, it is on the table the step reaches, pointing back at the one it leaves';
+COMMENT ON COLUMN graphitron_join_path_one_key.constraint_source_name IS 'the catalog entry of the foreign key, with the schema, the table and the name a sql_referential_constraint key';
+COMMENT ON COLUMN graphitron_join_path_one_key.constraint_schema IS 'the foreign key''s table''s schema';
+COMMENT ON COLUMN graphitron_join_path_one_key.constraint_table IS 'the table that holds the foreign key';
+COMMENT ON COLUMN graphitron_join_path_one_key.constraint_name IS 'the foreign key';
+COMMENT ON COLUMN graphitron_join_path_one_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_join_path_one_key_rule
+  (graph_name, coordinate, target_type, direction, constraint_source_name, constraint_schema,
+   constraint_table, constraint_name) AS
+SELECT js.graph_name, js.coordinate, js.target_type,
+       CASE WHEN rc.table_name = js.from_table AND rc.table_schema = js.from_schema
+                 AND rc.source_name = js.from_source_name THEN 'FORWARD' ELSE 'REVERSE' END,
+       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name
+  FROM graphitron_join_path_step js
+  LEFT JOIN graphitron_join_path_step_key sk
+    ON sk.graph_name = js.graph_name AND sk.coordinate = js.coordinate
+   AND sk.target_type = js.target_type AND sk.position = js.position
+  LEFT JOIN graphitron_join_path_step_inferred_key si
+    ON si.graph_name = js.graph_name AND si.coordinate = js.coordinate
+   AND si.target_type = js.target_type AND si.position = js.position
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = COALESCE(sk.constraint_source_name, si.constraint_source_name)
+   AND rc.table_schema = COALESCE(sk.constraint_schema, si.constraint_schema)
+   AND rc.table_name = COALESCE(sk.constraint_table, si.constraint_table)
+   AND rc.constraint_name = COALESCE(sk.constraint_name, si.constraint_name)
+ WHERE js.position = 0
+   AND ((rc.source_name = js.from_source_name AND rc.table_schema = js.from_schema
+         AND rc.table_name = js.from_table AND rc.referenced_source_name = js.to_source_name
+         AND rc.referenced_schema = js.to_schema AND rc.referenced_table = js.to_table)
+        OR (rc.source_name = js.to_source_name AND rc.table_schema = js.to_schema
+            AND rc.table_name = js.to_table AND rc.referenced_source_name = js.from_source_name
+            AND rc.referenced_schema = js.from_schema AND rc.referenced_table = js.from_table))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step j2
+                    WHERE j2.graph_name = js.graph_name AND j2.coordinate = js.coordinate
+                      AND j2.target_type = js.target_type AND j2.position > 0)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_method jm
+                    WHERE jm.graph_name = js.graph_name AND jm.coordinate = js.coordinate
+                      AND jm.target_type = js.target_type AND jm.position = js.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_routine jr
+                    WHERE jr.graph_name = js.graph_name AND jr.coordinate = js.coordinate
+                      AND jr.target_type = js.target_type AND jr.position = js.position);
+COMMENT ON VIEW graphitron_join_path_one_key_rule IS 'One row the one-key path rule computes, in the shape graphitron_join_path_one_key stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_join_path_one_key, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_join_path_one_key.graph_name';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_join_path_one_key.coordinate';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_join_path_one_key.target_type';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.direction IS 'the direction of a row of this rule, which the stage writes into graphitron_join_path_one_key.direction';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.constraint_source_name IS 'the constraint_source_name of a row of this rule, which the stage writes into graphitron_join_path_one_key.constraint_source_name';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.constraint_schema IS 'the constraint_schema of a row of this rule, which the stage writes into graphitron_join_path_one_key.constraint_schema';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.constraint_table IS 'the constraint_table of a row of this rule, which the stage writes into graphitron_join_path_one_key.constraint_table';
+-- COMMENT ON COLUMN graphitron_join_path_one_key_rule.constraint_name IS 'the constraint_name of a row of this rule, which the stage writes into graphitron_join_path_one_key.constraint_name';
+
+-- How a child producer's query restarts from its source: its lift, the producer's, stated per
+-- occurrence at the end of its depth by the rule code-generation-triggers.adoc § Producer states. A
+-- target lift restarts at the target off values the source already holds; a source lift keys the
+-- batch on the source's primary key and anchors the source's table.
+CREATE TABLE graphitron_occurrence_producer_lift_candidate (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  slot_source_name VARCHAR   NOT NULL,
+  slot_class_name  VARCHAR   NOT NULL,
+  slot_method_name VARCHAR   NOT NULL,
+  slot_descriptor  VARCHAR   NOT NULL,
+  found_by       VARCHAR   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, slot_source_name, slot_class_name, slot_method_name,
+               slot_descriptor),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (slot_source_name, slot_class_name, slot_method_name, slot_descriptor)
+    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (found_by IN ('NAME', 'RECORD'))
+);
+COMMENT ON TABLE graphitron_occurrence_producer_lift_candidate IS 'A member of the class a child producer''s source is an instance of that could hand it its keys: one row per producer and member. For example CreateFilmsPayload.films under a CreateFilmsPayload has its films() member, returning the film records it re-reads.';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.coordinate IS 'the child producer whose source is the object';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.slot_source_name IS 'the classpath entry of the member''s code_read_slot key, with the class, the method and the descriptor that key';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.slot_class_name IS 'the class whose member it is, the class the source is an instance of';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.slot_method_name IS 'the member''s method';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.slot_descriptor IS 'the member''s method descriptor';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.found_by IS 'NAME, the member the producer field''s bound name names, returning records of the field''s table or, for a union or an interface, of any table; or RECORD, for a service, the one member returning a single record of the table whose records the service takes its keys as';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_producer_lift (
+  graph_name      VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  lift            VARCHAR   NOT NULL,
+  read            VARCHAR   NOT NULL,
+  arity           VARCHAR   NOT NULL,
+  key_source_name VARCHAR   NOT NULL,
+  key_schema      VARCHAR   NOT NULL,
+  key_table       VARCHAR   NOT NULL,
+  key_constraint  VARCHAR   NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  -- What the accessor subtype references, so it hangs only under a lift read through a member.
+  UNIQUE (graph_name, coordinate, read),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (key_source_name, key_schema, key_table, key_constraint)
+    REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name) ON DELETE CASCADE,
+  CHECK (lift IN ('SOURCE', 'TARGET')),
+  CHECK (read IN ('COLUMNS', 'ACCESSOR')),
+  CHECK (arity IN ('ONE', 'MANY')),
+  CHECK (read <> 'ACCESSOR' OR lift = 'TARGET')
+);
+COMMENT ON TABLE graphitron_occurrence_producer_lift IS 'How a child producer''s query restarts from its source: one row per child producer, its lift and the key constraint its batch is keyed on. For example Film.language under a film row is a target lift keyed on film''s foreign key to language, and FilmDetailsCarrier.language under a FilmRecord a service handed over a source lift keyed on film''s primary key.';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.coordinate IS 'the child producer, the whole key: one lift per producer';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.lift IS 'TARGET, the query restarts at the target off values the source holds: the target''s records the source hands over, or one unconditioned hop''s key; or SOURCE, the batch is keyed on the source''s primary key and the query anchors the source''s table and walks the whole path';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.read IS 'how the key is read off the source: COLUMNS, its columns off the row or record, or ACCESSOR, through the member graphitron_occurrence_producer_lift_accessor names';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.arity IS 'ONE or MANY keys per parent: MANY where a member hands over a list of records';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.key_source_name IS 'the catalog entry of the key constraint, with the schema, the table and the name a sql_constraint key: the source''s primary key for a source lift or a list''s reverse hop, the hop''s foreign key on the source for a forward hop, the target''s primary key where the source hands over its records';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.key_schema IS 'the key constraint''s table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.key_table IS 'the table the key constraint is on, whose columns the batch is keyed on';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.key_constraint IS 'the key constraint, its columns in key order in sql_constraint_column';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_producer_lift_accessor (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  read             VARCHAR   NOT NULL,
+  slot_source_name VARCHAR   NOT NULL,
+  slot_class_name  VARCHAR   NOT NULL,
+  slot_method_name VARCHAR   NOT NULL,
+  slot_descriptor  VARCHAR   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  -- The lift it details, pinned to the read that takes its keys through a member.
+  FOREIGN KEY (graph_name, coordinate, read)
+    REFERENCES graphitron_occurrence_producer_lift (graph_name, coordinate, read) ON DELETE CASCADE,
+  FOREIGN KEY (slot_source_name, slot_class_name, slot_method_name, slot_descriptor)
+    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (read = 'ACCESSOR')
+);
+COMMENT ON TABLE graphitron_occurrence_producer_lift_accessor IS 'The member an ACCESSOR lift reads its keys through: one row per such lift. For example CreateFilmsPayload.films takes its film keys from the records CreateFilmsPayload.films() returns.';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.coordinate IS 'the child producer, the whole key: one member per lift';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.read IS 'always ACCESSOR, pinned so the foreign key holds the row to a lift read through a member';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.slot_source_name IS 'the classpath entry of the member''s code_read_slot key, with the class, the method and the descriptor that key';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.slot_class_name IS 'the class whose member it is';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.slot_method_name IS 'the member''s method';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.slot_descriptor IS 'the member''s method descriptor';
+COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- The members a child producer under an object could take its keys through, written per depth
+-- after its sources, since a member is one of the class the producer's source object names.
+CREATE VIEW graphitron_occurrence_producer_lift_candidate_rule
+  (graph_name, coordinate, slot_source_name, slot_class_name, slot_method_name, slot_descriptor,
+   found_by) AS
+-- By name: the member the field's bound name names, returning records of the field's table, or of
+-- any table where the field returns a union or an interface.
+SELECT p.graph_name, p.coordinate, s.source_name, s.class_name, s.method_name, s.descriptor, 'NAME'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_source_object so
+    ON so.graph_name = p.graph_name AND so.coordinate = p.coordinate
+  JOIN code_read_slot s
+    ON s.source_name = so.class_source_ref AND s.class_name = so.class_name_ref
+   AND s.slot_name = f.bound_name
+  JOIN store_graph_source gs ON gs.graph_name = p.graph_name
+  JOIN sql_table et ON et.source_name = gs.source_name AND et.record_class_fqn = s.element_class
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+  LEFT JOIN graphitron_tabletype b ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+ WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
+   AND (tt.kind IN ('INTERFACE', 'UNION')
+        OR (et.source_name = b.table_source_name AND et.table_schema = b.table_schema
+            AND et.table_name = b.table_name))
+UNION ALL
+-- By record: for a service, the member returning one record of the table whose records the
+-- parameter its source fills takes, found by what it returns rather than by its name.
+SELECT p.graph_name, p.coordinate, s.source_name, s.class_name, s.method_name, s.descriptor, 'RECORD'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_source_object so
+    ON so.graph_name = p.graph_name AND so.coordinate = p.coordinate
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate AND cm.call = 'producer'
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = cm.graph_name AND cp.coordinate = cm.coordinate AND cp.call = cm.call
+   AND cp.fill = 'SOURCE'
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
+   AND mp.position = cp.position
+  JOIN store_graph_source gs ON gs.graph_name = p.graph_name
+  JOIN sql_table kt ON kt.source_name = gs.source_name AND kt.record_class_fqn = mp.element_class
+  JOIN code_read_slot s
+    ON s.source_name = so.class_source_ref AND s.class_name = so.class_name_ref
+   AND s.element_class = kt.record_class_fqn AND s.delivery = 'DIRECT'
+ WHERE p.start = 'CHILD' AND p.kind = 'SERVICE';
+COMMENT ON VIEW graphitron_occurrence_producer_lift_candidate_rule IS 'One row the lift candidate rule computes, in the shape graphitron_occurrence_producer_lift_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_candidate, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_source_name IS 'the slot_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_class_name IS 'the slot_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_method_name IS 'the slot_method_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_descriptor IS 'the slot_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_descriptor';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.found_by IS 'the found_by of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.found_by';
+
+-- A child producer's lift, written at the end of each depth, after its join paths. Each arm reads
+-- stored rows: the candidates, the one-key paths, the path's origin, the source's tables. Whether a
+-- source row is one graphitron selected is read off the declaring type's table binding for now, so a
+-- record a service or a write handed over is never taken for one; graphitron_occurrence_source will
+-- say which, selected or handed, and a nested plain type under a table-bound one then takes the
+-- forward shortcut it takes a source lift for here.
+CREATE VIEW graphitron_occurrence_producer_lift_rule
+  (graph_name, coordinate, lift, read, arity, key_source_name, key_schema, key_table,
+   key_constraint) AS
+-- A member hands over the target's records: the one candidate, keyed on its records' primary key.
+SELECT p.graph_name, p.coordinate, 'TARGET', 'ACCESSOR',
+       CASE WHEN s.delivery = 'MANY' THEN 'MANY' ELSE 'ONE' END,
+       k.source_name, k.table_schema, k.table_name, k.constraint_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_lift_candidate c
+    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate
+  JOIN code_read_slot s
+    ON s.source_name = c.slot_source_name AND s.class_name = c.slot_class_name
+   AND s.method_name = c.slot_method_name AND s.descriptor = c.slot_descriptor
+  JOIN store_graph_source gs ON gs.graph_name = p.graph_name
+  JOIN sql_table et ON et.source_name = gs.source_name AND et.record_class_fqn = s.element_class
+  JOIN sql_constraint k
+    ON k.source_name = et.source_name AND k.table_schema = et.table_schema
+   AND k.table_name = et.table_name AND k.constraint_type = 'PRIMARY KEY'
+ WHERE p.start = 'CHILD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_lift_candidate c2
+                    WHERE c2.graph_name = c.graph_name AND c2.coordinate = c.coordinate
+                      AND (c2.slot_source_name <> c.slot_source_name
+                           OR c2.slot_class_name <> c.slot_class_name
+                           OR c2.slot_method_name <> c.slot_method_name
+                           OR c2.slot_descriptor <> c.slot_descriptor))
+UNION ALL
+-- A re-fetch: every need's path is empty, the target's rows being the source's, a record or a
+-- payload's rows of the field's own table under a type bound to no table; keyed on its primary key.
+SELECT p.graph_name, p.coordinate, 'TARGET', 'COLUMNS',
+       CASE WHEN f.is_list THEN 'MANY' ELSE 'ONE' END,
+       k.source_name, k.table_schema, k.table_name, k.constraint_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_source_table st
+    ON st.graph_name = p.graph_name AND st.coordinate = p.coordinate
+  JOIN sql_constraint k
+    ON k.source_name = st.table_source_name AND k.table_schema = st.table_schema
+   AND k.table_name = st.table_name AND k.constraint_type = 'PRIMARY KEY'
+ WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype dt
+                    WHERE dt.graph_name = f.graph_name AND dt.type_name = f.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st2
+                    WHERE st2.graph_name = st.graph_name AND st2.coordinate = st.coordinate
+                      AND (st2.table_source_name <> st.table_source_name
+                           OR st2.table_schema <> st.table_schema OR st2.table_name <> st.table_name))
+   AND EXISTS (SELECT 1 FROM graphitron_path_need n
+                WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need n
+                     LEFT JOIN graphitron_path pa
+                       ON pa.graph_name = n.graph_name AND pa.coordinate = n.coordinate
+                      AND pa.target_type = n.target_type
+                    WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate
+                      AND (pa.origin IS NULL OR pa.origin <> 'EMPTY'))
+UNION ALL
+-- One unconditioned hop off a row graphitron selected, forward: the source holds the hop's foreign
+-- key to the target, so the batch is keyed on it and the query starts at the target.
+SELECT p.graph_name, p.coordinate, 'TARGET', 'COLUMNS', 'ONE',
+       h.constraint_source_name, h.constraint_schema, h.constraint_table, h.constraint_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_tabletype dt ON dt.graph_name = f.graph_name AND dt.type_name = f.type_name
+  JOIN graphitron_join_path_one_key h
+    ON h.graph_name = p.graph_name AND h.coordinate = p.coordinate AND h.direction = 'FORWARD'
+ WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need n
+                    WHERE n.graph_name = h.graph_name AND n.coordinate = h.coordinate
+                      AND n.target_type <> h.target_type)
+UNION ALL
+-- One unconditioned hop off a row graphitron selected, reverse, for a list: the target's foreign key
+-- references the source's key, so the batch is keyed on that key, every need's hop riding it.
+SELECT DISTINCT p.graph_name, p.coordinate, 'TARGET', 'COLUMNS', 'ONE',
+       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
+       rc.referenced_constraint_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_tabletype dt ON dt.graph_name = f.graph_name AND dt.type_name = f.type_name
+  JOIN graphitron_join_path_one_key h
+    ON h.graph_name = p.graph_name AND h.coordinate = p.coordinate AND h.direction = 'REVERSE'
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = h.constraint_source_name AND rc.table_schema = h.constraint_schema
+   AND rc.table_name = h.constraint_table AND rc.constraint_name = h.constraint_name
+ WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP') AND f.is_list
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need n
+                    WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate
+                      AND NOT EXISTS (
+                        SELECT 1 FROM graphitron_join_path_one_key h2
+                          JOIN sql_referential_constraint rc2
+                            ON rc2.source_name = h2.constraint_source_name
+                           AND rc2.table_schema = h2.constraint_schema
+                           AND rc2.table_name = h2.constraint_table
+                           AND rc2.constraint_name = h2.constraint_name
+                         WHERE h2.graph_name = n.graph_name AND h2.coordinate = n.coordinate
+                           AND h2.target_type = n.target_type AND h2.direction = 'REVERSE'
+                           AND rc2.referenced_source_name = rc.referenced_source_name
+                           AND rc2.referenced_schema = rc.referenced_schema
+                           AND rc2.referenced_table = rc.referenced_table
+                           AND rc2.referenced_constraint_name = rc.referenced_constraint_name))
+UNION ALL
+-- Every other child producer over one source table restarts from its source, keyed on the source's
+-- primary key: a path of several hops, a hop carrying a condition, a foreign key read off a record
+-- handed over, a service under a row whose key-taking parameter takes the source's own records if it
+-- takes a table's at all.
+SELECT p.graph_name, p.coordinate, 'SOURCE', 'COLUMNS', 'ONE',
+       k.source_name, k.table_schema, k.table_name, k.constraint_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_source_table st
+    ON st.graph_name = p.graph_name AND st.coordinate = p.coordinate
+  JOIN sql_constraint k
+    ON k.source_name = st.table_source_name AND k.table_schema = st.table_schema
+   AND k.table_name = st.table_name AND k.constraint_type = 'PRIMARY KEY'
+  LEFT JOIN graphitron_tabletype dt ON dt.graph_name = f.graph_name AND dt.type_name = f.type_name
+ WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP', 'SERVICE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st2
+                    WHERE st2.graph_name = st.graph_name AND st2.coordinate = st.coordinate
+                      AND (st2.table_source_name <> st.table_source_name
+                           OR st2.table_schema <> st.table_schema OR st2.table_name <> st.table_name))
+   -- Not a re-fetch: a selection under a type bound to no table whose every need's path is empty.
+   AND NOT (p.kind IN ('SELECT', 'LOOKUP') AND dt.type_name IS NULL
+            AND EXISTS (SELECT 1 FROM graphitron_path_need n
+                         WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_path_need n
+                              LEFT JOIN graphitron_path pa
+                                ON pa.graph_name = n.graph_name AND pa.coordinate = n.coordinate
+                               AND pa.target_type = n.target_type
+                             WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate
+                               AND (pa.origin IS NULL OR pa.origin <> 'EMPTY')))
+   -- Not a forward hop: a selection under a table-bound type whose one need rides one key forward.
+   AND NOT (p.kind IN ('SELECT', 'LOOKUP') AND dt.type_name IS NOT NULL
+            AND EXISTS (SELECT 1 FROM graphitron_join_path_one_key h
+                         WHERE h.graph_name = p.graph_name AND h.coordinate = p.coordinate
+                           AND h.direction = 'FORWARD'
+                           AND NOT EXISTS (SELECT 1 FROM graphitron_path_need n
+                                            WHERE n.graph_name = h.graph_name
+                                              AND n.coordinate = h.coordinate
+                                              AND n.target_type <> h.target_type)))
+   -- Not a reverse hop: a list under a table-bound type whose every need rides one key back to the
+   -- same key of the source.
+   AND NOT (p.kind IN ('SELECT', 'LOOKUP') AND dt.type_name IS NOT NULL AND f.is_list
+            AND EXISTS (SELECT 1 FROM graphitron_join_path_one_key h
+                          JOIN sql_referential_constraint rc
+                            ON rc.source_name = h.constraint_source_name
+                           AND rc.table_schema = h.constraint_schema
+                           AND rc.table_name = h.constraint_table
+                           AND rc.constraint_name = h.constraint_name
+                         WHERE h.graph_name = p.graph_name AND h.coordinate = p.coordinate
+                           AND h.direction = 'REVERSE'
+                           AND NOT EXISTS (
+                             SELECT 1 FROM graphitron_path_need n
+                              WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate
+                                AND NOT EXISTS (
+                                  SELECT 1 FROM graphitron_join_path_one_key h2
+                                    JOIN sql_referential_constraint rc2
+                                      ON rc2.source_name = h2.constraint_source_name
+                                     AND rc2.table_schema = h2.constraint_schema
+                                     AND rc2.table_name = h2.constraint_table
+                                     AND rc2.constraint_name = h2.constraint_name
+                                   WHERE h2.graph_name = n.graph_name
+                                     AND h2.coordinate = n.coordinate
+                                     AND h2.target_type = n.target_type
+                                     AND h2.direction = 'REVERSE'
+                                     AND rc2.referenced_source_name = rc.referenced_source_name
+                                     AND rc2.referenced_schema = rc.referenced_schema
+                                     AND rc2.referenced_table = rc.referenced_table
+                                     AND rc2.referenced_constraint_name
+                                         = rc.referenced_constraint_name))))
+   -- A service takes its keys as the source's own records, where its key-taking parameter takes a
+   -- table's records at all.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_method cm
+                     JOIN graphitron_occurrence_call_parameter cp
+                       ON cp.graph_name = cm.graph_name AND cp.coordinate = cm.coordinate
+                      AND cp.call = cm.call AND cp.fill = 'SOURCE'
+                     JOIN code_method_parameter mp
+                       ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+                      AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
+                      AND mp.position = cp.position
+                     JOIN store_graph_source gs ON gs.graph_name = cm.graph_name
+                     JOIN sql_table kt
+                       ON kt.source_name = gs.source_name AND kt.record_class_fqn = mp.element_class
+                    WHERE cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate
+                      AND cm.call = 'producer'
+                      AND NOT (kt.source_name = st.table_source_name
+                               AND kt.table_schema = st.table_schema
+                               AND kt.table_name = st.table_name));
+COMMENT ON VIEW graphitron_occurrence_producer_lift_rule IS 'One row the lift rule computes, in the shape graphitron_occurrence_producer_lift stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.lift IS 'the lift of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.lift';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.read IS 'the read of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.read';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.arity IS 'the arity of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.arity';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.key_source_name IS 'the key_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.key_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.key_schema IS 'the key_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.key_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.key_table IS 'the key_table of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.key_table';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.key_constraint IS 'the key_constraint of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.key_constraint';
+
+-- The member an ACCESSOR lift reads through: its one candidate, under the lift the depth wrote first.
+CREATE VIEW graphitron_occurrence_producer_lift_accessor_rule
+  (graph_name, coordinate, read, slot_source_name, slot_class_name, slot_method_name,
+   slot_descriptor) AS
+SELECT c.graph_name, c.coordinate, l.read, c.slot_source_name, c.slot_class_name,
+       c.slot_method_name, c.slot_descriptor
+  FROM graphitron_occurrence_producer_lift_candidate c
+  JOIN graphitron_occurrence_producer_lift l
+    ON l.graph_name = c.graph_name AND l.coordinate = c.coordinate AND l.read = 'ACCESSOR'
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_lift_candidate c2
+                    WHERE c2.graph_name = c.graph_name AND c2.coordinate = c.coordinate
+                      AND (c2.slot_source_name <> c.slot_source_name
+                           OR c2.slot_class_name <> c.slot_class_name
+                           OR c2.slot_method_name <> c.slot_method_name
+                           OR c2.slot_descriptor <> c.slot_descriptor));
+COMMENT ON VIEW graphitron_occurrence_producer_lift_accessor_rule IS 'One row the lift accessor rule computes, in the shape graphitron_occurrence_producer_lift_accessor stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_accessor, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.read IS 'the read of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.read';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.slot_source_name IS 'the slot_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.slot_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.slot_class_name IS 'the slot_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.slot_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.slot_method_name IS 'the slot_method_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.slot_method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.slot_descriptor IS 'the slot_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.slot_descriptor';
+
 -- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
 -- occurrence and table, beside the COLUMN and NODE_ID bindings that land on a table too.
 CREATE VIEW graphitron_occurrence_binding_table_rule
@@ -17920,6 +18376,10 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_producer'),
   ('occurrence-depths', 'graphitron_occurrence_producer_key_row'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_lift'),
+  ('occurrence-depths', 'graphitron_join_path_one_key'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_lift_accessor'),
+  ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate'),
   ('occurrence-depths', 'graphitron_occurrence_producer_result'),
   ('occurrence-depths', 'graphitron_occurrence_producer_routine'),
   ('occurrence-depths', 'graphitron_occurrence_producer_service'),
@@ -18378,6 +18838,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence-call',
    'one call one occurrence makes, in one graph',
    'graph_name, coordinate, call', 'sdl'),
+  ('graph-occurrence-lift-candidate',
+   'one member of the class one child producer''s source is an instance of that could hand it its keys, in one graph',
+   'graph_name, coordinate, slot_source_name, slot_class_name, slot_method_name, slot_descriptor', 'sdl'),
   ('graph-occurrence-call-candidate',
    'one method one call of one occurrence could be, in one graph',
    'graph_name, coordinate, call, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
@@ -19029,6 +19492,38 @@ INSERT INTO meta_relation VALUES
    'One call an occurrence makes: one row per occurrence and call, of whatever kind.',
    'For example Query.filmsByPath''s service call is its producer call, and each parameter of FilmService#filmsByIds is filled under it.',
    'The supertype every call''s own relation hangs under, keyed the way graphitron_occurrence_binding is, so the parameter fills have one foreign key to whichever call they fill and a fill only some calls take is a check on the kind they carry. Written with the producers, per depth, before the call subtypes that reference it.'),
+  ('graphitron_join_path_one_key', 'path-need', 'graphitron',
+   'A path need whose join path is one step riding one foreign key, with no condition and no routine on it: one row per such need.',
+   'For example Film.language''s path is film_language_id_fkey, held by film, forward; Language.films''s the same key, held by film, reverse.',
+   'A fact of the join path, stored once after the depth''s steps so a reader asking whether a query may restart at either end of a path reads it rather than restating the step predicate: the producer''s lift reads it for its target lifts and its source lift alike. Written by occurrence-depths with the lift for now; it belongs at the tail of the step writer.'),
+  ('graphitron_join_path_one_key_rule', 'path-need', 'graphitron',
+   'One row the one-key path rule computes, in the shape graphitron_join_path_one_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_join_path_one_key, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_lift', 'graph-occurrence', 'graphitron',
+   'How a child producer''s query restarts from its source: one row per child producer, its lift and the key constraint its batch is keyed on.',
+   'For example Film.language under a film row is a target lift keyed on film''s foreign key to language, and FilmDetailsCarrier.language under a FilmRecord a service handed over a source lift keyed on film''s primary key.',
+   'The producer''s lift (Alf, 2026-11-10; code-generation-triggers.adoc § Producer), stated per occurrence since a field reached under two parents can restart differently under each. Written at the end of each depth inside occurrence-depths, after that depth''s join paths, since a hop''s lift reads the one step its path takes; it replaces graphitron_occurrence_producer_key_row and the field-keyed key row once their readers move.'),
+  ('graphitron_occurrence_producer_lift_rule', 'graph-occurrence', 'graphitron',
+   'One row the lift rule computes, in the shape graphitron_occurrence_producer_lift stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_lift_accessor', 'graph-occurrence', 'graphitron',
+   'The member an ACCESSOR lift reads its keys through: one row per such lift.',
+   'For example CreateFilmsPayload.films takes its film keys from the records CreateFilmsPayload.films() returns.',
+   'A subtype of the lift, so only a lift read through a member names one, the member being its one candidate. Written with the lift.'),
+  ('graphitron_occurrence_producer_lift_accessor_rule', 'graph-occurrence', 'graphitron',
+   'One row the lift accessor rule computes, in the shape graphitron_occurrence_producer_lift_accessor stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_accessor, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_lift_candidate', 'graph-occurrence-lift-candidate', 'graphitron',
+   'A member of the class a child producer''s source is an instance of that could hand it its keys: one row per producer and member.',
+   'For example CreateFilmsPayload.films under a CreateFilmsPayload has its films() member, returning the film records it re-reads.',
+   'The members stored once, so the lift takes the one where there is exactly one and the key-row defects read none or several off the same rows rather than counting them again. Written per depth after the depth''s sources, whose object names the class.'),
+  ('graphitron_occurrence_producer_lift_candidate_rule', 'graph-occurrence-lift-candidate', 'graphitron',
+   'One row the lift candidate rule computes, in the shape graphitron_occurrence_producer_lift_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_candidate, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_candidate', 'graph-occurrence-call-candidate', 'graphitron',
    'One method one call of one occurrence could be: one row per call and candidate method.',
    'For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.',
