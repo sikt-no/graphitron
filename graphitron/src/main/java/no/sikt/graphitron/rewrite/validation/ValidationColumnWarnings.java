@@ -20,10 +20,11 @@ import java.util.Optional;
 /**
  * The {@code validation-column-unchecked} advisory: a column a VALIDATION pre-step cannot check on a
  * jOOQ record parameter, because the store found no getter the record reads it through. The same
- * partition the pre-step emits its checks from
+ * partition the classified pre-step emits its checks from
  * ({@link ServiceMethodCall.ValidationSubject.WrittenColumns#partition}) over the same
- * {@link RecordAccessorQuery.Rows}, so the advisory and the emitted checks cannot disagree about a
- * column.
+ * {@link RecordAccessorQuery.Rows}. A service the store emits takes its checks from
+ * {@code BuildQuery}'s column writes instead, which read the same {@code sql_column_record_accessor}
+ * rows through the store's column bindings; nothing binds the two computations yet.
  *
  * <p>One finding per (record class, column), located at the first field in schema order that
  * reaches it, and none at a field whose owning type the lint configuration excludes. Folded in at

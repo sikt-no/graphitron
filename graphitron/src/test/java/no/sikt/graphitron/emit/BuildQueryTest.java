@@ -72,6 +72,9 @@ class BuildQueryTest {
                 assertThat(columns.build().recordClass()).endsWith(".FilmRecord");
                 assertThat(columns.build().columns()).extracting(BuildQuery.ColumnWrite::columnJavaName)
                     .containsExactly("TITLE");
+                assertThat(columns.build().columns()).extracting(BuildQuery.ColumnWrite::property)
+                    .as("the Bean Validation property the record's getter offers, for the validation pass")
+                    .containsExactly(java.util.Optional.of("title"));
             });
     }
 }

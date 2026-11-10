@@ -615,10 +615,6 @@ static method needs no holder.
   `EmissionCensusTest` pins the count, 104 of the example schema's services on 2026-11-09, the 19
   left being the `RECORD_BUILD`, `BUILD_REFUSED` and `VALIDATION` lines its two children and the
   validation pass clear.
-  * **A validating call validates the records it builds** `open`, E's. The validation pass checks a
-    jOOQ record argument one property at a time, each column the record writes, as the classified
-    emitter does through `validateProperty`; the two `VALIDATION` services then leave the census's
-    exclusions.
   * **A built argument decodes what `BuildQuery` refuses today** `open`. `NodeIdDecodeQuery` follows
     the id's stated path. A list of node ids, an id of several node types and a decode into one key value; the seven
     `BUILD_REFUSED` services then leave the census's exclusions.
@@ -633,8 +629,14 @@ static method needs no holder.
     says which parent's class fails.
   * **A record's writer per column is stated in the store** `open`, off the critical path. Which input
     field writes each column of a jOOQ record, a live one over a deprecated one, is decided in
-    `BuildQuery` and again in `BuildEmitter`'s conflict label; stated per column, two live writers
-    become a defect at the input type and the emitter reads the writer it is told.
+    `BuildQuery`, again in `BuildEmitter`'s conflict label and a third time in `ValidationEmitter`'s
+    violation paths; stated per column, two live writers become a defect at the input type and every
+    emitter reads the writer it is told.
+  * **The unchecked-column advisory reads the store** `open`, off the critical path.
+    `validation-column-unchecked` partitions the classified model's column bindings while a service
+    the store emits takes its checks from `BuildQuery`'s column writes; read off the validating
+    producer's occurrence columns anti-joined to `sql_column_record_accessor`, the advisory and the
+    checks state one fact.
   * **A child service whose source collects no table's records is refused** `open`. A child
     `@service` whose `Sources` parameter collects records of no table falls between
     `SOURCE_PARAMETER_MISSING` and the key-row arms, and which code refuses it is undecided (Alf,

@@ -9413,17 +9413,20 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void countFilmRecordDrafts_nullForANotNullColumnBesideADecodedNodeId_isNeitherWrittenNorChecked() {
-        // A node id decoded into the record loads its key through fromArray, and jOOQ's from() then
-        // resets the touched flag of every null-valued column the database declares NOT NULL, so a
-        // null sent for film.title beside it is not written. The check agrees with the write: this
-        // pins the agreement, not the erasure, and moves with the write when that changes.
+    void countFilmRecordDrafts_nullForANotNullColumnBesideADecodedNodeId_isWrittenAndChecked() {
+        // A null sent for film.title, which the database declares NOT NULL, is written beside a
+        // decoded node id like any other explicit null: every value is loaded before the nulls, so no
+        // later load clears its touched flag. The check follows the write, so the @NotBlank mapped
+        // onto title runs and the draft is refused.
         String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
-        Map<String, Object> data = execute("mutation { countFilmRecordDrafts(in: [{ id: \"" + id
-            + "\", title: null }]) { count errors { __typename } } }");
+        var rawResult = executeRaw("mutation { countFilmRecordDrafts(in: [{ id: \"" + id
+            + "\", title: null }]) { count errors { ... on FilmWriteInvalid { path } } } }");
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
         var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
-        payload.containsEntry("count", 1);
-        payload.containsEntry("errors", null);
+        payload.containsEntry("count", null);
+        payload.extractingByKey("errors", as(list(Map.class))).singleElement(as(MAP))
+            .containsEntry("path", List.of("countFilmRecordDrafts", "in", "0", "title"));
     }
 
     @Test

@@ -178,8 +178,8 @@ public final class ServiceEmission {
     /**
      * The services whose outcome claims validation: a member of the errors field's union is an
      * {@code @error} with a {@code VALIDATION} handler. Such a service validates the arguments its
-     * call builds before the call, which is not emitted here yet; one that builds none has no pass
-     * to run, and its outcome is the frame's like any other.
+     * call builds before the call, a class whole and a jOOQ record one written column at a time; one
+     * that builds none has no pass to run, and its outcome is the frame's like any other.
      */
     private static Set<String> validating(StoreHandle store) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -222,10 +222,6 @@ public final class ServiceEmission {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
         if (excluded.containsKey(coordinate)) return excluded.get(coordinate);
-        if (validating.contains(coordinate) && builds.getOrDefault(coordinate, Map.of()).values().stream()
-                .anyMatch(r -> r instanceof BuildQuery.Result.Columns)) {
-            return "VALIDATION";
-        }
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
         var told = discriminated.get(coordinate);
         if (told != null && (told.refusal().isPresent() || !lifts.containsKey(coordinate)

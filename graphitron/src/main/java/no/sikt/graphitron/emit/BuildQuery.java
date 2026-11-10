@@ -23,6 +23,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN_RECORD_ACCESSOR;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
@@ -82,11 +83,14 @@ public final class BuildQuery {
 
     /**
      * One column of a record built on the column axis, and the input fields that may write it, as
-     * their paths from the input map in precedence order: the first one the client sent writes it.
+     * their paths from the input map in precedence order: the first one the client sent writes it;
+     * with the Bean Validation property the record reads the column through, where the catalog's
+     * record has a getter for it.
      */
-    public record ColumnWrite(String columnJavaName, List<List<String>> paths) {
+    public record ColumnWrite(String columnJavaName, List<List<String>> paths, Optional<String> property) {
         public ColumnWrite {
             paths = paths.stream().map(List::copyOf).toList();
+            Objects.requireNonNull(property, "property");
         }
     }
 
@@ -295,6 +299,7 @@ public final class BuildQuery {
         var table = catalog.tables().get(recordClass);
         var tableKey = Catalog.key(table.source(), table.schema(), table.name());
         var byColumn = new java.util.LinkedHashMap<String, List<InputField>>();
+        var properties = new HashMap<String, Optional<String>>();
         var decodes = new ArrayList<Member>();
         for (var field : children.getOrDefault(occurrence, List.of())) {
             if (field.nodeId()) {
@@ -321,6 +326,7 @@ public final class BuildQuery {
                 return new Result.Refused("input field " + field.name() + " binds no column of " + table.name());
             }
             byColumn.computeIfAbsent(column.javaName(), k -> new ArrayList<>()).add(field);
+            properties.put(column.javaName(), column.property());
         }
         var writes = new ArrayList<ColumnWrite>();
         for (var entry : byColumn.entrySet()) {
@@ -334,7 +340,8 @@ public final class BuildQuery {
             fields.stream().filter(InputField::deprecated)
                 .sorted(java.util.Comparator.comparingInt(InputField::ordinal).reversed())
                 .forEach(ordered::add);
-            writes.add(new ColumnWrite(entry.getKey(), ordered.stream().map(f -> List.of(f.name())).toList()));
+            writes.add(new ColumnWrite(entry.getKey(), ordered.stream().map(f -> List.of(f.name())).toList(),
+                properties.get(entry.getKey())));
         }
         return new Result.Columns(new RecordBuild(recordClass, table.tablesClass(), table.tableField(), writes, decodes));
     }
@@ -400,7 +407,7 @@ public final class BuildQuery {
     private record Table(String source, String schema, String name, String tablesClass, String tableField) {}
 
     /** One column's generated name. */
-    private record Column(String javaName) {}
+    private record Column(String javaName, Optional<String> property) {}
 
     /**
      * The catalog facts a jOOQ record built on the column axis reads, the table each record class is
@@ -420,16 +427,21 @@ public final class BuildQuery {
                     new Table(r.value2(), r.value3(), r.value4(), r.value5(), r.value6())));
 
             // Each occurrence's column on each table it lands on, by the occurrence and the table.
+            // With the property the record's getter offers for it, where it has one.
             var c = SQL_COLUMN;
             var oc = GRAPHITRON_OCCURRENCE_COLUMN;
+            var a = SQL_COLUMN_RECORD_ACCESSOR;
             var columns = new HashMap<String, Column>();
-            store.dsl().select(oc.COORDINATE, oc.TABLE_SOURCE_NAME, oc.TABLE_SCHEMA, oc.TABLE_NAME, c.JOOQ_NAME)
+            store.dsl().select(oc.COORDINATE, oc.TABLE_SOURCE_NAME, oc.TABLE_SCHEMA, oc.TABLE_NAME, c.JOOQ_NAME,
+                    a.PROPERTY_NAME)
                 .from(oc)
                 .join(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
                     c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
+                .leftJoin(a).on(a.SOURCE_NAME.eq(c.SOURCE_NAME), a.TABLE_SCHEMA.eq(c.TABLE_SCHEMA),
+                    a.TABLE_NAME.eq(c.TABLE_NAME), a.COLUMN_NAME.eq(c.COLUMN_NAME))
                 .where(oc.GRAPH_NAME.eq(store.graphName()))
                 .forEach(r -> columns.put(r.value1() + "|" + key(r.value2(), r.value3(), r.value4()),
-                    new Column(r.value5())));
+                    new Column(r.value5(), Optional.ofNullable(r.value6()))));
             return new Catalog(tables, columns, NodeIdDecodeQuery.read(store));
         }
 

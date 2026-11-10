@@ -73,16 +73,14 @@ class EmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(118);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(120);
         // Each line goes as its shape is emitted from the store; a service moving between lines is
         // a change to look at, not to re-pin.
         assertThat(byVerdict)
             .containsEntry("BUILD_REFUSED", List.of("Mutation.assignFilmActorRecordList",
                 "Mutation.assignFilmRecordList", "Mutation.assignOccupantByArgument", "Mutation.assignOccupantRecord",
                 "Mutation.assignOccupantRecordList", "Mutation.customerUpsert", "Query.filmsByNodeIdService"))
-            .containsEntry("VALIDATION", List.of("Mutation.countFilmRecordDraft", "Mutation.countFilmRecordDrafts"))
-            .containsOnlyKeys(ServiceEmission.EMITTED, "BUILD_REFUSED",
-                "VALIDATION");
+            .containsOnlyKeys(ServiceEmission.EMITTED, "BUILD_REFUSED");
     }
 
 

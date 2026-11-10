@@ -12,11 +12,12 @@ import java.util.Objects;
 import java.util.function.Function;
 
 /**
- * Emits a validating call's validation pass from what its fills built: each value built into a
- * class from an input object is validated whole, each element of a list of them on its own, before
+ * Emits a validating call's validation pass from what its fills built: a value built into a class
+ * from an input object is validated whole, and one built into a table's jOOQ record one property at
+ * a time, for each column it wrote that its getter offers; each element of a list on its own, before
  * the call. A violation becomes a GraphQL error at the argument, the element's index for a list, and
- * the SDL input fields its Java members were bound from; any violation answers the call's outcome
- * with the errors in place of calling it.
+ * the SDL input fields its Java members or columns were bound from; any violation answers the call's
+ * outcome with the errors in place of calling it.
  *
  * <pre>{@code
  * Validator validator = graphitronContext(env).getValidator(env);
@@ -74,8 +75,14 @@ public final class ValidationEmitter {
      * The pass over {@code built} in a body named {@code body}, empty where nothing was built; the
      * constants are named after the body so two bodies in one class never share a name.
      */
-    public static Pass pass(List<FillEmitter.Result.Built> built, String body, Runtime runtime) {
+    public static Pass pass(List<FillEmitter.Result.Built> values, String body, Runtime runtime) {
         var constants = new ArrayList<FieldSpec>();
+        // A record is checked one property at a time, each column it writes that has a getter; a
+        // record with none has nothing to check.
+        var built = values.stream()
+            .filter(v -> !(v.into() instanceof FillEmitter.Result.Into.ARecord record)
+                || record.build().columns().stream().anyMatch(c -> c.property().isPresent()))
+            .toList();
         if (built.isEmpty()) {
             // Nothing built, nothing to validate: not even the request's validator is asked for.
             return new Pass(CodeBlock.of(""), constants);
@@ -87,23 +94,30 @@ public final class ValidationEmitter {
             String constant = "VALIDATION_PATHS_" + body.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT)
                 + "_" + constants.size();
             constants.add(FieldSpec.builder(runtime.paths(), constant, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer(paths(value.build(), runtime))
+                .initializer(switch (value.into()) {
+                    case FillEmitter.Result.Into.AClass c -> paths(c.build(), runtime);
+                    case FillEmitter.Result.Into.ARecord r -> paths(r.build(), runtime);
+                })
                 .build());
             var argument = CodeBlock.builder().add("$T.of(", LIST);
             for (int i = 0; i < value.argumentPath().size(); i++) {
                 argument.add(i == 0 ? "$S" : ", $S", value.argumentPath().get(i));
             }
+            String elementClass = switch (value.into()) {
+                case FillEmitter.Result.Into.AClass c -> c.build().className();
+                case FillEmitter.Result.Into.ARecord r -> r.build().recordClass();
+            };
             b.beginControlFlow("if ($L != null)", value.local());
             if (value.list()) {
                 b.beginControlFlow("for (int i = 0; i < $L.size(); i++)", value.local())
-                    .addStatement("$T element = $L.get(i)", ClassName.bestGuess(value.build().className().replace('$', '.')),
+                    .addStatement("$T element = $L.get(i)", ClassName.bestGuess(elementClass.replace('$', '.')),
                         value.local())
                     .beginControlFlow("if (element != null)")
-                    .add(validate("element", argument.add(", i)").build(), constant, runtime))
+                    .add(check(value.into(), "element", argument.add(", i)").build(), constant, runtime))
                     .endControlFlow()
                     .endControlFlow();
             } else {
-                b.add(validate(value.local(), argument.add(")").build(), constant, runtime));
+                b.add(check(value.into(), value.local(), argument.add(")").build(), constant, runtime));
             }
             b.endControlFlow();
         }
@@ -113,14 +127,62 @@ public final class ValidationEmitter {
         return new Pass(b.build(), constants);
     }
 
-    /** Each violation of {@code target} into the errors, under {@code argument}, named by {@code constant}. */
-    private static CodeBlock validate(String target, CodeBlock argument, String constant, Runtime runtime) {
+    /**
+     * {@code target} checked as what it was built into says: a class whole, a record one property at
+     * a time, each guarded on the record writing that column, so a field the client did not send is
+     * not checked.
+     */
+    private static CodeBlock check(FillEmitter.Result.Into into, String target, CodeBlock argument,
+                                   String constant, Runtime runtime) {
+        return switch (into) {
+            case FillEmitter.Result.Into.AClass ignored ->
+                validate(CodeBlock.of("validator.validate($L)", target), argument, constant, runtime);
+            case FillEmitter.Result.Into.ARecord record -> {
+                var table = SessionIdentityRows.classOf(record.build().tablesClass());
+                var b = CodeBlock.builder();
+                for (var column : record.build().columns()) {
+                    if (column.property().isEmpty()) {
+                        continue;
+                    }
+                    b.beginControlFlow("if ($L.touched($T.$L.$L))", target, table, record.build().tableField(),
+                            column.columnJavaName())
+                        .add(validate(CodeBlock.of("validator.validateProperty($L, $S)", target,
+                            column.property().get()), argument, constant, runtime))
+                        .endControlFlow();
+                }
+                yield b.build();
+            }
+        };
+    }
+
+    /** Each violation {@code violationsOf} yields into the errors, under {@code argument}, named by {@code constant}. */
+    private static CodeBlock validate(CodeBlock violationsOf, CodeBlock argument, String constant, Runtime runtime) {
         return CodeBlock.builder()
-            .beginControlFlow("for ($T<?> violation : validator.validate($L))", VIOLATION, target)
+            .beginControlFlow("for ($T<?> violation : $L)", VIOLATION, violationsOf)
             .addStatement("violations.add($T.toGraphQLError(violation, env, $L, $L))",
                 runtime.constraintViolations(), argument, constant)
             .endControlFlow()
             .build();
+    }
+
+    /**
+     * How a record's properties name the input fields that write them: each column with a getter by
+     * the first field written for it, nothing below it.
+     */
+    static CodeBlock paths(BuildQuery.RecordBuild build, Runtime runtime) {
+        var b = CodeBlock.builder().add("new $T()", runtime.paths());
+        for (var column : build.columns()) {
+            if (column.property().isEmpty()) {
+                continue;
+            }
+            var sdl = CodeBlock.builder().add("$T.of(", LIST);
+            var path = column.paths().getFirst();
+            for (int i = 0; i < path.size(); i++) {
+                sdl.add(i == 0 ? "$S" : ", $S", path.get(i));
+            }
+            b.add(".bind($S, $L, null)", column.property().get(), sdl.add(")").build());
+        }
+        return b.build();
     }
 
     /**

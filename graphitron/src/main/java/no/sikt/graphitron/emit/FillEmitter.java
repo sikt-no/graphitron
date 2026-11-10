@@ -78,7 +78,8 @@ public final class FillEmitter {
     public sealed interface Result {
         /**
          * The locals to declare in the body, then the arguments to call the method with, and the
-         * values built into a class from an input object, which a validating call validates.
+         * values built from an input object, into a class or a table's jOOQ record, in the order of
+         * the parameters they fill, which a validating call validates.
          */
         record Emitted(List<CodeBlock> statements, List<CodeBlock> arguments, List<MethodSpec> helpers,
                        List<Built> built) implements Result {
@@ -91,14 +92,20 @@ public final class FillEmitter {
         }
 
         /**
-         * A value built into a class from an input object: the local holding it, the names from the
-         * argument down to the input object, how the class was made, and whether the local is a list
-         * of them.
+         * A value built from an input object: the local holding it, the names from the argument down
+         * to the input object, whether the local is a list of them, and what it was built into.
          */
-        record Built(String local, List<String> argumentPath, BuildQuery.Build build, boolean list) {
+        record Built(String local, List<String> argumentPath, boolean list, Into into) {
             public Built {
                 argumentPath = List.copyOf(argumentPath);
+                Objects.requireNonNull(into, "into");
             }
+        }
+
+        /** What a value was built into: a class, member by member, or a table's jOOQ record, column by column. */
+        sealed interface Into {
+            record AClass(BuildQuery.Build build) implements Into {}
+            record ARecord(BuildQuery.RecordBuild build) implements Into {}
         }
 
         /** A parameter whose value has to be built first, and why. */
@@ -178,10 +185,12 @@ public final class FillEmitter {
                         var helper = "build" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
                         if (build instanceof BuildQuery.Result.Built made) {
                             helpers.addAll(BuildEmitter.helpers(made.build(), helper, runtime.decode()));
-                            built.add(new Result.Built(local, landing.path(), made.build(),
-                                type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())));
+                            built.add(new Result.Built(local, landing.path(), isList(type),
+                                new Result.Into.AClass(made.build())));
                         } else if (build instanceof BuildQuery.Result.Columns columns) {
                             helpers.add(BuildEmitter.recordHelper(columns.build(), helper, runtime.decode()));
+                            built.add(new Result.Built(local, landing.path(), isList(type),
+                                new Result.Into.ARecord(columns.build())));
                         } else {
                             return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
                                 build instanceof BuildQuery.Result.Refused refused ? refused.reason()
@@ -358,6 +367,11 @@ public final class FillEmitter {
     private static final TypeName ANY_MAP = ParameterizedTypeName.get(MAP,
         com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class),
         com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
+
+    /** Whether {@code type} is a {@code List}. */
+    private static boolean isList(TypeName type) {
+        return type instanceof ParameterizedTypeName list && LIST.equals(list.rawType());
+    }
 
     /** A type's element: the type a {@code List} holds, or the type itself. */
     private static TypeName elementOf(TypeName type) {
