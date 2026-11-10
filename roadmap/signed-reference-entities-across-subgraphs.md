@@ -445,3 +445,40 @@ Notes, not blocking: the docs draft should say that both subgraphs must put the 
 of scope and a mismatch shows up as every voucher being rejected. A sentence on clock skew between A's
 expiry and B's check (a tolerance, or none on purpose) would answer a question the implementer will
 otherwise answer alone.
+
+### Round 2: Spec → Ready (session_01WkW2JFv9qFDgNA4RommHSq, 2026-11-10)
+
+Verdict: withhold, on one finding introduced by the post-round-1 change. The four round-1 findings are
+settled. Finding 1: B's plain key is now unreachable from A by construction. The voucher carries B's key
+values, and the build refuses a field on the issuing type named like a `key:` target. Finding 2: the
+minted key's `resolvable` comes from the role, A takes no authored key, and `@accept(key:)` picks among
+several. Finding 3: the values travel in GraphQL's wire form, with codec tests over integer, UUID and
+two-field keys. Finding 4: closed. The new argMapping reuse checks out against the tree: `ArgMappingSigil`,
+`graphitron_ast_argmapping_pair_entry`, `graphitron_argmapping_site` and `graphitron_argmapping_pair`
+exist. The new path root (fields of the enclosing type) is named as a new root for both path resolution
+and LSP completion.
+
+**Finding 5 (question one: viability). An ordinary field on the issuing type may make the supergraph fail
+to compose.** After the 2026-11-10 change, A's `VgsResultat` keeps fields like `resultatId`, which exist
+only in A, on a type whose only key in A is `resolvable: false`. The spec expects B's entity to be reached
+from elsewhere too ("still resolves by plain `id` from anywhere else"). Federation 2 composition checks
+that every field of the supergraph can be resolved on every path that reaches its type. A query that
+enters `VgsResultat` through B (a B root field, or a third subgraph's jump on B's `id` key) and asks for
+`resultatId` cannot be planned: B has no such field, and no key lets the planner enter A. As I understand
+federation, composition rejects that as a satisfiability error. I could not confirm this against the
+Apollo docs from this session, because the host is outside its network allowance. Whether marking such a
+field `@inaccessible` exempts it is a second point I could not settle. The round-1 answer, where the
+issuing type published only `voucher`, did not have this problem, since `voucher` exists in both
+subgraphs. The served-SDL test cannot catch it, and the spec states that no composition tool is in the
+build. The spec needs to settle the federation behaviour and then pick a rule. One option: the issuing
+type publishes only `voucher` and fields B also defines, which the build cannot check from A but the
+how-to can state. Another: ordinary fields on the issuing type are refused, or minted `@inaccessible` if
+that is shown to satisfy composition. A third: a documented one-off composition of the fixture's two
+subgraphs, recorded in the item, as the evidence in place of a build-time test. The example in the Goal
+should match whichever rule is chosen.
+
+Notes, not blocking: the "Response to review round 1" entry for Finding 3 still says B coerces "by its
+key columns' types" in "one canonical form". The body and the later paragraph now say B parses with its
+key field's scalar from the wire form, and the stale sentence could mislead an implementer. `@issue(key:)`
+targets are field names, so a B key with a nested selection (`@key(fields: "org { id }")`) is neither
+supported nor listed among the rejections; one line saying which would close it.
