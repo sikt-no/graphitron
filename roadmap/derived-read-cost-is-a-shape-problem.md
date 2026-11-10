@@ -629,14 +629,24 @@ static method needs no holder.
   there. Output serializes unchanged, graphql-java matching a constant or its name either way.
 * **The service fields are emitted from the store** `open`, E's. The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
   the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
-  changes on purpose, its behaviour does not. It goes field by field as the parts land:
-  `ServiceEmission` emits a field the store states whole, the classified emitters the rest, and
-  `EmissionCensusTest` pins the count, 104 of the example schema's services on 2026-11-09, the 19
-  left being the `RECORD_BUILD`, `BUILD_REFUSED` and `VALIDATION` lines its two children and the
-  validation pass clear.
+  changes on purpose, its behaviour does not, save a behaviour ruled a defect. It goes field by
+  field as the parts land: `ServiceEmission` emits a field the store states whole, the classified
+  emitters the rest, and `EmissionCensusTest` pins the count, 124 of the example schema's services
+  on 2026-11-10, the 3 left being the polymorphic node ids on the `BUILD_REFUSED` line.
   * **A built argument decodes what `BuildQuery` refuses today** `open`. `NodeIdDecodeQuery` follows
-    the id's stated path. A list of node ids, an id of several node types and a decode into one key value; the seven
-    `BUILD_REFUSED` services then leave the census's exclusions.
+    the id's stated path. A list of node ids into a class member, a decode into one key value and a
+    record's groupings are built; what is left is an id of several node types into a supertype of
+    their records (`assignOccupantRecord`, `assignOccupantRecordList`, `assignOccupantByArgument`).
+    Whether each member's record fits is captured already (`sql_table_record_supertype`), and
+    `NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER` refuses one that does not, but only at a root argument's
+    parameter: an id filling a bean member is never compared. Widened to member slots, the emitter
+    dispatches on the type id over the member decodes it already groups, and the three
+    `BUILD_REFUSED` services leave the census's exclusions.
+  * **A node id's decode shape is decided once, in the store** `open`, off the critical path. Whether
+    a decoded id lands as its node's record, a `RecordN`, a `RowN` or its one key column's value is
+    judged by the slot defect rule off `graphitron_node_id_slot` and again in
+    `BuildQuery.decodeParameter`, from class-name patterns and the column's binding type; stated as the
+    slot's shape, the rule and the emitter read one fact.
   * **A service's key row is stored with its candidates, and its defects read them** `open`, E's, off
     the critical path. The key-row stage stores a service's key table and each member of the parent's
     class returning its record as rows under the field, so `NO_KEY_FROM_PARENT` and
