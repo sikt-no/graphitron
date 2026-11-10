@@ -1,13 +1,13 @@
 ---
 id: R1162
 title: "A connection cursor over a column with no SQL data type cannot be read back: fromDatabase throws NPE on page 2"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: runtime-connection
 depends-on: []
 created: 2026-11-09
-last-updated: 2026-11-09
+last-updated: 2026-11-10
 ---
 
 # A connection cursor over a column with no SQL data type cannot be read back: fromDatabase throws NPE on page 2
