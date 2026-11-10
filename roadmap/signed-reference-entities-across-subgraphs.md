@@ -1,13 +1,13 @@
 ---
 id: R1119
 title: "Signed voucher handover: one subgraph vouches, another grants through RLS"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: service
 depends-on: []
 created: 2026-10-28
-last-updated: 2026-11-09
+last-updated: 2026-11-10
 ---
 
 # Signed voucher handover: one subgraph vouches, another grants through RLS
@@ -579,3 +579,40 @@ field resolved from both subgraphs, but that check catches it only by accident. 
 and `@inaccessible` on A's ordinary fields is enough to make the supergraph compose (row 6). Minting
 `@inaccessible` on every ordinary field of an issuing type is therefore a working rule for Finding 5. It
 costs those fields' visibility to clients, which then read the values from B through the voucher.
+
+### Round 3: Spec → Ready (session_01WkW2JFv9qFDgNA4RommHSq, 2026-11-10)
+
+Verdict: sign off. Finding 5 is answered by construction. A's issuing type publishes `voucher` alone, the
+case the round-2 table shows composing with the jump on `voucher` while B also reaches the type from its
+own root field. That one guarantee settles both federation questions, and the Tests section pins it in the
+served SDL and the runtime schema. It also requires the implementer to repeat the composition check
+against the fixture's two served SDLs before Done, which is the right evidence when no composition tool is
+in the build. The goal still reads without the step list.
+
+On fit, the absorbed declaration is a real addition: an authored field that never becomes an element. The
+spec owns that openly. It decides at the decode (a stored component relation, keyed on
+`graphql_field_element`), not with a hidden-field axis. It orders the stage before `graphitron_element`,
+gives `EmittedRegistry` a removal arm instead of a branch in the walk, and sends the one possibly-new
+coordinate-free column rule to Alf and Filip before it is written. Checked against the tree:
+`graphitron_element` is a table and `graphitron_element_authored` a view over `graphql_element`.
+`graphitron_directive_application_authored` joins `graphitron_element`, so absorbed fields' `@field`
+applications drop by construction. `EmittedRegistry`'s javadoc says "Nothing is removed", so the removal
+arm is new, as the spec says.
+
+Two notes for the implementer. Both are plan edits in In Progress, not a reopen:
+
+* *The part sets read the transcription, not the element.* `graphitron_field_authored` (and
+  `graphitron_argument_authored`) select from `graphql_field` directly, and `EmittedAnchor.fields`
+  inserts them into `graphitron_field`, whose foreign key references `graphitron_element`. An absorbed
+  declaration anti-joined out of the element set alone would fail that key. Both part sets need the same
+  stand-down. `graphitron_field_authored` already has the shape, its `NOT EXISTS` against
+  `graphitron_connection_carrier`, and its `meta_relation` description should gain the new reason. "Everything built
+  on the emitted population drops the declarations by construction" is true of the directive applications,
+  not of these two.
+* *`@issue(key:)` can only restate its default.* Every field of the issuing type must be the voucher or
+  absorbed, and a field that is neither is refused, so an explicit `key:` either names every other field
+  (the default) or is refused. Drop the argument, its capture column and its two refusals and tests, or
+  give it a case where it selects something the default does not.
+
+Not blocking: the docs draft could add that the absorbed fields must be named like the other subgraph's key
+fields, since A cannot check that and a mismatch shows up as every voucher being rejected.
