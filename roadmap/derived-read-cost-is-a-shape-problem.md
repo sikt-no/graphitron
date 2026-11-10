@@ -1150,6 +1150,15 @@ classified records have no reader left and can go with the walk.
   key row and a depth's sources read that depth's producers, E's producer step, at the marked place
   in the source's depth loop, writes a depth's key rows and producers before its sources, both swept
   after the loop. The rules and the relations are E's, the cadence the source's.
+  * **A producer's result names its class by its key** `done`. `graphitron_occurrence_producer_result`
+    carries the class's `code_class` key, the graph's first entry declaring it as
+    `graphitron_occurrence_source_object` decides it, so a reader joins the class's members on their
+    key rather than scanning the census by name, which is what the field-keyed key row's accessor arm
+    does at about 5 s an evaluation on sakila.
+  * **A depth's key rows are written off its parent's producer result** `open`. The occurrence key
+    row and an `ACCESSOR` subtype are written in the depth loop from the parent's stored result and
+    source, and `graphitron_field_key_row`, its accessor table, `graphitron_field_key_row_rule` and the
+    `field-key-rows` stage go: about 14 s of a sakila capture's 38.
 * **A `@mutation(table:)` that disagrees with its return's table is a defect** `open`, E's. The
   manual rejects a `@mutation(table:)` naming another table than the one the return names; the store
   gives that write no `graphitron_producer_write` row and raises nothing, so the defect is the write

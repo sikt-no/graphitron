@@ -15016,7 +15016,7 @@ COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer
 
 CREATE VIEW graphitron_occurrence_producer_result_rule
   (graph_name, coordinate, shape, class_name, runtime_kind, table_source_name, table_schema,
-   table_name) AS
+   table_name, class_source_ref, class_name_ref) AS
 WITH produced (graph_name, coordinate, kind, is_list, connection, target_kind, payload,
                bound_source_name, bound_schema, bound_table, polymorphic,
                routine_source_name, routine_schema, routine_table,
@@ -15080,20 +15080,33 @@ shaped (graph_name, coordinate, kind, shape, element_class, table_source_name, t
               ELSE bound_table END
     FROM produced
 )
-SELECT s.graph_name, s.coordinate, s.shape,
-       CASE WHEN s.shape IN ('SCALAR', 'CONNECTION') THEN CAST(NULL AS VARCHAR)
-            WHEN s.kind = 'SERVICE' THEN s.element_class
-            WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN t.record_class_fqn
-            ELSE CAST(NULL AS VARCHAR) END,
-       CASE WHEN s.shape = 'CONNECTION' THEN 'CONNECTION_RESULT' END,
-       -- The lift: a result of records is lifted onto the table whose rows they are.
-       CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_source_name END,
-       CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_schema END,
-       CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_name END
-  FROM shaped s
-  LEFT JOIN sql_table t
-    ON t.source_name = s.table_source_name AND t.table_schema = s.table_schema
-   AND t.table_name = s.table_name;
+SELECT r.graph_name, r.coordinate, r.shape, r.class_name, r.runtime_kind, r.table_source_name,
+       r.table_schema, r.table_name, oc.source_name, oc.class_name
+  FROM (SELECT s.graph_name, s.coordinate, s.shape,
+               CASE WHEN s.shape IN ('SCALAR', 'CONNECTION') THEN CAST(NULL AS VARCHAR)
+                    WHEN s.kind = 'SERVICE' THEN s.element_class
+                    WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN t.record_class_fqn
+                    ELSE CAST(NULL AS VARCHAR) END,
+               CASE WHEN s.shape = 'CONNECTION' THEN 'CONNECTION_RESULT' END,
+               -- The lift: a result of records is lifted onto the table whose rows they are.
+               CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_source_name END,
+               CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_schema END,
+               CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_name END
+          FROM shaped s
+          LEFT JOIN sql_table t
+            ON t.source_name = s.table_source_name AND t.table_schema = s.table_schema
+           AND t.table_name = s.table_name)
+       r (graph_name, coordinate, shape, class_name, runtime_kind, table_source_name, table_schema,
+          table_name)
+  -- The class by its key: among the graph's own classpath entries declaring it, the first by name,
+  -- as graphitron_occurrence_source_object decides it, reached through the entries so the lookup
+  -- seeks code_class's key rather than scanning it by name.
+  LEFT JOIN code_class oc
+    ON oc.class_name = r.class_name
+   AND oc.source_name = (SELECT MIN(gs.source_name)
+                           FROM store_graph_source gs
+                           JOIN code_class ca ON ca.source_name = gs.source_name AND ca.class_name = r.class_name
+                          WHERE gs.graph_name = r.graph_name);
 COMMENT ON VIEW graphitron_occurrence_producer_result_rule IS 'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_result, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.coordinate';
@@ -15103,6 +15116,8 @@ COMMENT ON VIEW graphitron_occurrence_producer_result_rule IS 'One row the produ
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_source_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_schema';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.class_source_ref IS 'the class_source_ref of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.class_source_ref';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.class_name_ref IS 'the class_name_ref of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.class_name_ref';
 
 CREATE TABLE graphitron_occurrence_producer_result (
   graph_name        VARCHAR   NOT NULL,
@@ -15114,10 +15129,17 @@ CREATE TABLE graphitron_occurrence_producer_result (
   table_schema      VARCHAR,
   table_name        VARCHAR,
   touched_at        TIMESTAMP NOT NULL,
+  class_source_ref  VARCHAR,
+  class_name_ref    VARCHAR,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (runtime_kind) REFERENCES graphitron_runtime_class (kind),
+  -- The class, through the row's own copy of its key, where one of the graph's entries declares it.
+  FOREIGN KEY (class_source_ref, class_name_ref)
+    REFERENCES code_class (source_name, class_name) ON DELETE SET NULL,
+  CHECK ((class_source_ref IS NULL) = (class_name_ref IS NULL)),
+  CHECK (class_name_ref IS NULL OR class_name_ref = class_name),
   FOREIGN KEY (table_source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE SET NULL,
   CHECK (shape IN ('SINGLE_RECORD', 'RECORD_LIST', 'CONNECTION', 'OBJECT', 'SCALAR')),
@@ -15135,6 +15157,8 @@ COMMENT ON COLUMN graphitron_occurrence_producer_result.table_source_name IS 'th
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_name IS 'that table, where the producer''s children''s source starts';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.class_source_ref IS 'the classpath entry half of the class''s code_class key, the first of the graph''s own entries by name where two declare it, so a reader joins the class''s members on their key; nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
 
 -- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
 -- occurrence and table, beside the COLUMN and NODE_ID bindings that land on a table too.

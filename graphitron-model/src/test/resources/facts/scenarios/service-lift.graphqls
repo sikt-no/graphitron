@@ -16,7 +16,14 @@ type Language @table(name: "language") { name: String }
 type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
 type FilmsPayload { films: [Film] }
 
+type FilmBlurbHolder { blurb: FilmBlurb }
+
+type FilmBlurb { description: String }
+
 type Query {
+  filmBlurbHolder(filmId: Int!): FilmBlurbHolder @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService",
+      method: "byId"})
   filmsByIds(ids: [Int!]!): [Film!]! @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmsByIds"})
@@ -34,12 +41,17 @@ type Query {
       method: "filmCount"})
 }
 
+# What a service hands back names its class by its code_class key where the graph's classpath entries
+# read declare it, so a reader joins the class's members on their key: FilmBlurbHolder, a class the
+# schema names, carries it; a jOOQ record class the census did not read carries none; a scalar names
+# no class.
 extend schema @assertContains(relation: "graphitron_occurrence_producer_result", rows: """
-  coordinate,             shape,         table_name
-  Query.filmsByIds,       RECORD_LIST,   film
-  Query.filmById,         SINGLE_RECORD, film
-  Query.filmActorsByIds,  RECORD_LIST,   film_actor
-  Film.languageByService, SINGLE_RECORD, language
-  Film.castMembers,       RECORD_LIST,   film_actor
-  Query.filmCount,        SCALAR,
+  coordinate,             shape,         table_name, class_name,                                                class_name_ref
+  Query.filmBlurbHolder,  OBJECT,                  , no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,  no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder
+  Query.filmsByIds,       RECORD_LIST,   film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord,                                    
+  Query.filmById,         SINGLE_RECORD, film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord,                                    
+  Query.filmActorsByIds,  RECORD_LIST,   film_actor, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord,                               
+  Film.languageByService, SINGLE_RECORD, language,   no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord,                                
+  Film.castMembers,       RECORD_LIST,   film_actor, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord,                               
+  Query.filmCount,        SCALAR,                  ,                                                          ,
   """)
