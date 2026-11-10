@@ -31,6 +31,11 @@ MCP server and does not stop a build.
 code, and a detail string a message quotes. Its key is the position and the code, so one directive
 breaking two rules is two rows.
 
+A code names the rule broken, stated once; the position says where, and so in what context, it was
+broken. A rule is not given a code of its own for each place it can be broken: a name claimed that
+does not exist is one defect, `ELEMENT_UNRESOLVED`, whether a `@routine` at a root or an element
+along a path claimed it, and the position it sits at is the place it was claimed (Alf, 2026-11-09).
+
 `graphitron_defect_type` declares each code once:
 
 [cols="1,3"]
