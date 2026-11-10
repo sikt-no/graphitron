@@ -186,6 +186,9 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("ScatterSingleByIdxTest", "module: graphitron-sakila-example");
         exempt.put("SealedHierarchyDocCoverageTest", "module: graphitron-sakila-example");
         exempt.put("SchemaIdentifierDriftCheck", "module: roadmap-tool");
+        exempt.put("QuarkusTestLock", "module: graphitron-sakila-example");
+        exempt.put("EncoderLoggerLevelLock", "module: graphitron-sakila-example");
+        exempt.put("CursorEncodingTest", "module: graphitron-sakila-example");
 
         // schema: a GraphQL type from a worked example, not a Java type at all.
         exempt.put("FilmDetails", "schema: worked-example GraphQL type");
