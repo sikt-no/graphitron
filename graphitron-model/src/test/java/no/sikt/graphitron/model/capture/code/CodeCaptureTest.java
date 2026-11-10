@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
@@ -513,6 +514,19 @@ class CodeCaptureTest {
             assertThat(extractionsOn(dsl, "titleContains"))
                 .as("and the ordinary case, so the ones above are a rule and not an empty capture")
                 .containsOnly("DIRECT");
+        });
+    }
+
+    @Test
+    @DisplayName("a delivered element's type arguments are stated by position, a wildcard leaving its gap")
+    void theElementsTypeArgumentsAreStated() {
+        withReactorCapture(dsl -> {
+            assertThat(elementArgumentsOn(dsl, "onKeyRows", 1))
+                .as("a list of rows delivers the row, whose two arguments are the list's element's")
+                .containsExactly("0 java.lang.Integer", "1 java.lang.String");
+            assertThat(elementArgumentsOn(dsl, "onAPartlyWildKey", 1))
+                .as("a wildcard names no class, so its position has no row")
+                .containsExactly("0 java.lang.String", "2 java.lang.String");
         });
     }
 
@@ -1309,6 +1323,20 @@ class CodeCaptureTest {
             .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
             .orderBy(CODE_METHOD_PARAMETER.POSITION)
             .fetch(CODE_METHOD_PARAMETER.EXTRACTION);
+    }
+
+    /** The element type arguments of one tuple fixture method's parameter, as "position class". */
+    private static List<String> elementArgumentsOn(DSLContext dsl, String methodName, int position) {
+        var p = CODE_METHOD_PARAMETER;
+        var a = CODE_TYPE_ELEMENT_ARGUMENT;
+        return dsl.select(a.POSITION, a.ARGUMENT_CLASS)
+            .from(p)
+            .join(a).on(a.SOURCE_NAME.eq(p.SOURCE_NAME), a.TYPE_NAME.eq(p.PARAMETER_TYPE))
+            .where(p.CLASS_NAME.eq("no.sikt.graphitron.model.capture.code.fixtures.TupleFixture"))
+            .and(p.METHOD_NAME.eq(methodName))
+            .and(p.POSITION.eq(position))
+            .orderBy(a.POSITION)
+            .fetch(r -> r.value1() + " " + r.value2());
     }
 
     /** The first type argument of one service fixture method's positions, in parameter order. */

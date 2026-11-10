@@ -5973,6 +5973,23 @@ COMMENT ON COLUMN code_type_element.element_class IS 'the binary name of the cla
 COMMENT ON COLUMN code_type_element.delivery IS 'how a caller receives what the type hands over: DIRECT where the type is the class and nothing was peeled, WRAPPED where containers were peeled and none of them multiplies, MANY where at least one does. A List, a Set, a Collection or a jOOQ Result multiplies; an Optional, a CompletableFuture or a Map does not, those being one value in a wrapper. The decision rather than the containers behind it, which is what lets a reader ask its own question without knowing the vocabulary: whether one value may be handed to a position is DIRECT, and whether a field backed by this type is a list is MANY. Stating it as the container''s own name would make both questions a test against a class name, and a rule that turns on java.util.List not happening to equal java.lang.Integer is a coincidence doing load-bearing work';
 COMMENT ON COLUMN code_type_element.touched_at IS 'when the reading that produced this row ran; swept with the type it hangs on';
 
+CREATE TABLE code_type_element_argument (
+  source_name    VARCHAR NOT NULL,
+  type_name      VARCHAR NOT NULL,
+  position       INT     NOT NULL CHECK (position >= 0),
+  argument_class VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, type_name, position),
+  FOREIGN KEY (source_name, type_name)
+    REFERENCES code_type_element (source_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_type_element_argument IS 'One type argument of the element a type delivers, by its position, where it names a class exactly. For example java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.String>> delivering Row2, whose argument 0 is Integer and argument 1 String.';
+COMMENT ON COLUMN code_type_element_argument.source_name IS 'the entry whose signatures mention the type, as on code_type_element';
+COMMENT ON COLUMN code_type_element_argument.type_name IS 'the type, as on code_type_element; the row is deleted with it';
+COMMENT ON COLUMN code_type_element_argument.position IS 'the 0-based position of the argument among the element''s type arguments, as written';
+COMMENT ON COLUMN code_type_element_argument.argument_class IS 'the binary name of the class written at that position. A position naming no class exactly, a wildcard, a bounded one included, a type variable or an array, has no row, so a reader requiring a class at every position sees the gap rather than a placeholder';
+COMMENT ON COLUMN code_type_element_argument.touched_at IS 'when the reading that produced this row ran; swept with the type it hangs on';
+
 CREATE TABLE code_method (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -9730,6 +9747,63 @@ INSERT INTO code_delivery_container VALUES
   ('java.util.concurrent.CompletableFuture', '0', FALSE),
   ('org.jooq.Result', '0', TRUE),
   ('java.util.Map', '1', FALSE);
+
+CREATE TABLE code_tuple_class (
+  class_name VARCHAR NOT NULL,
+  degree     INT     NOT NULL CHECK (degree > 0),
+  kind       VARCHAR NOT NULL CHECK (kind IN ('RECORD', 'ROW')),
+  PRIMARY KEY (class_name),
+  UNIQUE (kind, degree)
+);
+COMMENT ON TABLE code_tuple_class IS 'One class jOOQ types a tuple of values with, by its degree. For example org.jooq.Row3 holds three values, typed by its three type arguments in order.';
+COMMENT ON COLUMN code_tuple_class.class_name IS 'the fully-qualified binary name of the class, spelled as the census spells a class name';
+COMMENT ON COLUMN code_tuple_class.degree IS 'how many values the tuple holds, which is also how many type arguments type them';
+COMMENT ON COLUMN code_tuple_class.kind IS 'RECORD for a RecordN, a record holding the values, or ROW for a RowN, a row value expression over them';
+INSERT INTO code_tuple_class VALUES
+  ('org.jooq.Record1', 1, 'RECORD'),
+  ('org.jooq.Record2', 2, 'RECORD'),
+  ('org.jooq.Record3', 3, 'RECORD'),
+  ('org.jooq.Record4', 4, 'RECORD'),
+  ('org.jooq.Record5', 5, 'RECORD'),
+  ('org.jooq.Record6', 6, 'RECORD'),
+  ('org.jooq.Record7', 7, 'RECORD'),
+  ('org.jooq.Record8', 8, 'RECORD'),
+  ('org.jooq.Record9', 9, 'RECORD'),
+  ('org.jooq.Record10', 10, 'RECORD'),
+  ('org.jooq.Record11', 11, 'RECORD'),
+  ('org.jooq.Record12', 12, 'RECORD'),
+  ('org.jooq.Record13', 13, 'RECORD'),
+  ('org.jooq.Record14', 14, 'RECORD'),
+  ('org.jooq.Record15', 15, 'RECORD'),
+  ('org.jooq.Record16', 16, 'RECORD'),
+  ('org.jooq.Record17', 17, 'RECORD'),
+  ('org.jooq.Record18', 18, 'RECORD'),
+  ('org.jooq.Record19', 19, 'RECORD'),
+  ('org.jooq.Record20', 20, 'RECORD'),
+  ('org.jooq.Record21', 21, 'RECORD'),
+  ('org.jooq.Record22', 22, 'RECORD'),
+  ('org.jooq.Row1', 1, 'ROW'),
+  ('org.jooq.Row2', 2, 'ROW'),
+  ('org.jooq.Row3', 3, 'ROW'),
+  ('org.jooq.Row4', 4, 'ROW'),
+  ('org.jooq.Row5', 5, 'ROW'),
+  ('org.jooq.Row6', 6, 'ROW'),
+  ('org.jooq.Row7', 7, 'ROW'),
+  ('org.jooq.Row8', 8, 'ROW'),
+  ('org.jooq.Row9', 9, 'ROW'),
+  ('org.jooq.Row10', 10, 'ROW'),
+  ('org.jooq.Row11', 11, 'ROW'),
+  ('org.jooq.Row12', 12, 'ROW'),
+  ('org.jooq.Row13', 13, 'ROW'),
+  ('org.jooq.Row14', 14, 'ROW'),
+  ('org.jooq.Row15', 15, 'ROW'),
+  ('org.jooq.Row16', 16, 'ROW'),
+  ('org.jooq.Row17', 17, 'ROW'),
+  ('org.jooq.Row18', 18, 'ROW'),
+  ('org.jooq.Row19', 19, 'ROW'),
+  ('org.jooq.Row20', 20, 'ROW'),
+  ('org.jooq.Row21', 21, 'ROW'),
+  ('org.jooq.Row22', 22, 'ROW');
 
 CREATE TABLE graphitron_type_backing (
   graph_name   VARCHAR NOT NULL,
@@ -17960,6 +18034,10 @@ INSERT INTO meta_stated_relation VALUES
    'One class a declared type delivers something through, with the type-argument position its element sits at and whether passing through it makes the delivery many.',
    'For example java.util.List delivers its argument at position 0, many.',
    'The vocabulary the code capture peels a declared type with, stated here because no classpath it reads declares it: nothing ships the JDK as a classpath entry, so java.util.List declares nothing the census holds and a container cannot be recognised through a closure over the declared supertypes. The set is closed by what a generator meets rather than by what Java offers, so a consumer returning its own collection type is not a container here and delivers itself; widening it is adding a row.'),
+  ('code_tuple_class',
+   'One class jOOQ types a tuple of values with, by its degree.',
+   'For example org.jooq.Row3 holds three values, typed by its three type arguments in order.',
+   'The vocabulary a slot taking a node id''s key as a tuple is recognised by, stated here for the reason code_delivery_container is: the classes are jOOQ''s own, which no reading of a consumer''s classpath states, and their degree is in their name, which a rule would otherwise have to parse. jOOQ declares Record1 to Record22 and Row1 to Row22, so the set is closed.'),
   ('meta_stated_relation',
    'One relation whose rows this file supplies: what one of its rows is, an example of one, and why it is stated rather than gathered.',
    'For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.',
@@ -19538,6 +19616,9 @@ INSERT INTO meta_grain VALUES
   ('declared-type',
    'one type as a source declared it, within one classpath entry',
    'source_name, type_name', 'classpath'),
+  ('declared-type-argument',
+   'one type argument of the element one declared type delivers, by its position',
+   'source_name, type_name, position', 'classpath'),
   ('method-exception',
    'one exception one method declares it throws',
    'source_name, class_name, method_name, descriptor, exception_class', 'classpath'),
@@ -21346,6 +21427,10 @@ INSERT INTO meta_relation VALUES
    'What a type resolves to once its delivery containers are peeled off, for the types that resolve to a class at all.',
    'For example java.util.List<no.sikt.example.Film> resolving to Film, many of them.',
    'A field backed by a method is backed by what that method finally hands back, and a return type is a tree rather than a name. Stated at capture because the alternative is in the store and measurable: a view peeling containers by self-joining a type-reference relation once per level, unrolled to a fixed depth because SQL has no loop, which bounds what it can answer as well as costing what it costs. Its own relation and not two columns on the type, because a void, a primitive, an array and a type variable name no class, and a placeholder would make four different silences look like one answer.'),
+  ('code_type_element_argument', 'declared-type-argument', 'code',
+   'One type argument of the element a type delivers, by its position, where it names a class exactly.',
+   'For example java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.String>> delivering Row2, whose argument 0 is Integer and argument 1 String.',
+   'What a slot taking a node id''s key as a tuple has to agree with: a RecordN or RowN is the key only where its arguments are the key columns'' types in key order. Stated at capture beside the peel that finds the element, since the peel already holds the element''s place in the declared type and a relation of every type reference would make each reader find it again.'),
   ('code_read_slot', 'class-method', 'code',
    'One member name a class offers an author, the method that reads it and what reading it yields.',
    'For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().',

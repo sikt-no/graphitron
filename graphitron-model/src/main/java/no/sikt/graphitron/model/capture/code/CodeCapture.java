@@ -32,6 +32,7 @@ import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
@@ -594,6 +595,28 @@ public final class CodeCapture {
                 .set(e.ELEMENT_CLASS, excluded(e.ELEMENT_CLASS))
                 .set(e.DELIVERY, excluded(e.DELIVERY))
                 .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
+
+        record Argument(String source, String typeName, int position, String argumentClass) {}
+        var arguments = resolved.stream()
+            .flatMap(row -> row.delivery().arguments().entrySet().stream()
+                .map(a -> new Argument(row.source(), row.typeName(), a.getKey(), a.getValue())))
+            .toList();
+        if (arguments.isEmpty()) {
+            return;
+        }
+        var a = CODE_TYPE_ELEMENT_ARGUMENT;
+        var argumentRows = arguments.stream().collect(Rows.toRowList(
+            row -> val(row.source(), a.SOURCE_NAME),
+            row -> val(row.typeName(), a.TYPE_NAME),
+            row -> val(row.position(), a.POSITION),
+            row -> val(row.argumentClass(), a.ARGUMENT_CLASS),
+            row -> val(touchedAt, a.TOUCHED_AT)));
+        BindBatch.execute(dsl, argumentRows, markers ->
+            dsl.insertInto(a, a.SOURCE_NAME, a.TYPE_NAME, a.POSITION, a.ARGUMENT_CLASS, a.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(a.ARGUMENT_CLASS, excluded(a.ARGUMENT_CLASS))
+                .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT)));
     }
 
     /**
@@ -1298,8 +1321,10 @@ public final class CodeCapture {
      * type is the class and nothing was peeled, WRAPPED where something was and none of it
      * multiplies, MANY where something does. A reader asking whether one value can be handed to a
      * position asks for DIRECT and never has to know that java.util.List is a container.
+     * {@code arguments} are the element's own type arguments by position, those naming a class
+     * exactly.
      */
-    private record Delivery(String elementClass, String delivery) {}
+    private record Delivery(String elementClass, String delivery, java.util.SortedMap<Integer, String> arguments) {}
 
     /** The delivered class, or null where the type peels to none; the two columns are null together. */
     private static String elementOf(Delivery delivery) {
@@ -1366,7 +1391,16 @@ public final class CodeCapture {
             path = next;
             element = at;
         }
-        return new Delivery(element, many ? "MANY" : descended ? "WRAPPED" : "DIRECT");
+        // The element's own arguments: the positions one step below where the peel stopped.
+        var arguments = new java.util.TreeMap<Integer, String>();
+        String prefix = path.isEmpty() ? "" : path + ".";
+        for (ClassfileCensus.TypeRefAt ref : refs) {
+            String rest = ref.path().startsWith(prefix) ? ref.path().substring(prefix.length()) : null;
+            if (rest != null && rest.matches("\\d+") && "NONE".equals(ref.variance())) {
+                arguments.put(Integer.parseInt(rest), ref.referencedClass());
+            }
+        }
+        return new Delivery(element, many ? "MANY" : descended ? "WRAPPED" : "DIRECT", arguments);
     }
 
     /**
@@ -1383,7 +1417,7 @@ public final class CodeCapture {
                 CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_WRITE_SLOT, CODE_CONSTRUCTION,
                 CODE_CONSTRUCTOR_PARAMETER, CODE_CONSTRUCTOR, CODE_READ_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
-                CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
+                CODE_METHOD, CODE_TYPE_ELEMENT_ARGUMENT, CODE_TYPE_ELEMENT, CODE_TYPE,
                 CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT, CODE_CLASS)) {
             dsl.deleteFrom(table)
                 .where(table.field(CODE_METHOD.SOURCE_NAME).in(sources))
