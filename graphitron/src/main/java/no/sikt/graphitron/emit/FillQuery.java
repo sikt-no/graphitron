@@ -12,9 +12,9 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
@@ -86,7 +86,7 @@ public final class FillQuery {
 
     /** The graph's calls, by coordinate. */
     public static List<Row> read(StoreHandle store) {
-        var s = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var o = GRAPHITRON_OCCURRENCE;
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var p = CODE_METHOD_PARAMETER;
@@ -112,7 +112,7 @@ public final class FillQuery {
                 .leftJoin(lf).on(lf.GRAPH_NAME.eq(lo.GRAPH_NAME), lf.COORDINATE.eq(lo.ELEMENT_COORDINATE))
                 .leftJoin(lt).on(lt.GRAPH_NAME.eq(lo.GRAPH_NAME),
                     lt.TYPE_NAME.eq(coalesce(la.NAMED_TYPE, lf.NAMED_TYPE)))
-                // Correlated to the service producer, so another kind's fills never reach a service call.
+                // Correlated to the service call, so another kind's fills never reach it.
                 .where(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.CALL.eq(s.CALL))
                 .orderBy(c.POSITION))
             .convertFrom(r -> r.map(Records.mapping(Raw::new)));
@@ -123,7 +123,7 @@ public final class FillQuery {
             .select(s.COORDINATE, o.ELEMENT_COORDINATE, fills, positions)
             .from(s)
             .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.COORDINATE))
-            .where(s.GRAPH_NAME.eq(graph))
+            .where(s.GRAPH_NAME.eq(graph), s.CALL_KIND.eq("SERVICE"))
             .orderBy(s.COORDINATE)
             .fetch(rec -> new Row(rec.value1(), rec.value2(),
                 rec.value3().stream().map(raw -> new Fill(raw.position(), raw.parameterName(),

@@ -245,8 +245,11 @@ result.
 
 include::examples/_code-generation-triggers.adoc[tag=ProducerKinds-graphitron_occurrence_producer_result]
 
-A producer's subtypes state what it calls. `graphitron_occurrence_producer_service` names a
-`SERVICE` producer's method and, for an instance method, the constructor its object is made with;
+A producer's subtypes state what it calls. Every call an occurrence makes is a row of
+`graphitron_occurrence_call`, the methods it could make rows of `graphitron_occurrence_call_candidate`
+and the one it pins a row of `graphitron_occurrence_call_method`, whatever its kind.
+`graphitron_occurrence_producer_service` names, for a `SERVICE` producer's instance method, the
+constructor its object is made with;
 `graphitron_occurrence_producer_routine` a `ROUTINE` producer's database routine;
 `graphitron_occurrence_producer_write` a write's table. `graphitron_occurrence_call_parameter` says
 what fills each parameter of a call: an argument, which then binds that parameter, as

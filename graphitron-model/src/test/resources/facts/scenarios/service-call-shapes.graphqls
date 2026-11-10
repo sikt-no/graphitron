@@ -26,10 +26,19 @@ type Query {
 }
 
 extend schema @assertContains(relation: "graphitron_occurrence_producer_service", rows: """
-  coordinate,    method_name, constructor_class_name
-  Query.count,   count,
-  Query.greet,   greet,       no.sikt.graphitron.rewrite.test.services.CallDslHolderService
-  Query.echo,    echo,        no.sikt.graphitron.rewrite.test.services.CallPlainHolderService
-  Film.byRecord, byRecord,
-  Film.inOrder,  inOrder,
+  coordinate,    constructor_class_name
+  Query.count,
+  Query.greet,   no.sikt.graphitron.rewrite.test.services.CallDslHolderService
+  Query.echo,    no.sikt.graphitron.rewrite.test.services.CallPlainHolderService
+  Film.byRecord,
+  Film.inOrder,
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_call_method", rows: """
+  coordinate,    call,     call_kind, method_name
+  Query.count,   producer, SERVICE,   count
+  Query.greet,   producer, SERVICE,   greet
+  Query.echo,    producer, SERVICE,   echo
+  Film.byRecord, producer, SERVICE,   byRecord
+  Film.inOrder,  producer, SERVICE,   inOrder
   """)

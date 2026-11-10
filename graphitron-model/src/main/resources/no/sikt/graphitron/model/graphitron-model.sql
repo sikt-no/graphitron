@@ -11036,8 +11036,8 @@ COMMENT ON COLUMN graphitron_occurrence_producer_key_row.touched_at IS 'the read
 
 -- A call's candidate methods, each of whose parameters the fills below are stated for, and the one
 -- the call pins: the fills decide the pin, so a call with several candidates takes the one every
--- position fills.
-CREATE VIEW graphitron_occurrence_call_candidate
+-- position fills. Stored per depth before any fill, so no fill or pin rule reads a view for them.
+CREATE VIEW graphitron_occurrence_call_candidate_rule
   (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
    method_descriptor) AS
 -- A service producer's call: the one method its reference names, its name unique in its class.
@@ -11049,7 +11049,45 @@ SELECT p.graph_name, p.coordinate, 'producer', 'SERVICE', s.method_source_name, 
   JOIN graphitron_producer_service s
     ON s.graph_name = f.graph_name AND s.type_name = f.type_name AND s.field_name = f.field_name
  WHERE p.kind = 'SERVICE';
-COMMENT ON VIEW graphitron_occurrence_call_candidate IS 'One method one call of one occurrence could be: one row per call and candidate method. For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.';
+COMMENT ON VIEW graphitron_occurrence_call_candidate_rule IS 'One row the call candidate rule computes, in the shape graphitron_occurrence_call_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.method_source_name IS 'the method_source_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.method_class_name IS 'the method_class_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.method_name IS 'the method_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.method_descriptor IS 'the method_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_descriptor';
+
+CREATE TABLE graphitron_occurrence_call_candidate (
+  graph_name         VARCHAR   NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  call               VARCHAR   NOT NULL,
+  call_kind          VARCHAR   NOT NULL,
+  method_source_name VARCHAR   NOT NULL,
+  method_class_name  VARCHAR   NOT NULL,
+  method_name        VARCHAR   NOT NULL,
+  method_descriptor  VARCHAR   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, call, method_source_name, method_class_name, method_name,
+               method_descriptor),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (call_kind IN ('SERVICE')),
+  CHECK (call_kind <> 'SERVICE' OR call = 'producer')
+);
+COMMENT ON TABLE graphitron_occurrence_call_candidate IS 'One method one call of one occurrence could be: one row per call and candidate method. For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.coordinate IS 'the occurrence making the call, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.call IS 'which of the occurrence''s calls, spelled as graphitron_occurrence_call.call is; the call row exists only once a candidate is pinned';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.call_kind IS 'SERVICE, a service producer''s call';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_descriptor IS 'the method''s descriptor, which tells overloads apart';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_call_parameter_written
   (graph_name, coordinate, call, method_descriptor, position, parameter_name, fill, landing_coordinate,
@@ -11336,36 +11374,6 @@ SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_source_name, c.
                                                             AND r.position = p.position)));
 COMMENT ON VIEW graphitron_occurrence_call_pin IS 'The method one call of one occurrence makes: one row per call some candidate pins. For example Query.filmsByPath''s producer call pins FilmService#filmsByIds, its one candidate.';
 
-CREATE VIEW graphitron_occurrence_producer_service_rule
-  (graph_name, coordinate, kind, call, call_kind, method_source_name, method_class_name, method_name,
-   method_descriptor, constructor_source_name, constructor_class_name, constructor_descriptor) AS
--- The method a SERVICE producer calls and, where it is an instance method, the constructor its
--- object is made with: the producer's call.
-SELECT p.graph_name, p.coordinate, p.kind, c.call, c.call_kind, c.method_source_name, c.method_class_name,
-       c.method_name, c.method_descriptor, h.constructor_source_name, h.constructor_class_name,
-       h.constructor_descriptor
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_occurrence_call_pin c
-    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate AND c.call = 'producer'
-  LEFT JOIN graphitron_service_holder h
-    ON h.graph_name = f.graph_name AND h.type_name = f.type_name AND h.field_name = f.field_name
- WHERE p.kind = 'SERVICE';
-COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_service, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.kind';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.call';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.call_kind';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_source_name IS 'the method_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_class_name IS 'the method_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_class_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_name IS 'the method_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.method_descriptor IS 'the method_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.method_descriptor';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_source_name IS 'the constructor_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_class_name IS 'the constructor_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_class_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_descriptor IS 'the constructor_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_descriptor';
-
 -- Every call an occurrence makes, of whatever kind: the supertype each call's own relation hangs
 -- under, so a call's parameter fills have one foreign key to reference whichever call they fill.
 CREATE VIEW graphitron_occurrence_call_rule (graph_name, coordinate, call, call_kind) AS
@@ -11400,16 +11408,83 @@ COMMENT ON COLUMN graphitron_occurrence_call.call IS 'which of the occurrence''s
 COMMENT ON COLUMN graphitron_occurrence_call.call_kind IS 'SERVICE, a service producer''s call; the kind a subtype pins so its foreign key holds it to a call of that kind, and a parameter fill carries so a fill only some calls take is a check';
 COMMENT ON COLUMN graphitron_occurrence_call.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The method a call makes, the candidate it pinned: a fact of every call that makes a method, stated
+-- once at the call's grain rather than on each kind's subtype.
+CREATE VIEW graphitron_occurrence_call_method_rule
+  (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
+   method_descriptor) AS
+-- Each call's pinned candidate.
+SELECT graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
+       method_descriptor
+  FROM graphitron_occurrence_call_pin;
+COMMENT ON VIEW graphitron_occurrence_call_method_rule IS 'One row the call method rule computes, in the shape graphitron_occurrence_call_method stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_method, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_method.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_method.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_method.call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call_method.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.method_source_name IS 'the method_source_name of a row of this rule, which the stage writes into graphitron_occurrence_call_method.method_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.method_class_name IS 'the method_class_name of a row of this rule, which the stage writes into graphitron_occurrence_call_method.method_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.method_name IS 'the method_name of a row of this rule, which the stage writes into graphitron_occurrence_call_method.method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.method_descriptor IS 'the method_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_call_method.method_descriptor';
+
+CREATE TABLE graphitron_occurrence_call_method (
+  graph_name         VARCHAR   NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  call               VARCHAR   NOT NULL,
+  call_kind          VARCHAR   NOT NULL,
+  method_source_name VARCHAR   NOT NULL,
+  method_class_name  VARCHAR   NOT NULL,
+  method_name        VARCHAR   NOT NULL,
+  method_descriptor  VARCHAR   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, call),
+  FOREIGN KEY (graph_name, coordinate, call, call_kind)
+    REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_call_method IS 'The method one call of one occurrence makes: one row per call that pinned a method. For example Query.filmsByPath''s producer call makes FilmService#filmsByIds, its one candidate.';
+COMMENT ON COLUMN graphitron_occurrence_call_method.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_call_method.coordinate IS 'the occurrence making the call, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_call_method.call IS 'which of the occurrence''s calls, as graphitron_occurrence_call.call; completing the key, one method per call';
+COMMENT ON COLUMN graphitron_occurrence_call_method.call_kind IS 'the call''s kind, carried so the foreign key holds the row to the call it names';
+COMMENT ON COLUMN graphitron_occurrence_call_method.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
+COMMENT ON COLUMN graphitron_occurrence_call_method.method_class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_occurrence_call_method.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_occurrence_call_method.method_descriptor IS 'the method''s descriptor, which tells overloads apart';
+COMMENT ON COLUMN graphitron_occurrence_call_method.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_producer_service_rule
+  (graph_name, coordinate, kind, call, call_kind, constructor_source_name, constructor_class_name,
+   constructor_descriptor) AS
+-- A SERVICE producer's call, its method in graphitron_occurrence_call_method, and, where it is an
+-- instance method, the constructor its object is made with.
+SELECT p.graph_name, p.coordinate, p.kind, c.call, c.call_kind, h.constructor_source_name,
+       h.constructor_class_name, h.constructor_descriptor
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_call c
+    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate AND c.call = 'producer'
+  LEFT JOIN graphitron_service_holder h
+    ON h.graph_name = f.graph_name AND h.type_name = f.type_name AND h.field_name = f.field_name
+ WHERE p.kind = 'SERVICE';
+COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_service, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.call';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_source_name IS 'the constructor_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_class_name IS 'the constructor_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_descriptor IS 'the constructor_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_descriptor';
+
 CREATE TABLE graphitron_occurrence_producer_service (
   graph_name              VARCHAR   NOT NULL,
   coordinate              VARCHAR   NOT NULL,
   kind                    VARCHAR   NOT NULL,
   call                    VARCHAR   NOT NULL,
   call_kind               VARCHAR   NOT NULL,
-  method_source_name      VARCHAR   NOT NULL,
-  method_class_name       VARCHAR   NOT NULL,
-  method_name             VARCHAR   NOT NULL,
-  method_descriptor       VARCHAR   NOT NULL,
   constructor_source_name VARCHAR,
   constructor_class_name  VARCHAR,
   constructor_descriptor  VARCHAR,
@@ -11420,8 +11495,6 @@ CREATE TABLE graphitron_occurrence_producer_service (
   -- The call it is, a call subtype as well as a producer subtype.
   FOREIGN KEY (graph_name, coordinate, call, call_kind)
     REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
-  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
-    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
   FOREIGN KEY (constructor_source_name, constructor_class_name, constructor_descriptor)
     REFERENCES code_constructor (source_name, class_name, descriptor) ON DELETE SET NULL,
   CHECK (kind = 'SERVICE'),
@@ -11429,16 +11502,12 @@ CREATE TABLE graphitron_occurrence_producer_service (
   CHECK (call_kind = 'SERVICE'),
   CHECK ((constructor_source_name IS NULL) = (constructor_descriptor IS NULL))
 );
-COMMENT ON TABLE graphitron_occurrence_producer_service IS 'The call a SERVICE producer makes: the method and, for an instance method, the constructor its object is made with; one row per service producer whose method resolved. For example Query.titleByFilmIdViaInstance calls SampleInstanceService.titleByFilmId on an object SampleInstanceService(DSLContext) makes.';
+COMMENT ON TABLE graphitron_occurrence_producer_service IS 'The call a SERVICE producer makes, its method in graphitron_occurrence_call_method, and, for an instance method, the constructor its object is made with; one row per service producer whose method resolved. For example Query.titleByFilmIdViaInstance calls SampleInstanceService.titleByFilmId on an object SampleInstanceService(DSLContext) makes.';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.coordinate IS 'the producing occurrence, the whole key: one call per producer';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.kind IS 'always SERVICE, pinned so the foreign key holds the producer to a service';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.call IS 'always producer, the call it is among the occurrence''s calls in graphitron_occurrence_call';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.call_kind IS 'always SERVICE, pinned so the foreign key holds the row to a call of that kind; a column apart from kind, which pins it to the producer';
-COMMENT ON COLUMN graphitron_occurrence_producer_service.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
-COMMENT ON COLUMN graphitron_occurrence_producer_service.method_class_name IS 'the class declaring the method';
-COMMENT ON COLUMN graphitron_occurrence_producer_service.method_name IS 'the method';
-COMMENT ON COLUMN graphitron_occurrence_producer_service.method_descriptor IS 'the method''s descriptor, which tells overloads apart';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_source_name IS 'the classpath entry of the constructor making the object an instance method runs on, with the class and the descriptor a code_constructor key; NULL for a static method, and where the class has no buildable constructor';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_class_name IS 'the class that constructor makes';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_descriptor IS 'the constructor''s descriptor';
@@ -11543,9 +11612,9 @@ CREATE VIEW graphitron_occurrence_call_parameter_defect
 -- Two written fills for one parameter: nothing says which, so the rule takes neither.
 SELECT DISTINCT w.graph_name, w.coordinate, w.position, w.parameter_name, 'PARAMETER_FILLED_TWICE'
   FROM graphitron_occurrence_call_parameter_written w
-  JOIN graphitron_occurrence_producer_service ps
+  JOIN graphitron_occurrence_call_method ps
     ON ps.graph_name = w.graph_name AND ps.coordinate = w.coordinate AND ps.call = w.call
-   AND ps.method_descriptor = w.method_descriptor
+   AND ps.call_kind = 'SERVICE' AND ps.method_descriptor = w.method_descriptor
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter c
                     WHERE c.graph_name = w.graph_name AND c.coordinate = w.coordinate
                       AND c.call = 'producer' AND c.position = w.position)
@@ -11554,9 +11623,9 @@ UNION ALL
 -- an argument it could take could go to another parameter, so nothing says which.
 SELECT DISTINCT c.graph_name, c.coordinate, c.position, c.parameter_name, 'PARAMETER_AMBIGUOUS'
   FROM graphitron_occurrence_call_parameter_candidate c
-  JOIN graphitron_occurrence_producer_service ps
+  JOIN graphitron_occurrence_call_method ps
     ON ps.graph_name = c.graph_name AND ps.coordinate = c.coordinate AND ps.call = c.call
-   AND ps.method_descriptor = c.method_descriptor
+   AND ps.call_kind = 'SERVICE' AND ps.method_descriptor = c.method_descriptor
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter s
                     WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
                       AND s.call = 'producer' AND s.position = c.position)
@@ -11564,8 +11633,9 @@ UNION ALL
 -- A parameter no fill reaches and no argument could fill by type, where no pair names it: a pair
 -- that fills nothing is the pair's defect, already reported where it is written.
 SELECT s.graph_name, s.coordinate, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
-  FROM graphitron_occurrence_producer_service s
+  FROM graphitron_occurrence_call_method s
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+   AND s.call_kind = 'SERVICE'
   JOIN code_method_parameter p
     ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
    AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
@@ -11631,8 +11701,9 @@ SELECT graph_name, element_coordinate, id_coordinate, site, named, by_name, para
           JOIN graphitron_occurrence_call_parameter cp
             ON cp.graph_name = ra.graph_name AND cp.fill = 'ARGUMENT'
            AND cp.landing_coordinate = ra.coordinate
-          JOIN graphitron_occurrence_producer_service ps
+          JOIN graphitron_occurrence_call_method ps
             ON ps.graph_name = cp.graph_name AND ps.coordinate = cp.coordinate AND ps.call = cp.call
+           AND ps.call_kind = 'SERVICE'
           JOIN code_method_parameter mp
             ON mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
            AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
@@ -14881,8 +14952,9 @@ WITH produced (graph_name, coordinate, kind, is_list, connection, target_kind, p
     LEFT JOIN graphitron_tabletype b ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
     LEFT JOIN graphitron_routine_result rr
       ON rr.graph_name = f.graph_name AND rr.type_name = f.type_name AND rr.field_name = f.field_name
-    LEFT JOIN graphitron_occurrence_producer_service s
-      ON s.graph_name = p.graph_name AND s.coordinate = p.coordinate
+    LEFT JOIN graphitron_occurrence_call_method s
+      ON s.graph_name = p.graph_name AND s.coordinate = p.coordinate AND s.call = 'producer'
+     AND s.call_kind = 'SERVICE'
     LEFT JOIN code_method m
       ON m.source_name = s.method_source_name AND m.class_name = s.method_class_name
      AND m.method_name = s.method_name AND m.descriptor = s.method_descriptor
@@ -17253,6 +17325,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_node_id'),
   ('occurrence-depths', 'graphitron_occurrence_binding_table'),
   ('occurrence-depths', 'graphitron_occurrence_call'),
+  ('occurrence-depths', 'graphitron_occurrence_call_candidate'),
+  ('occurrence-depths', 'graphitron_occurrence_call_method'),
   ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_producer'),
@@ -18358,7 +18432,19 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_call_candidate', 'graph-occurrence-call-candidate', 'graphitron',
    'One method one call of one occurrence could be: one row per call and candidate method.',
    'For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.',
-   'The methods the fills are stated for before a call is pinned, so whether a parameter is fillable is decided once, by the fill rule, and the pin reads it. A service call has the one method its reference names; a condition has each overload of its name.'),
+   'The methods the fills are stated for before a call is pinned, so whether a parameter is fillable is decided once, by the fill rule, and the pin reads it. A service call has the one method its reference names; a condition has each overload of its name. Stored per depth inside occurrence-depths before any fill, so no fill or pin rule reads a view for its candidates.'),
+  ('graphitron_occurrence_call_candidate_rule', 'graph-occurrence-call-candidate', 'graphitron',
+   'One row the call candidate rule computes, in the shape graphitron_occurrence_call_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_call_method', 'graph-occurrence-call', 'graphitron',
+   'The method one call of one occurrence makes: one row per call that pinned a method.',
+   'For example Query.filmsByPath''s producer call makes FilmService#filmsByIds, its one candidate.',
+   'A fact of every call that makes a method, a @service producer''s or a @condition''s, stated once at the call''s grain rather than on each kind''s subtype, where two relations would carry one payload. Written per depth inside occurrence-depths after the call it names, from the pin.'),
+  ('graphitron_occurrence_call_method_rule', 'graph-occurrence-call', 'graphitron',
+   'One row the call method rule computes, in the shape graphitron_occurrence_call_method stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_method, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_pin', 'graph-occurrence-call', 'graphitron',
    'The method one call of one occurrence makes: one row per call some candidate pins.',
    'For example Query.filmsByPath''s producer call pins FilmService#filmsByIds, its one candidate.',
@@ -18368,7 +18454,7 @@ INSERT INTO meta_relation VALUES
    'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_call, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_producer_service', 'graph-occurrence', 'graphitron',
-   'The call a SERVICE producer makes: the method and, for an instance method, the constructor its object is made with; one row per service producer whose method resolved.',
+   'The call a SERVICE producer makes, its method in graphitron_occurrence_call_method, and, for an instance method, the constructor its object is made with; one row per service producer whose method resolved.',
    'For example Query.titleByFilmIdViaInstance calls SampleInstanceService.titleByFilmId on an object SampleInstanceService(DSLContext) makes.',
    'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
   ('graphitron_occurrence_producer_service_rule', 'graph-occurrence', 'graphitron',

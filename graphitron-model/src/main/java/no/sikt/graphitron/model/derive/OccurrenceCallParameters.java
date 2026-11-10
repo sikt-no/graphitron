@@ -8,10 +8,9 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PIN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARAMETER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.coalesce;
@@ -44,7 +43,7 @@ public final class OccurrenceCallParameters {
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var r = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
-        var pin = GRAPHITRON_OCCURRENCE_CALL_PIN;
+        var made = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var o = GRAPHITRON_OCCURRENCE;
         var mp = CODE_METHOD_PARAMETER;
         var st = SQL_TABLE;
@@ -60,13 +59,13 @@ public final class OccurrenceCallParameters {
                     st.TABLE_NAME)
                 .from(r)
                 // The fills of the method the call pinned, of the calls at this depth.
-                .join(pin).on(pin.GRAPH_NAME.eq(r.GRAPH_NAME), pin.COORDINATE.eq(r.COORDINATE),
-                    pin.CALL.eq(r.CALL), pin.METHOD_DESCRIPTOR.eq(r.METHOD_DESCRIPTOR))
+                .join(made).on(made.GRAPH_NAME.eq(r.GRAPH_NAME), made.COORDINATE.eq(r.COORDINATE),
+                    made.CALL.eq(r.CALL), made.METHOD_DESCRIPTOR.eq(r.METHOD_DESCRIPTOR))
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 // The table, in the graph's catalog, whose generated record an argument's parameter takes.
-                .leftJoin(mp).on(mp.SOURCE_NAME.eq(pin.METHOD_SOURCE_NAME),
-                    mp.CLASS_NAME.eq(pin.METHOD_CLASS_NAME), mp.METHOD_NAME.eq(pin.METHOD_NAME),
-                    mp.DESCRIPTOR.eq(pin.METHOD_DESCRIPTOR), mp.POSITION.eq(r.POSITION),
+                .leftJoin(mp).on(mp.SOURCE_NAME.eq(made.METHOD_SOURCE_NAME),
+                    mp.CLASS_NAME.eq(made.METHOD_CLASS_NAME), mp.METHOD_NAME.eq(made.METHOD_NAME),
+                    mp.DESCRIPTOR.eq(made.METHOD_DESCRIPTOR), mp.POSITION.eq(r.POSITION),
                     r.FILL.eq(inline("ARGUMENT")))
                 .leftJoin(st.join(gs).on(gs.SOURCE_NAME.eq(st.SOURCE_NAME)))
                     .on(st.RECORD_CLASS_FQN.eq(coalesce(mp.ELEMENT_CLASS, mp.ERASED_CLASS)),
@@ -111,7 +110,7 @@ public final class OccurrenceCallParameters {
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var p = GRAPHITRON_OCCURRENCE_PARAMETER;
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
-        var s = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var o = GRAPHITRON_OCCURRENCE;
         var bound = s.METHOD_CLASS_NAME.concat(inline("#"), s.METHOD_NAME, s.METHOD_DESCRIPTOR,
             inline(":"), c.POSITION.cast(String.class));

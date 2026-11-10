@@ -539,7 +539,7 @@ static method needs no holder.
       `TABLE` fill only a condition takes, the table being the call's `bound`. The depth writer marks
       and sweeps calls by kind, so a `@condition` whose binding goes leaves no call and no fills.
       Three commits, the principles review's shape (Alf, 2026-11-10):
-      * **A call's candidates are stored and its method is a fact of the call** `open`. A refactor
+      * **A call's candidates are stored and its method is a fact of the call** `done`. A refactor
         over services only: `graphitron_occurrence_call_candidate` becomes a table written per depth
         before any fill, so no fill or pin view reads a view, and the pinned method moves to
         `graphitron_occurrence_call_method`, one row per pinned call cascading from `code_method`, off

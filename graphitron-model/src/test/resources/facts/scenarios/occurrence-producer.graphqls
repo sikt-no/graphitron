@@ -38,9 +38,15 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_producer", rows: ""
   """)
 
 extend schema @assertContains(relation: "graphitron_occurrence_producer_service", rows: """
-  coordinate,                     method_name,  constructor_class_name
-  Query.greetingByUser,           greet,
-  Query.titleByFilmIdViaInstance, titleByFilmId, no.sikt.graphitron.rewrite.test.services.SampleInstanceService
+  coordinate,                     constructor_class_name
+  Query.greetingByUser,
+  Query.titleByFilmIdViaInstance, no.sikt.graphitron.rewrite.test.services.SampleInstanceService
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_call_method", rows: """
+  coordinate,                     call,     method_name
+  Query.greetingByUser,           producer, greet
+  Query.titleByFilmIdViaInstance, producer, titleByFilmId
   """)
 
 # What each produces: records lifted onto the table they are rows of, or a scalar a service hands back.

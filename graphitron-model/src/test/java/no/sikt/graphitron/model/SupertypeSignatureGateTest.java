@@ -177,6 +177,10 @@ class SupertypeSignatureGateTest {
         // takes is its subtype's, so a binding and a source are two supertypes of the occurrence, not
         // one fact under two keys.
         Set.of("graphitron_occurrence_binding", "graphitron_occurrence_source"),
+        // A call and the methods it could make, whose payload is the call's kind alone: a candidate is
+        // stated before the pin that decides which call exists, so it cannot key into the call, and
+        // the call keeps the kind its subtypes key on. Two grains, not one fact under two keys.
+        Set.of("graphitron_occurrence_call", "graphitron_occurrence_call_candidate"),
         // How a join path's step joins, by which key it rode: a written foreign key and an inferred
         // one, and a table's own primary key ridden as a self-join and one matched by name from a
         // function's derived table. Siblings by decision, not a supertype owed: which relation holds

@@ -17,6 +17,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROU
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE;
@@ -44,8 +48,9 @@ public final class OccurrenceProducers {
     private OccurrenceProducers() {}
 
     /**
-     * States the producers of the occurrences at {@code depth}, then their starts and the calls they
-     * pin; {@link #writeResults} states what they produce once the calls are filled.
+     * States the producers of the occurrences at {@code depth}, then their starts, their calls'
+     * candidates and the calls and methods they pin; {@link #writeResults} states what they produce
+     * once the calls are filled.
      */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -61,8 +66,23 @@ public final class OccurrenceProducers {
         refresh(dsl, p, r, graph, depth, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW, GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW_RULE,
             graph, depth, touchedAt);
-        // The calls, before the subtypes that are calls as well as producers.
+        // The calls' candidates, stored before the pin and the fills read them; a candidate this
+        // reading no longer states goes now, or the pin would weigh it.
+        var k = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
+        var kr = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_RULE;
+        dsl.deleteFrom(k)
+            .where(k.GRAPH_NAME.eq(graph))
+            .and(atDepth(k.GRAPH_NAME, k.COORDINATE, depth))
+            .andNotExists(selectOne().from(kr)
+                .where(kr.GRAPH_NAME.eq(k.GRAPH_NAME), kr.COORDINATE.eq(k.COORDINATE), kr.CALL.eq(k.CALL),
+                    kr.METHOD_SOURCE_NAME.eq(k.METHOD_SOURCE_NAME), kr.METHOD_CLASS_NAME.eq(k.METHOD_CLASS_NAME),
+                    kr.METHOD_NAME.eq(k.METHOD_NAME), kr.METHOD_DESCRIPTOR.eq(k.METHOD_DESCRIPTOR)))
+            .execute();
+        refresh(dsl, k, kr, graph, depth, touchedAt);
+        // The calls and the methods they pin, before the subtypes that are calls as well as producers.
         refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_RULE, graph, depth, touchedAt);
+        refresh(dsl, GRAPHITRON_OCCURRENCE_CALL_METHOD, GRAPHITRON_OCCURRENCE_CALL_METHOD_RULE, graph, depth,
+            touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE,
             graph, depth, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE_RULE,
@@ -84,7 +104,8 @@ public final class OccurrenceProducers {
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE,
                 GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE,
-                GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_PRODUCER, GRAPHITRON_OCCURRENCE_CALL)) {
+                GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_CALL_METHOD, GRAPHITRON_OCCURRENCE_PRODUCER,
+                GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_CANDIDATE)) {
             dsl.deleteFrom(t)
                 .where(t.field("GRAPH_NAME", String.class).eq(graph))
                 .and(t.field("TOUCHED_AT", LocalDateTime.class).ne(touchedAt))

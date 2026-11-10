@@ -18,9 +18,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN_RECORD_ACCESSOR;
@@ -146,14 +146,15 @@ public final class BuildQuery {
     /** The argument fills that land on a node id, with the class the parameter or its elements take. */
     private static Map<Root, String> nodeIdRoots(StoreHandle store) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
-        var s = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var p = CODE_METHOD_PARAMETER;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
         var out = new HashMap<Root, String>();
         store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
             .from(c)
-            // The service producer's join keeps another kind's fills out.
-            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL))
+            // The service call's method, so another kind's fills stay out.
+            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL),
+                s.CALL_KIND.eq("SERVICE"))
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
             .where(c.GRAPH_NAME.eq(store.graphName()), c.FILL.eq("ARGUMENT"),
@@ -190,7 +191,7 @@ public final class BuildQuery {
     /** The argument fills that land on an input object, with the class the parameter takes. */
     private static Map<Root, String> roots(StoreHandle store) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
-        var s = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var p = CODE_METHOD_PARAMETER;
         var lo = GRAPHITRON_OCCURRENCE;
         var la = GRAPHITRON_ARGUMENT;
@@ -200,8 +201,9 @@ public final class BuildQuery {
         store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE,
                 coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
             .from(c)
-            // The service producer's join keeps another kind's fills out.
-            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL))
+            // The service call's method, so another kind's fills stay out.
+            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL),
+                s.CALL_KIND.eq("SERVICE"))
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
             .join(lo).on(lo.GRAPH_NAME.eq(c.GRAPH_NAME), lo.COORDINATE.eq(c.LANDING_COORDINATE))

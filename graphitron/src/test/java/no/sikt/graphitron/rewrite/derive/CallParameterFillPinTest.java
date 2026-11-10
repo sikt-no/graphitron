@@ -27,9 +27,9 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -93,7 +93,7 @@ class CallParameterFillPinTest {
      */
     private static Map<String, TreeSet<List<String>>> stored(DSLContext dsl) {
         var o = GRAPHITRON_OCCURRENCE;
-        var s = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var p = CODE_METHOD_PARAMETER;
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var byOccurrence = new TreeMap<String, List<String>>();
@@ -107,7 +107,7 @@ class CallParameterFillPinTest {
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR))
             .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.CALL.eq(s.CALL),
                 c.POSITION.eq(p.POSITION))
-            .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH), s.CALL_KIND.eq("SERVICE"))
             .orderBy(s.COORDINATE, p.POSITION)
             .forEach(r -> {
                 elementOf.put(r.value2(), r.value1());

@@ -9,6 +9,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 
 /**
@@ -55,19 +56,21 @@ public final class CallQuery {
     /** The graph's calls, by coordinate. */
     public static List<Row> read(StoreHandle store) {
         var s = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        var cm = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var m = CODE_METHOD;
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var p = CODE_METHOD_PARAMETER;
         return store.dsl()
-            .select(s.COORDINATE, s.METHOD_CLASS_NAME, s.METHOD_NAME, m.IS_STATIC, s.CONSTRUCTOR_DESCRIPTOR,
+            .select(s.COORDINATE, cm.METHOD_CLASS_NAME, cm.METHOD_NAME, m.IS_STATIC, s.CONSTRUCTOR_DESCRIPTOR,
                 m.RESULT_TYPE, c.POSITION, p.PARAMETER_TYPE)
             .from(s)
-            .join(m).on(m.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), m.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
-                m.METHOD_NAME.eq(s.METHOD_NAME), m.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR))
+            .join(cm).on(cm.GRAPH_NAME.eq(s.GRAPH_NAME), cm.COORDINATE.eq(s.COORDINATE), cm.CALL.eq(s.CALL))
+            .join(m).on(m.SOURCE_NAME.eq(cm.METHOD_SOURCE_NAME), m.CLASS_NAME.eq(cm.METHOD_CLASS_NAME),
+                m.METHOD_NAME.eq(cm.METHOD_NAME), m.DESCRIPTOR.eq(cm.METHOD_DESCRIPTOR))
             // Driven from the service producer, so another kind's fills never reach a service call.
             .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.CALL.eq(s.CALL), c.FILL.eq("SOURCE"))
-            .leftJoin(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
-                p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
+            .leftJoin(p).on(p.SOURCE_NAME.eq(cm.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(cm.METHOD_CLASS_NAME),
+                p.METHOD_NAME.eq(cm.METHOD_NAME), p.DESCRIPTOR.eq(cm.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
             .where(s.GRAPH_NAME.eq(store.graphName()))
             .orderBy(s.COORDINATE)
             .fetch(r -> new Row(r.value1(), r.value2(), r.value3(), r.value4(), Optional.ofNullable(r.value5()),
