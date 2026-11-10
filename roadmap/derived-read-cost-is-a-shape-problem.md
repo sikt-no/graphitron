@@ -2670,10 +2670,12 @@ the same key.
 reproduces. Where its by-type rule differs from the service's, to be closed by "A `@condition` and a
 service pair a parameter with an argument by one rule": the service pairs on list-ness and element
 type with each other's only candidate and, failing that, the last open parameter and argument where
-type cannot tell them apart, and reads an input object as any non-JDK class; the condition pairs one
-remaining parameter with one remaining element whatever their types, or a Java type once on each
-side by its GraphQL scalar's mapping, skips a parameter named for a context key, and reads no element
-of a collection.
+type cannot tell them apart, and reads an input object as any non-JDK class; the condition, in three
+steps the manual now states (Alf, 2026-11-10), pairs one remaining parameter with one remaining
+element only where the element is an input object or an enum and the parameter no scalar's class,
+pairs a Java type once on each side by its GraphQL scalar's mapping unless a nested input field has
+that type too, then binds a parameter one level into an input object by name and type, skips a
+parameter named for a context key, and never looks inside a list.
 
 **Stated so far.** `graphitron_occurrence_producer`, one row per producing occurrence with its kind
 and `ROOT` or `CHILD` start, and its subtypes `_key_row` (a child's start off its parent's object),
