@@ -178,7 +178,7 @@ alone, admits only those. Either is the consumer's choice, and both are covered 
 | Per-subtree routing value | `TenantHandDown` is the one writer of the `localContext` slot, which carries the tenant key; `LocalContextOwnershipGuardTest` keeps every other writer out; the carrier's `handDown(row, tenantKey)` stamps entity and node dispatch. A single-tenant build writes nothing there (`TenantHandDown.none()`). | Every build that writes the slot, multi-tenant or accepting, carries a generated `ConnectionKey` in it (the tenant part only in multi-tenant builds, the vouch id part only with `@accept`). The hand-down, the guard's owner list, the loader naming and `handDown` take it, with no "has accept" branch at any of them. A single-tenant build with no `@accept` still writes nothing. |
 | One connection per routing key | `TenantConnections` keys its entries by `Optional<tenantKey>`, mints lazily, one mount per entry, unmounts and resets at release; its entry resolution is the one enforcer of the request tenant set. | Key the entries by `ConnectionKey`; the cap of one vouched entry; the tenant part of a vouched key goes through the same enforcer, so a voucher never adds a tenant. |
 | Telling the mount what the connection is for | `MountedSession` carries `configuration()` and, in multi-tenant builds only, `tenant()`. | `vouch()`, returning `Optional<Vouch>` (id, scope, expiry, covered keys), declared only in a build with an `@accept` field, the way `tenant()` is declared only in multi-tenant builds. |
-| Entity with a non-column key field | Every `@key` field must resolve to a column-backed field, except the node-id alternative, which decodes to the key's columns. `EntityResolutionBuilder` re-derives the alternatives (`KeyAlternative.Direct`, `KeyAlternative.NodeId`) from the classified model on every build. | The entity key alternatives stated as a stored relation, one row per alternative of an entity, read by the dispatcher. An `@accept` field is an alternative there: the whole minted key, excluded from the SELECT and projection, decoded to the columns of B's authored key like a node id. The node-id and direct alternatives move onto the same relation, so `EntityResolutionBuilder`'s re-derivation goes. |
+| Entity with a non-column key field | Every `@key` field must resolve to a column-backed field, except the node-id alternative, which decodes to the key's columns. `EntityResolutionBuilder` re-derives the alternatives (`KeyAlternative.Direct`, `KeyAlternative.NodeId`) from the classified model on every build. | How each field of an authored `@key` binds, stated as `graphitron_key_field_binding`; the alternatives composed from it, `graphitron_minted_key` and `graphitron_node` by one emitted query, so `EntityResolutionBuilder` and its re-derivation go. An `@accept` field is an alternative there: the whole minted key, excluded from the SELECT and projection, decoded to the columns of B's authored key like a node id. |
 | A field the author writes that the schema does not carry | None: the emitted population, `graphitron_element`, is the authored elements plus the minted ones (`graphitron_element_authored`, `graphitron_element_minted_*`), and nothing is ever taken out of it. The part sets `graphitron_field_authored` and `graphitron_argument_authored` select from the transcription directly. | The absorbed declarations of an issuing type, decoded as voucher components rather than fields: a stored membership relation, decided by structure alone, that `graphitron_element_authored` and both part sets anti-join, the first subtraction from that population, and the component's column and scalar resolved beside it. `EmittedRegistry`, which only adds, gains a removal arm reading the membership, so the served SDL and runtime schema lose them too. |
 | Schema alteration from one marker | `graphitron_directive_application_minted` mints `@key(fields: "id")` on a node type of a federated graph, and `graphitron_directive_application_arg_minted` reads that view and hardcodes its arguments, since every minted key is today the node's (`fields: "id"`, `resolvable: true`). `graphitron_federation_link_import_rule` imports every minted directive the link's version allows. | A stored relation of minted keys, one row per key with its coordinate, field set, `resolvable` and role (`NODE`, `ISSUE`, `ACCEPT`), which both the minted application set and the minted argument set read, so no view reads another and no argument is hardcoded. The node rule becomes its `NODE` rows; the voucher key, `@key(fields: "voucher")`, is its `ISSUE` row (`resolvable: false`) and `ACCEPT` row (`resolvable: true`). `@inaccessible` on the marked field is one more arm of the minted application set. The import needs no change. |
 | Children of the entity | Table-bound children run through generated fetchers that honour the inherited routing. | Verify that a `@service` child and a connection-typed child under the entity also acquire from the inherited key. |
@@ -247,17 +247,33 @@ alone, admits only those. Either is the consumer's choice, and both are covered 
   `federation-link` and `vouchers`, since its `NODE` rows read `graphitron_node` and the federation link
   and its `ISSUE` and `ACCEPT` rows read the voucher stage and the accept entry, and before `emitted`,
   which reads the minted applications.
-* *Entity key alternatives, stated.* A stored relation, one row per key alternative of an entity: the
-  entity, the key's field set, `resolvable`, and how its representation reaches the SELECT (`DIRECT`
-  columns, a `NODE_ID` decode, a `VOUCHER` decode with the authored key it decodes to), with the
-  per-field column bindings beside it. The voucher alternative is written from the `ACCEPT` minted key and
-  the accept entry; the direct and node-id alternatives move onto the same relation from the facts
-  `EntityResolutionBuilder` reads today. The entity dispatch reads the relation, and
-  `EntityResolutionBuilder`'s re-derivation of `KeyAlternative` from the classified model goes. This is
-  the "Entity resolution is stated" node of R876's graph, taken here. A stage of its own owns it,
-  `entity-key-alternatives` (class `derive.EntityKeyAlternatives`), after `binding-claims`, since the
-  per-field column bindings read the binding claims; its exact position is fixed by the last relation its
-  rows read, and `meta_relation` and `meta_stage_write` name it.
+* *Entity key alternatives, stated.* The one fact the store lacks is how each field of an authored `@key`
+  binds at its entity's table; everything else an alternative carries is already stated. So one stored
+  relation, `graphitron_key_field_binding`: one row per field of an authored `@key` on a table-bound
+  type, keyed `(graph, type, 'key', ordinal, position)` (the key's directive application, since a key on
+  an extension can name a field declared in another file, and the field's index in the parse), with a
+  foreign key into the key's `graphitron_directive_application` row, one into the field's
+  `graphitron_occurrence_binding` row (which carries the binding kind), and one into
+  `graphitron_tabletype` so the bound is the type's own table. A key field with no row binds nothing at
+  that table, which is the refusal; the parse is reached through the authored application's written
+  position, an attribute of the row and not its key. The alternatives are composed by their one reader,
+  an `EntityKeyQuery` in `emit` beside `NodeIdDecodeQuery`: an authored key whose fields bind `COLUMN`
+  is `DIRECT`, its columns joined from `graphitron_occurrence_column`; a key whose one field binds
+  `NODE_ID`, authored or minted (`graphitron_minted_key` `NODE`), is the node-id alternative, its type id
+  and columns from `graphitron_node` and `graphitron_node_keycolumn`; later a minted `ACCEPT` key is the
+  voucher alternative, decoding onto the authored key a small slice-7 relation records for each
+  `@accept`. A thin adapter where `EntityResolutionBuilder` stood maps those rows to the existing
+  `EntityResolution` and `KeyAlternative` records the five generator sites read, and adds the node-id
+  alternative for a node type no `@key` gives one, from `graphitron_node`, which is the path a
+  non-federated graph takes; the adapter is transitional until the node and entity generators read the
+  store. `EntityResolutionBuilder` goes, its refusals included. This is the "Entity resolution is
+  stated" node of R876's graph, taken here. A stage of its own owns the relation and the refusals,
+  `entity-key-alternatives` (class `derive.EntityKeyAlternatives`), after `occurrence-depths`, which
+  writes the bindings it reads, and before `entry-defects`; `meta_relation` and `meta_stage_write` name
+  it. Whether a key is the id contract is decided by the binding (the ruling in
+  `docs/architecture/explanation/fact-model.adoc`): an authored `@key(fields: "id")` over an `id` that
+  carries `@field(name:)` is a plain key on its column, and `graphitron_minted_key_rule` mints the
+  node key beside it, its test becoming `id` with no `@field` on a node rather than the spelling alone.
 * *The readers.* Everything built on the emitted population drops the declarations by construction: the
   directive applications through `graphitron_directive_application_authored`'s join to
   `graphitron_element`, the fields and arguments through the part sets' anti-joins above. Three readers
@@ -290,7 +306,8 @@ alone, admits only those. Either is the consumer's choice, and both are covered 
     `Query`, `Mutation` or `Subscription` field, directly or as a list), because the vouched decision is
     the path from a parent A's rules admitted. A field of a mutation payload is not a root field and may
     return `@issue` rows.
-  * Owned by `entity-key-alternatives`: `@accept` on a type with no authored
+  * Owned by `entity-key-alternatives`, which also owns the `@key` refusals slice 2 moves out of
+    `EntityResolutionBuilder`: `@accept` on a type with no authored
     resolvable `@key`, or with several and no `key:`, or a `key:` naming no authored key; `@accept` whose
     `key:` is an authored key with a nested selection (`@key(fields: "org { id }")`), since absorbed fields
     are top-level scalars.
@@ -352,10 +369,17 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
 
 1. *Column names.* The catalog-side relation, with the occurrence rule and its two defect arms moved onto
    it. A refactor: fact documents row-identical.
-2. *Minted keys and entity key alternatives, stated.* Both stored relations with today's rows only
-   (`NODE` keys; direct and node-id alternatives), the minted views reading the first and the entity
-   dispatch reading the second, `EntityResolutionBuilder`'s re-derivation removed. A refactor: fact
-   documents and generated output unchanged.
+2. *Minted keys and entity key alternatives, stated.* In three commits. (a) `graphitron_minted_key` and
+   the `minted-keys` stage, the minted views reading it; a refactor, shipped. (b) A `feat`: the
+   `entity-key-alternatives` stage writes the `@key` refusals as entry defects (a key on a type that is
+   not table bound while any key is resolvable, on a table interface, a key field that is missing,
+   nested, or binds nothing at the entity's table, and the compound-key-with-`id` advisory as a
+   warning-severity code), `EntityResolutionBuilder`'s refusals go, and the
+   minted-key rule takes the id-contract ruling; the glossary and `federation-keys.adoc` state the new
+   wording. Fact documents pin a key type only `_entities` reaches, a key field the builder accepted as a
+   reference landing on another table, and an authored id key over a column-bound `id`. (c) A refactor:
+   `graphitron_key_field_binding`, the `EntityKeyQuery` and the adapter, `EntityResolutionBuilder`
+   deleted; generated output unchanged.
 3. *Connection key.* `ConnectionKey` in every build that writes the slot, tenant part only. A refactor:
    single-tenant output unchanged, multi-tenant output differs only in the key's type.
 4. *A's facts and published shape.* `@issue` and its capture entry, the voucher stage (membership,
@@ -578,6 +602,15 @@ components*, *Minted keys, stored*, *Entity key alternatives, stated*, *Rejectio
 user confirmed the first client's case, a voucher carrying a document and its owner, which the
 two-field accepting key covers as written; *How it works* now states it and the shape of `vouch().keys()`.
 
+At slice 2's entity key step the principles architect was consulted twice and the user ruled
+(2026-11-10). A stored alternative per `@key`, with `DIRECT` and `NODE_ID` subtypes, restated rows other
+relations hold, so only the per-field binding is stored and the one reader composes the rest
+(*Entity key alternatives, stated*). The column comes from the field's occurrence binding rather than a
+second spelling match, which puts the stage after `occurrence-depths`. The refusals move first, as a
+`feat`, so the store never holds a well-formed-only population beside a Java validation of the same
+decision. And the id contract is the binding, not the spelling: an authored `@key(fields: "id")` over a
+column-bound `id` is a plain key, with the node key minted beside it.
+
 ## Retired vocabulary
 
 * `@issue(key:)`, its capture column and its refusals: retired before they were built.
@@ -585,7 +618,8 @@ two-field accepting key covers as written; *How it works* now states it and the 
   ambiguous-column defect arms, replaced by joins onto the column-name relation.
 * The hardcoded `fields: "id"` and `resolvable: true` arms of `graphitron_directive_application_arg_minted`,
   and its read of `graphitron_directive_application_minted`.
-* `EntityResolutionBuilder`'s derivation of `KeyAlternative` from the classified model.
+* `EntityResolutionBuilder`, its derivation of `KeyAlternative` from the classified model and its
+  `@key` refusals, and the spelling-only id-contract test in `graphitron_minted_key_rule`.
 * `Optional<tenantKey>` as the routing value in the `localContext` slot and in `TenantConnections`.
 * The temporary refusals of `@issue` and `@accept` that slices 4 and 7 add and slices 6 and 8 remove.
 
