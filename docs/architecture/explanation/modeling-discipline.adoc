@@ -225,6 +225,20 @@ away flags every reading of it rather than silently deleting them, and the owner
 deliberately on its next pass. Review a foreign key against this: cascade downstream, set null
 from an anchor.
 
+== A record of reading commits after what it vouches for
+
+A source's stamp says that the store's rows of it are derived from these bytes, so a later reading
+may skip the source when the bytes have not moved. A capture commits gatherer by gatherer, so a run
+stopped partway keeps what its earlier gatherers committed. The stamp therefore commits with or
+after the facts it vouches for, never before them: written first, a stopped run leaves it vouching
+for rows nobody wrote, and every later reading skips the source on its word. Until the
+transcription has committed the stamp stays unknown, and unknown counts as changed, so the next
+reading reads the source again (Alf, 2026-11-10).
+
+The source readings decide what changed and claim the source; the pass calls their `vouch` once
+the gatherers that transcribe the source have committed. A gatherer that records a reading of its
+own owes the same order.
+
 == Where it pinches
 
 It would be dishonest to present this as enforced. Most of it is not.
