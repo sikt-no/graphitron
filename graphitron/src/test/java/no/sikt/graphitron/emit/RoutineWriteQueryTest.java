@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.tuple;
  *
  * <p>One schema carries every mutation shape so membership is tested against a live non-member: a
  * one-hop chain write, a two-hop chain write (which states the alias numbering and the per-hop
- * keying a one-hop chain leaves unstated), a payload-carrier write, and a DML insert.
+ * keying a one-hop chain leaves unstated), an object-result write, and a DML insert.
  */
 @PipelineTier
 class RoutineWriteQueryTest {
@@ -123,7 +123,6 @@ class RoutineWriteQueryTest {
     void theChainRowCarriesTheCallAndItsArguments() {
         var row = chainRow("rentFilm");
 
-        assertThat(row.seat()).isEqualTo(RoutineWriteQuery.Seat.CHAIN);
         assertThat(row.call().methodName())
             .as("the write is the declared routine call")
             .isEqualTo("rentFilm");
@@ -176,19 +175,19 @@ class RoutineWriteQueryTest {
 
     @Test
     void theCarrierRowCarriesWhatItsCaptureNeeds() {
-        var row = plan.routineWrites().rowFor("Mutation", "rentFilmPayload").orElseThrow();
+        var row = (RoutineWriteQuery.ObjectResult) plan.routineWrites()
+            .rowFor("Mutation", "rentFilmPayload").orElseThrow();
 
-        assertThat(row.seat()).isEqualTo(RoutineWriteQuery.Seat.CARRIER);
         assertThat(row.call().methodName()).isEqualTo("rentFilm");
-        assertThat(row.hops()).isEmpty();
-        assertThat(row.targetTable().sqlName())
-            .as("the captured keys are typed under the target table's own key fields")
+        assertThat(row.reRead().fieldName()).isEqualTo("rental");
+        assertThat(row.reRead().table().sqlName())
+            .as("the captured keys are typed under the re-read table's own key fields")
             .isEqualTo("rental");
-        assertThat(row.capturedPairs().stream().map(p -> p.target().javaName()))
-            .as("the payload data field correlates on the target table's key")
+        assertThat(row.reRead().capturedPairs().stream().map(p -> p.target().javaName()))
+            .as("the re-reading field correlates on the re-read table's key")
             .containsExactly("RENTAL_ID");
-        assertThat(row.listReturn())
-            .as("the payload's data field is single, this shape's only cardinality claim")
+        assertThat(row.reRead().listReturn())
+            .as("the re-reading field is single, this shape's only cardinality claim")
             .isFalse();
     }
 
@@ -218,8 +217,9 @@ class RoutineWriteQueryTest {
             .containsExactly("java.lang.Integer");
     }
 
-    private static RoutineWriteQuery.Row chainRow(String fieldName) {
-        return plan.routineWrites().rowFor("Mutation", fieldName).orElseThrow();
+    private static RoutineWriteQuery.RecordsResult chainRow(String fieldName) {
+        return (RoutineWriteQuery.RecordsResult) plan.routineWrites().rowFor("Mutation", fieldName)
+            .orElseThrow();
     }
 
     /** The leaf's own classified chain, which every chain check above joins back to. */

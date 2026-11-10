@@ -103,8 +103,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
   "`DerivationStratum` is gone, each step anchored by its owner".
 * A field's departure table in `graphitron_field_source_table`'s interim rules and in
   `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
-* A routine write's refusals in `RoutineWriteQuery`'s verdict and in the walk's routine
-  classification. Ends at "A routine write's refusals are codes a stage writes".
+* A routine write's refusals in the store's codes and in the walk's routine classification. Ends
+  at "A routine write's refusals are codes a stage writes".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
 * The walk's own schema beside the emitted one capture builds. Ends at "The generator builds no schema".
@@ -955,6 +955,9 @@ pass and no stratum that clears and recomputes.
       field no hop reaches and `REFERENCE_WITHOUT_TARGET_TABLE` at a path on a payload return, so
       only what a write alone refuses is a code of its own, and `RoutineWriteQuery`'s verdict and
       the walk's routine refusals go as each lands.
+      * **`RoutineWriteQuery` admits a write on the re-read its occurrence states** `done`. A
+        records result by the join path to its lift table, an object result by the key rows of the
+        occurrences under it, as the sealed `RoutineWriteQuery.Row`, `Seat` and the verdict gone.
       * **A root `@routine` naming no routine is `ELEMENT_UNRESOLVED`** `done`. As a child's is, at
         the element, though no walk stands on a root's leading routine, it being the producer's call.
       * **A table-bound return with no written path is a lift** `open`. The store states the
@@ -985,10 +988,15 @@ pass and no stratum that clears and recomputes.
       * **A field read off its parent's member is no lookup** `open`. `graphitron_producer_rule`
         calls `FilmBlurbHolder.blurb` a `LOOKUP` for its table-bound type though `blurb()` hands back
         the value it reads, so `NO_KEY_FROM_PARENT` exempts it by the member rather than the claim.
-      * **What the model admits the emitters follow** `open`. An id encoded from returned keys
-        under an insert or update, a non-null single field under a routine with no errors field and
-        a list field taking one row by an arity-one key row are no defect, so the emitter refusals
-        join "The store, the generator and the emitters agree on what a service call can be".
+      * **A node id is encoded from a routine result's returned keys** `open`. `NODE_ID_LANDS_ON_TABLE`
+        refuses a `@nodeId(typeName:)` under a routine write's object result, its rule taking a
+        foreign key and not the name-matched keys that carry the node's key out of the result.
+      * **What the model admits the emitters follow** `open`. An id encoded from returned keys, a
+        non-null single field under a routine with no errors field, a list field taking one row by
+        an arity-one key row, a routine lift with no step and several fields re-reading a routine's
+        rows are no defect, the routine ones `RoutineWriteQuery.Unrendered`, kept out of the rows by
+        name, so each emitter refusal joins "The store, the generator and
+        the emitters agree on what a service call can be" before the walk's refusals go.
     * **A name claimed that does not exist is one defect** `open`. `TABLE_UNRESOLVED`,
       `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
       written name resolving to nothing, the position saying what was named, so they fold into one
@@ -1204,7 +1212,7 @@ before `generate` does.
     once.
   * **A scalar constant says why it has no input type** `open`. `code_scalar_constant` tells an
     erased coercing apart from the other silences, so the erased-coercing rule reads the store.
-* **`validate` reads its verdict from the store** `blocked`, on "Each rule the walk enforces is a located defect". Node-id decode coverage is restated over store facts or goes, and
+* **`validate` reads its verdict from the store** `blocked`, on "Each rule the walk enforces is a located defect" and "What the model admits the emitters follow". Node-id decode coverage is restated over store facts or goes, and
   `GraphQLRewriteGenerator.validate` and the `VALIDATE` projection go.
 
 ### `generate` is a function of the store and the emitted schema `open`

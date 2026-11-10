@@ -3,7 +3,9 @@ package no.sikt.graphitron.emit;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Column;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Hop;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Keying;
+import no.sikt.graphitron.emit.RoutineWriteQuery.ObjectResult;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Pair;
+import no.sikt.graphitron.emit.RoutineWriteQuery.RecordsResult;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Row;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Table;
 import com.palantir.javapoet.ClassName;
@@ -35,10 +37,11 @@ import java.util.function.Supplier;
  *
  * <p><b>The two-statements rule.</b> The write transaction holds the routine call and a projection
  * of the routine's own result columns, and nothing else. Anything past that capture is a
- * post-commit query under the caller's identity, and the two seats differ only there: the chain
- * seat re-reads from its first hop's table keyed by the captured values, joining the remaining hops
- * forward and projecting the terminus type; the carrier seat returns the captured keys, typed as the
- * target table's key fields, and leaves the re-read to the payload's data field. The routine never
+ * post-commit query under the caller's identity, and the two result shapes differ only there: a
+ * {@link RecordsResult} re-reads from its first hop's table keyed by the captured values, joining the
+ * remaining hops forward and projecting the type the path lands on; an {@link ObjectResult} returns
+ * the captured keys, typed as the re-read table's key fields, and leaves the re-read to the field
+ * under it that takes them. The routine never
  * appears in the follow-up {@code FROM}: re-invoking it would re-execute the write. An error in the
  * routine rolls back at the {@code transactionResult} boundary; an error in the follow-up cannot
  * undo the committed write.
@@ -109,8 +112,8 @@ public final class RoutineWriteEmitter {
      * Renders the entry point for {@code row}.
      *
      * @param methodName        the entry point's generated name
-     * @param returnTypeClass   the return type's projection unit; read on the chain seat only
-     * @param selectionOccurrences the generated selection scaffold the chain seat's re-read
+     * @param returnTypeClass   the return type's projection unit; read for a records result only
+     * @param selectionOccurrences the generated selection scaffold a records result's re-read
      *                          groups the fetched field's own fields through
      * @param graphitronContext the host class's {@code graphitronContext(env)} call; calling it
      *                          records that the host needs the helper, so it is called only where
@@ -133,14 +136,15 @@ public final class RoutineWriteEmitter {
                 .build();
         };
         var call = routineCall(row, argHelpers, keys);
-        return switch (row.seat()) {
-            case CHAIN -> chainReread(row, methodName, returnTypeClass, selectionOccurrences, errors, dsl, call, keys,
+        return switch (row) {
+            case RecordsResult records -> recordsReRead(records, methodName, returnTypeClass,
+                selectionOccurrences, errors, dsl, call, keys, transactionProvider);
+            case ObjectResult object -> objectResultKeys(object, methodName, errors, dsl, call, keys,
                 transactionProvider);
-            case CARRIER -> carrierKeys(row, methodName, errors, dsl, call, keys, transactionProvider);
         };
     }
 
-    private static MethodSpec chainReread(Row row, String methodName, ClassName returnTypeClass,
+    private static MethodSpec recordsReRead(RecordsResult row, String methodName, ClassName returnTypeClass,
             ClassName selectionOccurrences,
             Errors errors, CodeBlock dsl, CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
         boolean isList = row.listReturn();
@@ -202,10 +206,11 @@ public final class RoutineWriteEmitter {
         return closeEntryPoint(builder, errors, declaredType, "payload");
     }
 
-    private static MethodSpec carrierKeys(Row row, String methodName, Errors errors, CodeBlock dsl,
-            CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
-        boolean isList = row.listReturn();
-        var targetKeyColumns = row.capturedPairs().stream().map(Pair::target).toList();
+    private static MethodSpec objectResultKeys(ObjectResult row, String methodName, Errors errors,
+            CodeBlock dsl, CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
+        var reRead = row.reRead();
+        boolean isList = reRead.listReturn();
+        var targetKeyColumns = reRead.capturedPairs().stream().map(Pair::target).toList();
         TypeName keyRowType = keyRecordType(targetKeyColumns);
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType;
         TypeName declaredType = declaredValueType(errors, valueType);
@@ -216,15 +221,15 @@ public final class RoutineWriteEmitter {
         builder.addStatement("$T source = $L", tableClass(row.call().resultTable()), call);
         builder.addCode(dsl);
 
-        // Re-typed under the target table's key fields, so the data field reads them back by field
-        // identity rather than by jOOQ's name-lookup fallback.
-        var target = row.targetTable();
+        // Re-typed under the re-read table's key fields, so the re-reading field reads them back by
+        // field identity rather than by jOOQ's name-lookup fallback.
+        var target = reRead.table();
         var coerceTo = CodeBlock.join(targetKeyColumns.stream()
             .map(c -> CodeBlock.of("$T.$L.$L", CatalogRefs.className(target.constantsClassName()),
                 target.javaFieldName(), c.javaName()))
             .toList(), ", ");
         builder.addCode(captureTransaction(valueType,
-            row.capturedPairs().stream().map(Pair::source).toList(), coerceTo, isList, transactionProvider));
+            reRead.capturedPairs().stream().map(Pair::source).toList(), coerceTo, isList, transactionProvider));
         builder.addCode(nullKeysGuard(declaredType, isList));
 
         return closeEntryPoint(builder, errors, declaredType, "keys");
@@ -282,7 +287,7 @@ public final class RoutineWriteEmitter {
 
     /**
      * {@code <keysType> keys = <Provider>.owned(dsl).transactionResult(tx -> DSL.using(tx).select(...).from(source)
-     * [.coerce(...)].fetch[One]());}, the write half both seats emit.
+     * [.coerce(...)].fetch[One]());}, the write half both result shapes emit.
      */
     private static CodeBlock captureTransaction(TypeName keysType, List<Column> capturedColumns,
             CodeBlock coerceTo, boolean isList, ClassName transactionProvider) {

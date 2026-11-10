@@ -12,20 +12,24 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 /**
- * {@link RoutineWriteQuery}'s admission: which seat a mutation root's {@code @routine} occupies, and
- * where it occupies none, which precondition stopped it.
+ * {@link RoutineWriteQuery}'s admission: which mutation-root {@code @routine} coordinates draw a row,
+ * in which result shape, and which the store states in a shape the emitter does not render yet.
  *
- * <p>The admission's contract is totality, so every case here asserts the whole graph's seatings
- * rather than a projection of them: a coordinate that should draw no row, or should draw a different
- * verdict than the one under test, fails the case it appears in. The one emitting verdict is a case
- * at each seat and the thirteen refusals are a case each, which is what makes the vocabulary closed
- * in fact and not only in the comment.
+ * <p>Every case asserts the whole graph's rows rather than a projection of them: a coordinate that
+ * should draw no row, or a different result shape, fails the case it appears in. Each admitted shape
+ * is a case, each {@link RoutineWriteQuery.Unrendered} shape is a case, and each shape the old
+ * admission refused is a case that asserts either its absence from the rows, where a missing fact
+ * keeps it out, or the store defect that stops the build, where every fact admission reads is
+ * present and the defect is the gate.
  *
  * <p>Every case captures real SDL against the test catalog rather than seeding rows: a seeded
  * fixture is free to declare a shape capture never writes, and the case then pins behaviour no
@@ -51,7 +55,7 @@ class MutationRoutineSeatTest {
         type Query { rentals: [Rental] }
         """;
 
-    // ===== The two seats that emit =====
+    // ===== The two result shapes that emit =====
 
     /**
      * The chain seat: the routine call is the write, the one {@code @reference} element says where
@@ -66,8 +70,10 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN ADMITTED Rental"));
+            """, dsl -> {
+                assertThat(rows(dsl)).containsExactly("Mutation.rentFilm RecordsResult Rental");
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -83,11 +89,13 @@ class MutationRoutineSeatTest {
               rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CARRIER ADMITTED RentFilmPayload"));
+            """, dsl -> {
+                assertThat(rows(dsl)).containsExactly("Mutation.rentFilm ObjectResult RentFilmPayload");
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
-    // ===== The three refusals both seats share =====
+    // ===== Shapes both result shapes share =====
 
     /**
      * A second {@code @routine} is a shape owed the multi-lateral emit, and it precedes every other
@@ -103,8 +111,10 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN MULTIPLE_ROUTINE_NODES Rental"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(defects(dsl)).contains("MULTIPLE_ROUTINE_NODES");
+            });
     }
 
     /**
@@ -119,8 +129,10 @@ class MutationRoutineSeatTest {
                 @reference(path: [{table: "rental"}])
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN CHAIN_HEAD_NOT_ROUTINE Rental"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -139,8 +151,10 @@ class MutationRoutineSeatTest {
                   method: "lifterFieldCondition"
                 })
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN READ_SURFACE_ON_WRITE Rental"));
+            """, dsl -> {
+                assertThat(defects(dsl)).contains("READ_SURFACE_ON_WRITE");
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -162,8 +176,10 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN READ_SURFACE_ON_WRITE Rental"));
+            """, dsl -> {
+                assertThat(defects(dsl)).contains("READ_SURFACE_ON_WRITE");
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -180,11 +196,13 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN READ_SURFACE_ON_WRITE Rental"));
+            """, dsl -> {
+                assertThat(defects(dsl)).contains("READ_SURFACE_ON_WRITE");
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
-    // ===== The chain seat's own refusals =====
+    // ===== Records results the old admission refused =====
 
     /**
      * The fourth cell: a path written on a field that returns the payload carrier is the right fact
@@ -200,8 +218,10 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN REFERENCE_ON_CARRIER_RETURN RentFilmPayload"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -217,8 +237,10 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN CONNECTION_RETURN Rental"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -233,8 +255,10 @@ class MutationRoutineSeatTest {
                 @routine(name: "no_such_function")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN CHAIN_UNRESOLVED Rental"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -252,8 +276,10 @@ class MutationRoutineSeatTest {
                   method: "join"
                 }}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN UNANCHORED_FIRST_HOP Rental"));
+            """, dsl -> {
+                assertThat(defects(dsl)).contains("CONDITION_ON_WRITE_RESULT");
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -276,8 +302,10 @@ class MutationRoutineSeatTest {
                   method: "routineResultToRental"
                 }}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN UNANCHORED_FIRST_HOP Rental"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -296,42 +324,13 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CHAIN CHAIN_UNRESOLVED Actor"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
-    // ===== The carrier seat's own refusals =====
-
-    /**
-     * A {@code @table} return with no path is the chain shape minus its chain: nothing says where
-     * the committed row is re-read from, and there is no payload data field to hang a hop on.
-     */
-    @Test
-    void aTableBoundReturnWithNoPathIsTheChainShapeMinusItsChain() {
-        withCapturedStore(RENTAL + """
-            type Mutation {
-              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
-                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-            }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CARRIER TABLE_BOUND_RETURN Rental"));
-    }
-
-    /**
-     * A return that is neither table-bound nor a type holding one field beside any errors field is
-     * no carrier at all. Here the payload declares two.
-     */
-    @Test
-    void aPayloadWithTwoDataChannelsIsNoCarrier() {
-        withCapturedStore(ERRORS + RENTAL + """
-            type RentFilmPayload { rental: Rental other: Rental errors: [WriteError] }
-            type Mutation {
-              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
-                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-            }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CARRIER NO_CARRIER RentFilmPayload"));
-    }
+    // ===== Object results the old admission refused =====
 
     /**
      * A routine write re-reads its committed row from a catalog table, so a data channel the
@@ -351,8 +350,10 @@ class MutationRoutineSeatTest {
               rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CARRIER CARRIER_ELEMENT_NOT_TABLE RentFilmPayload"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -368,8 +369,11 @@ class MutationRoutineSeatTest {
               rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CARRIER CARRIER_DATA_FIELD_NON_NULL RentFilmPayload"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).containsExactly(
+                    entry("Mutation.rentFilm", RoutineWriteQuery.Unrendered.NON_NULL_SINGLE_RE_READ));
+            });
     }
 
     /**
@@ -386,8 +390,10 @@ class MutationRoutineSeatTest {
               rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilm CARRIER CARRIER_HOP_UNRESOLVED RentFilmPayload"));
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     // ===== The population's edges =====
@@ -406,7 +412,10 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
             type Mutation { touch: Boolean }
-            """, dsl -> assertThat(seats(dsl)).isEmpty());
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(unrendered(dsl)).isEmpty();
+            });
     }
 
     /**
@@ -429,10 +438,53 @@ class MutationRoutineSeatTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
                 @reference(path: [{table: "rental"}])
             }
-            """, dsl -> assertThat(seats(dsl)).containsExactly(
-                "Mutation.rentFilmCarried CARRIER ADMITTED RentFilmPayload",
-                "Mutation.rentFilmChained CHAIN ADMITTED Rental",
-                "Mutation.rentFilmTwice CHAIN MULTIPLE_ROUTINE_NODES Rental"));
+            """, dsl -> {
+                assertThat(rows(dsl)).containsExactly(
+                    "Mutation.rentFilmCarried ObjectResult RentFilmPayload",
+                    "Mutation.rentFilmChained RecordsResult Rental");
+                assertThat(unrendered(dsl)).isEmpty();
+            });
+    }
+
+    /**
+     * The shapes the store admits and the emitter does not render yet, each kept out of the rows by
+     * name: a table-bound return with no step after its routine (a lift), an object result with two
+     * fields re-reading the written rows, one encoding a node id from the returned keys beside its
+     * re-read, and a non-null single re-read with no errors field. Three draw no defect, so the named
+     * case is all that keeps them out; the node id draws NODE_ID_LANDS_ON_TABLE, the node-id rule
+     * not yet taking a routine result's name-matched keys as the path to the node's table.
+     */
+    @Test
+    void theShapesTheEmitterDoesNotRenderYetAreKeptOutByName() {
+        withCapturedStore(ERRORS + """
+            interface Node { id: ID! }
+            type Rental implements Node @node @table(name: "rental") {
+              id: ID! @nodeId
+              rentalId: Int! @field(name: "rental_id")
+            }
+            type Query { rentals: [Rental] node(id: ID!): Node }
+            type RentalTwice { rental: Rental other: Rental errors: [WriteError] }
+            type RentalWithId { rental: Rental rentalId: ID @nodeId(typeName: "Rental") errors: [WriteError] }
+            type RentalNonNull { rental: Rental! }
+            type Mutation {
+              lifted(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+              twice(inventoryId: Int!, customerId: Int!): RentalTwice
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+              withId(inventoryId: Int!, customerId: Int!): RentalWithId
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+              nonNull(inventoryId: Int!, customerId: Int!): RentalNonNull
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """, dsl -> {
+                assertThat(rows(dsl)).isEmpty();
+                assertThat(defects(dsl)).containsExactly("NODE_ID_LANDS_ON_TABLE");
+                assertThat(unrendered(dsl)).containsOnly(
+                    entry("Mutation.lifted", RoutineWriteQuery.Unrendered.LIFT_WITHOUT_STEP),
+                    entry("Mutation.twice", RoutineWriteQuery.Unrendered.SEVERAL_RE_READING_FIELDS),
+                    entry("Mutation.withId", RoutineWriteQuery.Unrendered.ID_ENCODED_FROM_KEYS),
+                    entry("Mutation.nonNull", RoutineWriteQuery.Unrendered.NON_NULL_SINGLE_RE_READ));
+            });
     }
 
     // ===== Helpers =====
@@ -440,15 +492,26 @@ class MutationRoutineSeatTest {
     private static final String GRAPH = "MutationRoutineSeatTest";
 
     /**
-     * Every seat the graph holds, one string per row: the coordinate, the seat, the verdict and the
-     * type the field returns. Asserted whole so a coordinate that should draw no row, or a different
-     * verdict, cannot hide behind a filter.
+     * Every row the graph admits, one string per row: the coordinate, the result shape and the type
+     * the field returns. Asserted whole so a coordinate that should draw no row, or a different
+     * shape, cannot hide behind a filter.
      */
-    private static List<String> seats(DSLContext dsl) {
-        return RoutineWriteQuery.seatings(new StoreHandle(dsl, GRAPH)).stream()
-            .map(s -> s.typeName() + "." + s.fieldName() + " " + s.seat() + " " + s.verdict() + " "
-                + s.returnTypeName())
+    private static List<String> rows(DSLContext dsl) {
+        return RoutineWriteQuery.read(new StoreHandle(dsl, GRAPH)).rows().stream()
+            .map(r -> r.typeName() + "." + r.fieldName() + " " + r.getClass().getSimpleName() + " "
+                + r.returnTypeName())
             .toList();
+    }
+
+    /** Every coordinate the store states a re-read for in a shape the emitter does not render. */
+    private static Map<String, RoutineWriteQuery.Unrendered> unrendered(DSLContext dsl) {
+        return RoutineWriteQuery.unrendered(new StoreHandle(dsl, GRAPH));
+    }
+
+    /** The codes of the defects the store states for the graph, which are what stop the build. */
+    private static List<String> defects(DSLContext dsl) {
+        var d = GRAPHITRON_ENTRY_DEFECT;
+        return dsl.select(d.CODE).from(d).where(d.GRAPH_NAME.eq(GRAPH)).fetch(d.CODE);
     }
 
     private void withCapturedStore(String sdl, Consumer<DSLContext> body) {

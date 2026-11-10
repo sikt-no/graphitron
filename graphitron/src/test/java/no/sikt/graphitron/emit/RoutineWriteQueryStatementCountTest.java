@@ -19,9 +19,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Four
- * statements at four grains, and four however many coordinates the graph holds, however many
- * hops their chains cross and however many arguments their routines take.
+ * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Three
+ * statements at three grains, and three however many coordinates the graph holds, however many
+ * hops their paths cross and however many arguments their routines take.
  *
  * <p>An enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for being
  * slow. The shape it pins is invisible from every other gate. A fan-out into a statement per
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class RoutineWriteQueryStatementCountTest {
 
-    /** The narrow corpus: one coordinate, one seat, a chain of one hop, two routine arguments. */
+    /** The narrow corpus: one coordinate, one result shape, a path of one hop, two routine arguments. */
     private static final String ONE_COORDINATE = """
         type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
         type Query { rental: Rental }
@@ -49,7 +49,7 @@ class RoutineWriteQueryStatementCountTest {
         """;
 
     /**
-     * The wide corpus: both seats, three admitted coordinates, one of them a chain crossing two
+     * The wide corpus: both result shapes, three admitted coordinates, one of them a path crossing two
      * hops, plus a DML write admission refuses. Every axis the coordinate statement's
      * correlated {@code MULTISET}s fan out over is populated more than once here, which is what
      * makes the equality against the narrow corpus mean something.
@@ -91,8 +91,12 @@ class RoutineWriteQueryStatementCountTest {
         type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
         """;
 
-    /** One per grain: admission, the coordinate, the chain hop's pairing, the carrier's captured pairing. */
-    private static final int GRAINS = 4;
+    /**
+     * One per grain: the occurrence, a records result's step pairing, an object result's captured
+     * pairing. Three rather than four since admission is read off the occurrence statement's own
+     * facts instead of a statement of its own ahead of it.
+     */
+    private static final int GRAINS = 3;
 
     @TempDir
     Path tmp;
@@ -104,8 +108,8 @@ class RoutineWriteQueryStatementCountTest {
 
     @Test
     void aWiderCorpusCostsTheSame() {
-        // The assertion the pin exists for. Three admitted coordinates instead of one, both seats
-        // instead of one, a two-hop chain beside a one-hop chain: every one of those is a row
+        // The assertion the pin exists for. Three admitted coordinates instead of one, both result
+        // shapes instead of one, a two-hop path beside a one-hop path: every one of those is a row
         // count, and none of them is a statement count.
         var counted = new AtomicInteger();
         RoutineWriteQuery.Rows rows;
@@ -121,7 +125,7 @@ class RoutineWriteQueryStatementCountTest {
 
     @Test
     void aGraphWithNoRoutineWriteCostsTheSame() {
-        // Absence is an answer, and it is the same four statements: nothing here may probe a
+        // Absence is an answer, and it is the same three statements: nothing here may probe a
         // relation at a time to discover that none of them holds a row, and nothing may skip a
         // grain because an earlier one came back empty. Either shape makes the count a function of
         // the corpus in the direction the pin is blind to reading as a saving.
