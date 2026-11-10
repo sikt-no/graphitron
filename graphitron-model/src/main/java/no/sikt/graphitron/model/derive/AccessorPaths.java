@@ -11,7 +11,7 @@ import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCESSOR_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCESSOR_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_OBJECT;
@@ -40,8 +40,8 @@ import static org.jooq.impl.DSL.val;
  * field's bound name finds exactly one member on the start class in the graph's classpath, and the
  * path calls it, origin {@code INFERRED}, reaching the class it delivers. Or it finds none and the
  * field's type is backed by the start class, and the object passes through, origin {@code EMPTY},
- * reaching its start. A field taking its keys through a member, an {@code ACCESSOR} key row, is the
- * lift onto a table and its need has no accessor path. Marked here and swept by {@link Paths}, whose
+ * reaching its start. A producer taking its keys through a member, its one candidate in
+ * {@link OccurrenceLifts}, lifts onto a table there and its need has no accessor path. Marked here and swept by {@link Paths}, whose
  * sweep takes every inferred and empty path a reading did not mark, the subtypes going with them.
  */
 public final class AccessorPaths {
@@ -134,7 +134,8 @@ public final class AccessorPaths {
         var sl = CODE_READ_SLOT.as("sl");
         var gs2 = STORE_GRAPH_SOURCE.as("gs2");
         var sl2 = CODE_READ_SLOT.as("sl2");
-        var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
+        var c = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_CANDIDATE.as("c");
+        var c2 = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_CANDIDATE.as("c2");
         return select(n.GRAPH_NAME.as("graph_name"), n.COORDINATE.as("coordinate"),
                 n.TARGET_TYPE.as("target_type"), inline(INFERRED).as("origin"),
                 coalesce(sl.ELEMENT_CLASS, sl.ERASED_CLASS, sl.SLOT_TYPE).as("target_class"),
@@ -151,9 +152,16 @@ public final class AccessorPaths {
                 .join(sl2).on(sl2.SOURCE_NAME.eq(gs2.SOURCE_NAME), sl2.CLASS_NAME.eq(n.START_CLASS),
                     sl2.SLOT_NAME.eq(f.BOUND_NAME))
                 .where(gs2.GRAPH_NAME.eq(n.GRAPH_NAME))).eq(1))
-            .and(notExists(selectOne().from(kr)
-                .where(kr.GRAPH_NAME.eq(f.GRAPH_NAME), kr.TYPE_NAME.eq(f.TYPE_NAME),
-                    kr.FIELD_NAME.eq(f.FIELD_NAME), kr.KIND.eq("ACCESSOR"))));
+            // A producer that takes its keys through its one candidate member reads them there; its
+            // member is the lift's, not a path's.
+            .and(notExists(selectOne().from(c)
+                .where(c.GRAPH_NAME.eq(n.GRAPH_NAME), c.COORDINATE.eq(n.COORDINATE),
+                    c.TOUCHED_AT.eq(touchedAt))
+                .and(notExists(selectOne().from(c2)
+                    .where(c2.GRAPH_NAME.eq(c.GRAPH_NAME), c2.COORDINATE.eq(c.COORDINATE),
+                        c2.TOUCHED_AT.eq(touchedAt))
+                    .and(c2.SLOT_SOURCE_NAME.ne(c.SLOT_SOURCE_NAME).or(c2.SLOT_CLASS_NAME.ne(c.SLOT_CLASS_NAME))
+                        .or(c2.SLOT_METHOD_NAME.ne(c.SLOT_METHOD_NAME)).or(c2.SLOT_DESCRIPTOR.ne(c.SLOT_DESCRIPTOR)))))));
     }
 
     /** No member by the bound name, and the target type backed by the start class. */
