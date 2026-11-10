@@ -86,6 +86,30 @@ class DocumentStateCaptureTest {
     }
 
     /**
+     * The skip is safe only because the stamp is written after the rows it vouches for. A reading
+     * stopped between the source reading and the transcription, a cancelled build or a killed dev
+     * session, leaves the claim vouching for nothing, so the next reading transcribes the document
+     * rather than skipping it on the word of rows nobody wrote.
+     */
+    @Test
+    @DisplayName("a reading stopped before its transcription has the document transcribed next time")
+    void aStoppedReadingVouchesForNothing() {
+        ThreadConfinedStore.run(dsl -> {
+            Path directory = temporaryDirectory();
+            write(directory, "widget.graphqls", WIDGET);
+            readStoppedAfterTheClaim(dsl, directory, FIRST);
+            assertThat(positions(dsl, directory, "widget.graphqls"))
+                .as("the stopped reading transcribed nothing").isZero();
+
+            read(dsl, directory, SECOND);
+
+            assertThat(positions(dsl, directory, "widget.graphqls"))
+                .as("the next reading transcribes the unchanged document").isPositive();
+            assertThat(instants(dsl, directory, "widget.graphqls")).containsExactly(SECOND);
+        });
+    }
+
+    /**
      * The other side of the same comparison: bytes that moved are transcribed again, so the skip
      * cannot quietly be a skip of everything.
      */
@@ -223,7 +247,15 @@ class DocumentStateCaptureTest {
         var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        GraphQLSourceCapture.vouch(dsl, GRAPH, documents);
         GraphQLSourceCapture.reclaim(dsl, documents);
+    }
+
+    /** A reading stopped right after the source reading committed, before any transcription. */
+    private static void readStoppedAfterTheClaim(DSLContext dsl, Path baseDir, LocalDateTime readAt) {
+        var graph = new GraphIdentity(GRAPH, baseDir);
+        ModelCapture.writeGraph(dsl, graph, readAt);
+        GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, "*.graphqls"), readAt);
     }
 
     private static SubjectConfig corpus(Path baseDir, String pattern) {

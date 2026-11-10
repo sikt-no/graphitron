@@ -1693,6 +1693,14 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
 
 * **Class initialization cannot deadlock in javapoet** `open`. `TypeName`'s initializer builds no
   `ClassName`, and a test initializing the two from opposite ends on two threads pins it.
+* **A capture stopped partway leaves no stamp vouching for rows it did not write** `done`. Each
+  gatherer commits on its own, and the source readings committed a file's or an entry's stamp
+  before the gatherers that transcribe it; a build cancelled in between left the stamp vouching for
+  half a transcription, and every later run skipped the source on its word, the sakila example
+  drawing 326 defects on its valid schema until its store was deleted by hand. The stamps are now
+  written by `GraphQLSourceCapture.vouch` and `ClasspathSourceCapture.vouch`, which the pass calls
+  once the transcription has committed, so an interrupted capture leaves them unknown and the next
+  one reads the source again. Taken as a drive-by on this item (Alf, 2026-11-10).
 * **A refused compaction does not depend on luck** `done`.
 * **The flaky failures seen in this item's builds have their causes fixed** `done`. A `{@link}`
   into the nameless package no longer compiles it with parameter names, a zone switch, two rental

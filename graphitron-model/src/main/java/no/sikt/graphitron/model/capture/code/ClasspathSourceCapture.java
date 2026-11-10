@@ -66,8 +66,11 @@ public final class ClasspathSourceCapture {
          * classpath: an ancestry walk resolves a supertype in whichever entry declares it, so an
          * entry withheld from the reading would not make its classes unwritten, it would make
          * another entry's answers wrong.
+         *
+         * <p>{@code stamp} is what the entry's bytes hashed to, or null where they could not be
+         * hashed: what {@link #vouch} writes on its source row once the classes are transcribed.
          */
-        record Read(String sourceName, List<ClassfileCensus.ClassAt> classes)
+        record Read(String sourceName, List<ClassfileCensus.ClassAt> classes, String stamp)
             implements ClasspathSource {}
 
         /**
@@ -304,7 +307,7 @@ public final class ClasspathSourceCapture {
         var census = ClassfileCensus.read(declared(classpath), headerOnlyPackage);
         var read = new LinkedHashSet<String>();
         census.entries().forEach(at -> read.add(at.source()));
-        writeSources(dsl, census.entries(), stamps, readAt);
+        writeSources(dsl, census.entries(), readAt);
         // The files under those entries, which is the grain the families below key themselves by
         // and therefore the grain a deletion has to be noticed at. Marked here and swept below, so
         // a class a compile removed takes its rows with it rather than outliving them.
@@ -316,7 +319,7 @@ public final class ClasspathSourceCapture {
         var sources = new java.util.ArrayList<ClasspathSource>();
         for (var at : census.entries()) {
             sources.add(new ClasspathSource.Read(at.source(),
-                byEntry.getOrDefault(at.source(), List.of())));
+                byEntry.getOrDefault(at.source(), List.of()), stamps.get(at.source())));
         }
         for (ClasspathEntry entry : classpath) {
             String name = entry.path().toString();
@@ -326,6 +329,26 @@ public final class ClasspathSourceCapture {
         }
 
         return new Reading(census, List.copyOf(sources), null);
+    }
+
+    /**
+     * Vouches for each entry this reading opened: its source row now says the store's rows of it
+     * are derived from the bytes the reading hashed.
+     *
+     * <p>Called by the pass once the gatherers that transcribe the classes have committed, and the
+     * order is the point: a record of reading commits with or after the facts it vouches for, never
+     * before them. The skip a later reading takes is decided on this stamp alone, so a stamp written
+     * ahead of the classes would let that reading leave an entry whose rows were never written.
+     */
+    public static void vouch(DSLContext dsl, Reading reading) {
+        var t = STORE_SOURCE;
+        for (var source : reading.sources()) {
+            if (source instanceof ClasspathSource.Read read && read.stamp() != null) {
+                dsl.update(t).set(t.STAMP, read.stamp())
+                    .where(t.SOURCE_NAME.eq(read.sourceName()))
+                    .execute();
+            }
+        }
     }
 
     /**
@@ -346,9 +369,15 @@ public final class ClasspathSourceCapture {
         }
     }
 
-    /** The registry row every classpath row hangs its source on, one per entry read. */
+    /**
+     * The registry row every classpath row hangs its source on, one per entry read.
+     *
+     * <p>Its stamp is left unknown, the entry's bytes not yet transcribed: {@link #vouch} writes it
+     * once the classes are, so a capture stopped in between leaves an entry the next reading opens
+     * rather than one it skips on the word of rows nobody wrote.
+     */
     private static void writeSources(DSLContext dsl, List<ClassfileCensus.EntryAt> entries,
-                                     java.util.Map<String, String> stamps, LocalDateTime readAt) {
+                                     LocalDateTime readAt) {
         if (entries.isEmpty()) {
             return;
         }
@@ -356,7 +385,7 @@ public final class ClasspathSourceCapture {
         var rows = entries.stream().collect(Rows.toRowList(
             at -> val(at.source(), t.SOURCE_NAME),
             at -> val(at.kind(), t.SOURCE_KIND),
-            at -> val(stamps.get(at.source()), t.STAMP),
+            at -> val((String) null, t.STAMP),
             at -> val(modifiedAt(at.source()), t.MTIME),
             at -> val(readAt, t.LAST_SEEN),
             at -> val(readAt, t.READ_AT)));

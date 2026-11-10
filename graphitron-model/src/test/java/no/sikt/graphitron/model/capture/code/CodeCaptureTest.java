@@ -1077,8 +1077,10 @@ class CodeCaptureTest {
     private static void withCapture(List<ClasspathEntry> entries, String headerOnlyPackage,
                                     LocalDateTime at, Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
-            CodeCapture.capture(store.dsl(),
-                ClasspathSourceCapture.read(store.dsl(), entries, headerOnlyPackage, at), null, at);
+            var reading = ClasspathSourceCapture.read(store.dsl(), entries, headerOnlyPackage, at);
+            CodeCapture.capture(store.dsl(), reading, null, at);
+            // As the pass does, once the classes are transcribed.
+            ClasspathSourceCapture.vouch(store.dsl(), reading);
             body.accept(store.dsl());
         }
     }

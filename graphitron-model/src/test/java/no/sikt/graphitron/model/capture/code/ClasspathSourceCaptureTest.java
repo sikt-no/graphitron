@@ -51,6 +51,27 @@ class ClasspathSourceCaptureTest {
         }
     }
 
+    /**
+     * The stamp vouches for the classes, so it is written after them: a capture stopped once the
+     * entry was opened and before its classes were transcribed leaves nothing a later capture may
+     * skip on, and that capture opens the entry again.
+     */
+    @Test
+    @DisplayName("a capture stopped before its classes are transcribed has the entry opened again")
+    void aStoppedCaptureVouchesForNothing(@TempDir Path dir) throws IOException {
+        Path entry = entry(dir);
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            capture(dsl, dir, ClasspathEntry.project(entry), null, false);
+            assertThat(capture(dsl, dir, entry, null))
+                .as("nothing vouched for the bytes, so the entry is read rather than skipped")
+                .isInstanceOf(ClasspathSource.Read.class);
+            assertThat(capture(dsl, dir, entry, null))
+                .as("and once a capture finishes, the next one leaves it alone")
+                .isInstanceOf(ClasspathSource.Unchanged.class);
+        }
+    }
+
     @Test
     @DisplayName("a class file rewritten under a directory has the directory read again")
     void aRewrittenClassIsReadAgain(@TempDir Path dir) throws IOException {
@@ -158,12 +179,24 @@ class ClasspathSourceCaptureTest {
 
     private static ClasspathSource capture(DSLContext dsl, Path dir, ClasspathEntry entry,
                                            Observation observation) {
+        return capture(dsl, dir, entry, observation, true);
+    }
+
+    /**
+     * One capture of {@code entry}, vouched for where it {@code finished}: the pass vouches once the
+     * classes are transcribed, and a capture stopped before that point never does.
+     */
+    private static ClasspathSource capture(DSLContext dsl, Path dir, ClasspathEntry entry,
+                                           Observation observation, boolean finished) {
         // Strictly after any floor or mark already taken, the observation's comparisons being strict.
         pause();
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         ModelCapture.writeGraph(dsl, new GraphIdentity(GRAPH, dir), readAt);
         var reading = ClasspathSourceCapture.capture(dsl, GRAPH, List.of(entry), null, readAt,
             observation);
+        if (finished) {
+            ClasspathSourceCapture.vouch(dsl, reading);
+        }
         return reading.sources().stream()
             .filter(source -> source.sourceName().equals(entry.path().toString()))
             .findFirst().orElseThrow();

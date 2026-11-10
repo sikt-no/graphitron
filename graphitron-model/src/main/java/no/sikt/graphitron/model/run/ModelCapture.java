@@ -79,6 +79,9 @@ public final class ModelCapture {
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt, observation);
         CodeCapture.capture(dsl, classes, loader, readAt);
+        // Each stamp after the rows it vouches for: a capture stopped before this leaves the entries
+        // unvouched, and the next one reads them again rather than skipping on their word.
+        ClasspathSourceCapture.vouch(dsl, classes);
 
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         // A document that will not parse ends the capture here, the store keeping its last clean
@@ -91,6 +94,8 @@ public final class ModelCapture {
         // The decode reads only the corpus as written, so it runs ahead of the anchor.
         SdlFactCapture.decode(dsl, graph.name(), GraphQLAssemblyCapture.corpus(documents), readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        // The last gatherer that transcribes one document at a time has committed.
+        GraphQLSourceCapture.vouch(dsl, graph.name(), documents);
         // The composition hands federation-jvm the link the anchor just settled.
         var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
         GraphQLSourceCapture.reclaim(dsl, documents);

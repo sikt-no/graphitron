@@ -333,6 +333,15 @@ write the stamp after the rows it vouches for, which the analysing refresh caden
 materialization refresh runs outside the transaction and its stamps commit in a second one, and which
 needs no existing row to blank.
 
+> Since revised (2026-11-10): the premise above no longer holds. `ModelCapture.capture` commits per
+> gatherer, as `fact-model.adoc` § "Ownership" directs, so a run stopped partway keeps what its
+> earlier gatherers committed, and the source readings committed their stamps ahead of the
+> transcription; an interrupted build left stamps vouching for rows nobody wrote. The write-ordering
+> rule this paragraph keeps has shipped on its own: `GraphQLSourceCapture.vouch` and
+> `ClasspathSourceCapture.vouch` write the stamps once the transcription has committed, leaving them
+> unknown until then. `ClasspathSources.upsert` is gone; what this item deletes is now that ordering's
+> unknown stamp, and only once a refresh can no longer stop between a stamp and its rows.
+
 **What the dropped rule was protecting is left unprotected, deliberately.** Nothing now stops two
 consumer graphs binding one schema file, and `SourceGraph.Shared` stays a general arm rather than
 narrowing to the bundled file. If that turns out to want a rule, it belongs on

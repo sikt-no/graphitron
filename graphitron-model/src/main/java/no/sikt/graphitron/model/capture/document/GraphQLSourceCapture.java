@@ -91,8 +91,12 @@ public final class GraphQLSourceCapture {
         /**
          * A source whose bytes differ from the ones this graph's rows were derived from, which
          * includes a source this graph has never read.
+         *
+         * <p>{@code stamp} is what the bytes hashed to, or null where they could not be hashed:
+         * what {@link #vouch} writes on the claim once the transcription has committed.
          */
-        record Changed(String sourceName, TypeDefinitionRegistry registry) implements Stated {}
+        record Changed(String sourceName, TypeDefinitionRegistry registry, String stamp)
+            implements Stated {}
 
         /**
          * A source whose bytes are the ones this graph's rows were already derived from.
@@ -129,7 +133,7 @@ public final class GraphQLSourceCapture {
          * not composed from it: the engine supplies the built-ins itself, and a corpus redeclaring
          * one would otherwise meet a second declaration no author wrote.
          */
-        record Specification(String sourceName, TypeDefinitionRegistry registry)
+        record Specification(String sourceName, TypeDefinitionRegistry registry, String stamp)
             implements SourceDocument {}
 
         /**
@@ -290,8 +294,8 @@ public final class GraphQLSourceCapture {
             return new SourceDocument.Unchanged(sourceName, registry,
                 !java.util.Objects.equals(recorded, modifiedAt(sourceName)));
         }
-        claimMembership(dsl, graph, sourceName, stamp, readAt);
-        return new SourceDocument.Changed(sourceName, registry);
+        claimMembership(dsl, graph, sourceName, readAt);
+        return new SourceDocument.Changed(sourceName, registry, stamp);
     }
 
     /**
@@ -321,8 +325,8 @@ public final class GraphQLSourceCapture {
         if (stamp.equals(held.get(sourceName))) {
             return new SourceDocument.UnchangedSpecification(sourceName);
         }
-        claimMembership(dsl, graph, sourceName, stamp, readAt);
-        return new SourceDocument.Specification(sourceName, SchemaLoader.parseSpecification());
+        claimMembership(dsl, graph, sourceName, readAt);
+        return new SourceDocument.Specification(sourceName, SchemaLoader.parseSpecification(), stamp);
     }
 
     /** One source's row in the shared relation, dated by this reading. */
@@ -341,22 +345,52 @@ public final class GraphQLSourceCapture {
     }
 
     /**
-     * This graph's claim on one source, carrying the bytes its rows are derived from and when.
+     * This graph's claim on one source it is about to transcribe, dated by this reading and vouching
+     * for no bytes yet.
      *
      * <p>The stamp is the graph's rather than the file's: {@code store_source} holds what the file
-     * last hashed to for whoever read it, and only this answers whether this graph's scope is
-     * current. A stamp that could not date itself would license a skip against an answer of
-     * unknown age.
+     * last hashed to for whoever read it, and only the claim answers whether this graph's scope is
+     * current. It is left unknown here and written by {@link #vouch} once the gatherers that
+     * transcribe the source have committed, so a reading stopped between the two leaves a claim
+     * nothing may skip on: unknown counts as changed, and the next reading transcribes it again.
      */
     private static void claimMembership(DSLContext dsl, String graph, String sourceName,
-                                        String stamp, LocalDateTime readAt) {
+                                        LocalDateTime readAt) {
         var m = STORE_GRAPH_SOURCE;
         dsl.insertInto(m, m.GRAPH_NAME, m.SOURCE_NAME, m.STAMP, m.READ_AT)
-            .values(graph, sourceName, stamp, readAt)
+            .values(graph, sourceName, null, readAt)
             .onDuplicateKeyUpdate()
-            .set(m.STAMP, stamp)
+            .setNull(m.STAMP)
             .set(m.READ_AT, readAt)
             .execute();
+    }
+
+    /**
+     * Vouches for each source this reading transcribed: its claim now says this graph's rows are
+     * derived from the bytes the reading hashed.
+     *
+     * <p>Called by the pass rather than by {@link #capture}, and the order is the point: it runs once
+     * the last gatherer that transcribes a source one document at a time has committed. A record of
+     * reading commits with or after the facts it vouches for, never before them, or a reading stopped
+     * in between leaves a stamp vouching for rows nobody wrote and every later reading skips the
+     * source on its word.
+     */
+    public static void vouch(DSLContext dsl, String graph, List<SourceDocument> documents) {
+        var m = STORE_GRAPH_SOURCE;
+        for (var document : documents) {
+            String stamp = switch (document) {
+                case SourceDocument.Changed changed -> changed.stamp();
+                case SourceDocument.Specification specification -> specification.stamp();
+                case SourceDocument.Unchanged _, SourceDocument.UnchangedSpecification _,
+                     SourceDocument.Dropped _ -> null;
+            };
+            if (stamp != null) {
+                dsl.update(m).set(m.STAMP, stamp)
+                    .where(m.GRAPH_NAME.eq(graph))
+                    .and(m.SOURCE_NAME.eq(document.sourceName()))
+                    .execute();
+            }
+        }
     }
 
     /**
