@@ -563,6 +563,19 @@ static method needs no holder.
         binding yet: one overload applied to two tables is two calls taking one argument at one
         position, which `bound`, spelled from the method alone, cannot tell apart; how to spell it is
         decided when the bindings are first read (Alf, 2026-11-10).
+      * **A node id's key column a projection takes is stated at the landing** `open`. Before the
+        node-id authored conditions, which read it. `graphitron_argmapping_landing` states whether
+        its path descends past the slot it opens; `graphitron_argmapping_landing_key_column`,
+        keyed by the landing and the `graphitron_occurrence_node_id` binding it reads, names the key
+        position a descending or trailing-named landing on a node id projects, its trailing name
+        resolved through `sql_column_spelling`, else a one-column key's, written at the landing's
+        depth after its node ids; `graphitron_occurrence_call_parameter_pair` states the written
+        pair a fill came from. A projection resolving to no column is the pair's defect, and a
+        parameter whose type is not the column's is `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`, widened
+        to every call and to a projected column. A polymorphic node id's projection is refused for
+        now; the third by-type step does not project. The `intent_` projection readers and its other
+        verdicts (bare node id, two trailing names, missing `typeName`) move in a node of their own
+        (Alf, 2026-11-10, the shape weighed with the principles review the same day).
       * **A call's parameter defects are stated for every call** `done`. `PARAMETER_UNFILLED`,
         `PARAMETER_AMBIGUOUS` and `PARAMETER_FILLED_TWICE` read `graphitron_occurrence_call_parameter_defect`,
         which states a `@condition`'s unfilled parameter beside a service's, their statements worded

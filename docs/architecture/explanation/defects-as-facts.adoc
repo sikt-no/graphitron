@@ -102,6 +102,12 @@ under several fields, is one defect; which call, which bound table and which par
 detail relation keyed by the defect plus the occurrence, the call and the parameter's position, never
 the detail string. Only locating the written directive differs by kind (Alf, 2026-11-10).
 
+A projection out of a node id splits its refusals by grain the same way. One that resolves to no key
+column, several columns and none named, a name matching none, or a node id naming an interface or
+union, is the written `argMapping` pair's, reported where the pair is written whichever directive
+wrote it. A parameter whose type is not the column's is the call's: `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`,
+one rule whether the parameter takes the whole decoded key or one projected column (Alf, 2026-11-10).
+
 [#adding-a-defect]
 == Adding a defect
 

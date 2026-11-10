@@ -316,6 +316,20 @@ subtype, where two relations would carry one payload and every reader asking "wh
 call make" would union them. A kind's subtype keeps only what is that kind's own: a condition its
 bound table, a service producer its constructor (Alf, 2026-11-10).
 
+The same holds one grain further down, for a value an `argMapping` path projects out of a node id.
+Which key column the parameter takes is decided by the written pair, the call occurrence it is
+resolved under and the node binding at the landing, never by the method or by which of a
+condition's per-table calls takes it, so it is a fact of the landing:
+`graphitron_argmapping_landing_key_column`, keyed by the landing and the node binding it reads,
+written at the landing's depth after its node ids. Whether the path stops on the slot it opens or
+descends past it is stated on the landing, so a projection that resolves to no column is that
+landing's defect rather than a whole-slot fill read off an absent row. A fill states the written
+pair it came from in `graphitron_occurrence_call_parameter_pair`, written beside the inferred
+fills that have none, so a reader reaches the projection by keys: fill, pair, landing, key column.
+A projection onto a `@nodeId` naming an interface or union, several node bindings at one landing,
+is refused for now, and the condition's third by-type step, which binds a field one level in as
+if `argMapping` named it, does not project (Alf, 2026-11-10).
+
 == Ownership: the second axis, and why `intent_` dissolves
 
 Phase answers what a row is a function of. It does not answer who is responsible for keeping the row current, and that is a different question with different consequences. A relation has both answers, and `intent_` today conflates them: the family is named for the first and is being used to carry the second, which is why it holds rules that have no business being derived at read time and rules that could not be anything else, under one prefix that cannot tell them apart.
