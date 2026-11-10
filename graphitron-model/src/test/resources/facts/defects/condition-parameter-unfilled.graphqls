@@ -1,0 +1,45 @@
+# A @condition's method with a parameter nothing fills is PARAMETER_UNFILLED at the condition, as a
+# @service's is at the service: one defect per written condition, the calls it leaves unfilled named
+# under it. filmsAmbiguous has a String parameter titlePrefix and a String argument description, but
+# filter.name is a String too, so by type cannot say which is meant. occupantsByStore applies one
+# Table<?> declaration to customer and staff, two calls, each leaving its String firstName unfilled
+# by an Int argument. filmsByTitle is the near miss: its one String argument is the only String
+# anywhere, so by type pairs it.
+
+type Film @table(name: "film") { title: String }
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+
+union AddressOccupant = Customer | Staff
+
+input FilmNameInput { name: String }
+
+type Query {
+  filmsAmbiguous(description: String, filter: FilmNameInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
+  occupantsByStore(storeId: Int @field(name: "store_id")): [AddressOccupant!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
+      method: "firstNamePrefix"})
+  filmsByTitle(description: String): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  PARAMETER_UNFILLED, Query.filmsAmbiguous
+  PARAMETER_UNFILLED, Query.occupantsByStore
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  coordinate
+  Query.filmsByTitle
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_parameter", rows: """
+  code,               coordinate,             call,                      position, parameter_name
+  PARAMETER_UNFILLED, Query.filmsAmbiguous,   condition:public.film,     1,        titlePrefix
+  PARAMETER_UNFILLED, Query.occupantsByStore, condition:public.customer, 1,        firstName
+  PARAMETER_UNFILLED, Query.occupantsByStore, condition:public.staff,    1,        firstName
+  """)

@@ -75,3 +75,11 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   ARGMAPPING_PATH_UNRESOLVED, Query.unlandedFilms
   CONTEXT_SITE_UNSUPPORTED,   Query.contextPair
   """)
+
+# Each defect names the parameters it is about, under it.
+extend schema @assertContains(relation: "graphitron_entry_defect_parameter", rows: """
+  code,                   coordinate,           call,     position, parameter_name
+  PARAMETER_UNFILLED,     Query.unfilledFilms,  producer, 1,        ids
+  PARAMETER_AMBIGUOUS,    Query.ambiguousFilms, producer, 1,        filmIds
+  PARAMETER_FILLED_TWICE, Query.greetedTwice,   producer, 0,        userId
+  """)

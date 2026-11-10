@@ -11,6 +11,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
@@ -113,7 +114,7 @@ public final class EntryDefects {
      * {@code readAt} did not mark. Another gatherer's codes are not touched, so each owner sweeps
      * only what it writes; a detail relation's rows under a swept defect go with it by their
      * foreign key. One sweep covers every stage, each having marked its rows with the same instant. A detail row the reading did not mark under a defect it did, a method, claim,
-     * member, table or path step a defect no longer names, is swept here first by its own mark.
+     * member, parameter, table or path step a defect no longer names, is swept here first by its own mark.
      */
     public static void sweep(DSLContext dsl, String graphName, LocalDateTime readAt, String gatherer) {
         var target = GRAPHITRON_ENTRY_DEFECT;
@@ -138,6 +139,12 @@ public final class EntryDefects {
             .where(member.GRAPH_NAME.eq(graphName))
             .and(member.TOUCHED_AT.ne(readAt))
             .and(member.CODE.in(owned))
+            .execute();
+        var parameter = GRAPHITRON_ENTRY_DEFECT_PARAMETER;
+        dsl.deleteFrom(parameter)
+            .where(parameter.GRAPH_NAME.eq(graphName))
+            .and(parameter.TOUCHED_AT.ne(readAt))
+            .and(parameter.CODE.in(owned))
             .execute();
         var table = GRAPHITRON_ENTRY_DEFECT_TABLE;
         dsl.deleteFrom(table)

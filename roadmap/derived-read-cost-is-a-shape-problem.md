@@ -556,12 +556,15 @@ static method needs no holder.
         authored sites off them, run against the database. A condition's fill writes no `PARAMETER`
         binding yet: one overload applied to two tables is two calls taking one argument at one
         position, which `bound`, spelled from the method alone, cannot tell apart; how to spell it is
-        open (Alf).
-      * **A call's parameter defects are stated for every call** `open`. `PARAMETER_UNFILLED`,
-        `PARAMETER_AMBIGUOUS` and `PARAMETER_FILLED_TWICE` off the stored fills of every pinned call,
-        their statements worded to hold for a service and a condition alike, a `feat`; which call,
-        bound table and parameter is a detail relation keyed by the defect plus the occurrence, call
-        and position, and only locating the written directive differs by kind (Alf, 2026-11-10).
+        decided when the bindings are first read (Alf, 2026-11-10).
+      * **A call's parameter defects are stated for every call** `done`. `PARAMETER_UNFILLED`,
+        `PARAMETER_AMBIGUOUS` and `PARAMETER_FILLED_TWICE` read `graphitron_occurrence_call_parameter_defect`,
+        which states a `@condition`'s unfilled parameter beside a service's, their statements worded
+        for a method either calls; `graphitron_entry_defect_parameter` names, under each defect, the
+        occurrence, call and position it is about, so one written directive is one defect however
+        many calls it leaves unfilled. Locating the written directive is the one per-kind branch, the
+        `@service` or `@condition` reference (Alf, 2026-11-10). A condition's ambiguity by type is
+        reported as unfilled, as the classifier reports it.
     * **A `@condition` and a service pair a parameter with an argument by one rule** `open`, off the
       critical path. The condition keeps its own by-type pairing through the flip; the differences
       from the service's, listed under "A `@condition`'s fills", are closed then, one rule for every

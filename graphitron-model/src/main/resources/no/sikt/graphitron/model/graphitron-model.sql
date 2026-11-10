@@ -11616,9 +11616,11 @@ COMMENT ON COLUMN graphitron_occurrence_parameter.position IS 'the parameter''s 
 COMMENT ON COLUMN graphitron_occurrence_parameter.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_call_parameter_defect
-  (graph_name, coordinate, position, parameter_name, code) AS
--- Two written fills for one parameter: nothing says which, so the rule takes neither.
-SELECT DISTINCT w.graph_name, w.coordinate, w.position, w.parameter_name, 'PARAMETER_FILLED_TWICE'
+  (graph_name, coordinate, call, call_kind, position, parameter_name, code) AS
+-- Two written fills for one parameter of a service's call: nothing says which, so the rule takes
+-- neither.
+SELECT DISTINCT w.graph_name, w.coordinate, w.call, ps.call_kind, w.position, w.parameter_name,
+       'PARAMETER_FILLED_TWICE'
   FROM graphitron_occurrence_call_parameter_written w
   JOIN graphitron_occurrence_call_method ps
     ON ps.graph_name = w.graph_name AND ps.coordinate = w.coordinate AND ps.call = w.call
@@ -11627,9 +11629,11 @@ SELECT DISTINCT w.graph_name, w.coordinate, w.position, w.parameter_name, 'PARAM
                     WHERE c.graph_name = w.graph_name AND c.coordinate = w.coordinate
                       AND c.call = 'producer' AND c.position = w.position)
 UNION ALL
--- A parameter with candidates by type that did not bind: it could take more than one argument, or
--- an argument it could take could go to another parameter, so nothing says which.
-SELECT DISTINCT c.graph_name, c.coordinate, c.position, c.parameter_name, 'PARAMETER_AMBIGUOUS'
+-- A parameter of a service's call with candidates by type that did not bind: it could take more
+-- than one argument, or an argument it could take could go to another parameter, so nothing says
+-- which.
+SELECT DISTINCT c.graph_name, c.coordinate, c.call, ps.call_kind, c.position, c.parameter_name,
+       'PARAMETER_AMBIGUOUS'
   FROM graphitron_occurrence_call_parameter_candidate c
   JOIN graphitron_occurrence_call_method ps
     ON ps.graph_name = c.graph_name AND ps.coordinate = c.coordinate AND ps.call = c.call
@@ -11638,9 +11642,10 @@ SELECT DISTINCT c.graph_name, c.coordinate, c.position, c.parameter_name, 'PARAM
                     WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
                       AND s.call = 'producer' AND s.position = c.position)
 UNION ALL
--- A parameter no fill reaches and no argument could fill by type, where no pair names it: a pair
--- that fills nothing is the pair's defect, already reported where it is written.
-SELECT s.graph_name, s.coordinate, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
+-- A parameter of a service's call no fill reaches and no argument could fill by type, where no
+-- pair names it: a pair that fills nothing is the pair's defect, already reported where it is
+-- written.
+SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
   FROM graphitron_occurrence_call_method s
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
    AND s.call_kind = 'SERVICE'
@@ -11661,13 +11666,90 @@ SELECT s.graph_name, s.coordinate, p.position, p.parameter_name, 'PARAMETER_UNFI
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate c
                     WHERE c.graph_name = s.graph_name AND c.coordinate = s.coordinate
                       AND c.call = s.call AND c.method_descriptor = s.method_descriptor
-                      AND c.position = p.position);
-COMMENT ON VIEW graphitron_occurrence_call_parameter_defect IS 'A parameter of a service call that no fill or two fills reach: one row per producer occurrence, parameter and code. For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED.';
+                      AND c.position = p.position)
+UNION ALL
+-- A parameter of a @condition's call no fill reaches, where no pair names it, on the same terms:
+-- by type pairs only where nothing else could be meant, so a parameter it leaves is unfilled.
+SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
+  FROM graphitron_occurrence_call_method s
+  JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+   AND s.call_kind = 'CONDITION'
+  JOIN code_method_parameter p
+    ON p.source_name = s.method_source_name AND p.class_name = s.method_class_name
+   AND p.method_name = s.method_name AND p.descriptor = s.method_descriptor
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter c
+                    WHERE c.graph_name = s.graph_name AND c.coordinate = s.coordinate
+                      AND c.call = s.call AND c.position = p.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
+                    WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
+                      AND pr.directive_name = 'condition' AND pr.owner = 'condition'
+                      AND pr.parameter_name = p.parameter_name);
+COMMENT ON VIEW graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that no fill or two fills reach: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED, whether a @service or a @condition names it.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.coordinate IS 'the producer occurrence making the call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.coordinate IS 'the occurrence making the call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call IS 'which of its calls, as graphitron_occurrence_call spells it';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call_kind IS 'SERVICE or CONDITION, which directive wrote the call and so where the defect is reported';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.position IS 'the parameter''s position';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE, codes of graphitron_defect_type';
+
+-- Where a call's parameter defect is reported, and what it is about: the reference the directive
+-- that wrote the call names its method by, a @service's or a @condition's, with the occurrence, the
+-- call and the parameter under it, so one written directive whose parameter is unfilled in several
+-- calls, under several fields or for several tables, is one defect naming each.
+CREATE VIEW graphitron_entry_defect_parameter_rule
+  (graph_name, source_name, source_line, source_column, code, coordinate, call, position,
+   parameter_name) AS
+SELECT d.graph_name, site.source_name, site.source_line, site.source_column, d.code, d.coordinate,
+       d.call, d.position, d.parameter_name
+  FROM graphitron_occurrence_call_parameter_defect d
+  JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
+  JOIN graphitron_code_reference_site site
+    ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
+   AND ((d.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
+        OR (d.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'));
+COMMENT ON VIEW graphitron_entry_defect_parameter_rule IS 'One row the parameter defect detail rule computes, in the shape graphitron_entry_defect_parameter stores: the rule itself, evaluated on demand rather than read off disk. For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_parameter under the defects it marked, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.graph_name';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.source_name';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.source_line';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.source_column';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.code';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.coordinate';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.call';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.position';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.parameter_name';
+
+CREATE TABLE graphitron_entry_defect_parameter (
+  graph_name     VARCHAR   NOT NULL,
+  source_name    VARCHAR   NOT NULL,
+  source_line    INT       NOT NULL,
+  source_column  INT       NOT NULL,
+  code           VARCHAR   NOT NULL,
+  coordinate     VARCHAR   NOT NULL,
+  call           VARCHAR   NOT NULL,
+  position       INT       NOT NULL,
+  parameter_name VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, coordinate, call, position),
+  -- The defect it details, so a swept defect takes its parameters with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE,
+  -- The call the parameter belongs to, so a call the reading no longer makes is named by nothing.
+  FOREIGN KEY (graph_name, coordinate, call)
+    REFERENCES graphitron_occurrence_call (graph_name, coordinate, call) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_entry_defect_parameter IS 'One parameter a call parameter defect is about, under the defect: one row per defect, occurrence, call and position. For example a @condition on a field returning a union of customer and staff whose method leaves name unfilled is one PARAMETER_UNFILLED defect at the condition with a row for each table''s call.';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.graph_name IS 'the owning graph''s partition, carried from the defect';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.source_name IS 'the defect''s file';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.source_line IS 'the defect''s line, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.source_column IS 'the defect''s column, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.coordinate IS 'the occurrence making the call, at its nested coordinate';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.call IS 'which of its calls, as graphitron_occurrence_call spells it: the condition''s on one table, or the producer''s';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.position IS 'the parameter''s position in the call''s method, completing the key';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without -parameters';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
 -- Where a @nodeId's decoded value lands in Java: at each occurrence of an argument or input field
 -- claiming NODE_ID whose root argument a @service call hands to a parameter, that parameter and the
@@ -14306,15 +14388,12 @@ SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
    AND NOT EXISTS (SELECT 1 FROM code_constructor_buildable b
                     WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name)
 UNION ALL
--- A @service whose method has a parameter no fill or two fills reach, under some occurrence of the
--- call, at the reference: once per code, the parameters being graphitron_occurrence_call_parameter_defect's.
-SELECT DISTINCT site.graph_name, site.source_name, site.source_line, site.source_column, d.code,
+-- A @service's or a @condition's method with a parameter no fill or two fills reach, under some
+-- occurrence of the call, at the reference: once per code, the parameters being
+-- graphitron_entry_defect_parameter's under it.
+SELECT DISTINCT p.graph_name, p.source_name, p.source_line, p.source_column, p.code,
        CAST(NULL AS VARCHAR)
-  FROM graphitron_occurrence_call_parameter_defect d
-  JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
-  JOIN graphitron_code_reference_site site
-    ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
-   AND site.directive_name = 'service' AND site.owner = 'service'
+  FROM graphitron_entry_defect_parameter_rule p
 UNION ALL
 -- A @referenceFor naming a type an earlier @referenceFor on the same declaration already names, at
 -- each application after the first written. Read off the entries within one file, a declaration and
@@ -17800,6 +17879,7 @@ INSERT INTO meta_stage_write VALUES
   ('entry-defects', 'graphitron_entry_defect'),
   ('entry-defects', 'graphitron_entry_defect_claim'),
   ('entry-defects', 'graphitron_entry_defect_member'),
+  ('entry-defects', 'graphitron_entry_defect_parameter'),
   ('entry-defects', 'graphitron_entry_defect_method'),
   ('entry-defects', 'graphitron_entry_defect_path_step'),
   ('entry-defects', 'graphitron_entry_defect_table');
@@ -18199,6 +18279,9 @@ INSERT INTO meta_grain VALUES
   ('entry-defect-member',
    'one member one defect names, in one graph',
    'graph_name, source_name, source_line, source_column, code, member_type_name', 'sdl'),
+  ('entry-defect-parameter',
+   'one call parameter one defect names, in one graph',
+   'graph_name, source_name, source_line, source_column, code, coordinate, call, position', 'sdl'),
   ('entry-defect-table',
    'one table one defect names, in one graph',
    'graph_name, source_name, source_line, source_column, code, table_source_name, table_schema, table_name', 'sdl'),
@@ -18620,11 +18703,11 @@ INSERT INTO graphitron_defect_type VALUES
   ('TABLE_INTERFACE_PARTICIPANT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_INTERFACE_PARTICIPANT_UNBOUND',
    'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.', 'entry-defects'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
-   'A @service method has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and neither the jOOQ context''s type nor a collection the call''s source can hand it. Name it in argMapping or contextArguments, or rename it after the argument it takes.', 'entry-defects'),
+   'A method a @service or a @condition calls has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and nothing it could take by its type. Name it in argMapping or contextArguments, or rename it after the argument it takes.', 'entry-defects'),
   ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',
-   'A @service method''s parameter could take more than one of the call''s arguments by type, or an argument it could take could go to another parameter as well, so nothing says which: name it after its argument, or bind it in argMapping.', 'entry-defects'),
+   'A parameter of a method a @service or a @condition calls could take more than one of the call''s arguments by type, or an argument it could take could go to another parameter as well, so nothing says which: name it after its argument, or bind it in argMapping.', 'entry-defects'),
   ('PARAMETER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_FILLED_TWICE',
-   'A @service method''s parameter is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.', 'entry-defects'),
+   'A parameter of a method a @service or a @condition calls is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.', 'entry-defects'),
   ('KEY_ROW_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ROW_AMBIGUOUS',
    'A @service under a parent holding an object takes its keys through the member of the object''s class returning records of the table its source parameter collects, and more than one member does, so nothing says which: keep one.', 'entry-defects'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
@@ -18838,8 +18921,8 @@ INSERT INTO meta_relation VALUES
    'For example Query.filmsByPath(input.ids:) binds position 0 of FilmService#filmsByIds.',
    'The PARAMETER subtype of graphitron_occurrence_binding, on its key and pinned to its kind by the unique key beside it: the ARGUMENT fill seen from the occurrence, so a reader at an argument asks what takes it without going through the call.'),
   ('graphitron_occurrence_call_parameter_defect', 'graph-occurrence-call-parameter-defect', 'graphitron',
-   'A parameter of a service call that no fill or two fills reach: one row per producer occurrence, parameter and code.',
-   'For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED.',
+   'A parameter of a call that no fill or two fills reach: one row per occurrence, call, parameter and code.',
+   'For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED, whether a @service or a @condition names it.',
    'The members of the one entry defect a @service reference carries per code, joinable rather than folded into the defect''s detail.'),
   ('graphitron_occurrence_column_rule', 'graph-occurrence-binding', 'graphitron',
    'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk.',
@@ -19430,6 +19513,14 @@ INSERT INTO meta_relation VALUES
    'One member a polymorphic @nodeId''s defect names, in the shape graphitron_entry_defect_member stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a union of two node types whose @nodeId lands on a parameter taking one of their records draws a NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER row for the other.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the two per-member codes, so one statement says which members a defect names.'),
+  ('graphitron_entry_defect_parameter', 'entry-defect-parameter', 'graphitron',
+   'One parameter a call parameter defect is about, under the defect: one row per defect, occurrence, call and position.',
+   'For example a @condition on a field returning a union of customer and staff whose method leaves name unfilled is one PARAMETER_UNFILLED defect at the condition with a row for each table''s call.',
+   'One defect per written directive, its parameters a relation beneath it: a defect''s key is its position and code, so the calls one directive makes, under several fields or for several tables, are named here rather than packed into the detail string. Keyed by the defect, the occurrence, the call and the position, with a foreign key to the defect, so a swept defect takes the rows with it.'),
+  ('graphitron_entry_defect_parameter_rule', 'entry-defect-parameter', 'graphitron',
+   'One row the parameter defect detail rule computes, in the shape graphitron_entry_defect_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_parameter under the defects it marked, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the three parameter codes, so one statement says where a defect is and which parameters it names.'),
   ('graphitron_entry_defect_table', 'entry-defect-table', 'graphitron',
    'One table a defect names: one row per defect and candidate table.',
    'For example @table(name: "note") where multischema_a and multischema_b both declare note draws a TABLE_AMBIGUOUS defect with a row for each.',
