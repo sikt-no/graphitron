@@ -114,6 +114,7 @@ A test reads a document through `FactGraphs.reader()`, registered as an extensio
 
 `-Dfacts=<prefix>[,<prefix>...]` narrows `FactExpectationTest` to the documents whose path starts with one, as `-Dfacts=defects/entry-defect`, for iterating on a document without capturing the rest. The whole-corpus gates skip themselves under it.
 
+[#what-a-test-is-built-out-of]
 == What a test is built out of
 
 The tree keeps a *library of examples* and tests draw on it. Real service methods in

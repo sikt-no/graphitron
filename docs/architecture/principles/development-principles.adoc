@@ -265,8 +265,8 @@ the `{@link}` itself; the pipeline tier and the `graphitron-sakila-example` comp
 
 === Behaviour is pinned at the pipeline tier and above
 
-Behaviour is asserted at the SDL to classified model to generated `TypeSpec` pipeline layer; new
-features earn a pipeline test first. Above it, the `graphitron-sakila-example` compile pins type
+Behaviour is asserted at the pipeline layer, a fact document and its reader; new features earn a
+fact document first. Above it, the `graphitron-sakila-example` compile pins type
 correctness and PostgreSQL execution pins behaviour. Asserting on generated Java or SQL text is
 banned: it tests implementation. Behaviour is what a caller sees, rows and round trips; counting
 statements is allowed, reading them is not. Output is never held byte-identical; thin coverage is

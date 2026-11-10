@@ -114,7 +114,8 @@ the detail string. Only locating the written directive differs by kind (Alf, 202
 . Add a detail relation where the defect has more to say, keyed and cascaded as above.
 . Pin it in a fact document: the schema, then the expected rows of each relation the case touches
   with the defect rows beside the fact rows, since the defect is half the answer for that field;
-  and beside them a near miss that draws nothing.
+  and beside them a near miss that draws nothing. Where the document goes and how it states the pair:
+  xref:../how-to/testing.adoc#what-a-test-is-built-out-of[What a test is built out of].
 
 No build reader is needed: once declared with `error` severity, the code stops `validate` and
 `generate` through the store's verdict.

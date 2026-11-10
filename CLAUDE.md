@@ -73,6 +73,7 @@ This is not "skip the build for markdown": both halves of the scope catch faults
 
 Reach for the deeper docs only when the task requires it:
 
+- Writing or changing a test that reads the fact store: it starts from a fact document, and `docs/architecture/how-to/testing.adoc` § "What a test is built out of" says where one goes and how a test reads it.
 - Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/how-to/testing.adoc`, which carries the tier names, locations, decision rubric, and per-tier commands. For *why* the tiers are shaped that way: `docs/architecture/principles/development-principles.adoc`.
 - Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `docs/architecture/index.adoc`.
 - Diagnosing build/test failures specific to the web sandbox: `.claude/web-environment.md`.
