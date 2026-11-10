@@ -309,6 +309,13 @@ because the evidence is in what the readers do with it rather than in the schema
 for is a reader discriminating on `IS NULL` over an entry relation; where one appears, a fact was left
 undecided at capture and every reader has been deciding it since.
 
+The same-payload rule decides where a call's method lives. Every call an occurrence makes, a
+`@service` producer's or a `@condition`'s, states the method it pins, so the method is a fact at the
+call's grain, stored once for every kind in `graphitron_occurrence_call_method` and not on each kind's
+subtype, where two relations would carry one payload and every reader asking "which method does this
+call make" would union them. A kind's subtype keeps only what is that kind's own: a condition its
+bound table, a service producer its constructor (Alf, 2026-11-10).
+
 == Ownership: the second axis, and why `intent_` dissolves
 
 Phase answers what a row is a function of. It does not answer who is responsible for keeping the row current, and that is a different question with different consequences. A relation has both answers, and `intent_` today conflates them: the family is named for the first and is being used to carry the second, which is why it holds rules that have no business being derived at read time and rules that could not be anything else, under one prefix that cannot tell them apart.

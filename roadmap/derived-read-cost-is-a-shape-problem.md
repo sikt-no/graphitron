@@ -498,7 +498,7 @@ static method needs no holder.
     * **Every call an occurrence makes is a row of one supertype** `done`.
       `graphitron_occurrence_call(graph, coordinate, call, call_kind)`, `call` spelled from the
       subtype's own key as `graphitron_occurrence_binding.bound` is (`producer` for a producer's
-      service or routine, `condition:<target_type>`, later `step:<target_type>:<position>` and the
+      service or routine, `condition:<bound>`, later `step:<target_type>:<position>` and the
       expression), each subtype keyed into it with a `call_kind` column of its own, so
       `graphitron_occurrence_producer_service` is a subtype of both the producer and the call. The
       parameter fills, `graphitron_occurrence_call_parameter` as the routine call node widens it, are
@@ -521,20 +521,39 @@ static method needs no holder.
       service's candidates are every method of its reference's class and name rather than the one a
       name-unique reference resolves, so an overload set the store refuses today pins the overload every
       position fills, agreeing with `ServiceCatalog`'s choice where the walk has one; a capability change.
-    * **A `@condition` is a call per table its occurrence binds** `open`. `graphitron_occurrence_condition(graph, coordinate,
-      bound)`, a call subtype keyed into `graphitron_occurrence_binding`, one row per occurrence
-      carrying a `@condition` and per table it binds: a field's `TABLE`, root or child, one per
-      participant; a scalar argument's or input field's `COLUMN`; an `@nodeId` one's `NODE_ID` at the
-      foreign key's target; an input object's or an unmatched one's `TABLE`, so the table is the
-      binding's and no view derives it. `call` is `condition:<bound>`; the pin references
-      `code_condition_method` by `_ref` columns, `ON DELETE SET NULL`, as the step method does. It
-      carries `override_written`, the `override:` written, doomed with the consumption rule and kept
-      for the transition against the review's point that it is a definition-keyed fact repeated
-      per table (Alf, 2026-11-09). Its fills follow the manual's `@condition` reference, § How the
-      method's parameters are bound, today's rules reproduced, condition fills written per depth
-      after the bindings they read. A parameter nothing fills is `PARAMETER_UNFILLED`, the call
-      parameter defects stated for every pinned call off `graphitron_occurrence_call_pin` and worded
-      for any call, reported at the written directive naming the participant (Alf, 2026-11-09).
+    * **A `@condition` is a call per table its occurrence binds** `open`.
+      `graphitron_occurrence_condition(graph, coordinate, bound, call, override_written)`, a call
+      subtype keyed into `graphitron_occurrence_binding`, one row per occurrence carrying a
+      `@condition` and per table it binds: a field's `TABLE`, root or child, one per participant; a
+      scalar argument's or input field's `COLUMN`; an `@nodeId` one's `NODE_ID` at the foreign key's
+      target; an input object's or a `@condition`-taking scalar's `TABLE`, so the table is the
+      binding's and no view derives it. Per table, not per type: the table parameter's type picks the
+      overload, so a discriminated interface on one table is one call. `call` is `condition:<bound>`
+      with `CHECK (call = 'condition:' || bound)`, and readers join on `bound`, never parsing `call`.
+      It carries `override_written`, the `override:` written, doomed with the consumption rule and
+      kept for the transition against the review's point that it is a definition-keyed fact repeated
+      per table (Alf, 2026-11-09); it is the entry's only new reader. Its fills follow the manual's
+      `@condition` reference, § How the method's parameters are bound, today's rules reproduced, by
+      rule views of the condition's own beside the service's, never one view branching on
+      `call_kind`, into the one stored `graphitron_occurrence_call_parameter`, whose check gains a
+      `TABLE` fill only a condition takes, the table being the call's `bound`. The depth writer marks
+      and sweeps calls by kind, so a `@condition` whose binding goes leaves no call and no fills.
+      Three commits, the principles review's shape (Alf, 2026-11-10):
+      * **A call's candidates are stored and its method is a fact of the call** `open`. A refactor
+        over services only: `graphitron_occurrence_call_candidate` becomes a table written per depth
+        before any fill, so no fill or pin view reads a view, and the pinned method moves to
+        `graphitron_occurrence_call_method`, one row per pinned call cascading from `code_method`, off
+        `graphitron_occurrence_producer_service`, which keeps its constructor. Whether a call reads
+        context or the session is read off its stored fills, never a flag.
+      * **A `@condition`'s calls, candidates and fills are written per depth** `open`. Its candidates
+        are the `code_condition_method` overloads whose table parameter takes the bound table, as
+        `graphitron_join_path_step_method` pins a step's; `ConditionEmitter` emits the authored
+        sites off them, run against the database.
+      * **A call's parameter defects are stated for every call** `open`. `PARAMETER_UNFILLED`,
+        `PARAMETER_AMBIGUOUS` and `PARAMETER_FILLED_TWICE` off the stored fills of every pinned call,
+        their statements worded to hold for a service and a condition alike, a `feat`; which call,
+        bound table and parameter is a detail relation keyed by the defect plus the occurrence, call
+        and position, and only locating the written directive differs by kind (Alf, 2026-11-10).
     * **A `@condition` and a service pair a parameter with an argument by one rule** `open`, off the
       critical path. The condition keeps its own by-type pairing through the flip; the differences
       from the service's, listed under "A `@condition`'s fills", are closed then, one rule for every
@@ -2672,8 +2691,8 @@ call's `$context` fills.
 * Whether a `@condition` under `UPDATE` and `DELETE` applies to the rows they match, and whether the
   defect for a condition that decides nothing exists already or is new.
 * Settled (Alf, 2026-11-09): the call holders share a supertype, `graphitron_occurrence_call`, for
-  the parameter rows' one foreign key, and a `@condition` is one call per type its occurrence's rows
-  are, pinning an overload for each, as the join path step does per implementation; see
+  the parameter rows' one foreign key, and a `@condition` is one call per table its occurrence binds,
+  pinning an overload for each, as the join path step does per implementation; see
   "Every call an occurrence makes is a row of one supertype".
 
 ## Tests
@@ -2793,6 +2812,10 @@ the item's life. Already swept once, with seven survivors found and fixed.
 speaks of, and `graphitron_ast_path_entry`'s `anchor_line` and `anchor_column`. `graphitron_path_holder`
 went into `graphitron_occurrence`, a holder being just a coordinate. The anchor's spelling
 `Store.people[Staff]` and the argument spelling `Query.people.storeId` are retired with them.
+
+**Transitional columns.** `graphitron_occurrence_condition.override_written` copies the `override:` a
+`@condition` was written with off `graphitron_ast_field_condition_entry`; the consumption-rule node
+removes the column and the entry together.
 
 **The claim conflict moved into the claim supertype.** `AuthoredClaimConflicts`, its
 `FieldVerdict`, `FieldCoordinate` and `fieldConflicts`, `FieldClaim`, `AuthoredClaimRejectionRows`

@@ -89,6 +89,14 @@ tie for a path step, `CONDITION_NO_OVERLOAD_FOR_PAIR` every overload the step co
 row of `graphitron_entry_defect_method` under its defect, keyed to the method in `code_method`, so
 a reader lists them without parsing the detail.
 
+The call parameter defects are the other. `PARAMETER_UNFILLED`, `PARAMETER_AMBIGUOUS` and
+`PARAMETER_FILLED_TWICE` are stated for every call, a `@service` method's and a `@condition`'s alike,
+and worded to hold for both. A defect's key is its position and code, so one written directive that
+leaves parameters unfilled in several calls, a field binding two tables or an input field consumed
+under several fields, is one defect; which call, which bound table and which parameter is a row of a
+detail relation keyed by the defect plus the occurrence, the call and the parameter's position, never
+the detail string. Only locating the written directive differs by kind (Alf, 2026-11-10).
+
 == Adding a defect
 
 . Declare the code in `graphitron_defect_type`: severity, basis, `lsp_code`, a one-sentence
