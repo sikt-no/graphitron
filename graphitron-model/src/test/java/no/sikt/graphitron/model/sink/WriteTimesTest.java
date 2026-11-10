@@ -13,6 +13,8 @@ import java.nio.file.Path;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_READ;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE_STAGE;
+import static org.jooq.impl.DSL.sum;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -55,10 +57,11 @@ class WriteTimesTest {
     /**
      * A stage that fetches its rule into Java and inserts the rows evaluates the rule in the read, so
      * the reads are timed beside the writes, each named by the relation it reads, and a read under a
-     * millisecond is left out.
+     * millisecond, its preparing included, is left out. H2 parses and plans a statement before it runs,
+     * which for a rule of many arms can cost more than running it, so preparing is counted apart.
      */
     @Test
-    @DisplayName("a capture's reads are timed beside its writes, a millisecond and over")
+    @DisplayName("a capture's reads are timed beside its writes, a millisecond and over, preparing apart")
     void readsAreTimedBesideWrites() {
         try (var store = CapturedStore.ownStoreOfCatalogWith(tmp, CapturedStore.GRAPH,
                 ScaledSchemaFixture.scaledSdl(10), CatalogInput.of(TestRunContext.of()),
@@ -68,7 +71,8 @@ class WriteTimesTest {
 
             assertThat(reads).as("a capture over a schema this size reads for a millisecond somewhere")
                 .isNotEmpty();
-            assertThat(reads).extracting(row -> row.getTimeSpentMs()).allMatch(ms -> ms >= 1);
+            assertThat(reads).extracting(row -> row.getTimeSpentMs() + row.getPrepareMs())
+                .allMatch(ms -> ms >= 1);
             assertThat(reads).extracting(row -> row.getRelationName())
                 .as("the run's own record is not part of what it times")
                 .doesNotContain("STORE_GRAPH_PROGRESS", "STORE_GRAPH_WRITE", "STORE_GRAPH_READ");
@@ -81,6 +85,15 @@ class WriteTimesTest {
                 .extracting(WriteTimes.Statement::kind)
                 .as("the slowest name reads and writes alike")
                 .contains(WriteTimes.Kind.READ, WriteTimes.Kind.WRITE);
+            var writes = store.dsl().selectFrom(w).where(w.GRAPH_NAME.eq(CapturedStore.GRAPH)).fetch();
+            assertThat(writes.stream().mapToLong(row -> row.getPrepareMs()).sum())
+                .as("a capture plans its statements for a millisecond somewhere")
+                .isPositive();
+            var s = STORE_GRAPH_WRITE_STAGE;
+            assertThat(store.dsl().select(sum(s.PREPARE_MS)).from(s)
+                    .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH)).fetchSingle().value1().longValue())
+                .as("the anchor stages' planning is counted under each stage too")
+                .isPositive();
         }
     }
 

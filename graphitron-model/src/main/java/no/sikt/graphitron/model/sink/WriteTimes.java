@@ -31,6 +31,10 @@ import static org.jooq.impl.DSL.noCondition;
  * reads are timed too, through their fetch. A read under a millisecond in a capture is not recorded:
  * the many small lookups would multiply the rows and say nothing.
  *
+ * <p>Preparing a statement, where H2 parses and plans it, is timed apart from running it: a rule
+ * with many arms can cost more to plan than to evaluate, and the cache of a capture's session holds
+ * few statements, so a statement run once per depth is planned every time.
+ *
  * <p>Counted only between the capture's own start and finish, held in memory meanwhile and written
  * once the capture finishes under the instant it began, so a capture that stops partway writes
  * nothing and every finished capture keeps its own rows. The progress rows and these relations' own
@@ -48,8 +52,9 @@ public final class WriteTimes implements ExecuteListener {
         Pattern.CASE_INSENSITIVE);
     private static final Set<String> UNCOUNTED = Set.of("STORE_GRAPH_PROGRESS", "STORE_GRAPH_WRITE",
         "STORE_GRAPH_WRITE_STAGE", "STORE_GRAPH_READ");
-    private static final long READ_FLOOR_NANOS = 1_000_000;
     private static final String STARTED = WriteTimes.class.getName() + ".started";
+    private static final String PREPARING = WriteTimes.class.getName() + ".preparing";
+    private static final String PREPARED = WriteTimes.class.getName() + ".prepared";
 
     private record Key(String gatherer, String table) {}
 
@@ -59,6 +64,7 @@ public final class WriteTimes implements ExecuteListener {
         int statements;
         long rows;
         long nanos;
+        long prepareNanos;
     }
 
     private final transient Map<Key, Total> totals = new LinkedHashMap<>();
@@ -74,39 +80,39 @@ public final class WriteTimes implements ExecuteListener {
 
     /**
      * What one capture of a graph spent on one relation: written or read, by which gatherer, in how
-     * many statements, over how many rows and how long.
+     * many statements, over how many rows, how long running them took and how long preparing them.
      */
     public record Statement(String graph, Kind kind, String relation, String gatherer, int statements,
-                            long rows, long millis) {}
+                            long rows, long millis, long prepareMillis) {}
 
     /**
      * The {@code limit} relations {@code graphName}'s latest finished capture spent longest on,
-     * written or read, or, where {@code graphName} is null, the slowest across every graph's latest
-     * capture.
+     * preparing and running statements that wrote or read them, or, where {@code graphName} is null,
+     * the slowest across every graph's latest capture.
      */
     public static List<Statement> slowest(DSLContext dsl, String graphName, int limit) {
         var w = STORE_GRAPH_WRITE;
         var latest = STORE_GRAPH_WRITE.as("latest");
         var statements = new ArrayList<Statement>(dsl
             .select(w.GRAPH_NAME, w.TABLE_NAME, w.GATHERER_NAME, w.STATEMENTS, w.ROWS_WRITTEN,
-                w.TIME_SPENT_MS)
+                w.TIME_SPENT_MS, w.PREPARE_MS)
             .from(w)
             .where(graphName == null ? noCondition() : w.GRAPH_NAME.eq(graphName))
             .and(w.CAPTURED_AT.eq(dsl.select(max(latest.CAPTURED_AT)).from(latest)
                 .where(latest.GRAPH_NAME.eq(w.GRAPH_NAME))))
             .fetch(row -> new Statement(row.value1(), Kind.WRITE, row.value2(), row.value3(),
-                row.value4(), row.value5(), row.value6())));
+                row.value4(), row.value5(), row.value6(), row.value7())));
         var r = STORE_GRAPH_READ;
         statements.addAll(dsl
             .select(r.GRAPH_NAME, r.RELATION_NAME, r.GATHERER_NAME, r.STATEMENTS, r.ROWS_READ,
-                r.TIME_SPENT_MS)
+                r.TIME_SPENT_MS, r.PREPARE_MS)
             .from(r)
             .where(graphName == null ? noCondition() : r.GRAPH_NAME.eq(graphName))
             .and(r.CAPTURED_AT.eq(dsl.select(max(latest.CAPTURED_AT)).from(latest)
                 .where(latest.GRAPH_NAME.eq(r.GRAPH_NAME))))
             .fetch(row -> new Statement(row.value1(), Kind.READ, row.value2(), row.value3(),
-                row.value4(), row.value5(), row.value6())));
-        statements.sort(Comparator.comparingLong(Statement::millis).reversed()
+                row.value4(), row.value5(), row.value6(), row.value7())));
+        statements.sort(Comparator.comparingLong((Statement s) -> s.millis() + s.prepareMillis()).reversed()
             .thenComparing(Statement::graph).thenComparing(Statement::relation)
             .thenComparing(Statement::kind));
         return statements.subList(0, Math.min(limit, statements.size()));
@@ -183,27 +189,43 @@ public final class WriteTimes implements ExecuteListener {
         if (!written.isEmpty()) {
             var t = STORE_GRAPH_WRITE;
             var insert = dsl.insertInto(t, t.GRAPH_NAME, t.CAPTURED_AT, t.GATHERER_NAME, t.TABLE_NAME,
-                t.STATEMENTS, t.ROWS_WRITTEN, t.TIME_SPENT_MS);
+                t.STATEMENTS, t.ROWS_WRITTEN, t.TIME_SPENT_MS, t.PREPARE_MS);
             written.forEach((key, total) -> insert.values(graphName, at, key.gatherer(), key.table(),
-                total.statements, total.rows, total.nanos / 1_000_000));
+                total.statements, total.rows, total.nanos / 1_000_000, total.prepareNanos / 1_000_000));
             insert.execute();
         }
         if (!staged.isEmpty()) {
             var t = STORE_GRAPH_WRITE_STAGE;
             var insert = dsl.insertInto(t, t.GRAPH_NAME, t.CAPTURED_AT, t.GATHERER_NAME, t.TABLE_NAME,
-                t.STAGE_NAME, t.STATEMENTS, t.ROWS_WRITTEN, t.TIME_SPENT_MS);
+                t.STAGE_NAME, t.STATEMENTS, t.ROWS_WRITTEN, t.TIME_SPENT_MS, t.PREPARE_MS);
             staged.forEach((key, total) -> insert.values(graphName, at, key.gatherer(), key.table(),
-                key.stage(), total.statements, total.rows, total.nanos / 1_000_000));
+                key.stage(), total.statements, total.rows, total.nanos / 1_000_000,
+                total.prepareNanos / 1_000_000));
             insert.execute();
         }
-        read.values().removeIf(total -> total.nanos < READ_FLOOR_NANOS);
+        // The floor on what is written, each figure in whole milliseconds.
+        read.values().removeIf(total -> total.nanos / 1_000_000 + total.prepareNanos / 1_000_000 < 1);
         if (!read.isEmpty()) {
             var t = STORE_GRAPH_READ;
             var insert = dsl.insertInto(t, t.GRAPH_NAME, t.CAPTURED_AT, t.GATHERER_NAME,
-                t.RELATION_NAME, t.STATEMENTS, t.ROWS_READ, t.TIME_SPENT_MS);
+                t.RELATION_NAME, t.STATEMENTS, t.ROWS_READ, t.TIME_SPENT_MS, t.PREPARE_MS);
             read.forEach((key, total) -> insert.values(graphName, at, key.gatherer(), key.table(),
-                total.statements, total.rows, total.nanos / 1_000_000));
+                total.statements, total.rows, total.nanos / 1_000_000, total.prepareNanos / 1_000_000));
             insert.execute();
+        }
+    }
+
+    @Override
+    public synchronized void prepareStart(ExecuteContext ctx) {
+        if (graph != null) {
+            ctx.data(PREPARING, System.nanoTime());
+        }
+    }
+
+    @Override
+    public void prepareEnd(ExecuteContext ctx) {
+        if (ctx.data(PREPARING) instanceof Long preparing) {
+            ctx.data(PREPARED, System.nanoTime() - preparing);
         }
     }
 
@@ -221,6 +243,7 @@ public final class WriteTimes implements ExecuteListener {
             return;
         }
         long nanos = System.nanoTime() - started;
+        long prepareNanos = ctx.data(PREPARED) instanceof Long prepared ? prepared : 0;
         String[] batch = ctx.batchSQL();
         String sql = ctx.sql() != null ? ctx.sql() : batch.length > 0 ? batch[0] : null;
         if (sql == null) {
@@ -255,12 +278,14 @@ public final class WriteTimes implements ExecuteListener {
             total.statements++;
             total.rows += rows;
             total.nanos += nanos;
+            total.prepareNanos += prepareNanos;
             if (writes && stage != null) {
                 var staged = stageTotals.computeIfAbsent(new StageKey(gatherer, relation, stage),
                     k -> new Total());
                 staged.statements++;
                 staged.rows += rows;
                 staged.nanos += nanos;
+                staged.prepareNanos += prepareNanos;
             }
         }
     }

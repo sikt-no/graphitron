@@ -383,10 +383,11 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 + "one read from its installed copy for want of output, whose names then read as not "
                 + "found. And, as slowestStatements, the relations the last finished capture spent "
                 + "longest on, each a WRITE of a table or a READ of a table or view, with the gatherer, "
-                + "its statements, rows and milliseconds: a stage's rule is evaluated inside the write "
+                + "its statements, rows, milliseconds running them and prepareMilliseconds H2 spent "
+                + "parsing and planning them first: a stage's rule is evaluated inside the write "
                 + "that stores it, or inside the read where a stage fetches its rule and inserts the "
-                + "rows, so this is where a slow capture's time went; allGraphs lists them across "
-                + "every graph the store holds.")
+                + "rows, so this is where a slow capture's time went, longest of the two together first; "
+                + "allGraphs lists them across every graph the store holds.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
@@ -464,7 +465,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .map(statement -> Map.<String, Object>of("graph", statement.graph(),
                 "kind", statement.kind().name(), "relation", statement.relation(),
                 "gatherer", statement.gatherer(), "statements", statement.statements(),
-                "rows", statement.rows(), "milliseconds", statement.millis()))
+                "rows", statement.rows(), "milliseconds", statement.millis(),
+                "prepareMilliseconds", statement.prepareMillis()))
             .toList();
     }
 

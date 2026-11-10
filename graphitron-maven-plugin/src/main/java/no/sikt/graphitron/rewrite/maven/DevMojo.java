@@ -1022,6 +1022,8 @@ public class DevMojo extends AbstractRewriteMojo {
                 getLog().info("graphitron:dev: slowest statements: " + slowest.stream()
                     .map(statement -> statement.relation().toLowerCase(Locale.ROOT) + " "
                         + String.format(Locale.ROOT, "%.1f s", statement.millis() / 1000.0)
+                        + (statement.prepareMillis() > 0 ? String.format(Locale.ROOT, " + %.1f s preparing",
+                            statement.prepareMillis() / 1000.0) : "")
                         + " (" + statement.gatherer() + " "
                         + statement.kind().name().toLowerCase(Locale.ROOT) + ")")
                     .collect(Collectors.joining(", ")));

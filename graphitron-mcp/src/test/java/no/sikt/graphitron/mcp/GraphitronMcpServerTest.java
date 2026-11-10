@@ -350,7 +350,10 @@ class GraphitronMcpServerTest {
         }
     }
 
-    /** The relations a capture spent longest on, written or read, are in the status, slowest first. */
+    /**
+     * The relations a capture spent longest on, written or read, are in the status, slowest first by
+     * the time running and preparing their statements took together.
+     */
     @Test
     void statusToolNamesTheSlowestWrites(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
@@ -358,11 +361,13 @@ class GraphitronMcpServerTest {
                 .get("slowestStatements");
             assertThat(writes).isNotEmpty().hasSizeLessThanOrEqualTo(5);
             var millis = writes.stream()
-                .map(w -> ((Number) ((Map<?, ?>) w).get("milliseconds")).longValue())
+                .map(w -> ((Number) ((Map<?, ?>) w).get("milliseconds")).longValue()
+                    + ((Number) ((Map<?, ?>) w).get("prepareMilliseconds")).longValue())
                 .toList();
             assertThat(millis).isSortedAccordingTo(java.util.Comparator.reverseOrder());
             assertThat(List.<Object>copyOf(((Map<?, ?>) writes.get(0)).keySet()))
-                .contains("graph", "kind", "relation", "gatherer", "statements", "rows");
+                .contains("graph", "kind", "relation", "gatherer", "statements", "rows",
+                    "milliseconds", "prepareMilliseconds");
         }
     }
 
@@ -377,8 +382,8 @@ class GraphitronMcpServerTest {
                 .execute();
             var w = no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE;
             dsl.insertInto(w, w.GRAPH_NAME, w.CAPTURED_AT, w.GATHERER_NAME, w.TABLE_NAME, w.STATEMENTS,
-                    w.ROWS_WRITTEN, w.TIME_SPENT_MS)
-                .values("other", at, "graphitron", "GRAPHITRON_FIELD_SOURCE_TABLE", 1, 1L, 3_600_000L)
+                    w.ROWS_WRITTEN, w.TIME_SPENT_MS, w.PREPARE_MS)
+                .values("other", at, "graphitron", "GRAPHITRON_FIELD_SOURCE_TABLE", 1, 1L, 3_600_000L, 0L)
                 .execute();
 
             var own = (List<?>) structured(GraphitronMcpServer.statusResult(fixture.handle()))

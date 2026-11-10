@@ -17313,12 +17313,14 @@ CREATE TABLE store_graph_write (
   statements    INT       NOT NULL,
   rows_written  BIGINT    NOT NULL,
   time_spent_ms BIGINT    NOT NULL,
+  prepare_ms    BIGINT    NOT NULL,
   PRIMARY KEY (graph_name, captured_at, gatherer_name, table_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
   FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name) ON DELETE CASCADE,
   CHECK (statements > 0),
   CHECK (rows_written >= 0),
-  CHECK (time_spent_ms >= 0)
+  CHECK (time_spent_ms >= 0),
+  CHECK (prepare_ms >= 0)
 );
 COMMENT ON TABLE store_graph_write IS 'How long one finished capture of a graph spent writing one table: one row per table each gatherer wrote, every capture keeping its own. For example graphitron_occurrence_column written by the graphitron gatherer in two statements, its rule evaluated inside the insert.';
 COMMENT ON COLUMN store_graph_write.graph_name IS 'the graph the capture read';
@@ -17327,7 +17329,8 @@ COMMENT ON COLUMN store_graph_write.gatherer_name IS 'the gatherer running when 
 COMMENT ON COLUMN store_graph_write.table_name IS 'the table written, as the statement names it, in upper case';
 COMMENT ON COLUMN store_graph_write.statements IS 'how many insert, merge, update and delete statements wrote it, a batch counting once';
 COMMENT ON COLUMN store_graph_write.rows_written IS 'the rows those statements reported changing';
-COMMENT ON COLUMN store_graph_write.time_spent_ms IS 'the milliseconds those statements took between them, a stage''s rule being evaluated inside its write';
+COMMENT ON COLUMN store_graph_write.time_spent_ms IS 'the milliseconds those statements took to execute between them, a stage''s rule being evaluated inside its write; preparing them is prepare_ms';
+COMMENT ON COLUMN store_graph_write.prepare_ms IS 'the milliseconds H2 spent preparing those statements, parsing and planning them before they ran; near nothing for a statement its session''s cache already held';
 
 CREATE TABLE store_graph_write_stage (
   graph_name    VARCHAR   NOT NULL,
@@ -17338,13 +17341,15 @@ CREATE TABLE store_graph_write_stage (
   statements    INT       NOT NULL,
   rows_written  BIGINT    NOT NULL,
   time_spent_ms BIGINT    NOT NULL,
+  prepare_ms    BIGINT    NOT NULL,
   PRIMARY KEY (graph_name, captured_at, gatherer_name, table_name, stage_name),
   FOREIGN KEY (graph_name, captured_at, gatherer_name, table_name)
     REFERENCES store_graph_write (graph_name, captured_at, gatherer_name, table_name) ON DELETE CASCADE,
   FOREIGN KEY (stage_name) REFERENCES meta_stage (stage_name) ON DELETE CASCADE,
   CHECK (statements > 0),
   CHECK (rows_written >= 0),
-  CHECK (time_spent_ms >= 0)
+  CHECK (time_spent_ms >= 0),
+  CHECK (prepare_ms >= 0)
 );
 COMMENT ON TABLE store_graph_write_stage IS 'One table one stage of a gatherer''s anchor phase wrote in one finished capture of a graph, and how long that stage spent on it. For example graphitron_path_need written by the occurrence-depths stage of the graphitron gatherer, once per depth.';
 COMMENT ON COLUMN store_graph_write_stage.graph_name IS 'the graph the capture read';
@@ -17354,7 +17359,8 @@ COMMENT ON COLUMN store_graph_write_stage.table_name IS 'the table written, as t
 COMMENT ON COLUMN store_graph_write_stage.stage_name IS 'the stage running when the table was written, a meta_stage key';
 COMMENT ON COLUMN store_graph_write_stage.statements IS 'how many insert, merge, update and delete statements the stage wrote it with, a batch counting once';
 COMMENT ON COLUMN store_graph_write_stage.rows_written IS 'the rows those statements reported changing';
-COMMENT ON COLUMN store_graph_write_stage.time_spent_ms IS 'the milliseconds those statements took between them';
+COMMENT ON COLUMN store_graph_write_stage.time_spent_ms IS 'the milliseconds those statements took to execute between them';
+COMMENT ON COLUMN store_graph_write_stage.prepare_ms IS 'the milliseconds H2 spent preparing those statements before they ran';
 
 CREATE TABLE store_graph_read (
   graph_name    VARCHAR   NOT NULL,
@@ -17364,21 +17370,25 @@ CREATE TABLE store_graph_read (
   statements    INT       NOT NULL,
   rows_read     BIGINT    NOT NULL,
   time_spent_ms BIGINT    NOT NULL,
+  prepare_ms    BIGINT    NOT NULL,
   PRIMARY KEY (graph_name, captured_at, gatherer_name, relation_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
   FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name) ON DELETE CASCADE,
   CHECK (statements > 0),
   CHECK (rows_read >= 0),
-  CHECK (time_spent_ms >= 1)
+  CHECK (time_spent_ms >= 0),
+  CHECK (prepare_ms >= 0),
+  CHECK (time_spent_ms + prepare_ms >= 1)
 );
-COMMENT ON TABLE store_graph_read IS 'How long one finished capture of a graph spent reading one relation: one row per relation each gatherer read for a millisecond or more, every capture keeping its own. For example a rule view read by a stage that fetches it into Java and inserts the rows, the view evaluated in the read.';
+COMMENT ON TABLE store_graph_read IS 'How long one finished capture of a graph spent reading one relation: one row per relation each gatherer spent a millisecond or more preparing and reading, every capture keeping its own. For example a rule view read by a stage that fetches it into Java and inserts the rows, the view evaluated in the read.';
 COMMENT ON COLUMN store_graph_read.graph_name IS 'the graph the capture read';
 COMMENT ON COLUMN store_graph_read.captured_at IS 'when the capture began, on store_graph_write''s terms, so a capture''s reads and writes are one capture';
 COMMENT ON COLUMN store_graph_read.gatherer_name IS 'the gatherer running when the relation was read, or capture for reads outside any; keyed into meta_gatherer';
 COMMENT ON COLUMN store_graph_read.relation_name IS 'the first relation the query reads from, a table or a view, in upper case; a rule a stage fetches is named by its view';
 COMMENT ON COLUMN store_graph_read.statements IS 'how many queries read it';
 COMMENT ON COLUMN store_graph_read.rows_read IS 'the rows those queries returned, where the result was fetched whole';
-COMMENT ON COLUMN store_graph_read.time_spent_ms IS 'the milliseconds those queries took between them, fetch included; a relation read for less than one in a capture is not recorded';
+COMMENT ON COLUMN store_graph_read.time_spent_ms IS 'the milliseconds those queries took to execute between them, fetch included; a relation whose queries took less than one with their preparing is not recorded';
+COMMENT ON COLUMN store_graph_read.prepare_ms IS 'the milliseconds H2 spent preparing those queries, parsing and planning them before they ran';
 
 CREATE TABLE meta_gatherer_corpus (
   gatherer_name VARCHAR NOT NULL,
@@ -18546,7 +18556,7 @@ INSERT INTO meta_relation VALUES
    'For example graphitron_path_need written by the occurrence-depths stage of the graphitron gatherer, once per depth.',
    'store_graph_write says which table a capture''s time went to and which gatherer wrote it, and a gatherer''s anchor phase is a sequence of stages, so this says which stage. Written by WriteTimes beside the row it details, from the stage AnchorStage names while it runs, and only for writes inside a stage. Two readers: the gate holding each stage to the relations meta_stage_write declares for it, which reads every fact document''s captures, and whoever prices a stage, the per-stage time being what a split of one stage''s work is measured by. No sweep: it goes with its store_graph_write row.'),
   ('store_graph_read', 'gatherer-relation-read', 'capture',
-   'How long one finished capture of a graph spent reading one relation: one row per relation each gatherer read for a millisecond or more, every capture keeping its own.',
+   'How long one finished capture of a graph spent reading one relation: one row per relation each gatherer spent a millisecond or more preparing and reading, every capture keeping its own.',
    'For example a rule view read by a stage that fetches it into Java and inserts the rows, the view evaluated in the read.',
    'A stage that fetches its rule into Java and inserts the rows evaluates the rule in the read, which store_graph_write never sees: one such rule went from 7.7 s to 37.9 s on sis with nothing recording it. Timed by the same WriteTimes listener as the writes, through the fetch, under the gatherer Progress last started, named by the first relation the query reads from. A relation read for under a millisecond in a capture is not recorded, so the small lookups every capture makes do not multiply its rows. Written when the capture finishes, beside its writes and under the same instant; no sweep, every capture keeping its rows as store_graph_write does, and a graph that goes takes them by cascade. Read with the writes by MCP status and the dev loop.'),
   ('store_graph_dependency', 'graph-dependency', 'store',
