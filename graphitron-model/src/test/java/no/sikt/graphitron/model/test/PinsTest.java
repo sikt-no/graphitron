@@ -59,6 +59,15 @@ class PinsTest {
     }
 
     @Test
+    @DisplayName("a claim on a schema problem pins a defect: the stage and the toolchain's kind")
+    void problemsAreDefects() {
+        assertThat(pins("defects/base-less-extension", "graphql_schema_problem", List.of("stage", "error_class"),
+                List.of("ASSEMBLY", "TypeExtensionMissingBaseTypeError"), Mode.CONTAINS))
+            .containsExactly(new Pin(Family.DEFECT, "graphql_schema_problem",
+                "ASSEMBLY|TypeExtensionMissingBaseTypeError"));
+    }
+
+    @Test
     @DisplayName("a claim on an occurrence's detail pins the occurrence through that detail")
     void occurrenceFamily() {
         assertThat(pins(SERVICES, "graphitron_occurrence_producer_result", List.of("coordinate", "shape"),
@@ -74,13 +83,13 @@ class PinsTest {
     @DisplayName("a family is the relations declared at its anchor's grain")
     void membersShareTheGrain() {
         var members = FACTS.read(SERVICES, graph -> Pins.membersOf(graph.handle().dsl()));
-        assertThat(members.get(Family.DEFECT)).contains("GRAPHITRON_ENTRY_DEFECT_SITE")
+        assertThat(members.get(Pins.Anchor.DEFECT)).contains("GRAPHITRON_ENTRY_DEFECT_SITE")
             .as("a detail keying one method of a defect is a grain of its own")
             .doesNotContain("GRAPHITRON_ENTRY_DEFECT_METHOD");
-        assertThat(members.get(Family.OCCURRENCE)).contains("GRAPHITRON_OCCURRENCE_PRODUCER_RESULT")
+        assertThat(members.get(Pins.Anchor.OCCURRENCE)).contains("GRAPHITRON_OCCURRENCE_PRODUCER_RESULT")
             .as("a step of an occurrence's path keys something finer than the occurrence")
             .doesNotContain("GRAPHITRON_JOIN_PATH_STEP", "GRAPHITRON_FIELD");
-        assertThat(members.get(Family.CLAIM)).contains("GRAPHITRON_PRODUCER_CLAIM");
+        assertThat(members.get(Pins.Anchor.CLAIM)).contains("GRAPHITRON_PRODUCER_CLAIM");
     }
 
     @Test

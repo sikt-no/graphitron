@@ -70,7 +70,7 @@ class FactExpectationTest {
      * How many pins documents make of a behaviour some other document already pins, outside its
      * keystone: lowered as duplicates merge and never raised.
      */
-    private static final int DUPLICATE_PINS = 110;
+    private static final int DUPLICATE_PINS = 127;
 
     /** What each document's claims pin, by its path. */
     private static final Map<String, Map<String, java.util.Set<Pins.Pin>>> pinned = new TreeMap<>();

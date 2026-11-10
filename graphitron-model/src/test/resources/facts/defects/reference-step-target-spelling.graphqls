@@ -25,3 +25,11 @@ extend schema @expectEquals(relation: "graphitron_spelled_table", where: "spelli
   Event,               multischema_a, event,      2
   Event,               multischema_b, event,      2
   """)
+
+# A spelling naming no table is refused as naming nothing.
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  ELEMENT_UNRESOLVED, Film.emptyName
+  ELEMENT_UNRESOLVED, Film.emptySchema
+  ELEMENT_UNRESOLVED, Film.threeParts
+  """)

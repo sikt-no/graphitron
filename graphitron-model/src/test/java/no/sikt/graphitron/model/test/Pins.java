@@ -18,8 +18,9 @@ import java.util.TreeSet;
  * rows each claim matched. A document pins a behaviour when its claims assert rows of it; containing
  * one is not pinning it, since every scenario holds a table type's claim and few say so.
  *
- * <p>The behaviours fall in three families, each anchored on one relation: the claims elements make,
- * the defects a reading finds, and the occurrences an element has along a chain. A claimed relation
+ * <p>The behaviours fall in three families: the claims elements make, the defects a reading finds,
+ * and the occurrences an element has along a chain, each read from an anchor relation, the defects
+ * from two, since a refusal the toolchain raises answers an author as a defect does. A claimed relation
  * belongs to a family when {@code meta_relation} declares it at the anchor's grain, so a new relation
  * stating more about the same thing joins its family by being declared. Each family states its behaviour in
  * structural kinds, never names: two documents pinning a {@code SERVICE} claim on a field pin the
@@ -29,13 +30,16 @@ final class Pins {
 
     private Pins() {}
 
+    /** A family of behaviours, which one or more anchors pin. */
+    enum Family { CLAIM, DEFECT, OCCURRENCE }
+
     /**
-     * A family of behaviours: its anchor, the anchor's key, the projections that pin as the anchor
-     * itself rather than as a facet of it, and its shape.
+     * A relation a family's behaviours are read from: its family, the relation, its key, the
+     * projections that pin as the anchor itself rather than as a facet of it, and its shape.
      */
-    enum Family {
+    enum Anchor {
         /** The claims elements make: the claim's kind and the kind of element making it. */
-        CLAIM("graphitron_claim", List.of("graph_name", "coordinate", "kind", "claimer"),
+        CLAIM(Family.CLAIM, "graphitron_claim", List.of("graph_name", "coordinate", "kind", "claimer"),
             List.of("graphitron_producer_claim"), """
             SELECT DISTINCT CONCAT_WS('|', k.kind, COALESCE(e.element_kind, '-'))
               FROM graphitron_claim k
@@ -46,7 +50,7 @@ final class Pins {
          * The defects a reading finds: the code, the kind of AST entry it sits at, and the directive
          * applied there or around it, found in the hops {@code graphitron_entry_defect_site} takes.
          */
-        DEFECT("graphitron_entry_defect",
+        DEFECT(Family.DEFECT, "graphitron_entry_defect",
             List.of("graph_name", "source_name", "source_line", "source_column", "code"),
             List.of("graphitron_entry_defect_site"), """
             SELECT DISTINCT CONCAT_WS('|', k.code, n.entry_kind, COALESCE(a.directive_name, '-'))
@@ -72,8 +76,18 @@ final class Pins {
                      WHEN n.entry_kind LIKE '%DIRECTIVE' THEN n.source_column END
              WHERE (k.graph_name, k.source_name, k.source_line, k.source_column, k.code) IN ({0})
             """),
+        /**
+         * The refusals the toolchain raises making a schema of the documents: the stage and the
+         * stage's own name for the kind. Not entry defects, having no declared code and not always a
+         * written position, but the same answer to an author: this schema is refused, and why.
+         */
+        PROBLEM(Family.DEFECT, "graphql_schema_problem", List.of("graph_name", "stage", "ordinal"), List.of(), """
+            SELECT DISTINCT CONCAT_WS('|', k.stage, k.error_class)
+              FROM graphql_schema_problem k
+             WHERE (k.graph_name, k.stage, k.ordinal) IN ({0})
+            """),
         /** The occurrences along a chain: the occurrence's kind, its producer's, root or nested. */
-        OCCURRENCE("graphitron_occurrence", List.of("graph_name", "coordinate"), List.of(), """
+        OCCURRENCE(Family.OCCURRENCE, "graphitron_occurrence", List.of("graph_name", "coordinate"), List.of(), """
             SELECT DISTINCT CONCAT_WS('|', k.kind, COALESCE(p.kind, '-'),
                                       CASE WHEN k.depth = 0 THEN 'ROOT' ELSE 'NESTED' END)
               FROM graphitron_occurrence k
@@ -82,12 +96,14 @@ final class Pins {
              WHERE (k.graph_name, k.coordinate) IN ({0})
             """);
 
+        final Family family;
         final String anchor;
         final List<String> key;
         final List<String> projections;
         final String shape;
 
-        Family(String anchor, List<String> key, List<String> projections, String shape) {
+        Anchor(Family family, String anchor, List<String> key, List<String> projections, String shape) {
+            this.family = family;
             this.anchor = anchor;
             this.key = key;
             this.projections = projections;
@@ -112,7 +128,7 @@ final class Pins {
     }
 
     /** Each family's members, by upper-cased relation name, asked of the store's constraints once. */
-    private static volatile Map<Family, Set<String>> members;
+    private static volatile Map<Anchor, Set<String>> members;
 
     /**
      * What {@code blocks} pin in the store {@code dsl} reads, as the store stands now, by the
@@ -123,17 +139,17 @@ final class Pins {
         var pins = new TreeMap<String, Set<Pin>>();
         for (var block : blocks) {
             var relation = block.relation().toUpperCase(Locale.ROOT);
-            for (var family : Family.values()) {
-                if (!families.get(family).contains(relation)) {
+            for (var anchor : Anchor.values()) {
+                if (!families.get(anchor).contains(relation)) {
                     continue;
                 }
-                var facet = relation.equalsIgnoreCase(family.anchor)
-                        || family.projections.stream().anyMatch(relation::equalsIgnoreCase)
-                    ? family.anchor : block.relation().toLowerCase(Locale.ROOT);
-                CorpusExpectations.matched(dsl, block, family.key).ifPresent(matched ->
-                    dsl.resultQuery(family.shape, matched).fetch(0, String.class)
+                var facet = relation.equalsIgnoreCase(anchor.anchor)
+                        || anchor.projections.stream().anyMatch(relation::equalsIgnoreCase)
+                    ? anchor.anchor : block.relation().toLowerCase(Locale.ROOT);
+                CorpusExpectations.matched(dsl, block, anchor.key).ifPresent(matched ->
+                    dsl.resultQuery(anchor.shape, matched).fetch(0, String.class)
                         .forEach(shape -> pins.computeIfAbsent(block.relation().toLowerCase(Locale.ROOT),
-                            ignored -> new TreeSet<>()).add(new Pin(family, facet, shape))));
+                            ignored -> new TreeSet<>()).add(new Pin(anchor.family, facet, shape))));
             }
         }
         return pins;
@@ -248,7 +264,7 @@ final class Pins {
         return duplicates.values().stream().mapToInt(documents -> documents.size() - 1).sum();
     }
 
-    private static Map<Family, Set<String>> members(DSLContext dsl) {
+    private static Map<Anchor, Set<String>> members(DSLContext dsl) {
         var known = members;
         if (known == null) {
             synchronized (Pins.class) {
@@ -267,9 +283,9 @@ final class Pins {
      * relation keying something finer, a step of a path or a key of a node id, is an anchor of its
      * own and pins no behaviour of this family, however its key extends the anchor's.
      */
-    private static Map<Family, Set<String>> readMembers(DSLContext dsl) {
-        var families = new LinkedHashMap<Family, Set<String>>();
-        for (var family : Family.values()) {
+    private static Map<Anchor, Set<String>> readMembers(DSLContext dsl) {
+        var families = new LinkedHashMap<Anchor, Set<String>>();
+        for (var family : Anchor.values()) {
             families.put(family, Set.copyOf(dsl.resultQuery("""
                     SELECT UPPER(m.relation_name)
                       FROM meta_relation a
@@ -286,7 +302,7 @@ final class Pins {
     }
 
     /** The families' members, for a test naming which relations belong where. */
-    static Map<Family, Set<String>> membersOf(DSLContext dsl) {
+    static Map<Anchor, Set<String>> membersOf(DSLContext dsl) {
         return members(dsl);
     }
 

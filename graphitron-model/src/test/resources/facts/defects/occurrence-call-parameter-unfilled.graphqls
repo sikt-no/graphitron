@@ -65,3 +65,13 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Query.contextPair,   0,        CONTEXT_KEY, userId
   Query.namelessList,  0,        ARGUMENT,
   """)
+
+# Each parameter nothing fills, two arguments could fill or two fills reach is refused at its call.
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                       coordinate
+  PARAMETER_UNFILLED,         Query.unfilledFilms
+  PARAMETER_AMBIGUOUS,        Query.ambiguousFilms
+  PARAMETER_FILLED_TWICE,     Query.greetedTwice
+  ARGMAPPING_PATH_UNRESOLVED, Query.unlandedFilms
+  CONTEXT_SITE_UNSUPPORTED,   Query.contextPair
+  """)

@@ -34,3 +34,10 @@ extend schema @assertAbsent(relation: "graphitron_join_path", rows: """
   Film.spokenIn
   Query.castOf
   """)
+
+# Each stop is refused where the walk stops.
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                    coordinate
+  ROUTE_AMBIGUOUS,         Film.spokenIn
+  NO_ROUTE_FROM_DEPARTURE, Query.castOf
+  """)

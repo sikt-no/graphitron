@@ -159,9 +159,14 @@ model says an example means, in three families, each anchored on one relation:
 | Claims | `graphitron_claim` | the claim's kind and the kind of element making it
 | Defects | `graphitron_entry_defect` | the code, the kind of AST entry it sits at, and the directive
 applied there or around it
+| Defects | `graphql_schema_problem` | the stage that refused and the toolchain's own name for the kind
 | Occurrences | `graphitron_occurrence` | the occurrence's kind, its producer's kind, and whether it is a
 root
 |===
+
+A refusal the toolchain raises making a schema is a defect behaviour though not an entry defect: it
+has no declared code and not always a written position, so it pins from its own anchor into the
+defect family (Alf, 2026-11-10).
 
 A family is the relations `meta_relation` declares at its anchor's grain that spell the anchor's key
 as the anchor does, so a relation stating more about the same thing joins its family by being

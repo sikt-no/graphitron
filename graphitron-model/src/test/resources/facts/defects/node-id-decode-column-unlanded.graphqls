@@ -43,3 +43,11 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "c
   Query.projectNotes(ofProject:),      public.project,  0,        Project,        org_id
   Query.projectNotes(ofProject:),      public.project,  1,        Project,        name
   """)
+
+# Each decode landing short is refused, and so is the node no tier resolves key columns for.
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                   coordinate
+  NODE_WITHOUT_KEY,       FilmList
+  NODE_ID_LANDS_ON_TABLE, FilmInput.inCategory
+  NODE_ID_LANDS_ON_TABLE, Query.films(onList:)
+  """)
