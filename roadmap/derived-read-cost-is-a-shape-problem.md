@@ -664,12 +664,13 @@ static method needs no holder.
     judged by the slot defect rule off `graphitron_node_id_slot` and again in
     `BuildQuery.decodeParameter`, from class-name patterns and the column's binding type; stated as the
     slot's shape, the rule and the emitter read one fact.
-  * **A service's key row is stored with its candidates, and its defects read them** `open`, E's, off
-    the critical path. The key-row stage stores a service's key table and each member of the parent's
+  * **A service's key row is stored with its candidates, and its defects read them** `open`, folded
+    into "A depth's key rows are written off its source" (Alf, 2026-11-10). The key-row stage stores a service's key table and each member of the parent's
     class returning its record as rows under the field, so `NO_KEY_FROM_PARENT` and
     `KEY_ROW_AMBIGUOUS` read those rows rather than deriving them again, a copy that already
     disagrees with the rule on a method with two record-set parameters.
-  * **The key-row defects are judged per occurrence** `open`, off the critical path. They read the
+  * **The key-row defects are judged per occurrence** `open`, folded into "A depth's key rows are
+    written off its source" (Alf, 2026-11-10). They read the
     producer and `graphitron_field_key_row` per declared field; judged on
     `graphitron_occurrence_producer_key_row` per child producer, a type reached under two parents
     says which parent's class fails.
@@ -1161,10 +1162,32 @@ classified records have no reader left and can go with the walk.
     `graphitron_occurrence_source_object` decides it, so a reader joins the class's members on their
     key rather than scanning the census by name, which is what the field-keyed key row's accessor arm
     does at about 5 s an evaluation on sakila.
-  * **A depth's key rows are written off its parent's producer result** `open`. The occurrence key
-    row and an `ACCESSOR` subtype are written in the depth loop from the parent's stored result and
-    source, and `graphitron_field_key_row`, its accessor table, `graphitron_field_key_row_rule` and the
-    `field-key-rows` stage go: about 14 s of a sakila capture's 38.
+  * **A depth's key rows are written off its source** `open`. Each child producer's lift is stated
+    per occurrence at the end of its depth, off its source, its join path and its candidates:
+    `TARGET` where the source hands over the target's records, or one unconditioned hop rides a
+    foreign key graphitron read off a selected row or, for a list, one referencing the source's key;
+    `SOURCE` otherwise, keyed on the source's primary key (Alf, 2026-11-10; the rule is on
+    `code-generation-triggers.adoc` § Producer). The key is a `sql_constraint`, the accessor a
+    `code_read_slot`, the candidates rows the key-row defects read, judged per occurrence, two
+    candidates raising `KEY_ROW_AMBIGUOUS` on every arm (Alf, 2026-11-10). `graphitron_field_key_row`,
+    its accessor table, its rule, the `field-key-rows` stage and `FieldKeyRows` go: about 14 s of a
+    sakila capture's 38. A forward hop off a nested selected row waits on "A source says whether
+    graphitron selected its rows", a table-bound declaring type taking it meanwhile.
+  * **A source says whether graphitron selected its rows** `open`, F's.
+    `graphitron_occurrence_source` carries its basis, `SELECTED` or `HANDED`, so a lift tells a row
+    graphitron selected from a record a service or a write handed over, which guarantees only its key.
+  * **A child producer's source is its parent's value** `open`, F's. `keyRow`, `ownServiceRecord`
+    and `rootRoutine` leave `OccurrenceSources`, and `writePayload`/`writePayloadMember` read the
+    written rows; the § Source bullets of `code-generation-triggers.adoc` change with them (Alf,
+    2026-11-10).
+  * **The classifier lifts by the settled rule** `open`. `OnFkSlots` only on a single forward hop off
+    a selected row; a path of several hops and a `@service` or write record's foreign key take
+    `OnParentJoin`, keyed on the parent's primary key; a reverse single hop keeps its shortcut, and a
+    single forward hop to several participant tables takes the source lift (Alf, 2026-11-10).
+    `splitQuery.adoc` and `dispatch-axes.adoc` change in the same commit, execution tests pinning
+    each shape.
+  * **A write's payload member on another table is a defect** `open`, E's. A union or interface
+    member of a root write's payload bound to a table other than the written one is never produced.
 * **A `@mutation(table:)` that disagrees with its return's table is a defect** `open`, E's. The
   manual rejects a `@mutation(table:)` naming another table than the one the return names; the store
   gives that write no `graphitron_producer_write` row and raises nothing, so the defect is the write
