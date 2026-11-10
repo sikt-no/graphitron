@@ -257,6 +257,31 @@ what fills each parameter of a call: an argument, which then binds that paramete
 supplies, such as the jOOQ context. `graphitron_occurrence_producer_key_row` states where a child
 producer under an object starts: the key it takes off that object, lifted onto the key's table.
 
+An output occurrence's source is the value its parent holds, as the parent's producer lifted it: a
+row of a table-bound parent's table, a table record as rows of its table, any other class as an
+instance of it, and for a field of a root write's payload the written rows, as jOOQ records (Alf,
+2026-11-10). It is never the table the occurrence's own query starts on. Restarting a query from
+that source is the child producer's _lift_, and it belongs to the producer.
+
+A _target lift_ restarts the query at the target, its batch keyed on values the source already
+holds. A producer takes one in three cases. The source hands over the target's own records, directly
+or through a member of its class matching the producer field. Or its path is one hop with no
+condition on it and the source is a row graphitron selected that holds the hop's foreign key to the
+target. Or, for a list, its path is one hop with no condition on it and the target's foreign key
+references the source's key, so the batch is keyed on that key and each key's rows are its own. A
+single hop skips no table, so a dangling or null key finds nothing exactly as the join would,
+whether the key is enforced or not. A `@condition` on the field reads only the target and does not
+prevent a target lift. Every other producer takes a _source lift_: the batch is keyed on the
+source's primary key and the query anchors the source's table and walks the whole path. That covers
+a path of several hops, a hop carrying a condition, and a foreign key read off a record a `@service`
+or a write handed over, which guarantees only its primary key (Alf, 2026-11-10).
+
+A source lift needs the source's table to have a primary key, and a key spanning several columns is
+read whole and in key order. A polymorphic producer has one lift: which participant each fetched row
+is, `graphitron_occurrence_participant` decides once the rows are fetched. A root producer has no
+parent and so has no source. An argument or an input field never produces and reads the table it
+binds.
+
 An argument filling a parameter with a table's jOOQ record writes, for each column, what the input
 sent for it: a value, or an explicit `null` written as `NULL`, whatever else the input decodes into
 the record. The classified emitter erased that `null` beside a decoded node id; that is a defect,
