@@ -1,7 +1,7 @@
 ---
 id: R1163
 title: "The principles architect carries the direction: the rulings live in the docs it reads, and every design is judged by what it lets us delete"
-status: Ready
+status: In Progress
 bucket: dx
 theme: tooling
 depends-on: []
