@@ -10865,6 +10865,26 @@ COMMENT ON COLUMN graphitron_entry_defect_key_column.bound IS 'the node binding 
 COMMENT ON COLUMN graphitron_entry_defect_key_column.position IS 'the key column''s position in that binding''s key, completing the key';
 COMMENT ON COLUMN graphitron_entry_defect_key_column.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
+CREATE TABLE graphitron_occurrence_node_id_shape (
+  graph_name    VARCHAR   NOT NULL,
+  coordinate    VARCHAR   NOT NULL,
+  bound         VARCHAR   NOT NULL,
+  landing_class VARCHAR   NOT NULL,
+  decode_shape  VARCHAR   NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, landing_class),
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound) ON DELETE CASCADE,
+  CHECK (decode_shape IN ('OWN_RECORD', 'SUPERTYPE', 'RECORD_N', 'ROW_N', 'KEY_VALUE'))
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_shape IS 'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class. For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_shape.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_shape.coordinate IS 'the occurrence carrying the node id, as on its NODE_ID binding';
+COMMENT ON COLUMN graphitron_occurrence_node_id_shape.bound IS 'the node table the binding decodes for, as on graphitron_occurrence_node_id: one per member table where the id is one of several node types';
+COMMENT ON COLUMN graphitron_occurrence_node_id_shape.landing_class IS 'the class one decoded id meets: a list parameter''s element, otherwise the parameter''s erased class';
+COMMENT ON COLUMN graphitron_occurrence_node_id_shape.decode_shape IS 'OWN_RECORD, the node table''s generated record taking the whole key; SUPERTYPE, a type that record is, for an id of several node types decoded into each member''s own record; RECORD_N or ROW_N, a jOOQ tuple whose type arguments are the key columns'' types in key order; KEY_VALUE, the one key column''s own value. A landing no shape fits has no row, which is what the slot defects read';
+COMMENT ON COLUMN graphitron_occurrence_node_id_shape.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
 -- columns. A written typeName: decides at every site. An argument's or input field's bare @nodeId,
 -- and its id: ID named for its target, take the node each of its needs reaches: the need's target
@@ -12139,11 +12159,13 @@ COMMENT ON COLUMN graphitron_entry_defect_parameter.touched_at IS 'when the read
 -- shape it takes the value in. The decode-into-Java defects read it.
 CREATE VIEW graphitron_node_id_slot
   (graph_name, element_coordinate, id_coordinate, site, named, by_name, parameter_name,
-   landing_type, slot_shape) AS
+   landing_type, slot_shape, method_source_name, parameter_type) AS
 SELECT graph_name, element_coordinate, id_coordinate, site, named, by_name, parameter_name,
-       CASE WHEN slot_shape = 'LIST' THEN element_class ELSE erased_class END, slot_shape
+       CASE WHEN slot_shape = 'LIST' THEN element_class ELSE erased_class END, slot_shape,
+       method_source_name, parameter_type
   FROM (SELECT o.graph_name, o.element_coordinate, o.coordinate AS id_coordinate, o.kind AS site,
                cl.named, cp.parameter_name, mp.erased_class, mp.element_class,
+               mp.source_name AS method_source_name, mp.parameter_type,
                -- The parameter the root argument is named for, which no written pair redirects: a
                -- pair's own refusals are the argMapping family's.
                cp.parameter_name = ra.name
@@ -12192,6 +12214,69 @@ COMMENT ON VIEW graphitron_node_id_slot IS 'One Java parameter a @nodeId''s deco
 -- COMMENT ON COLUMN graphitron_node_id_slot.parameter_name IS 'the parameter, what a message names';
 -- COMMENT ON COLUMN graphitron_node_id_slot.landing_type IS 'the class the decoded value meets: a list parameter''s element, otherwise the parameter''s erased class; null where the census names no class';
 -- COMMENT ON COLUMN graphitron_node_id_slot.slot_shape IS 'LIST, SINGLE or MISMATCH, the parameter''s shape against the argument''s list depth; null where the parameter names no class';
+-- COMMENT ON COLUMN graphitron_node_id_slot.method_source_name IS 'the classpath entry declaring the method, the leading half of the parameter type''s key in code_type';
+-- COMMENT ON COLUMN graphitron_node_id_slot.parameter_type IS 'the parameter''s type as declared, whose element''s type arguments code_type_element_argument states';
+
+-- Which shape each node id binding lands in at a root argument's parameter, judged once: the node
+-- table's own record, a supertype of it for an id of several node types, a jOOQ tuple typed by the
+-- key columns in key order, or the one key column's value. A landing nothing fits has no row.
+CREATE VIEW graphitron_occurrence_node_id_shape_rule
+  (graph_name, coordinate, bound, landing_class, decode_shape) AS
+WITH binding (graph_name, coordinate, bound, arity, record_class, sole_column_type,
+              table_source_name, table_schema, table_name) AS (
+  SELECT n.graph_name, n.coordinate, n.bound, CAST(COUNT(*) AS INT),
+         MIN(NULLIF(t.record_class_fqn, 'org.jooq.Record')),
+         CASE WHEN COUNT(*) = 1 THEN MIN(c.binding_type) END,
+         MIN(n.table_source_name), MIN(n.table_schema), MIN(n.table_name)
+    FROM graphitron_occurrence_node_id n
+    JOIN sql_table t
+      ON t.source_name = n.table_source_name AND t.table_schema = n.table_schema
+     AND t.table_name = n.table_name
+    JOIN sql_column c
+      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+     AND c.table_name = n.table_name AND c.column_name = n.column_name
+   GROUP BY n.graph_name, n.coordinate, n.bound
+),
+landing (graph_name, coordinate, landing_class, method_source_name, parameter_type, polymorphic) AS (
+  SELECT DISTINCT s.graph_name, s.id_coordinate, s.landing_type, s.method_source_name, s.parameter_type,
+         EXISTS (SELECT 1 FROM graphitron_type ct
+                  WHERE ct.graph_name = s.graph_name AND ct.type_name = s.named
+                    AND ct.kind IN ('INTERFACE', 'UNION'))
+    FROM graphitron_node_id_slot s
+   WHERE s.site = 'FIELD_ARGUMENT' AND s.landing_type IS NOT NULL AND s.slot_shape <> 'MISMATCH'
+)
+SELECT graph_name, coordinate, bound, landing_class, decode_shape
+  FROM (SELECT b.graph_name, b.coordinate, b.bound, l.landing_class,
+               CASE WHEN l.landing_class = b.record_class THEN 'OWN_RECORD'
+                    WHEN l.polymorphic
+                     AND EXISTS (SELECT 1 FROM sql_table_record_supertype st
+                                  WHERE st.source_name = b.table_source_name
+                                    AND st.table_schema = b.table_schema
+                                    AND st.table_name = b.table_name
+                                    AND st.supertype_name = l.landing_class)
+                    THEN 'SUPERTYPE'
+                    WHEN tc.degree = b.arity
+                     AND b.arity = (SELECT COUNT(*) FROM graphitron_occurrence_node_id n
+                                      JOIN sql_column c
+                                        ON c.source_name = n.table_source_name
+                                       AND c.table_schema = n.table_schema
+                                       AND c.table_name = n.table_name
+                                       AND c.column_name = n.column_name
+                                      JOIN code_type_element_argument a
+                                        ON a.source_name = l.method_source_name
+                                       AND a.type_name = l.parameter_type
+                                       AND a.position = n.position
+                                       AND a.argument_class = c.binding_type
+                                     WHERE n.graph_name = b.graph_name AND n.coordinate = b.coordinate
+                                       AND n.bound = b.bound)
+                    THEN tc.kind || '_N'
+                    WHEN b.arity = 1 AND l.landing_class = b.sole_column_type THEN 'KEY_VALUE'
+               END AS decode_shape
+          FROM binding b
+          JOIN landing l ON l.graph_name = b.graph_name AND l.coordinate = b.coordinate
+          LEFT JOIN code_tuple_class tc ON tc.class_name = l.landing_class) shaped
+ WHERE decode_shape IS NOT NULL;
+COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class, in the shape graphitron_occurrence_node_id_shape stores. For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.';
 
 -- The members a polymorphic @nodeId's per-member defects name, at the @nodeId: a table-bound
 -- member that is no node, and a member the id binds whose record the parameter cannot take. A
@@ -15340,19 +15425,25 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND COALESCE(f.named_type, a.named_type) <> 'ID'
 UNION ALL
 -- A single node's decoded id handed by name to a @service parameter that cannot take it, at the
--- @nodeId: a parameter whose shape is not the argument's, a key wider than the one value a
--- parameter or a list element holds, or a sole key column of another type. The node's own record
--- takes the whole key at any arity. The parameter is the detail, the least where uses differ.
+-- @nodeId: a parameter whose shape is not the argument's, or a landing no decode shape fits, which
+-- graphitron_occurrence_node_id_shape decides. Which of the three it is follows the key: a jOOQ
+-- tuple of the key's degree whose type arguments disagree with it, a key wider than the one value
+-- a parameter or a list element holds, or a sole key column of another type. The parameter is the
+-- detail, the least where uses differ.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
        MIN(v.parameter_name)
   FROM (SELECT s.graph_name, s.element_coordinate, s.parameter_name,
                CASE WHEN s.slot_shape = 'MISMATCH' THEN 'NODE_ID_SLOT_SHAPE_MISMATCH'
-                    WHEN k.record_class IS NOT NULL AND s.landing_type = k.record_class THEN NULL
+                    WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                                  WHERE d.graph_name = s.graph_name AND d.coordinate = s.id_coordinate
+                                    AND d.landing_class = s.landing_type) THEN NULL
+                    WHEN tc.degree = k.arity THEN 'NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT'
                     WHEN k.arity > 1 THEN 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT'
                     WHEN s.landing_type <> k.sole_column_type
                     THEN 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT' END AS code
           FROM graphitron_node_id_slot s
           JOIN decode_key k ON k.graph_name = s.graph_name AND k.id_coordinate = s.id_coordinate
+          LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_type
          WHERE s.site = 'FIELD_ARGUMENT' AND s.by_name
            AND NOT EXISTS (SELECT 1 FROM container_id c
                             WHERE c.graph_name = s.graph_name
@@ -18840,6 +18931,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_binding'),
   ('occurrence-depths', 'graphitron_occurrence_column'),
   ('occurrence-depths', 'graphitron_occurrence_node_id'),
+  ('occurrence-depths', 'graphitron_occurrence_node_id_shape'),
   ('occurrence-depths', 'graphitron_occurrence_binding_table'),
   ('occurrence-depths', 'graphitron_occurrence_call'),
   ('occurrence-depths', 'graphitron_occurrence_call_candidate'),
@@ -19309,6 +19401,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-node-id-key',
    'one key column one occurrence''s node id carries at one node table, in one graph',
    'graph_name, coordinate, bound, position', 'sdl'),
+  ('occurrence-node-id-shape',
+   'one class one occurrence''s node id at one node table lands in, in one graph',
+   'graph_name, coordinate, bound, landing_class', 'sdl'),
   ('graph-occurrence-binding',
    'one place one occurrence binds, in one graph',
    'graph_name, coordinate, bound', 'sdl'),
@@ -19781,7 +19876,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_SLOT_SHAPE_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SLOT_SHAPE_MISMATCH',
    'A @nodeId''s decoded value goes to a @service parameter whose shape is not the argument''s, a list where one id arrives, one value where a list does, or a collection other than java.util.List: declare the parameter in the argument''s shape.', 'entry-defects'),
   ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_ARITY_EXCEEDS_SLOT',
-   'A @nodeId''s node has a key of several columns and the @service parameter its decoded value goes to, or each element of it, holds one value: declare the parameter as the node''s record, or bind one key column with argMapping.', 'entry-defects'),
+   'A @nodeId''s node has a key of several columns and the @service parameter its decoded value goes to, or each element of it, holds one value: declare the parameter as the node''s record, or as a RecordN or RowN of the key''s columns'' types, or bind one key column with argMapping.', 'entry-defects'),
+  ('NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT',
+   'A @nodeId''s decoded key goes to a @service parameter typed as a jOOQ RecordN or RowN of the key''s degree whose type arguments are not the key columns'' types in key order: declare the tuple with the columns'' own types.', 'entry-defects'),
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
    'A key column of a @nodeId''s node, its one-column key or the column an argMapping path projects out of it, has a jOOQ type that is not the type of the parameter of the @service or @condition method it goes to: declare the parameter with the column''s own type, boxed.', 'entry-defects'),
   ('ARGMAPPING_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_KEY_COLUMN_UNRESOLVED',
@@ -19964,6 +20061,14 @@ INSERT INTO meta_relation VALUES
    'One key column a node id at an occurrence packs or unpacks: one row per occurrence, node table and key position.',
    'For example Film.id packs film_id at public.film under Film, and Query.filmsByNodeIdArg(ids:), written @nodeId(typeName: "Film"), unpacks into the same column.',
    'The NODE_ID subtype of graphitron_occurrence_binding, on its key with the key position added and pinned to its kind by the unique key beside it. The key columns are the node type''s own, on its own table, whatever the occurrence reads: a written typeName takes them from the named node, and only an inference that reads where a need lands lets a table decide which node it is. Stored because the encode and the decode, the argMapping key projection and the defects all ask which columns an id at this occurrence carries, and a foreign key into graphitron_node_keycolumn holds the answer to the node''s key as it stands, the binding cascading with it as a derivation goes with what it was derived from.'),
+  ('graphitron_occurrence_node_id_shape', 'occurrence-node-id-shape', 'graphitron',
+   'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class.',
+   'For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.',
+   'The decode shape decided once: the slot defects read which landings have a row and the service emitter reads the shape of those that do, where both used to judge the class themselves, from the key''s arity and a class-name pattern. Keyed by the landing class rather than the parameter so a call not yet pinned to one overload has each candidate judged.'),
+  ('graphitron_occurrence_node_id_shape_rule', 'occurrence-node-id-shape', 'graphitron',
+   'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class, in the shape graphitron_occurrence_node_id_shape stores.',
+   'For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.',
+   'The rule the stored relation is written from, after the depth loop has written every node id binding and call parameter it reads.'),
   ('graphitron_occurrence_node_id_rule', 'occurrence-node-id-key', 'graphitron',
    'One row the occurrence node id rule computes, in the shape graphitron_occurrence_node_id stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_node_id, which are the names every reader spells.',

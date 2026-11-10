@@ -61,6 +61,21 @@ type Query {
   # An overloaded producer resolves several candidate slots and no verdict.
   byIds(ids: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "byIds"})
+  # A jOOQ tuple typed by the key columns in key order takes the key: one column ...
+  filmByTuple(key: ID @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "filmByTuple"})
+  # ... two, as a record ...
+  pairByTuple(key: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "pairByTuple"})
+  # ... or as the row values of a list.
+  pairsByRows(keys: [ID!] @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "pairsByRows"})
+  # A tuple of the key's degree whose types are not the key columns' is refused on the types ...
+  pairByMistypedRow(key: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "pairByMistypedRow"})
+  # ... and one of another degree on the arity.
+  pairByWideTuple(key: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "pairByWideTuple"})
   # An input field whose root argument feeds a parameter: the value lands inside the bean.
   echo(by: PairingInput): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
@@ -68,9 +83,12 @@ type Query {
 
 # Each refusal is a defect at the @nodeId, the parameter it lands in as its detail.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
-  code IN ('NODE_ID_SLOT_SHAPE_MISMATCH', 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
+  code IN ('NODE_ID_SLOT_SHAPE_MISMATCH', 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
+           'NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT')
   """, rows: """
   coordinate,                     code,                                 detail
+  Query.pairByMistypedRow(key:),  NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT,  key
+  Query.pairByWideTuple(key:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       key
   Query.greetings(userId:),       NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, userId
   Query.pairings(userId:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.pairingsByIds(ids:),      NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
@@ -88,4 +106,15 @@ extend schema @assertContains(relation: "graphitron_node_id_slot", rows: """
   Query.rateFilms(ratings:),     ratings,        TRUE,    LIST,       no.sikt.graphitron.rewrite.test.services.FilmRating
   Query.titleTitlecase(films:),  films,          TRUE,    MISMATCH,   java.util.Set
   Query.filmActorByIds(ids:),    ids,            TRUE,    MISMATCH,   java.util.List
+  """)
+
+# How each decode that resolves lands: the node's own record, its one column's value, or a jOOQ
+# tuple typed by the key columns in key order.
+extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
+  coordinate,                        landing_class,                                     decode_shape
+  Query.film(id:),                   java.lang.Integer,                                 KEY_VALUE
+  Query.filmActorRecord(in:),        no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord, OWN_RECORD
+  Query.filmByTuple(key:),           org.jooq.Record1,                                  RECORD_N
+  Query.pairByTuple(key:),           org.jooq.Record2,                                  RECORD_N
+  Query.pairsByRows(keys:),          org.jooq.Row2,                                     ROW_N
   """)

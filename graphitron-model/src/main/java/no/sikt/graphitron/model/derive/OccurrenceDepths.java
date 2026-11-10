@@ -65,5 +65,9 @@ public final class OccurrenceDepths {
         LandingKeyColumns.sweep(dsl, graph, touchedAt);
         OccurrenceColumns.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
+        // After the sweeps, since a shape joins a binding to the parameter its argument fills and
+        // a stale row of either would land it somewhere it no longer goes.
+        OccurrenceNodeIdShapes.write(dsl, graph, touchedAt);
+        OccurrenceNodeIdShapes.sweep(dsl, graph, touchedAt);
     }
 }

@@ -97,8 +97,22 @@ class NodeIdDecodeDefectsTest {
             "Field 'Query.films': argument 'key' carries the @nodeId(typeName: \"Inventory\") and the"
             + " producer method declares a parameter 'key' of that name, so the decoded key lands"
             + " there, but that key is 2 columns and one parameter takes one value; declare 'key' as"
-            + " InventoryRecord to receive the whole tuple, or bind one of its key columns to a"
-            + " parameter with argMapping: inventory_id, store_id");
+            + " InventoryRecord, or as Record2<Integer, Integer> or Row2<Integer, Integer>, to receive"
+            + " the whole tuple, or bind one of its key columns to a parameter with argMapping:"
+            + " inventory_id, store_id");
+    }
+
+    /**
+     * A jOOQ tuple of the key's degree is the key only where its types are the key columns' in key
+     * order, so one typed otherwise is refused naming the columns, their types and the tuple wanted.
+     */
+    @Test
+    void aTupleTypedOtherwiseThanTheKeyIsRejectedNamingTheColumnsAndTheirTypes() {
+        assertThat(messages(detect(schema("Inventory", "getFilmsByMistypedTuple")))).containsExactly(
+            "Field 'Query.films': argument 'key' carries the @nodeId(typeName: \"Inventory\") and the"
+            + " producer method declares a parameter 'key' of that name, so the decoded key lands"
+            + " there, and its key columns inventory_id, store_id jOOQ binds as Integer, Integer in key"
+            + " order, but 'key', a Row2, is typed otherwise; declare 'key' as Row2<Integer, Integer>");
     }
 
     /**

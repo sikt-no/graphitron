@@ -90,4 +90,24 @@ final class NodeIdMessages {
             .orderBy(k.POSITION)
             .fetch(r -> r.value1());
     }
+
+    /**
+     * The Java types jOOQ binds the node type's key columns as, in key order and by simple name: the
+     * type arguments a {@code RecordN} or {@code RowN} taking the key has to carry. Empty on the
+     * same terms as {@link #keyColumnsOf}.
+     */
+    static List<String> keyColumnTypesOf(DSLContext dsl, String graphName, String nodeTypeRef) {
+        if (nodeTypeRef == null) {
+            return List.of();
+        }
+        var k = GRAPHITRON_NODE_KEYCOLUMN;
+        var c = no.sikt.graphitron.model.Tables.SQL_COLUMN;
+        return dsl.select(c.BINDING_TYPE)
+            .from(k)
+            .join(c).on(c.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(k.TABLE_NAME), c.COLUMN_NAME.eq(k.COLUMN_NAME))
+            .where(k.GRAPH_NAME.eq(graphName), k.TYPE_NAME.eq(nodeTypeRef))
+            .orderBy(k.POSITION)
+            .fetch(r -> r.value1().substring(r.value1().lastIndexOf('.') + 1));
+    }
 }

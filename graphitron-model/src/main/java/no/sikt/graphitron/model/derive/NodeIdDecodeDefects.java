@@ -23,6 +23,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnsOf;
+import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnTypesOf;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.nodeIdSpelling;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
 import static org.jooq.impl.DSL.count;
@@ -93,6 +94,12 @@ public final class NodeIdDecodeDefects {
          * read being a new silence rather than the closing of one.
          */
         KEY_COLUMN_TYPE_DISAGREEMENT,
+        /**
+         * A jOOQ {@code RecordN} or {@code RowN} of the key's degree whose type arguments are not
+         * the key columns' types in key order. A tuple is the key only where both its degree and
+         * its types are the key's; one of another degree is refused on the arity instead.
+         */
+        KEY_TUPLE_TYPE_DISAGREEMENT,
         /**
          * The argument's list-ness and the parameter's disagree on terms the emitter cannot fill: a
          * list argument at a parameter that is not a {@code java.util.List}, which is the one
@@ -190,7 +197,8 @@ public final class NodeIdDecodeDefects {
                     rejectionOf(Verdict.of(row.value4()), slot.argumentName(), row.value5(),
                         slot.nodeTypeName(), slot.arity(), slot.keyColumnName(),
                         slot.columnJavaType(), slot.recordClass(), slotJavaType, slot.landingType(),
-                        listSlot, slot.listDepth(), keyColumnsOf(dsl, graphName, slot.nodeTypeName())),
+                        listSlot, slot.listDepth(), keyColumnsOf(dsl, graphName, slot.nodeTypeName()),
+                        keyColumnTypesOf(dsl, graphName, slot.nodeTypeName())),
                     new SourceLocation(row.value7(), row.value8(), row.value6()));
             }));
     }
@@ -237,15 +245,26 @@ public final class NodeIdDecodeDefects {
                                          String columnJavaType, String recordClass,
                                          String slotJavaType, String landingJavaType,
                                          boolean listSlot, Integer argumentListDepth,
-                                         List<String> keyColumns) {
+                                         List<String> keyColumns, List<String> keyColumnTypes) {
         String lead = lead(argumentName, paramName, nodeTypeName);
+        String types = String.join(", ", keyColumnTypes);
         return switch (verdict) {
             case KEY_ARITY_EXCEEDS_SLOT -> Rejection.structural(lead + ", but that key is " + arity
                 + " columns and one " + (listSlot ? "list element" : "parameter")
                 + " takes one value; declare '" + paramName + "' as "
-                + shaped(recordOf(recordClass), listSlot) + " to receive the whole tuple, or bind"
+                + shaped(recordOf(recordClass), listSlot) + ", or as "
+                + shaped("Record" + arity + "<" + types + ">", listSlot) + " or "
+                + shaped("Row" + arity + "<" + types + ">", listSlot)
+                + ", to receive the whole tuple, or bind"
                 + " one of its key columns to a parameter with argMapping: "
                 + String.join(", ", keyColumns));
+            case KEY_TUPLE_TYPE_DISAGREEMENT -> Rejection.structural(lead + ", and its key columns "
+                + String.join(", ", keyColumns) + " jOOQ binds as " + types + " in key order, but "
+                + (listSlot
+                    ? "the " + simpleName(landingJavaType) + " elements of '" + paramName + "' are"
+                    : "'" + paramName + "', a " + simpleName(landingJavaType) + ", is")
+                + " typed otherwise; declare '" + paramName + "' as "
+                + shaped(simpleName(landingJavaType) + "<" + types + ">", listSlot));
             case KEY_COLUMN_TYPE_DISAGREEMENT -> Rejection.structural(lead + ", and its key column '"
                 + keyColumnName + "' jOOQ binds as " + simpleName(columnJavaType)
                 + (listSlot

@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN_RECORD_ACCESSOR;
@@ -165,29 +166,30 @@ public final class BuildQuery {
     }
 
     /**
-     * How a node id argument fills a parameter of {@code className}: a table's record decodes it
-     * directly, a {@code RecordN} or {@code RowN} takes the key off the node type's own record, and
-     * the Java type of a key's one column takes that column's value off it.
+     * How a node id argument fills a parameter of {@code className}, in the decode shape
+     * {@code graphitron_occurrence_node_id_shape} states for it: the node type's own record decodes
+     * it directly, and a {@code RecordN}, a {@code RowN} or the key's one column value is taken off
+     * that record. A class no shape fits is the slot defects' to refuse.
      */
     private static Result decodeParameter(String coordinate, String className, Catalog catalog) {
+        var decodeShape = catalog.decodeShapes().get(coordinate + "|" + className);
+        if (decodeShape == null) {
+            return new Result.Refused("a node id cannot be decoded into " + className);
+        }
         NodeIdDecodeQuery.Resolution resolution;
         String shape;
-        if (catalog.tables().containsKey(className)) {
-            resolution = catalog.decodes().resolve(coordinate, className);
-            shape = "RECORD";
-        } else if (className.matches("org\\.jooq\\.Record\\d+")) {
-            resolution = catalog.decodes().resolveOwn(coordinate);
-            shape = "RECORD_N";
-        } else if (className.matches("org\\.jooq\\.Row\\d+")) {
-            resolution = catalog.decodes().resolveOwn(coordinate);
-            shape = "ROW_N";
-        } else if (catalog.decodes().resolveOwn(coordinate) instanceof NodeIdDecodeQuery.Resolution.Resolved own
-            && own.decode().columnJavaNames().size() == 1
-            && className.equals(catalog.columnTypes().get(own.decode().recordClass() + "|" + own.decode().columnJavaNames().getFirst()))) {
-            resolution = own;
-            shape = "KEY_VALUE";
-        } else {
-            return new Result.Refused("a node id cannot be decoded into " + className);
+        switch (decodeShape) {
+            case "OWN_RECORD" -> {
+                resolution = catalog.decodes().resolveOwn(coordinate);
+                shape = "RECORD";
+            }
+            case "RECORD_N", "ROW_N", "KEY_VALUE" -> {
+                resolution = catalog.decodes().resolveOwn(coordinate);
+                shape = decodeShape;
+            }
+            default -> {
+                return new Result.Refused("the id is one of several node types, which is not built here yet");
+            }
         }
         return switch (resolution) {
             case NodeIdDecodeQuery.Resolution.Resolved resolved -> new Result.Decoded(resolved.decode(), shape);
@@ -449,7 +451,7 @@ public final class BuildQuery {
      * a row of and each column's generated name, and the node id decodes its fields resolve through.
      */
     private record Catalog(Map<String, Table> tables, Map<String, Column> occurrenceColumns,
-                           Map<String, String> columnTypes, NodeIdDecodeQuery decodes) {
+                           Map<String, String> decodeShapes, NodeIdDecodeQuery decodes) {
 
         static Catalog read(StoreHandle store) {
             var t = SQL_TABLE;
@@ -479,13 +481,14 @@ public final class BuildQuery {
                 .forEach(r -> columns.put(r.value1() + "|" + key(r.value2(), r.value3(), r.value4()),
                     new Column(r.value5(), Optional.ofNullable(r.value6()))));
 
-            // Each column's Java type, by its table's record class and its name in the generated table.
-            var types = new HashMap<String, String>();
-            store.dsl().select(t.RECORD_CLASS_FQN, c.JOOQ_NAME, c.BINDING_TYPE)
-                .from(c)
-                .join(t).on(t.SOURCE_NAME.eq(c.SOURCE_NAME), t.TABLE_SCHEMA.eq(c.TABLE_SCHEMA), t.TABLE_NAME.eq(c.TABLE_NAME))
-                .forEach(r -> types.putIfAbsent(r.value1() + "|" + r.value2(), r.value3()));
-            return new Catalog(tables, columns, types, NodeIdDecodeQuery.read(store));
+            // How each node id lands in each class it is handed to, by the occurrence and the class.
+            var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+            var shapes = new HashMap<String, String>();
+            store.dsl().select(d.COORDINATE, d.LANDING_CLASS, d.DECODE_SHAPE)
+                .from(d)
+                .where(d.GRAPH_NAME.eq(store.graphName()))
+                .forEach(r -> shapes.put(r.value1() + "|" + r.value2(), r.value3()));
+            return new Catalog(tables, columns, shapes, NodeIdDecodeQuery.read(store));
         }
 
         static String key(String source, String schema, String table) {

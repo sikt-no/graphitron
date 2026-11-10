@@ -142,15 +142,19 @@ public static Result<FilmRecord> byKey(Integer key) { ... }      // one key colu
 public static Result<FilmRecord> inStock(InventoryRecord key) { ... }  // the whole tuple
 ----
 
-Two ways to get this wrong, and the build names both:
+Three ways to get this wrong, and the build names each:
 
 * *A parameter of the wrong type at a one-column key.* Declaring `String key` is the shape that used
   to receive the base64 string. The build names the key column, the type jOOQ binds it as, and the
   type the parameter takes, and asks for the column's own type.
 * *A single-valued parameter at a composite key.* One parameter holds one value and the key has
-  several, so the build names the count and the columns, and offers both remedies: the node type's
-  own generated record takes the whole tuple, or an xref:service.adoc[`@service`] `argMapping` entry
-  names the one key column you want.
+  several, so the build names the count and the columns, and offers the remedies: the node type's
+  own generated record, or a `RecordN` or `RowN` of the key's arity, takes the whole tuple, or an
+  xref:service.adoc[`@service`] `argMapping` entry names the one key column you want.
+* *A tuple typed otherwise than the key.* A `RecordN` or `RowN` of the key's degree takes the key
+  only where its type arguments are the key columns' types in key order. The build names the
+  columns and their types and asks for the tuple typed with them; a tuple of another degree is
+  refused on the arity instead.
 
 A parameter whose type the classpath scan cannot read (a primitive, or a consumer compiled without
 `-parameters`) is not refused: the decode is emitted on the key's arity alone and `javac` is the
@@ -274,6 +278,12 @@ Decoding, on an argument or input field:
 | The value reaches Java at a slot typed as the generated record of the node type's own table: a
   producer parameter, or a record-typed member of a consumer bean.
 | The whole decoded tuple is loaded onto that record's key columns. Any key arity.
+| A typed key slot
+| The value reaches Java at a slot typed `RecordN` or `RowN` (`Record2<Integer, String>`,
+  `Row3<String, String, String>`) that is the key's tuple: its `N` the node key's arity and each type
+  argument the type jOOQ binds that key column as, in key order, wherever a decoded value reaches
+  Java: a producer or condition parameter, or a member of a consumer bean.
+| The decoded tuple as that record or row, its values in key order.
 | A single-valued slot
 | The value reaches Java at any other slot, and the node key is one column.
 | That column's own value, decoded.
@@ -302,7 +312,8 @@ either resolves or is refused by name, and no arm hands the wire format on.
   node key must be *one column*, because one slot holds one value; and the slot's declared type must
   be the type jOOQ binds that column as, compared without widening, because the value arriving is the
   column's own. Both are the author's to fix in their own signature. A slot typed as the node type's
-  generated record escapes both, taking the whole tuple at any arity. See
+  generated record escapes both, taking the whole tuple at any arity, and so does a `RecordN` or
+  `RowN` whose `N` is the key's arity. See
   <<named-parameter-decode,the producer-parameter section>>.
 
 == Editor support

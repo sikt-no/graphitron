@@ -53,6 +53,14 @@ public class PublicNodeIdServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * The parameter typed as a jOOQ tuple of the inventory key's degree whose second type is not
+     * the key column's, so the tuple is not the key.
+     */
+    public static Result<FilmRecord> getFilmsByMistypedTuple(org.jooq.Row2<Integer, String> key) {
+        throw new UnsupportedOperationException();
+    }
+
     /** A list of the key column jOOQ binds, one decoded value per id. */
     public static Result<FilmRecord> getFilmsByIntegerKeys(java.util.List<Integer> key) {
         throw new UnsupportedOperationException();
