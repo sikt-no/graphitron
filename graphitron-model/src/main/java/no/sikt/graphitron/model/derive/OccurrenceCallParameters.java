@@ -45,17 +45,21 @@ public final class OccurrenceCallParameters {
      */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
+        bindings(dsl, graph, depth, touchedAt);
     }
 
     /**
      * States what fills each parameter of the {@code @condition} calls the occurrences at
-     * {@code depth} make, after the depth's bindings decide which tables they are applied to.
+     * {@code depth} make, after the depth's bindings decide which tables they are applied to. No
+     * {@code PARAMETER} binding is written for them yet: one overload applied to two tables is two
+     * calls taking the same argument at the same position, which the binding's spelling of the
+     * parameter by its method alone cannot tell apart.
      */
     public static void writeConditions(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE);
     }
 
-    /** The fills {@code rule} states for the pinned methods of the calls at {@code depth}, and their bindings. */
+    /** The fills {@code rule} states for the pinned methods of the calls at {@code depth}. */
     private static void write(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt,
                               Table<?> rule) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
@@ -104,7 +108,6 @@ public final class OccurrenceCallParameters {
             .set(c.RECORD_SCHEMA_REF, excluded(c.RECORD_SCHEMA_REF))
             .set(c.RECORD_TABLE_REF, excluded(c.RECORD_TABLE_REF))
             .execute();
-        bindings(dsl, graph, depth, touchedAt);
     }
 
     /** Deletes the fills and {@code PARAMETER} bindings no depth of this reading marked. */
@@ -129,12 +132,14 @@ public final class OccurrenceCallParameters {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var o = GRAPHITRON_OCCURRENCE;
+        // The service calls' only, a condition's being unspelled; see writeConditions.
         var bound = s.METHOD_CLASS_NAME.concat(inline("#"), s.METHOD_NAME, s.METHOD_DESCRIPTOR,
             inline(":"), c.POSITION.cast(String.class));
         var taken = dsl
             .select(c.GRAPH_NAME, c.LANDING_COORDINATE, bound.as("bound"), c.COORDINATE, c.CALL, c.POSITION)
             .from(c)
-            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL))
+            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL),
+                s.CALL_KIND.eq("SERVICE"))
             .join(o).on(o.GRAPH_NAME.eq(c.GRAPH_NAME), o.COORDINATE.eq(c.COORDINATE))
             .where(c.GRAPH_NAME.eq(graph), c.FILL.eq(inline("ARGUMENT")), o.DEPTH.eq(depth))
             .asTable("taken");

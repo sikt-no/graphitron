@@ -10,6 +10,16 @@ type Staff @table(name: "staff") { firstName: String @field(name: "first_name") 
 
 union AddressOccupant = Customer | Staff
 
+input FilmTitleInput { title: String }
+scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+input RentalRateRange { fra: BigDecimal  til: BigDecimal }
+input FilmRentalRangeFilter {
+  rentalRateRange: RentalRateRange @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "rentalRateRange"}, override: true)
+}
+input FilmPrefixInput { titlePrefix: String }
+
 type Query {
   # On the field: one call, on the field's own table.
   actorsM: [Actor!]! @condition(condition: {
@@ -28,12 +38,41 @@ type Query {
   occupantsByMixedNamePrefix(firstName: String @field(name: "first_name") @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
       method: "occupantMixedNamePrefix"})): [AddressOccupant!]!
+
+  # The fills, the first that applies. A pair's path.
+  filmsByPath(filter: FilmPrefixInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition", argMapping: "titlePrefix: filter.titlePrefix"}, override: true)
+  # By type, one and one: an input object and a bean nothing else in it could be.
+  filmsByBean(input: FilmTitleInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+      method: "filmTitleRecord"}, override: true)
+  # By type, a Java type once on each side.
+  filmsByType(title: String): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
+  # By type, one level into an input object by name and type.
+  filmsByField(filter: FilmPrefixInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
+  # On an input field: one level into it by name and type, a custom scalar's class its @scalarType's.
+  filmsByRentalRateRange(filter: FilmRentalRangeFilter): [Film!]!
+  # A contextArguments key of the parameter's name.
+  customersSeen: [Customer!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerSeenByUser"}, contextArguments: ["userId"])
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_condition", rows: """
   coordinate,                                   bound,           call,                     override_written
   Query.actorsM,                                public.actor,    condition:public.actor,    FALSE
+  Query.customersSeen,                          public.customer, condition:public.customer, FALSE
+  Query.filmsByBean,                            public.film,     condition:public.film,     TRUE
+  Query.filmsByField,                           public.film,     condition:public.film,     TRUE
+  Query.filmsByPath,                            public.film,     condition:public.film,     TRUE
   Query.filmsByPrefix(titlePrefix:),            public.film,     condition:public.film,     TRUE
+  Query.filmsByRentalRateRange(filter.rentalRateRange:), public.film, condition:public.film, TRUE
+  Query.filmsByType,                            public.film,     condition:public.film,     TRUE
   Query.occupantsByMixedNamePrefix(firstName:), public.customer, condition:public.customer, FALSE
   Query.occupantsByMixedNamePrefix(firstName:), public.staff,    condition:public.staff,    FALSE
   Query.occupantsByTypedNamePrefix(firstName:), public.customer, condition:public.customer, TRUE
@@ -43,7 +82,13 @@ extend schema @expectEquals(relation: "graphitron_occurrence_condition", rows: "
 extend schema @expectEquals(relation: "graphitron_occurrence_call_method", where: "call_kind = 'CONDITION'", rows: """
   coordinate,                                   call,                      method_name,               method_descriptor
   Query.actorsM,                                condition:public.actor,    firstNameStartsWithM,      (Lorg/jooq/Table;)Lorg/jooq/Condition;
+  Query.customersSeen,                          condition:public.customer, customerSeenByUser,        (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.filmsByBean,                            condition:public.film,     filmTitleRecord,           (Lorg/jooq/Table;Lno/sikt/graphitron/rewrite/test/conditions/FilmTitleFilter;)Lorg/jooq/Condition;
+  Query.filmsByField,                           condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.filmsByPath,                            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.filmsByPrefix(titlePrefix:),            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, rentalRateRange, (Lorg/jooq/Table;Ljava/math/BigDecimal;Ljava/math/BigDecimal;)Lorg/jooq/Condition;
+  Query.filmsByType,                            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.occupantsByMixedNamePrefix(firstName:), condition:public.customer, occupantMixedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.occupantsByMixedNamePrefix(firstName:), condition:public.staff,    occupantMixedNamePrefix,   (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.occupantsByTypedNamePrefix(firstName:), condition:public.customer, occupantTypedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
@@ -57,4 +102,27 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Query.filmsByPrefix(titlePrefix:),            condition:public.film,     0,        TABLE
   Query.occupantsByTypedNamePrefix(firstName:), condition:public.customer, 0,        TABLE
   Query.occupantsByTypedNamePrefix(firstName:), condition:public.staff,    0,        TABLE
+  """)
+
+# What fills each condition parameter that is not the table.
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
+    where: "call_kind = 'CONDITION' AND fill <> 'TABLE'", rows: """
+  coordinate,                                   call,                      position, fill,        landing_coordinate,                           context_key
+  Query.customersSeen,                          condition:public.customer, 1,        CONTEXT_KEY, ,                                             userId
+  Query.filmsByBean,                            condition:public.film,     1,        ARGUMENT,    Query.filmsByBean(input:),
+  Query.filmsByField,                           condition:public.film,     1,        ARGUMENT,    Query.filmsByField(filter.titlePrefix:),
+  Query.filmsByPath,                            condition:public.film,     1,        ARGUMENT,    Query.filmsByPath(filter.titlePrefix:),
+  Query.filmsByPrefix(titlePrefix:),            condition:public.film,     1,        ARGUMENT,    Query.filmsByPrefix(titlePrefix:),
+  Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, 1, ARGUMENT, Query.filmsByRentalRateRange(filter.rentalRateRange.fra:),
+  Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, 2, ARGUMENT, Query.filmsByRentalRateRange(filter.rentalRateRange.til:),
+  Query.filmsByType,                            condition:public.film,     1,        ARGUMENT,    Query.filmsByType(title:),
+  Query.occupantsByMixedNamePrefix(firstName:), condition:public.customer, 1,        ARGUMENT,    Query.occupantsByMixedNamePrefix(firstName:),
+  Query.occupantsByMixedNamePrefix(firstName:), condition:public.staff,    1,        ARGUMENT,    Query.occupantsByMixedNamePrefix(firstName:),
+  Query.occupantsByTypedNamePrefix(firstName:), condition:public.customer, 1,        ARGUMENT,    Query.occupantsByTypedNamePrefix(firstName:),
+  Query.occupantsByTypedNamePrefix(firstName:), condition:public.staff,    1,        ARGUMENT,    Query.occupantsByTypedNamePrefix(firstName:),
+  """)
+
+extend schema @assertContains(relation: "code_scalar_constant", rows: """
+  class_name,                      field_name,        input_type
+  graphql.scalars.ExtendedScalars, GraphQLBigDecimal, java.math.BigDecimal
   """)

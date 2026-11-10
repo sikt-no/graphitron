@@ -547,9 +547,16 @@ static method needs no holder.
         `graphitron_occurrence_producer_service`, which keeps its constructor. Whether a call reads
         context or the session is read off its stored fills, never a flag.
       * **A `@condition`'s calls, candidates and fills are written per depth** `open`. Its candidates
-        are the `code_condition_method` overloads whose table parameter takes the bound table, as
-        `graphitron_join_path_step_method` pins a step's; `ConditionEmitter` emits the authored
-        sites off them, run against the database.
+        are the `code_condition_method` overloads whose table parameter takes the bound table, its
+        own class over any table; the call, the method, `graphitron_occurrence_condition` and the
+        fills are stated, `graphitron_occurrence_condition_parameter_rule` reproducing the manual's
+        rules, and `CallParameterFillPinTest` holds them to the classifier's binding over the sakila
+        schema, two gaps listed: a field under a plain nesting type the test cannot see, and a root
+        `@routine` field, whose derived table binds nothing yet. Left: `ConditionEmitter` emits the
+        authored sites off them, run against the database. A condition's fill writes no `PARAMETER`
+        binding yet: one overload applied to two tables is two calls taking one argument at one
+        position, which `bound`, spelled from the method alone, cannot tell apart; how to spell it is
+        open (Alf).
       * **A call's parameter defects are stated for every call** `open`. `PARAMETER_UNFILLED`,
         `PARAMETER_AMBIGUOUS` and `PARAMETER_FILLED_TWICE` off the stored fills of every pinned call,
         their statements worded to hold for a service and a condition alike, a `feat`; which call,

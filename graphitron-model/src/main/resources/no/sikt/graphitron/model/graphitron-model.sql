@@ -15294,14 +15294,290 @@ COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading tha
 CREATE VIEW graphitron_occurrence_condition_parameter_rule
   (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name, fill,
    landing_coordinate, context_key, session_member) AS
+-- The manual's @condition reference, How the method's parameters are bound: the table parameter
+-- takes the table the call is applied to; any other takes, first that applies, a $session pair, a
+-- pair's path, an element of its name, a contextArguments key of its name, then by type in three
+-- steps that pair only where nothing else could be meant.
+WITH RECURSIVE
+cand (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
+      method_descriptor, element_coordinate) AS (
+  SELECT k.graph_name, k.coordinate, k.call, k.call_kind, k.method_source_name, k.method_class_name,
+         k.method_name, k.method_descriptor, o.element_coordinate
+    FROM graphitron_occurrence_call_candidate k
+    JOIN graphitron_occurrence o ON o.graph_name = k.graph_name AND o.coordinate = k.coordinate
+   WHERE k.call_kind = 'CONDITION'
+),
+-- The elements a condition sees: a field's arguments, or the argument or input field it is on.
+slot (graph_name, coordinate, slot_coordinate, name) AS (
+  SELECT DISTINCT c.graph_name, c.coordinate, a.coordinate, a.name
+    FROM cand c
+    JOIN graphitron_occurrence o ON o.graph_name = c.graph_name AND o.coordinate = c.coordinate
+    JOIN graphitron_occurrence a
+      ON a.graph_name = o.graph_name AND a.parent_coordinate = o.coordinate AND a.kind = 'FIELD_ARGUMENT'
+   WHERE o.kind = 'FIELD'
+  UNION
+  SELECT DISTINCT c.graph_name, c.coordinate, o.coordinate, o.name
+    FROM cand c
+    JOIN graphitron_occurrence o ON o.graph_name = c.graph_name AND o.coordinate = c.coordinate
+   WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+),
+-- The Java class a scalar arrives as: a built-in's by graphql-java, any other's by its @scalarType.
+scalar_class (graph_name, scalar, java_class) AS (
+  SELECT t.graph_name, t.type_name,
+         CASE t.type_name WHEN 'ID' THEN 'java.lang.String' WHEN 'String' THEN 'java.lang.String'
+                          WHEN 'Int' THEN 'java.lang.Integer' WHEN 'Float' THEN 'java.lang.Double'
+                          WHEN 'Boolean' THEN 'java.lang.Boolean' END
+    FROM graphitron_type t
+   WHERE t.kind = 'SCALAR' AND t.type_name IN ('ID', 'String', 'Int', 'Float', 'Boolean')
+  UNION
+  SELECT da.graph_name, da.coordinate, k.input_type
+    FROM graphql_directive_application da
+    JOIN graphitron_ast_scalar_type_entry e
+      ON e.graph_name = da.graph_name AND e.source_name = da.source_name
+     AND e.source_line = da.source_line AND e.source_column = da.source_column
+    JOIN code_scalar_constant k
+      ON k.class_name = e.scalar_ref_class_part AND k.field_name = e.scalar_ref_field_part
+   WHERE da.directive_name = 'scalarType' AND da.ordinal = 0 AND k.input_type IS NOT NULL
+),
+-- An element's Java type, a List of its scalar's class for a list, none for an enum or an input
+-- object, and whether it opens into an input object a search may enter, never through a list.
+typed (graph_name, coordinate, name, parent_coordinate, java_type, kind, opens) AS (
+  SELECT e.graph_name, e.coordinate, e.name, e.parent_coordinate,
+         CASE WHEN j.java_class IS NULL THEN NULL
+              WHEN COALESCE(ga.is_list, gf.is_list) = TRUE THEN 'java.util.List<' || j.java_class || '>'
+              ELSE j.java_class END,
+         t.kind,
+         CASE WHEN t.kind = 'INPUT_OBJECT' AND COALESCE(ga.is_list, gf.is_list) = FALSE THEN TRUE
+              ELSE FALSE END
+    FROM graphitron_occurrence e
+    LEFT JOIN graphitron_argument ga ON ga.graph_name = e.graph_name AND ga.coordinate = e.element_coordinate
+    LEFT JOIN graphitron_field gf ON gf.graph_name = e.graph_name AND gf.coordinate = e.element_coordinate
+    JOIN graphitron_type t ON t.graph_name = e.graph_name AND t.type_name = COALESCE(ga.named_type, gf.named_type)
+    LEFT JOIN scalar_class j ON j.graph_name = t.graph_name AND j.scalar = t.type_name
+   WHERE e.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+),
+-- Every input object reachable from an element without passing a list.
+reached (graph_name, slot_coordinate, coordinate) AS (
+  SELECT DISTINCT s.graph_name, s.slot_coordinate, s.slot_coordinate
+    FROM slot s
+    JOIN typed t ON t.graph_name = s.graph_name AND t.coordinate = s.slot_coordinate
+   WHERE t.opens = TRUE
+  UNION ALL
+  SELECT r.graph_name, r.slot_coordinate, t.coordinate
+    FROM reached r
+    JOIN typed t ON t.graph_name = r.graph_name AND t.parent_coordinate = r.coordinate
+   WHERE t.opens = TRUE
+),
+-- A field inside an element, at any depth, of a type a parameter could have.
+nested (graph_name, slot_coordinate, java_type) AS (
+  SELECT DISTINCT r.graph_name, r.slot_coordinate, t.java_type
+    FROM reached r
+    JOIN typed t ON t.graph_name = r.graph_name AND t.parent_coordinate = r.coordinate
+   WHERE t.java_type IS NOT NULL
+),
+-- What the author wrote for a parameter: an argMapping pair, or a contextArguments key.
+paired (graph_name, coordinate, parameter_name, bound_to) AS (
+  SELECT c.graph_name, c.coordinate, pr.parameter_name, pr.bound_to
+    FROM (SELECT DISTINCT graph_name, coordinate, element_coordinate FROM cand) c
+    JOIN graphitron_argmapping_pair pr
+      ON pr.graph_name = c.graph_name AND pr.coordinate = c.element_coordinate
+   WHERE pr.directive_name = 'condition' AND pr.owner = 'condition'
+),
+keyed (graph_name, coordinate, parameter_name, context_key) AS (
+  SELECT c.graph_name, c.coordinate, k.parameter_name, k.context_key
+    FROM (SELECT DISTINCT graph_name, coordinate, element_coordinate FROM cand) c
+    JOIN graphitron_call_context_key k
+      ON k.graph_name = c.graph_name AND k.coordinate = c.element_coordinate
+   WHERE k.directive_name = 'condition' AND k.owner = 'condition'
+),
+-- Each candidate's parameters but its table ones.
+parameter (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+           parameter_type) AS (
+  SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_descriptor, p.position,
+         p.parameter_name, p.parameter_type
+    FROM cand c
+    JOIN code_method_parameter p
+      ON p.source_name = c.method_source_name AND p.class_name = c.method_class_name
+     AND p.method_name = c.method_name AND p.descriptor = c.method_descriptor
+   WHERE p.role NOT IN ('TABLE_CONCRETE', 'TABLE_ANY')
+),
+-- The parameters by type may pair: named, and nothing written, no element and no key named for them.
+open_parameter (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+                parameter_type) AS (
+  SELECT p.*
+    FROM parameter p
+   WHERE p.parameter_name IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM paired w WHERE w.graph_name = p.graph_name
+                        AND w.coordinate = p.coordinate AND w.parameter_name = p.parameter_name)
+     AND NOT EXISTS (SELECT 1 FROM keyed w WHERE w.graph_name = p.graph_name
+                        AND w.coordinate = p.coordinate AND w.parameter_name = p.parameter_name)
+     AND NOT EXISTS (SELECT 1 FROM slot e WHERE e.graph_name = p.graph_name
+                        AND e.coordinate = p.coordinate AND e.name = p.parameter_name)
+),
+-- The elements by type may pair: no parameter of the candidate is named for them, and no pair's
+-- path lands on them or inside them.
+open_slot (graph_name, coordinate, call, method_descriptor, slot_coordinate, java_type, kind) AS (
+  SELECT DISTINCT c.graph_name, c.coordinate, c.call, c.method_descriptor, s.slot_coordinate,
+         t.java_type, t.kind
+    FROM cand c
+    JOIN slot s ON s.graph_name = c.graph_name AND s.coordinate = c.coordinate
+    JOIN typed t ON t.graph_name = s.graph_name AND t.coordinate = s.slot_coordinate
+   WHERE NOT EXISTS (SELECT 1 FROM parameter p
+                      WHERE p.graph_name = c.graph_name AND p.coordinate = c.coordinate
+                        AND p.call = c.call AND p.method_descriptor = c.method_descriptor
+                        AND p.parameter_name = s.name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                       JOIN graphitron_occurrence lo
+                         ON lo.graph_name = l.graph_name AND lo.coordinate = l.landing_coordinate
+                      WHERE l.graph_name = c.graph_name AND l.call_coordinate = c.coordinate
+                        AND l.directive_name = 'condition' AND l.owner = 'condition'
+                        AND (s.slot_coordinate = c.coordinate
+                             OR lo.argument_coordinate = s.slot_coordinate
+                             OR lo.coordinate = s.slot_coordinate))
+),
+-- Step one: one parameter and one element left, the element an input object or an enum, the
+-- parameter no scalar's class, and no field inside the element of the parameter's type.
+by_one (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+        slot_coordinate) AS (
+  SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
+         p.parameter_name, e.slot_coordinate
+    FROM open_parameter p
+    JOIN open_slot e
+      ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate AND e.call = p.call
+     AND e.method_descriptor = p.method_descriptor
+   WHERE e.kind IN ('INPUT_OBJECT', 'ENUM')
+     AND NOT EXISTS (SELECT 1 FROM scalar_class j
+                      WHERE j.graph_name = p.graph_name AND j.java_class = p.parameter_type)
+     AND NOT EXISTS (SELECT 1 FROM nested n
+                      WHERE n.graph_name = e.graph_name AND n.slot_coordinate = e.slot_coordinate
+                        AND n.java_type = p.parameter_type)
+     AND NOT EXISTS (SELECT 1 FROM open_parameter q
+                      WHERE q.graph_name = p.graph_name AND q.coordinate = p.coordinate
+                        AND q.call = p.call AND q.method_descriptor = p.method_descriptor
+                        AND q.position <> p.position)
+     AND NOT EXISTS (SELECT 1 FROM open_slot f
+                      WHERE f.graph_name = e.graph_name AND f.coordinate = e.coordinate
+                        AND f.call = e.call AND f.method_descriptor = e.method_descriptor
+                        AND f.slot_coordinate <> e.slot_coordinate)
+),
+-- Step two: a Java type once among the parameters and once among the elements, no field inside an
+-- element having it too.
+by_type (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+         slot_coordinate) AS (
+  SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
+         p.parameter_name, e.slot_coordinate
+    FROM open_parameter p
+    JOIN open_slot e
+      ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate AND e.call = p.call
+     AND e.method_descriptor = p.method_descriptor AND e.java_type = p.parameter_type
+   WHERE NOT EXISTS (SELECT 1 FROM open_parameter q
+                      WHERE q.graph_name = p.graph_name AND q.coordinate = p.coordinate
+                        AND q.call = p.call AND q.method_descriptor = p.method_descriptor
+                        AND q.position <> p.position AND q.parameter_type = p.parameter_type)
+     AND NOT EXISTS (SELECT 1 FROM open_slot f
+                      WHERE f.graph_name = e.graph_name AND f.coordinate = e.coordinate
+                        AND f.call = e.call AND f.method_descriptor = e.method_descriptor
+                        AND f.slot_coordinate <> e.slot_coordinate AND f.java_type = e.java_type)
+     AND NOT EXISTS (SELECT 1 FROM open_slot f
+                       JOIN nested n
+                         ON n.graph_name = f.graph_name AND n.slot_coordinate = f.slot_coordinate
+                      WHERE f.graph_name = p.graph_name AND f.coordinate = p.coordinate
+                        AND f.call = p.call AND f.method_descriptor = p.method_descriptor
+                        AND n.java_type = p.parameter_type)
+),
+-- Step three: a parameter still unbound takes the one field, one level inside an element, of its
+-- name and its type.
+by_field (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+          field_coordinate) AS (
+  SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
+         p.parameter_name, t.coordinate
+    FROM open_parameter p
+    JOIN open_slot e
+      ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate AND e.call = p.call
+     AND e.method_descriptor = p.method_descriptor
+    JOIN typed se ON se.graph_name = e.graph_name AND se.coordinate = e.slot_coordinate AND se.opens = TRUE
+    JOIN typed t
+      ON t.graph_name = e.graph_name AND t.parent_coordinate = e.slot_coordinate
+     AND t.name = p.parameter_name AND t.java_type = p.parameter_type
+   WHERE NOT EXISTS (SELECT 1 FROM by_one b
+                      WHERE b.graph_name = p.graph_name AND b.coordinate = p.coordinate
+                        AND b.call = p.call AND b.method_descriptor = p.method_descriptor
+                        AND b.position = p.position)
+     AND NOT EXISTS (SELECT 1 FROM by_type b
+                      WHERE b.graph_name = p.graph_name AND b.coordinate = p.coordinate
+                        AND b.call = p.call AND b.method_descriptor = p.method_descriptor
+                        AND b.position = p.position)
+     AND NOT EXISTS (SELECT 1 FROM open_slot f
+                       JOIN typed fs ON fs.graph_name = f.graph_name AND fs.coordinate = f.slot_coordinate
+                                    AND fs.opens = TRUE
+                       JOIN typed u
+                         ON u.graph_name = f.graph_name AND u.parent_coordinate = f.slot_coordinate
+                        AND u.name = p.parameter_name AND u.java_type = p.parameter_type
+                      WHERE f.graph_name = p.graph_name AND f.coordinate = p.coordinate
+                        AND f.call = p.call AND f.method_descriptor = p.method_descriptor
+                        AND u.coordinate <> t.coordinate)
+)
 -- A table parameter takes the table the condition is applied to, the call's bound table.
-SELECT k.graph_name, k.coordinate, k.call, k.call_kind, k.method_descriptor, p.position,
+SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_descriptor, p.position,
        p.parameter_name, 'TABLE', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM graphitron_occurrence_call_candidate k
+  FROM cand c
   JOIN code_method_parameter p
-    ON p.source_name = k.method_source_name AND p.class_name = k.method_class_name
-   AND p.method_name = k.method_name AND p.descriptor = k.method_descriptor
- WHERE k.call_kind = 'CONDITION' AND p.role IN ('TABLE_CONCRETE', 'TABLE_ANY');
+    ON p.source_name = c.method_source_name AND p.class_name = c.method_class_name
+   AND p.method_name = c.method_name AND p.descriptor = c.method_descriptor
+ WHERE p.role IN ('TABLE_CONCRETE', 'TABLE_ANY')
+UNION ALL
+-- $session, or one member of it, named by a pair.
+SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
+       p.parameter_name,
+       CASE WHEN w.bound_to = '$session' THEN 'SESSION' ELSE 'SESSION_MEMBER' END,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CASE WHEN w.bound_to <> '$session' THEN SUBSTRING(w.bound_to, 10) END
+  FROM parameter p
+  JOIN paired w
+    ON w.graph_name = p.graph_name AND w.coordinate = p.coordinate AND w.parameter_name = p.parameter_name
+ WHERE w.bound_to = '$session' OR w.bound_to LIKE '$session.%'
+UNION ALL
+-- The argument path a pair names, where it lands under this occurrence of the condition.
+SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
+       p.parameter_name, 'ARGUMENT', l.landing_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM parameter p
+  JOIN (SELECT DISTINCT graph_name, coordinate, element_coordinate FROM cand) c
+    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate
+  JOIN graphitron_argmapping_landing l
+    ON l.graph_name = c.graph_name AND l.coordinate = c.element_coordinate
+   AND l.directive_name = 'condition' AND l.owner = 'condition'
+   AND l.parameter_name = p.parameter_name AND l.call_coordinate = c.coordinate
+UNION ALL
+-- An element of the parameter's name, where nothing is written for it.
+SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
+       p.parameter_name, 'ARGUMENT', e.slot_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM parameter p
+  JOIN slot e ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate AND e.name = p.parameter_name
+ WHERE NOT EXISTS (SELECT 1 FROM paired w WHERE w.graph_name = p.graph_name
+                      AND w.coordinate = p.coordinate AND w.parameter_name = p.parameter_name)
+UNION ALL
+-- A contextArguments key of its name, where nothing is written for it and no element has its name.
+SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
+       p.parameter_name, 'CONTEXT_KEY', CAST(NULL AS VARCHAR), k.context_key, CAST(NULL AS VARCHAR)
+  FROM parameter p
+  JOIN keyed k ON k.graph_name = p.graph_name AND k.coordinate = p.coordinate
+   AND k.parameter_name = p.parameter_name
+ WHERE NOT EXISTS (SELECT 1 FROM paired w WHERE w.graph_name = p.graph_name
+                      AND w.coordinate = p.coordinate AND w.parameter_name = p.parameter_name)
+   AND NOT EXISTS (SELECT 1 FROM slot e WHERE e.graph_name = p.graph_name
+                      AND e.coordinate = p.coordinate AND e.name = p.parameter_name)
+UNION ALL
+SELECT graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+       'ARGUMENT', slot_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM by_one
+UNION ALL
+SELECT graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+       'ARGUMENT', slot_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM by_type
+UNION ALL
+SELECT graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
+       'ARGUMENT', field_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM by_field;
 COMMENT ON VIEW graphitron_occurrence_condition_parameter_rule IS 'One row the condition parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.coordinate';
