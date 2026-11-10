@@ -5471,6 +5471,29 @@ COMMENT ON COLUMN sql_name_matched_key_column.position IS 'the arriving key colu
 COMMENT ON COLUMN sql_name_matched_key_column.to_column IS 'the arriving table''s primary-key column at that position';
 COMMENT ON COLUMN sql_name_matched_key_column.column_name IS 'the function result''s column of the same name, which is the one the join reads. NOT NULL: a key with an unexposed column is not stated at all, so this column never carries the absence its predecessor did';
 
+CREATE TABLE sql_column_spelling (
+  source_name    VARCHAR NOT NULL,
+  table_schema   VARCHAR NOT NULL,
+  table_name     VARCHAR NOT NULL,
+  spelling_upper VARCHAR NOT NULL,
+  column_name    VARCHAR NOT NULL,
+  matched_by     VARCHAR NOT NULL,
+  reach          INT     NOT NULL,
+  PRIMARY KEY (source_name, table_schema, table_name, spelling_upper, column_name),
+  FOREIGN KEY (source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
+  CHECK (reach >= 1)
+);
+COMMENT ON TABLE sql_column_spelling IS 'One column a written name reaches on a table, folded by case: by its SQL name where any column of the table carries that name, else by its generated jOOQ name. For example the spelling FILM_ID reaches public.film.film_id by SQL_NAME, with a reach of one.';
+COMMENT ON COLUMN sql_column_spelling.source_name IS 'the table''s generated-package source, as on sql_table';
+COMMENT ON COLUMN sql_column_spelling.table_schema IS 'the table''s SQL schema';
+COMMENT ON COLUMN sql_column_spelling.table_name IS 'the table''s SQL name';
+COMMENT ON COLUMN sql_column_spelling.spelling_upper IS 'the name folded by case, which is where an authored spelling meets the catalog: a reader folds the author''s @field(name:) or field name and joins here, and compares nothing else';
+COMMENT ON COLUMN sql_column_spelling.column_name IS 'the column the spelling reaches, as the catalog spells it';
+COMMENT ON COLUMN sql_column_spelling.matched_by IS 'which of the column''s names the spelling met: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no column of the table carries the spelling as its SQL name';
+COMMENT ON COLUMN sql_column_spelling.reach IS 'how many columns of the table the spelling reaches under that precedence, the same on every row of one spelling: one is a resolution, more is an ambiguity, and a spelling no column answers has no row';
+
 CREATE TABLE sql_referential_constraint (
   source_name                VARCHAR NOT NULL,
   table_schema               VARCHAR NOT NULL,
@@ -10883,13 +10906,13 @@ COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that l
 -- occurrence the node id rule already bound, which the stage writes first. Where a path lands is the
 -- join path's table where one is walked, a written path's landing being stated there and not on the
 -- need, and the need's own landing otherwise. One flat select and no WITH, so H2 takes the writer's
--- graph into it; the candidates are counted per row rather than by a window, for the same reason.
+-- graph into it. Which column a spelling reaches, and how many, is sql_column_spelling's, so this
+-- rule only joins it.
 CREATE VIEW graphitron_occurrence_column_rule
   (graph_name, coordinate, bound, table_source_name, table_schema, table_name, column_name,
    matched_by) AS
 SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_name, c.source_name,
-       c.table_schema, c.table_name, c.column_name,
-       CASE WHEN c.column_name_upper = UPPER(COALESCE(cl.named, o.name)) THEN 'SQL_NAME' ELSE 'JOOQ_NAME' END
+       c.table_schema, c.table_name, c.column_name, c.matched_by
   FROM graphitron_occurrence o
   LEFT JOIN graphitron_field f
     ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -10906,10 +10929,11 @@ SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_nam
   LEFT JOIN graphitron_join_path jp
     ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
    AND jp.target_type = n.target_type
-  JOIN sql_column c
+  -- Exactly one column answering, by the catalog's own precedence, stated once in sql_column_spelling.
+  JOIN sql_column_spelling c
     ON c.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND c.table_schema = COALESCE(jp.target_schema, n.landing_schema)
    AND c.table_name = COALESCE(jp.target_table, n.landing_table)
-   AND (c.column_name_upper = UPPER(COALESCE(cl.named, o.name)) OR c.jooq_name_upper = UPPER(COALESCE(cl.named, o.name)))
+   AND c.spelling_upper = UPPER(COALESCE(cl.named, o.name)) AND c.reach = 1
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
                       AND x.kind IN ('NODE_ID', 'EXPRESSION'))
@@ -10941,20 +10965,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_nam
                                      WHERE bt.graph_name = pn.graph_name
                                        AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
                                        AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
-                                       AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) = 1)))
-   -- The SQL name, where exactly one column of the table carries it.
-   AND ((c.column_name_upper = UPPER(COALESCE(cl.named, o.name))
-         AND (SELECT COUNT(*) FROM sql_column m
-               WHERE m.source_name = c.source_name AND m.table_schema = c.table_schema
-                 AND m.table_name = c.table_name AND m.column_name_upper = UPPER(COALESCE(cl.named, o.name))) = 1)
-     -- Else the generated name, where no SQL name answers and exactly one generated one does.
-     OR (c.jooq_name_upper = UPPER(COALESCE(cl.named, o.name))
-         AND NOT EXISTS (SELECT 1 FROM sql_column m
-                          WHERE m.source_name = c.source_name AND m.table_schema = c.table_schema
-                            AND m.table_name = c.table_name AND m.column_name_upper = UPPER(COALESCE(cl.named, o.name)))
-         AND (SELECT COUNT(*) FROM sql_column m
-               WHERE m.source_name = c.source_name AND m.table_schema = c.table_schema
-                 AND m.table_name = c.table_name AND m.jooq_name_upper = UPPER(COALESCE(cl.named, o.name))) = 1));
+                                       AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) = 1)));
 COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.coordinate IS 'the scalar occurrence';
@@ -13943,12 +13954,9 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
                             AND ii.interface_name = 'Node')
                  OR EXISTS (SELECT 1 FROM graphitron_node nd
                              WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
-   AND (SELECT COUNT(*) FROM sql_column m
-          WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-            AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.column_name_upper = UPPER(COALESCE(cl.named, o.name))) = 0
-   AND (SELECT COUNT(*) FROM sql_column m
-          WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-            AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.jooq_name_upper = UPPER(COALESCE(cl.named, o.name))) = 0
+   AND NOT EXISTS (SELECT 1 FROM sql_column_spelling m
+                    WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+                      AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.spelling_upper = UPPER(COALESCE(cl.named, o.name)))
  GROUP BY o.graph_name, COALESCE(da.source_name, gf.source_name),
           COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
 UNION ALL
@@ -14001,15 +14009,10 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
                             AND ii.interface_name = 'Node')
                  OR EXISTS (SELECT 1 FROM graphitron_node nd
                              WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
-   AND ((SELECT COUNT(*) FROM sql_column m
-          WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-            AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.column_name_upper = UPPER(COALESCE(cl.named, o.name))) > 1
-        OR ((SELECT COUNT(*) FROM sql_column m
-          WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-            AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.column_name_upper = UPPER(COALESCE(cl.named, o.name))) = 0
-            AND (SELECT COUNT(*) FROM sql_column m
-          WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-            AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.jooq_name_upper = UPPER(COALESCE(cl.named, o.name))) > 1))
+   AND EXISTS (SELECT 1 FROM sql_column_spelling m
+                WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+                  AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.spelling_upper = UPPER(COALESCE(cl.named, o.name))
+                  AND m.reach > 1)
  GROUP BY o.graph_name, COALESCE(da.source_name, gf.source_name),
           COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
 UNION ALL
@@ -18555,6 +18558,10 @@ INSERT INTO meta_grain VALUES
    'one column of a key matching a function result to a table by column name',
    'source_name, table_schema, table_name, to_source_name, to_schema, to_table, position',
    'catalog'),
+  ('column-spelling',
+   'one column a folded name reaches on one table',
+   'source_name, table_schema, table_name, spelling_upper, column_name',
+   'catalog'),
   ('constraint-column',
    'one position in one constraint''s column list',
    'source_name, table_schema, table_name, constraint_name, position', 'catalog'),
@@ -20247,6 +20254,10 @@ INSERT INTO meta_relation VALUES
    'One column of the key that matches a table-valued function''s result to a table by column name.',
    'For example a function result exposing organisasjonskode, matched against the primary key of public.organisasjon, is one row at position 0.',
    'A function result declares no foreign key, so a join leaving one has no constraint to read and the only rule available is the column name. Derived rather than transcribed, on sql_table_record_supertype''s terms: a closure the catalog gatherer computes over rows it has just written, in the family whose facts it is about. Only complete keys are stated, which is what separates this from the intent view it replaces. A key one of whose columns the function does not expose is not a key, so it is absent rather than flagged, and the four consumers that demanded a zero shortfall now join these rows instead of counting them: on the sakila example, four rows where the flagged form held 324. What an author wrote that needed a key which is not here is a fact at that author''s coordinate, a catalog being unable to fail to connect two tables and able only to not connect them. Catalog only, so it carries no graph partition and gates on no directive, which lets one relation serve consumers finding their endpoints in different places. Matching is case-insensitive as the resolver compares, against the arrival''s primary key alone, a unique constraint being no candidate. The position is carried because a consumer building a key tuple builds it in the key''s order. Nothing here says a pair is meaningful: every consumer arrives already holding two ends from somewhere that does.'),
+  ('sql_column_spelling', 'column-spelling', 'jooq',
+   'One column a written name reaches on a table, folded by case: by its SQL name where any column of the table carries that name, else by its generated jOOQ name.',
+   'For example the spelling FILM_ID reaches public.film.film_id by SQL_NAME, with a reach of one.',
+   'Which column a written name means is a function of the catalog alone, and it was spelled inline at each rule that asked it: the occurrence column rule and the unresolved and ambiguous column defects each counted sql_column twice per row. Stated once here, those rules join on the folded spelling instead, and a reader that has to resolve a column before its coordinate is an element reads the same rows. Derived rather than transcribed, on sql_name_matched_key_column''s terms: a closure the catalog gatherer computes over rows it has just written, in the family whose facts it is about, with no graph partition. The precedence is the resolver''s: a column''s SQL name before its generated one, the generated one answering only where no SQL name on the table does. Reach is a column rather than a rule inside whoever counts first, so a resolution (reach one) and an ambiguity (reach above one) come off the same rows, as graphitron_tabletype''s arity does, and a spelling no column answers is an absence.'),
   ('sql_referential_constraint', 'table-constraint', 'jooq',
    'One foreign key''s reference to the constraint it resolves against.',
    'For example film_actor''s foreign key to film, referencing the film_pkey constraint of public.film.',

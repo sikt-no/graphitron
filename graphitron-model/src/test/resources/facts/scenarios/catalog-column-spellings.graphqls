@@ -1,0 +1,30 @@
+# Which column of a table a written name reaches, as the catalog reading states it once for every
+# rule that resolves a column: the name folded by case, a column's SQL name before its generated jOOQ
+# one, and the reach, how many columns the name reaches under that precedence, on every row.
+#
+# film's names fold onto one column each, and a generated name that is the SQL name folded states
+# nothing beside it. address's generated name ADDRESS_ is not its SQL name, so it reaches the column by
+# jOOQ name. nodeidfixture.case_twins quotes two columns, "Code" and "code", that fold alike: CODE
+# reaches both, which is an ambiguity a reader reads off the reach, while jOOQ's CAPITAL_CODE reaches
+# "Code" alone because no SQL name on the table answers it.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+extend schema @assertContains(relation: "sql_column_spelling", rows: """
+  table_schema,  table_name, spelling_upper, column_name, matched_by, reach
+  public,        film,       FILM_ID,        film_id,     SQL_NAME,   1
+  public,        film,       TITLE,          title,       SQL_NAME,   1
+  public,        address,    ADDRESS,        address,     SQL_NAME,   1
+  public,        address,    ADDRESS_,       address,     JOOQ_NAME,  1
+  nodeidfixture, case_twins, CODE,           Code,        SQL_NAME,   2
+  nodeidfixture, case_twins, CODE,           code,        SQL_NAME,   2
+  nodeidfixture, case_twins, CAPITAL_CODE,   Code,        JOOQ_NAME,  1
+  """)
+
+# A generated name equal to the SQL name folded is not stated twice, and a name no column answers is
+# an absence rather than a row.
+extend schema @assertAbsent(relation: "sql_column_spelling", rows: """
+  table_schema, table_name, spelling_upper, matched_by
+  public,       film,       TITLE,          JOOQ_NAME
+  public,       film,       TITLE_TXT,      SQL_NAME
+  public,       film,       TITLE_TXT,      JOOQ_NAME
+  """)

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.jooq;
 
 import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.derive.ColumnSpellings;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.sink.BindBatch;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -91,6 +92,7 @@ public final class JooqFactCapture {
         dsl.transaction(tx -> {
             gather(tx.dsl(), graphName, jooq, touchedAt);
             NameMatchedKeys.derive(tx.dsl());
+            ColumnSpellings.derive(tx.dsl());
         });
         Progress.completed(dsl, graphName, GATHERER);
     }

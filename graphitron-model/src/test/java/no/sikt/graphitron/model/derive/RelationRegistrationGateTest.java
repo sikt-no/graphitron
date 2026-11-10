@@ -377,6 +377,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_minted_conflict", Arm.DERIVED);
         registrations.put("graphitron_spelled_table", Arm.DERIVED);
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
+        registrations.put("sql_column_spelling", Arm.DERIVED);
         registrations.put("sql_table_reference", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
