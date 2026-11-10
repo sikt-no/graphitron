@@ -1,7 +1,7 @@
 ---
 id: R1162
 title: "A connection cursor over a column with no SQL data type cannot be read back: fromDatabase throws NPE on page 2"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: runtime-connection
@@ -56,6 +56,13 @@ Both tests are unit tier in `graphitron-sakila-example`, against the emitted cla
 No execution-tier test. Both halves of the cursor are column-driven and dialect-free, which is the premise `CursorEncodingTest` already rests on for every other column type, and the seek binds through the column's own `DataType`, so a binding's SQL rendering is jOOQ's concern and not this code's. An execution test would need a new Postgres fixture table with a range key, a converter or binding in `graphitron-fixtures-codegen` and a forced type in the codegen configuration, all to reach a path the unit tests already drive end to end on the cursor side.
 
 The Done gate's evidence is `CursorEncodingTest`'s `readBack` case: it is the issue's failure, and it passes only when a cursor minted over the column reads back to its value.
+
+## Implementation notes
+
+Implemented as planned, in one commit. Two things a reviewer would otherwise have to work out:
+
+- The shared test type is `Span`, a package-private record in its own file beside the two tests, carrying `Span.TYPE` (the codegen shape, a `Converter<Object, Span>`) and its converter.
+- `Span.NARROW_TYPE` is one case beyond the plan's list: the same unknown-typed column under a `Converter<String, Span>`, the hand-built shape the `fromType().isInstance` guard exists for. `ColumnValuesTest` reads `Boolean.TRUE` through it as `null`; without the guard that input is a `ClassCastException` out of `fromDatabaseValue`, so the guard is pinned rather than only reasoned about.
 
 ## Other solutions we've considered
 
