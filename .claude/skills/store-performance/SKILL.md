@@ -297,7 +297,7 @@ Two constraints on this step, both of which have cost time:
   middling count says inlining, the same relation expanded once per naming down the tree. Then price
   the shape by timing, and prefer arithmetic that closes: if driving cardinalities multiply out to
   roughly the count you see, you understand the plan, and if they do not, you do not yet. Run it
-  against the populated store rather than a seeded one; a plan over a dozen rows is a different plan.
+  against the populated store rather than a small one; a plan over a dozen rows is a different plan.
   The divergence has a mechanism, and knowing when to expect it beats knowing that it can happen: a
   scan count weights every visited row equally, and a row of a view over `INFORMATION_SCHEMA` does
   not cost what a row of a table costs, so the count stops tracking cost exactly when a change moves

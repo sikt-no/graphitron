@@ -20,8 +20,9 @@ Read top-down; stop at the first match.
 . *The behaviour is what the model says an example means, or what a reader makes of what the store holds for it* → **Pipeline.**
   A fact document claiming the rows, and where the behaviour is a reader's, a test reading the document through `FactGraphs`; see <<What a test is built out of>>.
   The classification truth tables and the corpus they read retire with the walk and take no new cases.
-. *The behaviour is "this builder helper / classifier method / writer primitive / validator rule does X on input Y"* → **Unit.**
-  New case in a `*Test` next to the production class, or a `*ValidationTest` for validator rules.
+. *The behaviour is "this builder helper / writer primitive does X on input Y"* → **Unit.**
+  New case in a `*Test` next to the production class.
+  A refusal is not a unit behaviour: it is a defect the store states, pinned by a document under `defects/`.
 
 Tier answers how far a test runs; whether the test should exist at all is the <<Authoritative tests>> question, asked before any tier is chosen.
 
@@ -161,7 +162,8 @@ are writing is the candidate, and the page's example is where it belongs.
 
 Open a scenario with `@withFacts(docs: [...])` pulling in the layouts and shapes it builds on, then
 state only what its subject adds. A setup repeated across scenarios is a shape waiting to be
-extracted. A defect document is a minimal pair, as
+extracted, and a scenario that is awkward to state is usually a building block missing from
+`shapes/` or `layouts/`. A defect document is a minimal pair, as
 xref:../explanation/defects-as-facts.adoc#adding-a-defect[Adding a defect] states it: the rows the
 defect draws, and a near miss that draws nothing. To read a change, move the clock with
 `@tick(ms:)`, write the next version with `@withFacts`, and claim what the store holds after it.

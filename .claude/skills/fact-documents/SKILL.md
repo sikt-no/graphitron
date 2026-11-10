@@ -52,8 +52,8 @@ The verdicts, and nothing else:
   editing the document;
 - **a Java test reading the population**: a reader's behaviour, read through `FactGraphs`;
 - **a store of its own**: the reasons the testing page gives, and only those;
-- **inline, its defect not yet stored**: the shape the store does not state; name it beside the
-  module's `InlineCaptureGateTest` ceiling, and it is a defect to add, not a place to stop;
+- **inline, its defect not yet stored**: on the testing page's terms ("What is not an example"),
+  named beside the module's `InlineCaptureGateTest` ceiling;
 - **deleted as a duplicate**: the authoritative test that already covers it, by `file:line`. A
   duplicate verdict without that `file:line` is refused.
 
@@ -94,11 +94,11 @@ the documents merged; and the ceilings it lowered.
 
 ## Smells
 
-- **A document named for a test class.** A document is named for its subject. One named for the test
-  that used to hold it pins whatever that class happened to assert.
-- **A claim weakened to fit a second case.** Give the case its own document, pulling the first in
-  with `@withFacts`.
-- **A seeded fixture moved rather than dissolved.** `SeededStore` only loses callers; a site that
-  seeds becomes a document stating the example whose capture writes those rows.
-- **An inline capture kept because converting it was awkward.** Inline is for a shape whose defect
-  the store does not record. Awkward is a building block missing from `shapes/` or `layouts/`.
+Each is a migration habit; the rule it breaks is on the testing page, "What a test is built out of".
+
+- **A document named for the test class it came from** pins whatever that class happened to assert,
+  not one subject.
+- **A seeded site moved rather than dissolved.** It becomes a document stating the example whose
+  capture writes those rows.
+- **An inline capture kept because converting it was awkward.** Awkward is a missing building block,
+  not a reason to stay inline.
