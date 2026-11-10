@@ -107,6 +107,19 @@ the `@service`:
   another parameter too. Name it after its argument, or bind it in `argMapping`.
 * *Filled twice*: an `argMapping` entry and a `contextArguments` element both name it. Write it once.
 
+An input object a parameter takes as a table's jOOQ record (`FilmRecord`) is built column by
+column, each input field writing the column it binds on that table:
+
+* A field the client did not send leaves its column untouched, so the record's changed flags say
+  exactly what the client wrote. A field sent as `null` writes `NULL`, on a `NOT NULL` column too,
+  whatever else the input sends.
+* A `@nodeId` field writes the key columns of its node, or of the reference its path names; sent as
+  `null`, it writes `NULL` to those of its columns no other field wrote.
+* Where two fields write one column, the values must agree, or the request fails with
+  "Conflicting values supplied for input fields 'a', 'b'", naming every field writing it.
+* In a list of input objects, built into records or classes, a `null` element is refused: the
+  method is handed the objects, not gaps.
+
 [[arg-mapping]]
 == Binding a parameter to a nested input field
 

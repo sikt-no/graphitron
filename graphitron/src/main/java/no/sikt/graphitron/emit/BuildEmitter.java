@@ -58,10 +58,13 @@ public final class BuildEmitter {
     /**
      * The helper that makes {@code build}'s jOOQ record from an input object's map: each column set
      * from the first of its fields the client sent, a value through the column's own conversion by
-     * {@code fromArray} and an explicit null as null, a column no
-     * field was sent for left untouched, so the record's dirty flags are what the client wrote; then
-     * the node ids decoded into the same record, after every plain write so their agreement check
-     * sees it.
+     * {@code fromArray} and an explicit null as null, a column no field was sent for left untouched, so
+     * the record's dirty flags are what the client wrote. Every value is loaded before any explicit null
+     * is set: each {@code fromArray} clears the dirty flag of a null already on a {@code NOT NULL}
+     * column, so a null written first would not survive a later load. Then the node ids decoded
+     * into the same record, after every plain write so their agreement check sees it, a conflict
+     * naming every input field writing the column; and last a node id sent as an explicit null, which
+     * nulls the columns it would have written that no other field wrote.
      */
     public static MethodSpec recordHelper(BuildQuery.RecordBuild build, String name,
                                           NodeIdDecodeEmitter.Runtime runtime) {
@@ -72,36 +75,77 @@ public final class BuildEmitter {
             .returns(type)
             .addParameter(ANY_MAP, "in")
             .addStatement("$T out = new $T()", type, type);
-        for (var column : build.columns()) {
-            var field = CodeBlock.of("$T.$L.$L", table, build.tableField(), column.columnJavaName());
-            boolean first = true;
-            for (var path : column.paths()) {
-                var condition = CodeBlock.of("in.containsKey($S)", path.getLast());
-                if (first) {
-                    method.beginControlFlow("if ($L)", condition);
-                    first = false;
-                } else {
-                    method.nextControlFlow("else if ($L)", condition);
+        // The values first, then the explicit nulls, each column from the first of its fields sent.
+        for (boolean nulls : new boolean[] {false, true}) {
+            for (var column : build.columns()) {
+                var field = CodeBlock.of("$T.$L.$L", table, build.tableField(), column.columnJavaName());
+                boolean first = true;
+                for (var path : column.paths()) {
+                    var condition = CodeBlock.of("in.containsKey($S)", path.getLast());
+                    if (first) {
+                        method.beginControlFlow("if ($L)", condition);
+                        first = false;
+                    } else {
+                        method.nextControlFlow("else if ($L)", condition);
+                    }
+                    if (nulls) {
+                        method.beginControlFlow("if (in.get($S) == null)", path.getLast())
+                            .addStatement("out.set($L, null)", field)
+                            .endControlFlow();
+                    } else {
+                        method.beginControlFlow("if (in.get($S) != null)", path.getLast())
+                            .addStatement("out.fromArray(new $T[] {in.get($S)}, $L)", Object.class, path.getLast(),
+                                field)
+                            .endControlFlow();
+                    }
                 }
-                // A present value through fromArray, which converts it through the column's own data
-                // type and converter; an explicit null set directly, fromArray skipping nulls.
-                method.beginControlFlow("if (in.get($S) == null)", path.getLast())
-                    .addStatement("out.set($L, null)", field)
-                    .nextControlFlow("else")
-                    .addStatement("out.fromArray(new $T[] {in.get($S)}, $L)", Object.class, path.getLast(), field)
-                    .endControlFlow();
+                method.endControlFlow();
             }
-            method.endControlFlow();
         }
         var counter = new int[] {0};
         for (var member : build.decodes()) {
             var id = "id" + (++counter[0]);
             method.beginControlFlow("if (in.get($S) instanceof $T $L)", member.path().getLast(), STRING, id);
             NodeIdDecodeEmitter.into(method, CodeBlock.of("out"), member.decode().orElseThrow(), id,
-                String.join(".", member.path()), runtime);
+                conflictLabel(build, member), runtime);
+            method.endControlFlow();
+        }
+        for (var member : build.decodes()) {
+            var decode = member.decode().orElseThrow();
+            var sent = member.path().getLast();
+            method.beginControlFlow("if (in.containsKey($S) && in.get($S) == null)", sent, sent);
+            for (var column : decode.columnJavaNames()) {
+                var field = CodeBlock.of("$T.$L.$L", SessionIdentityRows.classOf(decode.tablesClass()),
+                    decode.tableField(), column);
+                method.beginControlFlow("if (!out.touched($L))", field)
+                    .addStatement("out.set($L, null)", field)
+                    .endControlFlow();
+            }
             method.endControlFlow();
         }
         return method.addStatement("return out").build();
+    }
+
+    /**
+     * How a decode's disagreement with another writer of a column names them: every input field
+     * writing a column the decode writes, the plain ones first, then the node ids in order, as
+     * {@code input fields 'binIdText', 'binId'}.
+     */
+    private static String conflictLabel(BuildQuery.RecordBuild build, BuildQuery.Member member) {
+        var columns = member.decode().orElseThrow().columnJavaNames();
+        var writers = new java.util.LinkedHashSet<String>();
+        for (var column : build.columns()) {
+            if (columns.contains(column.columnJavaName())) {
+                column.paths().forEach(path -> writers.add(String.join(".", path)));
+            }
+        }
+        for (var other : build.decodes()) {
+            if (other.decode().orElseThrow().columnJavaNames().stream().anyMatch(columns::contains)) {
+                writers.add(String.join(".", other.path()));
+            }
+        }
+        return "input fields " + writers.stream().map(w -> "'" + w + "'")
+            .collect(java.util.stream.Collectors.joining(", "));
     }
 
     private static void helper(BuildQuery.Build build, String name, NodeIdDecodeEmitter.Runtime runtime,

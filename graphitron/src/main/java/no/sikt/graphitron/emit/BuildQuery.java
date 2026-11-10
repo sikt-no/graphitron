@@ -17,6 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
@@ -224,7 +225,9 @@ public final class BuildQuery {
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .join(t).on(t.GRAPH_NAME.eq(f.GRAPH_NAME), t.TYPE_NAME.eq(f.NAMED_TYPE))
             .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.eq("INPUT_FIELD"))
-            .orderBy(o.COORDINATE)
+            // In the order the input type declares its fields, which is the order a record's columns
+            // are written in.
+            .orderBy(o.PARENT_COORDINATE, f.ORDINAL)
             .forEach(r -> out.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(
                 new InputField(r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7(),
                     r.value8(), r.value9())));
@@ -280,11 +283,12 @@ public final class BuildQuery {
     }
 
     /**
-     * An input object made into a table's jOOQ record: each plain field writes the column its bound
-     * name names, a node id field decodes into the record's own key or its foreign key to the node's
-     * table, and where several fields name one column a live one is preferred over a deprecated one,
-     * the latest declared among deprecated ones, two live ones being refused for nothing saying which
-     * the author meant.
+     * An input object made into a table's jOOQ record: each plain field writes the column the store
+     * binds its occurrence to on the record's table, in the order the input type declares them; a
+     * node id field decodes into the record's own key or its foreign key to the node's table; and
+     * where several fields name one column a live one is preferred over a deprecated one, the latest
+     * declared among deprecated ones, two live ones being refused for nothing saying which the author
+     * meant.
      */
     private static Result columns(String occurrence, String recordClass, Map<String, List<InputField>> children,
                                   Catalog catalog) {
@@ -301,19 +305,20 @@ public final class BuildQuery {
                 if (resolution instanceof NodeIdDecodeQuery.Resolution.Refused refused) {
                     return new Result.Refused("input field " + field.name() + ": " + refused.reason());
                 }
+                var decode = ((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode();
                 var slot = new Slot(null, null, 0, field.boundName(), recordClass, recordClass, null);
                 decodes.add(new Member(slot, List.of(field.name()), field.typeKind(), false, Optional.empty(),
-                    Optional.of(((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode())));
+                    Optional.of(decode)));
                 continue;
             }
             if ("INPUT_OBJECT".equals(field.typeKind())) {
                 return new Result.Refused("input field " + field.name() + " is an input object inside a jOOQ record, "
                     + "which is not built here yet");
             }
-            var column = catalog.columns().get(tableKey + "." + field.boundName());
+            // The column the store binds the field's occurrence to on the record's table.
+            var column = catalog.occurrenceColumns().get(field.coordinate() + "|" + tableKey);
             if (column == null) {
-                return new Result.Refused("input field " + field.name() + " names column " + field.boundName()
-                    + ", which " + table.name() + " does not have");
+                return new Result.Refused("input field " + field.name() + " binds no column of " + table.name());
             }
             byColumn.computeIfAbsent(column.javaName(), k -> new ArrayList<>()).add(field);
         }
@@ -401,7 +406,7 @@ public final class BuildQuery {
      * The catalog facts a jOOQ record built on the column axis reads, the table each record class is
      * a row of and each column's generated name, and the node id decodes its fields resolve through.
      */
-    private record Catalog(Map<String, Table> tables, Map<String, Column> columns, NodeIdDecodeQuery decodes) {
+    private record Catalog(Map<String, Table> tables, Map<String, Column> occurrenceColumns, NodeIdDecodeQuery decodes) {
 
         static Catalog read(StoreHandle store) {
             var t = SQL_TABLE;
@@ -414,11 +419,16 @@ public final class BuildQuery {
                 .forEach(r -> tables.putIfAbsent(r.value1(),
                     new Table(r.value2(), r.value3(), r.value4(), r.value5(), r.value6())));
 
+            // Each occurrence's column on each table it lands on, by the occurrence and the table.
             var c = SQL_COLUMN;
+            var oc = GRAPHITRON_OCCURRENCE_COLUMN;
             var columns = new HashMap<String, Column>();
-            store.dsl().select(c.SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME)
-                .from(c)
-                .forEach(r -> columns.put(key(r.value1(), r.value2(), r.value3()) + "." + r.value4(),
+            store.dsl().select(oc.COORDINATE, oc.TABLE_SOURCE_NAME, oc.TABLE_SCHEMA, oc.TABLE_NAME, c.JOOQ_NAME)
+                .from(oc)
+                .join(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
+                    c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
+                .where(oc.GRAPH_NAME.eq(store.graphName()))
+                .forEach(r -> columns.put(r.value1() + "|" + key(r.value2(), r.value3(), r.value4()),
                     new Column(r.value5())));
             return new Catalog(tables, columns, NodeIdDecodeQuery.read(store));
         }

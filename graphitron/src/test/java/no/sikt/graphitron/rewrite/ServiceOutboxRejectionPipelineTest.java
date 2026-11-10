@@ -37,6 +37,7 @@ class ServiceOutboxRejectionPipelineTest {
         input ModifyFilmInput {
             filmId: ID! @nodeId(typeName: "Film")
             title: String @field(name: "title")
+            relatedIds: [ID!] @nodeId(typeName: "Film")
         }
         type Query { films: [Film!]! }
         """;

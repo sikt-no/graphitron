@@ -189,7 +189,7 @@ public final class FillEmitter {
                                         + " is made into " + type);
                         }
                         statements.add(argument(ClassName.get(Object.class), local + "Wire", landing.path()));
-                        statements.add(made(type, local, helper));
+                        statements.add(made(type, local, helper, helpers));
                         arguments.add(CodeBlock.of("$L", local));
                         continue;
                     }
@@ -316,18 +316,48 @@ public final class FillEmitter {
             CodeBlock.of("$T $L = $L == null ? null : $T.valueOf($L)", type, local, wire, type, wire));
     }
 
-    /** An input object, or a list of them, made into the parameter's class by {@code helper}. */
-    private static CodeBlock made(TypeName type, String local, String helper) {
+    /**
+     * An input object, or a list of them, made into the parameter's class by {@code helper}; a list
+     * through a helper of its own, {@link #madeList}, added to {@code helpers}.
+     */
+    private static CodeBlock made(TypeName type, String local, String helper, List<MethodSpec> helpers) {
         var wire = local + "Wire";
-        var anyMap = ParameterizedTypeName.get(MAP, com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class),
-            com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
         if (type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())) {
-            return CodeBlock.of("$T $L = $L instanceof $T<?> elements ? elements.stream()"
-                    + ".map(e -> e instanceof $T m ? $L(m) : null).toList() : null",
-                type, local, wire, LIST, anyMap, helper);
+            helpers.add(madeList(list, helper));
+            return CodeBlock.of("$T $L = $LList($L)", type, local, helper, wire);
         }
-        return CodeBlock.of("$T $L = $L instanceof $T m ? $L(m) : null", type, local, wire, anyMap, helper);
+        return CodeBlock.of("$T $L = $L instanceof $T m ? $L(m) : null", type, local, wire, ANY_MAP, helper);
     }
+
+    /**
+     * The helper making each element of a list of input objects by {@code helper}, null where the
+     * list is absent. A null element is refused rather than passed on: the method takes the objects it
+     * is handed.
+     */
+    private static MethodSpec madeList(ParameterizedTypeName type, String helper) {
+        var name = helper + "List";
+        return MethodSpec.methodBuilder(name)
+            .addModifiers(javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC)
+            .returns(type)
+            .addParameter(Object.class, "wire")
+            .beginControlFlow("if (!(wire instanceof $T<?> elements))", LIST)
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T out = new $T<>(elements.size())", type, ClassName.get("java.util", "ArrayList"))
+            .beginControlFlow("for (Object element : elements)")
+            .beginControlFlow("if (!(element instanceof $T m))", ANY_MAP)
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                name + ": null element not allowed in list argument")
+            .endControlFlow()
+            .addStatement("out.add($L(m))", helper)
+            .endControlFlow()
+            .addStatement("return out")
+            .build();
+    }
+
+    private static final TypeName ANY_MAP = ParameterizedTypeName.get(MAP,
+        com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class),
+        com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
 
     /** A type's element: the type a {@code List} holds, or the type itself. */
     private static TypeName elementOf(TypeName type) {

@@ -238,7 +238,6 @@ public final class ServiceEmission {
         if (filled == null || !filled.complete()) return "FILLS_INCOMPLETE";
         var built = builds.getOrDefault(coordinate, Map.of()).values();
         if (built.stream().anyMatch(r -> r instanceof BuildQuery.Result.Refused)) return "BUILD_REFUSED";
-        if (built.stream().anyMatch(r -> r instanceof BuildQuery.Result.Columns)) return "RECORD_BUILD";
         if (filled.fills().stream().anyMatch(f -> f.landing().map(FillEmitter::unreadThroughList).orElse(false))) {
             return "ARGUMENT_PATH";
         }

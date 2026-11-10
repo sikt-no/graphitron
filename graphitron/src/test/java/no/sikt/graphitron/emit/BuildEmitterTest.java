@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link BuildEmitter}'s helpers, through the fills that call them, compiled strictly and run: an
@@ -134,6 +135,13 @@ class BuildEmitterTest {
     @Test
     void anAbsentInputObjectIsNull() throws Exception {
         assertThat(run("bean", null)).isNull();
+    }
+
+    @Test
+    void aNullElementOfAListIsRefused() {
+        assertThatThrownBy(() -> run("drafts", java.util.Arrays.asList(Map.of("title", "a"), null)))
+            .hasRootCauseInstanceOf(IllegalArgumentException.class)
+            .rootCause().hasMessageEndingWith("null element not allowed in list argument");
     }
 
 }
