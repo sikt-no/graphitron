@@ -15839,8 +15839,19 @@ SELECT p.graph_name, p.coordinate, 'TARGET', 'ACCESSOR',
 UNION ALL
 -- A re-fetch: every need's path is empty, the target's rows being the source's, a record or a
 -- payload's rows of the field's own table under a type bound to no table; keyed on its primary key.
+-- Under a write's payload the write says how many rows a parent holds: many where it matches many or
+-- takes a list, one otherwise, whatever the field declares; elsewhere the field does.
 SELECT p.graph_name, p.coordinate, 'TARGET', 'COLUMNS',
-       CASE WHEN f.is_list THEN 'MANY' ELSE 'ONE' END,
+       CASE WHEN pw.coordinate IS NULL THEN CASE WHEN f.is_list THEN 'MANY' ELSE 'ONE' END
+            WHEN pw.matches = 'MANY'
+                 OR EXISTS (SELECT 1 FROM graphitron_occurrence po
+                              JOIN graphitron_field pf
+                                ON pf.graph_name = po.graph_name AND pf.coordinate = po.element_coordinate
+                              JOIN graphitron_argument a
+                                ON a.graph_name = pf.graph_name AND a.type_name = pf.type_name
+                               AND a.field_name = pf.field_name AND a.is_list
+                             WHERE po.graph_name = pw.graph_name AND po.coordinate = pw.coordinate)
+              THEN 'MANY' ELSE 'ONE' END,
        k.source_name, k.table_schema, k.table_name, k.constraint_name
   FROM graphitron_occurrence_producer p
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
@@ -15850,6 +15861,8 @@ SELECT p.graph_name, p.coordinate, 'TARGET', 'COLUMNS',
   JOIN sql_constraint k
     ON k.source_name = st.table_source_name AND k.table_schema = st.table_schema
    AND k.table_name = st.table_name AND k.constraint_type = 'PRIMARY KEY'
+  LEFT JOIN graphitron_occurrence_producer_write pw
+    ON pw.graph_name = o.graph_name AND pw.coordinate = o.parent_coordinate
  WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
    AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype dt
                     WHERE dt.graph_name = f.graph_name AND dt.type_name = f.type_name)
