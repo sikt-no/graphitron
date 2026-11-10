@@ -4,7 +4,7 @@
 #
 #
 
-type Film {
+type Film @table(name: "film") {
   title: String
 }
 

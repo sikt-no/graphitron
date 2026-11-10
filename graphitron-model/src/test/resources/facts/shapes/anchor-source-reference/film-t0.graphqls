@@ -1,7 +1,7 @@
 # An anchor references the entries it was read from. The first reading points each field at the
 # position of its own definition and of the declaration it sits in.
 
-type Film {
+type Film @table(name: "film") {
   title: String
 }
 
