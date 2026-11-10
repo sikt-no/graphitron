@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
@@ -15,12 +16,19 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.max;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.rowNumber;
 import static org.jooq.impl.DSL.selectDistinct;
+import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
@@ -34,6 +42,11 @@ import static org.jooq.impl.DSL.when;
  * argument's named type for an argument. The kind is read off the declaration's own entry kind, at
  * the position the claim was written, so it does not wait on the element being emitted. Positions
  * are joined only within one file.
+ *
+ * <p>Each claim states the places its path spans: the last written under its position, and the first,
+ * which is 1 where place 0 is a root field's leading {@code @routine}, that routine being the
+ * field's producer's call and its table the field's source, so not a step. A claim whose last place
+ * is below its first writes no path, which is a root field writing only its leading routine.
  *
  * <p>Two claims on one element reaching one type keep one row: the first written, by the merge
  * order of the declarations they sit in, as {@code graphql_type_declaration} numbers them, then by
@@ -76,13 +89,32 @@ public final class PathClaims {
             .when(declared.ENTRY_KIND.eq(EntryKind.FIELD_ARGUMENT), val("ARGUMENT"))
             .when(declared.ENTRY_KIND.eq(EntryKind.INPUT_FIELD), val("INPUT_FIELD"));
         var target = coalesce(rf.PARTICIPANT_TYPE_REF, ft.TARGET_TYPE_NAME, arg.NAMED_TYPE);
+        // The places under the claim's position, and whether place 0 is a root field's leading routine.
+        var span = GRAPHITRON_AST_PATH_ENTRY.as("span");
+        var lastPlace = field(select(max(span.PLACE)).from(span)
+            .where(span.GRAPH_NAME.eq(graph), span.SOURCE_NAME.eq(file), span.ANCHOR_LINE.eq(line),
+                span.ANCHOR_COLUMN.eq(column)));
+        var ro = GRAPHQL_ROOT_OPERATION;
+        var lead = GRAPHITRON_AST_PATH_ENTRY.as("lead");
+        var re = GRAPHITRON_AST_ROUTINE_ENTRY;
+        var firstPlace = when(rf.SOURCE_LINE.isNull()
+                .and(declared.ENTRY_KIND.eq(EntryKind.FIELD_DEFINITION))
+                .and(exists(selectOne().from(ro)
+                    .where(ro.GRAPH_NAME.eq(f.GRAPH_NAME), ro.TYPE_NAME.eq(f.TYPE_NAME))))
+                .and(exists(selectOne().from(lead)
+                    .join(re).on(re.GRAPH_NAME.eq(lead.GRAPH_NAME), re.SOURCE_NAME.eq(lead.SOURCE_NAME),
+                        re.SOURCE_LINE.eq(lead.ELEMENT_LINE), re.SOURCE_COLUMN.eq(lead.ELEMENT_COLUMN))
+                    .where(lead.GRAPH_NAME.eq(graph), lead.SOURCE_NAME.eq(file), lead.ANCHOR_LINE.eq(line),
+                        lead.ANCHOR_COLUMN.eq(column), lead.PLACE.eq(0)))), inline(1))
+            .otherwise(inline(0));
         var rank = rowNumber().over(partitionBy(el.COORDINATE, target)
             .orderBy(td.MERGE_ORDINAL.asc().nullsLast(), file.asc(), line.asc(), column.asc()));
 
         var ranked = dsl
             .select(graph.as("graph_name"), el.COORDINATE.as("element_coordinate"),
                 target.as("target_type"), kind.as("claim_kind"), file.as("source_name"),
-                line.as("source_line"), column.as("source_column"), rank.as("rn"))
+                line.as("source_line"), column.as("source_column"), firstPlace.as("first_place"),
+                lastPlace.as("last_place"), rank.as("rn"))
             .from(positions)
             .join(at).on(at.GRAPH_NAME.eq(graph), at.SOURCE_NAME.eq(file),
                 at.SOURCE_LINE.eq(line), at.SOURCE_COLUMN.eq(column))
@@ -108,14 +140,16 @@ public final class PathClaims {
         var t = GRAPHITRON_TYPE;
         dsl.insertInto(a)
             .columns(a.GRAPH_NAME, a.ELEMENT_COORDINATE, a.TARGET_TYPE, a.CLAIM_KIND,
-                a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, a.TOUCHED_AT,
+                a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, a.FIRST_PLACE, a.LAST_PLACE, a.TOUCHED_AT,
                 a.ELEMENT_GRAPH_REF, a.ELEMENT_COORDINATE_REF, a.TARGET_GRAPH_REF,
                 a.TARGET_TYPE_REF)
             .select(dsl
                 .select(rGraph, rElement, rTarget, ranked.field("claim_kind", String.class),
                     ranked.field("source_name", String.class),
                     ranked.field("source_line", Integer.class),
-                    ranked.field("source_column", Integer.class), val(touchedAt, a.TOUCHED_AT),
+                    ranked.field("source_column", Integer.class),
+                    ranked.field("first_place", Integer.class), ranked.field("last_place", Integer.class),
+                    val(touchedAt, a.TOUCHED_AT),
                     e.GRAPH_NAME, e.COORDINATE, t.GRAPH_NAME, t.TYPE_NAME)
                 .from(ranked)
                 .leftJoin(e).on(e.GRAPH_NAME.eq(rGraph), e.COORDINATE.eq(rElement))
@@ -128,6 +162,8 @@ public final class PathClaims {
             .set(a.SOURCE_NAME, excluded(a.SOURCE_NAME))
             .set(a.SOURCE_LINE, excluded(a.SOURCE_LINE))
             .set(a.SOURCE_COLUMN, excluded(a.SOURCE_COLUMN))
+            .set(a.FIRST_PLACE, excluded(a.FIRST_PLACE))
+            .set(a.LAST_PLACE, excluded(a.LAST_PLACE))
             .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT))
             .set(a.ELEMENT_GRAPH_REF, excluded(a.ELEMENT_GRAPH_REF))
             .set(a.ELEMENT_COORDINATE_REF, excluded(a.ELEMENT_COORDINATE_REF))

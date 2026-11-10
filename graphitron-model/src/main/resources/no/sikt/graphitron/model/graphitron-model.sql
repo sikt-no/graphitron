@@ -8415,6 +8415,8 @@ CREATE TABLE graphitron_join_path_claim (
   source_name            VARCHAR   NOT NULL,
   source_line            INT       NOT NULL,
   source_column          INT       NOT NULL,
+  first_place            INT       NOT NULL,
+  last_place             INT       NOT NULL,
   touched_at             TIMESTAMP NOT NULL,
   element_graph_ref      VARCHAR,
   element_coordinate_ref VARCHAR,
@@ -8433,7 +8435,10 @@ CREATE TABLE graphitron_join_path_claim (
   CHECK (element_coordinate_ref IS NULL OR element_coordinate_ref = element_coordinate),
   CHECK (target_graph_ref IS NULL OR target_graph_ref = graph_name),
   CHECK (target_type_ref IS NULL OR target_type_ref = target_type),
-  CHECK (claim_kind IN ('FIELD', 'REFERENCE_FOR', 'ARGUMENT', 'INPUT_FIELD'))
+  CHECK (claim_kind IN ('FIELD', 'REFERENCE_FOR', 'ARGUMENT', 'INPUT_FIELD')),
+  CHECK (first_place IN (0, 1)),
+  CHECK (first_place = 0 OR claim_kind = 'FIELD'),
+  CHECK (last_place >= 0)
 );
 COMMENT ON TABLE graphitron_join_path_claim IS 'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path. For example Store.people with @referenceFor(type: "Staff") is the claim (Store.people, Staff), of kind REFERENCE_FOR.';
 COMMENT ON COLUMN graphitron_join_path_claim.graph_name IS 'the owning graph''s partition, anchored by store_graph';
@@ -8443,6 +8448,8 @@ COMMENT ON COLUMN graphitron_join_path_claim.claim_kind IS 'what wrote the path:
 COMMENT ON COLUMN graphitron_join_path_claim.source_name IS 'the file the claim was written in';
 COMMENT ON COLUMN graphitron_join_path_claim.source_line IS 'the claim''s source line, 1-based';
 COMMENT ON COLUMN graphitron_join_path_claim.source_column IS 'the claim''s source column; with the two columns before it, the claim position graphitron_ast_path_entry keys its elements by within this file. An attribute and not a reference: a position is only a key within its own file, and the claim is named by the coordinate and the target type';
+COMMENT ON COLUMN graphitron_join_path_claim.first_place IS 'the place the path starts at: 1 where place 0 is a root field''s leading @routine, its producer''s call and so no step of the path, else 0';
+COMMENT ON COLUMN graphitron_join_path_claim.last_place IS 'the last place written under the claim''s position; the claim writes a path where it is at least first_place, so a root field writing only its leading @routine writes none';
 COMMENT ON COLUMN graphitron_join_path_claim.touched_at IS 'when the reading that last stated this claim ran: the mark the sweep reads, so a claim a reading no longer finds goes with the paths following it';
 COMMENT ON COLUMN graphitron_join_path_claim.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
 COMMENT ON COLUMN graphitron_join_path_claim.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
@@ -9383,16 +9390,7 @@ WITH claim (graph_name, claim_coordinate, claim_target_type, source_name, anchor
             anchor_column, first_place, single_valued, on_mutation) AS (
   SELECT c.graph_name, c.element_coordinate, c.target_type, c.source_name, c.source_line,
          c.source_column,
-         CASE WHEN ro.type_name IS NOT NULL
-                   AND EXISTS (SELECT 1 FROM graphitron_ast_path_entry e0
-                                 JOIN graphitron_path_element_routine r0
-                                   ON r0.graph_name = e0.graph_name AND r0.source_name = e0.source_name
-                                  AND r0.source_line = e0.element_line
-                                  AND r0.source_column = e0.element_column
-                                WHERE e0.graph_name = c.graph_name AND e0.source_name = c.source_name
-                                  AND e0.anchor_line = c.source_line
-                                  AND e0.anchor_column = c.source_column AND e0.place = 0)
-              THEN 1 ELSE 0 END,
+         c.first_place,
          CASE WHEN NOT (f.is_list OR nv.wrapper_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM')
               THEN TRUE ELSE FALSE END,
          CASE WHEN ro.operation = 'MUTATION' THEN TRUE ELSE FALSE END

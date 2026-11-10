@@ -244,3 +244,13 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_source", rows: """
   Film.actorRows.pageInfo
   Film.actorRows.totalCount
   """)
+
+# Each claim states the places its path spans. Query.rows writes only its leading @routine, its
+# producer's call, so its path starts past it and it writes none; languageName and titleTexts write
+# one element each, from place 0.
+extend schema @assertContains(relation: "graphitron_join_path_claim", rows: """
+  element_coordinate, target_type,     claim_kind, first_place, last_place
+  Film.languageName,  String,          FIELD,      0,           0
+  Film.titleTexts,    TranslatedTexts, FIELD,      0,           0
+  Query.rows,         Row,             FIELD,      1,           0
+  """)

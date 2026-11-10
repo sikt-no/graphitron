@@ -18,12 +18,11 @@ import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCESSOR_PATH;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -37,7 +36,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -744,27 +742,15 @@ public final class OccurrenceSources {
     }
 
     /**
-     * Whether the field {@code pf} writes a path, which its join path resolves. A root field's
-     * leading @routine is its producer's call, no step of a path, and its table the field's source
-     * already.
+     * Whether the field {@code pf} writes a path, which its join path resolves, as its {@code FIELD}
+     * claim's places state; a root field writing only its leading @routine, its producer's call,
+     * writes none.
      */
     private static Condition writesPath(GraphitronField pf) {
-        var pe = GRAPHITRON_AST_FIELD_PATH_ENTRY.as("wpe");
-        var fd = GRAPHQL_AST_FIELD_DEFINITION_ENTRY.as("wfd");
-        var ro = GRAPHQL_ROOT_OPERATION.as("wro");
-        var re = GRAPHITRON_AST_ROUTINE_ENTRY.as("wre");
-        return exists(selectOne().from(pe)
-            .join(fd).on(fd.GRAPH_NAME.eq(pe.GRAPH_NAME), fd.SOURCE_NAME.eq(pe.SOURCE_NAME),
-                fd.SOURCE_LINE.eq(pe.FIELD_LINE), fd.SOURCE_COLUMN.eq(pe.FIELD_COLUMN))
-            .where(fd.GRAPH_NAME.eq(pf.GRAPH_NAME), fd.TYPE_NAME.eq(pf.TYPE_NAME),
-                fd.NAME.eq(pf.FIELD_NAME))
-            .andNot(pe.POSITION.eq(0)
-                .and(exists(selectOne().from(ro)
-                    .where(ro.GRAPH_NAME.eq(pf.GRAPH_NAME), ro.TYPE_NAME.eq(pf.TYPE_NAME))))
-                .and(exists(selectOne().from(re)
-                    .where(re.GRAPH_NAME.eq(pe.GRAPH_NAME), re.SOURCE_NAME.eq(pe.SOURCE_NAME),
-                        re.SOURCE_LINE.eq(pe.ELEMENT_LINE),
-                        re.SOURCE_COLUMN.eq(pe.ELEMENT_COLUMN))))));
+        var c = GRAPHITRON_JOIN_PATH_CLAIM.as("wpc");
+        return exists(selectOne().from(c)
+            .where(c.GRAPH_NAME.eq(pf.GRAPH_NAME), c.ELEMENT_COORDINATE.eq(pf.COORDINATE),
+                c.CLAIM_KIND.eq("FIELD"), c.LAST_PLACE.ge(c.FIRST_PLACE)));
     }
 
     /** An input field reads its parent argument's or input field's tables. */

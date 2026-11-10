@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.tables.GraphitronJoinPathClaim;
 import no.sikt.graphitron.model.tables.GraphitronOccurrence;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -14,8 +15,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
@@ -29,9 +28,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.castNull;
 import static org.jooq.impl.DSL.coalesce;
@@ -307,38 +304,26 @@ public final class PathNeeds {
     }
 
     /**
-     * Whether the element {@code o} is an occurrence of writes a path at its declaration. A root
-     * field's leading @routine is its producer's call and its table the field's source already, so
-     * a root field writing that alone writes none.
+     * Whether the element {@code o} is an occurrence of writes a path at its declaration, as its
+     * {@code FIELD} claim's places state; a root field writing only its leading @routine, its
+     * producer's call, writes none.
      */
     private static Condition writesPath(GraphitronOccurrence o) {
-        var el = GRAPHQL_AST_ELEMENT_ENTRY.as("wp_el");
-        var ap = GRAPHITRON_AST_PATH_ENTRY.as("wp_ap");
-        var f = GRAPHITRON_FIELD.as("wp_f");
-        var ro = GRAPHQL_ROOT_OPERATION.as("wp_ro");
-        var re = GRAPHITRON_AST_ROUTINE_ENTRY.as("wp_re");
-        return exists(selectOne().from(el)
-            .join(ap).on(ap.GRAPH_NAME.eq(el.GRAPH_NAME), ap.SOURCE_NAME.eq(el.SOURCE_NAME),
-                ap.ANCHOR_LINE.eq(el.SOURCE_LINE), ap.ANCHOR_COLUMN.eq(el.SOURCE_COLUMN))
-            .where(el.GRAPH_NAME.eq(o.GRAPH_NAME), el.COORDINATE.eq(o.ELEMENT_COORDINATE))
-            .andNot(ap.PLACE.eq(0)
-                .and(exists(selectOne().from(f)
-                    .join(ro).on(ro.GRAPH_NAME.eq(f.GRAPH_NAME), ro.TYPE_NAME.eq(f.TYPE_NAME))
-                    .where(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))))
-                .and(exists(selectOne().from(re)
-                    .where(re.GRAPH_NAME.eq(ap.GRAPH_NAME), re.SOURCE_NAME.eq(ap.SOURCE_NAME),
-                        re.SOURCE_LINE.eq(ap.ELEMENT_LINE), re.SOURCE_COLUMN.eq(ap.ELEMENT_COLUMN))))));
+        var c = GRAPHITRON_JOIN_PATH_CLAIM.as("wp_c");
+        return exists(selectOne().from(c)
+            .where(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.ELEMENT_COORDINATE.eq(o.ELEMENT_COORDINATE),
+                c.CLAIM_KIND.eq("FIELD"), c.LAST_PLACE.ge(c.FIRST_PLACE)));
     }
 
     /**
-     * Whether the argument or input field {@code o} writes a path toward {@code target}: its own
-     * {@code @referenceFor} naming the type, or its own {@code @reference}, which covers every type.
+     * The join condition of a claim by which the argument or input field {@code o} writes a path toward
+     * {@code target}: its own {@code @referenceFor} naming the type, or its own {@code @reference},
+     * which covers every type. Left-joined once per arm, a row selected distinct whatever the claims.
      */
-    private static Condition claims(GraphitronOccurrence o, Field<String> target) {
-        var c = GRAPHITRON_JOIN_PATH_CLAIM.as("cl_c");
-        return exists(selectOne().from(c)
-            .where(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.ELEMENT_COORDINATE.eq(o.ELEMENT_COORDINATE))
-            .and(c.CLAIM_KIND.ne("REFERENCE_FOR").or(c.TARGET_TYPE.eq(target))));
+    private static Condition claimedBy(GraphitronJoinPathClaim c, GraphitronOccurrence o,
+                                       Field<String> target) {
+        return c.GRAPH_NAME.eq(o.GRAPH_NAME).and(c.ELEMENT_COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .and(c.CLAIM_KIND.ne("REFERENCE_FOR").or(c.TARGET_TYPE.eq(target)));
     }
 
     /** A field whose target has a table of its own and is no interface reaches it, landing there. */
@@ -432,7 +417,8 @@ public final class PathNeeds {
                                                Condition at, LocalDateTime touchedAt) {
         var pn = GRAPHITRON_PATH_NEED_TABLE.as("pn");
         var j = GRAPHITRON_JOIN_PATH.as("j");
-        Condition written = claims(o, pn.TARGET_TYPE);
+        var cl = GRAPHITRON_JOIN_PATH_CLAIM.as("cl");
+        Condition written = cl.ELEMENT_COORDINATE.isNotNull();
         Condition walked = pn.LANDING_TABLE.isNull();
         Field<String> startSource = when(walked, j.TARGET_SOURCE_NAME).otherwise(pn.LANDING_SOURCE_NAME);
         Field<String> startSchema = when(walked, j.TARGET_SCHEMA).otherwise(pn.LANDING_SCHEMA);
@@ -447,6 +433,7 @@ public final class PathNeeds {
                 pn.TOUCHED_AT.eq(touchedAt))
             .leftJoin(j).on(j.GRAPH_NAME.eq(pn.GRAPH_NAME), j.COORDINATE.eq(pn.COORDINATE),
                 j.TARGET_TYPE.eq(pn.TARGET_TYPE), j.TOUCHED_AT.eq(touchedAt))
+            .leftJoin(cl).on(claimedBy(cl, o, pn.TARGET_TYPE))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"), startTable.isNotNull())
             .and(sourcedAt(o, touchedAt));
     }
@@ -475,7 +462,8 @@ public final class PathNeeds {
         var a = GRAPHITRON_ARGUMENT.as("ra");
         var f = GRAPHITRON_FIELD.as("rf");
         Field<String> target = coalesce(a.NAMED_TYPE, f.NAMED_TYPE);
-        Condition written = claims(o, target);
+        var cl = GRAPHITRON_JOIN_PATH_CLAIM.as("cl");
+        Condition written = cl.ELEMENT_COORDINATE.isNotNull();
         return row(o, target, st.TABLE_SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SOURCE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SCHEMA),
@@ -485,6 +473,7 @@ public final class PathNeeds {
                 st.TOUCHED_AT.eq(touchedAt))
             .leftJoin(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME), a.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .leftJoin(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .leftJoin(cl).on(claimedBy(cl, o, target))
             .where(at, o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"), target.isNotNull());
     }
 
@@ -506,7 +495,8 @@ public final class PathNeeds {
         var ft = GRAPHITRON_FIELD_TARGET.as("ft");
         var gt = GRAPHITRON_TYPE.as("gt");
         var tt = GRAPHITRON_TABLETYPE.as("tt");
-        Condition written = claims(o, ft.TARGET_TYPE_NAME);
+        var cl = GRAPHITRON_JOIN_PATH_CLAIM.as("cl");
+        Condition written = cl.ELEMENT_COORDINATE.isNotNull();
         return row(o, ft.TARGET_TYPE_NAME, tt.TABLE_SOURCE_NAME, tt.TABLE_SCHEMA, tt.TABLE_NAME,
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(tt.TABLE_SOURCE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(tt.TABLE_SCHEMA),
@@ -518,6 +508,7 @@ public final class PathNeeds {
                 ft.FIELD_NAME.eq(pf.FIELD_NAME))
             .join(gt).on(gt.GRAPH_NAME.eq(ft.GRAPH_NAME), gt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
             .join(tt).on(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
+            .leftJoin(cl).on(claimedBy(cl, o, ft.TARGET_TYPE_NAME))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"), gt.KIND.ne("INTERFACE"))
             .and(parentHasNoNeed(p, touchedAt))
             .and(sourcedAt(o, touchedAt));
@@ -538,7 +529,8 @@ public final class PathNeeds {
         var pm = GRAPHQL_POLY_MEMBER.as("pm");
         var mt = GRAPHITRON_TABLETYPE.as("mt");
         var it = GRAPHITRON_TABLETYPE.as("it");
-        Condition written = claims(o, pm.MEMBER_TYPE_NAME);
+        var cl = GRAPHITRON_JOIN_PATH_CLAIM.as("cl");
+        Condition written = cl.ELEMENT_COORDINATE.isNotNull();
         return row(o, pm.MEMBER_TYPE_NAME, coalesce(it.TABLE_SOURCE_NAME, mt.TABLE_SOURCE_NAME),
                 coalesce(it.TABLE_SCHEMA, mt.TABLE_SCHEMA), coalesce(it.TABLE_NAME, mt.TABLE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(mt.TABLE_SOURCE_NAME),
@@ -554,6 +546,7 @@ public final class PathNeeds {
             .join(pm).on(pm.GRAPH_NAME.eq(ft.GRAPH_NAME), pm.CONTAINER_NAME.eq(ft.TARGET_TYPE_NAME))
             .join(mt).on(mt.GRAPH_NAME.eq(pm.GRAPH_NAME), mt.TYPE_NAME.eq(pm.MEMBER_TYPE_NAME))
             .leftJoin(it).on(it.GRAPH_NAME.eq(ft.GRAPH_NAME), it.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
+            .leftJoin(cl).on(claimedBy(cl, o, pm.MEMBER_TYPE_NAME))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"))
             .and(parentHasNoNeed(p, touchedAt))
             .and(sourcedAt(o, touchedAt));
@@ -572,7 +565,8 @@ public final class PathNeeds {
         var tt = GRAPHITRON_TABLETYPE.as("tt");
         var pm = GRAPHQL_POLY_MEMBER.as("pm");
         var mt = GRAPHITRON_TABLETYPE.as("mt");
-        Condition written = claims(o, ft.TARGET_TYPE_NAME);
+        var cl = GRAPHITRON_JOIN_PATH_CLAIM.as("cl");
+        Condition written = cl.ELEMENT_COORDINATE.isNotNull();
         return row(o, ft.TARGET_TYPE_NAME, st.TABLE_SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SOURCE_NAME),
                 when(written, castNull(SQLDataType.VARCHAR)).otherwise(st.TABLE_SCHEMA),
@@ -584,6 +578,7 @@ public final class PathNeeds {
             .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
             .join(ft).on(ft.GRAPH_NAME.eq(pf.GRAPH_NAME), ft.TYPE_NAME.eq(pf.TYPE_NAME),
                 ft.FIELD_NAME.eq(pf.FIELD_NAME))
+            .leftJoin(cl).on(claimedBy(cl, o, ft.TARGET_TYPE_NAME))
             .where(at, o.KIND.eq("FIELD_ARGUMENT"))
             .and(parentHasNoNeed(p, touchedAt))
             .and(notExists(selectOne().from(tt)
@@ -609,7 +604,8 @@ public final class PathNeeds {
     private static Select<Record> inputFieldCopy(GraphitronOccurrence o, GraphitronOccurrence p,
                                                  Condition at, LocalDateTime touchedAt) {
         var pn = GRAPHITRON_PATH_NEED_TABLE.as("pn");
-        Condition written = claims(o, pn.TARGET_TYPE);
+        var cl = GRAPHITRON_JOIN_PATH_CLAIM.as("cl");
+        Condition written = cl.ELEMENT_COORDINATE.isNotNull();
         Condition parentWalked = pn.LANDING_TABLE.isNull();
         return row(o, pn.TARGET_TYPE, pn.START_SOURCE_NAME, pn.START_SCHEMA, pn.START_TABLE,
                 when(written, castNull(SQLDataType.VARCHAR))
@@ -622,6 +618,7 @@ public final class PathNeeds {
             .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
             .join(pn).on(pn.GRAPH_NAME.eq(p.GRAPH_NAME), pn.COORDINATE.eq(p.COORDINATE),
                 pn.TOUCHED_AT.eq(touchedAt))
+            .leftJoin(cl).on(claimedBy(cl, o, pn.TARGET_TYPE))
             .where(at, o.KIND.eq("INPUT_FIELD"))
             .and(sourcedAt(o, touchedAt));
     }
