@@ -41,13 +41,16 @@ Above the base relations the DDL defines the `intent_` family as views, a family
 
 `GraphitronSchemaValidator` derives the run's verdict from the classified model, fused with the store-derived violations from the conflict detection. Rejection is a typed value end to end, never parsed prose; the taxonomy and its contract are xref:typed-rejection.adoc[Typed rejection]. A failing verdict throws before any file is written.
 
+[#planning-joins]
 == Planning joins
 
 `EmitPlan.produce` joins the model's facts into the command relations the run will render: the launcher relation (one row per covered coordinate), the condition relation (one row per filtered coordinate and resolved table), the projection relation (one row per projection unit), the fetcher-edge relation, the type-unit relation, and the global commands. Commands are complete rows; the completeness law, the package triangle that enforces the producer/consumer split, and the naming regime are xref:fact-model.adoc[The fact model].
 
 This layer is a functional core with an imperative shell, and two rules follow from that. A planner holds its own queries, decides what the run emits, and returns a command relation; the relation is immutable data, so it asks the store nothing and carries no handle to ask with. And what a planner needs is its own business, so two planners wanting the same rows each write their own query rather than sharing one. A derivation both would want is a fact missing from the model rather than a helper missing from this package, and the fix is to push it down.
 
-The routine-write emitter has a different shape, and it is the direction of travel: it owns its query. `RoutineWriteQuery` reads the store once per run at the grain the emitter renders, and `RoutineWriteEmitter` renders each coordinate's entry point from its row, with no command record between them. Both live in `no.sikt.graphitron.emit`, which reads the store and names nothing only the walk can answer.
+The routine-write emitter has a different shape, and it is the architecture: it owns its query. `RoutineWriteQuery` reads the store once per run at the grain the emitter renders, and `RoutineWriteEmitter` renders each coordinate's entry point from its row, with no command record between them. Both live in `no.sikt.graphitron.emit`, which reads the store and names nothing only the walk can answer.
+
+The functional core with an imperative shell is no longer the architecture, so `plan` and `command` retire, and the fold over committed relations with them. Each emitter owns its own query over the store, and the code it emits is tested by running it, never by inspecting it: an emitter's query by the rows a fact document claims, its output by an execution test over a scenario's generated package (Alf, 2026-11-10). What this section and the next describe is the transitional shape those packages drain from, and no new work goes into either.
 
 == Render: the shell folds
 
