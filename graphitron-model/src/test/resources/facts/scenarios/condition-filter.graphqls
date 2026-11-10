@@ -70,6 +70,19 @@ type Query {
             }}
         ])
     ): [Film!]!
+    # An argument's @condition with override: true owns its predicate, its argument binding no column.
+    filmsByTitlePrefix(titlePrefix: String @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmTitlePrefixCondition"}, override: true)): [Film!]!
+    # The same beside a generated term: the two compose.
+    filmsByLengthAndTitlePrefix(length: Int, titlePrefix: String @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmTitlePrefixCondition"}, override: true)): [Film!]!
+    # A field's @condition with override: true suppresses the generated term, the method taking the
+    # argument by type.
+    filmsByTitleOverridden(title: String): [Film!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmTitlePrefixCondition"}, override: true)
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id",
@@ -98,6 +111,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column",
   Query.filmsByRating(rating:),              public.film, rating,       SQL_NAME
   Query.filmsByRating(filter.ratings:),      public.film, rating,       SQL_NAME
   Query.filmsByTitle(title:),                public.film, title,        SQL_NAME
+  Query.filmsByLengthAndTitlePrefix(length:), public.film, length,     SQL_NAME
+  Query.filmsByTitleOverridden(title:),      public.film, title,        SQL_NAME
   """)
 
 # Every unwritten one reaches its column over an empty path, as does each input object it is read
@@ -125,5 +140,9 @@ extend schema @expectEquals(relation: "graphitron_path",
   Query.filmsByKey(film_id:),                Film,        JOIN, EMPTY
   Query.filmsByKey(title:),                  Film,        JOIN, EMPTY
   Query.filmsByLengths(lengths:),            Film,        JOIN, EMPTY
+  Query.filmsByLengthAndTitlePrefix(length:), Film,       JOIN, EMPTY
+  Query.filmsByLengthAndTitlePrefix(titlePrefix:), Film,  JOIN, EMPTY
+  Query.filmsByTitleOverridden(title:),      Film,        JOIN, EMPTY
+  Query.filmsByTitlePrefix(titlePrefix:),    Film,        JOIN, EMPTY
   Query.filmsByTitle(title:),                Film,        JOIN, EMPTY
   """)

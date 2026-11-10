@@ -552,8 +552,14 @@ static method needs no holder.
         fills are stated, `graphitron_occurrence_condition_parameter_rule` reproducing the manual's
         rules, and `CallParameterFillPinTest` holds them to the classifier's binding over the sakila
         schema, two gaps listed: a field under a plain nesting type the test cannot see, and a root
-        `@routine` field, whose derived table binds nothing yet. Left: `ConditionEmitter` emits the
-        authored sites off them, run against the database. A condition's fill writes no `PARAMETER`
+        `@routine` field, whose derived table binds nothing yet. `ConditionEmitter` emits the
+        authored calls off them beside the generated terms, `override:` read as written: on a field
+        it drops every generated term under it, on an argument or input field its own and those
+        beneath, an authored call standing either way; run against the database. Sixteen of the
+        example schema's 34 authored sites emit; left, each a census reason: a condition applied to
+        a node id's table or taking a decoded key (`AUTHORED_NODE_ID`, 10), an input object taken
+        as a bean (`AUTHORED_BEAN`, 4), and the request context or the session, which the emitted
+        method's parameters do not carry (`AUTHORED_CONTEXT`, 4). A condition's fill writes no `PARAMETER`
         binding yet: one overload applied to two tables is two calls taking one argument at one
         position, which `bound`, spelled from the method alone, cannot tell apart; how to spell it is
         decided when the bindings are first read (Alf, 2026-11-10).

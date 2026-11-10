@@ -116,7 +116,30 @@ class ConditionEmitterExecutionTest {
             assertThat(result).as(coordinate).isInstanceOf(ConditionEmitter.Result.Emitted.class));
         assertThat(conditions).containsOnlyKeys("filmsByTitle", "filmById", "filmsByLengths", "filmsByFilter",
             "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName", "filmByNodeId",
-            "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm", "filmsByRating");
+            "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm", "filmsByRating", "filmsByTitlePrefix",
+            "filmsByLengthAndTitlePrefix", "filmsByTitleOverridden");
+    }
+
+    @Test
+    @DisplayName("an argument's @condition with override: true calls its method on the table with the argument's value")
+    void authoredOnAnArgument() throws Exception {
+        assertThat(films(condition("filmsByTitlePrefix", args("titlePrefix", "AC"))))
+            .isEqualTo(films(FILM.TITLE.startsWith("AC"))).isNotEmpty();
+        assertThat(films(condition("filmsByTitlePrefix", args()))).isEqualTo(films(DSL.noCondition()));
+    }
+
+    @Test
+    @DisplayName("a @condition composes with the generated terms it does not override")
+    void authoredBesideGenerated() throws Exception {
+        assertThat(films(condition("filmsByLengthAndTitlePrefix", args("length", 86, "titlePrefix", "A"))))
+            .isEqualTo(films(FILM.LENGTH.eq((short) 86).and(FILM.TITLE.startsWith("A"))));
+    }
+
+    @Test
+    @DisplayName("a field's @condition with override: true replaces the generated term, its argument taken by type")
+    void authoredOverridingTheField() throws Exception {
+        assertThat(films(condition("filmsByTitleOverridden", args("title", "AC"))))
+            .isEqualTo(films(FILM.TITLE.startsWith("AC"))).isNotEmpty();
     }
 
     @Test

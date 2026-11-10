@@ -8,6 +8,7 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -76,8 +77,20 @@ public final class ConditionEmitter {
     public enum Reason {
         /** The field runs a call or a write, which takes its arguments rather than filtering by them. */
         CONSUMED,
-        /** A {@code @condition} is written on the field or under it, composed with the generated terms. */
-        AUTHORED,
+        /**
+         * A {@code @condition} takes a value this emitter does not hand a method yet: the request
+         * context or the session, which the method's signature does not carry.
+         */
+        AUTHORED_CONTEXT,
+        /** A {@code @condition} takes an input object as a bean, built from the map before the call. */
+        AUTHORED_BEAN,
+        /**
+         * A {@code @condition} is applied to the table a node id identifies, under an {@code EXISTS}
+         * over the foreign key, or takes a node id's decoded key.
+         */
+        AUTHORED_NODE_ID,
+        /** A {@code @condition} has a parameter nothing fills, its defect the store's. */
+        AUTHORED_UNFILLED,
         /** A term reaches its column over a path the store states no steps for, or one calling a routine. */
         REACHED,
         /** A term is a node id the store cannot state a decode of into the table it lands on. */
@@ -113,17 +126,20 @@ public final class ConditionEmitter {
         if (row.producerKind() != null && !FILTERED.contains(row.producerKind())) {
             return new Result.NotYet(Reason.CONSUMED, row.coordinate());
         }
-        if (row.authored()) {
-            return new Result.NotYet(Reason.AUTHORED, row.coordinate());
-        }
         var terms = row.terms().stream().filter(term -> !term.lookupKey()).toList();
-        if (terms.isEmpty()) {
+        if (terms.isEmpty() && row.calls().isEmpty()) {
             return new Result.Nothing();
         }
         for (var term : terms) {
             var reason = reasonFor(row, term, decodes);
             if (reason.isPresent()) {
                 return new Result.NotYet(reason.get(), term.coordinate());
+            }
+        }
+        for (var call : row.calls()) {
+            var reason = reasonFor(call);
+            if (reason.isPresent()) {
+                return new Result.NotYet(reason.get(), call.coordinate());
             }
         }
         var tableClass = ClassName.bestGuess(row.table().tableClassName());
@@ -181,10 +197,128 @@ public final class ConditionEmitter {
                 adds.addStatement("if ($L) conditions.add($L)", guard, predicate);
             }
         }
+        if (row.calls().stream().flatMap(call -> call.fills().stream())
+                .anyMatch(fill -> "ARGUMENT".equals(fill.fill()) && !"ENUM_VALUE_OF".equals(fill.extraction())
+                    && javaType(fill.parameterType()).orElseThrow() instanceof ParameterizedTypeName)) {
+            method.addAnnotation(com.palantir.javapoet.AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked").build());
+        }
+        for (var call : row.calls()) {
+            var arguments = new ArrayList<CodeBlock>();
+            for (var fill : call.fills()) {
+                arguments.add(argument(method, fill, counter));
+            }
+            adds.addStatement("conditions.add($T.$L($L))", ClassName.bestGuess(call.className()), call.methodName(),
+                CodeBlock.join(arguments, ", "));
+        }
         method.addStatement("$T<$T> conditions = new $T<>()", LIST, CONDITION, ARRAY_LIST);
         method.addCode(adds.build());
         method.addStatement("return $T.and(conditions)", DSL);
         return new Result.Emitted(method.build(), helpers);
+    }
+
+    /**
+     * Why an authored call is not emitted yet: a fill it takes that this emitter does not hand over, or
+     * a table it is applied to by way of a node id.
+     */
+    private static Optional<Reason> reasonFor(ConditionQuery.Call call) {
+        if ("NODE_ID".equals(call.bindingKind())) return Optional.of(Reason.AUTHORED_NODE_ID);
+        for (var fill : call.fills()) {
+            switch (fill.fill()) {
+                case "TABLE" -> { }
+                case "ARGUMENT" -> {
+                    if (fill.landingNodeId()) return Optional.of(Reason.AUTHORED_NODE_ID);
+                    if (fill.path().lists().stream().anyMatch(i -> i < fill.path().names().size() - 1)) {
+                        return Optional.of(Reason.THROUGH_LIST);
+                    }
+                    if ("INPUT_OBJECT".equals(fill.landingKind()) && !takesMap(fill)) {
+                        return Optional.of(Reason.AUTHORED_BEAN);
+                    }
+                    if (javaType(fill.parameterType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
+                    if ("ENUM_VALUE_OF".equals(fill.extraction()) && fill.path().lists().contains(fill.path().names().size() - 1)) {
+                        return Optional.of(Reason.UNSPELLED_TYPE);
+                    }
+                }
+                case "UNFILLED" -> {
+                    return Optional.of(Reason.AUTHORED_UNFILLED);
+                }
+                default -> {
+                    return Optional.of(Reason.AUTHORED_CONTEXT);
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Whether an input object's parameter takes the map graphql-java delivers rather than a bean. */
+    private static boolean takesMap(ConditionQuery.Fill fill) {
+        var type = fill.parameterType();
+        var element = type.startsWith("java.util.List<") ? type.substring(15, type.length() - 1) : type;
+        return element.equals("java.lang.Object") || element.startsWith("java.util.Map");
+    }
+
+    /**
+     * The value one parameter of an authored call takes: the table the condition is applied to, or an
+     * argument's value off the map, cast to the parameter's declared type, an enum by its constant's name.
+     */
+    private static CodeBlock argument(MethodSpec.Builder method, ConditionQuery.Fill fill, int[] counter) {
+        if ("TABLE".equals(fill.fill())) {
+            return CodeBlock.of("table");
+        }
+        var type = javaType(fill.parameterType()).orElseThrow();
+        var read = read(fill.path().names(), counter);
+        if ("ENUM_VALUE_OF".equals(fill.extraction())) {
+            var name = "s" + ++counter[0];
+            return CodeBlock.of("$L instanceof $T $L ? $T.valueOf($L) : null", read, String.class, name, type, name);
+        }
+        return CodeBlock.of("($T) $L", type.isPrimitive() ? type.box() : type, read);
+    }
+
+    /**
+     * A declared Java type, its type arguments kept, as the census spells it: a primitive, a class, or a
+     * class with type arguments; empty for an array, a type variable or a wildcard.
+     */
+    static Optional<TypeName> javaType(String spelled) {
+        try {
+            return Optional.of(parseType(spelled.strip()));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
+    private static TypeName parseType(String spelled) {
+        switch (spelled) {
+            case "int": return TypeName.INT;
+            case "long": return TypeName.LONG;
+            case "short": return TypeName.SHORT;
+            case "byte": return TypeName.BYTE;
+            case "char": return TypeName.CHAR;
+            case "boolean": return TypeName.BOOLEAN;
+            case "double": return TypeName.DOUBLE;
+            case "float": return TypeName.FLOAT;
+            default: break;
+        }
+        if (spelled.endsWith("]") || spelled.contains("?")) throw new IllegalArgumentException(spelled);
+        int open = spelled.indexOf('<');
+        if (open < 0) {
+            if (!spelled.contains(".")) throw new IllegalArgumentException(spelled);
+            return ClassName.bestGuess(spelled);
+        }
+        var raw = ClassName.bestGuess(spelled.substring(0, open));
+        var inner = spelled.substring(open + 1, spelled.length() - 1);
+        var arguments = new ArrayList<TypeName>();
+        int depth = 0, from = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            char ch = inner.charAt(i);
+            if (ch == '<') depth++;
+            else if (ch == '>') depth--;
+            else if (ch == ',' && depth == 0) {
+                arguments.add(parseType(inner.substring(from, i).strip()));
+                from = i + 1;
+            }
+        }
+        arguments.add(parseType(inner.substring(from).strip()));
+        return ParameterizedTypeName.get(raw, arguments.toArray(TypeName[]::new));
     }
 
     private static Optional<Reason> reasonFor(ConditionQuery.Row row, ConditionQuery.Term term,

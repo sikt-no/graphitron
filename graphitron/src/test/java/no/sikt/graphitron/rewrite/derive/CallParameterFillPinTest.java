@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -82,7 +81,7 @@ class CallParameterFillPinTest {
         var walked = walked(sdl);
         var walkedConditions = walkedConditions(sdl);
         try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-                CatalogInput.of(testContext()), sakilaClasspath())) {
+                CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath())) {
             var stored = stored(store.dsl());
             var absent = whyNoCall(store.dsl());
             assertThat(walked).as("the classifier builds this many @service fields, so the pin is"
@@ -342,18 +341,4 @@ class CallParameterFillPinTest {
         return a.toString().compareTo(b.toString());
     }
 
-    /**
-     * The test classpath read as the sakila example reads it: the sakila service and catalog modules
-     * as reactor modules it declares, so the conditions and their parameters are known, and the
-     * extended scalars as a library it declares, so a {@code @scalarType} naming one is resolved.
-     */
-    private static List<ClasspathEntry> sakilaClasspath() {
-        return TestSchemaHelper.testClasspath().stream()
-            .map(e -> e.path().toString().contains("graphitron-sakila-")
-                ? new ClasspathEntry(e.path(), ClasspathEntry.Origin.REACTOR, null, null)
-                : e.path().toString().contains("graphql-java-extended-scalars")
-                ? new ClasspathEntry(e.path(), ClasspathEntry.Origin.DECLARED, null, null)
-                : e)
-            .toList();
-    }
 }

@@ -11,8 +11,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
@@ -46,8 +52,9 @@ import static org.jooq.impl.DSL.selectOne;
  * read from (its path of names from the argument), the column it compares, and what decides how it is
  * compared and whether this emitter writes it yet: the declared type's kind, whether it is a node id,
  * whether it is a {@code @lookupKey}, and the origin of its path from the field's table to the column.
- * The field occurrence carries what it produces, if anything, and whether a {@code @condition} is
- * written on it or anywhere under it, which decides whether the generated terms stand alone.
+ * The field occurrence carries what it produces, if anything, and the {@code @condition} calls applied
+ * to the table, its own and its arguments' and input fields', each with what fills its parameters; a
+ * term an {@code override: true} suppresses, as written, is left out.
  */
 public final class ConditionQuery {
 
@@ -117,17 +124,45 @@ public final class ConditionQuery {
     }
 
     /**
-     * One field occurrence's filters on one table: the occurrence, what it produces where it produces
-     * anything, whether a {@code @condition} is written on it or under it, the table and the terms in
-     * coordinate order, and how many tables the field filters, more than one where its rows are a
-     * polymorphic type's participants on tables of their own.
+     * What fills one parameter of a {@code @condition}'s method: its position, its declared type and how
+     * a value is coerced into it, the fill, and for an {@code ARGUMENT} the occurrence it takes, that
+     * occurrence's path of names from its argument, its type's kind and whether it is a node id.
      */
-    public record Row(String coordinate, String producerKind, boolean authored, LiftQuery.Table table,
-                      List<Term> terms, int tables) {
+    public record Fill(int position, String parameterType, String extraction, String fill, String landing,
+                       ArgumentPaths.Path path, String landingKind, boolean landingNodeId) {
+        public Fill {
+            Objects.requireNonNull(parameterType, "parameterType");
+            Objects.requireNonNull(fill, "fill");
+        }
+    }
+
+    /**
+     * One {@code @condition} applied to the row's table: the occurrence it is written on and its kind,
+     * the kind of binding the table is to it, the class and method it calls, and what fills each of the
+     * method's parameters in position order, {@code UNFILLED} where nothing does.
+     */
+    public record Call(String coordinate, String occurrenceKind, String bindingKind, String className,
+                       String methodName, List<Fill> fills) {
+        public Call {
+            Objects.requireNonNull(coordinate, "coordinate");
+            fills = List.copyOf(fills);
+        }
+    }
+
+    /**
+     * One field occurrence's filters on one table: the occurrence, what it produces where it produces
+     * anything, the table, the generated terms in coordinate order but those an {@code override: true}
+     * suppresses, the {@code @condition} calls applied to the table in coordinate order, and how many
+     * tables the field filters, more than one where its rows are a polymorphic type's participants on
+     * tables of their own.
+     */
+    public record Row(String coordinate, String producerKind, LiftQuery.Table table, List<Term> terms,
+                      List<Call> calls, int tables) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(table, "table");
             terms = List.copyOf(terms);
+            calls = List.copyOf(calls);
         }
     }
 
@@ -153,7 +188,8 @@ public final class ConditionQuery {
         var graph = store.graphName();
         var paths = ArgumentPaths.read(store);
         var steps = steps(store);
-        var authored = authored(store);
+        var calls = calls(store, paths);
+        var parents = parents(store);
         var st = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
         var pn = GRAPHITRON_PATH_NEED_TABLE;
         var jp = GRAPHITRON_JOIN_PATH;
@@ -205,35 +241,139 @@ public final class ConditionQuery {
         for (var raw : raws) {
             rows.computeIfAbsent(List.of(raw.field(), raw.tableSqlName()), k -> new ArrayList<>()).add(raw);
         }
+        // A field with a condition and no generated term is a row of its calls alone.
+        for (var key : calls.keySet()) {
+            rows.computeIfAbsent(List.of(key.field(), key.table().sqlName()), k -> new ArrayList<>());
+        }
+        var tables = new LinkedHashMap<List<String>, LiftQuery.Table>();
+        calls.keySet().forEach(key -> tables.put(List.of(key.field(), key.table().sqlName()), key.table()));
+        var producers = producers(store);
         var out = new ArrayList<Row>();
         rows.forEach((key, group) -> {
-            var first = group.getFirst();
-            var table = new LiftQuery.Table(first.tableSqlName(), first.tableClass(), first.constantsClass(),
-                first.tableJavaName(), first.recordClass());
-            var terms = group.stream().map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()),
-                raw.column(), raw.typeKind(), raw.nodeId(), raw.lookupKey(), raw.origin(),
-                steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
-                raw.landingRecordClass())).toList();
-            out.add(new Row(first.field(), first.producerKind(), authored.contains(first.field()), table, terms,
-                (int) rows.keySet().stream().filter(k -> k.getFirst().equals(first.field())).count()));
+            var field = key.get(0);
+            var table = group.isEmpty() ? tables.get(key) : new LiftQuery.Table(group.getFirst().tableSqlName(),
+                group.getFirst().tableClass(), group.getFirst().constantsClass(), group.getFirst().tableJavaName(),
+                group.getFirst().recordClass());
+            var applied = calls.entrySet().stream()
+                .filter(e -> e.getKey().field().equals(field) && e.getKey().table().sqlName().equals(key.get(1)))
+                .flatMap(e -> e.getValue().stream()).toList();
+            // An override: true written on a condition suppresses the terms at its occurrence and under it.
+            var overriding = applied.stream().filter(CallRow::override).map(written -> written.call().coordinate()).toList();
+            var terms = group.stream()
+                .filter(raw -> overriding.stream().noneMatch(at -> under(raw.coordinate(), at, parents)))
+                .map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()),
+                    raw.column(), raw.typeKind(), raw.nodeId(), raw.lookupKey(), raw.origin(),
+                    steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
+                    raw.landingRecordClass())).toList();
+            out.add(new Row(field, group.isEmpty() ? producers.get(field) : group.getFirst().producerKind(), table,
+                terms, applied.stream().map(CallRow::call).toList(),
+                (int) rows.keySet().stream().filter(k -> k.getFirst().equals(field)).count()));
         });
         return out;
     }
 
-    /**
-     * The field occurrences a {@code @condition} is written on, or on an argument or input field
-     * anywhere under them.
-     */
-    private static Set<String> authored(StoreHandle store) {
+    /** Whether {@code coordinate} is {@code ancestor} or hangs under it. */
+    private static boolean under(String coordinate, String ancestor, Map<String, String> parents) {
+        for (var at = coordinate; at != null; at = parents.get(at)) {
+            if (at.equals(ancestor)) return true;
+        }
+        return false;
+    }
+
+    /** Each argument and input-field occurrence's parent. */
+    private static Map<String, String> parents(StoreHandle store) {
         var o = GRAPHITRON_OCCURRENCE;
-        var d = GRAPHITRON_DIRECTIVE_APPLICATION;
-        return new HashSet<>(store.dsl()
-            .selectDistinct(coalesce(o.FIELD_COORDINATE, o.COORDINATE))
-            .from(o)
-            .join(d).on(d.GRAPH_NAME.eq(o.GRAPH_NAME), d.COORDINATE.eq(o.ELEMENT_COORDINATE),
-                d.DIRECTIVE_NAME.eq("condition"))
-            .where(o.GRAPH_NAME.eq(store.graphName()))
-            .fetch(r -> r.value1()));
+        var out = new java.util.HashMap<String, String>();
+        store.dsl().select(o.COORDINATE, o.PARENT_COORDINATE).from(o)
+            .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"))
+            .forEach(r -> out.put(r.value1(), r.value2()));
+        return out;
+    }
+
+    /** What each field occurrence produces, where it produces anything. */
+    private static Map<String, String> producers(StoreHandle store) {
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var out = new java.util.HashMap<String, String>();
+        store.dsl().select(p.COORDINATE, p.KIND).from(p).where(p.GRAPH_NAME.eq(store.graphName()))
+            .forEach(r -> out.put(r.value1(), r.value2()));
+        return out;
+    }
+
+    private record CallKey(String field, LiftQuery.Table table) {}
+
+    private record CallRow(Call call, boolean override) {}
+
+    /**
+     * The graph's {@code @condition} calls, by the field occurrence they filter and the table they are
+     * applied to, each with whether it was written {@code override: true}.
+     */
+    private static Map<CallKey, List<CallRow>> calls(StoreHandle store, Map<String, ArgumentPaths.Path> paths) {
+        var c = GRAPHITRON_OCCURRENCE_CONDITION;
+        var o = GRAPHITRON_OCCURRENCE;
+        var b = GRAPHITRON_OCCURRENCE_BINDING;
+        var m = GRAPHITRON_OCCURRENCE_CALL_METHOD;
+        var cp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var mp = CODE_METHOD_PARAMETER;
+        var lo = GRAPHITRON_OCCURRENCE.as("lo");
+        var la = GRAPHITRON_ARGUMENT;
+        var lf = GRAPHITRON_FIELD;
+        var lt = GRAPHITRON_TYPE;
+        var n = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var t = SQL_TABLE;
+        var s = SQL_SCHEMA;
+        var oc = GRAPHITRON_OCCURRENCE_COLUMN;
+        var bt = GRAPHITRON_OCCURRENCE_BINDING_TABLE;
+        // The table a binding names, whichever binding it is.
+        var bound = select(bt.GRAPH_NAME, bt.COORDINATE, bt.BOUND, bt.TABLE_SOURCE_NAME, bt.TABLE_SCHEMA, bt.TABLE_NAME)
+            .from(bt)
+            .union(select(oc.GRAPH_NAME, oc.COORDINATE, oc.BOUND, oc.TABLE_SOURCE_NAME, oc.TABLE_SCHEMA, oc.TABLE_NAME)
+                .from(oc))
+            .union(select(n.GRAPH_NAME, n.COORDINATE, n.BOUND, n.TABLE_SOURCE_NAME, n.TABLE_SCHEMA, n.TABLE_NAME)
+                .from(n))
+            .asTable("bound", "graph_name", "coordinate", "bound", "source_name", "schema_name", "table_name");
+        var boundGraph = bound.field("graph_name", String.class);
+        var boundCoordinate = bound.field("coordinate", String.class);
+        var boundBound = bound.field("bound", String.class);
+        var fills = multiset(
+            select(mp.POSITION, mp.PARAMETER_TYPE, mp.EXTRACTION, coalesce(cp.FILL, org.jooq.impl.DSL.inline("UNFILLED")),
+                    cp.LANDING_COORDINATE, lt.KIND,
+                    field(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(cp.GRAPH_NAME),
+                        n.COORDINATE.eq(cp.LANDING_COORDINATE)))))
+                .from(mp)
+                .leftJoin(cp).on(cp.GRAPH_NAME.eq(c.GRAPH_NAME), cp.COORDINATE.eq(c.COORDINATE), cp.CALL.eq(c.CALL),
+                    cp.POSITION.eq(mp.POSITION))
+                .leftJoin(lo).on(lo.GRAPH_NAME.eq(cp.GRAPH_NAME), lo.COORDINATE.eq(cp.LANDING_COORDINATE))
+                .leftJoin(la).on(la.GRAPH_NAME.eq(lo.GRAPH_NAME), la.COORDINATE.eq(lo.ELEMENT_COORDINATE))
+                .leftJoin(lf).on(lf.GRAPH_NAME.eq(lo.GRAPH_NAME), lf.COORDINATE.eq(lo.ELEMENT_COORDINATE))
+                .leftJoin(lt).on(lt.GRAPH_NAME.eq(lo.GRAPH_NAME), lt.TYPE_NAME.eq(coalesce(la.NAMED_TYPE, lf.NAMED_TYPE)))
+                .where(mp.SOURCE_NAME.eq(m.METHOD_SOURCE_NAME), mp.CLASS_NAME.eq(m.METHOD_CLASS_NAME),
+                    mp.METHOD_NAME.eq(m.METHOD_NAME), mp.DESCRIPTOR.eq(m.METHOD_DESCRIPTOR))
+                .orderBy(mp.POSITION));
+        var out = new LinkedHashMap<CallKey, List<CallRow>>();
+        store.dsl()
+            .select(c.COORDINATE, o.KIND, coalesce(o.FIELD_COORDINATE, o.COORDINATE), c.OVERRIDE_WRITTEN, b.KIND,
+                m.METHOD_CLASS_NAME, m.METHOD_NAME, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN, t.JOOQ_NAME,
+                t.RECORD_CLASS_FQN, fills)
+            .from(c)
+            .join(o).on(o.GRAPH_NAME.eq(c.GRAPH_NAME), o.COORDINATE.eq(c.COORDINATE))
+            .join(b).on(b.GRAPH_NAME.eq(c.GRAPH_NAME), b.COORDINATE.eq(c.COORDINATE), b.BOUND.eq(c.BOUND))
+            .join(m).on(m.GRAPH_NAME.eq(c.GRAPH_NAME), m.COORDINATE.eq(c.COORDINATE), m.CALL.eq(c.CALL))
+            .join(bound).on(boundGraph.eq(c.GRAPH_NAME), boundCoordinate.eq(c.COORDINATE), boundBound.eq(c.BOUND))
+            .join(t).on(t.SOURCE_NAME.eq(bound.field("source_name", String.class)),
+                t.TABLE_SCHEMA.eq(bound.field("schema_name", String.class)),
+                t.TABLE_NAME.eq(bound.field("table_name", String.class)))
+            .join(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
+            .where(c.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(coalesce(o.FIELD_COORDINATE, o.COORDINATE), t.TABLE_NAME, c.COORDINATE)
+            .forEach(r -> {
+                var table = new LiftQuery.Table(r.value8(), r.value9(), r.value10(), r.value11(), r.value12());
+                var filled = r.value13().map(f -> new Fill(f.value1(), f.value2(), f.value3(), f.value4(), f.value5(),
+                    f.value5() == null ? null : paths.get(f.value5()), f.value6(), Boolean.TRUE.equals(f.value7())));
+                out.computeIfAbsent(new CallKey(r.value3(), table), k -> new ArrayList<>())
+                    .add(new CallRow(new Call(r.value1(), r.value2(), r.value5(), r.value6(), r.value7(), filled),
+                        Boolean.TRUE.equals(r.value4())));
+            });
+        return out;
     }
 
     /** Every join path's steps in order, by the need's coordinate and target type. */

@@ -258,6 +258,24 @@ public final class TestSchemaHelper {
     }
 
     /**
+     * The test classpath read as the sakila example reads it: the sakila service and catalog modules as
+     * reactor modules it declares, so their services and conditions are known, and the extended scalars
+     * as a library it declares, so a {@code @scalarType} naming one is resolved. A capture of the example
+     * schema reads its classpath this way.
+     */
+    public static java.util.List<no.sikt.graphitron.model.config.ClasspathEntry> sakilaExampleClasspath() {
+        return testClasspath().stream()
+            .map(e -> e.path().toString().contains("graphitron-sakila-")
+                ? new no.sikt.graphitron.model.config.ClasspathEntry(e.path(),
+                    no.sikt.graphitron.model.config.ClasspathEntry.Origin.REACTOR, null, null)
+                : e.path().toString().contains("graphql-java-extended-scalars")
+                ? new no.sikt.graphitron.model.config.ClasspathEntry(e.path(),
+                    no.sikt.graphitron.model.config.ClasspathEntry.Origin.DECLARED, null, null)
+                : e)
+            .toList();
+    }
+
+    /**
      * The classpath capture reads the {@code code_} family from: the test classes' own root, read as
      * this build's own output the way a run reads it. What a rule reading a class's declared form
      * states is only worth something when the reading behind it is the real one.

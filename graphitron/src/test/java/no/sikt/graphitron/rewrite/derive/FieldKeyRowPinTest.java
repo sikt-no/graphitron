@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -48,7 +47,7 @@ class FieldKeyRowPinTest {
             "resources", "graphql", "schema.graphqls"));
         var walked = walked(sdl);
         try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-                CatalogInput.of(testContext()), sakilaClasspath())) {
+                CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath())) {
             var dsl = store.dsl();
             var k = GRAPHITRON_FIELD_KEY_ROW;
             var a = GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
@@ -76,17 +75,6 @@ class FieldKeyRowPinTest {
         }
     }
 
-    /**
-     * The test classpath with the sakila service and catalog modules read as the sakila example
-     * reads them, reactor modules it declares, so the parents' classes and their members are known.
-     */
-    private static List<ClasspathEntry> sakilaClasspath() {
-        return TestSchemaHelper.testClasspath().stream()
-            .map(e -> e.path().toString().contains("graphitron-sakila-")
-                ? new ClasspathEntry(e.path(), ClasspathEntry.Origin.REACTOR, null, null)
-                : e)
-            .toList();
-    }
 
     private static Map<String, String> walked(String sdl) {
         var schema = TestSchemaHelper.buildSchema(sdl);
