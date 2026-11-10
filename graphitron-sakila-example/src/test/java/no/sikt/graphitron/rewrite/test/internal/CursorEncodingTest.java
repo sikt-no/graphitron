@@ -13,6 +13,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.types.ULong;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -49,8 +50,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>The last section pins the read side's second format, the cursors the Graphitron 10 release
  * candidates issued: which format a cursor string is read as, and how each token binds per column
  * type, the way those releases bound it.
+ *
+ * <p>{@link Isolated}, because two cases set the JVM's default time zone, which every class in this
+ * module shares: a capture running beside them binds its rows' timestamps through it, so half a
+ * capture would stamp its rows in one zone and the rest in another, and its sweep deletes the first
+ * half.
  */
 @UnitTier
+@Isolated
 class CursorEncodingTest {
 
     private static String encode(List<Field<?>> columns, Object... values) {

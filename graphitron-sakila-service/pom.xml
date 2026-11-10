@@ -61,11 +61,17 @@
                     <!-- The corpus compiles with -parameters, as a consumer's own code usually does.
                          The nameless package is the exception: a library compiled without it, whose
                          classfiles carry no parameter names. It is excluded from the default compile
-                         and compiled in a pass of its own with -parameters off. Self-contained, so no
-                         other class in this module references it at compile time. -->
+                         and compiled in a pass of its own with -parameters off.
+                         The default compile still reads it: a {@link} into it is resolved against the
+                         source, and javac would compile what it resolves with -parameters on, writing
+                         a classfile the nameless pass then judges up to date on an incremental build.
+                         -implicit:none keeps the read and drops the write. -->
                     <execution>
                         <id>default-compile</id>
                         <configuration>
+                            <compilerArgs combine.children="append">
+                                <arg>-implicit:none</arg>
+                            </compilerArgs>
                             <excludes>
                                 <exclude>no/sikt/graphitron/rewrite/test/nameless/**</exclude>
                             </excludes>
