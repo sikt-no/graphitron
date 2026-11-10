@@ -27,8 +27,8 @@ class PinsTest {
     private static final String UNRESOLVED = "defects/routine-step-unresolved";
 
     private static Set<Pin> pins(String path, String relation, List<String> columns, List<String> row, Mode mode) {
-        return FACTS.read(path, graph -> Pins.of(graph.handle().dsl(),
-            List.of(new Block(path, relation, columns, List.of(row), List.of(), mode))));
+        return FACTS.read(path, graph -> Pins.all(Pins.of(graph.handle().dsl(),
+            List.of(new Block(path, relation, columns, List.of(row), List.of(), mode)))));
     }
 
     @Test

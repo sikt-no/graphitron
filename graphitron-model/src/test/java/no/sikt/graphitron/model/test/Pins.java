@@ -114,10 +114,13 @@ final class Pins {
     /** Each family's members, by upper-cased relation name, asked of the store's constraints once. */
     private static volatile Map<Family, Set<String>> members;
 
-    /** What {@code blocks} pin in the store {@code dsl} reads, as the store stands now. */
-    static Set<Pin> of(DSLContext dsl, List<Block> blocks) {
+    /**
+     * What {@code blocks} pin in the store {@code dsl} reads, as the store stands now, by the
+     * relation each claim names: a keystone covers what the relations its page shows pin.
+     */
+    static Map<String, Set<Pin>> of(DSLContext dsl, List<Block> blocks) {
         var families = members(dsl);
-        var pins = new TreeSet<Pin>();
+        var pins = new TreeMap<String, Set<Pin>>();
         for (var block : blocks) {
             var relation = block.relation().toUpperCase(Locale.ROOT);
             for (var family : Family.values()) {
@@ -129,10 +132,103 @@ final class Pins {
                     ? family.anchor : block.relation().toLowerCase(Locale.ROOT);
                 CorpusExpectations.matched(dsl, block, family.key).ifPresent(matched ->
                     dsl.resultQuery(family.shape, matched).fetch(0, String.class)
-                        .forEach(shape -> pins.add(new Pin(family, facet, shape))));
+                        .forEach(shape -> pins.computeIfAbsent(block.relation().toLowerCase(Locale.ROOT),
+                            ignored -> new TreeSet<>()).add(new Pin(family, facet, shape))));
             }
         }
         return pins;
+    }
+
+    /** Every pin of {@code byRelation}, whichever relation's claim made it. */
+    static Set<Pin> all(Map<String, Set<Pin>> byRelation) {
+        var all = new TreeSet<Pin>();
+        byRelation.values().forEach(all::addAll);
+        return all;
+    }
+
+    /** Adds {@code more}'s pins to {@code into}'s, relation by relation. */
+    static void merge(Map<String, Set<Pin>> into, Map<String, Set<Pin>> more) {
+        more.forEach((relation, pins) -> into.computeIfAbsent(relation, ignored -> new TreeSet<>()).addAll(pins));
+    }
+
+    /**
+     * A page's example: the document {@code @factDocument(path:)} selects and one relation its
+     * {@code @factRows(relation:)} shows. It is the keystone of what that document's claims on that
+     * relation pin, and of nothing else the document pins.
+     */
+    record Keystone(String document, String relation) {}
+
+    /**
+     * Every keystone the manual names: each example under an {@code examples} folder of
+     * {@code docs}, one per relation its {@code @factRows(relation:)} shows from the document its
+     * {@code @factDocument(path:)} selects.
+     */
+    static List<Keystone> keystones(java.nio.file.Path docs) {
+        var keystones = new ArrayList<Keystone>();
+        try (var walk = java.nio.file.Files.walk(docs)) {
+            for (var file : walk.filter(path -> !docs.relativize(path).startsWith("target"))
+                    .filter(path -> path.getParent().getFileName().toString().equals("examples"))
+                    .filter(path -> path.getFileName().toString().endsWith(".graphql"))
+                    .sorted().toList()) {
+                for (graphql.language.Definition<?> definition : new graphql.parser.Parser()
+                        .parseDocument(java.nio.file.Files.readString(file)).getDefinitions()) {
+                    if (!(definition instanceof graphql.language.DirectivesContainer<?> container)) {
+                        continue;
+                    }
+                    for (var document : container.getDirectives("factDocument")) {
+                        for (var rows : container.getDirectives("factRows")) {
+                            keystones.add(new Keystone(text(document, "path"), text(rows, "relation")));
+                        }
+                    }
+                }
+            }
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+        return List.copyOf(keystones);
+    }
+
+    private static String text(graphql.language.Directive directive, String argument) {
+        return ((graphql.language.StringValue) directive.getArgument(argument).getValue()).getValue();
+    }
+
+    /** The behaviours each keystone stands for, from what its document's claims on its relation pin. */
+    static Map<Pin, Set<String>> keystones(List<Keystone> keystones, Map<String, Map<String, Set<Pin>>> pinned) {
+        var byPin = new TreeMap<Pin, Set<String>>();
+        for (var keystone : keystones) {
+            pinned.getOrDefault(keystone.document(), Map.of())
+                .getOrDefault(keystone.relation().toLowerCase(Locale.ROOT), Set.of())
+                .forEach(pin -> byPin.computeIfAbsent(pin, ignored -> new TreeSet<>()).add(keystone.document()));
+        }
+        return byPin;
+    }
+
+    /**
+     * The keystone report: each behaviour no page shows, ranked by how many documents pin it, so
+     * documentation goes where examples pile up without a page; then the documents that pin no
+     * family at all, whose claims are all on relations no family holds.
+     */
+    static List<String> keystoneReport(Map<String, Map<String, Set<Pin>>> pinned, List<Keystone> keystones,
+                                       Set<String> documents) {
+        var shown = keystones(keystones, pinned);
+        var byPin = new TreeMap<Pin, Set<String>>();
+        pinned.forEach((document, byRelation) -> all(byRelation).forEach(pin ->
+            byPin.computeIfAbsent(pin, ignored -> new TreeSet<>()).add(document)));
+        var lines = new ArrayList<String>();
+        lines.add("Behaviours with a keystone: " + shown.size() + " of " + byPin.size());
+        shown.forEach((pin, pages) -> lines.add("  " + pin + " shown from " + pages));
+        lines.add("Behaviours without a keystone, most pinned first:");
+        byPin.entrySet().stream()
+            .filter(entry -> !shown.containsKey(entry.getKey()))
+            .sorted(java.util.Comparator.<Map.Entry<Pin, Set<String>>>comparingInt(entry -> -entry.getValue().size())
+                .thenComparing(Map.Entry::getKey))
+            .forEach(entry -> lines.add("  " + entry.getValue().size() + " " + entry.getKey() + " " + entry.getValue()));
+        var unpinned = documents.stream()
+            .filter(document -> all(pinned.getOrDefault(document, Map.of())).isEmpty())
+            .sorted().toList();
+        lines.add("Documents pinning no family: " + unpinned.size());
+        unpinned.forEach(document -> lines.add("  " + document));
+        return lines;
     }
 
     /**

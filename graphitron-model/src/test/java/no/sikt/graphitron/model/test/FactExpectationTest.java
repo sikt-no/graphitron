@@ -73,7 +73,7 @@ class FactExpectationTest {
     private static final int DUPLICATE_PINS = 110;
 
     /** What each document's claims pin, by its path. */
-    private static final Map<String, java.util.Set<Pins.Pin>> pinned = new TreeMap<>();
+    private static final Map<String, Map<String, java.util.Set<Pins.Pin>>> pinned = new TreeMap<>();
 
     /** Each plain graph's facts, as {@link #SHAPE} projects them. */
     private static final Map<String, java.util.Set<String>> fingerprints = new TreeMap<>();
@@ -122,8 +122,7 @@ class FactExpectationTest {
                 verified.put(graph, verification);
                 divergences.addAll(verification.divergences().stream()
                     .map(divergence -> graph + " " + divergence).toList());
-                pinned.computeIfAbsent(graph, ignored -> new java.util.TreeSet<>())
-                    .addAll(verification.pins());
+                Pins.merge(pinned.computeIfAbsent(graph, ignored -> new TreeMap<>()), verification.pins());
             }
         });
         for (var examined : FACTS.eachStore((dsl, held) -> {
@@ -143,13 +142,13 @@ class FactExpectationTest {
             .forEach(fingerprints::putAll);
         // An assertion file pins for the document it names, on the final reading it is checked against.
         FACTS.eachStore((dsl, held) -> {
-            var byDocument = new TreeMap<String, java.util.Set<Pins.Pin>>();
+            var byDocument = new TreeMap<String, Map<String, java.util.Set<Pins.Pin>>>();
             assertionBlocks.stream().filter(block -> held.contains(block.graph()))
                 .collect(java.util.stream.Collectors.groupingBy(Block::graph))
                 .forEach((graph, files) -> byDocument.put(graph, Pins.of(dsl, files)));
             return byDocument;
         }).forEach(byDocument -> byDocument.forEach((graph, pins) ->
-            pinned.computeIfAbsent(graph, ignored -> new java.util.TreeSet<>()).addAll(pins)));
+            Pins.merge(pinned.computeIfAbsent(graph, ignored -> new TreeMap<>()), pins)));
     }
 
     /** What one store says about the blocks its graphs declare, gathered for the cases below. */
@@ -403,11 +402,36 @@ class FactExpectationTest {
     void duplicatePinsDoNotGrow() {
         org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("facts") == null,
             "-Dfacts narrows the corpus the count is over");
-        var duplicates = Pins.duplicates(pinned);
+        var flat = new TreeMap<String, java.util.Set<Pins.Pin>>();
+        pinned.forEach((document, byRelation) -> flat.put(document, Pins.all(byRelation)));
+        var duplicates = Pins.duplicates(flat);
         assertThat(Pins.surplus(duplicates))
             .as(() -> "pins beyond the first of each behaviour; lower DUPLICATE_PINS when documents merge:\n"
                 + String.join("\n", Pins.report(duplicates)))
             .isEqualTo(DUPLICATE_PINS);
+    }
+
+    /**
+     * Where each behaviour's keystone is, and where there is none: written to
+     * {@code target/facts-report/keystones.txt} and gated on nothing, so documentation work goes
+     * where examples pile up without a page. A keystone stands for what its document's claims on the
+     * relation its page shows pin, and its document must be one the corpus captures.
+     */
+    @Test
+    @DisplayName("the keystone report names every behaviour a page shows and every one it does not")
+    void keystoneReport() throws java.io.IOException {
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("facts") == null,
+            "-Dfacts narrows the corpus the report is over");
+        var docs = java.util.stream.Stream.of(java.nio.file.Path.of("..", "docs"), java.nio.file.Path.of("docs"))
+            .filter(java.nio.file.Files::isDirectory).findFirst().orElseThrow();
+        var keystones = Pins.keystones(docs);
+        assertThat(keystones).as("examples showing rows").isNotEmpty();
+        assertThat(keystones.stream().map(Pins.Keystone::document).filter(document -> !pinned.containsKey(document)))
+            .as("keystones naming a document the corpus does not capture or that claims nothing")
+            .isEmpty();
+        var report = java.nio.file.Path.of("target", "facts-report", "keystones.txt");
+        java.nio.file.Files.createDirectories(report.getParent());
+        java.nio.file.Files.write(report, Pins.keystoneReport(pinned, keystones, claims.keySet()));
     }
 
     /**

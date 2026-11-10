@@ -146,6 +146,58 @@ Beside the approval sit floors for an example naming no fact document, a rendere
 Build a schema with `TestSchemaHelper.buildSchema(sdl)`, assert structural shape on the resulting variant or generated `TypeSpec`.
 Banned: code-string body matching.
 
+== Authoritative tests
+
+Every behaviour has one *authoritative test*: the one place that pins it, which a reader asked
+"what makes this true, and what proves it" can name without searching. The behaviours are what the
+model says an example means, in three families, each anchored on one relation:
+
+[cols="1,2,3"]
+|===
+| Family | Anchor | A behaviour's shape
+
+| Claims | `graphitron_claim` | the claim's kind and the kind of element making it
+| Defects | `graphitron_entry_defect` | the code, the kind of AST entry it sits at, and the directive
+applied there or around it
+| Occurrences | `graphitron_occurrence` | the occurrence's kind, its producer's kind, and whether it is a
+root
+|===
+
+A family is the relations `meta_relation` declares at its anchor's grain that spell the anchor's key
+as the anchor does, so a relation stating more about the same thing joins its family by being
+declared. A relation keying something finer is an anchor of its own and pins nothing until it has a
+family: a path need and a path's step are such grains, and path claims pin no behaviour for now.
+Whether paths are a fourth family is decided once the keystone report shows whether path documents
+repeat one another (Alf, 2026-11-10).
+
+A document *pins* a behaviour when one of its claims, `@expectEquals` or `@assertContains`, matches
+rows of a family relation: the pin is read from the rows the claim matched, at the step the claim
+follows. Containing a behaviour is not pinning it, since every scenario holds a table type's claim
+and few say so, and a claim that rows are absent pins nothing.
+
+*The reference documentation's examples are the keystone.* A page's example selects a document with
+`@factDocument(path:)` and shows the rows it claims with `@factRows(relation:)`; it is the keystone of
+what that document's claims on that relation pin, and of nothing else the document pins. The keystone
+is the behaviour's authoritative test. Every other document pinning the behaviour is a different case
+of it, which its header names, or it merges into the keystone, usually by pulling the keystone in
+with `@withFacts` and stating only its variation.
+
+`FactExpectationTest` holds two counts that only fall, both over the whole corpus and skipped when
+`-Dfacts` narrows it:
+
+* *duplicate pins:* the pins documents make of a behaviour another document already pins, its failure
+  naming each behaviour and the documents pinning it;
+* *the same example:* two documents whose graphs hold the same declared shape.
+
+The *keystone report* is written to `graphitron-model/target/facts-report/keystones.txt` and gates
+nothing: the behaviours a page shows, the behaviours none does ranked by how many documents pin each,
+so documentation work goes where examples pile up without a page, and the documents that pin no
+family at all.
+
+Every other test that touches a behaviour relies on its authoritative test rather than restating it.
+A test whose assertions are all pinned elsewhere is deleted, naming the authoritative test that
+covers each one.
+
 == Compilation tier
 
 Generated source must compile against the test catalog.

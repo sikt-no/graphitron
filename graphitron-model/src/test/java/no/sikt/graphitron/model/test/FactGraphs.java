@@ -190,10 +190,10 @@ public final class FactGraphs implements AutoCloseable {
      * the behaviours the rows it matched then pin.
      */
     record Verification(String scenario, List<CorpusExpectations.Block> blocks, List<String> divergences,
-                        java.util.Set<Pins.Pin> pins) {
+                        Map<String, java.util.Set<Pins.Pin>> pins) {
 
         Verification(String scenario) {
-            this(scenario, new ArrayList<>(), new ArrayList<>(), new java.util.TreeSet<>());
+            this(scenario, new ArrayList<>(), new ArrayList<>(), new java.util.TreeMap<>());
         }
 
         /** Checks {@code claim} against the store {@code dsl} writes, as the last capture left it. */
@@ -204,7 +204,7 @@ public final class FactGraphs implements AutoCloseable {
             CorpusExpectations.divergences(dsl, claimed).stream()
                 .map(divergence -> "line " + claim.line() + " " + divergence)
                 .forEach(divergences::add);
-            pins.addAll(Pins.of(dsl, claimed));
+            Pins.merge(pins, Pins.of(dsl, claimed));
         }
     }
 
