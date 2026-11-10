@@ -83,6 +83,8 @@ Execution tier, with a test `MutationHook` that records `txid_current()`, the co
 * Operation name: named and anonymous operations.
 * `ROLLBACK_ONLY`: the hook runs per field and everything is discarded at release.
 * Multi-tenant: the hook runs once per connection with that connection's `tenant()`.
+  R1119 replaces the carrier's `Optional<tenantKey>` routing value with a generated `ConnectionKey`
+  in every build that writes the routing slot; `tenant()` then reads its tenant part.
 * With a declared handle, the hook receives the handle of the connection it runs on, and the session was mounted before the transaction began (the hook reads a value the mount set).
 * A hook failure and an outbox emit failure and a rejected mount are each declined by the one router predicate, pinned by calling `claim` with each cause and an `@error` channel that would otherwise match.
 

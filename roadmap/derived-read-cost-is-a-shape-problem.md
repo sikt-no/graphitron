@@ -1366,7 +1366,8 @@ output package they are written to are settled.
     `@order` and `@index` off the schema; `graphitron_ast_order_entry`,
     `graphitron_ast_order_field_entry` and `graphitron_ast_index_entry` are the store's only typed copy.
   * **The `@error` handlers are stated** `open`.
-  * **Entity resolution is stated** `open`.
+  * **Entity resolution is stated** `open`. Taken by R1119, which states the entity key alternatives
+    as a stored relation and adds the voucher alternative.
   * **Each field's wiring is stated** `open`. The cases `FetcherEmitter.bind` switches on, read with
     the families of "`TypeFetcherGenerator` reads the store, one family of field at a time".
 * **The type and input generators read the emitted schema and the store** `open`. The enum, input

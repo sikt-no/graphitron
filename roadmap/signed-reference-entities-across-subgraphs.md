@@ -1,7 +1,7 @@
 ---
 id: R1119
 title: "Signed voucher handover: one subgraph vouches, another grants through RLS"
-status: Ready
+status: Spec
 bucket: feature
 priority: 3
 theme: service
@@ -36,9 +36,9 @@ vouch it is told.
 
 ```graphql
 # Subgraph A: the issuer. VgsResultat is A's own table of references to results, written the way B's key
-# looks: `id` is B's key field, read here from A's `vgs_resultat_id`. `@issue` absorbs the type's other
-# fields into the voucher (`key:` may name them, as a `@key` field set), and Graphitron withholds them from
-# A's published schema: A publishes `voucher` alone. No service, no token code, no `@key` written.
+# looks: `id` is B's key field, read here from A's `vgs_resultat_id`. `@issue` absorbs every other field
+# of the type into the voucher, and Graphitron withholds them from A's published schema: A publishes
+# `voucher` alone. No service, no token code, no `@key` written.
 type Soknad @table(name: "soknad") @key(fields: "id") {
   id: ID! @nodeId
   vgsResultater: [VgsResultat!]! @reference(path: [{key: "soknad_vgs_resultat_soknad_fkey"}])
@@ -58,7 +58,7 @@ type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
 }
 ```
 
-The *absorbed* fields are the issuing type's fields other than the voucher, or those its `key:` names.
+The *absorbed* fields are the issuing type's fields other than the voucher.
 Graphitron reads each as a component of the voucher rather than as a field: its `@field` names the column,
 its type the scalar, and its column is read whenever the voucher is computed, but it never becomes a field
 of A's schema: not in A's served SDL, not in its runtime schema.
@@ -85,7 +85,8 @@ item rules out. And any other field A published on the type would exist only in 
 enter A for, so a query reaching the type through B that asked for it could not be planned and the
 supergraph would not compose. Withholding answers both: A's published type is `voucher` and its key and
 nothing else, which composes with the jump on `voucher` (the round-2 composition table, under Reviewer
-findings, row 4). A field that is neither the voucher nor absorbed is refused. B's authored key is
+findings, row 4). An issuing type is not a node: a node gets a minted `@key(fields: "id")`, and on A
+that key would name a field the voucher absorbed. B's authored key is
 untouched, so the type still resolves by plain `id` from anywhere else under the caller's own RLS; a
 voucher only ever adds access. This is federation only:
 `Query.node`, `@node` and the relay id are unaffected and know nothing about vouchers.
@@ -161,108 +162,159 @@ child to its result row, where `covered` is the session setting the mount wrote 
 | Encode and decode an opaque value in a key | `NodeIdEncoder` encodes and decodes node ids, and the node-id key alternative decodes one into the key's columns before the SELECT. | A voucher codec beside it: encode `(vouch id, scope, caller, expires, key values)`, sign it with the type name, decode, verify, and hand the key values to the authored key's columns. Owned by Graphitron, versioned in the encoding so the format can change. |
 | Signing and verification keys | None. | A runtime-level key provider: a signing key on A, verification keys by key id on B, so the public key can sit in B and rotation adds a key id. A default implementation over JDK Ed25519 (in the JDK since 15, so valid in emitted Java 17); an interface so a consumer can sign remotely, for example through Vault Transit. In a build with a marker it is a required parameter of every `Graphitron.runtime(...)` overload, so omitting it is a compile error. |
 | The caller the voucher is bound to | `SessionState.of(mount, unmount)` carries the request's callbacks; whatever the request knows is captured in their closures, and Graphitron never sees it. | In a build with a marker, `SessionState.of(caller, mount, unmount)`: the caller as a `String`, read by both subgraphs, so the voucher is useless to another user. Still one `of` form per build, so a lambda never meets an overload. |
-| Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. | `@issue` is a computed, non-column projection whose value comes from the codec, one signature per returned row that selects it, carrying the values of the absorbed fields. |
-| Per-subtree routing value | `TenantHandDown` is the one writer of the `localContext` slot, which carries the tenant key; `LocalContextOwnershipGuardTest` keeps every other writer out; the carrier's `handDown(row, tenantKey)` stamps entity and node dispatch. | In a build with an `@accept` field the slot carries a generated `ConnectionKey` (the tenant part only in multi-tenant builds, the vouch id part only with `@accept`). The hand-down, the guard's owner list, the loader naming and `handDown` take it. A build with no `@accept` keeps `Optional<K>` exactly. |
+| Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. The scalar occurrence binds by kind (`graphitron_occurrence_binding`: `COLUMN`, `NODE_ID`, `EXPRESSION` and others); `graphitron_occurrence_column_rule` seeks a column for every scalar occurrence it does not exclude, and a field with no column is `COLUMN_UNRESOLVED`. | The voucher field, on A and on B, binds by a kind of its own (`VOUCHER`), so the column rule never seeks a `voucher` column. On A its value comes from the codec, one signature per returned row that selects it, carrying the values of the absorbed fields. |
+| Which column a name answers to | The match (SQL name unique on the table, else the jOOQ name unique and no SQL name answers) is spelled inline three times: in `graphitron_occurrence_column_rule` and in the `COLUMN_UNRESOLVED` and ambiguous-column defect arms, each per occurrence and reading element-keyed claims. | One catalog-side relation, one row per table and name a column answers to unambiguously, carrying which name matched (`docs/architecture/explanation/fact-model.adoc`, the column-name ruling). The occurrence rule and the defect arms become joins onto it, and the voucher components read it before any element exists. |
+| Per-subtree routing value | `TenantHandDown` is the one writer of the `localContext` slot, which carries the tenant key; `LocalContextOwnershipGuardTest` keeps every other writer out; the carrier's `handDown(row, tenantKey)` stamps entity and node dispatch. A single-tenant build writes nothing there (`TenantHandDown.none()`). | Every build that writes the slot, multi-tenant or accepting, carries a generated `ConnectionKey` in it (the tenant part only in multi-tenant builds, the vouch id part only with `@accept`). The hand-down, the guard's owner list, the loader naming and `handDown` take it, with no "has accept" branch at any of them. A single-tenant build with no `@accept` still writes nothing. |
 | One connection per routing key | `TenantConnections` keys its entries by `Optional<tenantKey>`, mints lazily, one mount per entry, unmounts and resets at release; its entry resolution is the one enforcer of the request tenant set. | Key the entries by `ConnectionKey`; the cap of one vouched entry; the tenant part of a vouched key goes through the same enforcer, so a voucher never adds a tenant. |
 | Telling the mount what the connection is for | `MountedSession` carries `configuration()` and, in multi-tenant builds only, `tenant()`. | `vouch()`, returning `Optional<Vouch>` (id, scope, expiry, covered keys), declared only in a build with an `@accept` field, the way `tenant()` is declared only in multi-tenant builds. |
-| Entity with a non-column key field | Every `@key` field must resolve to a column-backed field (`EntityResolutionBuilder`), except the node-id alternative, which decodes to the key's columns. | An `@accept` field: the whole minted key, in the SDL, excluded from the SELECT and projection, decoded to the columns of B's authored key like a node id. |
-| A field the author writes that the schema does not carry | None: the emitted population, `graphitron_element`, is the authored elements plus the minted ones (`graphitron_element_authored`, `graphitron_element_minted_*`), and nothing is ever taken out of it. | The absorbed declarations of an issuing type, decoded as voucher components (a stored relation with column and scalar resolved) rather than fields, and anti-joined out of `graphitron_element_authored`: the first subtraction from that population. `EmittedRegistry`, which only adds, gains a removal arm, so the served SDL and runtime schema lose them too. |
-| Schema alteration from one marker | `graphitron_directive_application_minted` mints `@key(fields: "id")` on a node type of a federated graph; `graphitron_federation_link_import_rule` imports every minted directive the link's version allows. | Two more arms of the minted view: `@key(fields: "voucher")`, with `resolvable` from the role (`false` for `@issue`, `true` for `@accept`), and `@inaccessible` on the marked field. The import needs no change. |
+| Entity with a non-column key field | Every `@key` field must resolve to a column-backed field, except the node-id alternative, which decodes to the key's columns. `EntityResolutionBuilder` re-derives the alternatives (`KeyAlternative.Direct`, `KeyAlternative.NodeId`) from the classified model on every build. | The entity key alternatives stated as a stored relation, one row per alternative of an entity, read by the dispatcher. An `@accept` field is an alternative there: the whole minted key, excluded from the SELECT and projection, decoded to the columns of B's authored key like a node id. The node-id and direct alternatives move onto the same relation, so `EntityResolutionBuilder`'s re-derivation goes. |
+| A field the author writes that the schema does not carry | None: the emitted population, `graphitron_element`, is the authored elements plus the minted ones (`graphitron_element_authored`, `graphitron_element_minted_*`), and nothing is ever taken out of it. The part sets `graphitron_field_authored` and `graphitron_argument_authored` select from the transcription directly. | The absorbed declarations of an issuing type, decoded as voucher components rather than fields: a stored membership relation, decided by structure alone, that `graphitron_element_authored` and both part sets anti-join, the first subtraction from that population, and the component's column and scalar resolved beside it. `EmittedRegistry`, which only adds, gains a removal arm reading the membership, so the served SDL and runtime schema lose them too. |
+| Schema alteration from one marker | `graphitron_directive_application_minted` mints `@key(fields: "id")` on a node type of a federated graph, and `graphitron_directive_application_arg_minted` reads that view and hardcodes its arguments, since every minted key is today the node's (`fields: "id"`, `resolvable: true`). `graphitron_federation_link_import_rule` imports every minted directive the link's version allows. | A stored relation of minted keys, one row per key with its coordinate, field set, `resolvable` and role (`NODE`, `ISSUE`, `ACCEPT`), which both the minted application set and the minted argument set read, so no view reads another and no argument is hardcoded. The node rule becomes its `NODE` rows; the voucher key, `@key(fields: "voucher")`, is its `ISSUE` row (`resolvable: false`) and `ACCEPT` row (`resolvable: true`). `@inaccessible` on the marked field is one more arm of the minted application set. The import needs no change. |
 | Children of the entity | Table-bound children run through generated fetchers that honour the inherited routing. | Verify that a `@service` child and a connection-typed child under the entity also acquire from the inherited key. |
 
 ## Implementation
 
-* *Directives.* `@issue(scope:, ttl:, key:)` on a field of a table-bound type (A). `key:` is an optional
-  field set in `@key` syntax (`"id"`, `"orgId nr"`) naming the fields of the type the voucher absorbs;
-  omitted, it absorbs every other field of the type. Either way every field of the type is the voucher or
-  absorbed. `@accept(scope:, key:)` on a field of a table-bound, resolvable type (B): `key:` is the field set
-  of the authored `@key` whose columns the voucher decodes to, and may be omitted when the type has exactly
-  one authored resolvable key. Graphitron defines both in `directives.graphqls`, as it does `@node`;
+* *Directives.* `@issue(scope:, ttl:)` on a field of a table-bound type (A); it absorbs every other field
+  of the type. `@accept(scope:, key:)` on a field of a table-bound, resolvable type (B): `key:` is the field
+  set of the authored `@key` whose columns the voucher decodes to, and may be omitted when the type has
+  exactly one authored resolvable key. Graphitron defines both in `directives.graphqls`, as it does `@node`;
   consumers do not write the definitions.
 * *Facts.* Capture writes one entry per application, keyed by the directive application as
-  `graphitron_ast_node_id_entry` is: `graphitron_ast_issue_entry` (scope, ttl, the `key:` field set as
-  written, or none) and `graphitron_ast_accept_entry` (scope, the `key:` field set as written). Everything
-  else is derived from these and from facts the store already holds: the voucher components (below), the
-  minted key and `@inaccessible` (two arms of
-  `graphitron_directive_application_minted`, their arguments in
-  `graphitron_directive_application_arg_minted`), the rejections below as entry defects, and the
-  build-shape questions the emitters ask (does this graph issue, does it accept).
-* *Voucher components, not withheld fields.* An absorbed declaration is not a field that is classified and
-  then hidden: the store cannot keep a column binding, a claim or an occurrence for a coordinate that is
-  not a `graphitron_element` row (`graphitron_field`, `graphitron_directive_application`,
+  `graphitron_ast_node_id_entry` is: `graphitron_ast_issue_entry` (scope, ttl) and
+  `graphitron_ast_accept_entry` (scope, the `key:` field set as written, or none). Everything else is
+  derived from these and from facts the store already holds: the voucher membership and components
+  (below), the voucher binding, the minted keys and `@inaccessible`, the entity key alternatives, the
+  rejections below as entry defects, and the build-shape questions the emitters ask (does this graph issue,
+  does it accept).
+* *Column names.* Which column of a table a written name answers to is stated once in the catalog family,
+  per the column-name ruling in `docs/architecture/explanation/fact-model.adoc`: one row per table and name
+  a column answers to unambiguously (the SQL name where exactly one column carries it, else the jOOQ name
+  where no SQL name answers and exactly one generated one does), carrying which name matched.
+  `graphitron_occurrence_column_rule` and the `COLUMN_UNRESOLVED` and ambiguous-column defect arms become
+  joins onto it, with their fact documents row-identical; that is the gate for this step. The `graphitron`
+  gatherer's `meta_gatherer_dependency` row on the catalog family covers the read.
+* *Voucher membership and components, not withheld fields.* An absorbed declaration is not a field that is
+  classified and then hidden: the store cannot keep a column binding, a claim or an occurrence for a
+  coordinate that is not a `graphitron_element` row (`graphitron_field`, `graphitron_directive_application`,
   `graphitron_occurrence` and `graphitron_claim` all reference it), and a second population axis, modelled
-  but not emitted, is something nothing in the model has. So the decode decides what the declaration is.
-  The graphitron gatherer derives a stored relation, one row per component a voucher carries, keyed on the
-  absorbed declaration's `graphql_field_element` row, carrying the issuing field, the component's name and
-  its resolved column and scalar. That relation is the issue emitter's input (which columns to select, how
-  to serialize each value), and `graphitron_element_authored` anti-joins it, so an absorbed declaration
-  never becomes an element: the set states its own stand-down rule, as each element set does, and it is a
-  decision, not a provenance arm. The transcription (`graphql_*`) keeps the declarations as written.
-* *Stage order.* The component relation is written before `graphitron_element`, so it cannot read the
-  element-keyed anchors (the column-match claims). Its column resolution needs a rule that does not depend
-  on the coordinate being an element: `@field(name:)` read off the transcribed declaration, or the field
-  name, against the issuing type's table. Whether such a resolution exists as a reusable rule, or is
-  written here for the first time, is for the implementer to establish and, if it is new, to raise with Alf
-  and Filip before writing it.
-* *The readers.* Everything built on the emitted population drops the declarations by construction. Two
-  readers are not built on it and take a change each: `EmittedRegistry`, which patches the transcribed
-  registry additively and never removes, gains a removal arm for voucher components, and the served
-  `_service.sdl` follows from it; the runtime wiring and the classified walk, which build from
-  graphql-java's view of the authored schema, read the registry after that removal rather than skipping
-  absorbed fields themselves, which would add a branch to the classified walk being drained. No reader
-  derives "is this absorbed" from the `@issue` entry on its own; each queries the component relation. The
-  LSP and MCP keep reading the authored transcription for the author's own text, so the declaration stays
-  visible, completed and checked where it is written. The
-  emitters read those views; no new classified leaf carries the markers. The entity dispatch takes its
-  voucher key alternative from the minted application rather than re-deriving it in
-  `EntityResolutionBuilder` the way the node-id alternative is derived there today; it shares that
-  alternative's decode-then-SELECT path.
-* *Rejections.* `@accept` on a type with no authored resolvable `@key`, or with several and no `key:`, or
-  a `key:` naming no authored key. Over the component relation, as `graphitron_entry_defect` codes at the
-  declaration's written position, owned by the stage that writes that relation: `@issue` on a type with an
-  authored `@key` (it would let a router reach
-  B without the voucher); `@issue` on a type with a field that is neither the voucher nor absorbed (it would
-  exist only in A, and the supergraph would not compose), with a message naming the field and saying to
-  absorb or remove it; an `@issue` `key:` naming no field of the type, or a field named twice; an absorbed
-  field that is not a scalar read from the row (a list, an object, a field with its own fetcher such as a
-  `@service`, or a `@nodeId` field, whose published value is an encoded id rather than the key value);
-  an `@issue` that absorbs nothing; `@accept` whose `key:` is an authored key with a nested selection
-  (`@key(fields: "org { id }")`), since absorbed fields are top-level scalars;
-  either marker on a field that is also a column; both
-  markers on one type; either marker in a graph with no `<sessionState>` (no `store_graph_session_supplied`
-  row), since the caller rides on `SessionState`; `@issue` on a type a root operation field returns (a
-  `Query`, `Mutation` or `Subscription` field, directly or as a list), because the vouched decision is
-  the path from a parent A's rules admitted. A field of a mutation payload is not a root field and may
-  return `@issue` rows.
-* *Voucher codec.* One class owns the format: version byte, vouch id, scope, caller, expiry, key id, the
-  key values, signature. The key values travel in GraphQL's own wire form, so A and B never have to agree
-  on how a column prints: entries sorted by field name, each value the result of the absorbed field's
-  scalar serializing it, exactly what a plain representation would have carried. On B each value is parsed
-  by the scalar of B's key field, as a representation's value is, and reaches the authored key's columns
-  the way a node id's decoded values do. The signature covers every byte before it plus the entity type
-  name, which the token does not carry: B takes it from the representation's `__typename`, so a voucher
-  for one type cannot be presented as another's. A decode failure, unknown version, unknown key id, a
-  field set other than B's authored key or a value B's scalar does not parse is a verification failure,
+  but not emitted, is something nothing in the model has. So the decode decides what the declaration is,
+  in two stored relations of the `graphitron_` family, written by one new stage of the graphitron anchor
+  between `table-types` and `emitted` in `meta_stage`:
+  * the *membership*, one row per field declaration an `@issue` absorbs, keyed on its
+    `graphql_field_element` row (`ON DELETE CASCADE`) and carrying the issuing field. It is decided by
+    structure alone, from the issue entry and the type's transcribed fields, so a component whose column
+    fails to resolve is still a member and still withheld: a resolution failure is a defect, never an `id`
+    published by A;
+  * the *components*, one row per member whose column and scalar resolved, keyed on the member: the
+    component's name, its column (the first `@field(name:)` read off the transcription, else the field
+    name, joined to the column-name relation over the issuing type's `graphitron_tabletype` row) and its
+    scalar. This is the issue emitter's input: which columns to select, how to serialize each value.
+
+  `graphitron_element_authored`, `graphitron_field_authored` and `graphitron_argument_authored` each
+  anti-join the membership, the last two beside their existing `NOT EXISTS` against
+  `graphitron_connection_carrier`, and each `meta_relation` description gains the reason. The set states
+  its own stand-down rule, as each element set does; it is a decision, not a provenance arm. The
+  transcription (`graphql_*`) keeps the declarations as written. Every relation the new stage reads is
+  upstream of it (`graphql_*`, `graphitron_ast_*`, `graphitron_tabletype`, the column-name relation), so
+  the stage order is sound.
+* *The voucher binding.* The voucher field, on A and on B, is a scalar occurrence on a table-bound type,
+  and today the column rule would seek a `voucher` column and raise `COLUMN_UNRESOLVED` on a valid schema.
+  It binds by a kind of its own, `VOUCHER`, added to the kinds `graphitron_occurrence_binding` and
+  `graphitron_binding_claim` allow, per the binding-kind ruling in
+  `docs/architecture/explanation/fact-model.adoc`; no directive-name exclusion is added to the column
+  rule. The issue emitter and the entity dispatch find the voucher by that binding.
+* *Minted keys, stored.* A stored relation of minted keys, one row per key: its coordinate, field set,
+  `resolvable` and role (`NODE`, `ISSUE`, `ACCEPT`). The federation entity rule writes its `NODE` rows;
+  each `@issue` writes an `ISSUE` row (`fields: "voucher"`, `resolvable: false`) and each `@accept` an
+  `ACCEPT` row (`fields: "voucher"`, `resolvable: true`). `graphitron_directive_application_minted` and
+  `graphitron_directive_application_arg_minted` both read it, so the argument set stops reading the
+  application view and stops hardcoding `fields: "id"` and `resolvable: true`. `@inaccessible` on the
+  marked field is one more arm of the minted application set. Existing fact documents for node keys stay
+  row-identical.
+* *Entity key alternatives, stated.* A stored relation, one row per key alternative of an entity: the
+  entity, the key's field set, `resolvable`, and how its representation reaches the SELECT (`DIRECT`
+  columns, a `NODE_ID` decode, a `VOUCHER` decode with the authored key it decodes to), with the
+  per-field column bindings beside it. The voucher alternative is written from the `ACCEPT` minted key and
+  the accept entry; the direct and node-id alternatives move onto the same relation from the facts
+  `EntityResolutionBuilder` reads today. The entity dispatch reads the relation, and
+  `EntityResolutionBuilder`'s re-derivation of `KeyAlternative` from the classified model goes. This is
+  the "Entity resolution is stated" node of R876's graph, taken here.
+* *The readers.* Everything built on the emitted population drops the declarations by construction: the
+  directive applications through `graphitron_directive_application_authored`'s join to
+  `graphitron_element`, the fields and arguments through the part sets' anti-joins above. Three readers
+  are not built on it. `EmittedRegistry`, which patches the transcribed registry additively and never
+  removes, gains a removal arm that reads the membership relation, not a generic "no `graphitron_field`
+  row" rule, which would turn a capture defect into a silent deletion; its javadoc's "absence is a
+  capture defect" paragraph says so. The served `_service.sdl` follows from it. The runtime wiring and
+  the classified walk, which build from graphql-java's view of the authored schema, read the registry
+  after that removal rather than skipping absorbed fields themselves, which would add a branch to the
+  classified walk being drained. `FactCapture.derive`, through `ClassificationDomainCapture`, reads the
+  written assembly, not the emitted one; absorbed scalar fields are harmless there, and a test pins that
+  they classify without effect. No reader derives "is this absorbed" from the `@issue` entry on its own;
+  each queries the membership. The LSP and MCP keep reading the authored transcription for the author's
+  own text, so the declaration stays visible, completed and checked where it is written. The emitters read
+  those relations; no new classified leaf carries the markers.
+* *Rejections.* Each is a `graphitron_entry_defect` code at the declaration's written position, owned by
+  the stage whose relations it reads, so a refusal never reads a later stage's facts
+  (`StageRosterGateTest`).
+  * Owned by the voucher stage, decided from the transcription and the capture entries: `@issue` on a type
+    with an authored `@key` (it would let a router reach B without the voucher); `@issue` on a type
+    `graphitron_node` holds, authored or inferred from the table's node metadata, since the minted node
+    key would name an absorbed `id`; an `@issue` that absorbs nothing; an absorbed field that is a list or
+    an object, or carries `@nodeId`, `@service`, `@routine`, `@reference` or another directive that gives
+    it a value of its own (read off `graphql_directive_application`, not off a producer fact); an absorbed
+    field whose column does not resolve (a member with no component row); both markers on one type; either
+    marker in a graph with no `<sessionState>` (no `store_graph_session_supplied` row), since the caller
+    rides on `SessionState`.
+  * Owned by a stage at or after `emitted`, since what a root field returns is an element-keyed fact:
+    `@issue` on a type a root operation field returns (a
+    `Query`, `Mutation` or `Subscription` field, directly or as a list), because the vouched decision is
+    the path from a parent A's rules admitted. A field of a mutation payload is not a root field and may
+    return `@issue` rows.
+  * Owned by the stage that writes the entity key alternatives: `@accept` on a type with no authored
+    resolvable `@key`, or with several and no `key:`, or a `key:` naming no authored key; `@accept` whose
+    `key:` is an authored key with a nested selection (`@key(fields: "org { id }")`), since absorbed fields
+    are top-level scalars.
+* *Voucher codec.* One generated class owns the format: version byte, vouch id, scope, caller, expiry,
+  key id, the key values, signature. The key values travel in GraphQL's own wire form, so A and B never
+  have to agree on how a column prints: entries sorted by field name, each value the result of the absorbed
+  field's scalar serializing it, exactly what a plain representation would have carried. On B each value
+  is parsed by the scalar of B's key field, as a representation's value is, and reaches the authored key's
+  columns the way a node id's decoded values do. The signature covers every byte before it plus the entity
+  type name, which the token does not carry: B takes it from the representation's `__typename`, so a
+  voucher for one type cannot be presented as another's. A decode failure, unknown version, unknown key id,
+  a field set other than B's authored key or a value B's scalar does not parse is a verification failure,
   not an exception to the caller.
+* *Generated, not shipped.* The codec, `Vouch`, `VoucherRejectedException`, the key provider interface and
+  its default Ed25519 implementation are emitted per consumer, as `NodeIdEncoder` is
+  (`NodeIdEncoderClassGenerator`), and only in a build whose store holds a marker entry. Generated code has
+  no runtime dependency on Graphitron, and `graphitron-jakarta-rest` is an optional serving library a
+  consumer verifying a voucher need not take. JDK Ed25519 (`KeyFactory` and `Signature` with "Ed25519")
+  compiles at Java 17.
 * *Key synthesis.* The minted key and `@inaccessible` show in the served `_service.sdl` on both sides,
   and A's issuing type shows `voucher` alone. B's authored keys, `@node` and the relay id are not touched.
 * *Clock skew.* B accepts a voucher up to a fixed 30 seconds past its expiry, so a small difference
   between A's and B's clocks does not reject fresh vouchers. The constant lives beside the vouch cap.
 * *Issue.* The fetcher that reads an `@issue` row selects the voucher components' columns whenever
-  `voucher` is selected (nothing else can select them, since they are not fields), and computes the token after
-  the rows are read, one signature per row, the caller read from the carrier's `SessionState`. A row is
-  signed only when `voucher` is selected, which a router does only when it plans the jump to B, so the
-  signing cost follows what B is asked for; no ceiling beyond the page size the parent field already
-  sets. Expiry is fixed per operation. It
-  works at any position below a parent, including under a mutation payload, where the field's transaction
-  rule (a rolled-back field is `null`) keeps a voucher for rolled-back rows from the client.
+  `voucher` is selected (nothing else can select them, since they are not fields), and computes the token
+  after the rows are read, one signature per row, the caller read from the carrier's `SessionState`. A row
+  is signed only when `voucher` is selected, which a router does only when it plans the jump to B, so the
+  signing cost follows what B is asked for; no ceiling beyond the page size the parent field already sets.
+  Expiry is fixed per operation. It works at any position below a parent, including under a mutation
+  payload, where the field's transaction rule (a rolled-back field is `null`) keeps a voucher for
+  rolled-back rows from the client. It is emitted as an `emit` query and emitter reading the component
+  relation, not as a branch of `TypeFetcherGenerator`.
 * *Verify and group.* The dispatcher's voucher handler decodes and checks as in step 3, groups by vouch
   id, and acquires one vouched connection per group with every key of the group on the `Vouch`.
-* *Connection key.* Replace `Optional<tenantKey>` with the generated `ConnectionKey` in builds with an
-  `@accept` field. The routing hand-down remains the one writer of the `localContext` slot and the
-  ownership guard's owner list follows it. Builds with no `@accept` field emit exactly what they emit
-  today; whether a build gets the key is decided from the accept facts and the tenant-column
-  configuration, never by hand in two places.
+* *Connection key.* Every build that writes the `localContext` slot, multi-tenant or accepting, carries a
+  generated `ConnectionKey` there in place of `Optional<tenantKey>`, with a tenant part in multi-tenant
+  builds and a vouch id part with `@accept`. A single-tenant build with no `@accept` writes nothing there
+  today and still writes nothing, so its output is unchanged. The shape is computed once, as one value
+  beside `SessionIdentityRows`, from the store's accept facts and the tenancy configuration the generator
+  still takes, and handed to every generator that needs it; it is not added to `GraphitronSchema`, and no
+  site evaluates "has accept" itself. The routing hand-down remains the one writer of the slot and the
+  ownership guard's owner list follows it. `MountedSession.tenant()` keeps its type; the `Optional<K>`
+  that `acquire` takes is generated-internal, which the step confirms before it changes it.
 * *Acquisition.* The carrier's entry resolution takes the `ConnectionKey`; a key with a vouch id mints a
   separate entry whose mount sees `vouch()`, and the entry is reused for a repeat presentation of the same
   vouch. A rejected mount evicts the connection and fails the request, as today.
@@ -274,13 +326,46 @@ child to its result row, where `covered` is the session setting the mount wrote 
 * *Out of scope.* Key management and rotation procedure, a reference mount and policies (a worked example
   goes in the how-to), router header propagation, a per-row decision beyond A's own read.
 
+### Slices
+
+Each slice lands green on trunk with a build that uses neither marker unchanged, because every emitted
+unit, parameter and `of` overload is gated on a marker entry in the store.
+
+1. *Column names.* The catalog-side relation, with the occurrence rule and its two defect arms moved onto
+   it. A refactor: fact documents row-identical.
+2. *Minted keys and entity key alternatives, stated.* Both stored relations with today's rows only
+   (`NODE` keys; direct and node-id alternatives), the minted views reading the first and the entity
+   dispatch reading the second, `EntityResolutionBuilder`'s re-derivation removed. A refactor: fact
+   documents and generated output unchanged.
+3. *Connection key.* `ConnectionKey` in every build that writes the slot, tenant part only. A refactor:
+   single-tenant output unchanged, multi-tenant output differs only in the key's type.
+4. *A's facts and published shape.* `@issue` and its capture entry, the voucher stage (membership,
+   components, refusals), the `VOUCHER` binding, the three stand-downs, the `ISSUE` key and
+   `@inaccessible`, `EmittedRegistry`'s removal arm, A's served SDL and runtime schema. These land
+   together: without the removal arm the walk would be handed fields the store no longer holds. Until
+   slice 6, a temporary defect refuses `@issue` at generate time so that a valid schema never reaches an
+   emitter that does not exist; slice 6 removes it, and it is listed under Retired vocabulary.
+5. *Codec.* The generated codec, key provider, `Vouch` and `VoucherRejectedException`, emitted only when a
+   marker entry exists; compilation-tier tests and execution tests of the emitted codec. May run beside
+   slice 4.
+6. *Issuing.* The issue fetcher, `SessionState.of(caller, ...)` and the key parameter on
+   `Graphitron.runtime(...)`, gated on the issue entry; A-alone execution tests (tokens decode, one vouch
+   id per operation and scope); the temporary refusal goes.
+7. *B's facts.* `@accept` and its capture entry, its refusals, the `ACCEPT` key and `@inaccessible`, the
+   voucher alternative in the entity key alternatives. The same temporary-refusal device as slice 4,
+   removed in slice 8.
+8. *Dispatch.* The dispatcher's verify and group, vouched acquisition, `MountedSession.vouch()`, the A and
+   B RLS execution fixture, and the recorded composition check.
+
 ## First-client docs draft (for `federation-keys.adoc` and the security guide)
 
 "To let another subgraph read data your user's token does not cover, write the row type the way the
 other subgraph's key looks, each key field reading its value from your own column, and add a field
 `voucher: String! @issue(...)`. The voucher absorbs the key fields: they are sealed inside it and your
 subgraph publishes the voucher alone, so a router can reach the other subgraph's data only through it.
-Clients read the key fields from the other subgraph, like its other fields. Graphitron
+Clients read the key fields from the other subgraph, like its other fields. Name and type them exactly
+as the other subgraph's key fields: your subgraph cannot check that, and a mismatch shows up as every
+voucher being rejected. Graphitron
 signs a voucher for each row your own rules let the caller see, bound to the caller you pass to
 `SessionState.of`; both subgraphs must pass the same caller for the same user (for example the token's
 subject), or every voucher is rejected. In the subgraph that owns the data, add the field
@@ -298,18 +383,27 @@ read simply once the spellings are chosen, the design is wrong.
   tolerance (and accepted within it), wrong scope, wrong caller, a voucher presented under another
   `__typename`, a field set other than B's key, a value that does not coerce, and two vouchers sharing a
   vouch id but disagreeing on scope, caller or expiry each fail verification and nothing else does.
-* Pipeline tier: capture of both markers and each rejection above, including `@issue` on a type a root
-  field returns, on a type with an authored `@key`, with a field neither absorbed nor the voucher, with a
-  `key:` naming no field or a field twice, absorbing nothing, or absorbing a `@nodeId`, list, object or
-  `@service` field, each a defect at the declaration's position, and its acceptance under a mutation
-  payload; the component relation for an omitted `key:` (every other field) and an explicit one, with
-  column and scalar resolved; no `graphitron_element` row, no field binding and no occurrence for an
-  absorbed declaration; `@accept` with two authored keys with and without `key:`, and on a key with a
-  nested selection; the minted key with `resolvable: false` and as the only key on A's issuing type, with
-  `resolvable: true` beside the authored key on B's entity, and `@inaccessible` on the voucher field on
-  both; the connection key in emitted fetchers; output for
-  a build with no marker unchanged; `SessionState.of` gains the caller, `MountedSession` gains `vouch()`
-  and `Graphitron.runtime` gains the key parameter only when the matching marker is present.
+* Refactor gates (slices 1 to 3): every existing fact document row-identical after the column-name
+  relation, the minted-key relation and the entity key alternatives land, and generated output unchanged
+  for every existing fixture; single-tenant output unchanged after `ConnectionKey`.
+* Pipeline tier: capture of both markers and each rejection above, each a defect at the declaration's
+  position and owned by the stage named there, including `@issue` on a type a root field returns, on a type
+  with an authored `@key`, on a node type (authored and inferred from node metadata), absorbing nothing,
+  absorbing a `@nodeId`, list, object or `@service` field, or absorbing a field whose column does not
+  resolve, and its acceptance under a mutation payload; the membership for every other field of the type
+  and the components with column and scalar resolved, the column read through the column-name relation
+  both by SQL name and by jOOQ name; a member whose column does not resolve still withheld (no
+  `graphitron_element`, `graphitron_field` or argument row, absent from the served SDL); no
+  `graphitron_element` row, no field or argument binding and no occurrence for an absorbed declaration;
+  the voucher field bound `VOUCHER` and no `COLUMN_UNRESOLVED` on it, on A and on B; absorbed fields
+  classifying without effect in `ClassificationDomainCapture`; `@accept` with two authored keys with and
+  without `key:`, and on a key with a nested selection; the minted keys as rows (`ISSUE` with
+  `resolvable: false` as the only key on A's issuing type, `ACCEPT` with `resolvable: true` beside the
+  authored key on B's entity) and as the applications and arguments the minted sets render, and
+  `@inaccessible` on the voucher field on both; the voucher alternative beside the authored one in the
+  entity key alternatives; the connection key in emitted fetchers; output for a build with no marker
+  unchanged; `SessionState.of` gains the caller, `MountedSession` gains `vouch()` and
+  `Graphitron.runtime` gains the key parameter only when the matching marker is present.
 * Compilation tier: generated issue, dispatcher and acquisition code compiles at Java 17.
 * Execution tier (real Postgres, RLS fixture beside the existing session-mount fixture, A and B in one
   fixture): each returned row gets its own token and all share one vouch id; a valid voucher exposes the
@@ -350,8 +444,6 @@ read simply once the spellings are chosen, the design is wrong.
   fail.
 * A component read through a `@reference`: an absorbed field is a scalar read off the issuing row. A key
   value that lives one join away is left out until a consumer needs it, and refused meanwhile.
-* The column resolution for components (see *Stage order*): reuse of an existing coordinate-free rule, or
-  a new one, which then goes to Alf and Filip before it is written.
 * Isolation: one connection per vouch scopes a subtree by graph shape, not by connection. If a consumer
   needs a connection per row, the connection key can include the key fields at the cost of the cap.
 
@@ -420,6 +512,55 @@ fields publish them, so Finding 3's canonical form is GraphQL's own wire form ra
 * Notes. The round-1 entry for Finding 3 now points at the wire-form answer. `@accept` on a key with a
   nested selection is refused, since absorbed fields are top-level scalars.
 
+## Response to round 3 and the take-up consultation
+
+The item reached Ready on round 3 with two implementer notes. On taking it up the principles architect was
+consulted, and the user ruled on what it raised (2026-11-10); the plan changed beyond a plan edit, so the
+item returns to Spec for a fresh sign-off.
+
+* Round 3, note 1 (the part sets). `graphitron_field_authored` and `graphitron_argument_authored` anti-join
+  the membership beside their `graphitron_connection_carrier` stand-down (*Voucher membership and
+  components*).
+* Round 3, note 2 (`@issue(key:)` can only restate its default). Dropped, with its capture column and the
+  refusals it needed (a `key:` naming no field or a field twice), and the refusal of a field neither
+  voucher nor absorbed, which cannot occur once every other field is absorbed.
+* The voucher field had no binding, so the column rule would refuse a valid schema with
+  `COLUMN_UNRESOLVED`. Ruled: a binding kind of its own, `VOUCHER`, not a directive-name exclusion in the
+  column rule (*The voucher binding*; the ruling is in `fact-model.adoc`).
+* A node issuing type would get a minted `@key(fields: "id")` over an absorbed `id`, and a bare absorbed
+  `id` would mean an encoded node id as a field but a raw column as a component. Ruled: `@issue` on a node
+  type is refused (*Rejections*).
+* The component's column resolution had no coordinate-free rule, and writing one would have been a fourth
+  inline copy of the name match. Ruled: the match is stated once in the catalog family and the occurrence
+  rule moves onto it (*Column names*; the ruling is in `fact-model.adoc`). This closes the open question.
+* A component relation whose resolved column is required would drop a field that fails to resolve and
+  hand it back to the element set, so A would publish `id`. Membership and resolution are now two
+  relations, the anti-joins read membership (*Voucher membership and components*).
+* Voucher arms in `graphitron_directive_application_arg_minted` would extend a view reading a view and
+  break its hardcoded premise. Ruled in scope: minted keys are a stored relation (*Minted keys, stored*).
+* A voucher arm in `EntityResolutionBuilder` would extend the classified walk. Ruled in scope: the entity
+  key alternatives are stated, and the re-derivation goes (*Entity key alternatives, stated*).
+* `ConnectionKey` only with `@accept` would put a "has accept" branch at five generator sites. Now it is
+  emitted wherever the slot is written, computed once (*Connection key*); R1129's planned
+  `MutationScope.tenant()` reads the tenant part.
+* The codec and its types are generated per consumer, not shipped in `graphitron-jakarta-rest`
+  (*Generated, not shipped*).
+* Refusals are split by the stage whose facts they read, and `ClassificationDomainCapture` is named among
+  the readers.
+* Slicing, and the temporary refusal that keeps a valid `@issue` schema from reaching a missing emitter
+  (*Slices*).
+
+## Retired vocabulary
+
+* `@issue(key:)`, its capture column and its refusals: retired before they were built.
+* The inline name match in `graphitron_occurrence_column_rule` and the `COLUMN_UNRESOLVED` and
+  ambiguous-column defect arms, replaced by joins onto the column-name relation.
+* The hardcoded `fields: "id"` and `resolvable: true` arms of `graphitron_directive_application_arg_minted`,
+  and its read of `graphitron_directive_application_minted`.
+* `EntityResolutionBuilder`'s derivation of `KeyAlternative` from the classified model.
+* `Optional<tenantKey>` as the routing value in the `localContext` slot and in `TenantConnections`.
+* The temporary refusals of `@issue` and `@accept` that slices 4 and 7 add and slices 6 and 8 remove.
+
 ## Other solutions we've considered
 
 * A consumer-written issue method and an opaque token the consumer parses: needs a hand-written resolver
@@ -455,6 +596,21 @@ fields publish them, so Finding 3's canonical form is GraphQL's own wire form ra
 * B's protected fields declaring `@requires(fields: "voucher")` with the voucher `@external`: makes the
   requirement explicit, but composition must satisfy it from every path to those fields, and A, the only
   subgraph with the voucher, cannot be entered to fetch it.
+
+* `@issue(key:)` as an optional `@key`-style field set defaulting to every other field (the round-3 draft):
+  every non-voucher field must be absorbed, so an explicit `key:` could only restate the default.
+* Excluding `issue` and `accept` from the column rule by directive name, as `service`, `routine` and
+  `pivot` are: another exception inside the rule rather than a fact a reader can query.
+* Standing the node key down for an issuing type instead of refusing a node issuing type: keeps a type
+  whose bare `id` means an encoded node id as a field and a raw column as a component.
+* A component relation carrying the resolved column as required, read by the anti-joins: a field whose
+  column fails to resolve would return to the element set and be published.
+* An `EmittedRegistry` removal arm for anything with no `graphitron_field` row: turns a capture defect
+  into a silent deletion.
+* `ConnectionKey` only in builds with `@accept`: every site that writes or reads the slot evaluates the
+  same predicate.
+* The codec and its types in `graphitron-jakarta-rest`: a consumer that verifies a voucher would take on
+  an HTTP serving library, and generated code would depend on Graphitron at runtime.
 
 ## Reviewer findings
 
