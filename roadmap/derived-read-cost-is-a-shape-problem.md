@@ -627,8 +627,8 @@ static method needs no holder.
     parameter is a jOOQ record of table T lands on T, its input fields too, each scalar one binding a
     column of T in `graphitron_occurrence_column`. Then `BuildQuery`'s columns and the decode read it, and the ten `RECORD_BUILD` services and the
     two that validate a record leave the census's exclusions.
-  * **A built argument decodes what `BuildQuery` refuses today** `blocked`, on F's `NodeIdDecodeQuery`
-    change. A list of node ids, an id of several node types and a decode into one key value; the seven
+  * **A built argument decodes what `BuildQuery` refuses today** `open`. `NodeIdDecodeQuery` follows
+    the id's stated path. A list of node ids, an id of several node types and a decode into one key value; the seven
     `BUILD_REFUSED` services then leave the census's exclusions.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits

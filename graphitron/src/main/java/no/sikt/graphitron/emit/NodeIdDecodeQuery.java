@@ -9,11 +9,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
@@ -21,15 +22,17 @@ import static org.jooq.impl.DSL.coalesce;
 /**
  * The node id decode emitter's query: how the node id at an argument or input field occurrence is
  * decoded into a jOOQ record of a given class. The record's columns the key loads into, in the node
- * key's order, are the node type's own key where the record is a row of its table, else the
- * referencing columns of the record table's one foreign key to it.
+ * key's order, are traced back through the occurrence's join path where it has one from the record's
+ * table to the node's: each key column through each step's column pairs, last step first, to the
+ * column of the record that carries it, so a written path of any length decodes where identity
+ * passes along it. With no such path, a record of the node's own table loads the key itself.
  *
  * <p>Read once per graph: each occurrence's node id binding with the node's type id and key columns,
- * the table each record class is a row of, the foreign key column pairs between tables, and each
- * column's generated name. A decode the store cannot state is refused with the reason: an id bound to
- * no node or to several, a class that is no table's record, a table with no foreign key to the
- * node's or several, a key column no foreign key column references, and a column carrying a
- * converter.
+ * the table each record class is a row of, each occurrence's join paths with their column pairs, and
+ * each column's generated name. A decode the store cannot state is refused with the reason: an id
+ * bound to no node or to several, a class that is no table's record, a record of another table with
+ * no path from it to the node's, a key column the path does not carry back to the record, and a
+ * column carrying a converter.
  */
 public final class NodeIdDecodeQuery {
 
@@ -61,16 +64,22 @@ public final class NodeIdDecodeQuery {
     /** One column's generated name, and whether a converter sits on it. */
     private record Column(String javaName, boolean converted) {}
 
+    /** One column pair of a step: the column on the side the step leaves and on the side it reaches. */
+    private record Pair(String from, String to) {}
+
+    /** One step of a join path: the tables it leaves and reaches, and its column pairs. */
+    private record Step(String from, String to, List<Pair> pairs) {}
+
     private final Map<String, List<Binding>> bindings;
     private final Map<String, Table> tables;
-    private final Map<String, Map<String, List<String[]>>> foreignKeys;
+    private final Map<String, List<List<Step>>> paths;
     private final Map<String, Column> columns;
 
     private NodeIdDecodeQuery(Map<String, List<Binding>> bindings, Map<String, Table> tables,
-                              Map<String, Map<String, List<String[]>>> foreignKeys, Map<String, Column> columns) {
+                              Map<String, List<List<Step>>> paths, Map<String, Column> columns) {
         this.bindings = bindings;
         this.tables = tables;
-        this.foreignKeys = foreignKeys;
+        this.paths = paths;
         this.columns = columns;
     }
 
@@ -102,25 +111,32 @@ public final class NodeIdDecodeQuery {
             .forEach(r -> tables.putIfAbsent(r.value1(),
                 new Table(r.value2(), r.value3(), r.value4(), r.value5(), r.value6())));
 
-        // Referencing column by referenced column, per constraint, per ordered pair of tables.
-        var rc = SQL_REFERENTIAL_CONSTRAINT_COLUMN;
-        var cc = SQL_CONSTRAINT_COLUMN.as("cc");
-        var rk = SQL_CONSTRAINT_COLUMN.as("rk");
-        var foreignKeys = new HashMap<String, Map<String, List<String[]>>>();
-        store.dsl().select(rc.SOURCE_NAME, rc.TABLE_SCHEMA, rc.TABLE_NAME, rc.REFERENCED_SOURCE_NAME,
-                rc.REFERENCED_SCHEMA, rc.REFERENCED_TABLE, rc.CONSTRAINT_NAME, cc.COLUMN_NAME, rk.COLUMN_NAME)
-            .from(rc)
-            .join(cc).on(cc.SOURCE_NAME.eq(rc.SOURCE_NAME), cc.TABLE_SCHEMA.eq(rc.TABLE_SCHEMA),
-                cc.TABLE_NAME.eq(rc.TABLE_NAME), cc.CONSTRAINT_NAME.eq(rc.CONSTRAINT_NAME),
-                cc.POSITION.eq(rc.POSITION))
-            .join(rk).on(rk.SOURCE_NAME.eq(rc.REFERENCED_SOURCE_NAME), rk.TABLE_SCHEMA.eq(rc.REFERENCED_SCHEMA),
-                rk.TABLE_NAME.eq(rc.REFERENCED_TABLE), rk.CONSTRAINT_NAME.eq(rc.REFERENCED_CONSTRAINT_NAME),
-                rk.POSITION.eq(rc.REFERENCED_POSITION))
-            .forEach(r -> foreignKeys
-                .computeIfAbsent(key(r.value1(), r.value2(), r.value3()) + "->" + key(r.value4(), r.value5(), r.value6()),
-                    k -> new TreeMap<>())
-                .computeIfAbsent(r.value7(), k -> new ArrayList<>())
-                .add(new String[] {r.value8(), r.value9()}));
+        // Each met join path of an occurrence carrying a node id, its steps in order with their pairs.
+        var j = GRAPHITRON_JOIN_PATH;
+        var st = GRAPHITRON_JOIN_PATH_STEP;
+        var sc2 = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        var stepsByPath = new TreeMap<String, TreeMap<Integer, Step>>();
+        store.dsl().select(st.COORDINATE, st.TARGET_TYPE, st.POSITION, st.FROM_SOURCE_NAME, st.FROM_SCHEMA,
+                st.FROM_TABLE, st.TO_SOURCE_NAME, st.TO_SCHEMA, st.TO_TABLE, sc2.FROM_COLUMN, sc2.TO_COLUMN)
+            .from(st)
+            .join(j).on(j.GRAPH_NAME.eq(st.GRAPH_NAME), j.COORDINATE.eq(st.COORDINATE),
+                j.TARGET_TYPE.eq(st.TARGET_TYPE))
+            .leftJoin(sc2).on(sc2.GRAPH_NAME.eq(st.GRAPH_NAME), sc2.COORDINATE.eq(st.COORDINATE),
+                sc2.TARGET_TYPE.eq(st.TARGET_TYPE), sc2.POSITION.eq(st.POSITION))
+            .where(st.GRAPH_NAME.eq(store.graphName()), st.COORDINATE.in(bindings.keySet()))
+            .orderBy(st.COORDINATE, st.TARGET_TYPE, st.POSITION, sc2.ORDINAL)
+            .forEach(r -> {
+                var step = stepsByPath.computeIfAbsent(r.value1() + " " + r.value2(), k -> new TreeMap<>())
+                    .computeIfAbsent(r.value3(), k -> new Step(key(r.value4(), r.value5(), r.value6()),
+                        key(r.value7(), r.value8(), r.value9()), new ArrayList<>()));
+                if (r.value10() != null) {
+                    step.pairs().add(new Pair(r.value10(), r.value11()));
+                }
+            });
+        var paths = new HashMap<String, List<List<Step>>>();
+        stepsByPath.forEach((path, steps) -> paths
+            .computeIfAbsent(path.substring(0, path.indexOf(' ')), k -> new ArrayList<>())
+            .add(List.copyOf(steps.values())));
 
         var c = SQL_COLUMN;
         var columns = new HashMap<String, Column>();
@@ -129,7 +145,7 @@ public final class NodeIdDecodeQuery {
             .from(c)
             .forEach(r -> columns.put(key(r.value1(), r.value2(), r.value3()) + "." + r.value4(),
                 new Column(r.value5(), !r.value6().equals(r.value7()))));
-        return new NodeIdDecodeQuery(bindings, tables, foreignKeys, columns);
+        return new NodeIdDecodeQuery(bindings, tables, paths, columns);
     }
 
     private static String key(String source, String schema, String table) {
@@ -165,28 +181,25 @@ public final class NodeIdDecodeQuery {
         }
         var targetKey = key(target.source(), target.schema(), target.name());
         var nodeKey = key(binding.source(), binding.schema(), binding.table());
+        var path = paths.getOrDefault(coordinate, List.of()).stream()
+            .filter(steps -> steps.getFirst().from().equals(targetKey) && steps.getLast().to().equals(nodeKey))
+            .findFirst();
         List<String> targetColumns;
-        if (targetKey.equals(nodeKey)) {
-            targetColumns = binding.columns();
-        } else {
-            var byConstraint = foreignKeys.getOrDefault(targetKey + "->" + nodeKey, Map.of());
-            if (byConstraint.size() != 1) {
-                return new Resolution.Refused(byConstraint.isEmpty()
-                    ? target.name() + " has no foreign key to " + binding.table()
-                    : target.name() + " has " + byConstraint.size() + " foreign keys to " + binding.table()
-                        + ", so nothing says which the id fills");
-            }
-            var pairs = byConstraint.values().iterator().next();
+        if (path.isPresent()) {
             targetColumns = new ArrayList<>();
             for (var keyColumn : binding.columns()) {
-                var referencing = pairs.stream().filter(pair -> pair[1].equals(keyColumn))
-                    .map(pair -> pair[0]).findFirst();
-                if (referencing.isEmpty()) {
-                    return new Resolution.Refused(target.name() + "'s foreign key to " + binding.table()
-                        + " does not reference key column " + keyColumn);
+                var carried = carriedBack(path.get(), keyColumn);
+                if (carried == null) {
+                    return new Resolution.Refused("the path from " + target.name() + " to " + binding.table()
+                        + " does not carry key column " + keyColumn + " back to a column of " + target.name());
                 }
-                targetColumns.add(referencing.get());
+                targetColumns.add(carried);
             }
+        } else if (targetKey.equals(nodeKey)) {
+            targetColumns = binding.columns();
+        } else {
+            return new Resolution.Refused("no path from " + target.name() + " to " + binding.table()
+                + " is stated at the id, so nothing says which columns it fills");
         }
         var javaNames = new ArrayList<String>();
         for (var column : targetColumns) {
@@ -203,6 +216,24 @@ public final class NodeIdDecodeQuery {
         return new Resolution.Resolved(
             new Decode(binding.nodeTypeName(), binding.typeId(), target.tablesClass(), target.tableField(),
                 recordClass, javaNames));
+    }
+
+    /**
+     * The column of the path's first table that carries {@code keyColumn} of its last, each step's
+     * pairs followed from the side it reaches to the side it leaves, last step first; null where a
+     * step has no pair reaching the column.
+     */
+    private static String carriedBack(List<Step> steps, String keyColumn) {
+        var column = keyColumn;
+        for (int position = steps.size() - 1; position >= 0; position--) {
+            var reached = column;
+            var pair = steps.get(position).pairs().stream().filter(p -> p.to().equals(reached)).findFirst();
+            if (pair.isEmpty()) {
+                return null;
+            }
+            column = pair.get().from();
+        }
+        return column;
     }
 
     private static Resolution.Refused refusedFor(List<Binding> bound) {

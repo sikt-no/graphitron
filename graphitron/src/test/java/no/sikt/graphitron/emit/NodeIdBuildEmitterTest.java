@@ -70,7 +70,7 @@ class NodeIdBuildEmitterTest {
         var film = decoding("film", 0, resolved(decodes, "Query.inventories(filmId:)", RECORDS + "FilmRecord"), "filmId");
         var inventoryFilm = resolved(decodes, "Query.inventories(filmId:)", RECORDS + "InventoryRecord");
         var stockFilm = decoding("inventory", 1, inventoryFilm, "stockFilmId");
-        var stockStore = decoding("inventory", 1, resolved(decodes, "Store.id", RECORDS + "InventoryRecord"), "storeId");
+        var stockStore = decoding("inventory", 1, resolved(decodes, "Query.inventories(storeId:)", RECORDS + "InventoryRecord"), "storeId");
         var otherFilm = decoding("inventory", 1, inventoryFilm, "otherFilmId");
         var stock = new BuildQuery.Build(Stock.class.getName(), "POSITIONAL", "()V",
             List.of(film.slot(), stockFilm.slot()), List.of(film, stockFilm, stockStore, otherFilm));
