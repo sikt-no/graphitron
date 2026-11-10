@@ -1,7 +1,7 @@
 ---
 id: R1119
 title: "Signed voucher handover: one subgraph vouches, another grants through RLS"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: service
@@ -772,3 +772,37 @@ Two notes for the implementer. Both are plan edits in In Progress, not a reopen:
 
 Not blocking: the docs draft could add that the absorbed fields must be named like the other subgraph's key
 fields, since A cannot check that and a mismatch shows up as every voucher being rejected.
+
+### Round 4: Spec → Ready (session_01WkW2JFv9qFDgNA4RommHSq, 2026-11-10)
+
+Verdict: sign off. The goal, the runtime flow and A's published shape are as signed off in round 3. What
+changed is the plan beneath them, and each change replaces a branch or an inline copy with a stated
+relation, which is the direction the architecture docs ask for. Both round-3 notes are taken: the part
+sets anti-join the membership, and `@issue(key:)` is gone. Splitting membership from component resolution
+closes a hole round 3 missed: a field whose column failed to resolve would have fallen back into the
+element set, and A would have published `id`. The slices each land a refactor or a gated unit, so trunk
+stays green with no marker in use.
+
+Checked against the tree:
+
+* `fact-model.adoc` carries both 2026-11-10 rulings the spec leans on: the column name stated once in the
+  catalog family, and a binding kind of its own for a directive-computed field.
+* `graphitron_directive_application_arg_minted` reads `graphitron_directive_application_minted` and
+  hardcodes `fields: "id"` and `resolvable: true`, as the spec says.
+* `graphitron_occurrence_column_rule`, `graphitron_occurrence_binding`, `graphitron_binding_claim`,
+  `COLUMN_UNRESOLVED`, `TenantHandDown.none()`, `SessionIdentityRows`, `NodeIdEncoderClassGenerator`,
+  `ClassificationDomainCapture` and `StageRosterGateTest` exist.
+* R876's graph marks "Entity resolution is stated" as taken by this item, and R1129 already names
+  `ConnectionKey`, so the scope moved here is recorded on both sides.
+
+Two notes for the implementer, both plan edits in In Progress:
+
+* *The voucher stage follows `nodes`, not just `table-types`.* The node-type refusal reads
+  `graphitron_node`, which the `nodes` stage writes (position 6 in `meta_stage`, after `table-types` at 5),
+  and the refusal is owned by the voucher stage. So the stage sits between `nodes` and `emitted`, and
+  `graphitron_node` belongs in the list of relations it reads.
+* *Name the owning stage of the two new stored relations.* The minted-key relation needs `graphitron_node`
+  and the federation link for its `NODE` rows and the voucher stage's facts for its `ISSUE` row. The entity
+  key alternatives carry per-field column bindings, so they follow `binding-claims`. Each owes an owner
+  in `meta_relation`, and the `@accept` refusals the spec gives to "the stage that writes the entity key
+  alternatives" need that stage to have a name and a position `StageRosterGateTest` can check.
