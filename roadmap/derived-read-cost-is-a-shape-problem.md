@@ -1645,6 +1645,16 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
 * **Class initialization cannot deadlock in javapoet** `open`. `TypeName`'s initializer builds no
   `ClassName`, and a test initializing the two from opposite ends on two threads pins it.
 * **A refused compaction does not depend on luck** `done`.
+* **The flaky failures seen in this item's builds have their causes fixed** `done`. A `{@link}`
+  into the nameless package no longer compiles it with parameter names, a zone switch, two rental
+  cleanups and a warning capture no longer reach across concurrent test classes.
+* **A capture's mark is a UTC instant, bound without the JVM's zone** `open`. `touched_at` binds
+  through `java.sql.Timestamp` and the default zone, so a zone switch mid-capture splits the mark
+  and the sweep deletes parents under live children; a `forcedType` binding that hands H2 the
+  `LocalDateTime` itself, the mark taken at UTC, removes the dependence without touching the DDL.
+* **A test that sets the JVM's zone or locale is isolated, and the build says so** `open`. A scan
+  of test sources fails a `TimeZone.setDefault` or `Locale.setDefault` in a class without
+  `@Isolated`; the UTC mark makes it hygiene rather than the capture's only defence.
 
 ## User documentation (first-client check): paths
 
