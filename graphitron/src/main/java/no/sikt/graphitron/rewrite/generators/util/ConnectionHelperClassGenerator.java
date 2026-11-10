@@ -31,7 +31,8 @@ import java.util.OptionalInt;
  * Decoding reads any JSON scalar, so a cursor that wrote every value as a string still reads, and
  * binds each element through
  * {@code ColumnValues.fromDatabase(column.getDataType(), element)}, which parses it as the column's
- * database type and runs the converter. Returns {@code Field<?>[]} so jOOQ's
+ * database type and runs the converter, or, for a column with no SQL type, hands the element to
+ * the converter as the database value. Returns {@code Field<?>[]} so jOOQ's
  * {@code .seek(Field<?>...)} receives correctly-typed bind values. When no cursor is present
  * (absent, empty, or blank), {@code DSL.noField(field)} is returned per column, making
  * {@code .seek()} a no-op.
@@ -493,7 +494,9 @@ public class ConnectionHelperClassGenerator {
         // --- readJsonCursor(String text, List<Field<?>>) → Field<?>[] ---
         // The decoded text of a JSON cursor, bound one element per order column: null as a typed
         // NULL, anything else through ColumnValues.fromDatabase, which parses it as the column's
-        // database type and runs the converter, the inverse of encodeCursor's databaseValue.
+        // database type and runs the converter, the inverse of encodeCursor's databaseValue. A
+        // column with no SQL type has no database type to parse as, so its element, the database
+        // value's text, goes to the converter as it is.
         var readJsonCursor = MethodSpec.methodBuilder("readJsonCursor")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(ArrayTypeName.of(fieldWildcard))
@@ -509,7 +512,8 @@ public class ConnectionHelperClassGenerator {
             .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
             .addCode("    } else {\n")
             // fromDatabase answers null for an element that is no value of the column (text its
-            // database type does not parse, a number wider than the column); rejecting it here
+            // database type does not parse or its converter refuses, a number wider than the
+            // column); rejecting it here
             // collapses into the same client error as bad Base64 / wrong arity instead of silently
             // seeking on a null bound value. A cursor encodeCursor wrote always comes back.
             .addCode("        Object value = $T.fromDatabase(col.getDataType(), values.get(i));\n", columnValuesClass)

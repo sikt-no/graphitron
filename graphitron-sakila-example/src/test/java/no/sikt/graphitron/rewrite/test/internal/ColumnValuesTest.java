@@ -263,6 +263,17 @@ class ColumnValuesTest {
     }
 
     @Test
+    void fromDatabase_handsAColumnWithNoSqlTypesInputToItsConverter() {
+        assertThat(ColumnValues.fromDatabase(Span.TYPE, "[a,b)")).isEqualTo(new Span("a", "b"));
+        assertThat(ColumnValues.fromDatabase(Span.TYPE, "garbage")).as("the converter refuses it").isNull();
+        assertThat(ColumnValues.fromDatabase(Span.TYPE, Boolean.TRUE)).as("the converter refuses it").isNull();
+        assertThat(ColumnValues.fromDatabase(Span.NARROW_TYPE, Boolean.TRUE))
+            .as("no instance of the converter's database class, so it never reaches the converter")
+            .isNull();
+        assertThat(ColumnValues.fromDatabase(Span.NARROW_TYPE, "[a,b)")).isEqualTo(new Span("a", "b"));
+    }
+
+    @Test
     void fromDatabase_refusesWhatTheColumnCannotHold() {
         assertThat(ColumnValues.fromDatabase(NUMERIC_4, "99999")).as("five digits in NUMERIC(4)").isNull();
         assertThat(ColumnValues.fromDatabase(NUMERIC_4, "9999")).isEqualByComparingTo("9999");

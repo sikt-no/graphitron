@@ -257,6 +257,39 @@ class CursorEncodingTest {
         assertThat(readBack(type, value)).isEqualTo(value);
     }
 
+    // ===== A column with no SQL type =====
+    // A database type jOOQ has no built-in type for, read through a converter: the element is the
+    // database value's text, and reading it back hands that text to the converter.
+
+    private static final Span YEAR_2024 = new Span("2024-01-01T00:00Z", "2025-01-01T00:00Z");
+
+    @Test
+    void columnWithNoSqlType_writesTheDatabaseValuesText() {
+        assertThat(Span.TYPE.getSQLDataType()).as("typed the way codegen types an unknown column").isNull();
+        assertThat(json(Span.TYPE, YEAR_2024)).isEqualTo("[\"[2024-01-01T00:00Z,2025-01-01T00:00Z)\"]");
+    }
+
+    @Test
+    void columnWithNoSqlType_readsBackToTheValueWritten() {
+        assertThat(readBack(Span.TYPE, YEAR_2024)).isEqualTo(YEAR_2024);
+        List<Field<?>> columns = List.of(DSL.field("id", SQLDataType.INTEGER), DSL.field("period", Span.TYPE));
+        assertThat(json(columns, 7, YEAR_2024)).isEqualTo("[7,\"[2024-01-01T00:00Z,2025-01-01T00:00Z)\"]");
+        assertThat(readBack(columns, 7, YEAR_2024)).containsExactly(7, YEAR_2024);
+    }
+
+    @Test
+    void columnWithNoSqlType_anElementItsConverterRefuses_isTheClientError() {
+        // Refused by the JSON reading and then by the release-candidate reading it falls back to,
+        // which hands the whole text to the same converter.
+        Field<?> period = DSL.field("period", Span.TYPE);
+        assertRejected(jsonCursor("[\"garbage\"]"), period);
+        assertRejected(jsonCursor("[true]"), period);
+    }
+
+    private static String jsonCursor(String json) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
     // ===== A release-candidate cursor =====
     // The release candidates wrote each order column's value as its toString(), U+0001 for SQL
     // NULL, joined by U+0000, in standard Base64. The decoder reads that format beside the JSON one,

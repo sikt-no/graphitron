@@ -26,10 +26,11 @@ import java.util.Objects;
  * is one emitted shape): the user value {@code type.convert(input)}, or the input parsed as the
  * parse class {@code exact} is handed for a converter's user type, the database value
  * {@code converter.to(user)}, and the canonical value {@code converter.from(database)};
- * {@code fromDatabase} starts the trip at the database value. The trip
+ * {@code fromDatabase} starts the trip at the database value, which on a column with no SQL type
+ * is the input itself. The trip
  * fails when a step gives {@code null} or throws {@code IllegalArgumentException} or
  * {@code DataTypeException}; any other exception is a fault in the consumer's converter and
- * propagates. Following the value through the converter is what catches a converter-backed column,
+ * propagates, on a column with no SQL type as on any other. Following the value through the converter is what catches a converter-backed column,
  * where {@code convert} alone passes a user-type input through untouched and the value would only
  * fail at bind time.
  *
@@ -64,7 +65,13 @@ import java.util.Objects;
  *       {@code java.sql.Date}, the one date class that can hold a time of day, reads the input as a
  *       date-time and coerces that to the column, so the time {@code toText} wrote survives; the
  *       plain date parse would bind midnight. Input that does not read as a date-time (one carrying
- *       an offset) falls back to the plain parse, so nothing read before is refused.</li>
+ *       an offset) falls back to the plain parse, so nothing read before is refused. A column with
+ *       no SQL type ({@code type.getSQLDataType()} is {@code null}, as for a database type jOOQ
+ *       has no built-in type for, reached through a forced converter or binding) has no database
+ *       type to parse as: the input is the database value's text, the converter is the only thing
+ *       that reads it, and so the input is handed to {@code converter.from} as the database value,
+ *       once. An input that is no instance of the converter's database class is no value of the
+ *       column.</li>
  * </ul>
  *
  * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
@@ -78,7 +85,8 @@ import java.util.Objects;
  * with no fraction, a timestamp with its fraction only when non-zero, a timestamp with time zone
  * with its fraction always and then its offset ({@code Z} at UTC), every fraction to six digits or
  * nine. Anything else, and any value the coercion refuses (a floating-point NaN or infinity, which
- * JSON cannot hold), is its {@code toString()} as a JSON string.
+ * JSON cannot hold), is its {@code toString()} as a JSON string. So is every value of a column
+ * with no SQL type, which is the text {@code fromDatabase} hands back to the column's converter.
  */
 public class ColumnValuesClassGenerator {
 
@@ -177,10 +185,21 @@ public class ColumnValuesClassGenerator {
             .addJavadoc("The value {@code value}, read as the column's database value, names in a column of\n"
                 + "{@code type}, or {@code null} when it names none: parsed as the database type, taken through\n"
                 + "the converter, and fitting the column's precision. A {@code java.sql.Date} column reads\n"
-                + "{@code value} as a date-time, so the time of day {@code toText} wrote survives.\n")
+                + "{@code value} as a date-time, so the time of day {@code toText} wrote survives. A column\n"
+                + "with no SQL type has no database type to parse as, so {@code value} is itself the database\n"
+                + "value the converter reads, when it is an instance of the converter's database class.\n")
             .addStatement("if (value == null) return null")
             .beginControlFlow("try")
-            .addStatement("Object database = databaseValue(type.getSQLDataType(), value)")
+            .addStatement("$T sql = type.getSQLDataType()", dataTypeWildcard)
+            .addStatement("Object database")
+            .beginControlFlow("if (sql == null)")
+            .addComment("No database type to parse as: the element is the database value's text, which only the")
+            .addComment("converter reads. An element its database class cannot hold is no value of the column.")
+            .addStatement("if (!type.getConverter().fromType().isInstance(value)) return null")
+            .addStatement("database = value")
+            .nextControlFlow("else")
+            .addStatement("database = databaseValue(sql, value)")
+            .endControlFlow()
             .addStatement("if (database == null) return null")
             .addStatement("$T canonical = fromDatabaseValue(type.getConverter(), database)", t)
             .addStatement("if (canonical == null) return null")
@@ -223,7 +242,9 @@ public class ColumnValuesClassGenerator {
         // Branches on the SQL type, not the value's class, and coerces through jOOQ inside each
         // branch, so a value of any class the column admits lands on one form. Timestamp with time
         // zone is tested before timestamp; an INSTANT column is placed at UTC itself, since jOOQ's
-        // Instant-to-OffsetDateTime coercion uses the JVM's zone.
+        // Instant-to-OffsetDateTime coercion uses the JVM's zone. A column with no SQL type has no
+        // form to pick: its database value's text is written, the half fromDatabase reads back by
+        // handing that text to the converter.
         var toText = MethodSpec.methodBuilder("toText")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(TEXT)
@@ -231,7 +252,8 @@ public class ColumnValuesClassGenerator {
             .addParameter(Object.class, "value")
             .addJavadoc("The cursor text of {@code value}, a non-null database value of a column of {@code type},\n"
                 + "and whether it is a JSON literal written bare rather than a JSON string.\n")
-            .addStatement("$T sql = type.getSQLDataType() == null ? type : type.getSQLDataType()", dataTypeWildcard)
+            .addStatement("$T sql = type.getSQLDataType()", dataTypeWildcard)
+            .addStatement("if (sql == null) return new $T(value.toString(), false)", TEXT)
             .beginControlFlow("if (sql.isBoolean())")
             .addStatement("Boolean b = coerced(value, $T.BOOLEAN)", SQL_DATA_TYPE)
             .addStatement("if (b != null) return new $T(b.toString(), true)", TEXT)
