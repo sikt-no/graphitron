@@ -102,24 +102,24 @@ most likely to omit.
 
 **Population fidelity is where a reproduction is usually lost.** A relation's cost is a function of
 its inputs' cardinality, so a store missing a family is a store that cannot reproduce a cost that
-multiplies through it. Two specific ways this bites:
+multiplies through it. One specific way this bites:
 
 - **The classpath census is part of the population.** `CapturedStore.ofCatalog` takes the census as
   an argument and every arm defaults it to empty, so a probe written the obvious way has no
   `code_` rows and no `store_graph_source` rows beyond the trivial. A consumer with many classpath
   entries has a large source membership, and a join that fans out across it is invisible in a probe
   that has one. If your reproduction does not reproduce, suspect this first.
-- **A seeded store of a dozen rows will tell you nothing about cost**, because every shape on the
-  fact-model page is cheap at that size. And a derived read against a seeded store returns nothing
-  until `SeededStore.derive` has run, stage-written tables holding rows only once their stages fill
-  them.
+
+A store of a dozen rows tells you nothing about cost either, because every shape on the fact-model
+page is cheap at that size: a fact document pins what a relation returns, never what it costs.
 
 When you must build a store rather than borrow one, the harness ladder is documented per subject and
 the authority is the "Where a store-backed test gets its store" table in
 `docs/architecture/how-to/testing.adoc`. Read that table and take the row your subject sits on; this
 skill deliberately does not restate it, because a partial ladder in a second document is a wrong
-answer the moment a harness is added. `CapturedStore.ofCatalog` captures a schema document against a
-generated jOOQ catalog; where the rows only a pipeline run writes are what your relation reads,
+answer the moment a harness is added. A cost probe is a store of its own, its subject being the
+store's cost, so it takes that table's `CapturedStore` row: `CapturedStore.ofCatalog` captures a
+schema document against a generated jOOQ catalog; where the rows only a pipeline run writes are what your relation reads,
 `BuiltStore` is the row instead. `StoreFixtureGuardTest` fails the build on a test that opens a
 `GraphitronModelStore` itself, so take the store from a harness.
 

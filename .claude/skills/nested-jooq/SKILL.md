@@ -1,6 +1,6 @@
 ---
 name: nested-jooq
-description: Author a nested jOOQ query at one grain: name what one row of the answer means, drive the statement from the relation that owns that key, nest child grains as correlated MULTISETs on their own keys, and pin the result with a seeded test. Use when writing or reviewing hand-written store reads (MCP, LSP, model derivations), @condition fixtures, or any query that returns duplicates, drops rows, puts rows under the wrong parent, or needs "how do I nest this".
+description: Author a nested jOOQ query at one grain: name what one row of the answer means, drive the statement from the relation that owns that key, nest child grains as correlated MULTISETs on their own keys, and pin the result with a fact document's claim. Use when writing or reviewing hand-written store reads (MCP, LSP, model derivations), @condition fixtures, or any query that returns duplicates, drops rows, puts rows under the wrong parent, or needs "how do I nest this".
 ---
 
 # nested-jooq
@@ -79,10 +79,11 @@ pagination, where a page of deduplicated rows is not a page of anything.
 ## 4. Per-surface guidance
 
 **Hand-written store reads** (`graphitron-mcp`, `graphitron-lsp`'s `facts` package, `graphitron-model`
-derivations). Imitate `SchemaQueries`. Verify against `SeededStore`: seed the rows the answer depends on,
-call `SeededStore.derive` before reading any derived relation, and assert what the read returns. The
-"Where a store-backed test gets its store" table in `docs/architecture/how-to/testing.adoc` is the
-authority on which harness a given subject wants; that table's first row is this case.
+derivations). Imitate `SchemaQueries`. Verify against a fact document: state the example the answer
+depends on, claim the rows a derived relation holds for it, and read it through `FactGraphs` where the
+read is a reader's own query. The "Where a store-backed test gets its store" table in
+`docs/architecture/how-to/testing.adoc` is the authority on which harness a given subject wants; this
+case is its `FactGraphs` row, what the store holds for an example.
 
 **`@condition` fixtures.** Two contracts, both from the user manual, because here you are writing what a
 consumer writes:
@@ -110,17 +111,17 @@ A query is not done when it returns the right rows once.
 
 - **State the grain** in the relation's `COMMENT ON`, as the sentence step 1's test accepts. This is what
   makes step 1 possible for the next author, and it is the only part of the pin that no test can supply.
-- **Pin what the view returns given rows** with a seeded test in `graphitron-model`'s test tree, over
-  `SeededStore`. Include the case where *no* row appears: an empty answer is a fact about the population,
+- **Pin what the view returns for an example** with a claim in a fact document under
+  `graphitron-model/src/test/resources/facts/`, never by seeding rows: a seeded case states rows no
+  reading produces. Include the case where *no* row appears, with `@assertAbsent` or `@assertEmpty`: an empty answer is a fact about the population,
   and a read that cannot distinguish "wrong name" from "nothing captured yet" is a different bug wearing
   the same clothes.
 - **A deep derivation owes a cost warning in its own comment**, because the cost is invisible at the call
   site. Say which shape is expensive and why; point at the page for the general rule rather than
   restating its measurements.
-- **On the emitter surface**, the sakila SQL baseline tests in `graphitron-sakila-example` pin the
-  rendered shape. They are pins, not the specification: a baseline is never the oracle for what shape is
-  *correct*, and a re-baseline must preserve what its shape demonstrates. A baseline that moved because
-  you changed the shape is a question to answer, not a string to update.
+- **On the emitter surface**, the rows and the round trips are the pin, asserted at the execution tier
+  over a scenario's generated package; the rendered SQL text is never asserted (`testing.adoc`,
+  "Execution tier").
 
 ## 6. Smells, with a live exemplar each
 

@@ -110,7 +110,12 @@ Architectural improvement opportunities, especially:
   signature stays wide. The contract belongs in the signature.
 - **Test-tier mismatch.** Code-string assertions on generated method bodies
   (banned at every tier); per-variant unit tests for behaviour that pipeline /
-  compile / execute tiers should cover; a new feature without a pipeline test.
+  compile / execute tiers should cover; a new feature without a fact document
+  pinning it. An inline capture of a schema is a finding when the store states
+  the shape it captures, or when it is not one of the shapes named beside its
+  module's `InlineCaptureGateTest` ceiling; a second document stating a case a
+  keystone already states is a finding too (`docs/architecture/how-to/testing.adoc`,
+  "Authoritative tests").
 - **Stale references.** Javadoc, plan prose, or README naming a test/method/class
   that doesn't exist after this change.
 - **Generated-output Java version.** Generator code may use Java 25 freely;

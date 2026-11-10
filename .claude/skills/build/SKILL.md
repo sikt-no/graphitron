@@ -89,6 +89,10 @@ Knowing which of the two you are asking for is most of the saving.
 
 - **A test you are iterating on**: `-pl <module> -Dtest=ClassName -DfailIfNoSpecifiedTests=false`.
   Seconds, not minutes.
+- **A fact document you are iterating on**: `-pl :graphitron-model -Dtest=FactExpectationTest
+  -Dfacts=<path prefix>` (`-Dfacts=defects/entry-defect`, or several separated by commas), which
+  captures only those documents; the whole-corpus gates skip themselves under it, so finish with a run
+  without it.
 - **One module's own suite**: `-pl <module>`. Add `-am` only if an upstream module changed in this
   session; a bare `-pl` reads the *installed* artifacts and will silently use a stale upstream.
 - **Main sources in graphitron-model, or the DDL**: `-pl graphitron-model -amd`. That schema is read

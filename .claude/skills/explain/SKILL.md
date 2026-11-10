@@ -76,13 +76,14 @@ Every concept gets SDL. An explanation with no schema in it is a definition, not
 - **Mine real SDL, do not invent it.** In order of preference:
   - `docs/architecture/reference/code-generation-triggers.adoc`, SDL paired with the verdict it
     produces;
-  - `graphitron/src/test/resources/corpus/*.graphqls`, the corpus those blocks render from, where
-    each document carries its declared dimensions;
+  - the fact documents a manual page's examples select with `@factDocument(path:)`, under
+    `graphitron-model/src/test/resources/facts/`, each SDL an author could write with the rows the
+    store holds for it, and a header saying what it pins;
   - `graphitron-sakila-example/src/main/resources/graphql/*.graphqls`, schemas that actually build;
   - the directive's own reference page.
 - **Sakila tables, real columns.** `film`, `actor`, `customer`, `city`, `country`, `rental`, not
-  `Foo` and `Bar`. Strip the internal `@classified` / `@classifiedType` annotations when lifting from the
-  corpus; they are test vocabulary and will confuse an author.
+  `Foo` and `Bar`. Strip a fact document's claims (`@expectEquals`, `@assertContains` and the rest)
+  and its `@withFacts` setup when lifting from it; they are test vocabulary and will confuse an author.
 - **Avoid `film -> language`.** Two foreign keys, so the reference is ambiguous and the example is
   subtly wrong. `city -> country` is the clean single-FK case.
 - **Trim to the point.** Cut every field that is not doing work in the contrast you are drawing.
@@ -102,7 +103,7 @@ The shape of a gloss:
 
 Terms that essentially always need one: coordinate, classification and verdict, sealed variant, leaf,
 emitter, join path, projection, lowering, fact model, typed rejection, dispatch axis, batching and
-split queries, and any of the `@classified` dimension names.
+split queries, claim, occurrence, defect.
 
 Two failure modes:
 

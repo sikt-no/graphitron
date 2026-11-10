@@ -86,6 +86,12 @@ they are there and subtly wrong.
   removed from a corpus is removed from the store and `ON DELETE CASCADE` collects what hung off it.
   Where an orphan should survive to be noticed, the reference uses `ON DELETE SET NULL` instead.
 
+And it is pinned before it is trusted: a fact document under `graphitron-model/src/test/resources/facts/`
+states an example and claims the rows the relation holds for it, with a near miss that holds none.
+Where the document goes and how a test reads it is the "What a test is built out of" section of
+`docs/architecture/how-to/testing.adoc`; never seed the rows by hand, a seeded case states rows no
+reading produces.
+
 ## 8. What will actually stop you
 
 `MetaDeclarationGateTest` will stop a new relation with no owner and no grain. The undeclared roster
