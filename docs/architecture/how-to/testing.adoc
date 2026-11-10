@@ -234,6 +234,14 @@ Run with `mvn test -pl <module> -Plocal-db` in the web sandbox, or without the p
 
 No guard can tell a whole-table count from a filtered one, so review holds this rule. Running the execution tier at a higher class parallelism, or two runs at once against one server, surfaces a test that breaks it faster than CI hits the interleaving.
 
+*State the JVM shares, and no key splits.* Test classes run concurrently in one JVM, and some of what they share is a single value rather than rows: the default time zone or locale, a logger's level, a framework's static bookkeeping. No test can be resilient to another changing it, so a lock is the rule there, and only there:
+
+* A class that changes such a value puts back what it found, and takes `@ResourceLock` on a key every class changing that one value shares, held in a small holder class beside them with the reason (`QuarkusTestLock`, `EncoderLoggerLevelLock`).
+* When the value is one every class reads, so there is no set of classes to share a key, the class that changes it is `@Isolated`: `CursorEncodingTest` sets the default time zone, which every capture reads.
+* A test reading what is logged to a logger the JVM shares keeps only the records it can name: those its own thread logged, or those naming a key only it uses. That is the rule above applied to a log, and needs no lock.
+
+State a key can split, rows above all, stays under the rule above; a lock there isolates a test the rule asks to be resilient (Alf, 2026-11-10).
+
 Patterns:
 
 * JDBC round-trip count via the `QUERY_COUNT` listener (`AtomicInteger` reset per test to assert DataLoader batching or lazy-on-selection).
