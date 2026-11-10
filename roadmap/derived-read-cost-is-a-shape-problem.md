@@ -622,6 +622,31 @@ static method needs no holder.
   * **A built argument decodes what `BuildQuery` refuses today** `open`. `NodeIdDecodeQuery` follows
     the id's stated path. A list of node ids, an id of several node types and a decode into one key value; the seven
     `BUILD_REFUSED` services then leave the census's exclusions.
+  * **A service's key row is stored with its candidates, and its defects read them** `open`, E's, off
+    the critical path. The key-row stage stores a service's key table and each member of the parent's
+    class returning its record as rows under the field, so `NO_KEY_FROM_PARENT` and
+    `KEY_ROW_AMBIGUOUS` read those rows rather than deriving them again, a copy that already
+    disagrees with the rule on a method with two record-set parameters.
+  * **The key-row defects are judged per occurrence** `open`, off the critical path. They read the
+    producer and `graphitron_field_key_row` per declared field; judged on
+    `graphitron_occurrence_producer_key_row` per child producer, a type reached under two parents
+    says which parent's class fails.
+  * **A record's writer per column is stated in the store** `open`, off the critical path. Which input
+    field writes each column of a jOOQ record, a live one over a deprecated one, is decided in
+    `BuildQuery` and again in `BuildEmitter`'s conflict label; stated per column, two live writers
+    become a defect at the input type and the emitter reads the writer it is told.
+  * **A child service whose source collects no table's records is refused** `open`. A child
+    `@service` whose `Sources` parameter collects records of no table falls between
+    `SOURCE_PARAMETER_MISSING` and the key-row arms, and which code refuses it is undecided (Alf,
+    2026-11-10).
+  * **A table-bound field read off a member's value is judged** `open`. `FilmBlurbHolder.blurb`,
+    whose member hands back a `FilmBlurb` object while the field's type is bound to `film`, is
+    refused by the walk ("requires a typed accessor") and passes the store, `NO_KEY_FROM_PARENT`
+    reading the member's value; whether that is intended or a defect is missing is Alf's to decide.
+  * **A class states whether it is nested** `open`, off the critical path. The code census finds a
+    nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
+    and reading nested classes reached through another class's members closes the one hop the census
+    reads today.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
