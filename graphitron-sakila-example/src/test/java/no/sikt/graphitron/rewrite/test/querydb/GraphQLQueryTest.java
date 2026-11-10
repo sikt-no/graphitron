@@ -7806,8 +7806,12 @@ class GraphQLQueryTest {
 
     // ===== Routine write shapes beyond the one-hop list chain and the single carrier =====
     //
-    // Every rental these write is deleted afterwards by id: rental is written by no other class, so
-    // the rows above the highest id seen before a test are exactly that test's.
+    // Every rental these write is deleted afterwards. A test's own are the rows above the highest id
+    // seen before it wrote, to one of the customers this class rents to: another class commits
+    // rentals beside this one, to a customer of its own.
+
+    /** The customers this class's routine writes rent to. */
+    private static final List<Integer> RENTING_CUSTOMERS = List.of(2, 3, 4);
 
     private int maxRentalId() {
         Integer max = dsl.select(org.jooq.impl.DSL.max(org.jooq.impl.DSL.field("rental_id", Integer.class)))
@@ -7822,6 +7826,7 @@ class GraphQLQueryTest {
                 org.jooq.impl.DSL.field("customer_id", Integer.class))
             .from(org.jooq.impl.DSL.table("rental"))
             .where(org.jooq.impl.DSL.field("rental_id", Integer.class).gt(afterId))
+            .and(org.jooq.impl.DSL.field("customer_id", Integer.class).in(RENTING_CUSTOMERS))
             .orderBy(org.jooq.impl.DSL.field("rental_id"))
             .fetch(r -> List.of(r.value1(), r.value2()));
     }
@@ -7829,6 +7834,7 @@ class GraphQLQueryTest {
     private void deleteRentalsAfter(int afterId) {
         dsl.deleteFrom(org.jooq.impl.DSL.table("rental"))
             .where(org.jooq.impl.DSL.field("rental_id", Integer.class).gt(afterId))
+            .and(org.jooq.impl.DSL.field("customer_id", Integer.class).in(RENTING_CUSTOMERS))
             .execute();
     }
 

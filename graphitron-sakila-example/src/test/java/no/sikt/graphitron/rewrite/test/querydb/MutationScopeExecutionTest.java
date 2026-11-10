@@ -252,10 +252,14 @@ class MutationScopeExecutionTest {
         // JBoss LogManager's, and the line is read off a handler attached to it.
         var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.TenantConnections");
         var warnings = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        // The logger is the JVM's, and other classes run beside this one: their requests warn on
+        // their own threads, while this one's runs to completion on the test's thread.
+        long self = Thread.currentThread().threadId();
         var handler = new org.jboss.logmanager.ExtHandler() {
             @Override
             protected void doPublish(org.jboss.logmanager.ExtLogRecord record) {
-                if (record.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()) {
+                if (record.getLongThreadID() == self
+                        && record.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()) {
                     warnings.add(MESSAGE_ONLY.format(record));
                 }
             }
@@ -271,6 +275,7 @@ class MutationScopeExecutionTest {
         assertThat(warnings)
             .as("one line for the method, not one per request")
             .filteredOn(m -> m.contains("joined the enclosing transaction"))
+            .filteredOn(m -> m.contains("MutationScopeService#nestedScopeForWarning"))
             .singleElement()
             .satisfies(m -> assertThat(m)
                 .contains("MutationScopeService#nestedScopeForWarning")
@@ -304,8 +309,8 @@ class MutationScopeExecutionTest {
             }
             case "outbox" -> "mutation { w: createFilmOutbox(in: { title: \"%s\", languageId: 1 }) { filmId } }"
                 .formatted(title);
-            case "routineChain" -> "mutation { w: rentFilm(inventoryId: 2, customerId: 3) { rentalId } }";
-            case "routineCarrier" -> "mutation { w: rentFilmPayload(inventoryId: 2, customerId: 3) {"
+            case "routineChain" -> "mutation { w: rentFilm(inventoryId: 2, customerId: %d) { rentalId } }".formatted(RENTER);
+            case "routineCarrier" -> "mutation { w: rentFilmPayload(inventoryId: 2, customerId: %d) {".formatted(RENTER)
                 + " rental { rentalId } errors { __typename } } }";
             default -> throw new IllegalArgumentException(site);
         };
@@ -324,7 +329,8 @@ class MutationScopeExecutionTest {
             assertThat(warnings).as(site + ": graphitron's own scope draws no consumer-scope warning")
                 .noneMatch(m -> m.contains("joined the enclosing transaction"));
         } finally {
-            dsl.deleteFrom(DSL.table("rental")).where(DSL.field("rental_id", Integer.class).gt(rentalsBefore)).execute();
+            dsl.deleteFrom(DSL.table("rental")).where(DSL.field("rental_id", Integer.class).gt(rentalsBefore))
+                .and(DSL.field("customer_id", Integer.class).eq(RENTER)).execute();
             dsl.execute("delete from outbox where payload ->> 'requested' = ?", title);
         }
     }
@@ -362,10 +368,14 @@ class MutationScopeExecutionTest {
     private Captured warningsDuring(java.util.function.Supplier<ExecutionResult> body) {
         var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.TenantConnections");
         var warnings = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        // The logger is the JVM's, and other classes run beside this one: their requests warn on
+        // their own threads, while this one's runs to completion on the test's thread.
+        long self = Thread.currentThread().threadId();
         var handler = new org.jboss.logmanager.ExtHandler() {
             @Override
             protected void doPublish(org.jboss.logmanager.ExtLogRecord record) {
-                if (record.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()) {
+                if (record.getLongThreadID() == self
+                        && record.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()) {
                     warnings.add(MESSAGE_ONLY.format(record));
                 }
             }
@@ -377,6 +387,13 @@ class MutationScopeExecutionTest {
             logger.removeHandler(handler);
         }
     }
+
+    /**
+     * The customer this class rents to, one no other class rents to: other classes commit rentals
+     * beside this one, so a test's own are the rows above the highest id it saw, to this customer.
+     * Elizabeth is inactive, which the routine does not check.
+     */
+    private static final int RENTER = 5;
 
     private int maxRentalId() {
         Integer max = dsl.select(DSL.max(DSL.field("rental_id", Integer.class))).from(DSL.table("rental"))
