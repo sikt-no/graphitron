@@ -87,8 +87,9 @@ public final class NodeIdDecodeEmitter {
     /**
      * The helper decoding a node id argument, or a list or set of them, into a parameter of
      * {@code type}: each id into a new record of the decode's table, its key taken off the record as a
-     * {@code RecordN} ({@code RECORD_N}) or {@code RowN} ({@code ROW_N}) where the parameter wants
-     * that and the record itself otherwise, an absent one null.
+     * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or its one column's value
+     * ({@code KEY_VALUE}) where the parameter wants that and the record itself otherwise, an absent
+     * one null.
      */
     public static MethodSpec parameterHelper(String name, TypeName type, NodeIdDecodeQuery.Decode d, String shape,
                                              String label, Runtime runtime) {
@@ -96,6 +97,7 @@ public final class NodeIdDecodeEmitter {
         var taken = switch (shape) {
             case "RECORD_N" -> CodeBlock.of("decoded.into($L)", columns);
             case "ROW_N" -> CodeBlock.of("decoded.into($L).valuesRow()", columns);
+            case "KEY_VALUE" -> CodeBlock.of("decoded.get($L)", columns);
             default -> CodeBlock.of("decoded");
         };
         var method = MethodSpec.methodBuilder(name)

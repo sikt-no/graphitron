@@ -114,7 +114,8 @@ public final class BuildQuery {
         /**
          * A node id argument decoded straight into its parameter: into the parameter's own jOOQ
          * record ({@code RECORD}), or into the node type's record and taken from it as the key's
-         * {@code RecordN} ({@code RECORD_N}) or {@code RowN} ({@code ROW_N}).
+         * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or, for a key of one
+         * column, that column's own value ({@code KEY_VALUE}).
          */
         record Decoded(NodeIdDecodeQuery.Decode decode, String shape) implements Result {}
 
@@ -165,7 +166,8 @@ public final class BuildQuery {
 
     /**
      * How a node id argument fills a parameter of {@code className}: a table's record decodes it
-     * directly, a {@code RecordN} or {@code RowN} takes the key off the node type's own record.
+     * directly, a {@code RecordN} or {@code RowN} takes the key off the node type's own record, and
+     * the Java type of a key's one column takes that column's value off it.
      */
     private static Result decodeParameter(String coordinate, String className, Catalog catalog) {
         NodeIdDecodeQuery.Resolution resolution;
@@ -179,6 +181,11 @@ public final class BuildQuery {
         } else if (className.matches("org\\.jooq\\.Row\\d+")) {
             resolution = catalog.decodes().resolveOwn(coordinate);
             shape = "ROW_N";
+        } else if (catalog.decodes().resolveOwn(coordinate) instanceof NodeIdDecodeQuery.Resolution.Resolved own
+            && own.decode().columnJavaNames().size() == 1
+            && className.equals(catalog.columnTypes().get(own.decode().recordClass() + "|" + own.decode().columnJavaNames().getFirst()))) {
+            resolution = own;
+            shape = "KEY_VALUE";
         } else {
             return new Result.Refused("a node id cannot be decoded into " + className);
         }
@@ -413,7 +420,8 @@ public final class BuildQuery {
      * The catalog facts a jOOQ record built on the column axis reads, the table each record class is
      * a row of and each column's generated name, and the node id decodes its fields resolve through.
      */
-    private record Catalog(Map<String, Table> tables, Map<String, Column> occurrenceColumns, NodeIdDecodeQuery decodes) {
+    private record Catalog(Map<String, Table> tables, Map<String, Column> occurrenceColumns,
+                           Map<String, String> columnTypes, NodeIdDecodeQuery decodes) {
 
         static Catalog read(StoreHandle store) {
             var t = SQL_TABLE;
@@ -442,7 +450,14 @@ public final class BuildQuery {
                 .where(oc.GRAPH_NAME.eq(store.graphName()))
                 .forEach(r -> columns.put(r.value1() + "|" + key(r.value2(), r.value3(), r.value4()),
                     new Column(r.value5(), Optional.ofNullable(r.value6()))));
-            return new Catalog(tables, columns, NodeIdDecodeQuery.read(store));
+
+            // Each column's Java type, by its table's record class and its name in the generated table.
+            var types = new HashMap<String, String>();
+            store.dsl().select(t.RECORD_CLASS_FQN, c.JOOQ_NAME, c.BINDING_TYPE)
+                .from(c)
+                .join(t).on(t.SOURCE_NAME.eq(c.SOURCE_NAME), t.TABLE_SCHEMA.eq(c.TABLE_SCHEMA), t.TABLE_NAME.eq(c.TABLE_NAME))
+                .forEach(r -> types.putIfAbsent(r.value1() + "|" + r.value2(), r.value3()));
+            return new Catalog(tables, columns, types, NodeIdDecodeQuery.read(store));
         }
 
         static String key(String source, String schema, String table) {
