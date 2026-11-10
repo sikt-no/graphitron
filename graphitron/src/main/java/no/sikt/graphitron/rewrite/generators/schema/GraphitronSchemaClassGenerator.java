@@ -311,7 +311,6 @@ public final class GraphitronSchemaClassGenerator {
             // Two-arg form: base schema + federation post-step.
             var FEDERATION         = ClassName.get("com.apollographql.federation.graphqljava", "Federation");
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
-            var OBJ_TYPE           = ClassName.get("graphql.schema", "GraphQLObjectType");
             var fedCustomizerType  = ParameterizedTypeName.get(ClassName.get(Consumer.class), SCHEMA_TRANSFORMER);
 
             var twoArgBody = CodeBlock.builder().add(body.build());
@@ -344,7 +343,7 @@ public final class GraphitronSchemaClassGenerator {
                         // by the GraphQL introspection __typename meta-field (federation spec), not
                         // the synthetic SQL TYPENAME_COLUMN above; left as the literal field name.
                         .addStatement("Object tn = m.get(\"__typename\")")
-                        .addStatement("return tn != null ? ($T) env.getSchema().getObjectType(tn.toString()) : null", OBJ_TYPE)
+                        .addStatement("return tn != null ? env.getSchema().getObjectType(tn.toString()) : null")
                         .unindent().add("})\n")
                     .add(".fetchEntities(env -> java.util.List.of());\n")
                     .unindent();
