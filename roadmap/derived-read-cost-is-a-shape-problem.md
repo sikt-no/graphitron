@@ -1024,8 +1024,8 @@ pass and no stratum that clears and recomputes.
         non-null single field under a routine with no errors field, a list field taking one row by
         an arity-one key row, a routine lift with no step and several fields re-reading a routine's
         rows are no defect, the routine ones `RoutineWriteQuery.Unrendered`, kept out of the rows by
-        name, so each emitter refusal joins "The store, the generator and
-        the emitters agree on what a service call can be" before the walk's refusals go.
+        name, so each emitter refusal joins
+        "The store, the generator and the emitters agree on what a service call can be" before the walk's refusals go.
     * **A name claimed that does not exist is one defect** `open`. `TABLE_UNRESOLVED`,
       `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
       written name resolving to nothing, the position saying what was named, so they fold into one
