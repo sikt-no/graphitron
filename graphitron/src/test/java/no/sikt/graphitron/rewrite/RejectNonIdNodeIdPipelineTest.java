@@ -97,31 +97,6 @@ class RejectNonIdNodeIdPipelineTest {
                 && e.message().contains("'Int'"));
     }
 
-    // ===== Finding H: federation @key field that is itself @nodeId-encoded =====
-
-    @Test
-    void federationKeyOnNodeIdEncodedReference_rejectedFatally() {
-        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type ParentNode implements Node @table(name: "parent_node") @node {
-                id: ID! @nodeId
-                altKey: String! @field(name: "alt_key")
-            }
-            type ChildRef @table(name: "child_ref") @key(fields: "parentNodeId") {
-                childId: String! @field(name: "child_id")
-                parentNodeId: ID @nodeId(typeName: "ParentNode")
-                    @reference(path: [{key: "child_ref_parent_alt_key_fkey"}])
-            }
-            type Query { childRefs: [ChildRef!]! }
-            """, FIXTURE_CTX);
-
-        assertThat(schema.diagnostics())
-            .as("a federation @key on an @nodeId-encoded reference field must be rejected fatally (finding H)")
-            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
-                && e.message().contains("ChildRef")
-                && e.message().contains("parentNodeId")
-                && e.message().contains("@nodeId-encoded reference"));
-    }
-
     // ===== Counter-cases: legitimate @nodeId on ID coordinates must keep passing unchanged =====
 
     @Test

@@ -7556,9 +7556,10 @@ SELECT n.graph_name, n.type_name, 'NODE', 'id', TRUE,
   FROM graphitron_node n
  WHERE n.resolvable
    AND EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
-   -- An authored key states the id contract when it selects one path and that path is id. The
-   -- decode is reached through the application the corpus honours, at the at sign both share.
-   -- Positions are dense from zero, so one selection whose one segment is id is the selection at
+   -- An authored key states the id contract when it selects one path, that path is id, and the id
+   -- is the node's own: no @field on it, which is what makes it bind the node id rather than a
+   -- column (the id-contract ruling in fact-model.adoc). The decode is reached through the
+   -- application the corpus honours, at the at sign both share. Positions are dense from zero, so one selection whose one segment is id is the selection at
    -- zero, its segment at zero named id, with no selection at one and no second segment: each a
    -- probe on the entries' whole key.
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
@@ -7576,7 +7577,11 @@ SELECT n.graph_name, n.type_name, 'NODE', 'id', TRUE,
                                        WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
                                          AND h.source_line = g.source_line
                                          AND h.source_column = g.source_column AND h.position = 0
-                                         AND h.segment_position = 1));
+                                         AND h.segment_position = 1)
+                      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application f
+                                       WHERE f.graph_name = d.graph_name
+                                         AND f.coordinate = d.coordinate || '.id'
+                                         AND f.directive_name = 'field'));
 COMMENT ON VIEW graphitron_minted_key_rule IS 'One key the minting rules compute, in the shape graphitron_minted_key stores: the rules themselves, evaluated on demand rather than read off disk. For example the minted-keys stage writes this view''s rows for one graph into graphitron_minted_key, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_minted_key_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_minted_key_rule.type_name IS 'the type the key is minted on';
@@ -12633,6 +12638,97 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYL
  WHERE d.rn = 1;
 
 COMMENT ON VIEW graphitron_outbox_entry_defect_rule IS 'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.';
+
+-- A federation @key's refusals, the entity key stage's own, judged from how each key field binds at
+-- its entity's table. An entity is resolved by a SELECT on its table, so a key needs a table-bound
+-- object type (an interface is keyed on its implementations), selects at least one field, and each
+-- field it selects binds a column of that table, the one exception being a key whose only field is
+-- the node's own id, which binds the node id and is decoded. A type whose every key is
+-- resolvable: false is another subgraph's to resolve and needs no table. A @key on a type whose
+-- @table did not resolve is that defect's, and is not judged again here. Reported at the @key.
+CREATE VIEW graphitron_entity_key_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_TYPE_NOT_TABLE_BOUND',
+       d.coordinate
+  FROM graphql_directive_application d
+  JOIN graphitron_type t
+    ON t.graph_name = d.graph_name AND t.type_name = d.coordinate AND t.kind = 'OBJECT'
+  JOIN graphitron_ast_federation_key_entry k
+    ON k.graph_name = d.graph_name AND k.source_name = d.source_name
+   AND k.source_line = d.source_line AND k.source_column = d.source_column
+ WHERE d.directive_name = 'key' AND COALESCE(k.resolvable, TRUE) = TRUE
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application b
+                    WHERE b.graph_name = d.graph_name AND b.coordinate = d.coordinate
+                      AND b.directive_name = 'table')
+UNION ALL
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_ON_INTERFACE', d.coordinate
+  FROM graphql_directive_application d
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'INTERFACE'
+ WHERE d.directive_name = 'key'
+UNION ALL
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_SELECTS_NOTHING',
+       d.coordinate
+  FROM graphql_directive_application d
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
+  JOIN graphitron_ast_federation_key_entry k
+    ON k.graph_name = d.graph_name AND k.source_name = d.source_name
+   AND k.source_line = d.source_line AND k.source_column = d.source_column
+ WHERE d.directive_name = 'key'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_selection_entry p
+                    WHERE p.graph_name = k.graph_name AND p.source_name = k.source_name
+                      AND p.source_line = k.source_line AND p.source_column = k.source_column
+                      AND p.position = 0)
+UNION ALL
+-- One row per selection that is not a column of the entity's table: a nested selection, a name the
+-- type does not declare, or a field binding anything but a column there, the node's own id alone
+-- excepted. The detail is the selection's first segment, the name the author wrote.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_NOT_A_COLUMN',
+       MIN(g.segment_name)
+  FROM graphql_directive_application d
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
+  JOIN graphitron_ast_federation_key_selection_entry p
+    ON p.graph_name = d.graph_name AND p.source_name = d.source_name
+   AND p.source_line = d.source_line AND p.source_column = d.source_column
+  JOIN graphitron_ast_federation_key_segment_entry g
+    ON g.graph_name = p.graph_name AND g.source_name = p.source_name
+   AND g.source_line = p.source_line AND g.source_column = p.source_column
+   AND g.position = p.position AND g.segment_position = 0
+ WHERE d.directive_name = 'key'
+   AND (EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry h
+                 WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
+                   AND h.source_line = g.source_line AND h.source_column = g.source_column
+                   AND h.position = g.position AND h.segment_position = 1)
+        OR NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
+                        WHERE b.graph_name = d.graph_name
+                          AND b.coordinate = d.coordinate || '.' || g.segment_name
+                          AND b.bound = tt.table_schema || '.' || tt.table_name
+                          AND b.kind = 'COLUMN'))
+   -- The node's own id, alone in its key: an id with no @field on a node, which binds the node id.
+   AND NOT (g.segment_name = 'id' AND g.position = 0
+            AND EXISTS (SELECT 1 FROM graphitron_node n
+                         WHERE n.graph_name = d.graph_name AND n.type_name = d.coordinate)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_selection_entry q
+                             WHERE q.graph_name = g.graph_name AND q.source_name = g.source_name
+                               AND q.source_line = g.source_line AND q.source_column = g.source_column
+                               AND q.position = 1)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry h
+                             WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
+                               AND h.source_line = g.source_line AND h.source_column = g.source_column
+                               AND h.position = 0 AND h.segment_position = 1)
+            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application f
+                             WHERE f.graph_name = d.graph_name AND f.coordinate = d.coordinate || '.id'
+                               AND f.directive_name = 'field'))
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column;
+COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.code IS 'the rule the key breaks';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.detail IS 'the type, or for a key field the first field the author wrote that is not a column'
 
 CREATE VIEW graphitron_argmapping_pair_defect_rule
   (graph_name, source_name, source_line, source_column, position, code, detail) AS
@@ -18271,8 +18367,9 @@ INSERT INTO meta_stage VALUES
   ('occurrence-participants', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
   ('occurrence-depths', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
   ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('outbox', 'graphitron', 31, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 32, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('entity-key-alternatives', 'graphitron', 31, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -18396,6 +18493,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-values', 'graphitron_occurrence_binding'),
   ('occurrence-values', 'graphitron_occurrence_binding_value'),
   ('occurrence-participants', 'graphitron_occurrence_participant'),
+  ('entity-key-alternatives', 'graphitron_entry_defect'),
   ('outbox', 'graphitron_entry_defect'),
   ('outbox', 'graphitron_outbox_key'),
   ('outbox', 'graphitron_outbox_message'),
@@ -19350,6 +19448,14 @@ INSERT INTO graphitron_defect_type VALUES
    'The table''s generated class declares __NODE_LEGACY_KEY_COLUMNS graphitron cannot use, and no fallback reads ids issued in the old shape; fix the generator configuration that writes it.', 'entry-defects'),
   ('TYPE_NAME_CASE_COLLISION', 'error', 'GRAPHITRON', 'GRAPHITRON_TYPE_NAME_CASE_COLLISION',
    'Two types the generator writes a file for have names that differ only in case, which on a filesystem that folds case is one file; rename one of them.', 'entry-defects'),
+  ('KEY_TYPE_NOT_TABLE_BOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TYPE_NOT_TABLE_BOUND',
+   'A resolvable federation @key is on a type with no @table, and this subgraph resolves an entity by selecting its row from its table: bind the type to a table, or mark every key resolvable: false if another subgraph resolves it.', 'entity-key-alternatives'),
+  ('KEY_ON_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ON_INTERFACE',
+   'A federation @key is on a table-bound interface, and an entity is resolved by one table: declare the key on each implementing type instead.', 'entity-key-alternatives'),
+  ('KEY_SELECTS_NOTHING', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_SELECTS_NOTHING',
+   'A federation @key''s fields: selects no field, so nothing identifies the entity: name the fields of its key.', 'entity-key-alternatives'),
+  ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
+   'A federation @key selects a field that is not a column of the entity''s own table, a nested selection, a name the type does not declare, or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.', 'entity-key-alternatives'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
    'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, under its own name or the one @field(name:) gives it, so there is nothing to select: the name is misspelt, or the column lives on another table.', 'entry-defects'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',
@@ -20141,6 +20247,10 @@ INSERT INTO meta_relation VALUES
    'One row the outbox routine target rule computes, in the shape graphitron_outbox_routine_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_routine_target, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_entity_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.',
+   'The entity key stage''s own defects, judged from how each key field binds at its entity''s table, which the occurrence bindings state, so the rule reads stored bindings rather than the classified fields the refusals were once made from.'),
   ('graphitron_outbox_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.',

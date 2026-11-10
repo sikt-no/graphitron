@@ -10,6 +10,7 @@ import no.sikt.graphitron.model.derive.EntryDefectMembers;
 import no.sikt.graphitron.model.derive.EntryDefectParameters;
 import no.sikt.graphitron.model.derive.EntryDefectTables;
 import no.sikt.graphitron.model.derive.Occurrences;
+import no.sikt.graphitron.model.derive.EntityKeyAlternatives;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -144,6 +145,10 @@ public final class GraphitronAssemblyCapture {
         // The member each occurrence with an object source reads, off the accessor paths above.
         new AnchorStage("occurrence-values", OccurrenceValues.class,
             OccurrenceValues::derive),
+        // The federation @key refusals, off how each key field binds at its entity's table, which the
+        // two stages above state between them.
+        new AnchorStage("entity-key-alternatives", EntityKeyAlternatives.class,
+            EntityKeyAlternatives::derive),
         // The outbox targets the configuration resolves to, and each @outbox as the message its
         // field's call writes, judged against the occurrences' producers above; then their defects.
         new AnchorStage("outbox", Outboxes.class, Outboxes::derive),

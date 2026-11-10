@@ -1,39 +1,27 @@
 package no.sikt.graphitron.rewrite.schema.federation;
 
 import graphql.language.BooleanValue;
-import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.TypeRegistry;
-import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.JooqRecordType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
-import no.sikt.graphitron.model.diagnostics.Rejection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 import no.sikt.graphitron.model.schema.federation.FederationKeyFieldsParser;
 import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
 
@@ -57,13 +45,13 @@ import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
  *       referenced fields and reading their {@link ColumnRef}.</li>
  * </ul>
  *
- * <h3>Errors</h3>
- * <p>Validation failures (malformed {@code fields:} strings, a resolvable {@code @key} on a
- * non-table-bound type, {@code @key(fields:)} naming a non-column field) are registered as
- * {@link ValidationError}s on the diagnostic sink; the type keeps its classified verdict. A type
- * whose {@code @key} directives are all {@code resolvable: false} is a reference-only entity
- * stub: it is skipped (no entity entry, no rejection) since this subgraph emits no
- * {@code _entities} handler for it.
+ * <h3>Refusals</h3>
+ * <p>A {@code @key} this builder cannot resolve is refused by the store, as an entry defect the
+ * entity key stage writes ({@code no.sikt.graphitron.model.derive.EntityKeyAlternatives}), and a
+ * schema carrying one does not generate. So a type with such a key is skipped here without a
+ * diagnostic of its own, as is a type whose {@code @key} directives are all
+ * {@code resolvable: false}, a reference-only stub this subgraph emits no {@code _entities}
+ * handler for.
  */
 public final class EntityResolutionBuilder {
 
@@ -76,43 +64,19 @@ public final class EntityResolutionBuilder {
 
     /**
      * Walks the classified type map and returns an entity-resolution entry for every type
-     * whose schema element carries at least one {@code @key} directive. A type whose {@code @key}
-     * directives cannot be resolved keeps its classified verdict; the federation rejection is
-     * registered as a build-time {@link ValidationError} on {@code diagnosticSink} (the validator
-     * drains it).
+     * whose schema element carries at least one {@code @key} directive it can resolve, and every
+     * node type. A key it cannot resolve is the store's refusal, so the type is skipped.
      *
      * @param registry the classifier's type registry (read-only here)
      * @param fields the classifier's field map (read-only)
      * @param assembled the assembled graphql-java schema (read-only)
-     * @param warningSink receiver for non-fatal advisories (e.g. compound key on @node type
-     *                    that includes "id"); typically {@code BuildContext::addWarning}
-     * @param diagnosticSink receiver for the federation {@code @key} rejections; typically
-     *                    {@code BuildContext::addDiagnostic}
      */
     public static Map<String, EntityResolution> build(
         TypeRegistry registry,
         Map<FieldCoordinates, GraphitronField> fields,
-        GraphQLSchema assembled,
-        Consumer<BuildWarning> warningSink,
-        Consumer<ValidationError> diagnosticSink
+        GraphQLSchema assembled
     ) {
         var out = new LinkedHashMap<String, EntityResolution>();
-        // A @key object type the type pass left unclassified (directiveless; a federation entity
-        // needs a @table) is absent from the registry, so the entity loop below never sees it.
-        // Register the federation diagnostic here rather than letting it slip through as a
-        // generic unclassified field; no entity entry is built.
-        for (var named : assembled.getAllTypesAsList()) {
-            if (named instanceof GraphQLObjectType keyObj
-                    && !keyObj.getName().startsWith("__")
-                    && !keyObj.getAppliedDirectives(KEY_DIRECTIVE).isEmpty()
-                    && !registry.contains(keyObj.getName())) {
-                var loc = keyObj.getDefinition() != null ? keyObj.getDefinition().getSourceLocation() : null;
-                diagnosticSink.accept(ValidationError.forType(keyObj.getName(), Rejection.structural(
-                    "@key on type '" + keyObj.getName() + "' requires a table-bound type, but '" + keyObj.getName()
-                    + "' is classified as a plain object type — federation entities need a @table directive."),
-                    loc));
-            }
-        }
         for (var entry : List.copyOf(registry.entries().entrySet())) {
             String typeName = entry.getKey();
             GraphitronType gType = entry.getValue();
@@ -124,64 +88,22 @@ public final class EntityResolutionBuilder {
             // of whether federation @link is present.
             boolean isNodeType = gType instanceof NodeType;
             if (keys.isEmpty() && !isNodeType) continue;
-
-            if (gType instanceof TableInterfaceType) {
-                diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(
-                    "@key on TableInterfaceType is not supported; declare @key on the implementing types instead"),
-                    gType.location()));
-                continue;
-            }
-            // A type already rejected upstream (e.g. unresolvable @table, malformed @node
-            // keyColumns) carries the real cause on its existing UnclassifiedType. Pass it
-            // through unchanged; relitigating would overwrite the actionable diagnostic with
-            // a misleading "no @table directive" message.
-            if (gType instanceof UnclassifiedType) {
-                continue;
-            }
-            // Federation entities require a backing table (the dispatcher SELECTs from it), but
-            // only when a key is resolvable. A type whose @key directives are all
-            // resolvable: false is a reference-only entity stub: declared for the supergraph
-            // composer, but this subgraph does not own its resolution and emits no _entities
-            // handler for it, so it needs no backing table. Skip it without an entity entry or
-            // rejection; reject only when at least one key is resolvable and needs a SELECT path.
-            if (!(gType instanceof TableType || gType instanceof NodeType)) {
-                boolean anyResolvable = keys.stream().anyMatch(EntityResolutionBuilder::readResolvableArg);
-                if (!anyResolvable) {
-                    continue;
-                }
-                diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(
-                    "@key on type '" + typeName + "' requires a table-bound type, but '" + typeName
-                    + "' is classified as " + kindLabel(gType)
-                    + " — federation entities need a @table directive."),
-                    gType.location()));
-                continue;
-            }
+            // An entity is resolved by a SELECT on its table. A type that is not a table or node
+            // type here is either a reference-only stub or refused by the store, and a type already
+            // rejected upstream carries its own cause.
+            if (!(gType instanceof TableType || gType instanceof NodeType)) continue;
 
             var alternatives = new ArrayList<KeyAlternative>();
-            String error = null;
-            ValidationError fatal = null;
+            boolean refused = false;
             for (var key : keys) {
-                var alt = buildAlternative(typeName, gType, key, fields, warningSink);
-                if (alt instanceof AltResult.Ok ok) {
-                    alternatives.add(ok.alt());
-                } else if (alt instanceof AltResult.Err err) {
-                    error = err.message();
-                    break;
-                } else if (alt instanceof AltResult.Fatal f) {
-                    fatal = f.error();
+                var alt = buildAlternative(typeName, gType, key, fields);
+                if (alt == null) {
+                    refused = true;
                     break;
                 }
+                alternatives.add(alt);
             }
-            if (fatal != null) {
-                // The typed InvalidSchema rejection is already constructed; register
-                // it verbatim and skip the type (no second structural diagnostic).
-                diagnosticSink.accept(fatal);
-                continue;
-            }
-            if (error != null) {
-                diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(error), gType.location()));
-                continue;
-            }
+            if (refused) continue;
             // Synthesise a NODE_ID alternative when no explicit @key(fields: "id") is among the
             // user-declared keys (KeyNodeSynthesiser fills this in at the registry level; tests
             // that bypass the attributed read rely on this synthesis instead). Prepend so the
@@ -203,107 +125,45 @@ public final class EntityResolutionBuilder {
     }
 
     /**
-     * Author-facing label for a non-table-bound classification, used in the rejection message
-     * for {@code @key} on a type that is neither {@link TableType} nor {@link NodeType}.
+     * The alternative one {@code @key} resolves to, or {@code null} where it resolves to none,
+     * which the store refuses. The node's own id alone, which carries an encoded node id, is the
+     * node-id alternative; an {@code id} carrying {@code @field(name:)} reads a column like any
+     * other field, so a key over it is direct (the id-contract ruling in {@code docs/architecture/explanation/fact-model.adoc}).
      */
-    private static String kindLabel(GraphitronType gType) {
-        return switch (gType) {
-            case NestingType p -> "a plain object type";
-            case JavaRecordType r -> "a record-backed type";
-            case PojoResultType r -> "a record-backed type";
-            case JooqRecordType r -> "a record-backed type";
-            case JooqTableRecordType r -> "a record-backed type";
-            default -> "a non-table-bound type";
-        };
-    }
-
-    private sealed interface AltResult {
-        record Ok(KeyAlternative alt) implements AltResult {}
-        record Err(String message) implements AltResult {}
-        /**
-         * A fatal rejection whose typed {@link ValidationError} is already constructed.
-         * Distinct from {@link Err}, whose message the caller wraps in a
-         * {@link Rejection.AuthorError.Structural}; this carries an {@link Rejection.InvalidSchema}
-         * the caller registers verbatim, and the caller skips the type without emitting a second
-         * diagnostic.
-         */
-        record Fatal(ValidationError error) implements AltResult {}
-    }
-
-    private static AltResult buildAlternative(
+    private static KeyAlternative buildAlternative(
         String typeName,
         GraphitronType gType,
         GraphQLAppliedDirective keyDirective,
-        Map<FieldCoordinates, GraphitronField> fields,
-        Consumer<BuildWarning> warningSink
+        Map<FieldCoordinates, GraphitronField> fields
     ) {
         String fieldsValue = readFieldsArg(keyDirective);
-        if (fieldsValue == null) {
-            return new AltResult.Err("@key directive on type '" + typeName
-                + "' is missing required argument 'fields'");
-        }
+        if (fieldsValue == null) return null;
         List<String> required;
         try {
             required = FederationKeyFieldsParser.parse(fieldsValue);
         } catch (FederationKeyFieldsParser.ParseException e) {
-            return new AltResult.Err("@key on type '" + typeName + "': " + e.getMessage());
+            return null;
         }
         boolean resolvable = readResolvableArg(keyDirective);
 
-        // NodeId shape: a NodeType with a single "id" required field uses the node's
-        // nodeKeyColumns and decodes the rep's id through NodeIdEncoder at runtime.
         if (gType instanceof NodeType nodeType
             && required.size() == 1
-            && ID_FIELD.equals(required.get(0))) {
-            return new AltResult.Ok(new KeyAlternative.NodeId(
+            && ID_FIELD.equals(required.get(0))
+            && columnOf(fields.get(FieldCoordinates.coordinates(typeName, ID_FIELD))) == null) {
+            return new KeyAlternative.NodeId(
                 nodeType.typeId(),
                 List.copyOf(nodeType.nodeKeyColumns()),
-                resolvable));
+                resolvable);
         }
 
-        // Direct shape: each required field name maps to a ColumnRef on the type's table.
         var bindings = new ArrayList<KeyAlternative.RepBinding>();
         for (String name : required) {
             var field = fields.get(FieldCoordinates.coordinates(typeName, name));
             ColumnRef col = columnOf(field);
-            if (col == null) {
-                return new AltResult.Err("@key(fields: \"" + fieldsValue + "\") on type '"
-                    + typeName + "' references field '" + name
-                    + "' which is not a column-backed field on this type's table");
-            }
-            // A @key whose referenced field is an @nodeId-encoded reference carrier cannot
-            // resolve through the DIRECT _entities path: that path binds the rep's field value
-            // verbatim, but the rep carries a base64-encoded global id, so the encoded id is
-            // bound undecoded into the VALUES table (a never-matches predicate or a SQL
-            // bind/type error at runtime). Reject fatally, not with the non-fatal compound-id
-            // warning below, which covers the distinct own-column 'id' carrier.
-            if (field instanceof ChildField.ColumnBackedReferenceField cref
-                && cref.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
-                return new AltResult.Fatal(ValidationError.forType(typeName, Rejection.invalidSchema(
-                    "@key(fields: \"" + fieldsValue + "\") on type '" + typeName + "' references field '"
-                    + name + "', which is an @nodeId-encoded reference (its rep value is a base64 global "
-                    + "id). The _entities DIRECT path binds the rep value verbatim, so the encoded id "
-                    + "would be bound undecoded into the entity lookup. Key on a non-encoded column, or "
-                    + "use the canonical @key(fields: \"id\") NodeId path on a @node type."),
-                    gType.location()));
-            }
+            if (col == null) return null;
             bindings.add(new KeyAlternative.RepBinding(name, col));
         }
-        if (gType instanceof NodeType && required.contains(ID_FIELD)) {
-            // Compound key that includes "id" on a @node type: we treat it as DIRECT (the rep
-            // carries each required field individually, including the id), not NODE_ID.
-            // Surface a warning so the consumer is aware their compound key bypasses the
-            // global-id decode path.
-            warningSink.accept(new BuildWarning.NoRule(
-                "@key(fields: \"" + fieldsValue + "\") on @node type '" + typeName
-                + "' includes 'id' alongside other fields; the id is treated as a column value "
-                + "rather than a global NodeId. Federation reps for this alternative must "
-                + "carry the column-level id, not a base64-encoded NodeId.",
-                gType.location()));
-        }
-        return new AltResult.Ok(new KeyAlternative.Direct(
-            List.copyOf(bindings),
-            resolvable));
+        return new KeyAlternative.Direct(List.copyOf(bindings), resolvable);
     }
 
     private static String readFieldsArg(GraphQLAppliedDirective key) {
@@ -324,12 +184,17 @@ public final class EntityResolutionBuilder {
         return true;
     }
 
+    /**
+     * The one column of the entity's own table a field reads off the parent row, or {@code null}:
+     * a composite carrier binds several, a field encoding a node id carries the encoded id rather
+     * than the column's value, and a reference field reads another table's column. The store
+     * decides the same from the field's binding.
+     */
     private static ColumnRef columnOf(GraphitronField field) {
-        if (field == null) return null;
-        // Composite (multi-column) carriers stay null: a rep field binds one column value, so a
-        // composite node-key carrier is "not a column-backed field" for the DIRECT path.
-        if (field instanceof ChildField.ColumnBackedField cf && !cf.isComposite()) return cf.columns().get(0);
-        if (field instanceof ChildField.ColumnBackedReferenceField cref && !cref.isComposite()) return cref.columns().get(0);
+        if (field instanceof ChildField.ColumnBackedField cf && !cf.isComposite()
+                && !(cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys)) {
+            return cf.columns().get(0);
+        }
         return null;
     }
 }

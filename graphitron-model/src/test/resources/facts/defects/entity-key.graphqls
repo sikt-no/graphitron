@@ -1,0 +1,113 @@
+"A federation entity is resolved by selecting its row from its table, matching the values a key carries against that table's columns. So a resolvable @key needs a table-bound object type, selects at least one field, and every field it selects reads a column of the entity's own table, the one exception being a key whose only field is the node's own id, which carries an encoded node id the generator decodes. Each refusal is at the @key that breaks it. Whether a key is the id contract is how the id binds: an id with no @field on a node is the node's own, and one carrying @field(name:) is a column, so a key over it is plain and federation mints the node key beside it."
+# A resolvable key on a type with no table: nothing to select it from.
+type Plain @key(fields: "plainId") {
+  plainId: Int
+}
+
+# Every key resolvable: false is another subgraph's entity, which this one only references, so it
+# needs no table and draws nothing.
+type Stub @key(fields: "stubId", resolvable: false) {
+  stubId: Int
+}
+
+# One resolvable key among stubs is enough to need a table, and that key alone is refused.
+type Mixed @key(fields: "a", resolvable: false) @key(fields: "b") {
+  a: Int
+  b: Int
+}
+
+# A table-bound interface is keyed on the types implementing it, each resolved by its own table.
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") @key(fields: "contentId") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Short implements Content @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Film @table(name: "film")
+    # A column of film's own: accepted.
+    @key(fields: "filmId")
+    # A name film does not declare.
+    @key(fields: "titel")
+    # A nested selection reaches another table's row.
+    @key(fields: "language { name }")
+    # Selects nothing.
+    @key(fields: "")
+    # A field that reads language's column through a path, not one of film's: the generator once
+    # accepted it, and keyed the lookup on a column film does not have.
+    @key(fields: "languageName") {
+  filmId: Int @field(name: "film_id")
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+  languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+# No root field reaches this type: only a router's _entities call resolves it. Its key field is an
+# occurrence all the same, a chain starting at every field of a table-bound type, so it is accepted.
+type Store @table(name: "store") @key(fields: "storeId") {
+  storeId: Int @field(name: "store_id")
+}
+
+# The node's own id alone: the id contract, accepted, and nothing minted beside it.
+type Actor @table(name: "actor") @node @key(fields: "id") {
+  id: ID
+}
+
+# The node's own id beside a column: the id is an encoded node id, not a column, so the key is refused.
+type Staff @table(name: "staff") @node @key(fields: "id firstName") {
+  id: ID
+  firstName: String @field(name: "first_name")
+}
+
+# An id carrying @field reads a column: the key over it is a plain key, accepted, and the node key is
+# minted beside it.
+type Rental @table(name: "rental") @node @key(fields: "id") {
+  id: ID @field(name: "rental_id")
+}
+
+# An @nodeId reference carries another node's encoded id, not a column value.
+type Payment @table(name: "payment") @key(fields: "rentalId") {
+  rentalId: ID @nodeId(typeName: "Rental")
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query {
+  plains: [Plain!]!
+  stubs: [Stub!]!
+  mixed: [Mixed!]!
+  contents: [Content!]!
+  films: [Film!]!
+  actors: [Actor!]!
+  staff: [Staff!]!
+  rentals: [Rental!]!
+  payments: [Payment!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('KEY_TYPE_NOT_TABLE_BOUND', 'KEY_ON_INTERFACE', 'KEY_SELECTS_NOTHING', 'KEY_FIELD_NOT_A_COLUMN')
+  """, rows: """
+  code,                     type_name, detail
+  KEY_FIELD_NOT_A_COLUMN,   Film,      language
+  KEY_FIELD_NOT_A_COLUMN,   Film,      languageName
+  KEY_FIELD_NOT_A_COLUMN,   Film,      titel
+  KEY_FIELD_NOT_A_COLUMN,   Payment,   rentalId
+  KEY_FIELD_NOT_A_COLUMN,   Staff,     id
+  KEY_ON_INTERFACE,         Content,   Content
+  KEY_SELECTS_NOTHING,      Film,      Film
+  KEY_TYPE_NOT_TABLE_BOUND, Mixed,     Mixed
+  KEY_TYPE_NOT_TABLE_BOUND, Plain,     Plain
+  """)
+
+# The id contract decides the mint: Actor's authored id key is the node's own and stands it down,
+# while Rental's is over a column and Staff's is compound, so each is given the node key after its
+# own.
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name, role, fields, resolvable, ordinal
+  Rental,    NODE, id,     TRUE,       1
+  Staff,     NODE, id,     TRUE,       1
+  """)

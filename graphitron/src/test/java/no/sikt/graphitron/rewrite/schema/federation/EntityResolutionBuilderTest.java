@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.schema.federation;
 
-import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import org.junit.jupiter.api.Test;
@@ -208,53 +206,6 @@ class EntityResolutionBuilderTest {
     }
 
     @Test
-    void keyReferencingUnknownField_surfacesValidationDiagnostic() {
-        // The federation @key check registers a diagnostic instead of demoting; the
-        // type keeps its classified verdict and the validator surfaces the rejection.
-        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query { language: Language }
-            type Language @table(name: "language") @key(fields: "doesNotExist") {
-                languageId: Int @field(name: "language_id")
-            }
-            """);
-        assertThat(schema.type("Language")).isNotInstanceOf(UnclassifiedType.class);
-        assertThat(new GraphitronSchemaValidator().validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("Language") && m.contains("doesNotExist"));
-    }
-
-    @Test
-    void nestedSelectionInKeyFields_surfacesValidationDiagnostic() {
-        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query { film: Film }
-            type Film @table(name: "film") @key(fields: "language { id }") {
-                language: Language @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Language @table(name: "language") {
-                id: Int @field(name: "language_id")
-            }
-            """);
-        assertThat(schema.type("Film")).isNotInstanceOf(UnclassifiedType.class);
-        assertThat(new GraphitronSchemaValidator().validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("Film") && m.contains("nested selections") && m.contains("language"));
-    }
-
-    @Test
-    void emptyKeyFields_surfacesValidationDiagnostic() {
-        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query { language: Language }
-            type Language @table(name: "language") @key(fields: "") {
-                languageId: Int @field(name: "language_id")
-            }
-            """);
-        assertThat(schema.type("Language")).isNotInstanceOf(UnclassifiedType.class);
-        assertThat(new GraphitronSchemaValidator().validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.startsWith("Type 'Language':"));
-    }
-
-    @Test
     void typeWithoutKeyOrNode_hasNoEntityResolution() {
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Query { language: Language }
@@ -263,26 +214,6 @@ class EntityResolutionBuilderTest {
             }
             """);
         assertThat(schema.entityResolution("Language")).isNull();
-    }
-
-    @Test
-    void plainObjectTypeWithKey_surfacesValidationDiagnostic() {
-        // Federation @key on a non-@table type doesn't make sense — the dispatcher needs
-        // a backing table to SELECT from. The Case-B message names the classification and
-        // hints at the missing @table directive. Foo is a directiveless object the
-        // type pass never classified (absent from the registry, not demoted); the federation check
-        // registers the diagnostic the validator surfaces.
-        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query { x: Foo }
-            type Foo @key(fields: "fooId") {
-                fooId: Int
-            }
-            """);
-        assertThat(schema.type("Foo")).isNull();
-        assertThat(new GraphitronSchemaValidator().validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("is classified as a plain object type")
-                && m.contains("federation entities need a @table directive"));
     }
 
     @Test
@@ -322,27 +253,6 @@ class EntityResolutionBuilderTest {
     }
 
     @Test
-    void keyOnRecordType_namesRecordKindInMessage() {
-        // Case B's record-backed arm — the "missing @table" hint is wrong-by-coincidence
-        // because record-backed types intentionally have no @table. Name the kind explicitly so
-        // the author sees that @key on a record-backed type is the misuse, not a forgotten @table.
-        // FooRec keeps its record-backed verdict; the diagnostic carries the message.
-        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query {
-                x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            type FooRec @key(fields: "fooId") {
-                fooId: Int
-            }
-            """);
-        assertThat(schema.type("FooRec")).isNotInstanceOf(UnclassifiedType.class);
-        assertThat(new GraphitronSchemaValidator().validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("is classified as a record-backed type")
-                && !m.contains("has no @table directive"));
-    }
-
-    @Test
     void resolvableFalseKeyOnRecordType_isAcceptedAsReferenceOnlyStub() {
         // A @key(resolvable: false) declares a reference-only entity stub — this subgraph
         // does not own its resolution and emits no _entities handler, so it needs no backing
@@ -364,24 +274,4 @@ class EntityResolutionBuilderTest {
             .isNull();
     }
 
-    @Test
-    void mixedResolvableAndNonResolvableKeysOnRecordType_stillRejects() {
-        // The relaxation only applies when ALL keys are resolvable: false. A type with at
-        // least one resolvable @key still needs a backing table for the SELECT path, so the
-        // "requires a table-bound type" rejection still fires.
-        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query {
-                x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            type FooRec @key(fields: "fooId", resolvable: false) @key(fields: "barId") {
-                fooId: Int
-                barId: Int
-            }
-            """);
-        assertThat(schema.type("FooRec")).isNotInstanceOf(UnclassifiedType.class);
-        assertThat(new GraphitronSchemaValidator().validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("is classified as a record-backed type")
-                && m.contains("federation entities need a @table directive"));
-    }
 }

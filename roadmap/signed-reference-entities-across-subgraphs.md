@@ -268,9 +268,9 @@ alone, admits only those. Either is the consumer's choice, and both are covered 
   non-federated graph takes; the adapter is transitional until the node and entity generators read the
   store. `EntityResolutionBuilder` goes, its refusals included. This is the "Entity resolution is
   stated" node of R876's graph, taken here. A stage of its own owns the relation and the refusals,
-  `entity-key-alternatives` (class `derive.EntityKeyAlternatives`), after `occurrence-depths`, which
-  writes the bindings it reads, and before `entry-defects`; `meta_relation` and `meta_stage_write` name
-  it. Whether a key is the id contract is decided by the binding (the ruling in
+  `entity-key-alternatives` (class `derive.EntityKeyAlternatives`), after `occurrence-depths` and
+  `occurrence-values`, the two stages that write the bindings it reads, and before `outbox`;
+  `meta_relation` and `meta_stage_write` name it. Whether a key is the id contract is decided by the binding (the ruling in
   `docs/architecture/explanation/fact-model.adoc`): an authored `@key(fields: "id")` over an `id` that
   carries `@field(name:)` is a plain key on its column, and `graphitron_minted_key_rule` mints the
   node key beside it, its test becoming `id` with no `@field` on a node rather than the spelling alone.
@@ -606,7 +606,7 @@ At slice 2's entity key step the principles architect was consulted twice and th
 (2026-11-10). A stored alternative per `@key`, with `DIRECT` and `NODE_ID` subtypes, restated rows other
 relations hold, so only the per-field binding is stored and the one reader composes the rest
 (*Entity key alternatives, stated*). The column comes from the field's occurrence binding rather than a
-second spelling match, which puts the stage after `occurrence-depths`. The refusals move first, as a
+second spelling match, which puts the stage after the stages that write the bindings. The refusals move first, as a
 `feat`, so the store never holds a well-formed-only population beside a Java validation of the same
 decision. And the id contract is the binding, not the spelling: an authored `@key(fields: "id")` over a
 column-bound `id` is a plain key, with the node key minted beside it.

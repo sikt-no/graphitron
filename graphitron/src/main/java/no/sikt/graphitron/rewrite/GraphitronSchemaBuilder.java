@@ -327,8 +327,7 @@ public class GraphitronSchemaBuilder {
         rejectFacetMisuse(ctx, connectionSynthesis);
         var classifiedFields = ctx.fieldRegistry.entries();
         Map<String, EntityResolution> entitiesByType =
-            EntityResolutionBuilder.build(ctx.typeRegistry, classifiedFields, rebuiltAssembled,
-                ctx::addWarning, ctx::addDiagnostic);
+            EntityResolutionBuilder.build(ctx.typeRegistry, classifiedFields, rebuiltAssembled);
         // The ancestor-product arrival fold, computed once over the assembled (pre-connection-
         // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk
         // order; threaded onto the schema for OutputField.source(Arrival) consumers to read
