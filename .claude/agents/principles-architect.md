@@ -81,7 +81,7 @@ The `.claude/skills/reviewer-prompt/SKILL.md` taxonomy, applied forward to a des
 - **Emit vocabulary entering the model.** JavaPoet types, name formulas or suffix literals in the store or a `<Part>Query`'s rows.
 - **Validator gaps.** A store fact the emitters fork on with no defect for the shape they cannot emit yet.
 - **Wire-format leaks.** NodeId, cursors or federation reps reaching past the DataFetcher boundary into the model.
-- **Test-tier mismatch.** A behaviour change without a pipeline-tier test, or per-variant unit tests where pipeline, compile or execute tiers belong. No assertions on generated Java or SQL text at any tier.
+- **Test-tier mismatch.** A behaviour change without a pipeline-tier test, or per-variant unit tests where pipeline, compile or execute tiers belong. No assertions on generated Java or SQL text at any tier. A new fact document goes in the folder whose claim it meets (`testing.adoc`); `undecided/` only shrinks and is never a home for one.
 - **Stale references.** Names of tests, classes or methods that do not exist; if the plan creates them, prefer "C3 adds `X`".
 - **Type-system certainty, on code still on the classified model.** An enum where variants carry different data (a sealed hierarchy belongs), an `instanceof` chain where a capability is uniformly true (or a capability where the generator forks on identity), a component or return type wider than the producer guarantees, a resolution outcome as a raw string or nullable bag.
 - **Generated-output Java version.** Generator code may use Java 25; emitted source must be valid Java 17.
