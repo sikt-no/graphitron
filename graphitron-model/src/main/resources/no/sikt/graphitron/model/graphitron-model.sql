@@ -4789,15 +4789,21 @@ COMMENT ON VIEW graphitron_argmapping_step_next_rule IS 'One next step the argMa
 
 CREATE VIEW graphitron_argmapping_landing_rule
   (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
-   landing_coordinate, trailing_name, repeats_own_name) AS
+   landing_coordinate, trailing_name, repeats_own_name, descends) AS
 -- Where the path stops: every name consumed, or every name but one, which then names a key column of
 -- a node id at the occurrence reached and is the path end's to resolve.
 SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
        s.call_coordinate,
        s.step_coordinate,
        CASE WHEN s.consumed = s.segments THEN CAST(NULL AS VARCHAR) ELSE s.rest END,
-       s.repeats_own_name
+       s.repeats_own_name,
+       -- Past the slot the path opens: a field's argument, or the argument or input field the
+       -- directive is written on.
+       CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
+            ELSE lo.coordinate <> co.coordinate END
   FROM graphitron_argmapping_step s
+  JOIN graphitron_occurrence co ON co.graph_name = s.graph_name AND co.coordinate = s.call_coordinate
+  JOIN graphitron_occurrence lo ON lo.graph_name = s.graph_name AND lo.coordinate = s.step_coordinate
  WHERE s.consumed >= s.segments - 1
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_step d
                     WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
@@ -4806,6 +4812,7 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.param
                       AND d.call_coordinate = s.call_coordinate
                       AND d.consumed > s.consumed);
 COMMENT ON VIEW graphitron_argmapping_landing_rule IS 'One row the argMapping landing rule computes, in the shape graphitron_argmapping_landing stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_landing, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.descends IS 'the descends of a row of this rule, which the stage writes into graphitron_argmapping_landing.descends';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.graph_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.coordinate IS 'the pair''s coordinate';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.directive_name IS 'the pair''s directive_name';
@@ -4828,6 +4835,7 @@ CREATE TABLE graphitron_argmapping_landing (
   landing_coordinate VARCHAR   NOT NULL,
   trailing_name      VARCHAR,
   repeats_own_name   BOOLEAN   NOT NULL,
+  descends           BOOLEAN   NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name,
                call_coordinate),
@@ -4851,6 +4859,7 @@ COMMENT ON COLUMN graphitron_argmapping_landing.parameter_name IS 'the parameter
 COMMENT ON COLUMN graphitron_argmapping_landing.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on, completing the key: a field of a nested type is reached once per parent, and the path resolves under each';
 COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argument or input-field occurrence the path names; what it is, its column, table or node identity, is that occurrence''s own binding, not restated here';
 COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: a key column of the node id the landing carries, which the landing''s binding resolves and judges';
+COMMENT ON COLUMN graphitron_argmapping_landing.descends IS 'whether the path goes past the slot it opens, an argument of a field-level call or the argument or input field the directive is written on, rather than stopping on it: a path stopping on a @nodeId slot hands over the whole decoded key, one descending onto it projects a key column';
 COMMENT ON COLUMN graphitron_argmapping_landing.repeats_own_name IS 'whether the path began with the call''s own name, as an argument-level or input-field-level argMapping was once required to: a spelling that still resolves';
 COMMENT ON COLUMN graphitron_argmapping_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 CREATE INDEX graphitron_argmapping_landing_landing_ix
@@ -10634,6 +10643,154 @@ COMMENT ON COLUMN graphitron_occurrence_node_id.table_name IS 'the node''s table
 COMMENT ON COLUMN graphitron_occurrence_node_id.column_name IS 'the key column at this position, on the node''s table';
 COMMENT ON COLUMN graphitron_occurrence_node_id.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The key column a written argMapping path projects out of a node id: a path descending onto a
+-- @nodeId slot, or naming a column past it, hands the parameter one key column, named where it is
+-- written and else the node's one column; one stopping on the slot hands it the whole decoded key.
+CREATE VIEW graphitron_argmapping_landing_key_column_rule
+  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+   landing_coordinate, bound, position) AS
+WITH projected (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+                landing_coordinate, trailing_name, bound, position, table_source_name, table_schema,
+                table_name, column_name) AS (
+  -- A projecting landing on a node id of one node binding: one of several, an interface's or a
+  -- union's, is refused for now.
+  SELECT l.graph_name, l.coordinate, l.directive_name, l.ordinal, l.owner, l.parameter_name,
+         l.call_coordinate, l.landing_coordinate, l.trailing_name, n.bound, n.position,
+         n.table_source_name, n.table_schema, n.table_name, n.column_name
+    FROM graphitron_argmapping_landing l
+    JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
+   WHERE (l.descends = TRUE OR l.trailing_name IS NOT NULL)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id m
+                      WHERE m.graph_name = n.graph_name AND m.coordinate = n.coordinate
+                        AND m.bound <> n.bound)
+)
+-- The key column the written name reaches on the node's table.
+SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.parameter_name,
+       p.call_coordinate, p.landing_coordinate, p.bound, p.position
+  FROM projected p
+  JOIN sql_column_spelling sp
+    ON sp.source_name = p.table_source_name AND sp.table_schema = p.table_schema
+   AND sp.table_name = p.table_name AND sp.column_name = p.column_name
+   AND sp.spelling_upper = UPPER(p.trailing_name)
+UNION ALL
+-- Named nothing: the node's one key column.
+SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.parameter_name,
+       p.call_coordinate, p.landing_coordinate, p.bound, p.position
+  FROM projected p
+ WHERE p.trailing_name IS NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id m
+                    WHERE m.graph_name = p.graph_name AND m.coordinate = p.landing_coordinate
+                      AND m.bound = p.bound AND m.position <> p.position);
+COMMENT ON VIEW graphitron_argmapping_landing_key_column_rule IS 'One row the landing key column rule computes, in the shape graphitron_argmapping_landing_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_argmapping_landing_key_column, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.graph_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.directive_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.ordinal';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.owner IS 'the owner of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.owner';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.parameter_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.call_coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.landing_coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.bound';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.position';
+
+CREATE TABLE graphitron_argmapping_landing_key_column (
+  graph_name         VARCHAR   NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  directive_name     VARCHAR   NOT NULL,
+  ordinal            INT       NOT NULL,
+  owner              VARCHAR   NOT NULL,
+  parameter_name     VARCHAR   NOT NULL,
+  call_coordinate    VARCHAR   NOT NULL,
+  landing_coordinate VARCHAR   NOT NULL,
+  bound              VARCHAR   NOT NULL,
+  position           INT       NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+               bound),
+  -- The landing it projects, so a projection cannot outlive the path that wrote it.
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+    REFERENCES graphitron_argmapping_landing
+      (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+    ON DELETE CASCADE,
+  -- The key column of the node binding at the landing, so a binding that changes takes it.
+  FOREIGN KEY (graph_name, landing_coordinate, bound, position)
+    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_argmapping_landing_key_column IS 'The key column a written argMapping path projects out of the node id it lands on: one row per landing and node binding it projects from. For example filmId: pick.languageRef.language_id under Query.filmsByOptionalLanguage takes position 0 of the language node''s key, language_id.';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.coordinate IS 'the element the mapping is written on; with the four columns after it and call_coordinate, the landing';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.directive_name IS 'the mapping''s directive';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.ordinal IS 'its application''s ordinal';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.owner IS 'what the mapping is written under in its application';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.parameter_name IS 'the parameter the pair binds';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.call_coordinate IS 'the occurrence of the call the path is resolved under';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.landing_coordinate IS 'the node id occurrence the path lands on, as the landing names it';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.bound IS 'the node binding at the landing it reads, completing the key';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.position IS 'the key column''s position in that binding''s key';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- A written argMapping path that projects out of a node id and resolves to no one key column, where
+-- the pair is written: several key columns and none named, a name matching none, or several node
+-- bindings, an interface's or a union's id, refused for now. Each key column it could have meant is
+-- a row, so a reader lists them rather than parsing a detail.
+CREATE VIEW graphitron_entry_defect_key_column_rule
+  (graph_name, source_name, source_line, source_column, code, landing_coordinate, bound, position) AS
+SELECT DISTINCT pr.graph_name, pr.source_name, pr.source_line, pr.source_column,
+       'ARGMAPPING_KEY_COLUMN_UNRESOLVED', l.landing_coordinate, n.bound, n.position
+  FROM graphitron_argmapping_landing l
+  JOIN graphitron_argmapping_pair pr
+    ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
+   AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
+   AND pr.parameter_name = l.parameter_name
+  JOIN graphitron_occurrence_node_id n ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
+ WHERE (l.descends = TRUE OR l.trailing_name IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing_key_column kc
+                    WHERE kc.graph_name = l.graph_name AND kc.coordinate = l.coordinate
+                      AND kc.directive_name = l.directive_name AND kc.ordinal = l.ordinal
+                      AND kc.owner = l.owner AND kc.parameter_name = l.parameter_name
+                      AND kc.call_coordinate = l.call_coordinate);
+COMMENT ON VIEW graphitron_entry_defect_key_column_rule IS 'One row the unresolved projection detail rule computes, in the shape graphitron_entry_defect_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_key_column under the defects it marked, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.graph_name';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.source_name';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.source_line';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.source_column';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.code';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.landing_coordinate';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.bound';
+-- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.position';
+
+CREATE TABLE graphitron_entry_defect_key_column (
+  graph_name         VARCHAR   NOT NULL,
+  source_name        VARCHAR   NOT NULL,
+  source_line        INT       NOT NULL,
+  source_column      INT       NOT NULL,
+  code               VARCHAR   NOT NULL,
+  landing_coordinate VARCHAR   NOT NULL,
+  bound              VARCHAR   NOT NULL,
+  position           INT       NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, landing_coordinate, bound,
+               position),
+  -- The defect it details, so a swept defect takes its key columns with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE,
+  -- The key column it names, of the node binding at the landing.
+  FOREIGN KEY (graph_name, landing_coordinate, bound, position)
+    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_entry_defect_key_column IS 'One key column an unresolved projection could have meant, under its defect: one row per defect, landing, node binding and key position. For example filmId: pick.filmActor onto a FilmActor id names nothing past it, and its ARGMAPPING_KEY_COLUMN_UNRESOLVED defect has a row for each of the two key columns, actor_id and film_id.';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.graph_name IS 'the owning graph''s partition, carried from the defect';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.source_name IS 'the defect''s file';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.source_line IS 'the defect''s line, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.source_column IS 'the defect''s column, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.code IS 'the defect''s code, ARGMAPPING_KEY_COLUMN_UNRESOLVED; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.landing_coordinate IS 'the node id occurrence the projecting path lands on';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.bound IS 'the node binding at the landing whose key the column is of';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.position IS 'the key column''s position in that binding''s key, completing the key';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
+
 -- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
 -- columns. A written typeName: decides at every site. An argument's or input field's bare @nodeId,
 -- and its id: ID named for its target, take the node each of its needs reaches: the need's target
@@ -11638,6 +11795,70 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_schema_ref IS 'the
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_table_ref IS 'the table half of the record table''s key, equal to record_table while the table stands';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The written argMapping pair a fill came from: an ARGUMENT fill whose landing is the pair's under
+-- the call's occurrence, the pair of the directive that wrote the call. A fill a name or a type
+-- inferred has none.
+CREATE VIEW graphitron_occurrence_call_parameter_pair_rule
+  (graph_name, coordinate, call, position, pair_coordinate, directive_name, ordinal, owner,
+   parameter_name, call_coordinate) AS
+SELECT c.graph_name, c.coordinate, c.call, c.position, l.coordinate, l.directive_name, l.ordinal,
+       l.owner, l.parameter_name, l.call_coordinate
+  FROM graphitron_occurrence_call_parameter c
+  JOIN graphitron_argmapping_landing l
+    ON l.graph_name = c.graph_name AND l.call_coordinate = c.coordinate
+   AND l.landing_coordinate = c.landing_coordinate AND l.parameter_name = c.parameter_name
+   AND ((c.call_kind = 'SERVICE' AND l.directive_name = 'service' AND l.owner = 'service')
+        OR (c.call_kind = 'CONDITION' AND l.directive_name = 'condition' AND l.owner = 'condition'))
+ WHERE c.fill = 'ARGUMENT';
+COMMENT ON VIEW graphitron_occurrence_call_parameter_pair_rule IS 'One row the fill pair rule computes, in the shape graphitron_occurrence_call_parameter_pair stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter_pair after the fills, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.call';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.position';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.pair_coordinate IS 'the pair_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.pair_coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.directive_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.ordinal';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.owner IS 'the owner of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.owner';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.parameter_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.call_coordinate';
+
+CREATE TABLE graphitron_occurrence_call_parameter_pair (
+  graph_name      VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  position        INT       NOT NULL,
+  pair_coordinate VARCHAR   NOT NULL,
+  directive_name  VARCHAR   NOT NULL,
+  ordinal         INT       NOT NULL,
+  owner           VARCHAR   NOT NULL,
+  parameter_name  VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, call, position),
+  -- The fill it is the provenance of.
+  FOREIGN KEY (graph_name, coordinate, call, position)
+    REFERENCES graphitron_occurrence_call_parameter (graph_name, coordinate, call, position)
+    ON DELETE CASCADE,
+  -- The pair's landing under the call, so the two cannot drift.
+  FOREIGN KEY (graph_name, pair_coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+    REFERENCES graphitron_argmapping_landing
+      (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+    ON DELETE CASCADE,
+  CHECK (call_coordinate = coordinate)
+);
+COMMENT ON TABLE graphitron_occurrence_call_parameter_pair IS 'The written argMapping pair a fill came from: one row per fill a pair wrote. For example the filmId parameter of Query.filmsByOptionalLanguage''s condition takes the pair filmId: pick.languageRef.language_id, and a parameter its name or its type filled has no row.';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.coordinate IS 'the occurrence making the call; with call and position, the fill';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.call IS 'which of its calls';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.position IS 'the parameter''s position, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.pair_coordinate IS 'the element the pair''s mapping is written on; with the four columns after it and call_coordinate, the pair''s landing';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.directive_name IS 'the mapping''s directive, the one that wrote the call';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.ordinal IS 'its application''s ordinal';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.owner IS 'what the mapping is written under in its application';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.parameter_name IS 'the parameter the pair binds';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.call_coordinate IS 'the call occurrence the landing is resolved under, the fill''s own';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- The parameter an argument or input field is taken by: the PARAMETER subtype of the binding, one
 -- row per occurrence and call position, pinned to its kind through the binding's unique key.
 CREATE TABLE graphitron_occurrence_parameter (
@@ -11669,11 +11890,11 @@ COMMENT ON COLUMN graphitron_occurrence_parameter.position IS 'the parameter''s 
 COMMENT ON COLUMN graphitron_occurrence_parameter.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_call_parameter_defect
-  (graph_name, coordinate, call, call_kind, position, parameter_name, code) AS
+  (graph_name, coordinate, call, call_kind, position, parameter_name, code, detail) AS
 -- Two written fills for one parameter of a service's call: nothing says which, so the rule takes
 -- neither.
 SELECT DISTINCT w.graph_name, w.coordinate, w.call, ps.call_kind, w.position, w.parameter_name,
-       'PARAMETER_FILLED_TWICE'
+       'PARAMETER_FILLED_TWICE', CAST(NULL AS VARCHAR)
   FROM graphitron_occurrence_call_parameter_written w
   JOIN graphitron_occurrence_call_method ps
     ON ps.graph_name = w.graph_name AND ps.coordinate = w.coordinate AND ps.call = w.call
@@ -11686,7 +11907,7 @@ UNION ALL
 -- than one argument, or an argument it could take could go to another parameter, so nothing says
 -- which.
 SELECT DISTINCT c.graph_name, c.coordinate, c.call, ps.call_kind, c.position, c.parameter_name,
-       'PARAMETER_AMBIGUOUS'
+       'PARAMETER_AMBIGUOUS', CAST(NULL AS VARCHAR)
   FROM graphitron_occurrence_call_parameter_candidate c
   JOIN graphitron_occurrence_call_method ps
     ON ps.graph_name = c.graph_name AND ps.coordinate = c.coordinate AND ps.call = c.call
@@ -11698,7 +11919,8 @@ UNION ALL
 -- A parameter of a service's call no fill reaches and no argument could fill by type, where no
 -- pair names it: a pair that fills nothing is the pair's defect, already reported where it is
 -- written.
-SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
+SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED',
+       CAST(NULL AS VARCHAR)
   FROM graphitron_occurrence_call_method s
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
    AND s.call_kind = 'SERVICE'
@@ -11723,7 +11945,8 @@ SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_
 UNION ALL
 -- A parameter of a @condition's call no fill reaches, where no pair names it, on the same terms:
 -- by type pairs only where nothing else could be meant, so a parameter it leaves is unfilled.
-SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
+SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED',
+       CAST(NULL AS VARCHAR)
   FROM graphitron_occurrence_call_method s
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
    AND s.call_kind = 'CONDITION'
@@ -11736,15 +11959,48 @@ SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'condition' AND pr.owner = 'condition'
-                      AND pr.parameter_name = p.parameter_name);
+                      AND pr.parameter_name = p.parameter_name)
+UNION ALL
+-- A parameter a written pair hands one key column of a node id, of a type that column is not: the
+-- column's Java type, or a List of it where the node id is a list.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
+       'key column ' || c.column_name || ' is ' || c.binding_type || ', and the parameter it binds to is declared '
+         || p.parameter_type || ': Declare it ' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '')
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_call_parameter_pair pp
+    ON pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate AND pp.call = cp.call
+   AND pp.position = cp.position
+  JOIN graphitron_argmapping_landing_key_column kc
+    ON kc.graph_name = pp.graph_name AND kc.coordinate = pp.pair_coordinate
+   AND kc.directive_name = pp.directive_name AND kc.ordinal = pp.ordinal AND kc.owner = pp.owner
+   AND kc.parameter_name = pp.parameter_name AND kc.call_coordinate = pp.call_coordinate
+  JOIN graphitron_occurrence_node_id n
+    ON n.graph_name = kc.graph_name AND n.coordinate = kc.landing_coordinate AND n.bound = kc.bound
+   AND n.position = kc.position
+  JOIN sql_column c
+    ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+   AND c.table_name = n.table_name AND c.column_name = n.column_name
+  JOIN graphitron_occurrence_call_method m
+    ON m.graph_name = cp.graph_name AND m.coordinate = cp.coordinate AND m.call = cp.call
+  JOIN code_method_parameter p
+    ON p.source_name = m.method_source_name AND p.class_name = m.method_class_name
+   AND p.method_name = m.method_name AND p.descriptor = m.method_descriptor AND p.position = cp.position
+  JOIN graphitron_occurrence lo ON lo.graph_name = kc.graph_name AND lo.coordinate = kc.landing_coordinate
+  LEFT JOIN graphitron_argument la ON la.graph_name = lo.graph_name AND la.coordinate = lo.element_coordinate
+  LEFT JOIN graphitron_field lf ON lf.graph_name = lo.graph_name AND lf.coordinate = lo.element_coordinate
+ WHERE p.parameter_type <> CASE WHEN COALESCE(la.is_list, lf.is_list) = TRUE
+                                THEN 'java.util.List<' || c.binding_type || '>'
+                                ELSE c.binding_type END;
 COMMENT ON VIEW graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that no fill or two fills reach: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED, whether a @service or a @condition names it.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.coordinate IS 'the occurrence making the call';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call IS 'which of its calls, as graphitron_occurrence_call spells it';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.detail IS 'what the message adds about the parameter, where a code has more to say: for a key column of the wrong type, both types';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call_kind IS 'SERVICE or CONDITION, which directive wrote the call and so where the defect is reported';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.position IS 'the parameter''s position';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE, codes of graphitron_defect_type';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, codes of graphitron_defect_type';
 
 -- Where a call's parameter defect is reported, and what it is about: the reference the directive
 -- that wrote the call names its method by, a @service's or a @condition's, with the occurrence, the
@@ -11797,7 +12053,7 @@ COMMENT ON COLUMN graphitron_entry_defect_parameter.graph_name IS 'the owning gr
 COMMENT ON COLUMN graphitron_entry_defect_parameter.source_name IS 'the defect''s file';
 COMMENT ON COLUMN graphitron_entry_defect_parameter.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_parameter.source_column IS 'the defect''s column, 1-based';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_parameter.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT; with the four columns before it, the defect''s key';
 COMMENT ON COLUMN graphitron_entry_defect_parameter.coordinate IS 'the occurrence making the call, at its nested coordinate';
 COMMENT ON COLUMN graphitron_entry_defect_parameter.call IS 'which of its calls, as graphitron_occurrence_call spells it: the condition''s on one table, or the producer''s';
 COMMENT ON COLUMN graphitron_entry_defect_parameter.position IS 'the parameter''s position in the call''s method, completing the key';
@@ -14527,9 +14783,38 @@ UNION ALL
 -- A @service's or a @condition's method with a parameter no fill or two fills reach, under some
 -- occurrence of the call, at the reference: once per code, the parameters being
 -- graphitron_entry_defect_parameter's under it.
-SELECT DISTINCT p.graph_name, p.source_name, p.source_line, p.source_column, p.code,
-       CAST(NULL AS VARCHAR)
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.code, MIN(d.detail)
   FROM graphitron_entry_defect_parameter_rule p
+  JOIN graphitron_occurrence_call_parameter_defect d
+    ON d.graph_name = p.graph_name AND d.coordinate = p.coordinate AND d.call = p.call
+   AND d.position = p.position AND d.code = p.code
+ GROUP BY p.graph_name, p.source_name, p.source_line, p.source_column, p.code
+UNION ALL
+-- A written argMapping path projecting out of a node id that resolves to no one key column, where the
+-- pair is written: once per string, the key columns it could have meant being
+-- graphitron_entry_defect_key_column's under it.
+SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.code, MIN(u.detail)
+  FROM (SELECT k.graph_name, k.source_name, k.source_line, k.source_column, k.code,
+               CASE WHEN COUNT(DISTINCT k.bound) > 1
+                    THEN 'the id has a key per member of the interface or union it names'
+                    WHEN MIN(l.trailing_name) IS NOT NULL
+                    THEN '''' || MIN(l.trailing_name) || ''', which is not a key column of '''
+                         || MIN(n.node_type_name) || ''''
+                    ELSE MIN(n.node_type_name) || ', whose key is ' || COUNT(*) || ' columns' END AS detail
+          FROM graphitron_entry_defect_key_column_rule k
+          JOIN graphitron_occurrence_node_id n
+            ON n.graph_name = k.graph_name AND n.coordinate = k.landing_coordinate AND n.bound = k.bound
+           AND n.position = k.position
+          -- The landing of the pair written where the defect is.
+          JOIN graphitron_argmapping_landing l
+            ON l.graph_name = k.graph_name AND l.landing_coordinate = k.landing_coordinate
+          JOIN graphitron_argmapping_pair pr
+            ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
+           AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
+           AND pr.parameter_name = l.parameter_name AND pr.source_name = k.source_name
+           AND pr.source_line = k.source_line AND pr.source_column = k.source_column
+         GROUP BY k.graph_name, k.source_name, k.source_line, k.source_column, k.code, k.landing_coordinate) u
+ GROUP BY u.graph_name, u.source_name, u.source_line, u.source_column, u.code
 UNION ALL
 -- A @referenceFor naming a type an earlier @referenceFor on the same declaration already names, at
 -- each application after the first written. Read off the entries within one file, a declaration and
@@ -18468,6 +18753,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_call'),
   ('occurrence-depths', 'graphitron_occurrence_call_candidate'),
   ('occurrence-depths', 'graphitron_occurrence_call_method'),
+  ('occurrence-depths', 'graphitron_occurrence_call_parameter_pair'),
+  ('occurrence-depths', 'graphitron_argmapping_landing_key_column'),
   ('occurrence-depths', 'graphitron_occurrence_condition'),
   ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_parameter'),
@@ -18504,6 +18791,7 @@ INSERT INTO meta_stage_write VALUES
   ('entry-defects', 'graphitron_entry_defect_claim'),
   ('entry-defects', 'graphitron_entry_defect_member'),
   ('entry-defects', 'graphitron_entry_defect_parameter'),
+  ('entry-defects', 'graphitron_entry_defect_key_column'),
   ('entry-defects', 'graphitron_entry_defect_method'),
   ('entry-defects', 'graphitron_entry_defect_path_step'),
   ('entry-defects', 'graphitron_entry_defect_table');
@@ -18903,6 +19191,9 @@ INSERT INTO meta_grain VALUES
   ('entry-defect-member',
    'one member one defect names, in one graph',
    'graph_name, source_name, source_line, source_column, code, member_type_name', 'sdl'),
+  ('entry-defect-key-column',
+   'one key column one defect names at one node id, in one graph',
+   'graph_name, source_name, source_line, source_column, code, landing_coordinate, bound, position', 'sdl'),
   ('entry-defect-parameter',
    'one call parameter one defect names, in one graph',
    'graph_name, source_name, source_line, source_column, code, coordinate, call, position', 'sdl'),
@@ -19015,6 +19306,9 @@ INSERT INTO meta_grain VALUES
   ('graph-argmapping-pair-call',
    'one pair of one written argMapping under one occurrence of its call, in one graph',
    'graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate', 'sdl'),
+  ('graph-argmapping-pair-call-node',
+   'one node binding one written argMapping pair projects a key column out of under one occurrence of its call, in one graph',
+   'graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate, bound', 'sdl'),
   ('graph-argmapping-pair-call-step',
    'one name of one argMapping pair''s path, consumed under one occurrence of its call, in one graph',
    'graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate, consumed', 'sdl'),
@@ -19395,7 +19689,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_ARITY_EXCEEDS_SLOT',
    'A @nodeId''s node has a key of several columns and the @service parameter its decoded value goes to, or each element of it, holds one value: declare the parameter as the node''s record, or bind one key column with argMapping.', 'entry-defects'),
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
-   'A @nodeId''s node has a one-column key whose jOOQ type is not the type of the @service parameter its decoded value goes to: declare the parameter with the column''s own type.', 'entry-defects'),
+   'A key column of a @nodeId''s node, its one-column key or the column an argMapping path projects out of it, has a jOOQ type that is not the type of the parameter of the @service or @condition method it goes to: declare the parameter with the column''s own type, boxed.', 'entry-defects'),
+  ('ARGMAPPING_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_KEY_COLUMN_UNRESOLVED',
+   'An argMapping path past a @nodeId reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name the key column after the id, or bind the whole id and take its decoded key.', 'entry-defects'),
   ('NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINER_NOT_AT_A_SLOT',
    'A @nodeId(typeName:) names an interface or union, which an id decodes per member only into a @service parameter, and here the value reaches none: name one node type, or move the polymorphic id to the @service input.', 'entry-defects'),
   ('NODE_ID_SINGLE_TABLE_CONTAINER', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SINGLE_TABLE_CONTAINER',
@@ -20143,6 +20439,22 @@ INSERT INTO meta_relation VALUES
    'One next step the argMapping step rule computes from a stored step, in the shape graphitron_argmapping_step stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron assembly inserts this view''s rows for one graph and one count into graphitron_argmapping_step, a count at a time.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it. It reads the stored steps rather than itself, so the graph a writer pins reaches every join.'),
+  ('graphitron_argmapping_landing_key_column', 'graph-argmapping-pair-call-node', 'graphitron',
+   'The key column a written argMapping path projects out of the node id it lands on: one row per landing and node binding it projects from.',
+   'For example filmId: pick.languageRef.language_id under Query.filmsByOptionalLanguage takes position 0 of the language node''s key, language_id.',
+   'A fact of the landing, not of the fills that take it: which column is decided by the written pair, the call occurrence and the node binding there, never by the method or by which of a condition''s per-table calls takes it. Keyed by the landing and the use-site node binding, with foreign keys to both, so a binding that changes takes it. Written per depth inside occurrence-depths at the landing''s depth, after its node ids.'),
+  ('graphitron_argmapping_landing_key_column_rule', 'graph-argmapping-pair-call-node', 'graphitron',
+   'One row the landing key column rule computes, in the shape graphitron_argmapping_landing_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_argmapping_landing_key_column, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_call_parameter_pair', 'graph-occurrence-call-parameter', 'graphitron',
+   'The written argMapping pair a fill came from: one row per fill a pair wrote.',
+   'For example the filmId parameter of Query.filmsByOptionalLanguage''s condition takes the pair filmId: pick.languageRef.language_id, and a parameter its name or its type filled has no row.',
+   'The provenance of a fill, stated on the derived fact: whether a written pair answered decides whether the fill can project a node id''s key column, and a reader reaches the pair''s landing by keys rather than joining back on a nullable parameter name. Written per depth with the fills of each call kind.'),
+  ('graphitron_occurrence_call_parameter_pair_rule', 'graph-occurrence-call-parameter', 'graphitron',
+   'One row the fill pair rule computes, in the shape graphitron_occurrence_call_parameter_pair stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter_pair after the fills, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_argmapping_landing', 'graph-argmapping-pair-call', 'graphitron',
    'Where one written argMapping entry''s argument path lands under one occurrence of its call: one row per entry and call occurrence whose path resolves.',
    'For example input.ids on @service at Query.filmsByPath lands on Query.filmsByPath(input.ids:).',
@@ -20187,6 +20499,14 @@ INSERT INTO meta_relation VALUES
    'One member a polymorphic @nodeId''s defect names, in the shape graphitron_entry_defect_member stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a union of two node types whose @nodeId lands on a parameter taking one of their records draws a NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER row for the other.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the two per-member codes, so one statement says which members a defect names.'),
+  ('graphitron_entry_defect_key_column', 'entry-defect-key-column', 'graphitron',
+   'One key column an unresolved projection could have meant, under its defect: one row per defect, landing, node binding and key position.',
+   'For example filmId: pick.filmActor onto a FilmActor id names nothing past it, and its ARGMAPPING_KEY_COLUMN_UNRESOLVED defect has a row for each of the two key columns, actor_id and film_id.',
+   'One defect per written argMapping string, the key columns it could have meant a relation beneath it rather than a detail string, keyed to the node binding at the landing so a reader names them without parsing. With a foreign key to the defect, so a swept defect takes the rows with it.'),
+  ('graphitron_entry_defect_key_column_rule', 'entry-defect-key-column', 'graphitron',
+   'One row the unresolved projection detail rule computes, in the shape graphitron_entry_defect_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_key_column under the defects it marked, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the code, so one statement says where a defect is and which key columns it names.'),
   ('graphitron_entry_defect_parameter', 'entry-defect-parameter', 'graphitron',
    'One parameter a call parameter defect is about, under the defect: one row per defect, occurrence, call and position.',
    'For example a @condition on a field returning a union of customer and staff whose method leaves name unfilled is one PARAMETER_UNFILLED defect at the condition with a row for each table''s call.',

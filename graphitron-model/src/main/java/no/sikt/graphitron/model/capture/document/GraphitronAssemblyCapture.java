@@ -7,6 +7,7 @@ import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
 import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
 import no.sikt.graphitron.model.derive.EntryDefectClaims;
 import no.sikt.graphitron.model.derive.EntryDefectMembers;
+import no.sikt.graphitron.model.derive.EntryDefectKeyColumns;
 import no.sikt.graphitron.model.derive.EntryDefectParameters;
 import no.sikt.graphitron.model.derive.EntryDefectTables;
 import no.sikt.graphitron.model.derive.Occurrences;
@@ -161,6 +162,7 @@ public final class GraphitronAssemblyCapture {
             EntryDefectClaims.derive(dsl, graph, readAt);
             EntryDefectMembers.derive(dsl, graph, readAt);
             EntryDefectParameters.derive(dsl, graph, readAt);
+            EntryDefectKeyColumns.derive(dsl, graph, readAt);
             EntryDefectTables.derive(dsl, graph, readAt);
             ArgMappingPairDefects.derive(dsl, graph);
         }));

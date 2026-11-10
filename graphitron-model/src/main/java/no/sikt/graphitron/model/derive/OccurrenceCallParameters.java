@@ -9,6 +9,8 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
@@ -45,6 +47,7 @@ public final class OccurrenceCallParameters {
      */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
+        pairs(dsl, graph, depth, touchedAt);
         bindings(dsl, graph, depth, touchedAt);
     }
 
@@ -57,6 +60,36 @@ public final class OccurrenceCallParameters {
      */
     public static void writeConditions(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE);
+        pairs(dsl, graph, depth, touchedAt);
+    }
+
+    /**
+     * The written pair each {@code ARGUMENT} fill of the calls at {@code depth} came from, read off the
+     * fills just written and the landings the argMapping stage wrote.
+     */
+    private static void pairs(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
+        var r = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR_RULE;
+        var o = GRAPHITRON_OCCURRENCE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.POSITION, t.PAIR_COORDINATE, t.DIRECTIVE_NAME,
+                t.ORDINAL, t.OWNER, t.PARAMETER_NAME, t.CALL_COORDINATE, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.POSITION, r.PAIR_COORDINATE,
+                    r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER, r.PARAMETER_NAME, r.CALL_COORDINATE,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
+                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.POSITION)
+            .doUpdate()
+            .set(t.PAIR_COORDINATE, excluded(t.PAIR_COORDINATE))
+            .set(t.DIRECTIVE_NAME, excluded(t.DIRECTIVE_NAME))
+            .set(t.ORDINAL, excluded(t.ORDINAL))
+            .set(t.OWNER, excluded(t.OWNER))
+            .set(t.PARAMETER_NAME, excluded(t.PARAMETER_NAME))
+            .set(t.CALL_COORDINATE, excluded(t.CALL_COORDINATE))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
     }
 
     /** The fills {@code rule} states for the pinned methods of the calls at {@code depth}. */
@@ -112,6 +145,11 @@ public final class OccurrenceCallParameters {
 
     /** Deletes the fills and {@code PARAMETER} bindings no depth of this reading marked. */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var pair = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
+        dsl.deleteFrom(pair)
+            .where(pair.GRAPH_NAME.eq(graph))
+            .and(pair.TOUCHED_AT.ne(touchedAt))
+            .execute();
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         dsl.deleteFrom(c)
             .where(c.GRAPH_NAME.eq(graph))

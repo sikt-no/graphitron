@@ -83,6 +83,28 @@ public final class EntryDefectVerdict {
         return "The handle offers " + (offered.isEmpty() ? "no members." : String.join(", ", offered) + ".");
     }
 
+    /**
+     * What an unresolved projection's message adds: the key columns it could have meant, the rows of
+     * {@code graphitron_entry_defect_key_column} under the defect, in key order.
+     */
+    public static String keyColumns(DSLContext dsl, String graphName, Row row) {
+        var k = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_KEY_COLUMN;
+        var n = no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+        if (row.location() == null) {
+            return null;
+        }
+        var columns = dsl.selectDistinct(n.BOUND, n.POSITION, n.COLUMN_NAME)
+            .from(k)
+            .join(n).on(n.GRAPH_NAME.eq(k.GRAPH_NAME), n.COORDINATE.eq(k.LANDING_COORDINATE),
+                n.BOUND.eq(k.BOUND), n.POSITION.eq(k.POSITION))
+            .where(k.GRAPH_NAME.eq(graphName), k.CODE.eq(row.code()),
+                k.SOURCE_NAME.eq(row.location().getSourceName()), k.SOURCE_LINE.eq(row.location().getLine()),
+                k.SOURCE_COLUMN.eq(row.location().getColumn()))
+            .orderBy(n.BOUND, n.POSITION)
+            .fetch(n.COLUMN_NAME);
+        return columns.isEmpty() ? null : "open it with one of them: " + String.join(", ", columns);
+    }
+
     /** The build error one defect becomes, with nothing more to say about it. */
     public static ValidationError error(Row row) {
         return error(row, null);

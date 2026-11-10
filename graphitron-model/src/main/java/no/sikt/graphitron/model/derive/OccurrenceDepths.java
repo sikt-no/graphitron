@@ -47,6 +47,7 @@ public final class OccurrenceDepths {
                 Steps.writeDepth(dsl, graph, depth, touchedAt);
                 OccurrenceLifts.writeDepth(dsl, graph, depth, touchedAt);
                 OccurrenceNodeIds.writeDepth(dsl, graph, depth, touchedAt);
+                LandingKeyColumns.writeDepth(dsl, graph, depth, touchedAt);
                 OccurrenceColumns.writeDepth(dsl, graph, depth, touchedAt);
                 OccurrenceTables.writeDepth(dsl, graph, depth, touchedAt);
                 OccurrenceConditions.writeDepth(dsl, graph, depth, touchedAt);
@@ -61,6 +62,7 @@ public final class OccurrenceDepths {
         Paths.sweep(dsl, graph, touchedAt);
         Steps.sweep(dsl, graph, touchedAt);
         OccurrenceNodeIds.sweep(dsl, graph, touchedAt);
+        LandingKeyColumns.sweep(dsl, graph, touchedAt);
         OccurrenceColumns.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
     }

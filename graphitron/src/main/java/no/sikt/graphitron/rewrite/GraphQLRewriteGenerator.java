@@ -490,6 +490,7 @@ public class GraphQLRewriteGenerator {
                     ? rejected.reason()
                     : null;
                 case "SESSION_MEMBER_UNKNOWN" -> EntryDefectVerdict.offeredMembers(store.dsl(), store.graphName());
+                case "ARGMAPPING_KEY_COLUMN_UNRESOLVED" -> EntryDefectVerdict.keyColumns(store.dsl(), store.graphName(), row);
                 default -> null;
             }))
             .toList();

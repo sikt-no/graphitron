@@ -1,0 +1,57 @@
+# A written argMapping path projecting a key column out of a node id must reach one column of one
+# node, and the parameter taking it must be of that column's type. filmActorsPicked descends onto a
+# FilmActor id, whose key has two columns, naming neither; filmsByNope names a column the film key
+# does not have; filmsByEither projects out of a union's id, one key per member, which is refused for
+# now: each is refused where the pair is written, the key columns it could have meant named under
+# the defect. languagesByPrimitive takes language_id in an int, a type the column is not, refused at
+# the condition with the parameter named under it.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node { id: ID! }
+type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+type Language implements Node @table(name: "language") @node { id: ID! }
+
+union FilmOrActor = Film | FilmActor
+
+input FilmActorPick { filmActor: ID @nodeId(typeName: "FilmActor") }
+
+type Query {
+  filmActorsPicked(pick: FilmActorPick): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: pick.filmActor"}, override: true)
+  filmsByNope(id: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: id.nope"}, override: true)
+  filmsByEither(ref: ID @nodeId(typeName: "FilmOrActor")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: ref.film_id"}, override: true)
+  languagesByPrimitive(ref: ID @nodeId(typeName: "Language")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+      method: "filmsOfOptionalLanguagePrimitive", argMapping: "languageId: ref.language_id"}, override: true)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                                 coordinate
+  ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Query.filmActorsPicked
+  ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Query.filmsByNope
+  ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Query.filmsByEither
+  NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, Query.languagesByPrimitive
+  """)
+
+# The key columns each unresolved projection could have meant.
+extend schema @expectEquals(relation: "graphitron_entry_defect_key_column", rows: """
+  landing_coordinate,                     bound,             position
+  Query.filmActorsPicked(pick.filmActor:), public.film_actor, 0
+  Query.filmActorsPicked(pick.filmActor:), public.film_actor, 1
+  Query.filmsByEither(ref:),              public.film,       0
+  Query.filmsByEither(ref:),              public.film_actor, 0
+  Query.filmsByEither(ref:),              public.film_actor, 1
+  Query.filmsByNope(id:),                 public.film,       0
+  """)
+
+# The parameter whose type is not the column's.
+extend schema @assertContains(relation: "graphitron_entry_defect_parameter", rows: """
+  code,                                 coordinate,                 position, parameter_name
+  NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, Query.languagesByPrimitive, 1,        languageId
+  """)

@@ -1,0 +1,51 @@
+# Which key column a parameter takes out of a node id. A path that stops on the @nodeId slot it opens
+# hands the parameter the whole decoded key; one naming a column past it, or descending through an
+# input object onto a @nodeId input field, projects one key column, named where it is written and
+# else the node's one-column key. filmsBySlot takes its slot by name, the whole key; filmsByNamed
+# names film_id past its slot; filmsByPicked descends through pick onto film, whose node has one key
+# column. The projection is a fact of the argMapping landing, and each fill a pair wrote states it.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  title: String
+}
+
+input FilmPick { film: ID @nodeId(typeName: "Film") }
+
+type Query {
+  filmsBySlot(filmId: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals"}, override: true)
+  filmsByNamed(id: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: id.film_id"}, override: true)
+  filmsByPicked(pick: FilmPick): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: pick.film"}, override: true)
+}
+
+# Whether each written path descends past the slot it opens.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing",
+    where: "directive_name = 'condition'", rows: """
+  call_coordinate,     landing_coordinate,          trailing_name, descends
+  Query.filmsByNamed,  Query.filmsByNamed(id:),     film_id,       FALSE
+  Query.filmsByPicked, Query.filmsByPicked(pick.film:), ,          TRUE
+  """)
+
+# The key column each projecting landing takes; the whole slot takes none.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column",
+    where: "directive_name = 'condition'", rows: """
+  call_coordinate,     landing_coordinate,              bound,       position
+  Query.filmsByNamed,  Query.filmsByNamed(id:),         public.film, 0
+  Query.filmsByPicked, Query.filmsByPicked(pick.film:), public.film, 0
+  """)
+
+# The fills a written pair made state it; the one taken by name states none.
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair",
+    where: "call_coordinate LIKE 'Query.films%'", rows: """
+  coordinate,          call,                  position, parameter_name, call_coordinate
+  Query.filmsByNamed,  condition:public.film, 1,        filmId,         Query.filmsByNamed
+  Query.filmsByPicked, condition:public.film, 1,        filmId,         Query.filmsByPicked
+  """)
