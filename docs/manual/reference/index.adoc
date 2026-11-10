@@ -4,6 +4,8 @@
 
 Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
 
+These pages are where Graphitron's rules are stated: what an author may write, what each directive means, what is refused and why, and what is generated. Tests verify the rules and encode them in code; the prose that explains them lives here. A change to a rule changes the page that states it in the same commit as its code and its tests, so a rule is never only in code.
+
 == Runtime API
 
 * xref:runtime-api.adoc[Runtime API reference]: the `Graphitron.buildSchema(...)` facade (single-arg and federation two-arg overloads), the `Graphitron.newExecutionInput(...)` schema-driven factory (`DSLContext` first, then typed `contextArgument` slots reflected from your `@service` / `@condition` directives), the sealed `GraphitronContext` per-request interface (`getDslContext`, `getContextArgument`, `getValidator`), and the `NodeIdEncoder` utility (generic `encode`/`peekTypeId`/`decodeValues`/`decodeColumns` plus per-Node `encode<TypeName>` and `decode<TypeName>` helpers).
