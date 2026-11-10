@@ -17,14 +17,17 @@ Read top-down; stop at the first match.
   Add a fixture instead of an assertion.
 . *The behaviour is "this generated request must round-trip against PostgreSQL and return the right rows / fire the right number of queries / honour DataLoader batching"* → **Execution.**
   New `@Test` in `GraphQLQueryTest` (or one of the federation-/scatter-named companions).
-. *The behaviour is "this SDL pattern classifies into this variant" or "this SDL pattern produces a TypeSpec with this method shape"* → **Pipeline.**
-  New case in `GraphitronSchemaBuilderTest` (classification truth table) or a new `*PipelineTest` file.
+. *The behaviour is what the model says an example means, or what a reader makes of what the store holds for it* → **Pipeline.**
+  A fact document claiming the rows, and where the behaviour is a reader's, a test reading the document through `FactGraphs`; see <<What a test is built out of>>.
+  The classification truth tables and the corpus they read retire with the walk and take no new cases.
 . *The behaviour is "this builder helper / classifier method / writer primitive / validator rule does X on input Y"* → **Unit.**
   New case in a `*Test` next to the production class, or a `*ValidationTest` for validator rules.
 
+Tier answers how far a test runs; whether the test should exist at all is the <<Authoritative tests>> question, asked before any tier is chosen.
+
 When two tiers could apply, prefer the one that captures the behaviour most directly.
-Pipeline beats unit: per-variant structural tests are bookkeeping; the primary signal is that a realistic SDL produces a realistic `TypeSpec` end-to-end.
-Pipeline also beats compilation and execution where the behaviour can be asserted on the classified model or `TypeSpec` shape, since pipeline runs without jOOQ codegen or Postgres.
+Pipeline beats unit: per-variant structural tests are bookkeeping; the primary signal is that a realistic example captures into the rows the model states for it.
+Pipeline also beats compilation and execution where the behaviour can be asserted on the store's rows, since pipeline runs without jOOQ codegen or Postgres.
 Execution beats compilation only when SQL behaviour or row content is the contract.
 
 _Tier is determined by what's asserted, not by what module the file lives in._
@@ -56,7 +59,7 @@ Structural invariants on individual classifiers, builders, emitters, and runtime
 
 *Where:* `graphitron/src/test/java/...` next to the production class.
 
-Three sub-families:
+Sub-families:
 
 *Generator unit tests* (`TypeFetcherGeneratorTest`, `GeneratorCoverageTest`; and the `generators/schema/` subdirectory: `EnumTypeGeneratorTest`, `GraphitronFacadeGeneratorTest`, `InputTypeGeneratorTest`, etc.).
 Take pre-built model fixtures via `TestFixtures`; assert `TypeSpec` shape (method names, return types, parameter signatures).
@@ -64,6 +67,7 @@ Banned: code-string body matching on the generated `MethodSpec` body; that is wh
 
 *Validator unit tests* (`*ValidationTest` family, e.g. `ColumnFieldValidationTest`, `QueryTableFieldValidationTest`).
 Build a `GraphitronSchema` with one parent type and one field at a known coordinate; assert `validate()` outcomes by `RejectionKind` and message substring.
+The family retires with the walk and takes no new cases: a new refusal is a defect the store states, pinned by a document under `defects/` (xref:../explanation/defects-as-facts.adoc#adding-a-defect[Adding a defect]).
 
 *Builder / catalog / writer unit tests* (`JooqCatalogFindColumnTest`, `IdempotentWriterTest`, `ArgBindingMapTest`, `ServiceCatalogTest`, etc.).
 Targeted constructor or single-method assertions; no full-pipeline plumbing.
@@ -88,9 +92,27 @@ generator refuses, which the test's javadoc says.
 
 == Pipeline tier
 
-SDL → classified model → generated `TypeSpec`.
+An example captured into the store, and what the store holds for it.
 
-*Where:* `graphitron/src/test/java/no/sikt/graphitron/rewrite/`.
+*Where:* the fact documents under `graphitron-model/src/test/resources/facts/`, checked by `FactExpectationTest`, and the tests in any module that read them through `FactGraphs`.
+
+A document is SDL plus its claims, each a directive on `extend schema` naming a relation and stating rows as CSV under a header of the relation's columns:
+
+[cols="1,3"]
+|===
+| Claim | What it says
+
+| `@expectEquals(relation:, rows:)` | the relation's rows in the document's graph are exactly these
+| `@assertContains(relation:, rows:)` | these rows are among them
+| `@assertAbsent(relation:, rows:)` | none of these is among them
+| `@assertEmpty(relation:)` | the relation holds no row in the graph
+|===
+
+Each takes an optional `where:`, SQL over the relation's own columns, narrowing what the claim ranges over. A relation that carries no graph is the store's, shared by every document, and takes only `@assertContains` and `@assertAbsent`. The document's scenario is stated with the same vocabulary: `@withFacts(docs:)` pulls in the building blocks under `shapes/` and `layouts/`, `@tick(ms:)` moves the clock so a later `@withFacts` is a second reading, and `@withConfiguration` sets the configuration the following captures run under. A claim is checked against the store as the step before it left it.
+
+A test reads a document through `FactGraphs.reader()`, registered as an extension, as `FACTS.read("scenarios/field-key-row", graph -> ...)`: the graph is captured once for the run, whoever asks first, and handed over through a connection that can only select. An expectation that is not a store row, or that a module adds without editing the document, goes in an assertion file under that module's `src/test/resources/fact-assertions/`, naming its document with `@factDocument(path:)`; it only adds to what the document states.
+
+`-Dfacts=<prefix>[,<prefix>...]` narrows `FactExpectationTest` to the documents whose path starts with one, as `-Dfacts=defects/entry-defect`, for iterating on a document without capturing the rest. The whole-corpus gates skip themselves under it.
 
 == What a test is built out of
 
@@ -101,50 +123,90 @@ the reading and the model together: a derived relation asserted with no facts un
 over rows somebody wrote, and a reading asserted with nothing consuming it tests a gatherer nobody
 reads. They are two sides of one subject and testing either alone is a missed opportunity.
 
-The library is the asset, and tests are not its only reader. A corpus document already renders into
-the published site, its prose carried as SDL descriptions and its operation handed to the
-documentation renderer, so the example a test asserts against is the example a reader is shown. The
-same holds for the Java and SQL halves: a page explaining what `@service` reaches can name a method
-that exists, compiles and is captured, rather than printing a plausible-looking snippet that nothing
-checks. One example, several readers, and they cannot drift apart because there is only one of it.
+The library is the asset, and tests are not its only reader. A manual page's example selects a fact
+document and shows the rows it claims, so the example a test asserts against is the example a reader
+is shown. The same holds for the Java and SQL halves: a page explaining what `@service` reaches can
+name a method that exists, compiles and is captured, rather than printing a plausible-looking snippet
+that nothing checks. One example, several readers, and they cannot drift apart because there is only
+one of it.
 
 So a shape a test needs and cannot find is a method to write in the service module or a table to add
 to the schema, and it then serves every later test and every page that cites it; a shape stated as
 rows serves one assertion and disappears with it.
 
-Two things that are not examples, and should not be built as though they were:
+=== Where an example goes
 
-* *Rows written straight into the store.* `SeededStore` exists because the gatherers once lived in
-  a module its tests could not run a capture from. That is no longer so, and it is being dissolved.
-  A seeded fixture writes both halves of a claim and nothing checks the halves against each other,
-  so it can state a shape no reading produces: several have, and they could not fail for the reason
-  they existed. Prefer a document naming a real example.
+The folder states what the store does with a document's scenario at its end: under `scenarios` it
+generates and stores no defect, under `defects` it stores one, and `undecided` only shrinks, under a
+ceiling `FactExpectationTest` lowers and never raises, so a new document never goes there. `shapes`
+and `layouts` hold building blocks other documents pull in, which no folder claim applies to. A
+shape that meets neither `scenarios` nor `defects` is a gap to close, not to park: a refusal the
+store does not state yet is a defect to add, and one raised on a valid schema is a regression to
+fix.
+
+Within the folder, choose by subject. A document has one subject, what one page example would show,
+is named for it (`field-key-row`, `node-id-decode-unresolved-type`), and opens with a header saying
+what it pins and why each type is there.
+
+=== Look before you add
+
+Find the behaviour's keystone first, from the reference page (<<Authoritative tests>>). If it
+exists, extend it or rely on it, or state a different case of it by pulling the keystone in with
+`@withFacts` and adding only the variation, which the new document's header names. A second
+document stating the same case merges into the keystone. If there is no keystone, the document you
+are writing is the candidate, and the page's example is where it belongs.
+
+=== Set up with building blocks
+
+Open a scenario with `@withFacts(docs: [...])` pulling in the layouts and shapes it builds on, then
+state only what its subject adds. A setup repeated across scenarios is a shape waiting to be
+extracted. A defect document is a minimal pair, as
+xref:../explanation/defects-as-facts.adoc#adding-a-defect[Adding a defect] states it: the rows the
+defect draws, and a near miss that draws nothing. To read a change, move the clock with
+`@tick(ms:)`, write the next version with `@withFacts`, and claim what the store holds after it.
+
+=== Claim it in the document
+
+What the store holds for the example is claimed in the document, after the step it is about.
+Expectations that are not store rows, or that a test adds without changing the document, go in an
+assertion file in the module that answers them.
+
+=== Improve as you go
+
+Split a document that pins two subjects; merge documents that state the same example, which the
+same-example gate finds; move a document out of `undecided` into the folder whose claim it meets;
+never weaken a claim to make room for a case, give the case its own document instead. A document's
+path is referenced by the manual and by assertion files, and a move updates them in the same commit.
+
+=== Keep a store of your own only for a reason
+
+A test that writes, times or fails a store, or that captures a document under a configuration or a
+classpath its scenario does not state, captures into a store it owns. Everything else reads the
+shared population.
+
+=== What is not an example
+
+Two things are not examples, and are not built as though they were:
+
+* *Rows written straight into the store.* `SeededStore` writes both halves of a claim and nothing
+  checks the halves against each other, so it can state a shape no reading produces. It is closed
+  and dissolving: `SeedingDissolutionGateTest` holds its callers under a ceiling that only falls.
 * *Strange patterns nobody writes.* A rule that should hold across arbitrary shapes is a property
-  test generating them, not a fixture hand-building one of them. Building exotic input a row at a
-  time has a fixture's cost, a single point's coverage, and no guarantee the point is reachable.
+  test generating them, not a fixture hand-building one of them.
 
-Two shapes:
-
-*Classification truth tables:* `GraphitronSchemaBuilderTest`.
-Each variant family is a `// ===== VariantName =====` section with an enum where each constant is one `(description, SDL, assertion)` triple; one parameterised test iterates the table.
-
-*The spec-by-example corpus:* `graphitron-model/src/test/resources/corpus/`, one GraphQL document per example, loaded by `CorpusDocuments`.
-It sits beside `facts/`, whose documents are about the shape of the store rather than about a classification verdict; both are read from the source tree rather than the classpath, so what is asserted is exactly what an author edits.
-A document carries its annotated fixture, its prose as SDL descriptions, and optionally a projection operation as its last definition; the loader splits the file at that line and hands the type-system half to classification.
-Every reader of the corpus goes through the loader (`ClassifiedDslTest`, `VariantCoverageTest`, the `derive/*ShadowTest` sweeps), and nothing else lists the directory.
-A corpus document asserts nothing about the store: a store fact is pinned by a fact document under `facts/`, which states its rows by applying `@expectEquals(relation:, rows:)` to the schema, once per asserted relation, its rows as CSV; `FactExpectationTest` captures each folder and compares each block against its relation by anti-join in both directions, so a failure is a row.
-A fact document's folder is a claim about its graph (`FactDocuments`): `scenarios` generate with no defect, `defects` store at least one, and `undecided` claims nothing. `undecided` is a residue that only shrinks, under a ceiling `FactExpectationTest` lowers and never raises, so a new document never goes there; it goes in the folder whose claim it meets. A shape that meets neither is a gap to close, not to park: a refusal the store does not state yet is a defect to add, and one raised on a valid schema is a regression to fix.
-`CorpusDocumentsTest` carries the floors that keep a folder from passing while empty: a ratcheted document count, agreement between the loader's admissions and an independent listing, and a document nothing runs failing rather than being skipped.
-Adding an example is one new file; a `.java` edit means the assertion vocabulary changed, which is a prelude edit (`_prelude.graphqls`), not a container one.
+The classification walk's shapes retire with the walk and take no new cases: the truth tables in
+`GraphitronSchemaBuilderTest`, the spec-by-example corpus under
+`graphitron-model/src/test/resources/corpus/` that `CorpusDocuments` loads, and the `*PipelineTest`
+files built with `TestSchemaHelper.buildSchema(sdl)`. An inline capture of a schema is allowed only
+for a shape whose defect the store does not yet record, under the ceilings `InlineCaptureGateTest`
+holds per module.
 
 *A documentation example:* a page's examples live in an `examples` folder beside it, a `.graphql` file of named operations or fragments, each naming the fact document it selects from with `@factDocument(path:)` and the relations whose asserted rows it shows with `@factRows(relation:)`.
 `ManualExampleTest` renders each selection's SDL into the page's committed `.graphqls` and each shown relation's rows, the fact document's own `@expectEquals` block, into its committed `_`-prefixed `.adoc`, one tag region per example, which the page includes; `FactExpectationTest` holds those rows to a real capture.
 When a render legitimately changes, the test leaves this run's output under `graphitron/target/manual-examples/` and its message gives the `cp` line; never hand-edit a rendered file.
 Beside the approval sit floors for an example naming no fact document, a rendered file with no query, and an example no page beside its folder includes.
 
-*Deeper SDL → TypeSpec / variant-shape tests:* `*PipelineTest` files: `NodeIdPipelineTest`, `BatchedTableFieldPipelineTest`, `TableFieldPipelineTest`, `LookupPipelineTest`, `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`, `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`; and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
-Build a schema with `TestSchemaHelper.buildSchema(sdl)`, assert structural shape on the resulting variant or generated `TypeSpec`.
-Banned: code-string body matching.
+Banned in every test that reads generated source: code-string body matching.
 
 == Authoritative tests
 
@@ -222,7 +284,7 @@ Generated code run against a real PostgreSQL: one generated fetcher or rows meth
 
 *Where:* two modules.
 
-* `graphitron`, for the code a fixture schema generates, tested where it is generated. Each fact scenario, a document under `graphitron-model/src/test/resources/facts/scenarios`, is run in `generate-test-sources` as a generating run would run it: a `RunContext` declaring the output coordinates, captured by `GraphitronStore.captured` and generated from what it captured, over the document text and classpath corpus `FactExpectationTest` checks (`FactDocuments`), by the `GenerateTestSchemas` launcher rather than the Maven plugin, into its own package under `target/generated-test-sources/graphitron` (`no.sikt.graphitron.generated.facts.<name>`, each hyphen an underscore), and plain JUnit tests call the generated classes, typed and checked by the compiler against what was emitted. A scenario is added by adding the document, and one stating a `@withConfiguration` is not generated; the classes it names must be on the test classpath before the test sources compile, so its services live in `graphitron-sakila-service`. The fact folder says what each document is: `scenarios` generate and the store records no defect for them, `defects` never generate and always store one, and `undecided` makes no claim and only shrinks; `FactExpectationTest` holds each folder to its claim. A scenario the generator rejects stops the module's test compilation, and is a defect the store does not record. Canonical class: `ChildOutcomeExecutionTest`.
+* `graphitron`, for the code a fixture schema generates, tested where it is generated. Each fact scenario, a document under `graphitron-model/src/test/resources/facts/scenarios`, is run in `generate-test-sources` as a generating run would run it: a `RunContext` declaring the output coordinates, captured by `GraphitronStore.captured` and generated from what it captured, over the document text and classpath corpus `FactExpectationTest` checks (`FactDocuments`), by the `GenerateTestSchemas` launcher rather than the Maven plugin, into its own package under `target/generated-test-sources/graphitron` (`no.sikt.graphitron.generated.facts.<name>`, each hyphen an underscore), and plain JUnit tests call the generated classes, typed and checked by the compiler against what was emitted. A scenario is added by adding the document, and one stating a `@withConfiguration` is not generated; the classes it names must be on the test classpath before the test sources compile, so its services live in `graphitron-sakila-service`. Only `scenarios` generate (<<Where an example goes>>), so an execution test reads a scenario's generated package, the same document its pipeline claims are stated in. A scenario the generator rejects stops the module's test compilation, and is a defect the store does not record. Canonical class: `ChildOutcomeExecutionTest`.
 * `graphitron-sakila-example`, for the plugin path, the Java 17 compile, the Quarkus and HTTP wiring and federation. Canonical classes: `GraphQLQueryTest` on the Sakila fixture; `FederationEntitiesDispatchTest` on the federated fixture.
 
 Run with `mvn test -pl <module> -Plocal-db` in the web sandbox, or without the profile where Docker runs Testcontainers.
@@ -275,9 +337,9 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 |===
 | Subject | Harness | What it hands you
 
-| A relation's algebra: what a view or a check constraint returns given rows
-| `SeededStore` (`graphitron-model` test-jar)
-| Named row-inserting helpers over the generated model tables. It cannot run a crawler, which is the point: a test written against it cannot accidentally assert crawler behaviour, and it can reach states no crawler produces.
+| What the store holds for an example, and what a reader makes of it, a relation's algebra included
+| `FactGraphs` (`graphitron-model` test-jar), the default
+| A fact document's graph, captured once for the run whichever test asks first and handed over through a connection that can only select: `FactGraphs.reader()` as an extension, then `read(path, graph -> ...)`. A view's rows are claimed in the document that draws them; a check constraint is claimed by the document whose example would break it.
 
 | The store's lifetime alone
 | `FactStores` (`graphitron-model` test-jar)
@@ -287,9 +349,9 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 | `FactWriters` (`graphitron-model` test-jar)
 | The four shipped writers by name, over a store you opened from `FactStores` and a graph identity given as a name and a directory. A sibling of the capture harness rather than something under it: a writer test has no capture to run, and a captured fixture would have put rows in front of the assertion that the writer did not write.
 
-| A crawler, or agreement between a store-native relation and the classification walk
+| A store of one's own: a test that writes, times or fails a store, or captures a document under a configuration or classpath its scenario does not state
 | `CapturedStore` (`graphitron-model` test-jar)
-| A real capture over a fixture document, with the fixture file, the caller-supplied graph identity, and named arms saying what each capture's inputs are. Below the line with the capture it drives, so a client can take it without taking the generator.
+| A real capture over a document into a store the test owns, with named arms saying what each capture's inputs are; `CapturedStore.captureFolder` runs a document's rendered scenario as the population does. Below the line with the capture it drives, so a client can take it without taking the generator. Every other store-backed test reads `FactGraphs` instead.
 
 | The dev loop's own wiring, over rows only a pipeline run can produce
 | `BuiltStore` (`graphitron` test-jar)
@@ -297,16 +359,14 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 
 | Your own module's reads over a populated store
 | A fixture in your own module, over one of the above
-| Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `graphitron-lsp`'s `StoreFixture` is the same shape.
+| Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `graphitron-lsp`'s `StoreFixture` is the same shape. Both move onto `FactGraphs` as their modules migrate, keeping a store of their own only where the row above does.
 |===
 
 Where a build fixture goes is decided by the same question, one level up.
 A client's fixture that runs a real build spans two tiers, so it lives above both rather than inside the client: `graphitron-maven-plugin` holds `StoreBackedBuild` and `BuiltStoreFixture`, and the tests that read them, because the dev mojo is what wires the generator to the two clients and that wiring is what those tests are about.
 The clients publish test-jars so a relocated test keeps its own module's fixture vocabulary instead of a second copy that drifts, and neither client depends on `graphitron` at any scope; `StoreClientBoundaryTest` in each of them fails the build if one reacquires the edge, in main sources or in tests.
 
-Seeding is the method in exactly one module, the one whose subject is the DDL.
-Above that line capture is the default: the generator, the language server and the MCP server exist to turn real inputs into real rows, so a fixture that skips that step stops testing the thing.
-A seeded fixture above the model line is occasionally right and owes a reason at the call site.
+Capture is the default in every module: the generator, the language server and the MCP server exist to turn real inputs into real rows, so a fixture that skips that step stops testing the thing. `SeededStore`, the seeding harness, is closed and dissolving (<<What is not an example>>).
 
 If no harness expresses the shape you need, add it to the one that owns your subject rather than hand-rolling a helper in your test class.
 A harness carrying more helpers than any one reader needs is the cheap state; a spread of private copies that have quietly diverged is the expensive one, and it is expensive because nothing points the next author at the existing answer.

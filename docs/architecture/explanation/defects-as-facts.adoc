@@ -102,6 +102,7 @@ under several fields, is one defect; which call, which bound table and which par
 detail relation keyed by the defect plus the occurrence, the call and the parameter's position, never
 the detail string. Only locating the written directive differs by kind (Alf, 2026-11-10).
 
+[#adding-a-defect]
 == Adding a defect
 
 . Declare the code in `graphitron_defect_type`: severity, basis, `lsp_code`, a one-sentence
