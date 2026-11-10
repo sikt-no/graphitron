@@ -66,6 +66,15 @@ class FactExpectationTest {
     private static final List<String> wholeStore = new ArrayList<>();
     private static final List<String> refusedAssertions = new ArrayList<>();
 
+    /**
+     * How many pins documents make of a behaviour some other document already pins, outside its
+     * keystone: lowered as duplicates merge and never raised.
+     */
+    private static final int DUPLICATE_PINS = 110;
+
+    /** What each document's claims pin, by its path. */
+    private static final Map<String, java.util.Set<Pins.Pin>> pinned = new TreeMap<>();
+
     /** Each plain graph's facts, as {@link #SHAPE} projects them. */
     private static final Map<String, java.util.Set<String>> fingerprints = new TreeMap<>();
     private static int fields;
@@ -113,6 +122,8 @@ class FactExpectationTest {
                 verified.put(graph, verification);
                 divergences.addAll(verification.divergences().stream()
                     .map(divergence -> graph + " " + divergence).toList());
+                pinned.computeIfAbsent(graph, ignored -> new java.util.TreeSet<>())
+                    .addAll(verification.pins());
             }
         });
         for (var examined : FACTS.eachStore((dsl, held) -> {
@@ -130,6 +141,15 @@ class FactExpectationTest {
         }
         FACTS.eachStore((dsl, held) -> fingerprints(dsl, held, scenarios.keySet()))
             .forEach(fingerprints::putAll);
+        // An assertion file pins for the document it names, on the final reading it is checked against.
+        FACTS.eachStore((dsl, held) -> {
+            var byDocument = new TreeMap<String, java.util.Set<Pins.Pin>>();
+            assertionBlocks.stream().filter(block -> held.contains(block.graph()))
+                .collect(java.util.stream.Collectors.groupingBy(Block::graph))
+                .forEach((graph, files) -> byDocument.put(graph, Pins.of(dsl, files)));
+            return byDocument;
+        }).forEach(byDocument -> byDocument.forEach((graph, pins) ->
+            pinned.computeIfAbsent(graph, ignored -> new java.util.TreeSet<>()).addAll(pins)));
     }
 
     /** What one store says about the blocks its graphs declare, gathered for the cases below. */
@@ -370,6 +390,24 @@ class FactExpectationTest {
         FactDocuments.claimed().forEach((document, claim) ->
             plain.put(FactDocuments.path(claim, document), document));
         return plain;
+    }
+
+    /**
+     * Each behaviour is pinned once. A document pins a behaviour when its claims assert rows of it;
+     * a second document pinning the same shape is a second statement of one case, and merges into
+     * the first or names the case it is. Counted rather than refused, since the corpus predates the
+     * rule, and only over the whole corpus: a run narrowed by {@code -Dfacts} sees part of it.
+     */
+    @Test
+    @DisplayName("no behaviour is pinned by more documents than it was")
+    void duplicatePinsDoNotGrow() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("facts") == null,
+            "-Dfacts narrows the corpus the count is over");
+        var duplicates = Pins.duplicates(pinned);
+        assertThat(Pins.surplus(duplicates))
+            .as(() -> "pins beyond the first of each behaviour; lower DUPLICATE_PINS when documents merge:\n"
+                + String.join("\n", Pins.report(duplicates)))
+            .isEqualTo(DUPLICATE_PINS);
     }
 
     /**

@@ -9,6 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.RowN;
+import org.jooq.Select;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
 
@@ -429,6 +430,44 @@ public final class CorpusExpectations {
                 .forEach(row -> divergences.add(divergence(relation, row, Divergence.Side.NOT_DECLARED)));
         }
         return divergences;
+    }
+
+    /**
+     * The rows of {@code block}'s relation that its declared rows matched, as the store holds them
+     * and projected onto {@code keys}: a claim's grip on the store, which is what it pins. Only a
+     * claim that rows are there grips any; an absence or an emptiness matches nothing by its own
+     * statement. Within the block's graph, on the terms {@link #divergences} compares by.
+     */
+    public static java.util.Optional<Select<Record>> matched(DSLContext dsl, Block block, List<String> keys) {
+        if (block.rows().isEmpty() || (block.mode() != Mode.EQUALS && block.mode() != Mode.CONTAINS)) {
+            return java.util.Optional.empty();
+        }
+        var produced = produced(block.relation(), block.where());
+        List<String> allColumns = new ArrayList<>();
+        allColumns.add(GRAPH_COLUMN);
+        allColumns.addAll(block.columns());
+        var instants = timestampColumns(dsl, block.relation());
+        List<Field<String>> producedFields = allColumns.stream()
+            .map(column -> instants.contains(column.toUpperCase(java.util.Locale.ROOT))
+                ? epochSeconds(DSL.field(id("produced", column)))
+                : DSL.field(id("produced", column)).cast(String.class))
+            .toList();
+        Table<Record> expected = DSL.values(block.rows().stream()
+                .map(row -> {
+                    var cells = new ArrayList<Field<String>>();
+                    cells.add(DSL.val(block.graph(), String.class));
+                    row.forEach(cell -> cells.add(DSL.val(cell, String.class)));
+                    return DSL.row(cells.toArray(Field[]::new));
+                })
+                .toArray(RowN[]::new))
+            .as("EXPECTED", allColumns.stream().map(c -> c.toUpperCase(java.util.Locale.ROOT)).toArray(String[]::new));
+        List<Field<String>> expectedFields = allColumns.stream()
+            .map(column -> DSL.field(id("expected", column), String.class))
+            .toList();
+        return java.util.Optional.of(DSL.selectDistinct(
+                keys.stream().map(key -> DSL.field(id("produced", key))).toList())
+            .from(produced)
+            .whereExists(DSL.selectOne().from(expected).where(match(producedFields, expectedFields))));
     }
 
     /**

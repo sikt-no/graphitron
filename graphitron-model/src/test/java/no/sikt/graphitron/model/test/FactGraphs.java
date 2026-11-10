@@ -185,11 +185,15 @@ public final class FactGraphs implements AutoCloseable {
         shards.values().forEach(Shard::close);
     }
 
-    /** What running a scenario found: each claim's block, and how the store disagreed with it then. */
-    record Verification(String scenario, List<CorpusExpectations.Block> blocks, List<String> divergences) {
+    /**
+     * What running a scenario found: each claim's block, how the store disagreed with it then, and
+     * the behaviours the rows it matched then pin.
+     */
+    record Verification(String scenario, List<CorpusExpectations.Block> blocks, List<String> divergences,
+                        java.util.Set<Pins.Pin> pins) {
 
         Verification(String scenario) {
-            this(scenario, new ArrayList<>(), new ArrayList<>());
+            this(scenario, new ArrayList<>(), new ArrayList<>(), new java.util.TreeSet<>());
         }
 
         /** Checks {@code claim} against the store {@code dsl} writes, as the last capture left it. */
@@ -200,6 +204,7 @@ public final class FactGraphs implements AutoCloseable {
             CorpusExpectations.divergences(dsl, claimed).stream()
                 .map(divergence -> "line " + claim.line() + " " + divergence)
                 .forEach(divergences::add);
+            pins.addAll(Pins.of(dsl, claimed));
         }
     }
 
