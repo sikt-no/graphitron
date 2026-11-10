@@ -482,3 +482,26 @@ key columns' types" in "one canonical form". The body and the later paragraph no
 key field's scalar from the wire form, and the stale sentence could mislead an implementer. `@issue(key:)`
 targets are field names, so a B key with a nested selection (`@key(fields: "org { id }")`) is neither
 supported nor listed among the rejections; one line saying which would close it.
+
+Addendum to round 2 (same session, 2026-11-10): the two federation points above, checked against Apollo's
+own composition and query planner (`@apollo/composition` and `@apollo/query-planner` 2.14.4, federation
+v2.5 link). Each case composes two subgraphs, A with `Query.soknad` and `Soknad.vgsResultater: [T!]!`,
+and plans `{ soknad { vgsResultater { fag } } }`:
+
+| A's `T` / B's `T` | Composes | Jump A → B uses |
+|---|---|---|
+| No `@key`, field `id @shareable` / `@key(fields: "id")` | yes | `id` |
+| `@key(fields: "voucher", resolvable: false)` and a field `id @shareable` / keys `id` and `voucher` | yes | `id` |
+| The round-0 design: keys `id` and `id voucher`, both `resolvable: false` / keys `id` and `id voucher` | yes | `id` |
+| `@key(fields: "voucher", resolvable: false)`, only `voucher` / keys `id` and `voucher`, B has `Query.t: T` | yes | `voucher` |
+| As above plus `resultatId: ID!` (the current Goal example) / same B | no: `{ t { resultatId } }` is unsatisfiable | (does not compose) |
+| As above with `resultatId: ID! @inaccessible` / same B | yes | `voucher` |
+| `voucher` and `resultatId` / B with no root path to `T` | yes | `voucher` |
+
+So: a field of A's type that is not in A's own `@key` does carry a jump on B's key (rows 1 and 2), which
+is why the name rule is needed. Without `@shareable` the same `id` fails composition as a non-shareable
+field resolved from both subgraphs, but that check catches it only by accident. Round 1's Finding 1 held
+(row 3: the planner took the plain key). Finding 5 holds as soon as B can reach `T` any other way (row 5),
+and `@inaccessible` on A's ordinary fields is enough to make the supergraph compose (row 6). Minting
+`@inaccessible` on every ordinary field of an issuing type is therefore a working rule for Finding 5. It
+costs those fields' visibility to clients, which then read the values from B through the voucher.
