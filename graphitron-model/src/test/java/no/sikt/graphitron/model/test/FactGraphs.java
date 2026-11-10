@@ -43,7 +43,7 @@ import java.util.stream.Stream;
  * <p>A test states the schema it reads as a fact document under {@code src/test/resources/facts}
  * and reads that document's graph from here rather than capturing inline SDL for itself. A document
  * is named by its {@linkplain FactDocuments#path path}, and its graph is captured the first time any
- * class asks for it, through {@link FactDocuments#capture}, the one reading of a document, against
+ * class asks for it, by running its {@link Scenario} into {@link CapturedStore#captureFolder}, the one reading of a document, against
  * the catalog the document names and the classpath corpus every document is read over. A class
  * declares the population as an extension and reads inside a transaction:
  *
@@ -72,7 +72,9 @@ import java.util.stream.Stream;
  *
  * <p><b>Read-only.</b> A reader connects as the store's select-only database user, so a write from a
  * test is refused where it is issued. A test whose subject needs to write keeps a store of its own,
- * and captures its document into it through {@link FactDocuments#capture}.
+ * and captures its document into it by running its {@link Scenario} into
+ * {@link CapturedStore#captureFolder}. A test that only counts what a read costs reads the
+ * population through a handle whose configuration counts the statements it executes.
  *
  * <p><b>Lifetime.</b> The population lives in the root {@link ExtensionContext}'s store, so it is
  * one per run, and is closed with it.

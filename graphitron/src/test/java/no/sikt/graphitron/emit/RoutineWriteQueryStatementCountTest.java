@@ -1,19 +1,16 @@
 package no.sikt.graphitron.emit;
 
-import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.ExecuteContext;
 import org.jooq.ExecuteListener;
 import org.jooq.impl.DSL;
 import org.jooq.impl.DefaultExecuteListenerProvider;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,60 +34,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class RoutineWriteQueryStatementCountTest {
 
-    /** The narrow corpus: one coordinate, one result shape, a path of one hop, two routine arguments. */
-    private static final String ONE_COORDINATE = """
-        type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-        type Query { rental: Rental }
-        type Mutation {
-          rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
-            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-            @reference(path: [{table: "rental"}])
-        }
-        """;
-
-    /**
-     * The wide corpus: both result shapes, three admitted coordinates, one of them a path crossing two
-     * hops, plus a DML write admission refuses. Every axis the coordinate statement's
-     * correlated {@code MULTISET}s fan out over is populated more than once here, which is what
-     * makes the equality against the narrow corpus mean something.
-     */
-    private static final String MANY_COORDINATES = """
-        type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-            path: [String!]!
-            message: String!
-        }
-        union RentFilmError = DbErr
-        type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-        type RentFilmPayload {
-          rental: Rental
-          errors: [RentFilmError!]
-        }
-        type Film @table(name: "film") { title: String }
-        type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
-        input FilmInput { title: String }
-
-        type Query { rental: Rental }
-        type Mutation {
-          rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
-            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-            @reference(path: [{table: "rental"}])
-          rentFilmCustomer(inventoryId: Int!, customerId: Int!): [Customer!]!
-            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-            @reference(path: [{table: "rental"}, {table: "customer"}])
-          rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
-            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-          createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
-        }
-        """;
-
-    /** A graph that writes through no routine at all. */
-    private static final String NO_ROUTINE_WRITE = """
-        type Film @table(name: "film") { title: String }
-        input FilmInput { title: String }
-        type Query { film: Film }
-        type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
-        """;
-
     /**
      * One per grain: the occurrence, a records result's step pairing, an object result's captured
      * pairing. Three rather than four since admission is read off the occurrence statement's own
@@ -98,24 +41,17 @@ class RoutineWriteQueryStatementCountTest {
      */
     private static final int GRAINS = 3;
 
-    @TempDir
-    Path tmp;
-
-    @Test
-    void oneCoordinateCostsOneStatementPerGrain() {
-        assertThat(statementsToProduce(ONE_COORDINATE)).isEqualTo(GRAINS);
-    }
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     @Test
     void aWiderCorpusCostsTheSame() {
-        // The assertion the pin exists for. Three admitted coordinates instead of one, both result
-        // shapes instead of one, a two-hop path beside a one-hop path: every one of those is a row
-        // count, and none of them is a statement count.
+        // The assertion the pin exists for. Three admitted coordinates, both result shapes, a
+        // two-hop path beside a one-hop path: every one of those is a row count, and none of them is
+        // a statement count, which the graph with none below costs too.
         var counted = new AtomicInteger();
-        RoutineWriteQuery.Rows rows;
-        try (var store = capture(MANY_COORDINATES)) {
-            rows = RoutineWriteQuery.read(counting(store, counted));
-        }
+        var rows = FACTS.read("scenarios/routine-write",
+            graph -> RoutineWriteQuery.read(counting(graph.handle(), counted)));
         assertThat(rows.rows())
             .as("the wide corpus really is wider; an equality between two empty reads would hold"
                 + " for the wrong reason")
@@ -129,20 +65,18 @@ class RoutineWriteQueryStatementCountTest {
         // relation at a time to discover that none of them holds a row, and nothing may skip a
         // grain because an earlier one came back empty. Either shape makes the count a function of
         // the corpus in the direction the pin is blind to reading as a saving.
-        assertThat(statementsToProduce(NO_ROUTINE_WRITE)).isEqualTo(GRAINS);
+        assertThat(statementsToProduce("scenarios/producer-claim")).isEqualTo(GRAINS);
     }
 
-    /** The statements one {@link RoutineWriteQuery#read} executes for {@code sdl}. */
-    private int statementsToProduce(String sdl) {
+    /** The statements one {@link RoutineWriteQuery#read} executes over {@code path}'s graph. */
+    private static int statementsToProduce(String path) {
         var counted = new AtomicInteger();
-        try (var store = capture(sdl)) {
-            RoutineWriteQuery.read(counting(store, counted));
-        }
+        FACTS.read(path, graph -> RoutineWriteQuery.read(counting(graph.handle(), counted)));
         return counted.get();
     }
 
-    /** The fixture's own store, seen through a handle that counts the statements it executes. */
-    private static StoreHandle counting(CapturedStore store, AtomicInteger counted) {
+    /** {@code store} seen through a handle that counts the statements it executes. */
+    private static StoreHandle counting(StoreHandle store, AtomicInteger counted) {
         var configuration = store.dsl().configuration()
             .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {
                 @Override
@@ -150,13 +84,6 @@ class RoutineWriteQueryStatementCountTest {
                     counted.incrementAndGet();
                 }
             }));
-        return new StoreHandle(DSL.using(configuration), CapturedStore.GRAPH);
-    }
-
-    private CapturedStore capture(String sdl) {
-        var ctx = no.sikt.graphitron.common.configuration.TestConfiguration.testContext();
-        return CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-            CatalogInput.of(ctx),
-            TestSchemaHelper.testClasspath());
+        return new StoreHandle(DSL.using(configuration), store.graphName());
     }
 }

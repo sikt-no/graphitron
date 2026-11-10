@@ -4,6 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.model.test.Scenario;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -29,39 +30,15 @@ import static org.assertj.core.api.Assertions.tuple;
  *
  * <p>One schema carries every mutation shape so membership is tested against a live non-member: a
  * one-hop chain write, a two-hop chain write (which states the alias numbering and the per-hop
- * keying a one-hop chain leaves unstated), an object-result write, and a DML insert.
+ * keying a one-hop chain leaves unstated), an object-result write, and a DML insert. It is the
+ * {@code scenarios/routine-write} fact document's, read as text: the comparison is between the store
+ * and the classified model, which the shared fact graphs do not build, so it goes with the walk.
  */
 @PipelineTier
 class RoutineWriteQueryTest {
 
-    private static final String SDL = """
-        type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-            path: [String!]!
-            message: String!
-        }
-        union RentFilmError = DbErr
-        type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-        type RentFilmPayload {
-          rental: Rental
-          errors: [RentFilmError!]
-        }
-        type Film @table(name: "film") { title: String }
-        type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
-        input FilmInput { title: String }
-
-        type Query { rental: Rental }
-        type Mutation {
-          rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
-            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-            @reference(path: [{table: "rental"}])
-          rentFilmCustomer(inventoryId: Int!, customerId: Int!): [Customer!]!
-            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-            @reference(path: [{table: "rental"}, {table: "customer"}])
-          rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
-            @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
-          createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
-        }
-        """;
+    /** The schema the {@code scenarios/routine-write} fact document composes. */
+    private static final String SDL = Scenario.load("scenarios/routine-write").composed();
 
     @TempDir
     static Path tmp;

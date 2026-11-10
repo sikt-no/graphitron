@@ -1,7 +1,7 @@
 # A condition on the step out of a @routine write's result. The write's statement holds its locks and
 # joins nothing onward, so what it returns is re-read by its key in a statement of its own, where the
 # function's result is not there for a condition to join from: the condition written on the first
-# element after the routine draws the defect, at that element. One written on a later step joins two
+# element after the routine draws the defect, at that element, beside a table or as a step of its own. One written on a later step joins two
 # tables of the re-read and draws nothing, as the same first step does on a read.
 
 type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -15,6 +15,9 @@ type Mutation {
   rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
     @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
     @reference(path: [{table: "rental", condition: {className: "example.Ref", method: "m"}}])
+  rentFilmByCondition(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{condition: {className: "example.Ref", method: "m"}}])
   rentFilmCustomer(inventoryId: Int!, customerId: Int!): [Customer!]!
     @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
     @reference(path: [{table: "rental"}, {table: "customer", condition: {className: "example.Ref", method: "m"}}])
@@ -23,6 +26,7 @@ type Mutation {
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                      coordinate
   CONDITION_ON_WRITE_RESULT, Mutation.rentFilm
+  CONDITION_ON_WRITE_RESULT, Mutation.rentFilmByCondition
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """

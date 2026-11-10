@@ -15,7 +15,7 @@ import java.util.stream.Stream;
  * each module holds under a ceiling of its own that only falls.
  *
  * <p>Every schema a test captures is, or should be, a fact document: a test reads one from
- * {@link FactGraphs}, or captures one into a store of its own through {@link FactDocuments#capture}
+ * {@link FactGraphs}, or captures one into a store of its own through {@link CapturedStore#captureFolder}
  * where the store is its subject. A capture through any other arm states its schema inline, so this
  * counts the calls of those arms: the capturing arms of {@link CapturedStore}, the generator's own
  * {@code GraphitronStore} capture, and the fixtures above them in the modules that consume this one.

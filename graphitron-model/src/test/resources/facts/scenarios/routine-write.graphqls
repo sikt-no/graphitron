@@ -1,0 +1,52 @@
+# A @routine write the generator emits, its result re-read in a statement of its own after the write
+# commits. Records of a table are re-read along the path the field writes from the routine's result:
+# one step to rental, or on through rental's foreign key to customer. An object result is re-read by
+# the field under it whose key row takes rental's key out of the result by name. A DML insert beside
+# them is a write of another kind, through no routine.
+
+type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+  path: [String!]!
+  message: String!
+}
+union RentFilmError = DbErr
+
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
+type Film @table(name: "film") { title: String }
+type RentFilmPayload {
+  rental: Rental
+  errors: [RentFilmError!]
+}
+input FilmInput { title: String }
+
+type Query { rental: Rental }
+
+type Mutation {
+  rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentFilmCustomer(inventoryId: Int!, customerId: Int!): [Customer!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}, {table: "customer"}])
+  rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_producer_result", rows: """
+  coordinate,                shape,       table_name
+  Mutation.rentFilm,         RECORD_LIST, rental
+  Mutation.rentFilmCustomer, RECORD_LIST, customer
+  Mutation.rentFilmPayload,  OBJECT,
+  """)
+
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,                target_type, target_table
+  Mutation.rentFilm,         Rental,      rental
+  Mutation.rentFilmCustomer, Customer,    customer
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_key_row", rows: """
+  type_name,       field_name, kind,    table_name, arity
+  RentFilmPayload, rental,     COLUMNS, rental,     ONE
+  """)

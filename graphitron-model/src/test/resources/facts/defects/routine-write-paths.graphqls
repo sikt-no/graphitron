@@ -1,0 +1,40 @@
+# A path a @routine write leads its result on is the path family's to judge, as any field's is. A
+# @reference on a write returning an object reaches a type with no table, and a written path ending
+# on rental under a field returning Actor lands off its target, each at its own position. The same
+# write writing its path to the table it returns draws neither.
+
+type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+union WriteError = DbErr
+
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+type Actor @table(name: "actor") { actorId: Int! @field(name: "actor_id") }
+type RentFilmPayload { rental: Rental errors: [WriteError] }
+
+type Query {
+  rentals: [Rental]
+  actors: [Actor]
+}
+
+type Mutation {
+  rentFilmPathOnObject(inventoryId: Int!, customerId: Int!): RentFilmPayload
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentFilmLandingElsewhere(inventoryId: Int!, customerId: Int!): [Actor!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                           coordinate
+  REFERENCE_WITHOUT_TARGET_TABLE, Mutation.rentFilmPathOnObject
+  NO_ROUTE_TO_TARGET,             Mutation.rentFilmLandingElsewhere
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                           coordinate
+  REFERENCE_WITHOUT_TARGET_TABLE, Mutation.rentFilm
+  NO_ROUTE_TO_TARGET,             Mutation.rentFilm
+  """)
