@@ -97,13 +97,13 @@ consumer writes:
   discipline, not build-enforced. A violation surfaces as rows under the wrong parent at runtime, not as
   a red build, so the fixture's own test is the only thing standing between you and that symptom.
 
-**The emitter surface, which inverts.** On the emit side the plan already decided. A command carries its
-own driving relation (`LaunchSource.AnchorTable` carries the table; `ParentCorrelation.parentKeyColumns`
-is the batch grain, and it is a pure projection off the correlation arm so grain and topology cannot
-drift apart). So when you are in `ProjectionUnitRenderer` or `BatchedRowsFragments`, read the
-`ParentCorrelation` arm to learn what the grain already is. Finding yourself *choosing* a grain or a
-driving table inside a renderer is the smell of an incomplete command, not a query-authoring question:
-fix the plan.
+**The emitter surface.** An emitter owns its own query, in `no.sikt.graphitron.emit`: a `<Part>Query`
+such as `RoutineWriteQuery` reads the store once per run at the grain its emitter renders, and the
+emitter renders from those rows with nothing between them. So the grain question is this skill's
+question again, asked of that query: name what one row means, drive from the relation that owns the
+key, and pin the rows with a fact document's claim. The command tier (`plan`, `command`, and the
+renderers folding its rows) is retiring and takes no new work, so a grain is never chosen inside a
+renderer there.
 
 ## 5. Close with the pin
 
