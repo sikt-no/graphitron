@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.ArgumentScopeTables;
 import no.sikt.graphitron.model.capture.document.EmittedAnchor;
 import no.sikt.graphitron.model.derive.ColumnSpellings;
+import no.sikt.graphitron.model.derive.MintedKeys;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -127,6 +128,8 @@ public final class SeededStore {
         // call, so a fixture cannot hold its own idea of what the emitted population is.
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
+            // The minted keys first, which the emitted population's minted applications render.
+            MintedKeys.derive(dsl, graph);
             EmittedAnchor.derive(dsl, graph, SEED_INSTANT);
         }
         transcribeSupertypes(dsl);

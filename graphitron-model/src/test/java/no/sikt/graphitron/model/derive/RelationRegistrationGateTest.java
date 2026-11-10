@@ -278,6 +278,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphql_element_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);
         registrations.put("graphitron_node", Arm.DERIVED);
+        registrations.put("graphitron_minted_key", Arm.DERIVED);
         registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
         // The legacy key shape each type id answers to and the rules a stated one breaks, both
         // written by one stage; GraphitronSchema has no word for either, and the node-legacy-key
@@ -436,6 +437,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_binding", Arm.DERIVED);
         registrations.put("graphitron_occurrence_column", Arm.DERIVED);
         registrations.put("graphitron_occurrence_column_rule", Arm.DERIVED);
+        registrations.put("graphitron_minted_key_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_candidate", Arm.DERIVED);

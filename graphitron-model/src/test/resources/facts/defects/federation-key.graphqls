@@ -93,6 +93,17 @@ extend schema @expectEquals(relation: "graphitron_directive_application", where:
   Film
   """)
 
+# The keys the rule mints, as the stage states them before the emitted population renders them:
+# each the node's id, resolvable, after the keys its author wrote.
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name, role, fields, resolvable, ordinal
+  Address,   NODE, id,     TRUE,       1
+  Category,  NODE, id,     TRUE,       1
+  City,      NODE, id,     TRUE,       1
+  Country,   NODE, id,     TRUE,       1
+  Film,      NODE, id,     TRUE,       0
+  """)
+
 # The key the rule mints is the node's id, resolvable. The values are SDL, quotes and all, which a
 # CSV cell would unquote, so they are stated in the predicate: a wrong value drops its row.
 extend schema @expectEquals(relation: "graphitron_directive_application_arg", where: """

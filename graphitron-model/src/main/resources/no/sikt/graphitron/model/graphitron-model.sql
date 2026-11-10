@@ -7519,44 +7519,80 @@ COMMENT ON VIEW graphitron_inherited_directive IS 'The federation directives a m
 -- COMMENT ON COLUMN graphitron_inherited_directive.ordinal IS 'a tag''s position in the first carrier''s order, the first carrier being the least coordinate; zero on @shareable';
 -- COMMENT ON COLUMN graphitron_inherited_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable';
 
-CREATE VIEW graphitron_directive_application_minted
-  (graph_name, coordinate, directive_name, ordinal, origin,
-   source_name, source_line, source_column) AS
--- Federation's entity rule: a node of a federated graph gets @key(fields: "id") unless an authored
--- key already states that contract, federation needing the entity declaration in the emitted SDL and
--- a node carrying a globally unique id by definition. A node is graphitron_node's, explicit or
--- inferred from the table's node metadata alike, and a graph is federated however it opted in. A
--- stub, @node(resolvable: false), is another subgraph's to resolve and has no id field to key on.
-SELECT n.graph_name, n.type_name, 'key',
+CREATE TABLE graphitron_minted_key (
+  graph_name  VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  role        VARCHAR NOT NULL,
+  fields      VARCHAR NOT NULL,
+  resolvable  BOOLEAN NOT NULL,
+  ordinal     INT     NOT NULL,
+  PRIMARY KEY (graph_name, type_name, role),
+  UNIQUE (graph_name, type_name, ordinal),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_tabletype (graph_name, type_name)
+    ON DELETE CASCADE,
+  CHECK (role IN ('NODE'))
+);
+COMMENT ON TABLE graphitron_minted_key IS 'One federation key a graph mints on one of its table-bound types, with the rule that minted it. For example a node type of a federation-linked graph whose author wrote no id key carries one NODE row, fields id and resolvable.';
+COMMENT ON COLUMN graphitron_minted_key.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_minted_key.type_name IS 'the type the key is minted on. Into graphitron_tabletype because every rule minting a key mints it on a table-bound type, and cascading because a type that stops resolving to a table stops carrying one';
+COMMENT ON COLUMN graphitron_minted_key.role IS 'the rule that minted the key: NODE, federation''s entity rule, a resolvable node of a federated graph keyed by its id where no authored key states that contract';
+COMMENT ON COLUMN graphitron_minted_key.fields IS 'the key''s field set as federation spells it inside @key(fields:), unquoted: id for a NODE key';
+COMMENT ON COLUMN graphitron_minted_key.resolvable IS 'what the key''s resolvable: argument says, whether this subgraph resolves the entity by it: true for a NODE key, a stub never being minted one';
+COMMENT ON COLUMN graphitron_minted_key.ordinal IS 'the key''s place among the type''s @key applications: after every key its author wrote, then in the order of the roles that minted keys on it. Stated here rather than counted by each set that renders the application, so the application and its arguments cannot disagree about which @key they are';
+
+-- Federation's entity rule: a node of a federated graph is keyed by its id unless an authored key
+-- already states that contract, federation needing the entity declaration in the emitted SDL and a
+-- node carrying a globally unique id by definition. A node is graphitron_node's, explicit or inferred
+-- from the table's node metadata alike, and a graph is federated however it opted in. A stub,
+-- @node(resolvable: false), is another subgraph's to resolve and has no id field to key on. The key
+-- comes after every key the author wrote. Decided from the transcription, the node relation and the
+-- link, all upstream of the emitted population; the application sets join the element themselves.
+CREATE VIEW graphitron_minted_key_rule
+  (graph_name, type_name, role, fields, resolvable, ordinal) AS
+SELECT n.graph_name, n.type_name, 'NODE', 'id', TRUE,
        CAST((SELECT COUNT(*) FROM graphql_directive_application d
               WHERE d.graph_name = n.graph_name AND d.coordinate = n.type_name
-                AND d.directive_name = 'key') AS INT),
-       'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+                AND d.directive_name = 'key') AS INT)
   FROM graphitron_node n
-  JOIN graphitron_element e ON e.graph_name = n.graph_name AND e.coordinate = n.type_name
  WHERE n.resolvable
    AND EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
    -- An authored key states the id contract when it selects one path and that path is id. The
    -- decode is reached through the application the corpus honours, at the at sign both share.
+   -- Positions are dense from zero, so one selection whose one segment is id is the selection at
+   -- zero, its segment at zero named id, with no selection at one and no second segment: each a
+   -- probe on the entries' whole key.
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                     JOIN graphitron_ast_federation_key_entry k
-                       ON k.graph_name = d.graph_name AND k.source_name = d.source_name
-                      AND k.source_line = d.source_line AND k.source_column = d.source_column
+                     JOIN graphitron_ast_federation_key_segment_entry g
+                       ON g.graph_name = d.graph_name AND g.source_name = d.source_name
+                      AND g.source_line = d.source_line AND g.source_column = d.source_column
+                      AND g.position = 0 AND g.segment_position = 0 AND g.segment_name = 'id'
                     WHERE d.graph_name = n.graph_name AND d.coordinate = n.type_name
                       AND d.directive_name = 'key'
-                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_selection_entry p
-                                WHERE p.graph_name = k.graph_name AND p.source_name = k.source_name
-                                  AND p.source_line = k.source_line
-                                  AND p.source_column = k.source_column)
-                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_segment_entry g
-                                WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
-                                  AND g.source_line = k.source_line
-                                  AND g.source_column = k.source_column)
-                      AND EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry g
-                                   WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
-                                     AND g.source_line = k.source_line
-                                     AND g.source_column = k.source_column
-                                     AND g.segment_name = 'id'))
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_selection_entry p
+                                       WHERE p.graph_name = g.graph_name AND p.source_name = g.source_name
+                                         AND p.source_line = g.source_line
+                                         AND p.source_column = g.source_column AND p.position = 1)
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry h
+                                       WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
+                                         AND h.source_line = g.source_line
+                                         AND h.source_column = g.source_column AND h.position = 0
+                                         AND h.segment_position = 1));
+COMMENT ON VIEW graphitron_minted_key_rule IS 'One key the minting rules compute, in the shape graphitron_minted_key stores: the rules themselves, evaluated on demand rather than read off disk. For example the minted-keys stage writes this view''s rows for one graph into graphitron_minted_key, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_minted_key_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_minted_key_rule.type_name IS 'the type the key is minted on';
+-- COMMENT ON COLUMN graphitron_minted_key_rule.role IS 'the rule that mints it';
+-- COMMENT ON COLUMN graphitron_minted_key_rule.fields IS 'the key''s field set, unquoted';
+-- COMMENT ON COLUMN graphitron_minted_key_rule.resolvable IS 'what the key''s resolvable: argument says';
+-- COMMENT ON COLUMN graphitron_minted_key_rule.ordinal IS 'the key''s place among the type''s @key applications';
+
+CREATE VIEW graphitron_directive_application_minted
+  (graph_name, coordinate, directive_name, ordinal, origin,
+   source_name, source_line, source_column) AS
+-- Every key graphitron_minted_key states, on an emitted type, at the ordinal it states.
+SELECT k.graph_name, k.type_name, 'key', k.ordinal,
+       'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+  FROM graphitron_minted_key k
+  JOIN graphitron_element e ON e.graph_name = k.graph_name AND e.coordinate = k.type_name
 UNION ALL
 SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal,
        'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
@@ -7608,27 +7644,28 @@ COMMENT ON VIEW graphitron_directive_application_arg_configured IS 'One of the t
 
 CREATE VIEW graphitron_directive_application_arg_minted
   (graph_name, coordinate, directive_name, ordinal, directive_argument_name, value_sdl) AS
--- Every minted key is the entity rule's, and the rule states one key: the node's id, resolvable, an
--- opt-out being something only an author can write.
-SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'fields', '"id"'
-  FROM graphitron_directive_application_minted m
- WHERE m.directive_name = 'key'
+-- A minted key's two arguments, as graphitron_minted_key states them.
+SELECT k.graph_name, k.type_name, 'key', k.ordinal, 'fields', '"' || k.fields || '"'
+  FROM graphitron_minted_key k
+  JOIN graphitron_element e ON e.graph_name = k.graph_name AND e.coordinate = k.type_name
 UNION ALL
-SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'resolvable', 'true'
-  FROM graphitron_directive_application_minted m
- WHERE m.directive_name = 'key'
+SELECT k.graph_name, k.type_name, 'key', k.ordinal, 'resolvable',
+       CASE WHEN k.resolvable THEN 'true' ELSE 'false' END
+  FROM graphitron_minted_key k
+  JOIN graphitron_element e ON e.graph_name = k.graph_name AND e.coordinate = k.type_name
 UNION ALL
 SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal, 'name', i.value_sdl
   FROM graphitron_inherited_directive i
   JOIN graphitron_element e ON e.graph_name = i.graph_name AND e.coordinate = i.type_name
  WHERE i.directive_name = 'tag'
 UNION ALL
-SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'typeId',
-       '"' || REPLACE(REPLACE(t.type_id, '\', '\\'), '"', '\"') || '"'
-  FROM graphitron_directive_application_minted m
-  JOIN graphitron_synthesized_node_type_id t
-    ON t.graph_name = m.graph_name AND t.type_name = m.coordinate
- WHERE m.directive_name = 'nodeType';
+SELECT t.graph_name, t.type_name, 'nodeType',
+       CAST((SELECT COUNT(*) FROM graphql_directive_application d
+              WHERE d.graph_name = t.graph_name AND d.coordinate = t.type_name
+                AND d.directive_name = 'nodeType') AS INT),
+       'typeId', '"' || REPLACE(REPLACE(t.type_id, '\', '\\'), '"', '\"') || '"'
+  FROM graphitron_synthesized_node_type_id t
+  JOIN graphitron_element e ON e.graph_name = t.graph_name AND e.coordinate = t.type_name;
 COMMENT ON VIEW graphitron_directive_application_arg_minted IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument macro expansion passes to an application it adds. For example the fields: "id" and resolvable: true of a synthesised @key are two rows here.';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_minted.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_minted.coordinate IS 'the owning application''s coordinate';
@@ -17755,30 +17792,31 @@ INSERT INTO meta_stage VALUES
   ('table-types', 'graphitron', 5, 'no.sikt.graphitron.model.derive.TableTypes'),
   ('nodes', 'graphitron', 6, 'no.sikt.graphitron.model.derive.Nodes'),
   ('federation-link', 'graphitron', 7, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
-  ('emitted', 'graphitron', 8, 'no.sikt.graphitron.model.capture.document.EmittedAnchor'),
-  ('federation-imports', 'graphitron', 9, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
-  ('federation-vocabulary', 'graphitron', 10, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
-  ('argmapping-candidates', 'graphitron', 11, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
-  ('node-key-columns', 'graphitron', 12, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
-  ('node-legacy-key-shapes', 'graphitron', 13, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
-  ('field-targets', 'graphitron', 14, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
-  ('producer-claims', 'graphitron', 15, 'no.sikt.graphitron.model.derive.ProducerClaims'),
-  ('binding-claims', 'graphitron', 16, 'no.sikt.graphitron.model.derive.BindingClaims'),
-  ('type-claims', 'graphitron', 17, 'no.sikt.graphitron.model.derive.TypeClaims'),
-  ('spelled-tables', 'graphitron', 18, 'no.sikt.graphitron.model.derive.SpelledTables'),
-  ('path-elements', 'graphitron', 19, 'no.sikt.graphitron.model.derive.PathElements'),
-  ('routine-results', 'graphitron', 20, 'no.sikt.graphitron.model.derive.RoutineResults'),
-  ('occurrences', 'graphitron', 21, 'no.sikt.graphitron.model.derive.Occurrences'),
-  ('argmapping-landings', 'graphitron', 22, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
-  ('path-claims', 'graphitron', 23, 'no.sikt.graphitron.model.derive.PathClaims'),
-  ('type-backings', 'graphitron', 24, 'no.sikt.graphitron.model.derive.TypeBackings'),
-  ('fetchers', 'graphitron', 25, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('field-key-rows', 'graphitron', 26, 'no.sikt.graphitron.model.derive.FieldKeyRows'),
-  ('occurrence-participants', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-depths', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-values', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('outbox', 'graphitron', 30, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 31, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('minted-keys', 'graphitron', 8, 'no.sikt.graphitron.model.derive.MintedKeys'),
+  ('emitted', 'graphitron', 9, 'no.sikt.graphitron.model.capture.document.EmittedAnchor'),
+  ('federation-imports', 'graphitron', 10, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
+  ('federation-vocabulary', 'graphitron', 11, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
+  ('argmapping-candidates', 'graphitron', 12, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
+  ('node-key-columns', 'graphitron', 13, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
+  ('node-legacy-key-shapes', 'graphitron', 14, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
+  ('field-targets', 'graphitron', 15, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 16, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 17, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 18, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 19, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 20, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 21, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 22, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 23, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 24, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 25, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 26, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('field-key-rows', 'graphitron', 27, 'no.sikt.graphitron.model.derive.FieldKeyRows'),
+  ('occurrence-participants', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-depths', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('outbox', 'graphitron', 31, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 32, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -17801,6 +17839,7 @@ INSERT INTO meta_stage_write VALUES
   ('call-context-keys', 'graphitron_call_context_key'),
   ('table-types', 'graphitron_tabletype'),
   ('nodes', 'graphitron_node'),
+  ('minted-keys', 'graphitron_minted_key'),
   ('federation-link', 'graphitron_federation_link'),
   ('emitted', 'graphitron_argument'),
   ('emitted', 'graphitron_carrier_directive'),
@@ -18484,6 +18523,9 @@ INSERT INTO meta_grain VALUES
   ('node-type',
    'one graph type that is a node, in one graph',
    'graph_name, type_name', 'catalog'),
+  ('minted-key',
+   'one federation key a macro mints on one type, by the rule that minted it',
+   'graph_name, type_name, role', 'sdl'),
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
    'graph_name, type_name, position', 'catalog'),
@@ -19998,6 +20040,14 @@ INSERT INTO meta_relation VALUES
    'Which of a graph''s types are nodes, with the wire type id each answers to: one row per node type, from the authored population and the published one alike.',
    'For example a Customer carrying @node over @table draws a row, a type merely implementing Node over a table whose class publishes __NODE_TYPE_ID draws one beside it, and a @node on a type with no @table draws none.',
    'Nodehood as a resolved fact rather than a membership view over two arms, which is the difference between what an author wrote and what took effect. @node only takes effect on a type that also carries @table, so the table binding is the precondition on both arms and not a filter a reader remembers; a @node on an unbound type stays in the decode, and the anti-join between the two is where an author is told the directive did nothing. The type id rides along because it is total over this population and over no other: three tiers answer, the author''s declaration, the backing class''s published constant and the type''s own name, and the last always answers, so a reader encoding an id needs no fallback and the column needs no nullness. Which tier answered is a column because a diagnostic about two types colliding on one id has to say where each came from. The key columns are not here and that is deliberate: an author may declare the id and leave the columns to the catalog or the reverse, so the two axes resolve separately and a single declared-versus-inferred flag over the node would be wrong for half the schemas that have one. Written as a stage of the graphitron gatherer after the binding it stands on, both sources being in hand there: the catalog crawler has flushed and the @node decode is the gatherer''s own.'),
+  ('graphitron_minted_key', 'minted-key', 'graphitron',
+   'One federation key a graph mints on one of its table-bound types, with the rule that minted it.',
+   'For example a node type of a federation-linked graph whose author wrote no id key carries one NODE row, fields id and resolvable.',
+   'Which keys a macro adds was a membership rule inside the minted application view, and the argument view read that view and hardcoded what every minted key said, because the entity rule was the only one. A relation of its own lets more than one rule mint a key, each a role with its own field set and resolvability, and lets both sets that render the application read the same row, so no view reads another and no argument is assumed. Decided upstream of the emitted population, from graphitron_node, the federation link and the authored keys, so the stage that writes it runs before emitted; the application sets join graphitron_element as they did, so a key is rendered only on a type the graph emits. The ordinal is stated here for the same reason: the application and its arguments name one @key between them.'),
+  ('graphitron_minted_key_rule', 'minted-key', 'graphitron',
+   'One key the minting rules compute, in the shape graphitron_minted_key stores: the rules themselves, evaluated on demand rather than read off disk.',
+   'For example the minted-keys stage writes this view''s rows for one graph into graphitron_minted_key, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_node_keycolumn', 'node-key-position', 'graphitron',
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',

@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.EntryDefects;
+import no.sikt.graphitron.model.derive.MintedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -150,6 +151,9 @@ public final class GraphitronAstCapture {
         new AnchorStage("nodes", Nodes.class, (dsl, graph, readAt) -> Nodes.derive(dsl, graph)),
         // Whether the graph opts in to federation, which the key mint below reads.
         new AnchorStage("federation-link", FederationLinks.class, FederationLinks::link),
+        // The keys federation's rules mint, from the nodes and the link just written, ahead of the
+        // emitted population whose minted applications render them.
+        new AnchorStage("minted-keys", MintedKeys.class, (dsl, graph, readAt) -> MintedKeys.derive(dsl, graph)),
         // Then what the applications just anchored mint. Second by our choice rather than by
         // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
         // siblings, each decoded from its own position and reading nothing of the other. It is
