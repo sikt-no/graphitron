@@ -1,9 +1,10 @@
 # The table an occurrence's rows or value land on, its TABLE binding. A field whose values are a
 # table's rows binds that table: below a source where its need lands, at a root, which has no need,
-# its type's table or each participant's. An argument or input field no column or node id takes
-# binds where its need lands when it is an input object, whose fields filter there, or a scalar a
-# @condition takes; a scalar with a column binds that column instead, and a scalar nothing filters
-# by, a page size, binds nothing.
+# its type's table or each participant's, the type a connection carries for a field returning one,
+# so filmsPaged binds film. An argument or input field no column or node id takes binds where its
+# need lands when it is an input object, whose fields filter there, or a scalar a @condition takes;
+# a scalar with a column binds that column instead, and a scalar nothing filters by, a page size,
+# binds nothing.
 
 type Film @table(name: "film") {
     title: String
@@ -32,6 +33,7 @@ input YearSpan {
 
 type Query {
     films(filter: FilmFilter, title: String, first: Int): [Film!]!
+    filmsPaged(filter: FilmFilter): [Film!]! @asConnection
     search: [Searchable!]!
     filmsByPrefix(titlePrefix: String @condition(condition: {
         className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -47,6 +49,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding_table", row
   Query.films(filter:),             public.film,     film
   Query.filmsByPrefix,              public.film,     film
   Query.filmsByPrefix(titlePrefix:), public.film,    film
+  Query.filmsPaged,                 public.film,     film
+  Query.filmsPaged(filter.span:),   public.film,     film
+  Query.filmsPaged(filter:),        public.film,     film
   Query.search,                     public.film,     film
   Query.search,                     public.language, language
   """)

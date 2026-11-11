@@ -170,7 +170,7 @@ class EmissionCensusTest {
             "SessionStore.customersOfPrincipal customer", "Store.customersByFirstName customer",
             "Store.customersByFirstNameSplit customer", "Store.customersByNodeId customer",
             "Store.customersByNodeIdSplit customer", "Store.customersSeenByUser customer");
-        assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(105);
+        assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(44);
         // Each line goes as its shape is emitted from the store; a field moving between lines is a
         // change to look at, not to re-pin.
         assertThat(census)

@@ -37,7 +37,6 @@ import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
-import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
@@ -188,32 +187,17 @@ public final class ConditionQuery {
         var paths = ArgumentPaths.read(store);
         var steps = steps(store);
         var parents = parents(store);
-        // The rows: a field and each table it is bound to, or that its arguments are read from. A
-        // connection's field is bound to its carrier, not a table, and its arguments still name the
-        // table they filter.
-        var bt = GRAPHITRON_OCCURRENCE_BINDING_TABLE.as("bt");
+        // The rows: a field and each table it is bound to, where its query starts and its filter
+        // applies.
+        var rb = GRAPHITRON_OCCURRENCE_BINDING_TABLE.as("rb");
+        var rb2 = GRAPHITRON_OCCURRENCE_BINDING_TABLE.as("rb2");
         var fo = GRAPHITRON_OCCURRENCE.as("fo");
-        var ao = GRAPHITRON_OCCURRENCE.as("ao");
-        var as = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("as");
-        var rowTables = select(bt.GRAPH_NAME, bt.COORDINATE, bt.BOUND, bt.TABLE_SOURCE_NAME, bt.TABLE_SCHEMA, bt.TABLE_NAME)
-            .from(bt)
-            .join(fo).on(fo.GRAPH_NAME.eq(bt.GRAPH_NAME), fo.COORDINATE.eq(bt.COORDINATE), fo.KIND.eq("FIELD"))
-            .where(bt.GRAPH_NAME.eq(store.graphName()))
-            .union(select(ao.GRAPH_NAME, ao.FIELD_COORDINATE, concat(as.TABLE_SCHEMA, inline("."), as.TABLE_NAME),
-                    as.TABLE_SOURCE_NAME, as.TABLE_SCHEMA, as.TABLE_NAME)
-                .from(ao)
-                .join(as).on(as.GRAPH_NAME.eq(ao.GRAPH_NAME), as.COORDINATE.eq(ao.COORDINATE))
-                .where(ao.GRAPH_NAME.eq(store.graphName()), ao.KIND.eq("FIELD_ARGUMENT")));
-        var rb = rowTables.asTable("rb", "graph_name", "coordinate", "bound", "table_source_name", "table_schema",
-            "table_name");
-        var rb2 = rowTables.asTable("rb2", "graph_name", "coordinate", "bound", "table_source_name", "table_schema",
-            "table_name");
-        var rbGraph = rb.field("graph_name", String.class);
-        var rbCoordinate = rb.field("coordinate", String.class);
-        var rbBound = rb.field("bound", String.class);
-        var rbSource = rb.field("table_source_name", String.class);
-        var rbSchema = rb.field("table_schema", String.class);
-        var rbTable = rb.field("table_name", String.class);
+        var rbGraph = rb.GRAPH_NAME;
+        var rbCoordinate = rb.COORDINATE;
+        var rbBound = rb.BOUND;
+        var rbSource = rb.TABLE_SOURCE_NAME;
+        var rbSchema = rb.TABLE_SCHEMA;
+        var rbTable = rb.TABLE_NAME;
         var rt = SQL_TABLE.as("rt");
         var rs = SQL_SCHEMA.as("rs");
         var rp = GRAPHITRON_OCCURRENCE_PRODUCER.as("rp");
@@ -310,17 +294,19 @@ public final class ConditionQuery {
                     cc.BOUND.eq(rbBound).or(cb.KIND.eq("NODE_ID")))
                 .orderBy(cc.COORDINATE));
         var tables = field(selectCount().from(rb2)
-            .where(rb2.field("graph_name", String.class).eq(rbGraph), rb2.field("coordinate", String.class).eq(rbCoordinate)));
+            .where(rb2.GRAPH_NAME.eq(rbGraph), rb2.COORDINATE.eq(rbCoordinate)));
 
         var out = new ArrayList<Row>();
         store.dsl()
             .select(rbCoordinate, rp.KIND, rt.TABLE_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN, rt.JOOQ_NAME,
                 rt.RECORD_CLASS_FQN, terms, calls, tables)
             .from(rb)
+            .join(fo).on(fo.GRAPH_NAME.eq(rbGraph), fo.COORDINATE.eq(rbCoordinate), fo.KIND.eq("FIELD"))
             .join(rt).on(rt.SOURCE_NAME.eq(rbSource), rt.TABLE_SCHEMA.eq(rbSchema),
                 rt.TABLE_NAME.eq(rbTable))
             .join(rs).on(rs.SOURCE_NAME.eq(rt.SOURCE_NAME), rs.TABLE_SCHEMA.eq(rt.TABLE_SCHEMA))
             .leftJoin(rp).on(rp.GRAPH_NAME.eq(rbGraph), rp.COORDINATE.eq(rbCoordinate))
+            .where(rbGraph.eq(store.graphName()))
             .orderBy(rbCoordinate, rt.TABLE_NAME)
             .forEach(r -> {
                 var applied = r.value9().map(k -> new Applied(new Call(k.value1(), k.value2(), k.value4(),
