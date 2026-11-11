@@ -13350,6 +13350,104 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYL
 
 COMMENT ON VIEW graphitron_outbox_entry_defect_rule IS 'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.';
 
+CREATE TABLE graphitron_key_field_binding (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  directive_name    VARCHAR NOT NULL,
+  ordinal           INT     NOT NULL,
+  position          INT     NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
+  bound             VARCHAR NOT NULL,
+  kind              VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, directive_name, ordinal, position),
+  FOREIGN KEY (graph_name, type_name, directive_name, ordinal)
+    REFERENCES graphitron_directive_application (graph_name, coordinate, directive_name, ordinal)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, table_source_name, table_schema, table_name)
+    REFERENCES graphitron_tabletype (graph_name, type_name, table_source_name, table_schema, table_name)
+    ON DELETE CASCADE,
+  CHECK (directive_name = 'key'),
+  CHECK (position >= 0),
+  CHECK (coordinate = type_name || '.' || field_name),
+  CHECK (bound = table_schema || '.' || table_name),
+  CHECK (kind IN ('COLUMN', 'NODE_ID')),
+  -- The node id binds only as a key's sole field; the rule writes the "sole" half, which spans rows.
+  CHECK (kind <> 'NODE_ID' OR position = 0)
+);
+COMMENT ON TABLE graphitron_key_field_binding IS 'One field an authored federation key selects on a table-bound object type, and how it binds at that type''s own table. For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and @key(fields: "id") on a node type draws one NODE_ID row.';
+COMMENT ON COLUMN graphitron_key_field_binding.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_key_field_binding.type_name IS 'the entity type the key is applied to, the coordinate of its directive application';
+COMMENT ON COLUMN graphitron_key_field_binding.directive_name IS 'always key; carried so the row references its directive application whole';
+COMMENT ON COLUMN graphitron_key_field_binding.ordinal IS 'the key''s place among the type''s @key applications, the application''s own ordinal';
+COMMENT ON COLUMN graphitron_key_field_binding.position IS 'the field''s place in the key''s field set as the author wrote it, numbered from zero';
+COMMENT ON COLUMN graphitron_key_field_binding.field_name IS 'the field the key selects, a top-level field of the type';
+COMMENT ON COLUMN graphitron_key_field_binding.coordinate IS 'the field''s coordinate, type and field joined by a dot, as its occurrence binding spells it';
+COMMENT ON COLUMN graphitron_key_field_binding.bound IS 'the type''s own table, schema-qualified, as the binding spells it';
+COMMENT ON COLUMN graphitron_key_field_binding.kind IS 'how the field binds there: COLUMN, a column of the table whose value the representation carries; NODE_ID, the node''s own id, the key''s only field, decoded into the node''s key columns';
+COMMENT ON COLUMN graphitron_key_field_binding.table_source_name IS 'the catalog source of the type''s table';
+COMMENT ON COLUMN graphitron_key_field_binding.table_schema IS 'the schema of the type''s table';
+COMMENT ON COLUMN graphitron_key_field_binding.table_name IS 'the type''s table';
+
+-- How each field of an authored @key binds at its entity's own table. A field binds there when it is
+-- a single-segment selection whose occurrence binds a column of that table, or when it is the key's
+-- only field and the node's own id, which binds the node id (the id-contract ruling in
+-- fact-model.adoc: an id carrying @field(name:) binds a column instead). A selection that binds
+-- nothing there draws no row, which is the entity key stage's refusal. The key's entries are reached
+-- through the authored application's written position, probed on their whole key.
+CREATE VIEW graphitron_key_field_binding_rule
+  (graph_name, type_name, directive_name, ordinal, position, field_name, coordinate, bound, kind,
+   table_source_name, table_schema, table_name) AS
+SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, p.position, g.segment_name,
+       b.coordinate, b.bound, b.kind, tt.table_source_name, tt.table_schema, tt.table_name
+  FROM graphitron_directive_application a
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = a.graph_name AND tt.type_name = a.coordinate AND tt.named_type_kind = 'OBJECT'
+  JOIN graphitron_ast_federation_key_selection_entry p
+    ON p.graph_name = a.graph_name AND p.source_name = a.source_name
+   AND p.source_line = a.source_line AND p.source_column = a.source_column
+  JOIN graphitron_ast_federation_key_segment_entry g
+    ON g.graph_name = p.graph_name AND g.source_name = p.source_name
+   AND g.source_line = p.source_line AND g.source_column = p.source_column
+   AND g.position = p.position AND g.segment_position = 0
+  JOIN graphitron_occurrence_binding b
+    ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate || '.' || g.segment_name
+   AND b.bound = tt.table_schema || '.' || tt.table_name
+ WHERE a.directive_name = 'key' AND a.origin = 'AUTHORED'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry h
+                    WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
+                      AND h.source_line = g.source_line AND h.source_column = g.source_column
+                      AND h.position = g.position AND h.segment_position = 1)
+   AND (b.kind = 'COLUMN'
+        -- The node's own id, alone in its key: the id field, bound to the type's own node.
+        OR (b.kind = 'NODE_ID' AND g.segment_name = 'id' AND p.position = 0
+            AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_selection_entry q
+                             WHERE q.graph_name = p.graph_name AND q.source_name = p.source_name
+                               AND q.source_line = p.source_line AND q.source_column = p.source_column
+                               AND q.position = 1)
+            AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                         WHERE n.graph_name = b.graph_name AND n.coordinate = b.coordinate
+                           AND n.bound = b.bound AND n.position = 0
+                           AND n.node_type_name = a.coordinate)));
+COMMENT ON VIEW graphitron_key_field_binding_rule IS 'One key field binding the entity key rule computes, in the shape graphitron_key_field_binding stores: the rule itself, evaluated on demand rather than read off disk. For example the entity key stage writes this view''s rows for one graph into graphitron_key_field_binding, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.type_name IS 'the entity type';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.directive_name IS 'key';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.ordinal IS 'the key''s ordinal';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.position IS 'the field''s place in the key';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.field_name IS 'the field selected';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.coordinate IS 'the field''s coordinate';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.bound IS 'the type''s own table';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.kind IS 'COLUMN or NODE_ID';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.table_source_name IS 'the table''s catalog source';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.table_schema IS 'the table''s schema';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.table_name IS 'the table';
+
 -- A federation @key's refusals, the entity key stage's own, judged from how each key field binds at
 -- its entity's table. An entity is resolved by a SELECT on its table, so a key needs a table-bound
 -- object type (an interface is keyed on its implementations), selects at least one field, and each
@@ -13392,9 +13490,10 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_SELECTS
                       AND p.source_line = k.source_line AND p.source_column = k.source_column
                       AND p.position = 0)
 UNION ALL
--- One row per selection that is not a column of the entity's table: a nested selection, a name the
--- type does not declare, or a field binding anything but a column there, the node's own id alone
--- excepted. The detail is the selection's first segment, the name the author wrote.
+-- One row per selection that binds nothing at the entity's table, which graphitron_key_field_binding
+-- states: a nested selection, a name the type does not declare, or a field binding anything but a
+-- column there, the node's own id alone excepted. The detail is the selection's first segment, the
+-- name the author wrote.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_NOT_A_COLUMN',
        MIN(g.segment_name)
   FROM graphql_directive_application d
@@ -13408,30 +13507,10 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_N
    AND g.source_line = p.source_line AND g.source_column = p.source_column
    AND g.position = p.position AND g.segment_position = 0
  WHERE d.directive_name = 'key'
-   AND (EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry h
-                 WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
-                   AND h.source_line = g.source_line AND h.source_column = g.source_column
-                   AND h.position = g.position AND h.segment_position = 1)
-        OR NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
-                        WHERE b.graph_name = d.graph_name
-                          AND b.coordinate = d.coordinate || '.' || g.segment_name
-                          AND b.bound = tt.table_schema || '.' || tt.table_name
-                          AND b.kind = 'COLUMN'))
-   -- The node's own id, alone in its key: an id with no @field on a node, which binds the node id.
-   AND NOT (g.segment_name = 'id' AND g.position = 0
-            AND EXISTS (SELECT 1 FROM graphitron_node n
-                         WHERE n.graph_name = d.graph_name AND n.type_name = d.coordinate)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_selection_entry q
-                             WHERE q.graph_name = g.graph_name AND q.source_name = g.source_name
-                               AND q.source_line = g.source_line AND q.source_column = g.source_column
-                               AND q.position = 1)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry h
-                             WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
-                               AND h.source_line = g.source_line AND h.source_column = g.source_column
-                               AND h.position = 0 AND h.segment_position = 1)
-            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application f
-                             WHERE f.graph_name = d.graph_name AND f.coordinate = d.coordinate || '.id'
-                               AND f.directive_name = 'field'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_key_field_binding k
+                    WHERE k.graph_name = d.graph_name AND k.type_name = d.coordinate
+                      AND k.directive_name = d.directive_name AND k.ordinal = d.ordinal
+                      AND k.position = p.position)
  GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column;
 COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
@@ -18625,6 +18704,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-values', 'graphitron_occurrence_binding_value'),
   ('occurrence-participants', 'graphitron_occurrence_participant'),
   ('entity-key-alternatives', 'graphitron_entry_defect'),
+  ('entity-key-alternatives', 'graphitron_key_field_binding'),
   ('outbox', 'graphitron_entry_defect'),
   ('outbox', 'graphitron_outbox_key'),
   ('outbox', 'graphitron_outbox_message'),
@@ -19228,6 +19308,9 @@ INSERT INTO meta_grain VALUES
   ('minted-key',
    'one federation key a macro mints on one type, by the rule that minted it',
    'graph_name, type_name, role', 'sdl'),
+  ('key-field',
+   'one field one authored federation key selects, at its place in the key, on one type in one graph',
+   'graph_name, type_name, directive_name, ordinal, position', 'sdl'),
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
    'graph_name, type_name, position', 'catalog'),
@@ -20813,6 +20896,14 @@ INSERT INTO meta_relation VALUES
    'Which of a graph''s types are nodes, with the wire type id each answers to: one row per node type, from the authored population and the published one alike.',
    'For example a Customer carrying @node over @table draws a row, a type merely implementing Node over a table whose class publishes __NODE_TYPE_ID draws one beside it, and a @node on a type with no @table draws none.',
    'Nodehood as a resolved fact rather than a membership view over two arms, which is the difference between what an author wrote and what took effect. @node only takes effect on a type that also carries @table, so the table binding is the precondition on both arms and not a filter a reader remembers; a @node on an unbound type stays in the decode, and the anti-join between the two is where an author is told the directive did nothing. The type id rides along because it is total over this population and over no other: three tiers answer, the author''s declaration, the backing class''s published constant and the type''s own name, and the last always answers, so a reader encoding an id needs no fallback and the column needs no nullness. Which tier answered is a column because a diagnostic about two types colliding on one id has to say where each came from. The key columns are not here and that is deliberate: an author may declare the id and leave the columns to the catalog or the reverse, so the two axes resolve separately and a single declared-versus-inferred flag over the node would be wrong for half the schemas that have one. Written as a stage of the graphitron gatherer after the binding it stands on, both sources being in hand there: the catalog crawler has flushed and the @node decode is the gatherer''s own.'),
+  ('graphitron_key_field_binding', 'key-field', 'graphitron',
+   'One field an authored federation key selects on a table-bound object type, and how it binds at that type''s own table.',
+   'For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and @key(fields: "id") on a node type draws one NODE_ID row.',
+   'The one fact an entity key alternative needs that no other relation states: which of the type''s occurrence bindings each key field resolves to at the entity''s table. Everything else an alternative carries, the column, the node''s type id and key columns, the resolvability, is stated elsewhere, so only the binding is stored and a reader composes the rest from the relations that state it. Keyed by the key''s directive application and the field''s place in the parse, since a key on an extension can name a field declared in another file; referencing the application, the occurrence binding (which carries the kind) and the type''s table, so a row is a binding at the type''s own table by construction. A selection with no row binds nothing there, which is the entity key stage''s refusal.'),
+  ('graphitron_key_field_binding_rule', 'key-field', 'graphitron',
+   'One key field binding the entity key rule computes, in the shape graphitron_key_field_binding stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the entity key stage writes this view''s rows for one graph into graphitron_key_field_binding, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_minted_key', 'minted-key', 'graphitron',
    'One federation key a graph mints on one of its table-bound types, with the rule that minted it.',
    'For example a node type of a federation-linked graph whose author wrote no id key carries one NODE row, fields id and resolvable.',

@@ -1,0 +1,45 @@
+"An entity is resolved by selecting its row from its table, by any of its keys. Each authored key's fields bind at the entity's own table: a key over columns carries their values, and the node's own id alone carries an encoded id the generator decodes. A node federation keys by its id where no authored key states that contract is given the node key after the keys its author wrote."
+type Film implements Node @table(name: "film") @node @key(fields: "languageId") {
+  id: ID!
+  languageId: Int @field(name: "language_id")
+}
+
+# The node's own id, authored: the id contract, nothing minted beside it.
+type Actor implements Node @table(name: "actor") @node @key(fields: "id") {
+  id: ID!
+}
+
+# No key written: the node key is minted.
+type Customer implements Node @table(name: "customer") @node {
+  id: ID!
+}
+
+# Two keys over columns, one this subgraph does not resolve by.
+type Rental @table(name: "rental") @key(fields: "rentalId inventoryId") @key(fields: "rentalId", resolvable: false) {
+  rentalId: Int @field(name: "rental_id")
+  inventoryId: Int @field(name: "inventory_id")
+}
+
+interface Node {
+  id: ID!
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query {
+  films: [Film!]!
+  actors: [Actor!]!
+  customers: [Customer!]!
+  rentals: [Rental!]!
+}
+
+# Each authored key field's binding at its type's table, by key and place in the key; the minted keys
+# draw none, being no author's.
+extend schema @expectEquals(relation: "graphitron_key_field_binding", rows: """
+  type_name, ordinal, position, field_name,  kind,    bound
+  Actor,     0,       0,        id,          NODE_ID, public.actor
+  Film,      0,       0,        languageId,  COLUMN,  public.film
+  Rental,    0,       0,        rentalId,    COLUMN,  public.rental
+  Rental,    0,       1,        inventoryId, COLUMN,  public.rental
+  Rental,    1,       0,        rentalId,    COLUMN,  public.rental
+  """)
