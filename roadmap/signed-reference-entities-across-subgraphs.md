@@ -378,8 +378,15 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
    minted-key rule takes the id-contract ruling; the glossary and `federation-keys.adoc` state the new
    wording. Fact documents pin a key type only `_entities` reaches, a key field the builder accepted as a
    reference landing on another table, and an authored id key over a column-bound `id`. (c) A refactor:
-   `graphitron_key_field_binding`, the `EntityKeyQuery` and the adapter, `EntityResolutionBuilder`
-   deleted; generated output unchanged.
+   `graphitron_key_field_binding`, written by `entity-key-alternatives`, the key-field refusal reading
+   its absence; generated output unchanged. The `EntityKeyQuery` and `EntityResolutionBuilder`'s
+   deletion do not ride on it: the builder's readers are on the classified walk, and an adapter
+   feeding them from the store would keep them there. They dissolve instead. The node and entity
+   generators move onto the store under R876's node "The node and entity generators read the store",
+   reading the alternatives through the `EntityKeyQuery`; the tenant fold's entity routing follows
+   once the tenant facts are in the model. The builder goes when its last reader does, before
+   slice 7 adds the voucher alternative. Ruled by the user (2026-11-11), after a first cut that
+   deleted the builder behind an adapter left the walk's tenant tests with no entities.
 3. *Connection key.* `ConnectionKey` in every build that writes the slot, tenant part only. A refactor:
    single-tenant output unchanged, multi-tenant output differs only in the key's type.
 4. *A's facts and published shape.* `@issue` and its capture entry, the voucher stage (membership,
