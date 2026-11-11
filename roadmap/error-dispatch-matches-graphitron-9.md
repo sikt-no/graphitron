@@ -87,11 +87,9 @@ Each is a place where a Graphitron 9 schema can see a different answer, kept for
 
 Graphitron 10 also gives a channel to fields below the root, which Graphitron 9 did not have at all; that is additive and not a divergence.
 
-## Relation to R1165
+## Relation to the shadowed-handler diagnostic
 
-R1165 (`error-handlers-ordered-by-narrowness`, Ready) sorts handlers narrowest-first. That gives a different answer from Graphitron 9 for any schema that declares a broad handler before a narrower one of the same kind: Graphitron 9 answered the broad one, R1165 the narrow one. Under the ruling that is a divergence no reason above covers. Its "precedes" pair (`DATABASE` before a `GENERIC` handler on `DataAccessException` or above) is subsumed by this item's first phase.
-
-This item does not edit R1165. The recommendation to whoever owns it is to reopen it (Ready to Spec) and replan it on this item: keep declared order within each kind, and report a handler that an earlier handler of the same phase shadows as a build defect, which is R1165's own first considered alternative. The shadow relation R1165 already specifies (its containment rows) is the right test, evaluated within each phase. Neither item needs the other to land first: this item changes only the order between kinds.
+R1165 (`error-handlers-ordered-by-narrowness`), which sorted handlers narrowest-first, was discarded on 2026-11-11 on Filip's ruling: it answered differently from Graphitron 9 for any schema declaring a broad handler before a narrower one of the same kind. What replaces it is R1168 (`shadowed-error-handler-is-reported`): declared order is kept within each kind, as here, and a handler that an earlier handler of the same phase shadows is reported, as a warning or an error. R1168 depends on this item, since the order it judges "earlier" by is the one this item defines; this item needs nothing from it.
 
 ## Implementation
 
@@ -155,7 +153,7 @@ A new history page, `docs/history/error-dispatch-divergence.adoc`, sibling of `a
 
 ## Other solutions we've considered
 
-- **Narrowest first (R1165 as written).** Ends the ordering chore, but answers differently from Graphitron 9 wherever a broad handler of one kind was declared first, which the ruling excludes.
+- **Narrowest first (the discarded R1165).** Ends the ordering chore, but answers differently from Graphitron 9 wherever a broad handler of one kind was declared first, which the ruling excludes.
 - **`DATABASE` always before `GENERIC`, whatever the throw.** One emitted order, no runtime selector. It sends the second route under "Today" (a service's own exception around a database error) to the `DATABASE` member, as today, against Graphitron 9.
 - **Graphitron 9's single kind, no second phase.** Exact Graphitron 9, but a `DataAccessException` no `DATABASE` handler matches could then never reach a `GENERIC` catch-all, and the in-payload shape Graphitron 9 produced through consumer code (divergence b) would have no replacement.
 - **Filter by kind at runtime.** `Mapping` gains a kind accessor and every reader makes two passes over the mixed table. Smaller to emit, but three emitted readers evaluate the same kind predicate and can drift; the two orders are generation-time facts, so they are emitted once.
