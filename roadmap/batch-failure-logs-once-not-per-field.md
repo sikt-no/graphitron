@@ -7,7 +7,7 @@ priority: 3
 theme: error-channel
 depends-on: []
 created: 2026-09-04
-last-updated: 2026-11-05
+last-updated: 2026-11-11
 ---
 
 # a failed batch logs once, without its SQL, and a consumer can cap batch size
@@ -83,7 +83,9 @@ The redaction path is per-field by construction, and nothing along it knows a ba
 * The batch lambda emitted by `RowsMethodCall.batchLoaderLambda` calls its `rows<Field>` method
   synchronously inside `CompletableFuture.completedFuture(...)`, so a SQL throw escapes the batch
   function rather than completing a future. java-dataloader then completes *every* per-key future
-  exceptionally with that same `Throwable` instance.
+  exceptionally with that same `Throwable` instance. `FrameEmitter.child`'s batch lambda differs in
+  form only: it catches what its body throws and returns a failed future, and java-dataloader hands
+  that future's exception to every per-key future just the same.
 * The fetcher built by `DataLoaderFetcherEmitter.build` attaches the disposition per fetcher
   invocation: `loader.load(key, env).thenApply(...).exceptionally(t -> ErrorRouter.surfaceClientErrorOrRedact(t, env))`,
   from `TypeFetcherGenerator.asyncWrapTail` (and its twins on `MultiTablePolymorphicEmitter` and
@@ -97,8 +99,9 @@ The redaction path is per-field by construction, and nothing along it knows a ba
   `ErrorRouterClassGenerator.redactBody`, which mints a fresh `UUID.randomUUID()` and logs
   `"Unmatched exception in fetcher; correlation id = {}"` with the throwable as the trailing
   argument, so slf4j renders a full stack trace on every one of them.
-* The batch lambda has no catch and no logging of its own, so there is no single point where the
-  failure is observed once.
+* No batch lambda logs. Four of the five have no catch at all, and the one in `FrameEmitter.child`
+  only turns the throw into a failed future, so there is no single point where the failure is
+  observed once.
 * Because the throwable is the trailing argument, slf4j renders its message as well as its stack
   trace. The fixed text of the log call carries no SQL, but a `DataAccessException`'s message is the
   rendered statement, so the SQL reaches the record anyway. `redact` treats every throwable alike;
