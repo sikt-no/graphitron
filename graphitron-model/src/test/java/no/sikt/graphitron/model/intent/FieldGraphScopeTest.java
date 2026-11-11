@@ -10,7 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SCOPE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,7 +75,7 @@ class FieldGraphScopeTest {
     }
 
     private static List<String> connections(DSLContext dsl, String graph) {
-        var t = GRAPHITRON_CONNECTION_ELEMENT_TYPE;
+        var t = GRAPHITRON_CONNECTION;
         return dsl.select(t.TYPE_NAME).from(t)
             .where(t.GRAPH_NAME.eq(graph))
             .fetch(t.TYPE_NAME);

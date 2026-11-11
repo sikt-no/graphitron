@@ -237,7 +237,7 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   conventions graphitron adds and facets graphitron's own. The shape is a constant beside
   `graphitron_runtime_class`, and a type-field relation says which position each field fills.
   Today's test, `edges` to an OBJECT edge to `node`, is narrower than the specification although
-  `graphitron_connection_element_type`'s rationale calls it the specification's own; recognising
+  `graphitron_connection`'s rationale calls it the specification's own; recognising
   the full shape changes what is recognised, so it goes with `asConnection.adoc` and Alf's ruling.
 * **An authored connection type that departs from the shape is a defect** `blocked`, on "A connection is recognised by the specification's shape".
   A type used as a connection that lacks a required field raises a defect at the type, and the
@@ -362,10 +362,6 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
   * **A table defect is owned by the stage that decides the table** `open`, F's. `TABLE_AMBIGUOUS`
     and `TABLE_UNRESOLVED` move from `entry-defects` to `table-types`, which leaves an ambiguous
     `@table` without a `graphitron_tabletype` row, so the missing row and its refusal sit in one place.
-  * **A connection keys into its edge, and an edge names its item** `open`, F's. `graphitron_edge`
-    (type, `item_type_name`) and `graphitron_connection` (type, edge type) replace
-    `graphitron_connection_element_type`, both subtypes of `graphitron_type` of kind `OBJECT` with
-    `_rule` views; an edge type two connections share is one row. Facets wait for a named reader.
   * **A polymorphic type's members are stored** `open`, F's. `graphitron_type_member` (container,
     member), both keyed into `graphitron_type` by kind, replaces the `graphql_poly_member` view, and
     the per-depth rules and `graphitron_occurrence_producer_result_rule` read `graphitron_tabletype`
@@ -941,7 +937,7 @@ classified records have no reader left and can go with the walk.
   * **The other spellings of a connection read the stored shape** `open`. `graphitron_producer_rule`'s
     `COUNT`, `FACETS` and page arms and `graphitron_occurrence_start_rule` still ask whether a type
     is a connection or its edge over `graphitron_field_target`; each moves onto
-    `graphitron_connection_element_type` with its own row-for-row agreement against trunk. A read
+    `graphitron_connection` and `graphitron_edge` with its own row-for-row agreement against trunk. A read
     swap only: the field-keyed arms gain nothing, and they go with
     "The producer's readers read the occurrence producer, and the field-keyed family goes".
   * **The key defects read the fill's candidates alone** `open`. The service arm of

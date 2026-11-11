@@ -35,13 +35,19 @@ type Query {
   interfaceEdges: InterfaceEdgeConnection
 }
 
-extend schema @assertContains(relation: "graphitron_connection_element_type", rows: """
-  type_name,            edge_type_name,           element_type_name
-  FilmsConnection,      FilmsEdge,                Film
-  QueryFilmsConnection, QueryFilmsConnectionEdge, Film
+extend schema @assertContains(relation: "graphitron_connection", rows: """
+  type_name,            edge_type_name
+  FilmsConnection,      FilmsEdge
+  QueryFilmsConnection, QueryFilmsConnectionEdge
   """)
 
-extend schema @assertAbsent(relation: "graphitron_connection_element_type", rows: """
+extend schema @assertContains(relation: "graphitron_edge", rows: """
+  type_name,                item_type_name
+  FilmsEdge,                Film
+  QueryFilmsConnectionEdge, Film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_connection", rows: """
   type_name
   CursorOnlyConnection
   NodeOnly
