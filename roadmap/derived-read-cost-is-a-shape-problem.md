@@ -258,8 +258,8 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `edges.cursor` a function of the element and the ordering (`RESULT_EXPRESSION`) and `pageInfo` the
   page. `edges.node` binds the record only where the producer selected it; where something else
   produced the result set (a search index, a service) the edge is what it handed over and
-  `edges.node` may be a producer lifted from its key ("A source says whether graphitron selected
-  its rows"). `totalCount` and facets run queries of their own, and only where graphitron selected
+  `edges.node` may be a producer lifted from its key (
+  "A source says whether graphitron selected its rows"). `totalCount` and facets run queries of their own, and only where graphitron selected
   the result set.
   * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
     The result a producer states for a field returning a connection is a page of
@@ -1316,8 +1316,8 @@ classified records have no reader left and can go with the walk.
     `COUNT`, `FACETS` and page arms and `graphitron_occurrence_start_rule` still ask whether a type
     is a connection or its edge over `graphitron_field_target`; each moves onto
     `graphitron_connection_element_type` with its own row-for-row agreement against trunk. A read
-    swap only: the field-keyed arms gain nothing, and they go with "The producer's readers read the
-    occurrence producer, and the field-keyed family goes".
+    swap only: the field-keyed arms gain nothing, and they go with
+    "The producer's readers read the occurrence producer, and the field-keyed family goes".
   * **The key defects read the fill's candidates alone** `open`. The service arm of
     `NO_KEY_FROM_PARENT`/`KEY_ROW_AMBIGUOUS` still counts members itself over `code_read_slot` and
     `code_method_parameter`, a second spelling of the candidates that disagrees with the fill on a
