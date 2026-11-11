@@ -317,10 +317,10 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
       document. The docs change in the same commit: `emitter-conventions.adoc` § Return types,
       `code-generation-triggers.adoc` § Producer and the `COUNT`/`FACETS` row,
       `connections.adoc`, `runtime-api.adoc` and `runtime-extension-points.adoc`.
-    * Open for Alf and Filip: graphql-java's default property access calls a member taking the
-      environment, but that is its implementation rather than a documented contract, and a renamed
-      member would resolve to null at run time. Either one explicit registration per member, or the
-      default with an execution test per member as the enforcer.
+    * Each member is read through its own registration, as every field is: graphitron wires every
+      field in the schema and never falls back to graphql-java's `PropertyDataFetcher` (Alf,
+      2026-11-11; `emitter-conventions.adoc` § Return types). The registrations are the same for
+      every connection rather than per type.
 
   **What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
   The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
