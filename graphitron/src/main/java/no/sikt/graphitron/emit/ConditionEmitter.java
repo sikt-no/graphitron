@@ -11,6 +11,7 @@ import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -77,11 +78,6 @@ public final class ConditionEmitter {
     public enum Reason {
         /** The field runs a call or a write, which takes its arguments rather than filtering by them. */
         CONSUMED,
-        /**
-         * A {@code @condition} takes a value this emitter does not hand a method yet: the request
-         * context or the session, which the method's signature does not carry.
-         */
-        AUTHORED_CONTEXT,
         /** A {@code @condition} takes an input object as a bean, built from the map before the call. */
         AUTHORED_BEAN,
         /**
@@ -122,7 +118,16 @@ public final class ConditionEmitter {
      * it, or why it is not emitted.
      */
     public static Result emit(ConditionQuery.Row row, String name, NodeIdDecodeQuery decodes,
-                              NodeIdDecodeEmitter.Runtime runtime) {
+                              FillEmitter.Runtime runtime) {
+        return emit(row, name, decodes, runtime, Map.of());
+    }
+
+    /**
+     * The row's condition as the method {@code name}, its input-object parameters made into the beans
+     * {@code builds} says how to make, keyed by the call, the position and the input object taken.
+     */
+    public static Result emit(ConditionQuery.Row row, String name, NodeIdDecodeQuery decodes,
+                              FillEmitter.Runtime runtime, Map<BuildQuery.Root, BuildQuery.Result> builds) {
         if (row.producerKind() != null && !FILTERED.contains(row.producerKind())) {
             return new Result.NotYet(Reason.CONSUMED, row.coordinate());
         }
@@ -137,7 +142,7 @@ public final class ConditionEmitter {
             }
         }
         for (var call : row.calls()) {
-            var reason = reasonFor(call);
+            var reason = reasonFor(call, builds);
             if (reason.isPresent()) {
                 return new Result.NotYet(reason.get(), call.coordinate());
             }
@@ -148,6 +153,15 @@ public final class ConditionEmitter {
             .returns(CONDITION)
             .addParameter(tableClass, "table")
             .addParameter(ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class)), "args");
+        // The request context and the session are not in the argument map: the method takes the
+        // environment where a call reads a context key, and the executing context where one reads
+        // the session, as today's glue does; the row says which, so its callers read the same.
+        if (row.takesEnv()) {
+            method.addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "env");
+        }
+        if (row.takesDsl()) {
+            method.addParameter(ClassName.get("org.jooq", "DSLContext"), "dsl");
+        }
         var locals = new HashSet<String>();
         var counter = new int[1];
         var adds = CodeBlock.builder();
@@ -159,7 +173,8 @@ public final class ConditionEmitter {
                 var onOwn = decode.recordClass().equals(row.table().recordClassName());
                 var hops = onOwn ? List.<String>of() : hops(method, term, local);
                 var alias = hops.isEmpty() ? "table" : hops.getLast();
-                var compare = nodeId(method, helpers, term, decode, name + "_" + local, local, alias, counter, runtime);
+                var compare = nodeId(method, helpers, term, decode, name + "_" + local, local, alias, counter,
+                    runtime.decode());
                 var guard = term.list()
                     ? (term.present() ? CodeBlock.of("!$L.isEmpty()", local)
                         : CodeBlock.of("$L != null && !$L.isEmpty()", local, local))
@@ -206,7 +221,7 @@ public final class ConditionEmitter {
         for (var call : row.calls()) {
             var arguments = new ArrayList<CodeBlock>();
             for (var fill : call.fills()) {
-                arguments.add(argument(method, fill, counter));
+                arguments.add(argument(method, helpers, name, call, fill, counter, runtime, row.coordinate(), builds));
             }
             adds.addStatement("conditions.add($T.$L($L))", ClassName.bestGuess(call.className()), call.methodName(),
                 CodeBlock.join(arguments, ", "));
@@ -221,7 +236,7 @@ public final class ConditionEmitter {
      * Why an authored call is not emitted yet: a fill it takes that this emitter does not hand over, or
      * a table it is applied to by way of a node id.
      */
-    private static Optional<Reason> reasonFor(ConditionQuery.Call call) {
+    private static Optional<Reason> reasonFor(ConditionQuery.Call call, Map<BuildQuery.Root, BuildQuery.Result> builds) {
         if ("NODE_ID".equals(call.bindingKind())) return Optional.of(Reason.AUTHORED_NODE_ID);
         for (var fill : call.fills()) {
             switch (fill.fill()) {
@@ -231,7 +246,9 @@ public final class ConditionEmitter {
                     if (fill.path().lists().stream().anyMatch(i -> i < fill.path().names().size() - 1)) {
                         return Optional.of(Reason.THROUGH_LIST);
                     }
-                    if ("INPUT_OBJECT".equals(fill.landingKind()) && !takesMap(fill)) {
+                    if ("INPUT_OBJECT".equals(fill.landingKind()) && !takesMap(fill)
+                            && !(builds.get(new BuildQuery.Root(call.coordinate(), fill.position(), fill.landing()))
+                                instanceof BuildQuery.Result.Built)) {
                         return Optional.of(Reason.AUTHORED_BEAN);
                     }
                     if (javaType(fill.parameterType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
@@ -242,83 +259,77 @@ public final class ConditionEmitter {
                 case "UNFILLED" -> {
                     return Optional.of(Reason.AUTHORED_UNFILLED);
                 }
+                case "CONTEXT_KEY", "SESSION", "SESSION_MEMBER" -> {
+                    if (javaType(fill.parameterType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
+                }
                 default -> {
-                    return Optional.of(Reason.AUTHORED_CONTEXT);
+                    return Optional.of(Reason.UNSPELLED_TYPE);
                 }
             }
         }
         return Optional.empty();
     }
 
-    /** Whether an input object's parameter takes the map graphql-java delivers rather than a bean. */
+    /**
+     * Whether an input object's parameter takes the map graphql-java delivers rather than a bean: the
+     * class it delivers, its list peeled off, is a map or any object.
+     */
     private static boolean takesMap(ConditionQuery.Fill fill) {
-        var type = fill.parameterType();
-        var element = type.startsWith("java.util.List<") ? type.substring(15, type.length() - 1) : type;
-        return element.equals("java.lang.Object") || element.startsWith("java.util.Map");
+        return "java.util.Map".equals(fill.element()) || "java.lang.Object".equals(fill.element());
     }
 
     /**
      * The value one parameter of an authored call takes: the table the condition is applied to, or an
      * argument's value off the map, cast to the parameter's declared type, an enum by its constant's name.
      */
-    private static CodeBlock argument(MethodSpec.Builder method, ConditionQuery.Fill fill, int[] counter) {
-        if ("TABLE".equals(fill.fill())) {
-            return CodeBlock.of("table");
+    private static CodeBlock argument(MethodSpec.Builder method, List<MethodSpec> helpers, String name,
+                                      ConditionQuery.Call call, ConditionQuery.Fill fill, int[] counter,
+                                      FillEmitter.Runtime runtime, String coordinate,
+                                      Map<BuildQuery.Root, BuildQuery.Result> builds) {
+        switch (fill.fill()) {
+            case "TABLE" -> {
+                return CodeBlock.of("table");
+            }
+            case "CONTEXT_KEY" -> {
+                var type = javaType(fill.parameterType()).orElseThrow();
+                return CodeBlock.of("($T) $L", type.isPrimitive() ? type.box() : type,
+                    runtime.contextArgument().apply(fill.contextKey()));
+            }
+            case "SESSION" -> {
+                return runtime.sessionHandle().apply(coordinate);
+            }
+            case "SESSION_MEMBER" -> {
+                return runtime.sessionMember().apply(fill.sessionMember(), coordinate);
+            }
+            default -> { }
         }
         var type = javaType(fill.parameterType()).orElseThrow();
         var read = read(fill.path().names(), counter);
+        // An input object a bean takes: the map made into it by a helper of its own, before the call.
+        if (builds.get(new BuildQuery.Root(call.coordinate(), fill.position(), fill.landing()))
+                instanceof BuildQuery.Result.Built made && !takesMap(fill)) {
+            var local = "b" + ++counter[0];
+            var helper = name + "_build" + counter[0];
+            helpers.addAll(BuildEmitter.helpers(made.build(), helper, runtime.decode()));
+            method.addStatement("$T $LWire = $L", Object.class, local, read);
+            method.addStatement(FillEmitter.made(type, local, helper, helpers));
+            return CodeBlock.of("$L", local);
+        }
         if ("ENUM_VALUE_OF".equals(fill.extraction())) {
-            var name = "s" + ++counter[0];
-            return CodeBlock.of("$L instanceof $T $L ? $T.valueOf($L) : null", read, String.class, name, type, name);
+            var spelled = "s" + ++counter[0];
+            return CodeBlock.of("$L instanceof $T $L ? $T.valueOf($L) : null", read, String.class, spelled, type,
+                spelled);
         }
         return CodeBlock.of("($T) $L", type.isPrimitive() ? type.box() : type, read);
     }
 
-    /**
-     * A declared Java type, its type arguments kept, as the census spells it: a primitive, a class, or a
-     * class with type arguments; empty for an array, a type variable or a wildcard.
-     */
+    /** A declared Java type as the census spells it, decoded as every emitter decodes it; empty where it cannot be. */
     static Optional<TypeName> javaType(String spelled) {
         try {
-            return Optional.of(parseType(spelled.strip()));
+            return Optional.of(SessionIdentityRows.typeOf(spelled));
         } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
-    }
-
-    private static TypeName parseType(String spelled) {
-        switch (spelled) {
-            case "int": return TypeName.INT;
-            case "long": return TypeName.LONG;
-            case "short": return TypeName.SHORT;
-            case "byte": return TypeName.BYTE;
-            case "char": return TypeName.CHAR;
-            case "boolean": return TypeName.BOOLEAN;
-            case "double": return TypeName.DOUBLE;
-            case "float": return TypeName.FLOAT;
-            default: break;
-        }
-        if (spelled.endsWith("]") || spelled.contains("?")) throw new IllegalArgumentException(spelled);
-        int open = spelled.indexOf('<');
-        if (open < 0) {
-            if (!spelled.contains(".")) throw new IllegalArgumentException(spelled);
-            return ClassName.bestGuess(spelled);
-        }
-        var raw = ClassName.bestGuess(spelled.substring(0, open));
-        var inner = spelled.substring(open + 1, spelled.length() - 1);
-        var arguments = new ArrayList<TypeName>();
-        int depth = 0, from = 0;
-        for (int i = 0; i < inner.length(); i++) {
-            char ch = inner.charAt(i);
-            if (ch == '<') depth++;
-            else if (ch == '>') depth--;
-            else if (ch == ',' && depth == 0) {
-                arguments.add(parseType(inner.substring(from, i).strip()));
-                from = i + 1;
-            }
-        }
-        arguments.add(parseType(inner.substring(from).strip()));
-        return ParameterizedTypeName.get(raw, arguments.toArray(TypeName[]::new));
     }
 
     private static Optional<Reason> reasonFor(ConditionQuery.Row row, ConditionQuery.Term term,

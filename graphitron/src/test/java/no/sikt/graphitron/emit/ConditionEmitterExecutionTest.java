@@ -44,7 +44,11 @@ class ConditionEmitterExecutionTest {
     private static final no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film FILM = Tables.FILM;
 
     private static final ClassName ENCODER = ClassName.get(PACKAGE + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
-    private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(ENCODER, PACKAGE);
+    private static final FillEmitter.Runtime RUNTIME = new FillEmitter.Runtime(
+        key -> com.palantir.javapoet.CodeBlock.of("env.getGraphQlContext().get($S)", key),
+        coordinate -> com.palantir.javapoet.CodeBlock.of("null"),
+        (member, coordinate) -> com.palantir.javapoet.CodeBlock.of("null"),
+        new NodeIdDecodeEmitter.Runtime(ENCODER, PACKAGE));
 
     private static EmittedCodeHarness harness;
     private static Method encode;
@@ -53,15 +57,17 @@ class ConditionEmitterExecutionTest {
 
     @BeforeAll
     static void emit() throws Exception {
-        record Read(List<ConditionQuery.Row> rows, NodeIdDecodeQuery decodes) {}
+        record Read(List<ConditionQuery.Row> rows, NodeIdDecodeQuery decodes,
+                    Map<BuildQuery.Root, BuildQuery.Result> builds) {}
         var read = FACTS.read("scenarios/condition-filter",
-            graph -> new Read(ConditionQuery.read(graph.handle()), NodeIdDecodeQuery.read(graph.handle())));
+            graph -> new Read(ConditionQuery.read(graph.handle()), NodeIdDecodeQuery.read(graph.handle()),
+                BuildQuery.read(graph.handle())));
         var rows = read.rows();
         var type = TypeSpec.classBuilder("Conditions").addModifiers(Modifier.PUBLIC);
         results = new HashMap<>();
         for (var row : rows) {
             var name = row.coordinate().substring(row.coordinate().indexOf('.') + 1);
-            var result = ConditionEmitter.emit(row, name, read.decodes(), RUNTIME);
+            var result = ConditionEmitter.emit(row, name, read.decodes(), RUNTIME, read.builds());
             results.put(row.coordinate(), result);
             if (result instanceof ConditionEmitter.Result.Emitted emitted) {
                 type.addMethod(emitted.method());
@@ -117,7 +123,31 @@ class ConditionEmitterExecutionTest {
         assertThat(conditions).containsOnlyKeys("filmsByTitle", "filmById", "filmsByLengths", "filmsByFilter",
             "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName", "filmByNodeId",
             "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm", "filmsByRating", "filmsByTitlePrefix",
-            "filmsByLengthAndTitlePrefix", "filmsByTitleOverridden");
+            "filmsByLengthAndTitlePrefix", "filmsByTitleOverridden", "customersSeen", "filmsByTitleBean");
+    }
+
+    @Test
+    @DisplayName("a @condition taking a bean gets the input object made into it, null where it is absent")
+    void authoredTakingABean() throws Exception {
+        var title = TestDatabase.dsl().select(FILM.TITLE).from(FILM).orderBy(FILM.FILM_ID).limit(1).fetchOne(FILM.TITLE);
+        assertThat(films(condition("filmsByTitleBean", args("by", args("title", title)))))
+            .isEqualTo(films(FILM.TITLE.eq(title))).isNotEmpty();
+        assertThat(films(condition("filmsByTitleBean", args()))).isEqualTo(films(DSL.noCondition()));
+    }
+
+    @Test
+    @DisplayName("a @condition reading a context key takes the environment and reads the key off its context")
+    void authoredReadingTheContext() throws Exception {
+        var customer = Tables.CUSTOMER;
+        var env = graphql.schema.DataFetchingEnvironmentImpl.newDataFetchingEnvironment()
+            .graphQLContext(graphql.GraphQLContext.of(Map.of("userId", "mary"))).build();
+        var condition = (Condition) conditions.get("customersSeen").invoke(null, customer, args(), env);
+        assertThat(TestDatabase.dsl().select(customer.CUSTOMER_ID).from(customer).where(condition)
+                .orderBy(customer.CUSTOMER_ID).fetch(customer.CUSTOMER_ID))
+            .isEqualTo(TestDatabase.dsl().select(customer.CUSTOMER_ID).from(customer)
+                .where(customer.FIRST_NAME.equalIgnoreCase("mary")).orderBy(customer.CUSTOMER_ID)
+                .fetch(customer.CUSTOMER_ID))
+            .isNotEmpty();
     }
 
     @Test

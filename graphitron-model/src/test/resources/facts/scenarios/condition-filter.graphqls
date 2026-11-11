@@ -39,6 +39,8 @@ input FilmLengthFilter {
     length: Int
 }
 
+input FilmTitleInput { title: String }
+
 type Customer @table(name: "customer") {
     firstName: String @field(name: "first_name")
 }
@@ -83,6 +85,14 @@ type Query {
     filmsByTitleOverridden(title: String): [Film!]! @condition(condition: {
         className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
         method: "filmTitlePrefixCondition"}, override: true)
+    # A @condition taking an input object as a bean, built from the map before the call.
+    filmsByTitleBean(by: FilmTitleInput): [Film!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+        method: "filmTitleRecord", argMapping: "filter: by"}, override: true)
+    # A @condition reading the request context, its key named in contextArguments.
+    customersSeen: [Customer!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "customerSeenByUser"}, contextArguments: ["userId"])
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id",
@@ -113,6 +123,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column",
   Query.filmsByTitle(title:),                public.film, title,        SQL_NAME
   Query.filmsByLengthAndTitlePrefix(length:), public.film, length,     SQL_NAME
   Query.filmsByTitleOverridden(title:),      public.film, title,        SQL_NAME
+  Query.filmsByTitleBean(by.title:),         public.film, title,        SQL_NAME
   """)
 
 # Every unwritten one reaches its column over an empty path, as does each input object it is read
@@ -144,5 +155,7 @@ extend schema @expectEquals(relation: "graphitron_path",
   Query.filmsByLengthAndTitlePrefix(titlePrefix:), Film,  JOIN, EMPTY
   Query.filmsByTitleOverridden(title:),      Film,        JOIN, EMPTY
   Query.filmsByTitlePrefix(titlePrefix:),    Film,        JOIN, EMPTY
+  Query.filmsByTitleBean(by.title:),         Film,        JOIN, EMPTY
+  Query.filmsByTitleBean(by:),               Film,        JOIN, EMPTY
   Query.filmsByTitle(title:),                Film,        JOIN, EMPTY
   """)

@@ -329,7 +329,7 @@ public final class FillEmitter {
      * An input object, or a list of them, made into the parameter's class by {@code helper}; a list
      * through a helper of its own, {@link #madeList}, added to {@code helpers}.
      */
-    private static CodeBlock made(TypeName type, String local, String helper, List<MethodSpec> helpers) {
+    static CodeBlock made(TypeName type, String local, String helper, List<MethodSpec> helpers) {
         var wire = local + "Wire";
         if (type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())) {
             helpers.add(madeList(list, helper));

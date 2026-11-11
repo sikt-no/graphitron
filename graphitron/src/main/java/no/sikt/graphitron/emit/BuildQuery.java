@@ -138,8 +138,10 @@ public final class BuildQuery {
         var constructions = constructions(store);
         var catalog = Catalog.read(store);
         var out = new HashMap<Root, Result>();
-        roots(store).forEach((root, className) -> out.put(root,
-            build(root.landingCoordinate(), className, children, constructions, catalog, new ArrayList<>())));
+        roots(store).forEach((root, rooted) -> out.put(root, rooted.condition() && catalog.tables().containsKey(rooted.className())
+            ? new Result.Refused("a @condition parameter takes no jOOQ record: take the map or a bean")
+            : build(root.landingCoordinate(), rooted.className(), children, constructions, catalog, new ArrayList<>(),
+                rooted.condition())));
         nodeIdRoots(store).forEach((root, className) -> out.put(root,
             decodeParameter(root.landingCoordinate(), className, catalog)));
         return out;
@@ -197,8 +199,14 @@ public final class BuildQuery {
         };
     }
 
-    /** The argument fills that land on an input object, with the class the parameter takes. */
-    private static Map<Root, String> roots(StoreHandle store) {
+    /** The class an input object's parameter takes, and whether a {@code @condition}'s call takes it. */
+    private record Rooted(String className, boolean condition) {}
+
+    /**
+     * The argument fills that land on an input object, a service call's or a condition's, with the class
+     * the parameter takes.
+     */
+    private static Map<Root, Rooted> roots(StoreHandle store) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var p = CODE_METHOD_PARAMETER;
@@ -206,13 +214,12 @@ public final class BuildQuery {
         var la = GRAPHITRON_ARGUMENT;
         var lf = GRAPHITRON_FIELD;
         var t = GRAPHITRON_TYPE;
-        var out = new HashMap<Root, String>();
+        var out = new HashMap<Root, Rooted>();
         store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE,
-                coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
+                coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS), s.CALL_KIND)
             .from(c)
-            // The service call's method, so another kind's fills stay out.
             .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL),
-                s.CALL_KIND.eq("SERVICE"))
+                s.CALL_KIND.in("SERVICE", "CONDITION"))
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
             .join(lo).on(lo.GRAPH_NAME.eq(c.GRAPH_NAME), lo.COORDINATE.eq(c.LANDING_COORDINATE))
@@ -220,7 +227,9 @@ public final class BuildQuery {
             .leftJoin(lf).on(lf.GRAPH_NAME.eq(lo.GRAPH_NAME), lf.COORDINATE.eq(lo.ELEMENT_COORDINATE))
             .join(t).on(t.GRAPH_NAME.eq(lo.GRAPH_NAME), t.TYPE_NAME.eq(coalesce(la.NAMED_TYPE, lf.NAMED_TYPE)))
             .where(c.GRAPH_NAME.eq(store.graphName()), c.FILL.eq("ARGUMENT"), t.KIND.eq("INPUT_OBJECT"))
-            .forEach(r -> out.put(new Root(r.value1(), r.value2(), r.value3()), r.value4()));
+            // A condition applied to several tables makes one call per table, taking the same bean.
+            .forEach(r -> out.put(new Root(r.value1(), r.value2(), r.value3()),
+                new Rooted(r.value4(), "CONDITION".equals(r.value5()))));
         return out;
     }
 
@@ -269,7 +278,7 @@ public final class BuildQuery {
 
     private static Result build(String occurrence, String className, Map<String, List<InputField>> children,
                                 Map<String, Construction> constructions, Catalog catalog,
-                                List<String> prefix) {
+                                List<String> prefix, boolean graphQlNames) {
         if (catalog.tables().containsKey(className)) {
             return columns(occurrence, className, children, catalog);
         }
@@ -278,7 +287,7 @@ public final class BuildQuery {
             return new Result.Refused("nothing says how to make " + className);
         }
         var members = new ArrayList<Member>();
-        var reason = bind(occurrence, construction, children, constructions, catalog, prefix, members);
+        var reason = bind(occurrence, construction, children, constructions, catalog, prefix, members, graphQlNames);
         if (reason != null) {
             return new Result.Refused(reason);
         }
@@ -387,31 +396,34 @@ public final class BuildQuery {
 
     /**
      * Binds the fields under {@code occurrence} to {@code construction}'s members, a grouping's
-     * fields under its name; the reason the first one cannot bind, or null.
+     * fields under its name; the reason the first one cannot bind, or null. A service's bean matches
+     * a field's bound name, {@code @field(name:)} renaming the member; a condition's matches its
+     * GraphQL name, {@code @field} naming the column a filter input compares rather than a member.
      */
     private static String bind(String occurrence, Construction construction,
                                Map<String, List<InputField>> children, Map<String, Construction> constructions,
-                               Catalog catalog, List<String> prefix, List<Member> members) {
+                               Catalog catalog, List<String> prefix, List<Member> members, boolean graphQlNames) {
         for (var field : children.getOrDefault(occurrence, List.of())) {
             var path = new ArrayList<>(prefix);
             path.add(field.name());
+            var memberName = graphQlNames ? field.name() : field.boundName();
             var slot = construction.slots().stream()
-                .filter(s -> s.slotName().equals(field.boundName())).findFirst();
+                .filter(s -> s.slotName().equals(memberName)).findFirst();
             if (slot.isEmpty()) {
-                boolean renamed = !field.boundName().equals(field.name());
+                boolean renamed = !memberName.equals(field.name());
                 if ("INPUT_OBJECT".equals(field.typeKind()) && !renamed) {
                     if (field.list()) {
                         return "input field " + String.join(".", path) + " matches no member of "
                             + construction.className() + " and is a list, so it cannot group";
                     }
                     var reason = bind(field.coordinate(), construction, children, constructions, catalog,
-                        path, members);
+                        path, members, graphQlNames);
                     if (reason != null) {
                         return reason;
                     }
                     continue;
                 }
-                return "input field " + String.join(".", path) + " names member " + field.boundName()
+                return "input field " + String.join(".", path) + " names member " + memberName
                     + ", which " + construction.className() + " does not have";
             }
             var memberClass = slot.get().elementClass() != null ? slot.get().elementClass() : slot.get().erasedClass();
@@ -425,7 +437,8 @@ public final class BuildQuery {
                 }
                 decode = Optional.of(((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode());
             } else if ("INPUT_OBJECT".equals(field.typeKind())) {
-                var result = build(field.coordinate(), memberClass, children, constructions, catalog, List.of());
+                var result = build(field.coordinate(), memberClass, children, constructions, catalog, List.of(),
+                    graphQlNames);
                 if (result instanceof Result.Refused refused) {
                     return refused.reason();
                 }

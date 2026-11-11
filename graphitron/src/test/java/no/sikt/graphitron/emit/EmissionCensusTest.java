@@ -37,8 +37,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EmissionCensusTest {
 
     private static final String EMITTED = ServiceEmission.EMITTED;
-    private static final NodeIdDecodeEmitter.Runtime RUNTIME = new NodeIdDecodeEmitter.Runtime(
-        ClassName.get("census.util", NodeIdEncoderClassGenerator.CLASS_NAME), "census");
+    private static final FillEmitter.Runtime RUNTIME = new FillEmitter.Runtime(
+        key -> com.palantir.javapoet.CodeBlock.of("env.getGraphQlContext().get($S)", key),
+        coordinate -> com.palantir.javapoet.CodeBlock.of("null"),
+        (member, coordinate) -> com.palantir.javapoet.CodeBlock.of("null"),
+        new NodeIdDecodeEmitter.Runtime(ClassName.get("census.util", NodeIdEncoderClassGenerator.CLASS_NAME), "census"));
 
     @TempDir
     static Path shared;
@@ -86,12 +89,13 @@ class EmissionCensusTest {
     void theCensusOfTheExampleSchemasConditions() throws Exception {
         var rows = ConditionQuery.read(handle());
         var decodes = NodeIdDecodeQuery.read(handle());
+        var builds = BuildQuery.read(handle());
         var census = new TreeMap<String, List<String>>();
         var type = TypeSpec.classBuilder("Conditions").addModifiers(Modifier.PUBLIC);
         int n = 0;
         for (var row : rows) {
             var key = row.coordinate() + " " + row.table().sqlName();
-            switch (ConditionEmitter.emit(row, "condition" + n++, decodes, RUNTIME)) {
+            switch (ConditionEmitter.emit(row, "condition" + n++, decodes, RUNTIME, builds)) {
                 case ConditionEmitter.Result.Emitted emitted -> {
                     census.computeIfAbsent(EMITTED, k -> new ArrayList<>()).add(key);
                     type.addMethod(emitted.method());
@@ -126,17 +130,21 @@ class EmissionCensusTest {
             "Query.citiesByCountryName city", "Query.citiesFaceted city", "Query.computedTitleFilm film",
             "Query.converterCampusesByOrgCode converter_campus",
             "Query.converterCampusesByOrgCodes converter_campus", "Query.customerByPk customer",
-            "Query.customers customer", "Query.customersByAddressDistrictActive customer",
-            "Query.customersByCityFilter customer", "Query.customersByCityId customer",
-            "Query.customersByConditionDistrict customer", "Query.customersByNullableAddressIds customer",
-            "Query.customersByTwoNames customer", "Query.endorsementsByNodeId film_endorsement",
+            "Query.customers customer", "Query.customersByCityFilter customer",
+            "Query.customersByCityId customer", "Query.customersByConditionDistrict customer",
+            "Query.customersByDistrictBean customer", "Query.customersByNullableAddressIds customer",
+            "Query.customersByTwoNames customer", "Query.customersOfPrincipal customer",
+            "Query.customersSeenByUser customer", "Query.endorsementsByNodeId film_endorsement",
             "Query.fanItem fan_base", "Query.filmActorBySingularCompositeNodeId film_actor",
             "Query.filmActorsByCompositeNodeIds film_actor", "Query.filmActorsByNullableNodeIds film_actor",
             "Query.filmActorsFaceted film_actor", "Query.films film",
             "Query.filmsByBridgedActorFirstName film", "Query.filmsByEffectiveNullability film",
             "Query.filmsByJunctionActorId film", "Query.filmsByNodeIdArg film",
             "Query.filmsByNodeIdArgWithTitleFilter film", "Query.filmsByNullableNodeIds film",
-            "Query.filmsByOneOf film", "Query.filmsByPlainInput film", "Query.filmsBySameTableNodeId film",
+            "Query.filmsByOneOf film", "Query.filmsByPlainInput film", "Query.filmsByRentalRateRange film",
+            "Query.filmsByRentalRateRangeDefaulted film", "Query.filmsByRentalRateRangeExplicit film",
+            "Query.filmsBySameTableNodeId film", "Query.filmsBySearchBean film", "Query.filmsByTitleBean film",
+            "Query.filmsByTitleBeans film", "Query.filmsByTitlePrefix film",
             "Query.filmsConnectionByOptionalIds film", "Query.filmsConnectionByRequiredIds film",
             "Query.filmsFaceted film", "Query.filmsNestedInput film", "Query.filmsOrderedConnection film",
             "Query.filmsOuterOverrideFilterInput film", "Query.filmsOuterOverridePlainInput film",
@@ -152,45 +160,36 @@ class EmissionCensusTest {
             "Query.occupantsByNamePrefix customer", "Query.occupantsByNamePrefix staff",
             "Query.occupantsByStoreId customer", "Query.occupantsByStoreId staff",
             "Query.occupantsByTypedNamePrefix customer", "Query.occupantsByTypedNamePrefix staff",
+            "Query.occupantsStartingWithM customer", "Query.occupantsStartingWithM staff",
             "Query.presenceDetail presence_detail", "Query.presenceDetailNode presence_detail",
             "Query.presenceDetailRequired presence_detail", "Query.presenceHostRefs presence_host",
             "Query.presenceHosts presence_host", "Query.rentalsByInventoryItem rental",
             "Query.splitFilterParentsByTargetLabel split_filter_parent",
             "Query.xlatChildByParentId xlat_child", "Query.xlatChildrenByFilter xlat_child",
             "Query.xlatChildrenByParentIds xlat_child", "Query.xlatCompChildrenByParentIds xlat_comp_child",
-            "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer",
-            "Query.filmsByRentalRateRange film", "Query.filmsByRentalRateRangeDefaulted film",
-            "Query.filmsByRentalRateRangeExplicit film", "Query.filmsByTitlePrefix film",
-            "Query.occupantsStartingWithM customer", "Query.occupantsStartingWithM staff",
-            "Store.customersByFirstName customer", "Store.customersByFirstNameSplit customer");
+            "SessionStore.customersOfPrincipal customer", "Store.customersByFirstName customer",
+            "Store.customersByFirstNameSplit customer", "Store.customersByNodeId customer",
+            "Store.customersByNodeIdSplit customer", "Store.customersSeenByUser customer");
         assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(105);
         // Each line goes as its shape is emitted from the store; a field moving between lines is a
         // change to look at, not to re-pin.
         assertThat(census)
-            .containsEntry("AUTHORED_BEAN", List.of("Query.customersByDistrictBean customer", "Query.filmsBySearchBean film",
-                "Query.filmsByTitleBean film", "Query.filmsByTitleBeans film"))
-            .containsEntry("AUTHORED_CONTEXT", List.of("Query.customersOfPrincipal customer", "Query.customersSeenByUser customer",
-                "SessionStore.customersOfPrincipal customer", "Store.customersSeenByUser customer"))
-            .containsEntry("AUTHORED_NODE_ID", List.of("Query.filmsByOptionalLanguage film", "Query.customersByAddressDistrict address",
-                "Query.customersByAddressDistrictActive address", "Query.customersByMultiFieldFilter address",
-                "Query.projectNotesByPlainFilter project", "Query.projectNotesByPlainFilterConnection project",
-                "Query.projectNotesByProject project", "Query.stockByLanguageOverride language",
-                "Store.customersByAddressDistrict address", "Store.customersByAddressDistrictSplit address"))
+            .containsEntry("AUTHORED_NODE_ID", List.of("Query.customersByAddressDistrict customer", "Query.customersByAddressDistrictActive customer",
+                "Query.customersByMultiFieldFilter customer", "Query.filmsByOptionalLanguage film",
+                "Query.projectNotesByPlainFilter project_note",
+                "Query.projectNotesByPlainFilterConnection project_note",
+                "Query.projectNotesByProject project_note", "Query.stockByLanguageOverride film",
+                "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
+                "Store.customersByAddressDistrictSplit customer"))
             .containsEntry("NODE_ID", List.of("Query.converterCampusTermByNodeId converter_campus_term",
                 "Query.converterCampusTermsByNodeIds converter_campus_term",
                 "Query.converterIdChangeByNodeId converter_id_change"))
-            .containsEntry("NODE_ID_PARTICIPANT", List.of("Query.customersByAddressDistrict customer", "Query.customersByMultiFieldFilter customer",
-                "Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",
+            .containsEntry("NODE_ID_PARTICIPANT", List.of("Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",
                 "Query.occupantByOptionalId staff", "Query.occupantsByAddress customer",
                 "Query.occupantsByAddress staff", "Query.occupantsByIds customer", "Query.occupantsByIds staff",
                 "Query.occupantsByIdsConnection customer", "Query.occupantsByIdsConnection staff",
                 "Query.occupantsByNullableIds customer", "Query.occupantsByNullableIds staff",
-                "Query.projectNotesByPlainFilter project_note",
-                "Query.projectNotesByPlainFilterConnection project_note",
-                "Query.projectNotesByProject project_note", "Query.stockByLanguage film",
-                "Query.stockByLanguage inventory", "Query.stockByLanguageOverride film",
-                "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
-                "Store.customersByAddressDistrictSplit customer"))
+                "Query.stockByLanguage film", "Query.stockByLanguage inventory"))
             .containsEntry("NOTHING", List.of("Film.actors actor", "Film.actorsBySplitLookup actor", "Film.actorsOrderedBySplitLookup actor",
                 "Film.filmDetails.actorsByLookup actor", "Film.info.castByKey actor",
                 "Film.inlineBundle.actorsByKey actor", "Film.inlineBundle.actorsByKeyViaJunctionCondition actor",
@@ -204,7 +203,7 @@ class EmissionCensusTest {
                 "Query.filmActorsByPairList film_actor", "Query.filmActorsByPairs film_actor",
                 "Query.filmsByCastNames film", "Query.filmsByLanguagePairs film",
                 "Query.filmsByOptionalLanguages film", "Query.filmsByOriginalLanguages film"))
-            .containsOnlyKeys("AUTHORED_BEAN", "AUTHORED_CONTEXT", "AUTHORED_NODE_ID", "CONSUMED", EMITTED, "NODE_ID", "NODE_ID_PARTICIPANT", "NOTHING", "THROUGH_LIST");
+            .containsOnlyKeys("AUTHORED_NODE_ID", "CONSUMED", EMITTED, "NODE_ID", "NODE_ID_PARTICIPANT", "NOTHING", "THROUGH_LIST");
     }
 
     /**
@@ -230,5 +229,4 @@ class EmissionCensusTest {
             assertThat(services.emits("Film.greeting")).isFalse();
         }
     }
-
 }
