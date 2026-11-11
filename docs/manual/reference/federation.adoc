@@ -1,0 +1,38 @@
+= Federation reference
+:description: What a federation key may select in a Graphitron subgraph, how its entities are resolved, and what is refused.
+:!toc:
+
+The rules a Graphitron subgraph applies to Apollo Federation's `@key`. `@key` is federation's directive, imported through the schema's `@link`, so it has no page among xref:directives/index.adoc[Graphitron's directives]; this page states what Graphitron does with it. xref:../how-to/federation-keys.adoc[How-to: Federation keys] walks through the shapes with examples.
+
+== How an entity is resolved
+
+An entity is resolved by selecting its row from its table: `_entities` matches the values a representation carries against that table's columns, one batched statement per key alternative. Each `@key` on a type is one alternative. A representation is matched by the most specific resolvable alternative whose fields it carries, ties broken by declaration order. A key with `resolvable: false` is declared for reference only and is never matched.
+
+A key over the node's own `id` is decoded rather than matched: the representation's `id` is a global node ID, decoded into the node's key columns as `Query.node` decodes it. The node's own `id` is an `id` field on a node type with no `@field`; an `id` carrying `@field(name:)` reads a column like any other field.
+
+== Synthesised keys
+
+In a federation-linked graph, every resolvable node type is given `@key(fields: "id")` after the keys its author wrote, unless an authored key already selects the node's own `id` alone. A key over an `id` carrying `@field(name:)` is a key on that column, so the node key is still synthesised beside it. A stub, `@node(resolvable: false)`, is given none.
+
+== What a key may select
+
+Each refusal below is reported at the `@key` that breaks it.
+
+[cols="1,3"]
+|===
+| Code | Rule
+
+| `KEY_TYPE_NOT_TABLE_BOUND`
+| A resolvable `@key` needs a type bound to a table with `@table`, since the entity is selected from it. A type whose every key is `resolvable: false` is another subgraph's to resolve and needs no table.
+
+| `KEY_ON_INTERFACE`
+| A table-bound interface carries no `@key`: an entity is resolved by one table, so declare the key on each implementing type.
+
+| `KEY_SELECTS_NOTHING`
+| A key's `fields:` must select at least one field.
+
+| `KEY_FIELD_NOT_A_COLUMN`
+| Every field a key selects reads a column of the entity's own table. A name the type does not declare, a nested selection, a field read through a `@reference` path, a computed field, or a `@nodeId` carrying another node's ID is refused, naming the field. The one exception is a key whose only field is the node's own `id`. A compound key including the node's own `id` is refused, since an encoded ID is not a column value.
+|===
+
+xref:index.adoc[← Reference index]

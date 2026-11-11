@@ -6,6 +6,8 @@ This recipe covers the federation key surface: how `@key` declares an entity, ho
 
 The framework-level federation surface (the `@link` opt-in, the runtime entity dispatcher, custom fetchers, the `<schemaInput tag>` flag) lives in xref:apollo-federation.adoc[How-to: Apollo Federation transport]; this recipe assumes that wiring is in place.
 
+The rules themselves, what a key may select and the codes a key is refused with, are stated in the xref:../reference/federation.adoc[Federation reference].
+
 == What `@key` does
 
 A federation `@key` on a type declares "this type is an entity, and a representation carrying these fields uniquely identifies one row". The federation gateway routes `_entities` lookups to your subgraph; graphitron wires the resolution per-type so each `@key` becomes a SELECT against the type's `@table`.
