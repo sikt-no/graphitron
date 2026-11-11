@@ -1,5 +1,5 @@
 "The expansion of one @asConnection application, stated as the rows it derives. The carrier is a bare list of a table-backed type, which is the only shape the expansion admits, and everything below follows from that one application: the connection, its edge, the shared page info, the machinery fields on each, the rewritten carrier and the pagination arguments."
-type Film @table(name: "film") { id: ID title: String }
+type Film @table(name: "film") { title: String }
 
 type Query { films: [Film!]! @asConnection }
 

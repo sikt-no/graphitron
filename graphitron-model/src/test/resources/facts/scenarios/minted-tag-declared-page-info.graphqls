@@ -1,0 +1,37 @@
+# A tagged @asConnection carrier beside a PageInfo its author declared. A minted type inherits the
+# tags of the carriers that mint it, and inheritance follows the mint rather than the coinage: every
+# carrier coins a PageInfo, but where the author declared one the mint stands down, so the declared
+# type is the author's and inherits nothing. The connection and edge nobody declared are the
+# control: they are minted, so they still inherit the carrier's tag.
+#
+# @tag is declared by the document, the graph linking no federation that would declare it.
+directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+
+type Query {
+  films: [Film!] @asConnection @tag(name: "experimental")
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+# The declared PageInfo is not minted.
+extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
+  type_name
+  QueryFilmsConnection
+  QueryFilmsConnectionEdge
+  """)
+
+# So only the connection and the edge inherit the carrier's tag.
+extend schema @expectEquals(relation: "graphitron_inherited_directive", rows: """
+  type_name,                directive_name, ordinal
+  QueryFilmsConnection,     tag,            0
+  QueryFilmsConnectionEdge, tag,            0
+  """)

@@ -1,0 +1,43 @@
+# A second @asConnection carrier, declared on an extension of Query and written nullable, beside the
+# base-declared, non-null carrier connection-mint states. The variation is the two things that
+# carrier differs in, each a way the rewrite could go wrong.
+#
+# The site: a type is its definition and its extensions, and the field anchors are merged across
+# them, so the row for Query.shorts has the same shape as the row for Query.films. What reads the
+# rows has to route each back to the site that declared it.
+#
+# The nullability: the expansion replaces what a carrier returns and says nothing about whether it
+# may be null, so [Film!] becomes a nullable connection where connection-mint's [Film!]! becomes a
+# non-null one. An output field that lost its non-null would be a breaking change to its consumers.
+extend schema @withFacts(docs: [{path: "scenarios/connection-mint"}])
+
+extend type Query { shorts: [Film!] @asConnection }
+
+extend schema @expectEquals(relation: "graphitron_connection_carrier", rows: """
+  type_name, field_name, connection_name,       edge_name,                 element_type, item_non_null, argument_count
+  Query,     films,      QueryFilmsConnection,  QueryFilmsConnectionEdge,  Film,         TRUE,          0
+  Query,     shorts,     QueryShortsConnection, QueryShortsConnectionEdge, Film,         TRUE,          0
+  """)
+
+# One connection and one edge per carrier, and the one page info both share.
+extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
+  type_name
+  QueryFilmsConnection
+  QueryFilmsConnectionEdge
+  QueryShortsConnection
+  QueryShortsConnectionEdge
+  PageInfo
+  """)
+
+# Each carrier retyped to its own connection, keeping the outer non-null its author wrote or did not.
+extend schema @expectEquals(relation: "graphitron_field_minted", where: "type_name = 'Query'", rows: """
+  field_name, type_sdl
+  films,      QueryFilmsConnection!
+  shorts,     QueryShortsConnection
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argument_minted", where: "field_name = 'shorts'", rows: """
+  type_name, field_name, argument_name, ordinal, type_sdl, default_value_sdl
+  Query,     shorts,     first,         0,       Int,      100
+  Query,     shorts,     after,         1,       String,
+  """)

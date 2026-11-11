@@ -1,0 +1,46 @@
+# Two @asConnection carriers that agree on one tag and disagree on another, one of them @shareable.
+# Each carrier mints a connection and an edge of its own, which inherit exactly that carrier's
+# directives; the one PageInfo is minted by both, so it inherits only the tag every carrier carries,
+# keeping a contract that excludes one carrier's tag intact for the other, and is shareable because
+# one of them is. The carriers' own connections are the control for the shared type.
+#
+# @tag and @shareable are declared by the document, the graph linking no federation that would
+# declare them.
+directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+directive @shareable repeatable on OBJECT | FIELD_DEFINITION
+
+type Query {
+  films: [Film!] @asConnection @tag(name: "public") @tag(name: "stable") @shareable
+  shorts: [Film!] @asConnection @tag(name: "public") @tag(name: "experimental")
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+# What each minted type inherits: the shared PageInfo the one tag both carriers carry, and
+# @shareable because one carrier is; each carrier's own connection and edge all of its carrier's.
+extend schema @expectEquals(relation: "graphitron_inherited_directive", rows: """
+  type_name,                 directive_name, ordinal
+  PageInfo,                  shareable,      0
+  PageInfo,                  tag,            0
+  QueryFilmsConnection,      shareable,      0
+  QueryFilmsConnection,      tag,            0
+  QueryFilmsConnection,      tag,            1
+  QueryFilmsConnectionEdge,  shareable,      0
+  QueryFilmsConnectionEdge,  tag,            0
+  QueryFilmsConnectionEdge,  tag,            1
+  QueryShortsConnection,     tag,            0
+  QueryShortsConnection,     tag,            1
+  QueryShortsConnectionEdge, tag,            0
+  QueryShortsConnectionEdge, tag,            1
+  """)
+
+# The tag the shared PageInfo keeps is the one both carriers carry. The value is SDL, quotes and
+# all, which a CSV cell would unquote, so it is stated in the predicate: a wrong value drops the row.
+extend schema @expectEquals(relation: "graphitron_inherited_directive", where: """
+  type_name = 'PageInfo' AND directive_name = 'tag' AND value_sdl = '"public"'
+  """, rows: """
+  type_name
+  PageInfo
+  """)
