@@ -1063,6 +1063,11 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
 * **The generator reads its configuration from the store** `open`. Each setting it still takes off
   `RunContext` or `BuildContext` (the tenant column, the lint configuration, the session hooks, the
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
+  * **The entity dispatch's tenant routing is read from the store** `blocked`, on "The tenant column and the session hook signature are captured".
+    `EntityTenantRouting` is filled from the walk's tenant fold over `EntityResolutionBuilder`'s map,
+    paired with the store's keys by field list, a disagreement failing the build; filled from the
+    store, `EntityResolutionBuilder`, `TenantBinding.EntityRepBound` and the fold's entity arm go
+    together, the builder's deletion having moved here from R1119.
   * **The tenant column and the session hook signature are captured** `blocked`, on "The generator builds no schema".
     `<tenantColumn>` is one pattern, matched against database names as jOOQ matches them: a Java
     regular expression, case-insensitive, whole-name against `column`, `table.column` or
@@ -1140,21 +1145,18 @@ output package they are written to are settled.
   and the session hooks from the store rather than from `GraphitronSchema`.
 * **The node id encoder is not planned** `open`. It renders from the store already and is written
   straight from it, as `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER`
-  goes, with `PlanCompileGraph`'s edge to it. Whether a stub's id is encodable here is unruled, Alf
-  and Filip's to say.
-* **The walk's catalog decode goes** `open`. `BuildContext.catalogNodeDecode`'s arm for a `@table`
-  type with no `@node` is unreachable on a graph that generates, the store refusing it as
-  `NODE_ID_TYPE_NAME_UNDECLARED_STUB`; count that over the scenarios, then delete it.
-* **The node and entity dispatch reads the store** `blocked`, on "Entity resolution is stated" and
-  "The generator reads its configuration from the store". `EntityFetcherDispatchClassGenerator` and
-  `QueryNodeFetcherClassGenerator` move together, the fetcher calling the dispatch, which reads the
-  entity key alternatives, each entity's tenant binding and the per-type projection classes. The
-  fetcher takes only the tenancy flag now, and whether either is emitted, decided from the walk by the
-  plan, the schema class and the facade alike, is one fact the facade node states once.
+  goes, with `PlanCompileGraph`'s edge to it.
+* **A node's own `id` bound to a column is a defect** `open`. A node's id is its encoded key, the
+  table's primary key or `keyColumns` (Alf, 2026-11-11), so `id: ID! @field(name:)` on a node is
+  refused rather than offered as `NODE_ID_SHADOWS_COLUMN`'s second remedy, and `node.adoc` follows.
+  It settles the order of an authored `@key(fields: "id")` against the minted node key, which would
+  otherwise send `Query.node`'s encoded id to a direct key over the column.
 * **The facade, dev executor, registrations and schema class read the store** `open`.
   `GraphitronFacadeGenerator`, `GraphitronDevExecutorGenerator`, `FetcherRegistrationsEmitter` and
   `GraphitronSchemaClassGenerator` take roots, nodes, scalars, error types and entities from the
-  emitted schema and the store, once the facts below exist.
+  emitted schema and the store, once the facts below exist. Whether the entity dispatch and the node
+  fetcher are emitted, decided from the walk by the plan, the schema class and the facade alike, is
+  one fact this node states once; the dispatch itself renders from `EntityKeyQuery`.
   * **An enum's runtime value is stated by coordinate** `open`. It reads `graphitron_ast_enum_entry`,
     the store's only typed copy of an enum's `@enum` reference.
   * **A scalar's resolution is stated** `open`.
@@ -1164,8 +1166,6 @@ output package they are written to are settled.
     `@order` and `@index` off the schema; `graphitron_ast_order_entry`,
     `graphitron_ast_order_field_entry` and `graphitron_ast_index_entry` are the store's only typed copy.
   * **The `@error` handlers are stated** `open`.
-  * **Entity resolution is stated** `open`. Taken by R1119, which states the entity key alternatives
-    as a stored relation and adds the voucher alternative.
   * **Each field's wiring is stated** `open`. The cases `FetcherEmitter.bind` switches on, read with
     the families of "`TypeFetcherGenerator` reads the store, one family of field at a time".
 * **The type and input generators read the emitted schema and the store** `open`. The enum, input
