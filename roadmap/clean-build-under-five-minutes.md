@@ -103,11 +103,38 @@ removes.
 - If it is most of it, Track A is the main road to five minutes.
 - If it is not, the target is restated from what A1 shows, and this item says so before going on.
 
+*Result (2026-11-11, `roadmap/audits/2026-11-11-what-a-capture-costs-by-store.md`).* It is most of
+it, and the target stands. A capture costs about 2.3 s of CPU in an empty store and about 0.3 to
+0.45 s in a store that already holds other graphs and has kept its statement cache.
+- **Every inline arm lands in the expensive case.** That includes the thread's long-lived store,
+  whose clear empties it and invalidates its cache: the referential-integrity toggle the clear
+  truncates under throws the cache away.
+- **The real run shows the same split.** In `graphitron` and the model, inline captures are 797 of
+  1,108 captures and 1,941 of 2,111 thread-seconds. At the populated price they would cost about
+  540 s in all.
+- **The lever is a populated store, not the population as such,** so A2 gains a shorter road, A2a.
+- **Duplicates are second order.** At 0.45 s a capture, A3 is priced against that figure, not 2.3 s.
+
 **A2. The inline captures move onto the population, heaviest first.** This is R1160's migration (the
 `fact-documents` skill, each module's `InlineCaptureGateTest` ceiling, 294 call sites in `graphitron`
 today). This item adds only the order: classes ranked by the CPU their captures cost in the latest
 profile, so the build gains early. A test that needs a store of its own keeps one, as R1160's "What
 keeps a store of its own" says.
+
+**A2a. The thread's store accumulates instead of clearing.** This is the harness change A1 points
+at, and it would come ahead of A2's class-by-class order:
+- each borrow captures under a graph name of its own;
+- the thread keeps one store per catalog and classpath, as the population's shards do;
+- the clear goes.
+
+What it costs:
+- about 290 test references to `CapturedStore.GRAPH` read the fixture's name instead;
+- the tests that read without scoping to their graph, write, or change the schema keep a store of
+  their own, and they are not counted yet;
+- the heap of a thread store holding hundreds of graphs is priced before it lands.
+
+The stores booted per capture (`ownStore*`, `BuiltStore`) are a separate 807 s. They move onto the
+accumulating store where their reason for a store of their own allows.
 
 **A3. Each scenario is captured once per build, not once per module.** The population is per JVM,
 so the model's tests, `generate-test-schemas`, `graphitron`, LSP, MCP and the plugin each capture the
@@ -141,8 +168,9 @@ pool and heap are raised together, after A2, and priced. Raising them before Tra
 more work for the same heap.
 
 **B6. Let the forks be recorded.** The LSP, MCP and plugin modules' `<argLine>` drops a flag passed
-on the command line, so their forks cannot be profiled. Lead with `@{argLine}` so a passed flag
-survives. This is small, and it makes their next measurement possible.
+on the command line, so their forks cannot be profiled. They already lead with `@{argLine}`, which
+was this step's first fix, so the cause is still to be found. This is small, and it makes their next
+measurement possible.
 
 ### Track C: smaller statements (R876)
 
