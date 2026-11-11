@@ -10,6 +10,13 @@ DataFetchers return `Result<Record>` ; no DTOs, no TypeMappers. GraphQL-Java tra
 using the registered field DataFetchers. Exception: Connection fields return `ConnectionResult`, a
 generated carrier wrapping `Result<Record>` + pagination context.
 
+Every field in the schema is wired: the generated code registers a DataFetcher for each one and
+never leaves a field to graphql-java's default `PropertyDataFetcher` (Alf, 2026-11-11). Where a
+field reads a member of the value it is handed, its registration names that member, so a member
+that is renamed or changes its signature fails the build or the classify-time check rather than
+resolving to null on a request. This holds for the values graphitron generates as much as for the
+consumer's own classes.
+
 == Selection-aware queries
 
 `DataFetchingFieldSelectionSet` and `SelectedField` are threaded through all table method
