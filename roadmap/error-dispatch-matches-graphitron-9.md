@@ -195,3 +195,62 @@ A new history page, `docs/history/error-dispatch-divergence.adoc`, sibling of `a
 - Test with named fixtures per route and per divergence.
 
 It also pointed out that the ruling's reach over `message:`, `path:` and unclaimed throws is not written down; divergences (c) and (d) are marked for a ruling, and (a) and (b) are proposed as kept. On where the ruling lives, it found no `docs/architecture/` page owning dispatch semantics and suggested the history page this item creates, with an optional line in `runtime-extension-points.adoc` if the ruling should bind beyond dispatch; that placement is for Alf and Filip.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready (session_01FY5UvsLHL4QaoqPYs6hAmA, 2026-11-11)
+
+Verdict: withhold. The goal reads cleanly on its own and is reachable: the account of Graphitron 9
+holds against the v9.3.0 source, the account of today holds against the tree, and every class,
+method, relation, test and doc passage the body names exists as named. Question two passes: the
+plan extends `ErrorChannelRelation`, `ErrorMappings` and `ErrorRouter` and stands nothing beside
+them. One finding on question one holds the gate.
+
+**Finding 1 (question one: goal communication and viability). The goal promises "the same
+`message:`", and the item leaves open whether that holds.** Divergences (c) and (d) are marked
+"Needs a ruling", the goal section says both rulings are needed before the item is Ready, and
+neither is recorded here or under `docs/`. Until they are, a reader cannot say what a consumer
+sees in `message:` from a handler without `description:`, or in `path:` on an aliased field, and
+those are two of the four things the goal is about.
+
+The plan also covers only the recommended arm of each. "Tests" carries "(or the reverse, per the
+ruling)" twice, and "Implementation" has nothing for the reverse: (c) reversed has
+`ErrorTypeFetcherClassGenerator.messageMethod` read the recorded root's message where it reads
+the source's today, and (d) reversed changes `pathMethod` and the standing
+`GraphQLQueryTest.createFilmWithErrors_aliased_pathNamesTheAlias`. An implementer handed the item
+as it stands meets a fork that is not theirs to settle.
+
+Satisfied by: each ruling recorded under "Divergences kept" with who gave it and when, the two
+markers and the conditional halves of the two tests removed, and, where a ruling goes against the
+recommendation, the implementation and user-documentation text for that arm added. In the same
+pass, say whether (a) and (b) were confirmed: "Architect consultation" calls them "proposed as
+kept", and (b) is the widest of the four, since on Graphitron 9 every `IllegalArgumentException`
+and every unclaimed outer `DataAccessException` went to consumer code.
+
+**Not holding the gate.** Three observations for the author to weigh.
+
+* *Two corners of the compatibility claim are not in the divergence list (question one).* "The
+  rule" says every throw Graphitron 9 put into a payload through a handler is claimed by the
+  handler Graphitron 9 chose. Graphitron 9's `unwrapCompletionException` removes one
+  `CompletionException` and never an `ExecutionException`, where `outer` removes any depth of
+  both; a throw whose outer exception on Graphitron 9 was an `ExecutionException`, or a second
+  `CompletionException`, around a `DataAccessException` went to the `GENERIC` list only and goes
+  `DATABASE`-first here. And `DataAccessMatcher` read the first `SQLException` only, so a
+  `DATABASE` handler declared earlier that matches a deeper `SQLException` claims here ahead of
+  the handler Graphitron 9 chose; (a) says a handler that matched still matches, which is true
+  and is not the same as it still winning. Both are narrow, and the history page is where they
+  would be stated.
+* *What a run without a store reads (question two).* `EmitPlan.produce` hands the emitters
+  `ErrorChannelRelation.empty()` when there is no store. The member check in
+  `ErrorMappingsClassGenerator.generate` passes on it vacuously; the planned kind-sequence check
+  walks the model's `@error` types, so on an empty relation every type with a dispatch handler
+  differs. Both mojos construct the generator with a store, so this reaches test harnesses only
+  (`TypeFetcherRenderTestSupport`, `SchemaShapeRenderTestSupport`), but the plan does not say
+  what `empty()` means for the third component.
+* *The read-side selector's fallback (question two).* As worded it answers
+  `dataAccessFirst(source)` when roots are recorded and none is a `DataAccessException`. A
+  `DataAccessException` claimed by a `GENERIC` handler through a wrapper of another class then
+  reads `DATABASE`-first where dispatch went `GENERIC`-first. The answer is still the one
+  dispatch gave, because a `DatabaseMapping` claims only an `SQLException` and a
+  `DataAccessException` is not one; the selector's javadoc or its unit test is where to say so,
+  or the fallback is taken only when no root is recorded.
