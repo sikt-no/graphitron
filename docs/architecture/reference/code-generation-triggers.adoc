@@ -178,6 +178,9 @@ and place it binds, keyed by the place and stating its kind.
 | `VALUE`
 | A member's value off its parent's object.
 
+| `MEMBER`
+| A member of the class its parent input object is built into, which its value fills.
+
 | `PARAMETER`
 | A parameter of a call that consumes it, such as a `@service` method's.
 
@@ -198,6 +201,16 @@ include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_o
 the name jOOQ generated for it, which answers only where no SQL name on the table does.
 
 include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_occurrence_column]
+
+An input object a call takes is built into a class first, and `graphitron_occurrence_built_class`
+says which: the class the parameter takes where the input object lands on it, the class of the
+member it fills below that, or its parent's own class where it fills no member and groups its
+fields onto the parent's. A `@service` matches a field to a member by its bound name, so
+`@field(name:)` renames the member; a `@condition` matches by the field's own name, since `@field`
+there names the column the filter compares. A jOOQ record is built too, but its fields bind columns
+rather than members. The input `in` that `Mutation.customerUpsert` takes is built into
+`CustomerRecord`, and so is its field `details`, which groups `firstName` and `lastName` onto the
+same record.
 
 The store does not state every binding yet. In the running example `Film.language`, `Film.actors`
 and `Film.inventory` have no `TABLE` row, and the arguments a `@routine` consumes have no

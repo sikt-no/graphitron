@@ -22,6 +22,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN_RECORD_ACCESSOR;
@@ -132,16 +134,51 @@ public final class BuildQuery {
 
     private record Construction(String className, String shape, String descriptor, List<Slot> slots) {}
 
+    /**
+     * What the store says an input object is built into and how each field fills it: the class each
+     * occurrence is built into, by occurrence and class, with how it got it and the classpath entry
+     * the class is read from, and the member each field fills, by field and the class it is of.
+     */
+    private record Builds(Map<String, Built> classes, Map<String, String> members) {
+
+        record Built(String declaredVia, String sourceRef) {}
+
+        static String key(String coordinate, String className) {
+            return coordinate + "|" + className;
+        }
+
+        static Builds read(StoreHandle store) {
+            var c = GRAPHITRON_OCCURRENCE_BUILT_CLASS;
+            var classes = new HashMap<String, Built>();
+            store.dsl().select(c.COORDINATE, c.CLASS_NAME, c.DECLARED_VIA, c.CLASS_SOURCE_REF)
+                .from(c)
+                .where(c.GRAPH_NAME.eq(store.graphName()))
+                .forEach(r -> classes.put(key(r.value1(), r.value2()), new Built(r.value3(), r.value4())));
+            var m = GRAPHITRON_OCCURRENCE_BINDING_MEMBER;
+            var members = new HashMap<String, String>();
+            store.dsl().select(m.COORDINATE, m.CLASS_NAME, m.SLOT_METHOD_NAME, m.SLOT_DESCRIPTOR, m.SLOT_POSITION)
+                .from(m)
+                .where(m.GRAPH_NAME.eq(store.graphName()))
+                .forEach(r -> members.put(key(r.value1(), r.value2()), slotKey(r.value3(), r.value4(), r.value5())));
+            return new Builds(classes, members);
+        }
+
+        static String slotKey(String methodName, String descriptor, int position) {
+            return methodName + descriptor + ":" + position;
+        }
+    }
+
     /** Every input object a service call's argument fill takes, and how its parameter is made. */
     public static Map<Root, Result> read(StoreHandle store) {
         var children = inputFields(store);
         var constructions = constructions(store);
         var catalog = Catalog.read(store);
+        var builds = Builds.read(store);
         var out = new HashMap<Root, Result>();
         roots(store).forEach((root, rooted) -> out.put(root, rooted.condition() && catalog.tables().containsKey(rooted.className())
             ? new Result.Refused("a @condition parameter takes no jOOQ record: take the map or a bean")
-            : build(root.landingCoordinate(), rooted.className(), children, constructions, catalog, new ArrayList<>(),
-                rooted.condition())));
+            : build(root.landingCoordinate(), rooted.className(), children, constructions, catalog, builds,
+                new ArrayList<>())));
         nodeIdRoots(store).forEach((root, className) -> out.put(root,
             decodeParameter(root.landingCoordinate(), className, catalog)));
         return out;
@@ -258,7 +295,10 @@ public final class BuildQuery {
         return out;
     }
 
-    /** Every class the code family says how to make, with the members it fills. */
+    /**
+     * Every class the code family says how to make, with the members it fills, by the classpath entry
+     * it is read from and its name.
+     */
     private static Map<String, Construction> constructions(StoreHandle store) {
         var k = CODE_CONSTRUCTION;
         var w = CODE_WRITE_SLOT;
@@ -269,25 +309,29 @@ public final class BuildQuery {
                     .from(w)
                     .where(w.SOURCE_NAME.eq(k.SOURCE_NAME), w.CLASS_NAME.eq(k.CLASS_NAME))
                     .orderBy(w.METHOD_NAME, w.POSITION))
-                    .convertFrom(r -> r.map(Records.mapping(Slot::new))))
+                    .convertFrom(r -> r.map(Records.mapping(Slot::new))),
+                k.SOURCE_NAME)
             .from(k)
-            .forEach(r -> out.putIfAbsent(r.value1(), new Construction(r.value1(), r.value2(), r.value3(), r.value4())));
+            .forEach(r -> out.put(r.value5() + "|" + r.value1(),
+                new Construction(r.value1(), r.value2(), r.value3(), r.value4())));
         return out;
     }
 
 
     private static Result build(String occurrence, String className, Map<String, List<InputField>> children,
-                                Map<String, Construction> constructions, Catalog catalog,
-                                List<String> prefix, boolean graphQlNames) {
+                                Map<String, Construction> constructions, Catalog catalog, Builds builds,
+                                List<String> prefix) {
         if (catalog.tables().containsKey(className)) {
             return columns(occurrence, className, children, catalog);
         }
-        var construction = constructions.get(className);
+        // The class as graphitron_occurrence_built_class names it, read from the entry it names.
+        var built = builds.classes().get(Builds.key(occurrence, className));
+        var construction = built == null ? null : constructions.get(built.sourceRef() + "|" + className);
         if (construction == null) {
             return new Result.Refused("nothing says how to make " + className);
         }
         var members = new ArrayList<Member>();
-        var reason = bind(occurrence, construction, children, constructions, catalog, prefix, members, graphQlNames);
+        var reason = bind(occurrence, construction, children, constructions, catalog, builds, prefix, members);
         if (reason != null) {
             return new Result.Refused(reason);
         }
@@ -396,35 +440,35 @@ public final class BuildQuery {
 
     /**
      * Binds the fields under {@code occurrence} to {@code construction}'s members, a grouping's
-     * fields under its name; the reason the first one cannot bind, or null. A service's bean matches
-     * a field's bound name, {@code @field(name:)} renaming the member; a condition's matches its
-     * GraphQL name, {@code @field} naming the column a filter input compares rather than a member.
+     * fields under its name; the reason the first one cannot bind, or null. The member each field
+     * fills is its {@code MEMBER} binding's, and a field filling none is a grouping where
+     * {@code graphitron_occurrence_built_class} says it is built into the same class.
      */
     private static String bind(String occurrence, Construction construction,
                                Map<String, List<InputField>> children, Map<String, Construction> constructions,
-                               Catalog catalog, List<String> prefix, List<Member> members, boolean graphQlNames) {
+                               Catalog catalog, Builds builds, List<String> prefix, List<Member> members) {
+        var className = construction.className();
         for (var field : children.getOrDefault(occurrence, List.of())) {
             var path = new ArrayList<>(prefix);
             path.add(field.name());
-            var memberName = graphQlNames ? field.name() : field.boundName();
-            var slot = construction.slots().stream()
-                .filter(s -> s.slotName().equals(memberName)).findFirst();
+            var filled = builds.members().get(Builds.key(field.coordinate(), className));
+            var slot = filled == null ? Optional.<Slot>empty() : construction.slots().stream()
+                .filter(s -> Builds.slotKey(s.methodName(), s.descriptor(), s.position()).equals(filled)).findFirst();
             if (slot.isEmpty()) {
-                boolean renamed = !memberName.equals(field.name());
-                if ("INPUT_OBJECT".equals(field.typeKind()) && !renamed) {
-                    if (field.list()) {
-                        return "input field " + String.join(".", path) + " matches no member of "
-                            + construction.className() + " and is a list, so it cannot group";
-                    }
-                    var reason = bind(field.coordinate(), construction, children, constructions, catalog,
-                        path, members, graphQlNames);
+                var built = builds.classes().get(Builds.key(field.coordinate(), className));
+                if (built != null && "GROUPING".equals(built.declaredVia())) {
+                    var reason = bind(field.coordinate(), construction, children, constructions, catalog, builds,
+                        path, members);
                     if (reason != null) {
                         return reason;
                     }
                     continue;
                 }
-                return "input field " + String.join(".", path) + " names member " + memberName
-                    + ", which " + construction.className() + " does not have";
+                if ("INPUT_OBJECT".equals(field.typeKind()) && field.list()) {
+                    return "input field " + String.join(".", path) + " matches no member of "
+                        + className + " and is a list, so it cannot group";
+                }
+                return "input field " + String.join(".", path) + " fills no member of " + className;
             }
             var memberClass = slot.get().elementClass() != null ? slot.get().elementClass() : slot.get().erasedClass();
             Optional<Build> nested = Optional.empty();
@@ -437,8 +481,8 @@ public final class BuildQuery {
                 }
                 decode = Optional.of(((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode());
             } else if ("INPUT_OBJECT".equals(field.typeKind())) {
-                var result = build(field.coordinate(), memberClass, children, constructions, catalog, List.of(),
-                    graphQlNames);
+                var result = build(field.coordinate(), memberClass, children, constructions, catalog, builds,
+                    List.of());
                 if (result instanceof Result.Refused refused) {
                     return refused.reason();
                 }

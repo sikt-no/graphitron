@@ -67,6 +67,8 @@ public final class OccurrenceDepths {
         OccurrenceTables.sweep(dsl, graph, touchedAt);
         // After the sweeps, since a shape joins a binding to the parameter its argument fills and
         // a stale row of either would land it somewhere it no longer goes.
+        OccurrenceBuilds.write(dsl, graph, touchedAt);
+        OccurrenceBuilds.sweep(dsl, graph, touchedAt);
         OccurrenceNodeIdShapes.write(dsl, graph, touchedAt);
         OccurrenceNodeIdShapes.sweep(dsl, graph, touchedAt);
     }

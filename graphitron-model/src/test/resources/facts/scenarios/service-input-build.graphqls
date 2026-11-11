@@ -54,3 +54,32 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter", ro
   Query.countFilmRecordDatedDrafts, 0,  drafts,         ARGUMENT, Query.countFilmRecordDatedDrafts(in:)
   Query.countFilmSurvey,      0,        survey,         ARGUMENT, Query.countFilmSurvey(in:)
   """)
+
+# The class each input object is built into: the parameter's at the argument, a list's element; a
+# member's below it; and its parent's own where it groups. A record's fields write columns rather than
+# fill members, so the only class below a record is the record itself, for an input object grouping
+# onto it.
+extend schema @expectEquals(relation: "graphitron_occurrence_built_class", rows: """
+  coordinate,                               class_name,                                                         declared_via, member_names
+  Query.countFilmDrafts(in:),               no.sikt.graphitron.rewrite.test.services.FilmDraft,                 PARAMETER,    BOUND
+  Query.countFilmBundleDraft(in:),          no.sikt.graphitron.rewrite.test.services.FilmBundleDraft,           PARAMETER,    BOUND
+  Query.countFilmBundleDraft(in.limits:),   no.sikt.graphitron.rewrite.test.services.FilmBundleDraft,           GROUPING,     BOUND
+  Query.countFilmBundleDraft(in.films:),    no.sikt.graphitron.rewrite.test.services.FilmDraft,                 MEMBER,       BOUND
+  Query.countFilmRecordDrafts(in:),         no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PARAMETER, BOUND
+  Query.countFilmRecordDatedDrafts(in:),    no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PARAMETER, BOUND
+  Query.countFilmSurvey(in:),               no.sikt.graphitron.rewrite.test.services.FilmSurvey,                PARAMETER,    BOUND
+  """)
+
+# The member each field fills, of the class its parent is built into: a grouping's field fills the
+# enclosing class's member, its parent the grouping.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_member", rows: """
+  coordinate,                                      bound,                                                             parent_coordinate
+  Query.countFilmDrafts(in.title:),                no.sikt.graphitron.rewrite.test.services.FilmDraft#title,          Query.countFilmDrafts(in:)
+  Query.countFilmBundleDraft(in.name:),            no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#name,     Query.countFilmBundleDraft(in:)
+  Query.countFilmBundleDraft(in.limits.capacity:), no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity, Query.countFilmBundleDraft(in.limits:)
+  Query.countFilmBundleDraft(in.films:),           no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#films,    Query.countFilmBundleDraft(in:)
+  Query.countFilmBundleDraft(in.films.title:),     no.sikt.graphitron.rewrite.test.services.FilmDraft#title,          Query.countFilmBundleDraft(in.films:)
+  Query.countFilmSurvey(in.count:),                no.sikt.graphitron.rewrite.test.services.FilmSurvey#count,         Query.countFilmSurvey(in:)
+  Query.countFilmSurvey(in.mood:),                 no.sikt.graphitron.rewrite.test.services.FilmSurvey#mood,          Query.countFilmSurvey(in:)
+  Query.countFilmSurvey(in.note:),                 no.sikt.graphitron.rewrite.test.services.FilmSurvey#note,          Query.countFilmSurvey(in:)
+  """)

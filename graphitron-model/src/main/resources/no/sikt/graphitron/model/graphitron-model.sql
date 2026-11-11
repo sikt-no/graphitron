@@ -10569,13 +10569,13 @@ CREATE TABLE graphitron_occurrence_binding (
   UNIQUE (graph_name, coordinate, bound, kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'PARAMETER', 'EXPRESSION', 'RESULT_EXPRESSION'))
+  CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'MEMBER', 'PARAMETER', 'EXPRESSION', 'RESULT_EXPRESSION'))
 );
 COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and an argument a call consumes binds the parameter that takes it, once per candidate overload until the call is pinned.';
 COMMENT ON COLUMN graphitron_occurrence_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_binding.coordinate IS 'the binding occurrence, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the holder''s key, the method and the position for PARAMETER; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
-COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; PARAMETER, the parameter of a call that consumes the value; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
+COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; PARAMETER, the parameter of a call that consumes the value; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The member each occurrence with an object source reads, off its accessor path.
@@ -10630,6 +10630,73 @@ COMMENT ON COLUMN graphitron_occurrence_binding_value.slot_class_name IS 'the cl
 COMMENT ON COLUMN graphitron_occurrence_binding_value.slot_method_name IS 'the method that reads the member';
 COMMENT ON COLUMN graphitron_occurrence_binding_value.slot_descriptor IS 'the method''s descriptor; with the three before it, the code_read_slot row';
 COMMENT ON COLUMN graphitron_occurrence_binding_value.touched_at IS 'when the reading that last stated this binding ran; the occurrence-values stage deletes the graph''s VALUE bindings a reading did not mark, this row going with its binding';
+
+CREATE TABLE graphitron_occurrence_built_class (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  class_name       VARCHAR   NOT NULL,
+  declared_via     VARCHAR   NOT NULL,
+  member_names     VARCHAR   NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  class_source_ref VARCHAR,
+  class_name_ref   VARCHAR,
+  PRIMARY KEY (graph_name, coordinate, class_name),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  -- The class, through the row's own copy of its key, where the graph's entries declare it.
+  FOREIGN KEY (class_source_ref, class_name_ref)
+    REFERENCES code_class (source_name, class_name) ON DELETE SET NULL,
+  CHECK ((class_source_ref IS NULL) = (class_name_ref IS NULL)),
+  CHECK (class_name_ref IS NULL OR class_name_ref = class_name),
+  CHECK (declared_via IN ('PARAMETER', 'MEMBER', 'GROUPING')),
+  CHECK (member_names IN ('BOUND', 'GRAPHQL'))
+);
+COMMENT ON TABLE graphitron_occurrence_built_class IS 'The class an input object occurrence is built into: one row per occurrence and class. For example Mutation.assignFilmRecordList(in:) is built into FilmRecordListAssignment, the class its @service parameter takes, and Mutation.customerUpsert(in:).details into CustomerRecord, the record its parent is built into, as a grouping.';
+COMMENT ON COLUMN graphitron_occurrence_built_class.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_built_class.coordinate IS 'the argument or input field occurrence whose input object is built';
+COMMENT ON COLUMN graphitron_occurrence_built_class.class_name IS 'the class it is built into, a jOOQ record of a table among them, whose fields then write columns rather than fill members. Several where a @condition applied to several tables pins a different overload per table';
+COMMENT ON COLUMN graphitron_occurrence_built_class.declared_via IS 'how the class was reached: PARAMETER, the class the call parameter it lands on takes, a list''s element; MEMBER, the class of the member of its parent''s class it fills; GROUPING, its parent''s own class, the input object matching no member and its fields filling the parent''s';
+COMMENT ON COLUMN graphitron_occurrence_built_class.member_names IS 'which name of an input field below names the member it fills: BOUND, the field''s bound name, @field(name:) renaming the member, where a @service takes the object; GRAPHQL, the field''s own name, where a @condition takes it, since @field there names the column a filter compares. Decided at the parameter and carried down, so a member or a grouping is matched as its root is';
+COMMENT ON COLUMN graphitron_occurrence_built_class.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+COMMENT ON COLUMN graphitron_occurrence_built_class.class_source_ref IS 'the classpath entry half of the class''s code_class key, nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
+COMMENT ON COLUMN graphitron_occurrence_built_class.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
+
+CREATE TABLE graphitron_occurrence_binding_member (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  parent_coordinate VARCHAR   NOT NULL,
+  class_name        VARCHAR   NOT NULL,
+  slot_source_name  VARCHAR   NOT NULL,
+  slot_method_name  VARCHAR   NOT NULL,
+  slot_descriptor   VARCHAR   NOT NULL,
+  slot_position     INT       NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- The binding it details, pinned to the kind that fills a member of a built class.
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  -- A member of the class its parent is built into, which the database holds rather than the rule.
+  FOREIGN KEY (graph_name, parent_coordinate, class_name)
+    REFERENCES graphitron_occurrence_built_class (graph_name, coordinate, class_name) ON DELETE CASCADE,
+  FOREIGN KEY (slot_source_name, class_name, slot_method_name, slot_descriptor, slot_position)
+    REFERENCES code_write_slot (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE,
+  CHECK (kind = 'MEMBER'),
+  CHECK (bound = class_name || '#' || SUBSTRING(bound, POSITION('#', bound) + 1))
+);
+COMMENT ON TABLE graphitron_occurrence_binding_member IS 'The member of the class an input object is built into that an input field fills: one row per MEMBER binding. For example Mutation.assignFilmRecordList(in:).films fills FilmRecordListAssignment#films, the record component at position 0 of its canonical constructor.';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.graph_name IS 'the owning graph''s partition, carried from the binding';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.coordinate IS 'the input field occurrence that fills the member';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.bound IS 'the place bound, the class and the member filled, Class#member; with the two columns before it, the binding''s key';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.kind IS 'always MEMBER, pinned so the foreign key holds the row to a binding of that kind';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.parent_coordinate IS 'the occurrence whose built class the member is of: the input field''s parent, or for a field under a grouping the grouping, which is built into the enclosing class';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.class_name IS 'the class the member is of, the parent''s built class, shared by both foreign keys so the member is one of that class''s';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_source_name IS 'the classpath entry of the member''s code_write_slot row, the entry the parent''s built class is read from';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_method_name IS 'the call that fills the member, the constructor or the setter, as on code_write_slot';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_descriptor IS 'that call''s descriptor';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_position IS 'the argument of the call carrying the member';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.touched_at IS 'the reading that last wrote this row; the sweep deletes the MEMBER bindings an older reading wrote, this row with them';
 
 -- The key columns a node id at an occurrence packs or unpacks: the NODE_ID subtype of the binding,
 -- one row per key position, keyed as the binding is with the position added and pinned to its kind
@@ -12189,6 +12256,114 @@ SELECT graph_name, coordinate, bound, landing_class, decode_shape
           LEFT JOIN code_tuple_class tc ON tc.class_name = l.landing_class) shaped
  WHERE decode_shape IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class, in the shape graphitron_occurrence_node_id_shape stores. For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.';
+
+-- The member of its parent's built class each input field fills, matched on the name the parent's
+-- row says: the first of the class's members by that name, in the order code_write_slot keys them.
+-- A record's fields write columns, so a record's setters are no members here, however they are named.
+CREATE VIEW graphitron_occurrence_binding_member_rule
+  (graph_name, coordinate, bound, parent_coordinate, class_name, slot_source_name, slot_method_name,
+   slot_descriptor, slot_position, parent_touched_at) AS
+SELECT o.graph_name, o.coordinate, pr.class_name || '#' || w.slot_name, o.parent_coordinate,
+       pr.class_name, w.source_name, w.method_name, w.descriptor, w.position, pr.touched_at
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_built_class pr
+    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
+  JOIN code_write_slot w
+    ON w.source_name = pr.class_source_ref AND w.class_name = pr.class_name
+   AND w.slot_name = CASE WHEN pr.member_names = 'GRAPHQL' THEN o.name ELSE f.bound_name END
+ WHERE o.kind = 'INPUT_FIELD'
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source gs
+                     JOIN sql_table st ON st.source_name = gs.source_name
+                    WHERE gs.graph_name = o.graph_name AND st.record_class_fqn = pr.class_name)
+   AND NOT EXISTS (SELECT 1 FROM code_write_slot w2
+                    WHERE w2.source_name = w.source_name AND w2.class_name = w.class_name
+                      AND w2.slot_name = w.slot_name
+                      AND (w2.method_name < w.method_name
+                           OR w2.method_name = w.method_name AND w2.position < w.position));
+COMMENT ON VIEW graphitron_occurrence_binding_member_rule IS 'The member of the class an input object is built into that an input field fills: one row per MEMBER binding, in the shape graphitron_occurrence_binding_member stores, with when the parent row it reads was written. For example Mutation.assignFilmRecordList(in:).films fills FilmRecordListAssignment#films, the record component at position 0 of its canonical constructor.';
+
+-- The class each input object is built into, judged depth by depth: at a call's parameter the class
+-- the parameter takes, below it the class of the member it fills, or its parent's own class where it
+-- matches no member and groups. A parameter taking the delivered map builds nothing. The parent's
+-- row and the member bindings are the stored ones, the writer having written a depth's members
+-- before its classes, carried with when they were written so the writer reads this reading's only.
+CREATE VIEW graphitron_occurrence_built_class_rule
+  (graph_name, coordinate, depth, class_name, declared_via, member_names, parent_touched_at,
+   class_source_ref, class_name_ref) AS
+WITH reached (graph_name, coordinate, depth, class_name, declared_via, member_names,
+              parent_touched_at) AS (
+  -- Every call's ARGUMENT fill, a condition's among them, where a service's alone also has a
+  -- PARAMETER binding at the occurrence it lands on.
+  SELECT cp.graph_name, cp.landing_coordinate, o.depth, COALESCE(mp.element_class, mp.erased_class),
+         'PARAMETER',
+         CASE WHEN MIN(s.call_kind) = 'CONDITION' AND MAX(s.call_kind) = 'CONDITION'
+              THEN 'GRAPHQL' ELSE 'BOUND' END,
+         CAST(NULL AS TIMESTAMP)
+    FROM graphitron_occurrence_call_parameter cp
+    JOIN graphitron_occurrence_call_method s
+      ON s.graph_name = cp.graph_name AND s.coordinate = cp.coordinate AND s.call = cp.call
+    JOIN code_method_parameter mp
+      ON mp.source_name = s.method_source_name AND mp.class_name = s.method_class_name
+     AND mp.method_name = s.method_name AND mp.descriptor = s.method_descriptor
+     AND mp.position = cp.position
+    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.landing_coordinate
+    LEFT JOIN graphitron_argument a ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+    LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    JOIN graphitron_type t
+      ON t.graph_name = o.graph_name AND t.type_name = COALESCE(a.named_type, f.named_type)
+     AND t.kind = 'INPUT_OBJECT'
+   WHERE cp.fill = 'ARGUMENT'
+     AND COALESCE(mp.element_class, mp.erased_class) NOT IN ('java.util.Map', 'java.lang.Object')
+   GROUP BY cp.graph_name, cp.landing_coordinate, o.depth, COALESCE(mp.element_class, mp.erased_class)
+  UNION ALL
+  SELECT m.graph_name, m.coordinate, o.depth, COALESCE(w.element_class, w.erased_class), 'MEMBER',
+         pr.member_names, pr.touched_at
+    FROM graphitron_occurrence_binding_member m
+    JOIN graphitron_occurrence o ON o.graph_name = m.graph_name AND o.coordinate = m.coordinate
+    JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    JOIN graphitron_type t
+      ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INPUT_OBJECT'
+    -- The member bindings of this reading, written before the classes at each depth.
+    JOIN graphitron_occurrence_built_class pr
+      ON pr.graph_name = m.graph_name AND pr.coordinate = m.parent_coordinate
+     AND pr.class_name = m.class_name AND pr.touched_at = m.touched_at
+    JOIN code_write_slot w
+      ON w.source_name = m.slot_source_name AND w.class_name = m.class_name
+     AND w.method_name = m.slot_method_name AND w.descriptor = m.slot_descriptor
+     AND w.position = m.slot_position
+  UNION ALL
+  -- A nested input object that is no list and fills no member groups onto its parent's class: always
+  -- under a record, whose fields write columns, and under a bean where no member has its name and
+  -- nothing renames it.
+  SELECT o.graph_name, o.coordinate, o.depth, pr.class_name, 'GROUPING', pr.member_names, pr.touched_at
+    FROM graphitron_occurrence o
+    JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    JOIN graphitron_type t
+      ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INPUT_OBJECT'
+    JOIN graphitron_occurrence_built_class pr
+      ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
+   WHERE o.kind = 'INPUT_FIELD' AND NOT f.is_list
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
+                      WHERE m.graph_name = o.graph_name AND m.coordinate = o.coordinate
+                        AND m.class_name = pr.class_name AND m.touched_at = pr.touched_at)
+     AND (EXISTS (SELECT 1 FROM store_graph_source gs
+                    JOIN sql_table st ON st.source_name = gs.source_name
+                   WHERE gs.graph_name = o.graph_name AND st.record_class_fqn = pr.class_name)
+          OR pr.member_names = 'GRAPHQL' OR f.bound_name = o.name)
+)
+SELECT r.graph_name, r.coordinate, r.depth, r.class_name, r.declared_via, r.member_names,
+       r.parent_touched_at, cc.source_name, cc.class_name
+  FROM reached r
+  -- The class by its key, among the graph's own entries declaring it the first by name, as
+  -- graphitron_occurrence_source_object decides it.
+  LEFT JOIN code_class cc
+    ON cc.class_name = r.class_name
+   AND cc.source_name = (SELECT MIN(gs.source_name)
+                           FROM store_graph_source gs
+                           JOIN code_class ca ON ca.source_name = gs.source_name AND ca.class_name = r.class_name
+                          WHERE gs.graph_name = r.graph_name);
+COMMENT ON VIEW graphitron_occurrence_built_class_rule IS 'The class an input object occurrence is built into: one row per occurrence and class, in the shape graphitron_occurrence_built_class stores, with the depth the writer steps through and when the parent row it reads was written. For example Mutation.assignFilmRecordList(in:) is built into FilmRecordListAssignment, the class its @service parameter takes, and Mutation.customerUpsert(in:).details into CustomerRecord, the record its parent is built into, as a grouping.';
 
 -- The members a polymorphic @nodeId's per-member defects name, at the @nodeId: a table-bound
 -- member that is no node, and a member the id binds whose record the parameter cannot take. A
@@ -18674,6 +18849,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_column'),
   ('occurrence-depths', 'graphitron_occurrence_node_id'),
   ('occurrence-depths', 'graphitron_occurrence_node_id_shape'),
+  ('occurrence-depths', 'graphitron_occurrence_built_class'),
+  ('occurrence-depths', 'graphitron_occurrence_binding_member'),
   ('occurrence-depths', 'graphitron_occurrence_binding_table'),
   ('occurrence-depths', 'graphitron_occurrence_call'),
   ('occurrence-depths', 'graphitron_occurrence_call_candidate'),
@@ -19142,6 +19319,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-node-id-key',
    'one key column one occurrence''s node id carries at one node table, in one graph',
    'graph_name, coordinate, bound, position', 'sdl'),
+  ('occurrence-built-class',
+   'one class one input object occurrence is built into, in one graph',
+   'graph_name, coordinate, class_name', 'sdl'),
   ('occurrence-node-id-shape',
    'one class one occurrence''s node id at one node table lands in, in one graph',
    'graph_name, coordinate, bound, landing_class', 'sdl'),
@@ -19969,6 +20149,22 @@ INSERT INTO meta_relation VALUES
    'One row the table binding rule computes, in the shape graphitron_occurrence_binding_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_binding and graphitron_occurrence_binding_table, which are the names every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_built_class', 'occurrence-built-class', 'graphitron',
+   'The class an input object occurrence is built into: one row per occurrence and class.',
+   'For example Mutation.assignFilmRecordList(in:) is built into FilmRecordListAssignment, the class its @service parameter takes, and Mutation.customerUpsert(in:).details into CustomerRecord, the record its parent is built into, as a grouping.',
+   'Which class an input object is built into depends on the call that takes it, not on its type alone, so it is the occurrence''s and not graphitron_type_backing''s: a @condition''s bean belongs to its parameter and does not back the input type. Stored so the member bindings below can name their parent''s row by foreign key, a grouping''s row carrying the enclosing class its fields fill.'),
+  ('graphitron_occurrence_built_class_rule', 'occurrence-built-class', 'graphitron',
+   'The class an input object occurrence is built into: one row per occurrence and class, in the shape graphitron_occurrence_built_class stores, with the depth the writer steps through and when the parent row it reads was written.',
+   'For example Mutation.assignFilmRecordList(in:) is built into FilmRecordListAssignment, the class its @service parameter takes, and Mutation.customerUpsert(in:).details into CustomerRecord, the record its parent is built into, as a grouping.',
+   'The rule the stored relation is written from, depth by depth after the depth loop, a member''s or a grouping''s row reading its parent''s.'),
+  ('graphitron_occurrence_binding_member', 'graph-occurrence-binding', 'graphitron',
+   'The member of the class an input object is built into that an input field fills: one row per MEMBER binding.',
+   'For example Mutation.assignFilmRecordList(in:).films fills FilmRecordListAssignment#films, the record component at position 0 of its canonical constructor.',
+   'The MEMBER subtype of graphitron_occurrence_binding, the write side''s twin of VALUE: where VALUE reads a member off the object a field reads from, MEMBER fills one of the class an input object is built into. Decided here once, matched on the name the parent''s built class says, so a service''s and a condition''s bean are read alike.'),
+  ('graphitron_occurrence_binding_member_rule', 'graph-occurrence-binding', 'graphitron',
+   'The member of the class an input object is built into that an input field fills: one row per MEMBER binding, in the shape graphitron_occurrence_binding_member stores, with when the parent row it reads was written.',
+   'For example Mutation.assignFilmRecordList(in:).films fills FilmRecordListAssignment#films, the record component at position 0 of its canonical constructor.',
+   'The rule the stored relation is written from, with the built classes of the depth above it.'),
   ('graphitron_occurrence_binding_value', 'graph-occurrence-binding', 'graphitron',
    'The member an occurrence''s value is read by off the object it reads from: one row per VALUE binding, the class read from, the class of the value and the member''s code_read_slot row, none where the object passes through.',
    'For example Query.filmBlurbHolder.blurb binds FilmBlurbHolder#blurb, a FilmBlurb, and a payload''s data element that its producer''s class backs binds that class itself.',
