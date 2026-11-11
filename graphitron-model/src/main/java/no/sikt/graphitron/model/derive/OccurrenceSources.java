@@ -22,7 +22,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
@@ -76,10 +75,11 @@ import static org.jooq.impl.DSL.val;
  * <p>A kind is part of its subtypes' keys, so a source whose kind changed since the last reading is
  * deleted before it is written again, taking its subtypes.
  *
- * <p>A step of the assembly's per-depth loop: reads the key rows {@link FieldKeyRows} writes before
- * the loop, the producers {@link OccurrenceProducers} writes for the same depth, the call parameters
- * {@link OccurrenceCallParameters} wrote for the calls above, and the join paths {@link Steps} wrote
- * for the depth above.
+ * <p>A step of the assembly's per-depth loop: a field under a parent's value reads that value, its
+ * table or its class, and never the key a producer takes off it, which is the producer's
+ * ({@link OccurrenceLifts}). Reads the producers {@link OccurrenceProducers} writes for the same
+ * depth, the call parameters {@link OccurrenceCallParameters} wrote for the calls above, and the join
+ * paths {@link Steps} wrote for the depth above.
  */
 public final class OccurrenceSources {
 
@@ -201,7 +201,6 @@ public final class OccurrenceSources {
         at = at.andNot(takesRecord(o, touchedAt));
         return ownServiceRecord(o, atDepth, touchedAt)
             .union(recordParameter(o, record, touchedAt))
-            .union(keyRow(o, p, at, touchedAt))
             .union(record(o, p, at, touchedAt))
             .union(object(o, p, at, touchedAt))
             .union(objectMember(o, p, at, touchedAt))
@@ -298,49 +297,7 @@ public final class OccurrenceSources {
     }
 
     /**
-     * A nested field under a parent whose service hands back an object, a table record or not, or
-     * whose {@code @externalField} hands over the value its {@code Field} carries, takes its rows by
-     * its key row where it has one of kind COLUMNS: the key row's table. A parent read off an object
-     * and an errors field give none.
-     */
-    private static Select<Record> keyRow(GraphitronOccurrence o, GraphitronOccurrence p,
-                                         Condition at, LocalDateTime touchedAt) {
-        var pf = GRAPHITRON_FIELD.as("pf");
-        var cf = GRAPHITRON_FIELD.as("cf");
-        var ps = GRAPHITRON_PRODUCER_SERVICE.as("ps");
-        var xr = GRAPHITRON_CODE_REFERENCE.as("xr");
-        var xm = CODE_METHOD.as("xm");
-        var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
-        var po = GRAPHITRON_OCCURRENCE_SOURCE.as("po");
-        var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
-        return row(o, TABLE, kr.TABLE_SOURCE_NAME, kr.TABLE_SCHEMA, kr.TABLE_NAME, null)
-            .from(o)
-            .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.PARENT_COORDINATE))
-            .join(pf).on(pf.GRAPH_NAME.eq(p.GRAPH_NAME), pf.COORDINATE.eq(p.ELEMENT_COORDINATE))
-            .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
-            .join(kr).on(kr.GRAPH_NAME.eq(cf.GRAPH_NAME), kr.TYPE_NAME.eq(cf.TYPE_NAME),
-                kr.FIELD_NAME.eq(cf.FIELD_NAME), kr.KIND.eq("COLUMNS"))
-            .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"))
-            .and(exists(selectOne().from(ps)
-                    .where(ps.GRAPH_NAME.eq(pf.GRAPH_NAME), ps.TYPE_NAME.eq(pf.TYPE_NAME),
-                        ps.FIELD_NAME.eq(pf.FIELD_NAME)))
-                .or(exists(selectOne().from(xr)
-                    .join(xm).on(xm.SOURCE_NAME.eq(xr.METHOD_SOURCE_NAME),
-                        xm.CLASS_NAME.eq(xr.METHOD_CLASS_NAME), xm.METHOD_NAME.eq(xr.METHOD_NAME),
-                        xm.DESCRIPTOR.eq(xr.METHOD_DESCRIPTOR))
-                    .where(xr.GRAPH_NAME.eq(pf.GRAPH_NAME), xr.COORDINATE.eq(pf.COORDINATE),
-                        xr.DIRECTIVE_NAME.eq("externalField"), xr.KIND.eq("ROOT"),
-                        xm.RESULT_FIRST_ARGUMENT_CLASS.isNotNull()))))
-            .and(notExists(selectOne().from(po)
-                .where(po.GRAPH_NAME.eq(p.GRAPH_NAME), po.COORDINATE.eq(p.COORDINATE),
-                    po.KIND.eq(OBJECT), po.TOUCHED_AT.eq(touchedAt))))
-            .and(notExists(selectOne().from(ef)
-                .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
-                    ef.FIELD_NAME.eq(cf.FIELD_NAME))));
-    }
-
-    /**
-     * A nested field with no COLUMNS key row under a parent whose service hands back a table's own
+     * A nested field under a parent whose service hands back a table's own
      * record, or whose {@code @externalField}'s {@code Field} carries one, reads that table, the
      * record class matched in the graph's own catalog.
      */
@@ -354,7 +311,6 @@ public final class OccurrenceSources {
         var xm = CODE_METHOD.as("xm");
         var gs = STORE_GRAPH_SOURCE.as("gs");
         var st = SQL_TABLE.as("st");
-        var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
         var po = GRAPHITRON_OCCURRENCE_SOURCE.as("po");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
         // The class the parent hands over: its service's result, or the class its Field carries.
@@ -375,9 +331,6 @@ public final class OccurrenceSources {
             .join(st).on(st.SOURCE_NAME.eq(gs.SOURCE_NAME), st.RECORD_CLASS_FQN.eq(handed))
             .join(cf).on(cf.GRAPH_NAME.eq(o.GRAPH_NAME), cf.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .where(at, o.KIND.eq("FIELD"), p.KIND.eq("FIELD"))
-            .and(notExists(selectOne().from(kr)
-                .where(kr.GRAPH_NAME.eq(cf.GRAPH_NAME), kr.TYPE_NAME.eq(cf.TYPE_NAME),
-                    kr.FIELD_NAME.eq(cf.FIELD_NAME), kr.KIND.eq("COLUMNS"))))
             .and(notExists(selectOne().from(po)
                 .where(po.GRAPH_NAME.eq(p.GRAPH_NAME), po.COORDINATE.eq(p.COORDINATE),
                     po.KIND.eq(OBJECT), po.TOUCHED_AT.eq(touchedAt))))
@@ -387,7 +340,7 @@ public final class OccurrenceSources {
     }
 
     /**
-     * A nested field with no COLUMNS key row under a parent whose service hands back a class that is
+     * A nested field under a parent whose service hands back a class that is
      * no table's record, or whose {@code @externalField}'s {@code Field} carries one, reads an
      * instance of that class, the parent's own method's and no class the type may otherwise be
      * backed by.
@@ -402,7 +355,6 @@ public final class OccurrenceSources {
         var xm = CODE_METHOD.as("xm");
         var gs = STORE_GRAPH_SOURCE.as("gs");
         var st = SQL_TABLE.as("st");
-        var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
         var po = GRAPHITRON_OCCURRENCE_SOURCE.as("po");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
         // The class the parent hands over: its service's result, or the class its Field carries.
@@ -424,9 +376,6 @@ public final class OccurrenceSources {
             .and(notExists(selectOne().from(gs)
                 .join(st).on(st.SOURCE_NAME.eq(gs.SOURCE_NAME))
                 .where(gs.GRAPH_NAME.eq(o.GRAPH_NAME), st.RECORD_CLASS_FQN.eq(handed))))
-            .and(notExists(selectOne().from(kr)
-                .where(kr.GRAPH_NAME.eq(cf.GRAPH_NAME), kr.TYPE_NAME.eq(cf.TYPE_NAME),
-                    kr.FIELD_NAME.eq(cf.FIELD_NAME), kr.KIND.eq("COLUMNS"))))
             .and(notExists(selectOne().from(po)
                 .where(po.GRAPH_NAME.eq(p.GRAPH_NAME), po.COORDINATE.eq(p.COORDINATE),
                     po.KIND.eq(OBJECT), po.TOUCHED_AT.eq(touchedAt))))
@@ -439,7 +388,7 @@ public final class OccurrenceSources {
      * A field under an occurrence whose accessor path this reading stated reads an instance of the
      * class that path reaches, its parent's value: the object side reaching past the producer's own
      * object as the table side reaches past its first table. Not where the class is a table's record,
-     * nor for a field taking its parent's columns or for an errors field, as for the producer's own
+     * nor for an errors field, as for the producer's own
      * object.
      */
     private static Select<Record> objectMember(GraphitronOccurrence o, GraphitronOccurrence p,
@@ -448,7 +397,6 @@ public final class OccurrenceSources {
         var cf = GRAPHITRON_FIELD.as("cf");
         var gs = STORE_GRAPH_SOURCE.as("gs");
         var st = SQL_TABLE.as("st");
-        var kr = GRAPHITRON_FIELD_KEY_ROW.as("kr");
         var ef = GRAPHITRON_ERRORS_FIELD.as("ef");
         return row(o, OBJECT, null, null, null, pa.TARGET_CLASS_NAME)
             .from(o)
@@ -460,9 +408,6 @@ public final class OccurrenceSources {
             .and(notExists(selectOne().from(gs)
                 .join(st).on(st.SOURCE_NAME.eq(gs.SOURCE_NAME))
                 .where(gs.GRAPH_NAME.eq(o.GRAPH_NAME), st.RECORD_CLASS_FQN.eq(pa.TARGET_CLASS_NAME))))
-            .and(notExists(selectOne().from(kr)
-                .where(kr.GRAPH_NAME.eq(cf.GRAPH_NAME), kr.TYPE_NAME.eq(cf.TYPE_NAME),
-                    kr.FIELD_NAME.eq(cf.FIELD_NAME), kr.KIND.eq("COLUMNS"))))
             .and(notExists(selectOne().from(ef)
                 .where(ef.GRAPH_NAME.eq(cf.GRAPH_NAME), ef.TYPE_NAME.eq(cf.TYPE_NAME),
                     ef.FIELD_NAME.eq(cf.FIELD_NAME))));
