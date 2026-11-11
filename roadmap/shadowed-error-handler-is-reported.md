@@ -174,3 +174,23 @@ What satisfies this: the rulings on 2, 3 and 4, recorded in the body with who ga
   *Response.* Taken. The capture paragraph attaches the platform source through `store_graph_source`, the shadowing bullet reads `code_throwable` through it, and "Tests" gains the scoping case.
 - R1167 is in Spec with rulings of its own pending. This item's rule is stated against R1167's order, so a change to that order in R1167's review reopens this one.
   *Response.* "The rule" now opens with the pickup check: confirm R1167 landed with the order stated here, and reopen this item if it did not.
+
+### Round 2: Spec → Ready (session_01FY5UvuPcoH2xjvpofcwirM, 2026-11-11)
+
+Verdict: withhold. The goal reads cleanly on its own, every symbol, relation, test and page the body names exists as named, the rule is sound against the predicates the emitted router evaluates and against R1167's two phases, and round 1's findings are answered in the body. One blocking finding and three notes.
+
+**Finding 1 (question one: viability; question two for the seam). The warning half of the goal has no route to the build, and the plan defers finding that out to pickup.** The goal says the author is told "when the schema is built, as a warning or as an error", and "Tests" asserts that "the finding is a warning in the build's report". On the build side the Demotion paragraph changes one thing, `EntryDefectVerdict` no longer counting a demoted row as an error, and leaves the rest to a pickup check ("confirm that a `warning`-severity defect already reaches the build log") whose fallback covers a path that exists and is untested, not one that is absent. The check can be made now, and the path is absent:
+
+- `EntryDefectVerdict.rows` selects `severity = 'error'`, and its javadoc says a warning-severity defect is no part of the verdict.
+- The build logs `BuildWarning`s and nothing else (`GraphQLRewriteGenerator.logWarnings`), and nothing turns a defect into one: `storeWarnings` gathers the lint findings, the session-state and dependency advisories, the tag narrowings and the fan-out advisory.
+- The `diagnostic` view's entry arm is the one reader of a warning-severity defect, and only the LSP (`DiagnosticFacts`) and the MCP server (`DiagnosticsTool`) read that view. `defects-as-facts.adoc` says as much: such a defect "shows in the editor and the MCP server".
+
+So as planned, a consumer who demotes the code gets a build that says nothing about the handler, which is the state this item exists to end, and the migration advice ("migrate first and fix later") leaves nothing in a CI log to fix later from. The missing route is a fork, not a line. `BuildWarning` is sealed to `NoRule` and `LintFinding`, and `BuildWarningFacts` stores both back into relations that are arms of the same `diagnostic` view, so a defect sent through that channel shows twice in the editor and the MCP tool, beside its own entry arm. And a route for every warning-severity defect starts printing `NODE_METADATA_UNREADABLE`, the one such code today, where a route for demoted codes alone does not.
+
+What satisfies this: the plan says how a warning-severity defect reaches the build log, through which seam, how the editor and the MCP tool keep showing it once, and whether `NODE_METADATA_UNREADABLE` prints as a consequence; the `defects-as-facts.adoc` sentence quoted above joins the statements the item restates; the pickup sentence goes; and "Tests" names where the logged warning is asserted.
+
+**Notes, not blocking.**
+
+- "Fails the build at configuration, as an unknown lint rule id does (`LintConfig.validated`)" is not like for like. That check compares against `LintRule.ids()`, a Java enum, at the Maven seam before a store is open; the defect codes exist only as rows of `graphitron_defect_type`. Say where the check reads the vocabulary from: the configuration gatherer would be reading a `graphitron`-family relation, and `meta_gatherer_dependency` puts `store` upstream of `graphitron`.
+- "Unresolved classes" gives a class with no `code_throwable` row no shadowing rows at all, while the shadowing bullet reads "A's class is B's class" as the names being equal, which needs no ancestry. Two handlers with identical criteria on such a class are refused by rule 8 today and would pass unreported; say which is meant.
+- R1167's read, as its spec now stands, takes each handler's dispatch index (its ordinal among the type's handlers that are not `VALIDATION`), and the sequence relation carries the declared index and the rank within a kind. The repoint works if the read keeps ranking or the relation carries that index; since the grain is fixed here, say which.
