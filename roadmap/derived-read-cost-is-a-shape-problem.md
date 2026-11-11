@@ -1177,17 +1177,20 @@ classified records have no reader left and can go with the walk.
     `graphitron_occurrence_source_object` decides it, so a reader joins the class's members on their
     key rather than scanning the census by name, which is what the field-keyed key row's accessor arm
     does at about 5 s an evaluation on sakila.
-  * **A depth's key rows are written off its source** `open`. Each child producer's lift is stated
-    per occurrence at the end of its depth, off its source, its join path and its candidates:
-    `TARGET` where the source hands over the target's records, or one unconditioned hop rides a
-    foreign key graphitron read off a selected row or, for a list, one referencing the source's key;
-    `SOURCE` otherwise, keyed on the source's primary key (Alf, 2026-11-10; the rule is on
-    `code-generation-triggers.adoc` § Producer). The key is a `sql_constraint`, the accessor a
-    `code_read_slot`, the candidates rows the key-row defects read, judged per occurrence, two
-    candidates raising `KEY_ROW_AMBIGUOUS` on every arm (Alf, 2026-11-10). `graphitron_field_key_row`,
-    its accessor table, its rule, the `field-key-rows` stage and `FieldKeyRows` go: about 14 s of a
-    sakila capture's 38. A forward hop off a nested selected row waits on "A source says whether
-    graphitron selected its rows", a table-bound declaring type taking it meanwhile.
+  * **A depth's key rows are written off its source** `open`. Each child producer that takes keys
+    off its parent's value states per occurrence, at the end of its depth, the key its source fills
+    it with: the key constraint, read off the source's columns or through a member, and how many per
+    parent, a selection's batch key and a service's key parameter alike, since a service fills with
+    the data a lookup lifts from (Alf, 2026-11-11). The population is the field-keyed key row's, so no
+    reader changes (scope is simplification and performance, Alf 2026-11-11): a member handing over
+    the key's records, a re-fetch, a selection under a record handed over whose path leaves the
+    record's table by its first key, and a service keyed on its source's table. The candidates are the
+    rows the key-row defects read, judged per occurrence, two candidates raising `KEY_ROW_AMBIGUOUS` on
+    every arm (Alf, 2026-11-10), the refused service shapes taking `NO_KEY_FROM_PARENT` with its
+    statement widened. The readers move (sources, defects, `FrameQuery`, `RoutineWriteQuery`), then
+    `graphitron_field_key_row`, its accessor table, its rule, the `field-key-rows` stage and
+    `FieldKeyRows` go: about 14 s of a sakila capture's 38. Where a query resumes, at the source or
+    at the target, is stated with the shortcut that reads it.
   * **A source says whether graphitron selected its rows** `open`, F's.
     `graphitron_occurrence_source` carries its basis, `SELECTED` or `HANDED`, so a lift tells a row
     graphitron selected from a record a service or a write handed over, which guarantees only its key.
