@@ -734,11 +734,15 @@ static method needs no holder.
     parameter: an id filling a bean member is never compared. Widened to member slots, the emitter
     dispatches on the type id over the member decodes it already groups, and the three
     `BUILD_REFUSED` services leave the census's exclusions.
-  * **A node id's decode shape is decided once, in the store** `open`, off the critical path. Whether
-    a decoded id lands as its node's record, a `RecordN`, a `RowN` or its one key column's value is
-    judged by the slot defect rule off `graphitron_node_id_slot` and again in
-    `BuildQuery.decodeParameter`, from class-name patterns and the column's binding type; stated as the
-    slot's shape, the rule and the emitter read one fact.
+  * **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
+    At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
+    `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and
+    `BuildQuery.decodeParameter` read it. What is left is the bean member an input field fills, which
+    `BuildQuery.bind` still judges with `NodeIdDecodeQuery.resolve`, and a record of another table
+    the id reaches through a foreign key. The model (Alf, 2026-11-10): the class each input object
+    occurrence is built into, a `MEMBER` binding beside `VALUE` keyed into `code_write_slot` (matched
+    on the bound name for a service and the GraphQL name for a condition), the node id slot stored
+    per call parameter for every call kind, and the shape relation widened to those slots.
   * **A service's key row is stored with its candidates, and its defects read them** `open`, folded
     into "A depth's key rows are written off its source" (Alf, 2026-11-10). The key-row stage stores a service's key table and each member of the parent's
     class returning its record as rows under the field, so `NO_KEY_FROM_PARENT` and
