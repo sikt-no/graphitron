@@ -1,78 +1,96 @@
-# Roadmap staleness audit: 2026-11-10
+# Roadmap staleness audit: 2026-11-11
 
 A point-in-time review of every active roadmap item under [`roadmap/`](../) against the **current**
-state of the codebase on `claude/graphitron-rewrite` (HEAD `0c95016`, committed 2026-11-10 04:45 +0100,
-audited 2026-11-10). The goal is to find items whose premise no longer holds: work already shipped,
+state of the codebase on `claude/graphitron-rewrite` (HEAD `17747b3`, committed 2026-11-10 22:56 UTC,
+audited 2026-11-11). The goal is to find items whose premise no longer holds: work already shipped,
 constructs renamed or removed, dependencies that have since landed or been discarded, or specs grown
-stale enough to mislead an implementer.
+stale enough to mislead an implementer. Every flagged item carries a recommended action and the reason
+for it.
 
 This file is an analysis artifact, not a roadmap item: it lives in a subdirectory so the roadmap-tool
 (which scans `roadmap/*.md` non-recursively and requires `id:` front-matter on each) ignores it, and it
 is Markdown so the `check-adoc-tables` build step (which scans `.adoc` only) leaves it alone.
 
-This audit supersedes the `2026-09-01` staleness audit, which has been deleted; only the latest
+This audit supersedes the `2026-11-10` staleness audit, which has been deleted; only the latest
 **staleness** audit is retained. The other files in this directory are provenance (spikes, censuses,
 measurements, lineage notes) that shipped and active items cite by path; they are not staleness audits and
 are left in place.
 
-**Baseline and method, stated honestly.** The prior audit measured against trunk HEAD `77beb3b`
-(`next-id: R903`, 325 item files, 2026-08-31). This audit measures at `next-id: R1164`, **368** item
-files (max id R1163), a window of about ten weeks and roughly 260 allocated ids. The sandbox clone is
-shallow (50 commits), so the prior audit's commit is not reachable and the delta is measured against the
-**prior audit's own recorded flag set** rather than a commit diff. The method was:
+**Baseline and method.** The prior audit measured trunk at `0c95016` (`next-id: R1164`, 368 item files).
+This audit measures at `17747b3` (`next-id: R1166`, **366** item files, max id R1165): a window of **one
+day and 78 commits**. Unlike the prior run, the baseline commit was reachable (the clone was deepened), so
+the delta is a real commit diff:
 
-1. Parse every `roadmap/*.md` front-matter (id, status, bucket, depends-on) and recheck every one of the
-   44 carried flags for presence and status.
-2. For every one of the 368 item bodies, extract the backticked class, method, test and relation names
-   and test each against a corpus of every non-roadmap source, test, DDL, doc and config file in the
-   reactor. A name absent from the whole tree is a candidate stale citation. Names that appear in
-   `changelog.md` or in other item bodies but nowhere in code are treated as retired; names that appear
-   only in the citing item are treated as the item's own proposals and not flagged.
-3. Read the headline evidence (the changelog entries, R876 and R955's bodies, `graphitron-model.sql`) to
-   decide what each cluster of hits means.
+1. Parse every `roadmap/*.md` front-matter (id, status, bucket, depends-on) and recheck structure.
+2. Diff `0c95016..17747b3`: every roadmap file touched, every changelog entry added, and the set of
+   identifiers present anywhere in the non-roadmap tree at the baseline and absent now (259 of them).
+   Each of the 366 item bodies was tested against that removed set; four items cite a name removed in
+   the window.
+3. Recheck the prior audit's flags: a sample of the retired names each cluster rests on was re-`grep`ped
+   (all still absent), and no flagged item was edited in the window except those named below, so the
+   flags the prior audit raised carry unless stated otherwise.
+4. Read the new and moved items (R1164, R1165, R1119) and the window's R876 commits for work that
+   delivers or undercuts a Backlog item.
 
-A flag below is therefore **symbol-evidence-backed, not a full prose read of 368 bodies**; the
-recommended action for most flagged items is a re-derive that will confirm or dissolve the flag.
+As before, the carried flags are **symbol-evidence-backed, not a full prose read of every body**; the
+recommended action for most is a re-derive that will confirm or dissolve the flag.
 
-## Headline: one event, R876's dissolution of the `intent_` family and the materialization register, stales about 40 Backlog and Spec items at once; the prior audit's predicted "next headline" arrived
+## What changed since the 2026-11-10 audit
 
-The prior audit's observation 3 said R682's terminal step would stale many walk-tier items at once and
-"is the next audit's likely headline". What actually happened is larger and different:
+- **Done (files deleted, changelog entries present):** R1162 (`cursor-decode-binding-only-column`),
+  R1163 (`principles-architect-carries-the-direction`), R1076 (`entities-unknown-typename-is-an-error`).
+  None was flagged; nothing to carry.
+- **Discarded:** R545 (`model-free-of-emit-vocabulary`), absorbed by R876 on an Alf ruling of 2026-11-10.
+  It was a §B.1 re-spec flag; **resolved**.
+- **Filed:** R1164 (`federation-resolution-failure-claim-leaves-the-comments`, Backlog) and R1165
+  (`error-handlers-ordered-by-narrowness`, Spec). Both are **current**: the two comments R1164 names are
+  still in `KeyAlternative` and `GraphitronSchemaClassGenerator`, and all 33 names R1165 cites resolve.
+- **Moved:** R1119 (`signed-reference-entities-across-subgraphs`) went Ready, back to Spec, to Ready and
+  to **In Progress** inside the day, with its body largely rewritten (616 lines changed). The ten names
+  it cites that are absent from the tree are its own proposals or relations it is mid-way through
+  landing, so it is not flagged.
+- **R876 kept moving (34 commits).** New in the store this window: `graphitron_occurrence_call_method`,
+  `graphitron_occurrence_call_candidate` as a table, `graphitron_occurrence_condition`,
+  `graphitron_occurrence_producer_lift`, `graphitron_argmapping_landing_key_column`,
+  `graphitron_entry_defect_key_column`, `graphitron_entry_defect_parameter`, and from R1119
+  `graphitron_minted_key` and `sql_column_spelling`. `graphitron-model.sql` went from 281 to **307**
+  distinct `graphitron_*` names and from 129 to **143** views; the `intent_*` names it still defines are
+  unchanged at **9**. `MutationRoutineSeatTest` was deleted by R1160 (`e446f4c`, the routine-write tests
+  now read fact documents).
+- **Effect on flags.** One resolved (R545). Four sharpened: **R898** and **R852** now have a delivering
+  commit to point at, and **R816**/**R677** gained a deleted test cite (§B.2). One new minor flag: **R534**
+  (§C.1). One recommendation changed wording because R1163 shipped (R836, R697).
+
+**Flag totals.** Prior ~108; one resolved, one added: **~108 flagged items: 4 §A (+R901 structural) /
+~39 §B / ~65 §C.** Item counts are given per cluster because many flagged items cite the same retired
+names. Nothing the prior audit recommended has been actioned yet beyond the R545 discard, which is
+expected one day on.
+
+## Standing headline (unchanged): R876's dissolution of the `intent_` family and the materialization register stales about 40 Backlog and Spec items at once
 
 - **R682 was discarded, absorbed by R876** (`planners-read-facts-emitters-read-commands`, changelog
-  "Discarded"). R876 (`derived-read-cost-is-a-shape-problem`, still **In Progress**, hundreds of commits)
-  is now the single large model-level item. It has retired, in this window: the `intent_` relation family
-  (now **9** `intent_*` names remain in `graphitron-model.sql`, against the 100+ the board cites; the
-  fact store holds **269 `graphitron_*` relations**), `meta_materialize` and its `_live` registration
-  views (**R955 reached the thesis in full: the register is gone**, `meta_materialize` is `grep`=0),
-  `MaterializeDependencies`, `MaterializeRegistryGateTest`, `CompletionData` (and with it the generator's
-  classpath census read only to build it), the `@sourceRow` directive (`SourceRowDirectiveResolver`,
-  `LifterRef`, `BatchKeyLifterDirectiveResolver` are `grep`=0), and the `*ShadowTest` family
-  (`ColumnMatchShadowTest`, `DemandShadowTest`, `InputOccurrenceShadowTest`). `DerivationStratum` is the
-  next thing it dissolves.
-- **R1163 (In Review) states the edge of the retired three-strata vocabulary** and lists what R876 owns.
-  Items that cite "stratum" or the `intent_` names as live mechanisms are the stale set.
-- Done this window and not stale-making beyond the above: R922 (change observation, `read_at`), R1133
-  (fixed 2026-11-09), R1076 (In Review). Discarded this window and already off the board: R462
-  (`nested-fetcher-outgoing-field-edges`), R333 (`coordinate-lowers-to-datafetcher-queryparts`, absorbed
-  by R876), R116 (`composite-key-row2-source-row-coverage`, `@sourceRow` removed), R682, R972; R382 and
-  R533 and R231 and R724 no longer have files (shipped or discarded).
+  "Discarded"). R876 (`derived-read-cost-is-a-shape-problem`, still **In Progress**) is the single large
+  model-level item. It has retired the `intent_` relation family (9 `intent_*` names remain in
+  `graphitron-model.sql` against the 100+ the board cites), `meta_materialize` and its `_live`
+  registration views (R955: the register is gone, `meta_materialize` is `grep`=0),
+  `MaterializeDependencies`, `MaterializeRegistryGateTest`, `CompletionData`, the `@sourceRow` directive
+  (`SourceRowDirectiveResolver`, `LifterRef`, `BatchKeyLifterDirectiveResolver` are `grep`=0), and the
+  `*ShadowTest` family. `DerivationStratum` is still present (15 files) and is the next thing it
+  dissolves.
+- **R1163 is now Done** and its changelog entry states the direction: the strata account is the
+  gatherers' capture and anchor phases. Items that cite "stratum" or the `intent_` names as live
+  mechanisms are the stale set.
 
-**Flag totals.** Of the 44 carried flags, **6 resolved** (R462, R333, R116, R382, R533, R231 left the
-board); **38 carry**. **~70 new flags** join, almost all one root cause (the R876 retirements). New
-total: **~108 flagged items: 4 §A (+R901 structural) / ~40 §B / ~64 §C.** Item counts below are given per
-cluster because many flagged items cite the same retired names.
-
-## Status snapshot (368 item files)
+## Status snapshot (366 item files)
 
 [`roadmap/README.md`](../README.md) is the roll-up. By `status:` front-matter: Backlog 319, Spec 34,
-Ready 8, In Progress 4, In Review 2, Done 1 (the Done one is a tombstone, §D).
+Ready 7, In Progress 5, In Review 0, Done 1 (the Done one is a tombstone, §D).
 
 - **In Progress:** R876 (`derived-read-cost-is-a-shape-problem`), R1113 (`transactional-outbox-directive`),
-  R1131 (`clean-build-under-five-minutes`), R1160 (`tests-read-shared-fact-stores`).
-- **In Review:** R1076 (`entities-unknown-typename-is-an-error`), R1163
-  (`principles-architect-carries-the-direction`).
-- **Ready:** R427, R467, R555, R684, R730, R838, R1137, R1162 (R1162 moved Spec to Ready as this audit landed; its `cursor-decode-binding-only-column` body cites only jOOQ converter class names and is not flagged). R333 and R724 left the Ready set (R333 discarded).
+  R1119 (`signed-reference-entities-across-subgraphs`), R1131 (`clean-build-under-five-minutes`), R1160
+  (`tests-read-shared-fact-stores`).
+- **In Review:** none.
+- **Ready:** R427, R467, R555, R684, R730, R838, R1137.
 
 ## A. Obsolete: should leave the active roadmap
 
@@ -93,7 +111,7 @@ now** (its fifth site shipped as R850) or rewrite its trigger to R876.
 
 ## B. Outdated: needs re-spec (premise or targets materially changed)
 
-### B.1 Carried from the prior audit (still true; recommended actions unchanged)
+### B.1 Long-carried flags (still true; recommended actions unchanged)
 
 | Item | Status | What changed | Recommended action |
 |---|---|---|---|
@@ -104,16 +122,15 @@ now** (its fifth site shipped as R850) or rewrite its trigger to R876.
 | **R66** rejection-string-carrier-widening | Backlog | Phase A2 delivered by R585; A1/A3/B1/B2 survive. | **Re-spec**: strike A2, re-baseline. |
 | **R34** nodeid-migration-quickfix | Backlog | Driver void (R473); `SkipMismatchedElement` gone; re-anchor target `intent_node_id_instruction` is itself now reshaped by R876 (R876 has per-depth node-id bindings). | **Re-spec onto the current node-id relations**; retitle off "shim facts". |
 | **R122** compound-entity-mutations | Backlog | Leans on R222's discarded `InputUsage`; `BackingClass` `grep`=0. | **Re-spec** against R876's occurrence/write model. |
-| **R545** model-free-of-emit-vocabulary | Backlog | `RowsMethodBody`, `CompletionData`, `JavaTypeRef` all gone; first deliverable may survive. | **Re-spec**, drop the dead diagnosis. |
 | **R85** helper-emission-non-fetcher-hosts | Backlog | `QueryConditionsGenerator`, `TypeClassGenerator`, `InlineLookupTableFieldEmitter`, `EmissionContext` `grep`=0. | **Re-derive against `render/`**, drop dead cites. |
 | **R71** recordn-key-parity-lifter-and-non-jooq-record-parents | Backlog | `@sourceRow`, `LifterRef`, `LifterRowKeyed`, `SourceRowsCall` all removed by R876. | **Re-spec or discard**: the lifter surface it extends no longer exists. |
 | **R76** participant-fieldsjoin-helpers | Backlog | R650 subselect conversion removed the cross-table `$fieldsJoin` framing. | **Re-spec** onto the joined-detail join, or discard. |
 | **R430** lsp-compile-diagnostics-publish | Backlog | LSP diagnostics moved onto the capture cadence (R638). | **Re-derive** against the fact-store LSP. |
 
-R462 and R333 and R116 (carried flags) are resolved by discard. R122/R71/R72 now additionally depend on a
+R462, R333, R116 and now R545 (carried flags) are resolved by discard. R122/R71/R72 now additionally depend on a
 removed directive (`@sourceRow`).
 
-### B.2 New: items whose premise is the retired `intent_` / register / strata model (R876, R955, R1163)
+### B.2 Items whose premise is the retired `intent_` / register / strata model (R876, R955, R1163)
 
 All cite relations or classes that are `grep`=0 in the tree and defined the item's motivating claim, not
 an incidental reference. Recommended default: **re-spec against the `graphitron_` family**, using R876's
@@ -131,21 +148,21 @@ body and `graphitron-model.sql` as the source of current names; several may then
 | **R758** fact-model-page-learns-the-registry | Backlog | The registry it wants documented is gone. | **Discard**, recording R955. |
 | **R751** meta-family-relations-as-constrained-tables | Backlog | Premise is the `meta_` family stated as VALUES views; `meta_materialize` gone, family shrank. | **Re-derive** against current `meta_` relations. |
 | **R827** target-index-exemptions-in-the-model | Backlog | Registered-targets exemptions lived beside `MaterializeRegistryGateTest`; many `intent_*` names gone. | **Re-spec** onto the current exemption set. |
-| **R836** fact-schema-prose-plain-language | Spec | Prose sweep names `meta_materialize`, `meta_glossary`, `intent_*` relations; overlaps R1163's prose edge. | **Re-spec against R1163's retired-vocabulary list**; fold in or mark dependent. |
+| **R836** fact-schema-prose-plain-language | Spec | Prose sweep names `meta_materialize`, `meta_glossary`, `intent_*` relations; overlaps R1163's prose edge. | **Re-spec against the vocabulary R1163 shipped** (Done this window; the direction now lives in the architecture pages under `docs/architecture/`), striking the relation names that are gone. |
 | **R877** graphitron-model-house-cleaning | Spec | Cleanup list names `intent_condition_membership`, `intent_field_scope_table`, `jvm_declared_type_ref`, `meta_materialize`. | **Re-spec**: strike items R876/R955 delivered. |
 | **R733** build-wall-clock-guardrail | Backlog | The four `*ShadowTest` classes and `deriveDependencies` it measures are gone; R1131 (In Progress) owns build time. | **Re-derive against R1131, likely close.** |
-| **R697** name-matching-stratum | Spec | Retired "stratum" vocabulary in the slug and body; `intent_column_match_claim`, `intent_bound_table` gone. | **Re-spec** (R1163 already names the slug as a retained-for-now edge). |
-| **R677** list-ordering-invariant-enforcement | Spec | `UnlowerableOrderings*`, `AuthoredClaim*`, `MaterializeRegistryGateTest` gone; R876 now owns ordering defects (`UNLOWERABLE_ORDERING`-style). | **Re-derive**; likely subsumed or reducible to a test. |
+| **R697** name-matching-stratum | Spec | Retired "stratum" vocabulary in the slug and body; `intent_column_match_claim`, `intent_bound_table` gone. | **Re-spec** and retitle off "stratum": R1163 is Done and the strata account is now the capture and anchor phases. |
+| **R677** list-ordering-invariant-enforcement | Spec | `UnlowerableOrderings*`, `AuthoredClaim*`, `MaterializeRegistryGateTest` gone; R876 now owns ordering defects (`UNLOWERABLE_ORDERING`-style). **New this window:** the `MutationRoutineSeatTest` tier it reasons from was deleted (`e446f4c`). | **Re-derive**; likely subsumed or reducible to a test. |
 | **R851** corpus-directives-to-expect-equals | Spec | `intent_authored_field_claim`, `LauncherSource`, `LauncherResult` gone. | **Re-spec** against current corpus renderer. |
 | **R963** one-resolution-tail-for-the-graphitron-gatherer | Backlog | Lists `FieldEndpoints`, `MacroCapture`, `AuthoredClaimRejectionRows`, `intent_*` tail relations (20 of 30 names gone). | **Re-derive** which tails R876 already merged; likely close. |
-| **R898** candidate-tree-reaches-the-key-column | Backlog | `intent_resolved_node_key_column` and `intent_resolved_type_binding` gone; R876 landed per-depth node-id and column bindings. | **Re-derive; likely subsumed by R876.** |
-| **R902** node-default-key-columns-are-a-grain | Backlog | Same `intent_resolved_node_key_column` premise. | **Re-derive; likely subsumed.** |
+| **R898** candidate-tree-reaches-the-key-column | Backlog | `intent_resolved_node_key_column` and `intent_resolved_type_binding` gone. **New this window:** `431e604` states the key column an argMapping path projects out of a node id at its landing (`graphitron_argmapping_landing_key_column`, `LandingKeyColumns`) and refuses a projection that resolves to no column, which is this item's goal; the `trailing_segments = 1` hand-off it describes no longer exists. | **Close as absorbed by R876** (Discard, recording `431e604`) once the owner confirms no reader still re-derives the projection; drop its `depends-on` edge with it. |
+| **R902** node-default-key-columns-are-a-grain | Backlog | Same `intent_resolved_node_key_column` premise; a stored `graphitron_node_keycolumn` table now exists. | **Re-derive**: check whether that table holds the primary-key default rows; if so close as absorbed by R876. |
 | **R812** key-column-read-per-refused-row | Backlog | `AuthoredClaimConflicts`, `intent_resolved_*` gone. | **Re-derive.** |
 | **R718** column-scope-admits-the-chain-terminus | Backlog | Seven of seven cited names gone (`intent_field_path_terminus`, `intent_field_column_scope`, ...). | **Re-derive against R876's per-depth table bindings; likely subsumed.** |
 | **R915** producer-result-is-a-field-grain-fact | Backlog | Ten of eleven names gone. | **Re-derive; likely subsumed.** |
 | **R929** store-reads-no-referencefor-step | Backlog | Names `intent_*_reference_step_target`, `intent_node_id_decode_*`; reference-step relations reshaped. | **Re-derive.** |
-| **R717** / **R719** / **R660** / **R816** / **R979** routine-write and carrier items | Backlog / Spec | Cite `intent_carrier_routine_hop`, `intent_mutation_routine_seat`, `RoutineWriteFacts`, `UnlowerableOrderings`; R876 retired the routine seat model in this window (R876 body: routine call is a row of `graphitron_occurrence_call`). | **Re-spec each against the call-supertype model**; R979 (`mikado-graph-replaces-the-phase-plan`) also names `RoutineWriteFacts`. |
-| **R852** field-walk-declared-target-condition-rung | Backlog | `intent_condition_method_route`, `intent_field_column_scope` gone; R876 states "a `@condition` is a call per table its occurrence binds". | **Re-derive; likely subsumed.** |
+| **R717** / **R719** / **R660** / **R816** / **R979** routine-write and carrier items | Backlog / Spec | Cite `intent_carrier_routine_hop`, `intent_mutation_routine_seat`, `RoutineWriteFacts`, `UnlowerableOrderings`; R876 retired the routine seat model in this window (R876 body: routine call is a row of `graphitron_occurrence_call`). | **Re-spec each against the call-supertype model**; R979 (`mikado-graph-replaces-the-phase-plan`) also names `RoutineWriteFacts`. **New this window for R816:** the test its plan says "already" pins the behaviour, `MutationRoutineSeatTest.anAuthoredConditionOnTheFirstHopLeavesTheReReadUnanchored`, was deleted by `e446f4c`; name the fact document that replaced it. |
+| **R852** field-walk-declared-target-condition-rung | Backlog | `intent_condition_method_route`, `intent_field_column_scope` gone; R876 states "a `@condition` is a call per table its occurrence binds", and this window stored it (`ff123e8`, `3227e55`: `graphitron_occurrence_condition`, parameters filled per depth). | **Re-derive against `graphitron_occurrence_condition`; likely subsumed.** |
 | **R813** derive-package-names-three-jobs | Backlog | `TypeBackingClasses`, `InputOccurrencePaths`, `DemandResidue` gone. | **Re-spec.** |
 | **R917** store-too-large-to-service | Backlog | `intent_column_match_claim`, `intent_resolved_field_claim` gone. | **Re-measure on the `graphitron_` family.** |
 | **R698** views-carry-keys-not-payloads | Backlog | Cites `intent_resolved_field_claim`; the claim relations were reshaped. | **Re-derive.** |
@@ -162,7 +179,7 @@ R846 (see §A), R900 (`argmapping-relation-names-standardise`, `intent_argmappin
 (`roadmap-bodies-cite-unchecked-store-names`: **its own subject is this very drift**; it should be
 Done-or-superseded once the sweep below is run), R961 (`converted-relations-prose-still-calls-them-views`,
 `UnregisteredRelationTest`), R854 (`jvm_method_parameter`), R626, R729, R973, R984
-(`intent_record_slot_assignable`), R736, R807, R632 (`intent_authored_claim_conflict`).
+(`intent_record_slot_assignable`), R736, R807, R632 (`intent_authored_claim_conflict`). **New: R534** (`record-key-decode-null-write-erasure`): its opening paragraphs still cite `customerUpsert_explicitNullNestedLeaf_collapsesToOmitted`, renamed this window to `..._besideADecodedNodeId_writesNull` when R876 fixed the store-built helper; the item's own 2026-11-10 progress note is current and says what is left (the classified emitter's helper). Action: **narrow the Goal to the remaining classified-emitter path** and drop the old test name.
 
 **C.2 `CompletionData` / `CatalogBuilder` / `LspSchemaSnapshot` / `CatalogFacts` (dissolved by R876 / R638).**
 **R427 (Ready), R555 (Ready), R684 (Ready), R730 (Ready)**, R152, R381, R594, R536, R397, R528, R557.
@@ -195,11 +212,11 @@ R720, R829), `QueryConditionsPipelineTest` (R561), `IdReferenceShimClassificatio
 | **R555** deprecate-externalfield-fold-into-service | Ready | `CompletionData`, `ClasspathScanner`, `PkLessParent`, `AuthoredClaimConflicts`. | Refresh cites before pickup. |
 | **R684** consumers-share-relations-not-queries | Ready | `CatalogFacts`, `LspSchemaSnapshot`, `CompletionData`. | Refresh cites; part of its premise (CatalogFacts retirement) shipped. |
 | **R730** capture-api-residue-after-nodehood-move | Ready | `CompletionData` retired by R876. | Refresh. |
-| **R1131** clean-build-under-five-minutes | In Progress | Cites deleted `ColumnMatchShadowTest`, `InputOccurrenceShadowTest`, `FieldPaths`. | Author is mid-flight; refresh when next edited. |
-| **R1113** transactional-outbox-directive | In Progress | 17 of 73 names gone; many are its own proposals (`MutationHook`, `HandleMember`) but `DefaultPageSizeDefects`, `store_graph_session_*` moved. R876's outbox commits (2026-11-09/10) overlap its directive. | **Recheck against R876's outbox work**, which `e7141da` shows has redefined the outbox message model. |
-| **R1160** tests-read-shared-fact-stores | In Progress | `ServiceEmissionCensusTest` absent. | Minor; refresh when edited. |
+| **R1131** clean-build-under-five-minutes | In Progress | Cites deleted `ColumnMatchShadowTest`, `InputOccurrenceShadowTest`, `FieldPaths`, `ArgumentReferenceStepTargets`, `FieldReferenceStepHops` (10 of 36 names gone). | Author is mid-flight; refresh when next edited. |
+| **R1113** transactional-outbox-directive | In Progress | 17 of 73 names gone; many are its own proposals (`MutationHook`, `HandleMember`) but `DefaultPageSizeDefects`, `store_graph_session_*` moved. R876's outbox commits (2026-11-09/10) overlap its directive. | **Recheck against R876's outbox work**, which `e7141da` shows has redefined the outbox message model; R876's body says R1113's service phase is R876's. Not touched since 2026-11-09. |
+| **R1160** tests-read-shared-fact-stores | In Progress | `ServiceEmissionCensusTest` absent; its own `@capability` / `@exemplifies` header vocabulary was dropped from the tree this window while the body still uses it. | Minor; author is mid-flight, refresh when next edited. |
 
-R467 (`upgrade-graphql-java-26`), R1137 (`rejected-type-cascades-into-secondary-diagnostics`) are clean:
+R467 (`upgrade-graphql-java-26`), R1137 (`rejected-type-cascades-into-secondary-diagnostics`), R1119 and R1165 are clean:
 their "missing" names are graphql-java API names or the item's own proposals.
 
 ## D. Structural
@@ -210,10 +227,10 @@ their "missing" names are graphql-java API names or the item's own proposals.
   was a count of nothing, and it is a name now". Recommended action: finish the transition (changelog
   entry, delete the file) or, if it is intentionally parked behind R876, say so in its body and move it
   back to a non-Done status.
-- `next-id: R1164` clears the max present id (R1163); no duplicate `id:`.
-- Ten items carry a non-empty `depends-on:`, all resolving to existing files. Seven of the ten depend on R876
+- `next-id: R1166` clears the max present id (R1165); no duplicate `id:`.
+- Ten items carry a non-empty `depends-on:`, all resolving to existing files. Six of the ten depend on R876
   (`derived-read-cost-is-a-shape-problem`), which means **R876 is a single point of staleness**: any
-  design change there cascades across R898, R851, R1099, R697, R1096, R901 and the §B.2 set.
+  design change there cascades across R898, R851, R1099, R697, R1096, R901 and the §B.2 set. R857 depends on R872 (`warm-capture-empties-unpartitioned-catalog-relations`), which exists.
 - Four legacy items still lack a `bucket:` key: R242, R109, R252, R180 (unchanged from the prior audit,
   harmless; fold in when next edited).
 - Numbering gaps are harmless; numbers are never reused.
@@ -242,15 +259,19 @@ their "missing" names are graphql-java API names or the item's own proposals.
    are mechanical closes (R649; R585 and R589). R209 (§A) is the third. Closing all three is five minutes of
    work and removes a recurring line from this report.
 
-5. **The Ready set is where stale prose bites soonest.** Of the eight Ready items, **R427, R555, R684, R730
-   and R838 carry stale cites** (R467, R1137 and R1162 are clean). Refreshing those before pickup remains the
+5. **The Ready set is where stale prose bites soonest.** Of the seven Ready items, **R427, R555, R684, R730
+   and R838 carry stale cites** (R467 and R1137 are clean). Refreshing those before pickup remains the
    highest-value hygiene action, as it was last audit.
 
-6. **The prior audit's "baseline drift" lesson recurred in a different form.** The sandbox history is shallow
-   (50 commits), so a commit-delta baseline was not reachable; this audit measured against the prior flag
-   set and the live tree and says so. A fuller history clone would let the next run produce a real
-   per-commit delta.
+6. **A reachable baseline makes the audit cheap.** This run deepened the clone, diffed against the prior
+   audit's commit, and found the day's delta in four items rather than re-deriving 366. Daily runs should
+   keep doing that; the full symbol sweep is only worth repeating when the window is weeks long.
+
+7. **R876 delivers Backlog items without closing them.** R898 is the clear case this window: its goal
+   landed in `431e604` under R876's scope and the item is still Backlog with a `depends-on` edge to R876.
+   R852 and R902 look the same. When an R876 commit lands something a filed item asked for, discarding
+   that item in the same commit (as was done for R545) keeps the board honest.
 
 ---
 
-_Review date: 2026-11-10._
+_Review date: 2026-11-11._
