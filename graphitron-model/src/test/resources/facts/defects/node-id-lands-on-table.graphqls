@@ -2,7 +2,8 @@
 # none, the slot's own table must be the node's or reach it by exactly one foreign key, in either
 # direction. film declares two keys to language, inventory one to film, and nothing joins film to
 # actor directly; category's one key is to itself.
-# An id handed to a call by argMapping or under a @service binds no predicate and owes no route.
+# An id handed to a call by argMapping or under a @service binds no predicate and owes no route,
+# unless its input object is built into a jOOQ record, whose columns the id is decoded into.
 # An argument's or input field's own written path is judged as an output field's, so filmsByActor,
 # ending on language for a node on actor, lands on the wrong table. With no path written, the one key
 # joining the slot's table and the node's infers the path there, whichever table declares it; none or
@@ -47,6 +48,11 @@ input InventoryFilter { filmId: ID @nodeId(typeName: "Film") }
 "Two keys to language, but the id goes to a call, not a predicate."
 input LanguageFilter { languageId: ID @nodeId(typeName: "Language") }
 
+"Two keys to language, and the id is decoded into the film record a @service takes."
+input FilmRecordLanguageInput { title: String @field(name: "title"), languageId: ID @nodeId(typeName: "Language") }
+
+type FilmDraftsCountedPayload { count: Int }
+
 type Query {
   films(languageId: ID @nodeId(typeName: "Language")): [Film!]!
   filmsByKey(languageId: ID @nodeId(typeName: "Language")
@@ -67,6 +73,8 @@ type Query {
                            method: "byLanguage", argMapping: "languageId: where.languageId"})
   filmsServed(languageId: ID @nodeId(typeName: "Language")): [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  countRecordLanguages(in: [FilmRecordLanguageInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
   languages: [Language!]!
   actors: [Actor!]!
 }
@@ -79,6 +87,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Film.languageId,           NODE_ID_LANDS_ON_TABLE, public.film
   Film.wrongLanding,         NODE_ID_LANDS_ON_TABLE, public.language
   FilmFilter.languageId,     NODE_ID_LANDS_ON_TABLE, public.film
+  FilmRecordLanguageInput.languageId, NODE_ID_LANDS_ON_TABLE, public.film
   Query.films(languageId:),  NODE_ID_LANDS_ON_TABLE, public.film
   Query.filmsByActor(actorId:), NODE_ID_LANDS_ON_TABLE, public.language
   Query.filmsByActorId(actorId:), NODE_ID_LANDS_ON_TABLE, public.film

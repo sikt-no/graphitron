@@ -19,6 +19,15 @@ public final class BeanConditionFixtures {
 
     private BeanConditionFixtures() {}
 
+    /**
+     * A jOOQ record where a condition takes a bean or the map, for the build defect that refuses it;
+     * no example schema names it.
+     */
+    public static Condition filmByRecord(Table<?> table,
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord film) {
+        return DSL.noCondition();
+    }
+
     /** A record bean bound by {@code argMapping}: the film whose title equals the filter's. */
     public static Condition filmTitleRecord(Table<?> table, FilmTitleFilter filter) {
         if (filter == null || filter.title() == null) {

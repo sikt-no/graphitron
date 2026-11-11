@@ -1,0 +1,61 @@
+# An input object a call takes is built into the class its parameter holds, field by field, and what
+# cannot be built is a defect at the input field or argument, each beside the shape that builds: a
+# class nothing constructs, a field filling no member, a list that cannot group, two fields on one
+# member, a @condition taking a jOOQ record, and a field naming no column of the record it writes. A
+# node id with no route onto the record is node-id-lands-on-table's.
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! title: String }
+type FilmDraftsCountedPayload { count: Int }
+
+input FilmDraftInput { title: String! }
+input FilmDraftExtraInput { title: String!, subtitle: String }
+input FilmDraftTwiceInput { title: String!, name: String @field(name: "title") }
+input FilmBundleExtrasInput { name: String, films: [FilmDraftInput!], extras: [FilmDraftInput!] }
+input AbstractDraftInput { title: String }
+input FilmRecordDraftInput {
+  title: String @field(name: "title")
+  filmId: ID @nodeId(typeName: "Film")
+}
+input FilmRecordExtraInput { title: String @field(name: "title"), subtitle: String }
+
+type Query {
+  # Every field fills a member of FilmDraft.
+  countDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
+  # subtitle fills no member of FilmDraft.
+  countExtraDrafts(in: [FilmDraftExtraInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
+  # title and name both fill FilmDraft's title.
+  countTwiceDrafts(in: [FilmDraftTwiceInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
+  # films fills FilmBundleDraft's films; extras fills nothing and, a list, cannot group.
+  countBundleExtras(in: FilmBundleExtrasInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService", method: "count", argMapping: "bundle: in"})
+  # AbstractFilmDraft is abstract: nothing constructs it.
+  countAbstractDraft(in: AbstractDraftInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "countAbstract", argMapping: "draft: in"})
+  # A FilmRecord built column by column, its own node id decoded into its key.
+  countRecordDrafts(in: [FilmRecordDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  # subtitle names no column of film.
+  countRecordExtras(in: [FilmRecordExtraInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  # A @condition takes a bean or the map, never a record.
+  filmsByRecord(by: FilmRecordDraftInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+      method: "filmByRecord", argMapping: "film: by"}, override: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('BUILT_CLASS_UNBUILDABLE', 'CONDITION_PARAMETER_RECORD', 'MEMBER_UNKNOWN', 'GROUPING_LIST',
+           'MEMBER_FILLED_TWICE', 'COLUMN_UNRESOLVED', 'COLUMN_AMBIGUOUS', 'NODE_ID_LANDS_ON_TABLE')
+  """, rows: """
+  coordinate,                          code,                       detail
+  Query.countAbstractDraft(in:),       BUILT_CLASS_UNBUILDABLE,    no.sikt.graphitron.rewrite.test.services.AbstractFilmDraft
+  Query.filmsByRecord(by:),            CONDITION_PARAMETER_RECORD, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  FilmDraftExtraInput.subtitle,        MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmDraft
+  FilmBundleExtrasInput.extras,        GROUPING_LIST,              no.sikt.graphitron.rewrite.test.services.FilmBundleDraft
+  FilmDraftTwiceInput.title,           MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmDraft#title
+  FilmRecordExtraInput.subtitle,       COLUMN_UNRESOLVED,          subtitle
+  """)

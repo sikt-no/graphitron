@@ -660,12 +660,22 @@ static method needs no holder.
     per call parameter for every call kind, and the shape relation widened to those slots. The first
     two are stated: `graphitron_occurrence_built_class` and `graphitron_occurrence_binding_member`,
     which `BuildQuery` reads in place of matching member names.
-    * **`BuildQuery`'s refusals are defects** `open`, E's. A class nothing constructs, a field filling
-      no member, a list that cannot group, two fields on one member and a `@condition` parameter
-      taking a jOOQ record are refused in Java and fall back to the classified emitter; as defects
-      at the input field they fail the build where the classified generator already does. Which of
-      them the classified generator accepts (an unmatched scalar on a setter bean, dropped in
-      silence; a field binding no column of a record its input has no `@table` for) is Alf's to rule.
+    * **`BuildQuery`'s refusals are defects** `open`, E's. A class nothing constructs, a field
+      filling no member, a list that cannot group, two fields on one member, a `@condition` taking a
+      jOOQ record and a record's field naming no column are entry defects at the field, and a node id
+      with no route onto a record under a `@service` is `NODE_ID_LANDS_ON_TABLE`. What is left: a
+      list of node ids written onto a record and a nested input object filling a member typed as a
+      jOOQ record, both refused only in Java, and the Java refusals themselves, which go once nothing
+      falls back to the classified emitter.
+    * **A record's column defects read the column binding** `open`, off the critical path. The
+      output and input arms of `COLUMN_UNRESOLVED` and `COLUMN_AMBIGUOUS` each work out spelling
+      resolution from `sql_column_spelling`; reading what `graphitron_occurrence_column` leaves
+      unbound, as `BuildQuery` does, they judge the binding the emitter writes. `COLUMN_AMBIGUOUS` on
+      a record has no pinning case yet.
+    * **A shared input built into several classes names which in its defect** `open`, off the
+      critical path. A build defect's detail is the least class or member where an input is built
+      into several, so which class and occurrence failed is lost; a detail relation, as the
+      parameter defects have, names each.
     * **The node id slot is stored, and the shape rule reads it** `open`, E's. `graphitron_node_id_slot`
       is a view, its landing the root parameter's class, and
       `graphitron_occurrence_node_id_shape_rule` reads it, a view reading a view. Stored per node id
@@ -2630,6 +2640,17 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   building, and the value goes on the method instead. FS-plattform: every one of the 37
   `contextArguments` uses across opptak, kompetanse, kreg and sis fills a method parameter, and
   every service class's constructor takes only `DSLContext`.
+
+* **Breaking: an input object a call cannot build is a defect at the field** ("an input object that
+  cannot be built is a defect at the field"). A `@service` or `@condition` input object built into a
+  class is refused where nothing constructs the class (`BUILT_CLASS_UNBUILDABLE`), a field fills no
+  member (`MEMBER_UNKNOWN`, where a setter bean dropped the value in silence), a list of input objects
+  cannot group (`GROUPING_LIST`), or two fields fill one member (`MEMBER_FILLED_TWICE`); a
+  `@condition` parameter taking a jOOQ record is `CONDITION_PARAMETER_RECORD`. On a jOOQ record a
+  field naming no column of the record's table is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and a
+  `@nodeId` field with no route onto that table is `NODE_ID_LANDS_ON_TABLE` under a `@service` too,
+  as in utdanningsregisteret's `RegistrerCampusForUtdanningsmulighetInput.organisasjonsId`, which
+  writes a `@reference` path through `campus` to build.
 
 ## Retired vocabulary
 

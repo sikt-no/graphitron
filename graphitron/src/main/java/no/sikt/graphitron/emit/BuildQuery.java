@@ -141,7 +141,7 @@ public final class BuildQuery {
      */
     private record Builds(Map<String, Built> classes, Map<String, String> members) {
 
-        record Built(String declaredVia, String sourceRef) {}
+        record Built(String declaredVia, String sourceRef, boolean record) {}
 
         static String key(String coordinate, String className) {
             return coordinate + "|" + className;
@@ -150,10 +150,11 @@ public final class BuildQuery {
         static Builds read(StoreHandle store) {
             var c = GRAPHITRON_OCCURRENCE_BUILT_CLASS;
             var classes = new HashMap<String, Built>();
-            store.dsl().select(c.COORDINATE, c.CLASS_NAME, c.DECLARED_VIA, c.CLASS_SOURCE_REF)
+            store.dsl().select(c.COORDINATE, c.CLASS_NAME, c.DECLARED_VIA, c.CLASS_SOURCE_REF, c.RECORD_TABLE)
                 .from(c)
                 .where(c.GRAPH_NAME.eq(store.graphName()))
-                .forEach(r -> classes.put(key(r.value1(), r.value2()), new Built(r.value3(), r.value4())));
+                .forEach(r -> classes.put(key(r.value1(), r.value2()),
+                    new Built(r.value3(), r.value4(), r.value5() != null)));
             var m = GRAPHITRON_OCCURRENCE_BINDING_MEMBER;
             var members = new HashMap<String, String>();
             store.dsl().select(m.COORDINATE, m.CLASS_NAME, m.SLOT_METHOD_NAME, m.SLOT_DESCRIPTOR, m.SLOT_POSITION)
@@ -321,11 +322,12 @@ public final class BuildQuery {
     private static Result build(String occurrence, String className, Map<String, List<InputField>> children,
                                 Map<String, Construction> constructions, Catalog catalog, Builds builds,
                                 List<String> prefix) {
-        if (catalog.tables().containsKey(className)) {
+        // The class as graphitron_occurrence_built_class names it, read from the entry it names, and
+        // a jOOQ record where the row says it is one.
+        var built = builds.classes().get(Builds.key(occurrence, className));
+        if (built != null && built.record()) {
             return columns(occurrence, className, children, catalog);
         }
-        // The class as graphitron_occurrence_built_class names it, read from the entry it names.
-        var built = builds.classes().get(Builds.key(occurrence, className));
         var construction = built == null ? null : constructions.get(built.sourceRef() + "|" + className);
         if (construction == null) {
             return new Result.Refused("nothing says how to make " + className);

@@ -202,10 +202,10 @@ public static Condition byTitle(Film table, FilmTitleFilter filter) {
 }
 ----
 
-Any other declared type fails the build, naming the parameter and the type graphql-java delivers, which is the type (or a supertype of it) to declare. So does a bean that cannot be built, with the reason, a list parameter on a single slot or the reverse, and a `Set` where graphql-java delivers a `List`. Three limits apply where `@service` would accept the same parameter:
+Any other declared type fails the build, naming the parameter and the type graphql-java delivers, which is the type (or a supertype of it) to declare. So does a bean that cannot be built, on the rules a `@service` bean is built by (xref:service.adoc[`@service`]) save that each input field fills the member of its own GraphQL name, `@field(name:)` naming the column a filter compares rather than a member; a list parameter on a single slot or the reverse; and a `Set` where graphql-java delivers a `List`. Three limits apply where `@service` would accept the same parameter:
 
 * *No bean at an input-field `@condition`.* Such a condition is resolved once per input type, without the consuming field a bean is built for. Take the `Map`, or move the `@condition` to the field or argument that consumes the input.
-* *No jOOQ record.* Binding an input onto a record's columns is a xref:../../how-to/handle-services.adoc#jooq-record-parameter[`@service` feature]; a `@condition` parameter declared as a generated jOOQ record fails the build.
+* *No jOOQ record.* Binding an input onto a record's columns is a xref:../../how-to/handle-services.adoc#jooq-record-parameter[`@service` feature]; a `@condition` parameter declared as a generated jOOQ record fails the build (`CONDITION_PARAMETER_RECORD`).
 * *No bean on an interface or union field.* A field returning several tables' types refuses a bean-typed condition parameter at build time; take the `Map` there.
 
 A dotted path that passes through a list on its way to an input object fails the build too: there is no single value there to descend into.

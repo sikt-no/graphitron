@@ -49,11 +49,13 @@ public final class OccurrenceBuilds {
         var c = GRAPHITRON_OCCURRENCE_BUILT_CLASS;
         var r = GRAPHITRON_OCCURRENCE_BUILT_CLASS_RULE;
         dsl.insertInto(c)
-            .columns(c.GRAPH_NAME, c.COORDINATE, c.CLASS_NAME, c.DECLARED_VIA, c.MEMBER_NAMES, c.TOUCHED_AT,
-                c.CLASS_SOURCE_REF, c.CLASS_NAME_REF)
+            .columns(c.GRAPH_NAME, c.COORDINATE, c.CLASS_NAME, c.DECLARED_VIA, c.MEMBER_NAMES, c.BUILT_AT, c.TOUCHED_AT,
+                c.CLASS_SOURCE_REF, c.CLASS_NAME_REF, c.CONSTRUCTIBLE, c.RECORD_SOURCE_NAME, c.RECORD_SCHEMA,
+                c.RECORD_TABLE)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.CLASS_NAME, r.DECLARED_VIA, r.MEMBER_NAMES,
-                    val(touchedAt, c.TOUCHED_AT), r.CLASS_SOURCE_REF, r.CLASS_NAME_REF)
+                .select(r.GRAPH_NAME, r.COORDINATE, r.CLASS_NAME, r.DECLARED_VIA, r.MEMBER_NAMES, r.BUILT_AT,
+                    val(touchedAt, c.TOUCHED_AT), r.CLASS_SOURCE_REF, r.CLASS_NAME_REF, r.CONSTRUCTIBLE,
+                    r.RECORD_SOURCE_NAME, r.RECORD_SCHEMA, r.RECORD_TABLE)
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph), r.DEPTH.eq(depth),
                     r.PARENT_TOUCHED_AT.isNull().or(r.PARENT_TOUCHED_AT.eq(touchedAt))))
@@ -61,8 +63,13 @@ public final class OccurrenceBuilds {
             .doUpdate()
             .set(c.DECLARED_VIA, excluded(c.DECLARED_VIA))
             .set(c.MEMBER_NAMES, excluded(c.MEMBER_NAMES))
+            .set(c.BUILT_AT, excluded(c.BUILT_AT))
             .set(c.CLASS_SOURCE_REF, excluded(c.CLASS_SOURCE_REF))
             .set(c.CLASS_NAME_REF, excluded(c.CLASS_NAME_REF))
+            .set(c.CONSTRUCTIBLE, excluded(c.CONSTRUCTIBLE))
+            .set(c.RECORD_SOURCE_NAME, excluded(c.RECORD_SOURCE_NAME))
+            .set(c.RECORD_SCHEMA, excluded(c.RECORD_SCHEMA))
+            .set(c.RECORD_TABLE, excluded(c.RECORD_TABLE))
             .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
             .execute();
     }

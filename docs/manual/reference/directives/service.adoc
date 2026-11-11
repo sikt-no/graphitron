@@ -124,6 +124,26 @@ column, each input field writing the column it binds on that table:
 * In a list of input objects, built into records or classes, a `null` element is refused: the
   method is handed the objects, not gaps.
 
+The build fails at the input field where a record cannot be built this way: a field naming no
+column of the table (`COLUMN_UNRESOLVED`, or `COLUMN_AMBIGUOUS` where its name reaches several), and
+a `@nodeId` field with no route onto the table, where no one foreign key joins the two and no
+`@reference` path is written (`NODE_ID_LANDS_ON_TABLE`). That holds however the record reaches the
+method, by name or through `argMapping`.
+
+An input object a parameter takes as any other class is built into it: a Java record by its
+canonical constructor, another class by its public no-argument constructor and setters. Each input
+field fills the member its `@field(name:)` names, or its own name; a nested input object fills the
+member of that name, built into the member's class in turn, or where no member has its name groups
+its fields onto the enclosing object. The build fails at the field where it cannot:
+
+* a class nothing constructs, being abstract, not public, or without such a constructor
+  (`BUILT_CLASS_UNBUILDABLE`);
+* a field filling no member, whose value would reach nothing (`MEMBER_UNKNOWN`);
+* a list of input objects filling no member, which has no one object to group onto
+  (`GROUPING_LIST`), and any list of input objects inside a jOOQ record;
+* two fields filling one member of one object (`MEMBER_FILLED_TWICE`); node ids decoding into one
+  record member are one record and allowed.
+
 [[arg-mapping]]
 == Binding a parameter to a nested input field
 

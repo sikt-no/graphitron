@@ -69,6 +69,7 @@ public final class OccurrenceDepths {
         // a stale row of either would land it somewhere it no longer goes.
         OccurrenceBuilds.write(dsl, graph, touchedAt);
         OccurrenceBuilds.sweep(dsl, graph, touchedAt);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.BUILDS);
         OccurrenceNodeIdShapes.write(dsl, graph, touchedAt);
         OccurrenceNodeIdShapes.sweep(dsl, graph, touchedAt);
     }

@@ -18,4 +18,9 @@ public final class FilmDraftService {
     public static FilmDraftsCountedPayload count(List<FilmDraft> drafts) {
         return new FilmDraftsCountedPayload(drafts.size(), List.of());
     }
+
+    /** Takes a class nothing can construct, for the build defect that says so; never called. */
+    public static FilmDraftsCountedPayload countAbstract(AbstractFilmDraft draft) {
+        return new FilmDraftsCountedPayload(1, List.of());
+    }
 }
