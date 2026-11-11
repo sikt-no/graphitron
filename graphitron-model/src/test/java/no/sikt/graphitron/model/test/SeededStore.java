@@ -202,6 +202,13 @@ public final class SeededStore {
               SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
                 FROM graphitron_routine_entry) spellings
             """);
+        dsl.execute("DELETE FROM graphitron_connection_element_type");
+        dsl.execute("""
+            INSERT INTO graphitron_connection_element_type
+              (graph_name, type_name, edge_type_name, element_type_name, touched_at)
+            SELECT graph_name, type_name, edge_type_name, element_type_name, CURRENT_TIMESTAMP
+              FROM graphitron_connection_element_type_rule
+            """);
         dsl.execute("DELETE FROM graphitron_field_target");
         dsl.execute("""
             INSERT INTO graphitron_field_target

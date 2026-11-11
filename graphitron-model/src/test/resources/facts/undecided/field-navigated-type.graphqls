@@ -36,9 +36,9 @@ type Query {
 }
 
 extend schema @assertContains(relation: "graphitron_connection_element_type", rows: """
-  type_name,            element_type_name
-  FilmsConnection,      Film
-  QueryFilmsConnection, Film
+  type_name,            edge_type_name,           element_type_name
+  FilmsConnection,      FilmsEdge,                Film
+  QueryFilmsConnection, QueryFilmsConnectionEdge, Film
   """)
 
 extend schema @assertAbsent(relation: "graphitron_connection_element_type", rows: """

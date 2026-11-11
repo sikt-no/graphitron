@@ -7755,9 +7755,28 @@ COMMENT ON COLUMN graphitron_code_reference.touched_at IS 'when the reading that
 CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
 COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: the namings in the view bodies (graphitron_entry_defect_table_rule, graphitron_argument_scope_table_rule, graphitron_path_element_routine_rule) all join on the graph and the spelling and nothing else. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, the type binding view since replaced by graphitron_tabletype 357 against 198, and a node id decode defect view since dissolved 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
 
-CREATE VIEW graphitron_connection_element_type
-  (graph_name, type_name, element_type_name) AS
-SELECT c.graph_name, c.type_name, n.named_type
+CREATE TABLE graphitron_connection_element_type (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  edge_type_name    VARCHAR   NOT NULL,
+  element_type_name VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name)
+    REFERENCES graphitron_type (graph_name, type_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, edge_type_name)
+    REFERENCES graphitron_type (graph_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_connection_element_type IS 'Which type a connection type paginates, and through which edge type: one row per type whose shape is a Relay connection. For example a FilmConnection declaring edges: [FilmConnectionEdge] whose node is Film draws one row naming the edge type and Film, and a type that is not a connection draws none, so a reader left-joins this rather than joining it.';
+COMMENT ON COLUMN graphitron_connection_element_type.graph_name IS 'the owning graph''s partition, carried from the connection type''s own row; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_connection_element_type.type_name IS 'the connection type itself, the wrapper a field returns; with the graph, the grain';
+COMMENT ON COLUMN graphitron_connection_element_type.edge_type_name IS 'the type the connection''s edges field names, the OBJECT whose node field names the element';
+COMMENT ON COLUMN graphitron_connection_element_type.element_type_name IS 'the type the connection paginates, read off the edge type''s node field''s named type with its wrappers already stripped by graphql_field. A name and not a binding: whether the element is bound to a table is graphitron_tabletype''s answer and deliberately not asked here';
+COMMENT ON COLUMN graphitron_connection_element_type.touched_at IS 'when the reading that derived this row ran. Swept per graph after the reading upserts, so a type that stopped being a connection leaves; a type the author removed goes through the cascade';
+
+CREATE VIEW graphitron_connection_element_type_rule
+  (graph_name, type_name, edge_type_name, element_type_name) AS
+SELECT c.graph_name, c.type_name, et.type_name, n.named_type
   FROM graphitron_type c
   JOIN graphitron_field e
     ON e.graph_name = c.graph_name AND e.type_name = c.type_name
@@ -7769,10 +7788,11 @@ SELECT c.graph_name, c.type_name, n.named_type
     ON n.graph_name = et.graph_name AND n.type_name = et.type_name
    AND n.field_name = 'node'
  WHERE c.kind = 'OBJECT';
-COMMENT ON VIEW graphitron_connection_element_type IS 'Which type a connection type paginates: one row per type whose shape is a Relay connection, naming the element it delivers. For example a FilmConnection declaring edges whose element declares node: Film draws one row naming Film, and a type that is not a connection draws none, so a reader left-joins this rather than joining it.';
--- COMMENT ON COLUMN graphitron_connection_element_type.graph_name IS 'the owning graph''s partition, carried from the connection type''s own row; the leading key dimension that keeps one workspace''s graphs apart';
--- COMMENT ON COLUMN graphitron_connection_element_type.type_name IS 'the connection type itself, the wrapper a field returns; with the graph, the grain';
--- COMMENT ON COLUMN graphitron_connection_element_type.element_type_name IS 'the type the connection paginates, read off the edge type''s node field''s named type with its wrappers already stripped by graphql_field. A name and not a binding: whether the element is bound to a table is graphitron_tabletype''s answer and deliberately not asked here';
+COMMENT ON VIEW graphitron_connection_element_type_rule IS 'One row the connection element rule computes, in the shape graphitron_connection_element_type stores: the rule itself, evaluated on demand rather than read off disk. For example the field-targets stage inserts this view''s rows for one graph into graphitron_connection_element_type, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_connection_element_type_rule.graph_name IS 'the owning graph''s partition, carried from the connection type''s own row';
+-- COMMENT ON COLUMN graphitron_connection_element_type_rule.type_name IS 'the connection type itself';
+-- COMMENT ON COLUMN graphitron_connection_element_type_rule.edge_type_name IS 'the type the connection''s edges field names';
+-- COMMENT ON COLUMN graphitron_connection_element_type_rule.element_type_name IS 'the type the edge type''s node field names';
 
 CREATE VIEW graphitron_field_target_rule
   (graph_name, type_name, field_name, target_type_name, wrapper_type_name) AS
@@ -16717,16 +16737,14 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON xf.graph_name = f.graph_name AND xf.coordinate = f.coordinate
      AND xf.directive_name = 'externalField'
    WHERE p.field_name IS NULL
-     -- The element of a carrier @asConnection wraps is handed by the producer above, so neither the
-     -- carrier's nodes nor its edge's node hands it the carrier's object.
-     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target w
-                      WHERE w.graph_name = pa.graph_name AND w.target_type_name = ft.target_type_name
-                        AND w.wrapper_type_name = pa.type_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target w
-                       JOIN graphitron_field_target et
-                         ON et.graph_name = w.graph_name AND et.type_name = w.wrapper_type_name
-                        AND et.target_type_name = pa.type_name
-                      WHERE w.graph_name = pa.graph_name AND w.target_type_name = ft.target_type_name)
+     -- The element of a connection is handed by the producer above, so neither the connection's
+     -- nodes nor its edge's node hands it the connection's object.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_connection_element_type ce
+                      WHERE ce.graph_name = pa.graph_name AND ce.type_name = pa.type_name
+                        AND ce.element_type_name = ft.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_connection_element_type ce
+                      WHERE ce.graph_name = pa.graph_name AND ce.edge_type_name = pa.type_name
+                        AND ce.element_type_name = ft.target_type_name)
 ),
 -- Each field hands an object type itself, or each object member of a union or interface, and a
 -- table-bound interface itself too, which is a row of its table as a table-bound object type is;
@@ -18528,6 +18546,7 @@ INSERT INTO meta_stage_write VALUES
   ('node-key-columns', 'graphitron_node_keycolumn'),
   ('node-legacy-key-shapes', 'graphitron_node_legacy_key_defect'),
   ('node-legacy-key-shapes', 'graphitron_node_legacy_keycolumn'),
+  ('field-targets', 'graphitron_connection_element_type'),
   ('field-targets', 'graphitron_field_target'),
   ('producer-claims', 'graphitron_claim'),
   ('binding-claims', 'graphitron_binding_claim'),
@@ -20775,9 +20794,13 @@ INSERT INTO meta_relation VALUES
    'For example the first and after arguments a connection carrier gets when its author wrote no pagination argument sit here, where graphql_argument holds only what the document declares and therefore holds no row for them.',
    'The argument grain, and the one this family gained rather than inherited. The connection expansion mints two arguments on a carrier whose author wrote no pagination argument, and until this relation the store recorded nothing about them: the expansion has two halves in two modules, one writing facts and one building schema objects, and only the second knew the arguments existed. So an argument the generator emits was reachable from the emitted schema and from no relation, which is the gap this closes. Total over the emitted population on graphitron_type''s terms.'),
   ('graphitron_connection_element_type', 'expanded-type', 'graphitron',
-   'Which type a connection type paginates: one row per type whose shape is a Relay connection, naming the element it delivers.',
-   'For example a FilmConnection declaring edges whose element declares node: Film draws one row naming Film, and a type that is not a connection draws none, so a reader left-joins this rather than joining it.',
-   'Structural and not directive-driven, which is the whole of what it buys: a connection the generator synthesised from @asConnection and one the author wrote out have the same shape and therefore the same row, where a rule reading the synthesis record could see only the first. The shape test is the spec''s own and the names are literal because the spec''s are, edges then an OBJECT element then node, so a type spelling them differently is not a connection to the classifier either; field names being unique within a type, each resolves at most once and this never fans out. Absence is every type that is not a connection, and two near misses worth naming so a reader does not read them as defects: a type with edges whose element declares no node, and a type reaching node some other way than through edges. Named in this family rather than the derivation one on that family''s own admission test: expanded to captured relations this rule reaches graphitron_type and graphitron_field and stops, which is one family rather than two, and a rule that crosses nothing belongs to the family it reads. Its grain is graphitron_type''s rather than one of its own, the key being that relation''s key restricted to the types this rule admits, so nothing here establishes a grain and no table is owed. It does not state nullability or the page-info shape; a consumer needing the element''s optionality joins the node field''s own row from the element name this one carries.'),
+   'Which type a connection type paginates, and through which edge type: one row per type whose shape is a Relay connection.',
+   'For example a FilmConnection declaring edges: [FilmConnectionEdge] whose node is Film draws one row naming the edge type and Film, and a type that is not a connection draws none, so a reader left-joins this rather than joining it.',
+   'Structural and not directive-driven: a connection synthesised from @asConnection and one the author wrote out have the same shape and so the same row. The shape test is the spec''s own and its names literal, edges then an OBJECT edge then node, so a type spelling them otherwise is not a connection to the classifier either; field names being unique within a type, this never fans out. Two near misses are not defects: a type with edges whose edge declares no node, and a type reaching node other than through edges. The connection''s shape, connection, edge and element, is a fact at the type''s grain that several rules ask: stored by the field-targets stage ahead of the field targets it unwraps, so no rule reads it as a view and none re-spells it as anti-joins over graphitron_field_target, which in the result rule''s fixpoint was nearly all of that rule''s cost. It does not state nullability or the page-info shape; a consumer needing the element''s optionality joins the node field''s own row.'),
+  ('graphitron_connection_element_type_rule', 'expanded-type', 'graphitron',
+   'One row the connection element rule computes, in the shape graphitron_connection_element_type stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the field-targets stage inserts this view''s rows for one graph into graphitron_connection_element_type, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphql_element_field', 'element-field-site', 'graphql-ast',
    'The field a schema element sits on, for the element kinds whose coordinate names one: one row per field coordinate, output and input alike, and one per field-argument coordinate, carrying the parts the spelling is built from.',
    'For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.',

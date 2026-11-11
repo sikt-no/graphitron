@@ -32,6 +32,8 @@ import org.jooq.DSLContext;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_RULE;
 import static org.jooq.impl.DSL.excluded;
@@ -168,8 +170,12 @@ public final class GraphitronAssemblyCapture {
      * first: the connection's element, with the connection as its wrapper, where the field's named
      * type is a connection, and the named type itself otherwise. The rule is the view beside the
      * target; stored because a reader joins on the target's name and wants an index on that column.
+     *
+     * <p>The connection types go first, since the target's rule reads them to unwrap a connection;
+     * the result rule's fixpoint asks them once per merge, which is why they are stored.
      */
     static void targets(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        connectionElementTypes(dsl, graph, touchedAt);
         var target = GRAPHITRON_FIELD_TARGET;
         var rule = GRAPHITRON_FIELD_TARGET_RULE;
         dsl.insertInto(target)
@@ -194,6 +200,29 @@ public final class GraphitronAssemblyCapture {
         dsl.deleteFrom(target)
             .where(target.GRAPH_NAME.eq(graph))
             .and(target.TOUCHED_AT.ne(touchedAt))
+            .execute();
+    }
+
+    /** Each connection type with its edge type and the element it pages, marked and swept. */
+    private static void connectionElementTypes(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var connection = GRAPHITRON_CONNECTION_ELEMENT_TYPE;
+        var rule = GRAPHITRON_CONNECTION_ELEMENT_TYPE_RULE;
+        dsl.insertInto(connection)
+            .columns(connection.GRAPH_NAME, connection.TYPE_NAME, connection.EDGE_TYPE_NAME,
+                connection.ELEMENT_TYPE_NAME, connection.TOUCHED_AT)
+            .select(dsl
+                .select(rule.GRAPH_NAME, rule.TYPE_NAME, rule.EDGE_TYPE_NAME,
+                    rule.ELEMENT_TYPE_NAME, val(touchedAt, connection.TOUCHED_AT))
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(connection.EDGE_TYPE_NAME, excluded(connection.EDGE_TYPE_NAME))
+            .set(connection.ELEMENT_TYPE_NAME, excluded(connection.ELEMENT_TYPE_NAME))
+            .set(connection.TOUCHED_AT, excluded(connection.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(connection)
+            .where(connection.GRAPH_NAME.eq(graph))
+            .and(connection.TOUCHED_AT.ne(touchedAt))
             .execute();
     }
 }

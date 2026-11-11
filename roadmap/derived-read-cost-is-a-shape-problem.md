@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-11-09
+last-updated: 2026-11-11
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -1191,8 +1191,30 @@ classified records have no reader left and can go with the walk.
     no table gives its child no key table to fill. The sources, the defects, the outbox,
     `FrameQuery` and `RoutineWriteQuery` read the fill; `graphitron_field_key_row`, its accessor table,
     its rule, the `field-key-rows` stage, `FieldKeyRows` and `graphitron_occurrence_producer_key_row`
-    are gone, about 14 s of a sakila capture's 38. Where a query resumes, at the source or at the
-    target, is stated with the shortcut that reads it.
+    are gone: the sakila example's full capture went from about 58 s to 38, the stage itself having
+    cost about 16 s. Where a query resumes, at the source or at the target, is stated with the
+    shortcut that reads it.
+  * **A connection's shape is stored once** `done`. `graphitron_connection_element_type` is a
+    table, written by the `field-targets` stage ahead of the targets it unwraps from its rule view
+    `graphitron_connection_element_type_rule`, and names the connection's edge type beside its
+    element. The result rule's reader arm asked, as two anti-joins over `graphitron_field_target`,
+    whether a parent is a connection or a connection's edge paging the field's target; that was
+    nearly all of the rule's cost, and the `fetchers` fixpoint evaluates the rule fifteen times a
+    capture. As key probes on the stored fact the sakila example's full capture went from about
+    38 s to 27 and the `fetchers` stage from about 15 s to 1.5, with the result family, readers,
+    fetchers, producers and occurrence sources unchanged row for row. Correlating the anti-joins
+    on the field's own columns rather than the parent CTE's was measured and changed nothing. The
+    old second anti-join skipped the hand-on of every type any field of a connection returns, and a
+    minted connection always has `nodes`, so it also skipped a field of the element returning the
+    element itself; now only the connection and its edge are skipped. Such a self-reference adds
+    nothing to a type-keyed closure unless it is a `@pivot`, an `@externalField` or ends on a
+    `@routine`, where it may now add a row the old rule did not. The sakila example's rows are
+    unchanged and every fixture's tests pass; whether that case should hand its parent on is Alf's
+    call, and it wants a fact document pinning it when it is made.
+  * **The other spellings of a connection read the stored shape** `open`. `graphitron_producer_rule`'s
+    `COUNT`, `FACETS` and page arms and `graphitron_occurrence_start_rule` still ask whether a type
+    is a connection or its edge over `graphitron_field_target`; each moves onto
+    `graphitron_connection_element_type` with its own row-for-row agreement against trunk.
   * **The key defects read the fill's candidates alone** `open`. The service arm of
     `NO_KEY_FROM_PARENT`/`KEY_ROW_AMBIGUOUS` still counts members itself over `code_read_slot` and
     `code_method_parameter`, a second spelling of the candidates that disagrees with the fill on a
