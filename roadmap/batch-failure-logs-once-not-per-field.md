@@ -385,3 +385,70 @@ Amended 2026-09-28 after a second 9.x consumer's production trace (the evidence 
 showed that the amplification also costs wall-clock, that the SQL in the record is a size and privacy
 problem of its own, and that the size of the batch was what made the statement slow. The SQL summary
 and the batch cap were added to the goal then.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready (session_01FY5UvtV99jaTh2xtJxqGNK, 2026-11-11)
+
+Verdict: withhold. The three consumer-visible changes read cleanly from the goal alone, the memo
+extends the claim record rather than standing a holder beside it, the cap goes where the other
+hooks are, and every class, method, test and doc section the body names exists as named. One
+finding on question one, one on question two.
+
+**Finding 1 (question one: goal communication and viability). The summary's content does not
+answer either reason the goal gives for it.** Two parts, one decision.
+
+* The goal says the driver's message "can carry personal data" and, in the next sentence, puts the
+  driver's message on the ERROR line. Truncation does not remove it: PostgreSQL's
+  `PSQLException.getMessage()` for a unique violation is the error text followed by
+  `Detail: Key (email)=(a@b.no) already exists.`, well inside 240 characters once whitespace is
+  collapsed. So a reader cannot tell whether the item's outcome is "no SQL at ERROR" or "no row data
+  at ERROR", and the Done gate will not be able to tell whether row data in the summary is a defect.
+  State which. If row data in the default line stays accepted (the interface javadoc already warns
+  of it and names `FetcherErrorLog` as the sanitising seam), say so in the goal and drop personal
+  data as a reason; if it does not, the summary cannot carry the message verbatim.
+* The goal says the record should "name the failure by what locates it", and the summary is the
+  exception class, the driver class, the SQL state, the vendor code and the message. Those classify
+  a failure; none says which field or statement failed. Today the stack trace and the SQL do that.
+  For the incident the item is built on, every record would read the same `ORA-01013` line with a
+  different reference, and finding the query means turning DEBUG on in production and waiting for
+  it to happen again. Either the line carries something that locates the failure (the router
+  already has `pathOf(env)` for the logging field) or the body says why class, state and code are
+  enough for an operator who has only the log.
+
+The tests should then pin whichever answer is given: the database fixture fails with
+`division by zero`, whose message carries no row data and whose record nothing checks for a
+location, so neither part is observed today.
+
+**Finding 2 (question two: fit). "Compile-graph wiring" and "One way to build a loader" make
+claims the tree contradicts.** None changes the design; each changes what the implementer builds,
+so they are the author's to restate.
+
+* "Fetcher units reach the cap only through `ErrorRouter`, which they already have a
+  frozen-scaffold edge into ... so no fetcher-side edge is added" holds for four of the five sites.
+  `QueryNodeFetcher` is not a fetchers unit: it is `GlobalUnitKind.QUERY_NODE_FETCHER`, its arm in
+  `PlanCompileGraph.addFixedKindEdges` declares three precise edges (encoder, context, entity
+  dispatch), the blanket in `addBlanketEdges` covers `plan.typeUnits().fetchersUnits()` only, and
+  `QueryNodeFetcherClassGenerator` names no router today. `ErrorRouter.loaderOptions(idEnv)` is a
+  new reference, and leg 2 of the oracle reports it as a gap until that arm gains an edge.
+* `IncrementalCompileHarnessTest.frozenScaffoldSources_referenceOnlyThePinnedUnits` pins
+  `ErrorRouter`'s references to exactly four units. `BatchSizeLimit` is a fifth, so that test is
+  edited, not passed, and its javadoc asks for a check that the new target's members are stable
+  across schemas and configurations before the list grows. The body should name the pin and make
+  that argument (a one-method interface emitted the same in every build).
+* The shared loader fragment has no stated home, and `PackageImportDirectionTest` constrains it.
+  `FrameEmitter` is in `no.sikt.graphitron.emit`, which may name neither `rewrite.generators` nor
+  the leaf model, and `render` only through `EMIT_ALLOWANCES`, each entry with its reason and none
+  unused. A fragment built "from the container kind" takes `LoaderRegistration.Container`, which
+  `FrameEmitter` cannot name. Say where the fragment lives, what `emit` is allowed to call on it,
+  and the allowance's reason.
+
+Non-blocking, for the author to take or leave:
+
+* With a cap, chunks run one after another and a failed chunk does not stop the next, so a request
+  whose statement times out can take chunk count times the timeout. Worth a sentence in "Bounding a
+  batch".
+* For a batched `@service` child the cap multiplies calls to the consumer's method, not statements;
+  the manual text says "several statements".
+* `FetcherErrorLog.tenantFailed` defaults to `unmatched`, so "once per failure per request" in the
+  new `unmatched` javadoc has the per-tenant call as an exception.
