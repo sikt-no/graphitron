@@ -39,6 +39,25 @@ public interface ParentRowDemand {
     List<ColumnRef> parentRowColumns();
 
     /**
+     * {@code paths}, unmodifiable, in the order of {@code participants}, the order the SDL states them
+     * in. A polymorphic field's participant paths are iterated where the parent row's columns are
+     * unioned, so their order is the projection's; a copy that does not keep one, as
+     * {@link java.util.Map#copyOf} does not, changes the generated source from run to run.
+     */
+    static <V> java.util.Map<String, V> inParticipantOrder(List<ParticipantRef> participants,
+                                                           java.util.Map<String, V> paths) {
+        var ordered = new java.util.LinkedHashMap<String, V>();
+        for (var participant : participants) {
+            var path = paths.get(participant.typeName());
+            if (path != null) {
+                ordered.put(participant.typeName(), path);
+            }
+        }
+        paths.forEach(ordered::putIfAbsent);
+        return java.util.Collections.unmodifiableMap(ordered);
+    }
+
+    /**
      * The parent-row column demand for a multi-table polymorphic child field, shared by
      * {@link ChildField.InterfaceField} and {@link ChildField.UnionField} (identical shape).
      *

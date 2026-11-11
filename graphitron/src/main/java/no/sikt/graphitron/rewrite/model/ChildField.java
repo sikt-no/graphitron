@@ -781,7 +781,7 @@ public sealed interface ChildField extends OutputField
     ) implements ChildField, ParentRowDemand {
         public InterfaceField {
             participants = List.copyOf(participants);
-            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            participantJoinPaths = ParentRowDemand.inParticipantOrder(participants, participantJoinPaths);
             // Validator and emitter both read sourceKey / parentResultType
             // unconditionally; carry the non-null contract in the type system rather than
             // by reviewer-tracked correspondence.
@@ -829,7 +829,7 @@ public sealed interface ChildField extends OutputField
     ) implements ChildField, ParentRowDemand {
         public UnionField {
             participants = List.copyOf(participants);
-            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            participantJoinPaths = ParentRowDemand.inParticipantOrder(participants, participantJoinPaths);
             java.util.Objects.requireNonNull(sourceKey, "sourceKey");
             java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
             java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
@@ -875,7 +875,7 @@ public sealed interface ChildField extends OutputField
     ) implements ChildField, BatchKeyField, ParentRowDemand {
         public BatchedInterfaceField {
             participants = List.copyOf(participants);
-            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            participantJoinPaths = ParentRowDemand.inParticipantOrder(participants, participantJoinPaths);
             java.util.Objects.requireNonNull(sourceKey, "sourceKey");
             java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
             java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
@@ -935,7 +935,7 @@ public sealed interface ChildField extends OutputField
     ) implements ChildField, BatchKeyField, ParentRowDemand {
         public BatchedUnionField {
             participants = List.copyOf(participants);
-            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            participantJoinPaths = ParentRowDemand.inParticipantOrder(participants, participantJoinPaths);
             java.util.Objects.requireNonNull(sourceKey, "sourceKey");
             java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
             java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
