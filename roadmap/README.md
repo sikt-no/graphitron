@@ -48,7 +48,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-11-08 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
-| `R1131` | A clean build runs in under five minutes | In Progress | 2026-11-09 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
+| `R1131` | A clean build runs in under five minutes | In Progress | 2026-11-11 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-07 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
