@@ -509,7 +509,8 @@ static method needs no holder.
   model; so a producer whose body the store emits still projects through units the walk decides,
   and the classified model cannot go while it does. The units are read off the store instead, the
   type's fields, their columns and their nested reaches at the occurrence, each unit's query its
-  own, with the generated selection adapters (`SelectionOccurrences`, the per-member `restrictTo`
+  own, a polymorphic field's parent-row columns among them in the order its participants are stated
+  (today `ParentRowDemand.polymorphicParentRowColumns`, kept in that order by `inParticipantOrder`), with the generated selection adapters (`SelectionOccurrences`, the per-member `restrictTo`
   a polymorphic lift calls) unchanged, the unit tests pinning what each unit selects for a given
   selection before and after (Alf, 2026-11-07). A unit restricts itself to its own type's occurrences
   of the selection, taking the shared-alias field names where it is merged into a discriminated
@@ -1153,11 +1154,6 @@ output package they are written to are settled.
 * **The node id encoder is not planned** `open`. It renders from the store already and is written
   straight from it, as `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER`
   goes, with `PlanCompileGraph`'s edge to it.
-* **A node's own `id` bound to a column is a defect** `open`. A node's id is its encoded key, the
-  table's primary key or `keyColumns` (Alf, 2026-11-11), so `id: ID! @field(name:)` on a node is
-  refused rather than offered as `NODE_ID_SHADOWS_COLUMN`'s second remedy, and `node.adoc` follows.
-  It settles the order of an authored `@key(fields: "id")` against the minted node key, which would
-  otherwise send `Query.node`'s encoded id to a direct key over the column.
 * **The facade, dev executor, registrations and schema class read the store** `open`.
   `GraphitronFacadeGenerator`, `GraphitronDevExecutorGenerator`, `FetcherRegistrationsEmitter` and
   `GraphitronSchemaClassGenerator` take roots, nodes, scalars, error types and entities from the
@@ -1353,6 +1349,9 @@ disagree with the build about which types are nodes.
 * **A node is what the manual says takes effect** `open`.
   `graphitron_node_type` goes, its readers read `graphitron_node`, and
   `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
+* **A node without an `id` field is a defect** `open`. A node has one, a stub included, and so does
+  a type whose `@key` names `id` (Alf, 2026-11-11, in `fact-model.adoc`); the documents declaring
+  stubs without one, `defects/node-stub` and `scenarios/synthesized-node-type-id` among them, follow.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
   squiggle and `SchemaQueries` read `graphitron_node` and `graphitron_node_keycolumn`, as the hover
   already does.
