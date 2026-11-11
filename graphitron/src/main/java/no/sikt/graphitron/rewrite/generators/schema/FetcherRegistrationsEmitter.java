@@ -88,6 +88,8 @@ public final class FetcherRegistrationsEmitter {
                 body = connectionBody(ct, units);
             } else if (type instanceof GraphitronType.EdgeType) {
                 body = edgeBody(name, units);
+            } else if (type instanceof GraphitronType.PageInfoType pageInfo) {
+                body = pageInfoBody(pageInfo, units);
             } else if (type instanceof GraphitronType.TableType
                     || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType
@@ -199,6 +201,26 @@ public final class FetcherRegistrationsEmitter {
         }
         body.add(";\n").unindent();
         return body.build();
+    }
+
+    /**
+     * The shared {@code PageInfo} type's fields, each registered to read the member of the shared
+     * generated {@code PageInfo} of the same name, for the specification's fields the type
+     * declares. Every field is wired; none is left to graphql-java's default property fetcher.
+     */
+    private static CodeBlock pageInfoBody(GraphitronType.PageInfoType pageInfoType,
+            no.sikt.graphitron.plan.GeneratedUnits units) {
+        var ref = units.pageInfo();
+        var pageInfo = ClassName.get(ref.packageName(), ref.simpleName());
+        var env = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+        var name = pageInfoType.name();
+        var body = CodeBlock.builder().add("codeRegistry").indent();
+        // The generated PageInfo's members are named after the specification's fields.
+        for (String field : pageInfoType.declaredSpecFields()) {
+            body.add("\n.dataFetcher($T.coordinates($S, $S), ($T env) -> (($T) env.getSource()).$L())",
+                FIELD_COORDS, name, field, env, pageInfo, field);
+        }
+        return body.add(";\n").unindent().build();
     }
 
     private static CodeBlock edgeBody(String edgeTypeName,

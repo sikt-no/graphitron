@@ -729,7 +729,17 @@ public sealed interface GraphitronType
         SourceLocation location,
         boolean shareable,
         GraphQLObjectType schemaType
-    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {}
+    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {
+
+        /** The fields the Relay Cursor Connections specification gives {@code PageInfo}, in order. */
+        public static final List<String> SPEC_FIELDS =
+            List.of("hasNextPage", "hasPreviousPage", "startCursor", "endCursor");
+
+        /** The specification's fields this type declares, in the specification's order. */
+        public List<String> declaredSpecFields() {
+            return SPEC_FIELDS.stream().filter(f -> schemaType.getFieldDefinition(f) != null).toList();
+        }
+    }
 
     /**
      * The synthesised per-connection facets container, e.g.

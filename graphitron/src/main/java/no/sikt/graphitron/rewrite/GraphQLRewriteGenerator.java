@@ -686,6 +686,7 @@ public class GraphQLRewriteGenerator {
             case CONNECTION_RESULT -> ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null);
             case CONNECTION_HELPER -> ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null,
                 ctx.maxAllowedPageSize());
+            case PAGE_INFO -> no.sikt.graphitron.rewrite.generators.util.PageInfoClassGenerator.generate();
             case ONE_OF_DIRECTIVE_SDL -> OneOfDirectiveSdlGenerator.generate(outputPackage);
             case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
             case NESTING_COORDINATES -> NestingCoordinatesClassGenerator.generate(schema.nestingReach());

@@ -80,6 +80,36 @@ class ConnectionRegistrationsTest {
         assertThat(body).doesNotContain("::totalCount");
     }
 
+    @Test
+    void pageInfo_registersExactlyWhenItDeclaresASpecificationField() {
+        var declared = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { id: ID }
+            type FilmsConnection { edges: [FilmsEdge!]! pageInfo: PageInfo! }
+            type FilmsEdge { cursor: String! node: Film! }
+            type PageInfo { hasNextPage: Boolean! endCursor: String }
+            type Query { films: FilmsConnection }
+            """);
+        var pageInfo = (no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType) declared.type("PageInfo");
+        assertThat(pageInfo.declaredSpecFields()).containsExactly("hasNextPage", "endCursor");
+        assertThat(registersFetchers(declared, "PageInfo")).isTrue();
+
+        var synthesised = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { id: ID }
+            type Query { films: [Film!]! @asConnection @defaultOrder(primaryKey: true) }
+            """);
+        var minted = (no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType) synthesised.type("PageInfo");
+        assertThat(minted.declaredSpecFields())
+            .containsExactlyElementsOf(no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType.SPEC_FIELDS);
+        assertThat(registersFetchers(synthesised, "PageInfo")).isTrue();
+    }
+
+    private static boolean registersFetchers(GraphitronSchema schema, String typeName) {
+        return no.sikt.graphitron.plan.SchemaShapePlanner.produce(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(row -> row.typeName().equals(typeName))
+            .findFirst().orElseThrow()
+            .registersFetchers();
+    }
+
     private static String bodyFor(String sdl, String connectionTypeName) {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(sdl);
         Map<String, CodeBlock> bodies = SchemaShapeRenderTestSupport.fetcherRegistrations(

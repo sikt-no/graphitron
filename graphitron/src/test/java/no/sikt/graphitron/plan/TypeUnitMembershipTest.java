@@ -128,7 +128,8 @@ class TypeUnitMembershipTest {
 
         // The registersFetchers flag: hosting classifications with a classified coordinate and
         // the reach-fold owner are true; connection and edge carriers are unconditionally true;
-        // PageInfo, enums, inputs and plain interfaces carry no registration body.
+        // PageInfo registers its specification fields on the shared generated class; enums,
+        // inputs and plain interfaces carry no registration body.
         var connection = schemaShapes.stream()
             .filter(row -> schema.type(row.typeName())
                 instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
@@ -142,7 +143,7 @@ class TypeUnitMembershipTest {
         assertThat(byName.get("FilmDetails").registersFetchers()).isTrue();
         assertThat(connection.registersFetchers()).isTrue();
         assertThat(edge.registersFetchers()).isTrue();
-        assertThat(byName.get("PageInfo").registersFetchers()).isFalse();
+        assertThat(byName.get("PageInfo").registersFetchers()).isTrue();
         assertThat(byName.get("Rating").registersFetchers()).isFalse();
         assertThat(byName.get("FilmFilter").registersFetchers()).isFalse();
     }

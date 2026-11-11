@@ -585,24 +585,20 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return cr.trimmedResult()")
             .build();
 
-        // --- pageInfo(DataFetchingEnvironment) → Map<String, Object> ---
+        // --- pageInfo(DataFetchingEnvironment) → PageInfo ---
+        // The shared generated PageInfo, whose fields are registered to read its members.
         var mapStringObject = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class));
-
         var hashMap = ClassName.get("java.util", "LinkedHashMap");
+        var pageInfoClass = ClassName.get(outputPackage + ".util", PageInfoClassGenerator.CLASS_NAME);
         var pageInfoMethod = MethodSpec.methodBuilder("pageInfo")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(mapStringObject)
+            .returns(pageInfoClass)
             .addParameter(ENV, "env")
             .addStatement("$T cr = env.getSource()", connectionResultClass)
             .addStatement("$T trimmed = cr.trimmedResult()", listOfRecord)
             .addStatement("String startCursor = trimmed.isEmpty() ? null : encodeCursor(trimmed.get(0), cr.orderByColumns())")
             .addStatement("String endCursor = trimmed.isEmpty() ? null : encodeCursor(trimmed.get(trimmed.size() - 1), cr.orderByColumns())")
-            .addStatement("$T<String, Object> info = new $T<>()", hashMap, hashMap)
-            .addStatement("info.put(\"hasNextPage\", cr.hasNextPage())")
-            .addStatement("info.put(\"hasPreviousPage\", cr.hasPreviousPage())")
-            .addStatement("info.put(\"startCursor\", startCursor)")
-            .addStatement("info.put(\"endCursor\", endCursor)")
-            .addStatement("return info")
+            .addStatement("return new $T(cr.hasNextPage(), cr.hasPreviousPage(), startCursor, endCursor)", pageInfoClass)
             .build();
 
         // --- totalCount(DataFetchingEnvironment) → Integer ---

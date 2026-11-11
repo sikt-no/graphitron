@@ -74,7 +74,9 @@ public final class SchemaShapePlanner {
     /**
      * Whether {@code name}'s schema-shape class carries a {@code registerFetchers} body. One
      * rule per population, mirroring the retired registrations emitter's construction gates:
-     * connection and edge carriers always (their delegate methods exist unconditionally);
+     * connection and edge carriers always (their delegate methods exist unconditionally), and the
+     * shared page info where it declares a specification field, each reading the generated
+     * {@code PageInfo}'s member;
      * fetcher-hosting classifications exactly when the type owns a classified coordinate (an
      * all-unclassified body would be empty and its call site an orphan); everything else via
      * the reach fold's {@link NestingReach#ownsFetchers} gate. A hosting classification that is
@@ -85,6 +87,9 @@ public final class SchemaShapePlanner {
                                              String name, GraphitronType type) {
         if (type instanceof GraphitronType.ConnectionType || type instanceof GraphitronType.EdgeType) {
             return true;
+        }
+        if (type instanceof GraphitronType.PageInfoType pageInfo) {
+            return !pageInfo.declaredSpecFields().isEmpty();
         }
         if (type instanceof GraphitronType.TableType
                 || type instanceof GraphitronType.NodeType

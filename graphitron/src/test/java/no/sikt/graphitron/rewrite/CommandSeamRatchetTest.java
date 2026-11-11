@@ -113,9 +113,12 @@ class CommandSeamRatchetTest {
      * probes that read an {@code ErrorsField}'s transport went with the transport. Lowered 64 to
      * 63 when the same-row table child retired, its fetcher read in {@code bindRaw} with it.
      * Lowered 63 to 61 when {@code @sourceRow} was removed: the lifter arms of the record-parent
-     * key extraction and the child service's key source went with it.
+     * key extraction and the child service's key source went with it. Raised 61 to 62 when the
+     * shared {@code PageInfo} was wired: the registrations emitter's arm for the page-info leaf,
+     * the smallest repair of a field left to graphql-java's default fetcher; it moves to the
+     * store-reading connection emitter when the connection classes are generated.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 61;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 62;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -293,8 +296,12 @@ class CommandSeamRatchetTest {
      * membership switch, each a new leaf's own exhaustive-switch site.
      *
      * <p>Lowered 143 to 140 when the same-row table child retired, taking those three arms.
+     *
+     * <p>Raised 140 to 141 when the shared {@code PageInfo} was wired: the schema-shape planner's
+     * page-info arm, which registers where the type declares a specification field; it leaves with
+     * the connection units when the connection classes are generated from the store.
      */
-    private static final int PLAN_LEAF_REFERENCES = 140;
+    private static final int PLAN_LEAF_REFERENCES = 141;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

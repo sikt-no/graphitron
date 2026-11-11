@@ -149,6 +149,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         globals.add(one(GlobalUnitKind.CONNECTION_RESULT, units.connectionResult()));
         globals.add(one(GlobalUnitKind.CONNECTION_HELPER, units.connectionHelper()));
+        globals.add(one(GlobalUnitKind.PAGE_INFO, units.pageInfo()));
         // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
         // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
         // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to

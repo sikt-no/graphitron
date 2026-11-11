@@ -28,6 +28,8 @@ public enum GlobalUnitKind {
     ENTITY_FETCHER_DISPATCH,
     CONNECTION_RESULT,
     CONNECTION_HELPER,
+    /** The page info every connection hands its {@code pageInfo} field, one class shared by all. */
+    PAGE_INFO,
     /** Present exactly when the schema is federated and uses {@code @oneOf}. */
     ONE_OF_DIRECTIVE_SDL,
     SELECTION_OCCURRENCES,

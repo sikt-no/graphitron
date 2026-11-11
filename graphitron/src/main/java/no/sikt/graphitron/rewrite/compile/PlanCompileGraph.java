@@ -107,6 +107,7 @@ public final class PlanCompileGraph {
         GlobalUnitKind.COLUMN_VALUES,
         GlobalUnitKind.CONNECTION_RESULT,
         GlobalUnitKind.CONNECTION_HELPER,
+        GlobalUnitKind.PAGE_INFO,
         GlobalUnitKind.SELECTION_OCCURRENCES,
         GlobalUnitKind.NESTING_COORDINATES,
         GlobalUnitKind.ORDER_BY_RESULT,
@@ -299,7 +300,7 @@ public final class PlanCompileGraph {
         private void addFixedKindEdges(GlobalUnitKind kind, List<UnitRef> units) {
             switch (kind) {
                 case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
-                     CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL,
+                     CONNECTION_HELPER, PAGE_INFO, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }
@@ -690,6 +691,11 @@ public final class PlanCompileGraph {
                     UnitRef own = fetchersBySimpleName.get(row.typeName() + GeneratedUnits.FETCHERS_SUFFIX);
                     if (own != null) {
                         declared(row.unit(), own);
+                    }
+                    // The page info's fields are registered to read the shared generated PageInfo.
+                    if (schema.type(row.typeName()) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType pageInfo
+                            && !pageInfo.declaredSpecFields().isEmpty()) {
+                        precise(row.unit(), require(GlobalUnitKind.PAGE_INFO));
                     }
                 }
             }

@@ -276,9 +276,16 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     idea of binding positions to runtime members is withdrawn.
   * The classes are written by an emitter reading the store, counted by `EmissionCensusTest`; the
     plan layer's connection units shrink rather than grow.
-  * `PageInfo` and the facets types are served by graphql-java's `PropertyDataFetcher` reading maps
-    today, which the wiring rule forbids; `code-generation-triggers.adoc` still says a plain field
-    is served by the default property fetcher.
+  * `PageInfo` is wired to the shared generated `util.PageInfo`, each specification field it
+    declares registered to its member; the specification's fields sit on
+    `GraphitronType.PageInfoType` until "A connection is recognised by the specification's shape"
+    states them as positions, and the wiring's leaf arms in the schema-shape planner and the
+    registrations emitter leave with the connection units. Open for Alf and Filip: a field an
+    author adds to `PageInfo` beyond the specification is still unwired; refused, or left with the
+    other custom connection fields?
+  * The facets types are served by graphql-java's `PropertyDataFetcher` reading maps today, which
+    the wiring rule forbids; `code-generation-triggers.adoc` still says a plain field is served by
+    the default property fetcher.
   * Removing `ConnectionHelper.totalCount(env)`, which `runtime-api.adoc` documents, breaks
     consumers: that commit is `feat!` with a `BREAKING-CHANGE:` footer.
   * `totalCount` and facets read the producer's arguments: the count's condition and each facet's
@@ -290,9 +297,9 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   * `PageInfo` is one generated class shared by every connection, and each facets type and facet
     value type has a generated class of its own (Alf, 2026-11-11; `emitter-conventions.adoc`
     § Return types).
-  * **The page info and facets fields are wired** `open`. The shared generated `PageInfo`
-    class and facets classes, each field explicitly registered, replace the maps. Pinned by the sakila
-    connection, cursor-format and facets execution tests; `code-generation-triggers.adoc` changes.
+  * **The facets fields are wired** `open`. A generated class for each facets type and facet value
+    type, each field explicitly registered, replaces the maps the facets resolver returns. Pinned by
+    the sakila facets execution tests.
   * "A count or facets graphitron cannot run is a defect" removes the null paths, and
     "A connection is recognised by the specification's shape" states the positions; both above,
     both before the classes.

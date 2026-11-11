@@ -306,6 +306,11 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "ConnectionHelper");
     }
 
+    /** {@code <pkg>.util.PageInfo}: the page info every connection shares. */
+    public UnitRef pageInfo() {
+        return unit(SUB_UTIL, "PageInfo");
+    }
+
     /** {@code <pkg>.util.ConnectionResult} — the generated connection carrier. */
     public UnitRef connectionResult() {
         return unit(SUB_UTIL, "ConnectionResult");
