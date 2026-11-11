@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FactExpectationTest {
 
     /** The undecided folder's size, lowered as documents leave it and never raised. */
-    private static final int UNDECIDED_CEILING = 42;
+    private static final int UNDECIDED_CEILING = 41;
 
     /** Each scenario's claim, by its graph's name, which is its path. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();

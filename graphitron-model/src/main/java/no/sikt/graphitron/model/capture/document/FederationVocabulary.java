@@ -28,9 +28,9 @@ import static org.jooq.impl.DSL.val;
  * <p>The last step of the graphitron-ast anchor, after the link's imports, since what a definition
  * is called depends on them and the imports on what the mint applied. Every graph gets its directives,
  * a graph with no link its written ones alone. Marked and swept per graph on the reading's instant.
- * The federation types are elements like any other, which {@link EmittedAnchor}'s sweep takes when
- * the next reading starts and this step writes again; a name an author or the mint holds stays
- * theirs.
+ * The federation types are elements like any other, of origin {@code FEDERATION} in
+ * {@code graphitron_type}: this step marks and sweeps them, and {@link MacroExpansion}'s sweep
+ * leaves them be. A name an author or the mint holds stays theirs.
  */
 final class FederationVocabulary {
 
@@ -119,6 +119,18 @@ final class FederationVocabulary {
         var f = GRAPHITRON_TYPE_FEDERATION;
         var e = GRAPHITRON_ELEMENT;
         var t = GRAPHITRON_TYPE;
+        // A federation type this stage wrote before takes this reading's mark; a name the author or
+        // a macro holds stays theirs.
+        var owned = GRAPHITRON_TYPE.as("owned");
+        dsl.update(e)
+            .set(e.TOUCHED_AT, touchedAt)
+            .where(e.GRAPH_NAME.eq(graph))
+            .and(exists(selectOne().from(f)
+                .where(f.GRAPH_NAME.eq(e.GRAPH_NAME), f.COORDINATE.eq(e.COORDINATE))))
+            .and(exists(selectOne().from(owned)
+                .where(owned.GRAPH_NAME.eq(e.GRAPH_NAME), owned.COORDINATE.eq(e.COORDINATE),
+                    owned.ORIGIN.eq("FEDERATION"))))
+            .execute();
         dsl.insertInto(e)
             .columns(e.GRAPH_NAME, e.COORDINATE, e.ELEMENT_KIND, e.TOUCHED_AT)
             .select(dsl.select(f.GRAPH_NAME, f.COORDINATE, inline("NAMED_TYPE"), val(touchedAt, e.TOUCHED_AT))
@@ -128,12 +140,23 @@ final class FederationVocabulary {
                     .where(e.GRAPH_NAME.eq(f.GRAPH_NAME)).and(e.COORDINATE.eq(f.COORDINATE)))))
             .execute();
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.COORDINATE, t.KIND, t.DESCRIPTION)
-            .select(dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.COORDINATE, f.KIND, f.DESCRIPTION)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.COORDINATE, t.KIND, t.ORIGIN, t.DESCRIPTION)
+            .select(dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.COORDINATE, f.KIND, inline("FEDERATION"),
+                    f.DESCRIPTION)
                 .from(f)
                 .where(f.GRAPH_NAME.eq(graph))
                 .and(notExists(selectOne().from(t)
                     .where(t.GRAPH_NAME.eq(f.GRAPH_NAME)).and(t.TYPE_NAME.eq(f.TYPE_NAME)))))
             .execute();
+        // The federation types this reading no longer imports, type before element.
+        var stale = dsl.select(t.COORDINATE)
+            .from(t)
+            .join(e).on(e.GRAPH_NAME.eq(t.GRAPH_NAME), e.COORDINATE.eq(t.COORDINATE))
+            .where(t.GRAPH_NAME.eq(graph), t.ORIGIN.eq("FEDERATION"), e.TOUCHED_AT.ne(touchedAt))
+            .fetchSet(t.COORDINATE);
+        if (!stale.isEmpty()) {
+            dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph)).and(t.COORDINATE.in(stale)).execute();
+            dsl.deleteFrom(e).where(e.GRAPH_NAME.eq(graph)).and(e.COORDINATE.in(stale)).execute();
+        }
     }
 }

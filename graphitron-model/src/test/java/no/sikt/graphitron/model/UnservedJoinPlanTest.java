@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.EmittedAnchor;
+import no.sikt.graphitron.model.capture.document.MacroExpansion;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import org.jooq.DSLContext;
@@ -151,7 +151,8 @@ class UnservedJoinPlanTest {
             })));
         var at = LocalDateTime.now();
         GraphQLAstCapture.anchor(recording, GRAPH, at);
-        EmittedAnchor.derive(recording, GRAPH, at);
+        MacroExpansion.derive(recording, GRAPH, at);
+        MacroExpansion.directives(recording, GRAPH, at);
         ArgMappingCandidates.derive(recording, GRAPH);
         return statements.stream()
             .filter(sql -> sql.contains(marker))

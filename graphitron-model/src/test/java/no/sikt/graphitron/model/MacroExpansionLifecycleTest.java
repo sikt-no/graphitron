@@ -1,7 +1,9 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.EmittedAnchor;
+import no.sikt.graphitron.model.capture.document.MacroExpansion;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.CatalogInput;
+import no.sikt.graphitron.model.test.TestRunContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,6 +13,9 @@ import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * admits it are readable without reading the others. These cases are about the lifetime rather than
  * the sets; the sets are where the admission rules are stated and read.
  */
-class EmittedAnchorLifecycleTest {
+class MacroExpansionLifecycleTest {
 
     private static final String SDL = """
         type Query {
@@ -68,16 +73,19 @@ class EmittedAnchorLifecycleTest {
      * from the one row rather than stored beside it.
      */
     @Test
-    @DisplayName("an element a later reading does not derive is swept")
+    @DisplayName("an element a later reading does not derive is swept, and a type whose kind changed is written afresh")
     void anElementNoLongerDerivedIsSwept(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, SDL)) {
+        try (var store = CapturedStore.ofCatalog(tmp, SDL, CatalogInput.of(TestRunContext.of()))) {
+            assertThat(store.dsl().fetchCount(GRAPHITRON_TABLETYPE, GRAPHITRON_TABLETYPE.TYPE_NAME.eq("Film")))
+                .as("Film is a table, a type of kind OBJECT")
+                .isEqualTo(1);
             // The applications go, which is a corpus that stopped asking for the expansion. There
             // are no minted rows to remove beside them: what a carrier mints is derived from the
             // application, so removing the application is the whole of it.
             store.dsl().deleteFrom(GRAPHQL_DIRECTIVE_APPLICATION)
                 .where(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("asConnection")).execute();
 
-            EmittedAnchor.derive(store.dsl(), CapturedStore.GRAPH,
+            MacroExpansion.derive(store.dsl(), CapturedStore.GRAPH,
                 LocalDateTime.of(2030, 1, 1, 0, 0));
 
             assertThat(store.dsl().fetchCount(GRAPHITRON_ELEMENT,
@@ -88,6 +96,21 @@ class EmittedAnchorLifecycleTest {
                     GRAPHITRON_ELEMENT.COORDINATE.eq("Film")))
                 .as("while an element the reading still derives stays")
                 .isEqualTo(1);
+
+            // A later reading in which the author made Film an interface. Its table row was written
+            // for an object, so it goes with the stale type rather than standing under the new kind,
+            // and the table types written after this stage state it again.
+            store.dsl().update(GRAPHQL_TYPE).set(GRAPHQL_TYPE.KIND, "INTERFACE")
+                .where(GRAPHQL_TYPE.TYPE_NAME.eq("Film")).execute();
+            MacroExpansion.derive(store.dsl(), CapturedStore.GRAPH, LocalDateTime.of(2030, 1, 2, 0, 0));
+
+            assertThat(store.dsl().select(GRAPHITRON_TYPE.KIND).from(GRAPHITRON_TYPE)
+                    .where(GRAPHITRON_TYPE.TYPE_NAME.eq("Film")).fetchOne(GRAPHITRON_TYPE.KIND))
+                .as("the type is written with the kind the reading found")
+                .isEqualTo("INTERFACE");
+            assertThat(store.dsl().fetchCount(GRAPHITRON_TABLETYPE, GRAPHITRON_TABLETYPE.TYPE_NAME.eq("Film")))
+                .as("and the table row keyed to the old kind went by the cascade")
+                .isZero();
         }
     }
 }

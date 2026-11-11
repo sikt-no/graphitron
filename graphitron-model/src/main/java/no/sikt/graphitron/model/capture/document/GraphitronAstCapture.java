@@ -131,6 +131,9 @@ public final class GraphitronAstCapture {
      */
     public static final List<AnchorStage> STAGES = Stream.concat(Stream.of(
         new AnchorStage("anchor", GraphitronAnchor.class, GraphitronAnchor::write),
+        // The schema the generator works with, macros expanded: it reads only the transcription and
+        // the macros' own views, and every type-grained relation below keys into its types.
+        new AnchorStage("macro-expansion", MacroExpansion.class, MacroExpansion::derive),
         // What each written code reference names on the classpath, which this anchor can ask now it
         // runs after the classpath has been read.
         new AnchorStage("code-references", GraphitronCodeReferences.class,
@@ -154,12 +157,9 @@ public final class GraphitronAstCapture {
         // The keys federation's rules mint, from the nodes and the link just written, ahead of the
         // emitted population whose minted applications render them.
         new AnchorStage("minted-keys", MintedKeys.class, (dsl, graph, readAt) -> MintedKeys.derive(dsl, graph)),
-        // Then what the applications just anchored mint. Second by our choice rather than by
-        // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
-        // siblings, each decoded from its own position and reading nothing of the other. It is
-        // here that one depends on the other, the emitted population being resolved out of the
-        // applications this gatherer settled a statement earlier.
-        new AnchorStage("emitted", EmittedAnchor.class, EmittedAnchor::derive),
+        // The directives applied across the expanded schema, whose minted applications render the
+        // nodes and the keys just written.
+        new AnchorStage("directive-applications", MacroExpansion.class, MacroExpansion::directives),
         // What the link imports, which is what the author wrote plus what was just applied.
         new AnchorStage("federation-imports", FederationLinks.class, FederationLinks::imports),
         // And the vocabulary the composed schema has, which those imports name.

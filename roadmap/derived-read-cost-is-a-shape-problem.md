@@ -383,6 +383,22 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   6. Does the hit being an edge reopen R427's decision to keep search apart from connections? R427's
      question, recorded there.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
+  The rules re-derive what a type is, its table and its members, so the type grain is stated as
+  structure first (Alf, 2026-11-11): `graphitron_type` is the strict supertype, complete over the
+  schema's types and written first after the anchor, and a table is a type, a node a table, each a
+  foreign key on type and kind.
+  * **A table defect is owned by the stage that decides the table** `open`, F's. `TABLE_AMBIGUOUS`
+    and `TABLE_UNRESOLVED` move from `entry-defects` to `table-types`, which leaves an ambiguous
+    `@table` without a `graphitron_tabletype` row, so the missing row and its refusal sit in one place.
+  * **A connection keys into its edge, and an edge names its item** `open`, F's. `graphitron_edge`
+    (type, `item_type_name`) and `graphitron_connection` (type, edge type) replace
+    `graphitron_connection_element_type`, both subtypes of `graphitron_type` of kind `OBJECT` with
+    `_rule` views; an edge type two connections share is one row. Facets wait for a named reader.
+  * **A polymorphic type's members are stored** `open`, F's. `graphitron_type_member` (container,
+    member), both keyed into `graphitron_type` by kind, replaces the `graphql_poly_member` view, and
+    the per-depth rules and `graphitron_occurrence_producer_result_rule` read `graphitron_tabletype`
+    and it in place of their type, member and `NOT EXISTS` combinations, priced by a quiet-machine
+    A/B on `prepare_ms`.
 * **Relations nobody reads go** `open`, F's.
   A census of every relation's readers, static over the main sources and at runtime over a full
   build (`roadmap/audits/2026-11-07-relations-nobody-reads.md`), found 56 that no main code reads.

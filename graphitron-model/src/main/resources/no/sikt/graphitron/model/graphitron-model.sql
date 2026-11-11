@@ -3542,16 +3542,22 @@ CREATE TABLE graphitron_type (
   type_name   VARCHAR NOT NULL,
   coordinate  VARCHAR NOT NULL,
   kind        VARCHAR NOT NULL,
+  origin      VARCHAR NOT NULL,
   description VARCHAR,
   PRIMARY KEY (graph_name, type_name),
+  -- What a subtype references, so a subtype row can only hang under a type of the kind it is for:
+  -- a table is an object or an interface, and a node is a table.
+  UNIQUE (graph_name, type_name, kind),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
-  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
+  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR')),
+  CHECK (origin IN ('AUTHORED', 'MINTED', 'FEDERATION'))
 );
-COMMENT ON TABLE graphitron_type IS 'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph. For example a Connection type the connection macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.';
+COMMENT ON TABLE graphitron_type IS 'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph. For example a Connection type the connection macro minted sits here beside the type whose field carried the macro. Total from federation-vocabulary on, the stage adding the last population, so a consumer from there joins this rather than left-joining it.';
 COMMENT ON COLUMN graphitron_type.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_type.type_name IS 'the type''s name; with the graph, the grain, and one row per name however many declaration sites or minting sites contributed to it';
 COMMENT ON COLUMN graphitron_type.coordinate IS 'this row as graphitron_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader holding a coordinate reaches the parts here rather than splitting the spelling';
 COMMENT ON COLUMN graphitron_type.kind IS 'the type''s kind in graphql_type''s vocabulary, carried across rather than restated so a reader joins one column whichever arm supplied its row';
+COMMENT ON COLUMN graphitron_type.origin IS 'which population answered: AUTHORED, a type a document declares; MINTED, one a macro adds; FEDERATION, a scalar or enum of the federation vocabulary the graph imports. Each population is written and swept by the stage that owns it, macro-expansion the first two and federation-vocabulary the third';
 COMMENT ON COLUMN graphitron_type.description IS 'the docstring the generator emits: authored on an authored type, with its file''s configured note appended, which mints it, and written by the macro on a minted one; display material, never a dimension';
 
 CREATE TABLE graphitron_field (
@@ -3574,7 +3580,7 @@ CREATE TABLE graphitron_field (
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
   CHECK (is_list OR item_non_null IS NULL),
-  -- The coordinate is the key spelled out, which is what lets EmittedAnchor upsert on the key.
+  -- The coordinate is the key spelled out, which is what lets MacroExpansion upsert on the key.
   CHECK (coordinate = type_name || '.' || field_name)
 );
 COMMENT ON TABLE graphitron_field IS 'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries. For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.';
@@ -3705,7 +3711,7 @@ COMMENT ON COLUMN graphitron_directive_application_arg.value_sdl IS 'the value a
 COMMENT ON COLUMN graphitron_directive_application_arg.touched_at IS 'when the reading that last wrote this row ran, swept per graph like the application''s own, so an argument removed from an application that still stands leaves';
 
 -- ==== Macro synthesis provenance ==================================================
--- What macro expansion mints is stated by views and anchored by EmittedAnchor, beside the authored
+-- What macro expansion mints is stated by views and anchored by MacroExpansion, beside the authored
 -- sets, into the tables above. Per element kind a candidate view states what the arms mint before
 -- any disagreement between them is resolved, and a minted set states what survives:
 -- graphitron_type_minted_candidate and graphitron_type_minted, and the field and argument pairs.
@@ -5776,12 +5782,11 @@ CREATE TABLE graphitron_tabletype (
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  -- The type and the kind it is, replacing the reference to the type element alone: boundness is a
-  -- fact about an object or an interface, and a reference to the element could not say so. The
-  -- element is still reached, graphql_type hanging off it, so the narrower reference gives up no
-  -- reach. Cascading, a type that stops being declared having no binding to keep.
+  -- The type and the kind it is: boundness is a fact about an object or an interface, so a table
+  -- is a type of one of those kinds, held there by the supertype's own key. Cascading, a type that
+  -- stops being one, or changes kind, having no binding to keep.
   FOREIGN KEY (graph_name, type_name, named_type_kind)
-    REFERENCES graphql_type (graph_name, type_name, kind) ON DELETE CASCADE,
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
   CHECK (named_type_kind IN ('OBJECT', 'INTERFACE')),
   FOREIGN KEY (table_source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
@@ -18723,38 +18728,39 @@ ALTER TABLE graphitron_defect_type ADD FOREIGN KEY (owner_stage)
 -- The graphitron gatherer's anchor phase, in the order GraphitronAstCapture.STAGES runs it.
 INSERT INTO meta_stage VALUES
   ('anchor', 'graphitron', 0, 'no.sikt.graphitron.model.capture.document.GraphitronAnchor'),
-  ('code-references', 'graphitron', 1, 'no.sikt.graphitron.model.capture.document.GraphitronCodeReferences'),
-  ('argmapping-sites', 'graphitron', 2, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingSites'),
-  ('argmapping-pairs', 'graphitron', 3, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingPairs'),
-  ('call-context-keys', 'graphitron', 4, 'no.sikt.graphitron.model.capture.document.GraphitronCallContextKeys'),
-  ('table-types', 'graphitron', 5, 'no.sikt.graphitron.model.derive.TableTypes'),
-  ('nodes', 'graphitron', 6, 'no.sikt.graphitron.model.derive.Nodes'),
-  ('federation-link', 'graphitron', 7, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
-  ('minted-keys', 'graphitron', 8, 'no.sikt.graphitron.model.derive.MintedKeys'),
-  ('emitted', 'graphitron', 9, 'no.sikt.graphitron.model.capture.document.EmittedAnchor'),
-  ('federation-imports', 'graphitron', 10, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
-  ('federation-vocabulary', 'graphitron', 11, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
-  ('argmapping-candidates', 'graphitron', 12, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
-  ('node-key-columns', 'graphitron', 13, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
-  ('node-legacy-key-shapes', 'graphitron', 14, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
-  ('field-targets', 'graphitron', 15, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
-  ('producer-claims', 'graphitron', 16, 'no.sikt.graphitron.model.derive.ProducerClaims'),
-  ('binding-claims', 'graphitron', 17, 'no.sikt.graphitron.model.derive.BindingClaims'),
-  ('type-claims', 'graphitron', 18, 'no.sikt.graphitron.model.derive.TypeClaims'),
-  ('spelled-tables', 'graphitron', 19, 'no.sikt.graphitron.model.derive.SpelledTables'),
-  ('path-elements', 'graphitron', 20, 'no.sikt.graphitron.model.derive.PathElements'),
-  ('routine-results', 'graphitron', 21, 'no.sikt.graphitron.model.derive.RoutineResults'),
-  ('occurrences', 'graphitron', 22, 'no.sikt.graphitron.model.derive.Occurrences'),
-  ('argmapping-landings', 'graphitron', 23, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
-  ('path-claims', 'graphitron', 24, 'no.sikt.graphitron.model.derive.PathClaims'),
-  ('type-backings', 'graphitron', 25, 'no.sikt.graphitron.model.derive.TypeBackings'),
-  ('fetchers', 'graphitron', 26, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('occurrence-participants', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-depths', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-values', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 30, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 31, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 32, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('macro-expansion', 'graphitron', 1, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
+  ('code-references', 'graphitron', 2, 'no.sikt.graphitron.model.capture.document.GraphitronCodeReferences'),
+  ('argmapping-sites', 'graphitron', 3, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingSites'),
+  ('argmapping-pairs', 'graphitron', 4, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingPairs'),
+  ('call-context-keys', 'graphitron', 5, 'no.sikt.graphitron.model.capture.document.GraphitronCallContextKeys'),
+  ('table-types', 'graphitron', 6, 'no.sikt.graphitron.model.derive.TableTypes'),
+  ('nodes', 'graphitron', 7, 'no.sikt.graphitron.model.derive.Nodes'),
+  ('federation-link', 'graphitron', 8, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
+  ('minted-keys', 'graphitron', 9, 'no.sikt.graphitron.model.derive.MintedKeys'),
+  ('directive-applications', 'graphitron', 10, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
+  ('federation-imports', 'graphitron', 11, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
+  ('federation-vocabulary', 'graphitron', 12, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
+  ('argmapping-candidates', 'graphitron', 13, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
+  ('node-key-columns', 'graphitron', 14, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
+  ('node-legacy-key-shapes', 'graphitron', 15, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
+  ('field-targets', 'graphitron', 16, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 17, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 18, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 19, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 20, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 21, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 22, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 23, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 24, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 25, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 26, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 27, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('occurrence-participants', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-depths', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 31, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -18779,17 +18785,17 @@ INSERT INTO meta_stage_write VALUES
   ('nodes', 'graphitron_node'),
   ('minted-keys', 'graphitron_minted_key'),
   ('federation-link', 'graphitron_federation_link'),
-  ('emitted', 'graphitron_argument'),
-  ('emitted', 'graphitron_carrier_directive'),
-  ('emitted', 'graphitron_configured_tag'),
-  ('emitted', 'graphitron_directive_application'),
-  ('emitted', 'graphitron_directive_application_arg'),
-  ('emitted', 'graphitron_element'),
-  ('emitted', 'graphitron_enum_value'),
-  ('emitted', 'graphitron_field'),
-  ('emitted', 'graphitron_minted_coinage'),
-  ('emitted', 'graphitron_minted_conflict'),
-  ('emitted', 'graphitron_type'),
+  ('macro-expansion', 'graphitron_argument'),
+  ('macro-expansion', 'graphitron_carrier_directive'),
+  ('macro-expansion', 'graphitron_configured_tag'),
+  ('directive-applications', 'graphitron_directive_application'),
+  ('directive-applications', 'graphitron_directive_application_arg'),
+  ('macro-expansion', 'graphitron_element'),
+  ('macro-expansion', 'graphitron_enum_value'),
+  ('macro-expansion', 'graphitron_field'),
+  ('macro-expansion', 'graphitron_minted_coinage'),
+  ('macro-expansion', 'graphitron_minted_conflict'),
+  ('macro-expansion', 'graphitron_type'),
   ('federation-imports', 'graphitron_federation_link_import'),
   ('federation-vocabulary', 'graphitron_directive'),
   ('federation-vocabulary', 'graphitron_directive_argument'),
@@ -20899,7 +20905,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_minted_coinage_rule', 'minted-coinage', 'graphitron',
    'One row the coinage rule computes, in the shape graphitron_minted_coinage stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_minted_coinage, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_element_minted_type', 'expanded-element', 'graphitron',
    'One of the four sets graphitron_element is the union of: a type macro expansion adds to the schema, which no author declared and no two applications disagree about.',
    'For example an author writing films: [Film!]! @asConnection and nothing else gets QueryFilmsConnection here, where an author who also wrote their own QueryFilmsConnection gets no row.',
@@ -20942,8 +20948,8 @@ INSERT INTO meta_relation VALUES
    'The composed schema holds the types the link brings in, and a reader asking what a federation argument''s type is asks graphitron_type like any other. Written after the link''s imports, a name an author or the mint already holds staying theirs.'),
   ('graphitron_type', 'expanded-type', 'graphitron',
    'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph.',
-   'For example a Connection type the connection macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.',
-   'The type grain of the emitted population, as a table where it was a view. Two things follow from being a table and neither is available to a union: a relation about a minted type can key here, and a reader can be given an index. The payload is carried rather than joined from graphql_type because a minted type has no row there, so the join would be a left join whose null arm is the whole reason this relation exists. What it does not carry is the declaration site, that being a fact only the transcription can assert.'),
+   'For example a Connection type the connection macro minted sits here beside the type whose field carried the macro. Total from federation-vocabulary on, the stage adding the last population, so a consumer from there joins this rather than left-joining it.',
+   'The type grain of the emitted population, as a table where it was a view. Two things follow from being a table and neither is available to a union: a relation about a minted type can key here, and a reader can be given an index. The payload is carried rather than joined from graphql_type because a minted type has no row there, so the join would be a left join whose null arm is the whole reason this relation exists. What it does not carry is the declaration site, that being a fact only the transcription can assert. The supertype every type-grained relation keys into by type and kind: a table is a type, and a node is a table.'),
   ('graphitron_type_authored', 'expanded-type', 'graphitron',
    'One of the two sets graphitron_type is the union of: a type an author declared, carried across whole.',
    'For example type Film { title: String } is the row Film here, with the kind and docstring the author wrote.',
@@ -21031,7 +21037,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_configured_tag_rule', 'configured-tag', 'graphitron',
    'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_enum_value', 'expanded-enum-value', 'graphitron',
    'Every enum value the generator emits: one row per enum value coordinate.',
    'For example enum Rating { G PG } is the rows Rating.G and Rating.PG. Authored only, the macros minting no enum.',
@@ -21063,7 +21069,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_carrier_directive_rule', 'carrier-directive', 'graphitron',
    'One row the carrier-directive rule computes, in the shape graphitron_carrier_directive stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_carrier_directive, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by EmittedAnchor before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_inherited_directive', 'inherited-directive', 'graphitron',
    'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is.',
    'For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.',

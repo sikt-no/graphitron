@@ -72,8 +72,17 @@ import static org.jooq.impl.DSL.regexpReplaceAll;
 import static org.jooq.impl.DSL.when;
 
 /**
- * The anchor phase of macro expansion: the schema elements the generator emits, which are what the
- * author declared unioned with what {@code graphitron_connection_carrier} minted.
+ * Macro expansion, as two stages of the {@code graphitron} gatherer's anchor phase: the schema the
+ * generator works with, what the author declared with what a macro replaces left out, unioned with
+ * what {@code graphitron_connection_carrier} minted; and, once the nodes and the keys federation
+ * mints are known, the directives applied across it.
+ *
+ * <p>The schema comes first, right after the anchor: it reads only the transcription and the
+ * macros' own views, and {@code graphitron_type} is the supertype every type-grained relation keys
+ * into, a table being a type and a node a table, so it is written before any of them. A type whose
+ * kind changed is a stale row, deleted with what hangs off it before it is written again, never
+ * rewritten in place under rows that hold its old kind. The federation vocabulary's types join the
+ * supertype later, written and swept by their own stage.
  *
  * <p>A phase rather than a stage beside the expansion, on the shape the other gatherers already
  * have: each transcribes, then anchors what it transcribed, the anchoring living in a class of its
@@ -88,9 +97,9 @@ import static org.jooq.impl.DSL.when;
  * carrying any other instant, children first. A relation whose lifetime is a property of whatever
  * pass runs around it cannot move to another pass.
  */
-public final class EmittedAnchor {
+public final class MacroExpansion {
 
-    private EmittedAnchor() {}
+    private MacroExpansion() {}
 
     private static final String REPLACE = "REPLACE";
 
@@ -106,6 +115,7 @@ public final class EmittedAnchor {
         // First, because every arm below withholds what this finds.
         conflicts(dsl, graphName);
         elements(dsl, graphName, touchedAt);
+        changedKinds(dsl, graphName);
         types(dsl, graphName);
         fields(dsl, graphName);
         arguments(dsl, graphName);
@@ -113,7 +123,14 @@ public final class EmittedAnchor {
         sweep(dsl, graphName, touchedAt);
         // After the sweep, so the sets join only the coordinates this reading kept.
         federation(dsl, graphName, touchedAt);
-        directives(dsl, graphName, touchedAt);
+    }
+
+    /**
+     * The directives applied across the schema {@link #derive} wrote, a stage of its own after the
+     * nodes and the keys federation mints, which the minted applications render.
+     */
+    public static void directives(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        applications(dsl, graphName, touchedAt);
     }
 
     /**
@@ -126,7 +143,7 @@ public final class EmittedAnchor {
      * application the reading still derives keeps its row, and one removed from a coordinate that
      * still stands leaves.
      */
-    private static void directives(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+    private static void applications(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var t = GRAPHITRON_DIRECTIVE_APPLICATION;
         var authored = GRAPHITRON_DIRECTIVE_APPLICATION_AUTHORED;
         var configured = GRAPHITRON_DIRECTIVE_APPLICATION_CONFIGURED;
@@ -214,10 +231,15 @@ public final class EmittedAnchor {
      * stopped deriving goes here, and its directive applications go with it through their cascade.
      */
     private static void sweep(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        // The federation vocabulary's types are its own stage's to mark and sweep.
+        var owned = GRAPHITRON_TYPE.as("owned");
         var stale = dsl.select(GRAPHITRON_ELEMENT.COORDINATE)
             .from(GRAPHITRON_ELEMENT)
             .where(GRAPHITRON_ELEMENT.GRAPH_NAME.eq(graphName))
             .and(GRAPHITRON_ELEMENT.TOUCHED_AT.ne(touchedAt))
+            .andNotExists(selectOne().from(owned)
+                .where(owned.GRAPH_NAME.eq(GRAPHITRON_ELEMENT.GRAPH_NAME),
+                    owned.COORDINATE.eq(GRAPHITRON_ELEMENT.COORDINATE), owned.ORIGIN.eq("FEDERATION")))
             .fetchSet(GRAPHITRON_ELEMENT.COORDINATE);
         if (stale.isEmpty()) {
             return;
@@ -418,22 +440,61 @@ public final class EmittedAnchor {
         var minted = GRAPHITRON_TYPE_MINTED;
         dsl.insertInto(GRAPHITRON_TYPE)
             .columns(GRAPHITRON_TYPE.GRAPH_NAME, GRAPHITRON_TYPE.TYPE_NAME,
-                GRAPHITRON_TYPE.COORDINATE, GRAPHITRON_TYPE.KIND, GRAPHITRON_TYPE.DESCRIPTION)
+                GRAPHITRON_TYPE.COORDINATE, GRAPHITRON_TYPE.KIND, GRAPHITRON_TYPE.ORIGIN,
+                GRAPHITRON_TYPE.DESCRIPTION)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.COORDINATE,
-                    authored.KIND, mintedDescription(authored.DESCRIPTION, authored.NOTE))
+                    authored.KIND, inline("AUTHORED"), mintedDescription(authored.DESCRIPTION, authored.NOTE))
                 .from(authored)
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.COORDINATE,
-                        minted.KIND, minted.DESCRIPTION)
+                        minted.KIND, inline("MINTED"), minted.DESCRIPTION)
                     .from(minted)
                     .where(minted.GRAPH_NAME.eq(graphName))))
-            .onDuplicateKeyUpdate()
+            .onConflict(GRAPHITRON_TYPE.GRAPH_NAME, GRAPHITRON_TYPE.TYPE_NAME)
+            .doUpdate()
             .set(GRAPHITRON_TYPE.COORDINATE, excluded(GRAPHITRON_TYPE.COORDINATE))
-            .set(GRAPHITRON_TYPE.KIND, excluded(GRAPHITRON_TYPE.KIND))
+            .set(GRAPHITRON_TYPE.ORIGIN, excluded(GRAPHITRON_TYPE.ORIGIN))
             .set(GRAPHITRON_TYPE.DESCRIPTION, excluded(GRAPHITRON_TYPE.DESCRIPTION))
             .execute();
+    }
+
+    /**
+     * Deletes each type this reading writes with another kind than the stored row's, with its fields'
+     * arguments, its fields and its enum values, so the types below write it afresh: a kind is part
+     * of what a type is, and a table or a node keyed to the old kind goes by the cascade rather than
+     * standing under a kind it was never written for.
+     */
+    private static void changedKinds(DSLContext dsl, String graphName) {
+        var authored = GRAPHITRON_TYPE_AUTHORED;
+        var minted = GRAPHITRON_TYPE_MINTED;
+        var t = GRAPHITRON_TYPE;
+        var changed = dsl.select(t.TYPE_NAME)
+            .from(t)
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(exists(selectOne().from(authored)
+                    .where(authored.GRAPH_NAME.eq(t.GRAPH_NAME), authored.TYPE_NAME.eq(t.TYPE_NAME),
+                        authored.KIND.ne(t.KIND)))
+                .or(exists(selectOne().from(minted)
+                    .where(minted.GRAPH_NAME.eq(t.GRAPH_NAME), minted.TYPE_NAME.eq(t.TYPE_NAME),
+                        minted.KIND.ne(t.KIND)))))
+            .fetchSet(t.TYPE_NAME);
+        if (changed.isEmpty()) {
+            return;
+        }
+        dsl.deleteFrom(GRAPHITRON_ARGUMENT)
+            .where(GRAPHITRON_ARGUMENT.GRAPH_NAME.eq(graphName))
+            .and(GRAPHITRON_ARGUMENT.TYPE_NAME.in(changed)).execute();
+        dsl.deleteFrom(GRAPHITRON_FIELD)
+            .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(graphName))
+            .and(GRAPHITRON_FIELD.TYPE_NAME.in(changed)).execute();
+        dsl.deleteFrom(GRAPHITRON_ENUM_VALUE)
+            .where(GRAPHITRON_ENUM_VALUE.GRAPH_NAME.eq(graphName))
+            .and(GRAPHITRON_ENUM_VALUE.TYPE_NAME.in(changed)).execute();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(t.TYPE_NAME.in(changed)).execute();
     }
 
     /**

@@ -1,28 +1,28 @@
-# The element family the generator emits is the author's elements and the ones macro expansion
+# The schema macro expansion writes is the author's elements and the ones a macro
 # minted, at every grain: a type, a field, an argument and the element supertype each hold both.
 # One @asConnection application mints a connection, its edge, the shared page info, their fields
 # and the pagination arguments, and rewrites the carrier, so every arm of each union is reached
 # beside the authored rows it is unioned with. The carrier counts once, at its own coordinate,
 # with the expression the generator reads rather than the one the author wrote.
 
-type Film @table(name: "film") { id: ID title: String }
+type Film @table(name: "film") { title: String }
 
 input FilmFilter { title: String }
 
 enum Rating { G }
 
-type Query { films(filter: FilmFilter): [Film!]! @asConnection, rating: Rating }
+type Query { films(filter: FilmFilter): [Film!]! @asConnection }
 
 extend schema @expectEquals(relation: "graphitron_type", where: """
   type_name IN ('Film', 'FilmFilter', 'Rating', 'QueryFilmsConnection', 'QueryFilmsConnectionEdge', 'PageInfo')
   """, rows: """
-  type_name,                kind
-  Film,                     OBJECT
-  FilmFilter,               INPUT_OBJECT
-  Rating,                   ENUM
-  QueryFilmsConnection,     OBJECT
-  QueryFilmsConnectionEdge, OBJECT
-  PageInfo,                 OBJECT
+  type_name,                kind, origin
+  Film,                     OBJECT, AUTHORED
+  FilmFilter,               INPUT_OBJECT, AUTHORED
+  Rating,                   ENUM, AUTHORED
+  QueryFilmsConnection,     OBJECT, MINTED
+  QueryFilmsConnectionEdge, OBJECT, MINTED
+  PageInfo,                 OBJECT, MINTED
   """)
 
 extend schema @expectEquals(relation: "graphitron_field", where: """
@@ -30,8 +30,6 @@ extend schema @expectEquals(relation: "graphitron_field", where: """
   """, rows: """
   type_name,                field_name,      type_sdl
   Query,                    films,           QueryFilmsConnection!
-  Query,                    rating,          Rating
-  Film,                     id,              ID
   Film,                     title,           String
   FilmFilter,               title,           String
   QueryFilmsConnection,     edges,           [QueryFilmsConnectionEdge!]!

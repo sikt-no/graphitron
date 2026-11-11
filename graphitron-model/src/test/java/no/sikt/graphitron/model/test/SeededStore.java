@@ -2,7 +2,7 @@ package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.ArgumentScopeTables;
-import no.sikt.graphitron.model.capture.document.EmittedAnchor;
+import no.sikt.graphitron.model.capture.document.MacroExpansion;
 import no.sikt.graphitron.model.derive.ColumnSpellings;
 import no.sikt.graphitron.model.derive.MintedKeys;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
@@ -128,9 +128,10 @@ public final class SeededStore {
         // call, so a fixture cannot hold its own idea of what the emitted population is.
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
-            // The minted keys first, which the emitted population's minted applications render.
+            // The expanded schema, then the minted keys its minted applications render, then those.
+            MacroExpansion.derive(dsl, graph, SEED_INSTANT);
             MintedKeys.derive(dsl, graph);
-            EmittedAnchor.derive(dsl, graph, SEED_INSTANT);
+            MacroExpansion.directives(dsl, graph, SEED_INSTANT);
         }
         transcribeSupertypes(dsl);
         // The candidate tree, by the same call capture makes. Stated here rather than seeded row by

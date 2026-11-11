@@ -36,9 +36,9 @@ extend schema @expectEquals(relation: "graphitron_directive_argument", where: ""
   """)
 
 extend schema @assertContains(relation: "graphitron_type", rows: """
-  type_name,            kind
-  federation__FieldSet, SCALAR
-  link__Purpose,        ENUM
+  type_name,            kind,   origin
+  federation__FieldSet, SCALAR, FEDERATION
+  link__Purpose,        ENUM,   FEDERATION
   """)
 
 extend schema @assertContains(relation: "graphitron_federation_definition", rows: """
