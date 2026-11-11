@@ -62,14 +62,19 @@ rule needs work a view cannot state, as the `occurrence-depths` stage writes the
 the walk it takes. So no one statement reaches every relation a gatherer derives, and a stage's rule
 reads only what that stage and the stages before it wrote; one that read a later stage's relation
 would read the previous reading's rows. A rule reading several stages' facts belongs to the last of
-them. Every row carries `touched_at`, the instant of the reading that found it. When its stages have
+them. A stage whose own run has to stay lean writes no defects: its codes go to a stage of their own
+straight after it, which writes nothing but those defects, as `occurrence-depth-defects` does for the
+depth loop's `occurrence-depths` (Alf, 2026-11-12). Every row carries `touched_at`, the instant of the
+reading that found it. When its stages have
 run, the gatherer sweeps the codes its stages own once, deleting the rows of
 those codes the reading did not mark. Another gatherer's rows are never touched.
 
-The split is under way. Today the `entry-defects` stage, `EntryDefects` itself as the graphitron
-anchor phase's last step, owns every graphitron code no earlier stage writes, from
-`graphitron_entry_defect_rule`; a stage takes its codes by writing them and moving their
-`owner_stage`.
+The split is under way. `graphitron_entry_defect_rule` takes no new arm: a new code goes to the
+stage whose facts it judges, and an existing one leaves with its family. `occurrence-builds`,
+`occurrence-depth-defects`, `outbox` and `entity-key-alternatives` write their own; the
+`entry-defects` stage, `EntryDefects` itself as the graphitron anchor phase's last step, owns every
+graphitron code no earlier stage writes yet, from `graphitron_entry_defect_rule`. A stage takes its
+codes by writing them and moving their `owner_stage`.
 
 `DefectOwnerGateTest` holds this together: every code names a stage of a gatherer, a stage owns
 exactly the codes it writes, every stage's rule view emits only that stage's codes and its gatherer

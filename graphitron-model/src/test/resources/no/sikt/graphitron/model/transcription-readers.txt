@@ -46,10 +46,15 @@ graphitron_connection_carrier graphql_field
 
 # Adjudicated and kept: an entry defect reported at what an author wrote.
 #
-# graphitron_entry_defect_rule's COLUMN_UNRESOLVED and COLUMN_AMBIGUOUS judge a scalar field against
-# the table its read arrives at and report at the field's own line, or at its @field. Both are the
-# author's: a minted field has no line to report at, and none of the macro's minted fields is a
-# scalar read off a column, so the expanded population would add rows they can only skip.
+# graphitron_occurrence_depth_entry_defect_rule's COLUMN_UNRESOLVED and COLUMN_AMBIGUOUS judge a scalar
+# field against the table its read arrives at and report at the field's own line, or at its @field.
+# Both are the author's: a minted field has no line to report at, and none of the macro's minted
+# fields is a scalar read off a column, so the expanded population would add rows they can only skip.
+graphitron_occurrence_depth_entry_defect_rule graphql_field
+
+# graphitron_entry_defect_rule's id defects, an id: ID written with neither @nodeId nor @field where
+# its table is several nodes' or has a column of that name, judge what the author wrote and report
+# at the field's own line, which a minted field does not have.
 graphitron_entry_defect_rule graphql_field
 
 # Adjudicated and kept: the tags the configuration applies.

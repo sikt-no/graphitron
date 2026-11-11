@@ -12476,109 +12476,6 @@ SELECT r.graph_name, r.coordinate, r.depth, r.class_name, r.declared_via, r.memb
                           WHERE gs.graph_name = r.graph_name);
 COMMENT ON VIEW graphitron_occurrence_built_class_rule IS 'The class an input object occurrence is built into: one row per occurrence and class, in the shape graphitron_occurrence_built_class stores, with the depth the writer steps through and when the parent row it reads was written. For example Mutation.assignFilmRecordList(in:) is built into FilmRecordListAssignment, the class its @service parameter takes, and Mutation.customerUpsert(in:).details into CustomerRecord, the record its parent is built into, as a grouping.';
 
--- The defects of what an input object is built into and how its fields fill it, read off the built
--- classes and member bindings occurrence-depths writes, by that stage: a rule of its own beside
--- graphitron_entry_defect_rule, the owner's rule, as the outbox's and the entity keys' are.
-CREATE VIEW graphitron_occurrence_build_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
--- The class an input object is built into, where nothing says how to make one: no public
--- constructor the code census can call, or a class no entry of the graph declares. At the argument or
--- input field built into it, the detail the class. A jOOQ record is built on the column axis instead.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'BUILT_CLASS_UNBUILDABLE', MIN(b.class_name)
-  FROM graphitron_occurrence_built_class b
-  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE b.declared_via IN ('PARAMETER', 'MEMBER')
-   AND b.record_table IS NULL
-   AND NOT b.constructible
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
-UNION ALL
--- A @condition's parameter taking a jOOQ record, built from an input object: a condition takes the
--- delivered map or a bean, a record being a row to write rather than a filter's values. At the
--- argument, the detail the record class.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'CONDITION_PARAMETER_RECORD', MIN(b.class_name)
-  FROM graphitron_occurrence_built_class b
-  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE b.declared_via = 'PARAMETER'
-   AND b.record_table IS NOT NULL
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
-                 JOIN graphitron_occurrence_call_method s
-                   ON s.graph_name = cp.graph_name AND s.coordinate = cp.coordinate AND s.call = cp.call
-                  AND s.call_kind = 'CONDITION'
-                WHERE cp.graph_name = b.graph_name AND cp.landing_coordinate = b.coordinate
-                  AND cp.fill = 'ARGUMENT')
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
-UNION ALL
--- An input field under a class its parent is built into that fills no member of it, by the name the
--- built class matches on, and does not group onto it: the value would reach nothing. A list of input
--- objects is GROUPING_LIST's. At the input field, the detail the class.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MEMBER_UNKNOWN', MIN(pr.class_name)
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
-  JOIN graphitron_occurrence_built_class pr
-    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE o.kind = 'INPUT_FIELD'
-   AND NOT (t.kind = 'INPUT_OBJECT' AND f.is_list)
-   AND pr.record_table IS NULL
-   AND pr.constructible
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
-                    WHERE m.graph_name = o.graph_name AND m.coordinate = o.coordinate
-                      AND m.class_name = pr.class_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class g
-                    WHERE g.graph_name = o.graph_name AND g.coordinate = o.coordinate
-                      AND g.class_name = pr.class_name)
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
-UNION ALL
--- A list of input objects under a built class it fills no member of: a grouping's fields fill the
--- enclosing object once, and a list has no one value to fill it with. Under a jOOQ record always,
--- its fields writing columns. At the input field, the detail the class.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'GROUPING_LIST', MIN(pr.class_name)
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_type t
-    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INPUT_OBJECT'
-  JOIN graphitron_occurrence_built_class pr
-    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE o.kind = 'INPUT_FIELD' AND f.is_list
-   AND (pr.record_table IS NOT NULL
-        OR pr.constructible
-       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
-                        WHERE m.graph_name = o.graph_name AND m.coordinate = o.coordinate
-                          AND m.class_name = pr.class_name))
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
-UNION ALL
--- Two input fields filling one member of one object, which nothing says how to choose between: the
--- object being the one both parents' built classes say their fields fill, a grouping's its
--- parent's. Node ids decoding into one record member are one record, and allowed. At the later
--- field by coordinate, the detail the member.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MEMBER_FILLED_TWICE', MIN(m2.bound)
-  FROM graphitron_occurrence_binding_member m1
-  JOIN graphitron_occurrence_built_class p1
-    ON p1.graph_name = m1.graph_name AND p1.coordinate = m1.parent_coordinate AND p1.class_name = m1.class_name
-  JOIN graphitron_occurrence_binding_member m2
-    ON m2.graph_name = m1.graph_name AND m2.class_name = m1.class_name
-   AND m2.slot_method_name = m1.slot_method_name AND m2.slot_descriptor = m1.slot_descriptor
-   AND m2.slot_position = m1.slot_position AND m2.coordinate > m1.coordinate
-  JOIN graphitron_occurrence_built_class p2
-    ON p2.graph_name = m2.graph_name AND p2.coordinate = m2.parent_coordinate AND p2.class_name = m2.class_name
-   AND p2.built_at = p1.built_at
-  JOIN graphitron_occurrence o ON o.graph_name = m2.graph_name AND o.coordinate = m2.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE NOT (EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n1
-                     WHERE n1.graph_name = m1.graph_name AND n1.coordinate = m1.coordinate)
-            AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n2
-                         WHERE n2.graph_name = m2.graph_name AND n2.coordinate = m2.coordinate))
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
-COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depths inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
 
 -- The members a polymorphic @nodeId's per-member defects name, at the @nodeId: a table-bound
 -- member that is no node, and a member the id binds whose record the parameter cannot take. A
@@ -14181,6 +14078,458 @@ SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
     OR (u.bound_to LIKE '$result.%' AND rl.key_name IS NOT NULL);
 COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
 
+-- The defects of what an input object is built into and how its fields fill it, read off the built
+-- classes and member bindings occurrence-builds writes, by that stage: a rule of its own, as the
+-- outbox's and the entity keys' are.
+CREATE VIEW graphitron_occurrence_build_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+-- The class an input object is built into, where nothing says how to make one: no public
+-- constructor the code census can call, or a class no entry of the graph declares. At the argument or
+-- input field built into it, the detail the class. A jOOQ record is built on the column axis instead.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'BUILT_CLASS_UNBUILDABLE', MIN(b.class_name)
+  FROM graphitron_occurrence_built_class b
+  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE b.declared_via IN ('PARAMETER', 'MEMBER')
+   AND b.record_table IS NULL
+   AND NOT b.constructible
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- A @condition's parameter taking a jOOQ record, built from an input object: a condition takes the
+-- delivered map or a bean, a record being a row to write rather than a filter's values. At the
+-- argument, the detail the record class.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'CONDITION_PARAMETER_RECORD', MIN(b.class_name)
+  FROM graphitron_occurrence_built_class b
+  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE b.declared_via = 'PARAMETER'
+   AND b.record_table IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
+                 JOIN graphitron_occurrence_call_method s
+                   ON s.graph_name = cp.graph_name AND s.coordinate = cp.coordinate AND s.call = cp.call
+                  AND s.call_kind = 'CONDITION'
+                WHERE cp.graph_name = b.graph_name AND cp.landing_coordinate = b.coordinate
+                  AND cp.fill = 'ARGUMENT')
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- An input field under a class its parent is built into that fills no member of it, by the name the
+-- built class matches on, and does not group onto it: the value would reach nothing. A list of input
+-- objects is GROUPING_LIST's. At the input field, the detail the class.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'MEMBER_UNKNOWN', MIN(pr.class_name)
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
+  JOIN graphitron_occurrence_built_class pr
+    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE o.kind = 'INPUT_FIELD'
+   AND NOT (t.kind = 'INPUT_OBJECT' AND f.is_list)
+   AND pr.record_table IS NULL
+   AND pr.constructible
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
+                    WHERE m.graph_name = o.graph_name AND m.coordinate = o.coordinate
+                      AND m.class_name = pr.class_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class g
+                    WHERE g.graph_name = o.graph_name AND g.coordinate = o.coordinate
+                      AND g.class_name = pr.class_name)
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- A list of input objects under a built class it fills no member of: a grouping's fields fill the
+-- enclosing object once, and a list has no one value to fill it with. Under a jOOQ record always,
+-- its fields writing columns. At the input field, the detail the class.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'GROUPING_LIST', MIN(pr.class_name)
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INPUT_OBJECT'
+  JOIN graphitron_occurrence_built_class pr
+    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE o.kind = 'INPUT_FIELD' AND f.is_list
+   AND (pr.record_table IS NOT NULL
+        OR pr.constructible
+       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
+                        WHERE m.graph_name = o.graph_name AND m.coordinate = o.coordinate
+                          AND m.class_name = pr.class_name))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- Two input fields filling one member of one object, which nothing says how to choose between: the
+-- object being the one both parents' built classes say their fields fill, a grouping's its
+-- parent's. Node ids decoding into one record member are one record, and allowed. At the later
+-- field by coordinate, the detail the member.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'MEMBER_FILLED_TWICE', MIN(m2.bound)
+  FROM graphitron_occurrence_binding_member m1
+  JOIN graphitron_occurrence_built_class p1
+    ON p1.graph_name = m1.graph_name AND p1.coordinate = m1.parent_coordinate AND p1.class_name = m1.class_name
+  JOIN graphitron_occurrence_binding_member m2
+    ON m2.graph_name = m1.graph_name AND m2.class_name = m1.class_name
+   AND m2.slot_method_name = m1.slot_method_name AND m2.slot_descriptor = m1.slot_descriptor
+   AND m2.slot_position = m1.slot_position AND m2.coordinate > m1.coordinate
+  JOIN graphitron_occurrence_built_class p2
+    ON p2.graph_name = m2.graph_name AND p2.coordinate = m2.parent_coordinate AND p2.class_name = m2.class_name
+   AND p2.built_at = p1.built_at
+  JOIN graphitron_occurrence o ON o.graph_name = m2.graph_name AND o.coordinate = m2.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE NOT (EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n1
+                     WHERE n1.graph_name = m1.graph_name AND n1.coordinate = m1.coordinate)
+            AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n2
+                         WHERE n2.graph_name = m2.graph_name AND n2.coordinate = m2.coordinate))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
+COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
+
+-- The defects judging the facts occurrence-depths and occurrence-builds write, by the stage after them:
+-- a child producer's lift and the key it takes, and the column a field reads or writes.
+CREATE VIEW graphitron_occurrence_depth_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+-- A list over one value, at the field: a service whose method hands back one value, or a write
+-- returning an object, which it hands back once however many rows it writes, under a field
+-- declaring a list. A list of what the producer delivers once has nothing to list.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer_service ps
+  JOIN graphitron_field f
+    ON f.graph_name = ps.graph_name AND f.type_name = ps.type_name AND f.field_name = ps.field_name
+  JOIN code_method m
+    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
+   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE f.is_list AND m.result_delivery IS NOT NULL AND m.result_delivery <> 'MANY'
+UNION ALL
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer p
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type tt
+    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name AND tt.kind = 'OBJECT'
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE') AND f.is_list
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
+                    WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
+UNION ALL
+-- Many keys into one, at the field: its fill takes many keys off what its parent holds, a write
+-- yielding many or a member delivering a collection, and the field declares one.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'MANY_KEYS_INTO_ONE', CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_producer_lift l
+  JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE l.arity = 'MANY' AND NOT f.is_list AND ft.wrapper_type_name IS NULL
+UNION ALL
+-- A field fetching its own rows under an object with no key to take off it, at the field: its
+-- parent holds an object, and nothing it holds, no column of a record and no member returning one,
+-- keys the rows the field reads. Judged only where the store has read the parent's class and its
+-- members, what it holds being unknown otherwise, and a field that class offers a member for reads
+-- that member's value instead, even where its type is a table's, so it fetches nothing. Where two
+-- members of the class could hand over the key's records, KEY_ROW_AMBIGUOUS, the detail the class.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       -- Ambiguous as the fill judges it: an occurrence with more than one candidate, a candidate
+       -- being one member by its whole slot key.
+       CASE WHEN amb.class_name IS NOT NULL THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
+       amb.class_name
+  FROM graphitron_producer p
+  JOIN graphitron_result r
+    ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  LEFT JOIN (SELECT o.graph_name, o.element_coordinate, MIN(c.slot_class_name) AS class_name
+               FROM graphitron_occurrence o
+               JOIN graphitron_occurrence_producer_lift_candidate c
+                 ON c.graph_name = o.graph_name AND c.coordinate = o.coordinate
+              WHERE (SELECT COUNT(*) FROM graphitron_occurrence_producer_lift_candidate c2
+                      WHERE c2.graph_name = o.graph_name AND c2.coordinate = o.coordinate) > 1
+              GROUP BY o.graph_name, o.element_coordinate) amb
+    ON amb.graph_name = f.graph_name AND amb.element_coordinate = f.coordinate
+ WHERE p.kind = 'LOOKUP'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence o
+                     JOIN graphitron_occurrence_producer_lift l
+                       ON l.graph_name = o.graph_name AND l.coordinate = o.coordinate
+                    WHERE o.graph_name = f.graph_name AND o.element_coordinate = f.coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_result_class rc
+                  JOIN code_read_slot known ON known.class_name = rc.class_name
+                WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                     JOIN code_read_slot cs
+                       ON cs.class_name = rc.class_name AND cs.slot_name = f.bound_name
+                    WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name)
+UNION ALL
+-- An outcome in a list, at the field: a producer catching into an outcome hands back one, its
+-- value or its errors, and a list of them would need one catch per element.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'OUTCOME_IN_A_LIST', CAST(NULL AS VARCHAR)
+  FROM graphitron_producer_outcome po
+  JOIN graphitron_field f
+    ON f.graph_name = po.graph_name AND f.type_name = po.type_name AND f.field_name = po.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE f.is_list
+UNION ALL
+-- A scalar or enum field's occurrence whose spelling names no column, or several, where its path
+-- lands: the occurrences the column rule takes, the @field(name:) or the field's own name folded by
+-- case, the SQL name before the generated one, with no candidate or more than one on the landing
+-- table. A walk that stopped lands nowhere and draws only its path's defect, and a field of a type
+-- with no table under a written path is a @pivot's projection or under REFERENCE_WITHOUT_TARGET_TABLE,
+-- with no column to judge. A declaration reached
+-- at several occurrences is one site, reported once, the detail the spelling. Reported at the @field
+-- where one is written, since that is the spelling to fix, and at the field otherwise. Output fields
+-- here: an input field writing a jOOQ record is judged on the record's table by its own arm below,
+-- and one consumed any other way by what consumes it.
+SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
+       COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
+       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name))
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind IN ('SCALAR', 'ENUM')
+  JOIN graphitron_type pt
+    ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name
+   AND pt.kind IN ('OBJECT', 'INTERFACE')
+  JOIN graphql_field_element fe
+    ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
+  JOIN graphql_field gf
+    ON gf.graph_name = fe.graph_name AND gf.type_name = fe.type_name AND gf.field_name = fe.field_name
+  LEFT JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+   AND cl.kind = 'COLUMN'
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+  JOIN graphitron_path_need_table n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
+   AND jp.target_type = n.target_type
+ WHERE o.kind = 'FIELD' AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+   AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                      AND d.directive_name IN ('service', 'routine', 'pivot'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po
+                     JOIN graphitron_join_path_claim pc
+                       ON pc.graph_name = po.graph_name AND pc.element_coordinate = po.element_coordinate
+                      AND pc.claim_kind IN ('FIELD', 'REFERENCE_FOR')
+                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                                       WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name))
+   AND NOT (cl.named IS NULL AND o.name = 'id' AND f.named_type = 'ID'
+            AND (EXISTS (SELECT 1 FROM graphql_implements_interface ii
+                          WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
+                            AND ii.interface_name = 'Node')
+                 OR EXISTS (SELECT 1 FROM graphitron_node nd
+                             WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
+   AND NOT EXISTS (SELECT 1 FROM sql_column_spelling m
+                    WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+                      AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.spelling_upper = UPPER(COALESCE(cl.named, o.name)))
+ GROUP BY o.graph_name, COALESCE(da.source_name, gf.source_name),
+          COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
+UNION ALL
+SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
+       COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
+       'COLUMN_AMBIGUOUS', MIN(COALESCE(cl.named, o.name))
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind IN ('SCALAR', 'ENUM')
+  JOIN graphitron_type pt
+    ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name
+   AND pt.kind IN ('OBJECT', 'INTERFACE')
+  JOIN graphql_field_element fe
+    ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
+  JOIN graphql_field gf
+    ON gf.graph_name = fe.graph_name AND gf.type_name = fe.type_name AND gf.field_name = fe.field_name
+  LEFT JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+   AND cl.kind = 'COLUMN'
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+  JOIN graphitron_path_need_table n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
+   AND jp.target_type = n.target_type
+ WHERE o.kind = 'FIELD' AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+   AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                      AND d.directive_name IN ('service', 'routine', 'pivot'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po
+                     JOIN graphitron_join_path_claim pc
+                       ON pc.graph_name = po.graph_name AND pc.element_coordinate = po.element_coordinate
+                      AND pc.claim_kind IN ('FIELD', 'REFERENCE_FOR')
+                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                                       WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name))
+   AND NOT (cl.named IS NULL AND o.name = 'id' AND f.named_type = 'ID'
+            AND (EXISTS (SELECT 1 FROM graphql_implements_interface ii
+                          WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
+                            AND ii.interface_name = 'Node')
+                 OR EXISTS (SELECT 1 FROM graphitron_node nd
+                             WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
+   AND EXISTS (SELECT 1 FROM sql_column_spelling m
+                WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+                  AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.spelling_upper = UPPER(COALESCE(cl.named, o.name))
+                  AND m.reach > 1)
+ GROUP BY o.graph_name, COALESCE(da.source_name, gf.source_name),
+          COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
+UNION ALL
+-- A service under a parent holding one class of object takes its keys through the one member of that
+-- class returning records of the table its source parameter collects, which
+-- graphitron_occurrence_producer_lift states; where it states none, at the field's definition: NO_KEY_FROM_PARENT where no member returns
+-- such a record, KEY_ROW_AMBIGUOUS where two do, the detail the class. A selection's keyless field is
+-- NO_KEY_FROM_PARENT's arm above, and one taking many keys into one MANY_KEYS_INTO_ONE's.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN c.found > 1 THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
+       c.class_name
+  FROM (SELECT p.graph_name, p.type_name, p.field_name, rc.class_name,
+               (SELECT COUNT(*) FROM code_read_slot s
+                 WHERE s.class_name = rc.class_name AND s.delivery = 'DIRECT' AND s.element_class IN (
+                         SELECT kt.record_class_fqn FROM code_method_parameter mp
+                           JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
+                          WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+                            AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
+                            AND mp.delivery = 'MANY')) AS found
+          FROM graphitron_producer p
+          JOIN graphitron_producer_service ps
+            ON ps.graph_name = p.graph_name AND ps.type_name = p.type_name AND ps.field_name = p.field_name
+          JOIN graphitron_result r
+            ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
+          JOIN graphitron_result_class rc ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
+         WHERE (SELECT COUNT(*) FROM graphitron_result_class c2
+                 WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) = 1
+           -- Judged only where the store has read the class and its members, what it holds being
+           -- unknown otherwise, as NO_KEY_FROM_PARENT's selection arm judges.
+           AND EXISTS (SELECT 1 FROM code_read_slot known WHERE known.class_name = rc.class_name)
+           -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a fill's.
+           AND EXISTS (SELECT 1 FROM code_method_parameter mp JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
+                        WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+                          AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
+                          AND mp.delivery = 'MANY')
+           -- The record's own table is the key: read straight off it, so no member is wanted.
+           AND NOT EXISTS (SELECT 1 FROM sql_table rt JOIN code_method_parameter mp
+                             ON mp.element_class = rt.record_class_fqn AND mp.delivery = 'MANY'
+                            WHERE rt.record_class_fqn = rc.class_name
+                              AND mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+                              AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor)) c
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_field cf
+                     JOIN graphitron_occurrence o
+                       ON o.graph_name = cf.graph_name AND o.element_coordinate = cf.coordinate
+                     JOIN graphitron_occurrence_producer_lift l
+                       ON l.graph_name = o.graph_name AND l.coordinate = o.coordinate
+                    WHERE cf.graph_name = c.graph_name AND cf.type_name = c.type_name
+                      AND cf.field_name = c.field_name)
+UNION ALL
+-- A fill on a table with no primary key, at the field's definition: a batch is keyed by the
+-- table's primary key, so there is nothing to key it by. The detail is the table.
+-- One row per field however many occurrences fill it, the detail the first such table by name.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'KEY_TABLE_WITHOUT_PRIMARY_KEY', MIN(l.key_table)
+  FROM graphitron_occurrence_producer_lift l
+  JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE l.key_constraint IS NULL
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
+UNION ALL
+-- A service under a table's row or an object of a known class whose method has no parameter the
+-- batch's keys reach, at the field's definition: it is fetched for many parents at once, and its keys
+-- have nowhere to go. The detail is the method.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, 'SOURCE_PARAMETER_MISSING',
+       ps.method_name
+  FROM graphitron_occurrence_producer op
+  JOIN graphitron_occurrence o ON o.graph_name = op.graph_name AND o.coordinate = op.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_producer_service ps
+    ON ps.graph_name = f.graph_name AND ps.type_name = f.type_name AND ps.field_name = f.field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE op.kind = 'SERVICE' AND op.start = 'CHILD'
+   -- Under a parent the batch is keyed by: a table's row, or an object of a known class. A type
+   -- nothing hands a value to has no parents to batch.
+   AND (EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                 WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name)
+        OR EXISTS (SELECT 1 FROM graphitron_result_class rc
+                    WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
+                    WHERE cp.graph_name = op.graph_name AND cp.coordinate = op.coordinate
+                      AND cp.fill = 'SOURCE')
+UNION ALL
+-- A scalar or enum input field under an input object built into a jOOQ record, whose spelling names
+-- no column, or several, of the record's table: the column the field writes is judged on the table
+-- the record is a row of, as an output field's is on the table it reads, by the spelling's reach. A
+-- node id decodes into the record instead, and an input object groups onto it. Reported at the
+-- @field where one is written and at the field otherwise, the detail the spelling.
+SELECT v.graph_name, v.source_name, v.source_line, v.source_column, v.code, MIN(v.spelling)
+  FROM (SELECT o.graph_name, COALESCE(da.source_name, el.source_name) AS source_name,
+               COALESCE(da.source_line, el.source_line) AS source_line,
+               COALESCE(da.source_column, el.source_column) AS source_column,
+               COALESCE(cl.named, o.name) AS spelling,
+               CASE WHEN NOT EXISTS (SELECT 1 FROM sql_column_spelling sp
+                                      WHERE sp.source_name = st.source_name AND sp.table_schema = st.table_schema
+                                        AND sp.table_name = st.table_name
+                                        AND sp.spelling_upper = UPPER(COALESCE(cl.named, o.name)))
+                    THEN 'COLUMN_UNRESOLVED'
+                    WHEN EXISTS (SELECT 1 FROM sql_column_spelling sp
+                                  WHERE sp.source_name = st.source_name AND sp.table_schema = st.table_schema
+                                    AND sp.table_name = st.table_name
+                                    AND sp.spelling_upper = UPPER(COALESCE(cl.named, o.name)) AND sp.reach > 1)
+                    THEN 'COLUMN_AMBIGUOUS' END AS code
+          FROM graphitron_occurrence o
+          JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+          JOIN graphitron_type t
+            ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind IN ('SCALAR', 'ENUM')
+          JOIN graphitron_occurrence_built_class pr
+            ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
+          JOIN sql_table st
+            ON st.source_name = pr.record_source_name AND st.table_schema = pr.record_schema
+           AND st.table_name = pr.record_table
+          JOIN graphql_ast_element_entry el
+            ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+          LEFT JOIN graphitron_binding_claim cl
+            ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+          LEFT JOIN graphitron_directive_application da
+            ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+           AND da.directive_name = 'field' AND da.ordinal = 0
+         WHERE o.kind = 'INPUT_FIELD'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                            WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                              AND x.kind = 'NODE_ID')) v
+ WHERE v.code IS NOT NULL
+ GROUP BY v.graph_name, v.source_name, v.source_line, v.source_column, v.code;
+COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
+
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
@@ -14378,101 +14727,6 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
   JOIN graphql_ast_element_entry el
     ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
  WHERE p.kind = 'DELETE'
-UNION ALL
--- A list over one value, at the field: a service whose method hands back one value, or a write
--- returning an object, which it hands back once however many rows it writes, under a field
--- declaring a list. A list of what the producer delivers once has nothing to list.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
-  FROM graphitron_producer_service ps
-  JOIN graphitron_field f
-    ON f.graph_name = ps.graph_name AND f.type_name = ps.type_name AND f.field_name = ps.field_name
-  JOIN code_method m
-    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
-   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE f.is_list AND m.result_delivery IS NOT NULL AND m.result_delivery <> 'MANY'
-UNION ALL
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
-  FROM graphitron_producer p
-  JOIN graphql_root_operation ro
-    ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
-  JOIN graphitron_field f
-    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_type tt
-    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name AND tt.kind = 'OBJECT'
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE') AND f.is_list
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
-                    WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
-UNION ALL
--- Many keys into one, at the field: its fill takes many keys off what its parent holds, a write
--- yielding many or a member delivering a collection, and the field declares one.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MANY_KEYS_INTO_ONE', CAST(NULL AS VARCHAR)
-  FROM graphitron_occurrence_producer_lift l
-  JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE l.arity = 'MANY' AND NOT f.is_list AND ft.wrapper_type_name IS NULL
-UNION ALL
--- A field fetching its own rows under an object with no key to take off it, at the field: its
--- parent holds an object, and nothing it holds, no column of a record and no member returning one,
--- keys the rows the field reads. Judged only where the store has read the parent's class and its
--- members, what it holds being unknown otherwise, and a field that class offers a member for reads
--- that member's value instead, even where its type is a table's, so it fetches nothing. Where two
--- members of the class could hand over the key's records, KEY_ROW_AMBIGUOUS, the detail the class.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       -- Ambiguous as the fill judges it: an occurrence with more than one candidate, a candidate
-       -- being one member by its whole slot key.
-       CASE WHEN amb.class_name IS NOT NULL THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
-       amb.class_name
-  FROM graphitron_producer p
-  JOIN graphitron_result r
-    ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
-  JOIN graphitron_field f
-    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
-  LEFT JOIN (SELECT o.graph_name, o.element_coordinate, MIN(c.slot_class_name) AS class_name
-               FROM graphitron_occurrence o
-               JOIN graphitron_occurrence_producer_lift_candidate c
-                 ON c.graph_name = o.graph_name AND c.coordinate = o.coordinate
-              WHERE (SELECT COUNT(*) FROM graphitron_occurrence_producer_lift_candidate c2
-                      WHERE c2.graph_name = o.graph_name AND c2.coordinate = o.coordinate) > 1
-              GROUP BY o.graph_name, o.element_coordinate) amb
-    ON amb.graph_name = f.graph_name AND amb.element_coordinate = f.coordinate
- WHERE p.kind = 'LOOKUP'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence o
-                     JOIN graphitron_occurrence_producer_lift l
-                       ON l.graph_name = o.graph_name AND l.coordinate = o.coordinate
-                    WHERE o.graph_name = f.graph_name AND o.element_coordinate = f.coordinate)
-   AND EXISTS (SELECT 1 FROM graphitron_result_class rc
-                  JOIN code_read_slot known ON known.class_name = rc.class_name
-                WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
-                     JOIN code_read_slot cs
-                       ON cs.class_name = rc.class_name AND cs.slot_name = f.bound_name
-                    WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name)
-UNION ALL
--- An outcome in a list, at the field: a producer catching into an outcome hands back one, its
--- value or its errors, and a list of them would need one catch per element.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'OUTCOME_IN_A_LIST', CAST(NULL AS VARCHAR)
-  FROM graphitron_producer_outcome po
-  JOIN graphitron_field f
-    ON f.graph_name = po.graph_name AND f.type_name = po.type_name AND f.field_name = po.field_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE f.is_list
 UNION ALL
 -- A read surface written on a write. Three sites state one, and each row sits at its own.
 -- On the field or on one of its arguments, each at its own application.
@@ -15247,127 +15501,6 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                 WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
                   AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
 UNION ALL
--- A scalar or enum field's occurrence whose spelling names no column, or several, where its path
--- lands: the occurrences the column rule takes, the @field(name:) or the field's own name folded by
--- case, the SQL name before the generated one, with no candidate or more than one on the landing
--- table. A walk that stopped lands nowhere and draws only its path's defect, and a field of a type
--- with no table under a written path is a @pivot's projection or under REFERENCE_WITHOUT_TARGET_TABLE,
--- with no column to judge. A declaration reached
--- at several occurrences is one site, reported once, the detail the spelling. Reported at the @field
--- where one is written, since that is the spelling to fix, and at the field otherwise. Output fields
--- here: an input field writing a jOOQ record is judged on the record's table by its own arm below,
--- and one consumed any other way by what consumes it.
-SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
-       COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
-       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name))
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_type t
-    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind IN ('SCALAR', 'ENUM')
-  JOIN graphitron_type pt
-    ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name
-   AND pt.kind IN ('OBJECT', 'INTERFACE')
-  JOIN graphql_field_element fe
-    ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
-  JOIN graphql_field gf
-    ON gf.graph_name = fe.graph_name AND gf.type_name = fe.type_name AND gf.field_name = fe.field_name
-  LEFT JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-   AND cl.kind = 'COLUMN'
-  LEFT JOIN graphitron_directive_application da
-    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
-   AND da.directive_name = 'field' AND da.ordinal = 0
-  JOIN graphitron_path_need_table n
-    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
-   AND jp.target_type = n.target_type
- WHERE o.kind = 'FIELD' AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
-   AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
-                      AND d.directive_name IN ('service', 'routine', 'pivot'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po
-                     JOIN graphitron_join_path_claim pc
-                       ON pc.graph_name = po.graph_name AND pc.element_coordinate = po.element_coordinate
-                      AND pc.claim_kind IN ('FIELD', 'REFERENCE_FOR')
-                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                                       WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name))
-   AND NOT (cl.named IS NULL AND o.name = 'id' AND f.named_type = 'ID'
-            AND (EXISTS (SELECT 1 FROM graphql_implements_interface ii
-                          WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
-                            AND ii.interface_name = 'Node')
-                 OR EXISTS (SELECT 1 FROM graphitron_node nd
-                             WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
-   AND NOT EXISTS (SELECT 1 FROM sql_column_spelling m
-                    WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-                      AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.spelling_upper = UPPER(COALESCE(cl.named, o.name)))
- GROUP BY o.graph_name, COALESCE(da.source_name, gf.source_name),
-          COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
-UNION ALL
-SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
-       COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
-       'COLUMN_AMBIGUOUS', MIN(COALESCE(cl.named, o.name))
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_type t
-    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind IN ('SCALAR', 'ENUM')
-  JOIN graphitron_type pt
-    ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name
-   AND pt.kind IN ('OBJECT', 'INTERFACE')
-  JOIN graphql_field_element fe
-    ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
-  JOIN graphql_field gf
-    ON gf.graph_name = fe.graph_name AND gf.type_name = fe.type_name AND gf.field_name = fe.field_name
-  LEFT JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-   AND cl.kind = 'COLUMN'
-  LEFT JOIN graphitron_directive_application da
-    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
-   AND da.directive_name = 'field' AND da.ordinal = 0
-  JOIN graphitron_path_need_table n
-    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
-   AND jp.target_type = n.target_type
- WHERE o.kind = 'FIELD' AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
-   AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
-                      AND d.directive_name IN ('service', 'routine', 'pivot'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po
-                     JOIN graphitron_join_path_claim pc
-                       ON pc.graph_name = po.graph_name AND pc.element_coordinate = po.element_coordinate
-                      AND pc.claim_kind IN ('FIELD', 'REFERENCE_FOR')
-                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                                       WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name))
-   AND NOT (cl.named IS NULL AND o.name = 'id' AND f.named_type = 'ID'
-            AND (EXISTS (SELECT 1 FROM graphql_implements_interface ii
-                          WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name
-                            AND ii.interface_name = 'Node')
-                 OR EXISTS (SELECT 1 FROM graphitron_node nd
-                             WHERE nd.graph_name = f.graph_name AND nd.type_name = f.type_name)))
-   AND EXISTS (SELECT 1 FROM sql_column_spelling m
-                WHERE m.source_name = COALESCE(jp.target_source_name, n.landing_source_name) AND m.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-                  AND m.table_name = COALESCE(jp.target_table, n.landing_table) AND m.spelling_upper = UPPER(COALESCE(cl.named, o.name))
-                  AND m.reach > 1)
- GROUP BY o.graph_name, COALESCE(da.source_name, gf.source_name),
-          COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
-UNION ALL
 -- A declared ordering on a field read once per participant, at the directive that declared it. The
 -- branches are combined on their primary keys and nothing carries the declaration down onto one, so
 -- the rows arrive in participant primary-key order whatever was declared. Graphitron does not
@@ -15648,90 +15781,6 @@ SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY
                   AND o.owner = w.owner AND o.parameter_name = w.parameter_name
                   AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
                        OR o.origin_position <> w.origin_position))
-UNION ALL
--- A service under a parent holding one class of object takes its keys through the one member of that
--- class returning records of the table its source parameter collects, which
--- graphitron_occurrence_producer_lift states; where it states none, at the field's definition: NO_KEY_FROM_PARENT where no member returns
--- such a record, KEY_ROW_AMBIGUOUS where two do, the detail the class. A selection's keyless field is
--- NO_KEY_FROM_PARENT's arm above, and one taking many keys into one MANY_KEYS_INTO_ONE's.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN c.found > 1 THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
-       c.class_name
-  FROM (SELECT p.graph_name, p.type_name, p.field_name, rc.class_name,
-               (SELECT COUNT(*) FROM code_read_slot s
-                 WHERE s.class_name = rc.class_name AND s.delivery = 'DIRECT' AND s.element_class IN (
-                         SELECT kt.record_class_fqn FROM code_method_parameter mp
-                           JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
-                          WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
-                            AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
-                            AND mp.delivery = 'MANY')) AS found
-          FROM graphitron_producer p
-          JOIN graphitron_producer_service ps
-            ON ps.graph_name = p.graph_name AND ps.type_name = p.type_name AND ps.field_name = p.field_name
-          JOIN graphitron_result r
-            ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
-          JOIN graphitron_result_class rc ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
-         WHERE (SELECT COUNT(*) FROM graphitron_result_class c2
-                 WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) = 1
-           -- Judged only where the store has read the class and its members, what it holds being
-           -- unknown otherwise, as NO_KEY_FROM_PARENT's selection arm judges.
-           AND EXISTS (SELECT 1 FROM code_read_slot known WHERE known.class_name = rc.class_name)
-           -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a fill's.
-           AND EXISTS (SELECT 1 FROM code_method_parameter mp JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
-                        WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
-                          AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
-                          AND mp.delivery = 'MANY')
-           -- The record's own table is the key: read straight off it, so no member is wanted.
-           AND NOT EXISTS (SELECT 1 FROM sql_table rt JOIN code_method_parameter mp
-                             ON mp.element_class = rt.record_class_fqn AND mp.delivery = 'MANY'
-                            WHERE rt.record_class_fqn = rc.class_name
-                              AND mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
-                              AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor)) c
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_field cf
-                     JOIN graphitron_occurrence o
-                       ON o.graph_name = cf.graph_name AND o.element_coordinate = cf.coordinate
-                     JOIN graphitron_occurrence_producer_lift l
-                       ON l.graph_name = o.graph_name AND l.coordinate = o.coordinate
-                    WHERE cf.graph_name = c.graph_name AND cf.type_name = c.type_name
-                      AND cf.field_name = c.field_name)
-UNION ALL
--- A fill on a table with no primary key, at the field's definition: a batch is keyed by the
--- table's primary key, so there is nothing to key it by. The detail is the table.
--- One row per field however many occurrences fill it, the detail the first such table by name.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'KEY_TABLE_WITHOUT_PRIMARY_KEY', MIN(l.key_table)
-  FROM graphitron_occurrence_producer_lift l
-  JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE l.key_constraint IS NULL
- GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
-UNION ALL
--- A service under a table's row or an object of a known class whose method has no parameter the
--- batch's keys reach, at the field's definition: it is fetched for many parents at once, and its keys
--- have nowhere to go. The detail is the method.
-SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, 'SOURCE_PARAMETER_MISSING',
-       ps.method_name
-  FROM graphitron_occurrence_producer op
-  JOIN graphitron_occurrence o ON o.graph_name = op.graph_name AND o.coordinate = op.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_producer_service ps
-    ON ps.graph_name = f.graph_name AND ps.type_name = f.type_name AND ps.field_name = f.field_name
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE op.kind = 'SERVICE' AND op.start = 'CHILD'
-   -- Under a parent the batch is keyed by: a table's row, or an object of a known class. A type
-   -- nothing hands a value to has no parents to batch.
-   AND (EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                 WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name)
-        OR EXISTS (SELECT 1 FROM graphitron_result_class rc
-                    WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
-                    WHERE cp.graph_name = op.graph_name AND cp.coordinate = op.coordinate
-                      AND cp.fill = 'SOURCE')
 UNION ALL
 -- An instance @service method whose class has no constructor the run can call, at the reference:
 -- an abstract class or an interface has none, and one taking anything but the jOOQ context is not
@@ -16095,49 +16144,6 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND NOT (jp.target_source_name = nt.table_source_name AND jp.target_schema = nt.table_schema
             AND jp.target_table = nt.table_name)
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
-UNION ALL
--- A scalar or enum input field under an input object built into a jOOQ record, whose spelling names
--- no column, or several, of the record's table: the column the field writes is judged on the table
--- the record is a row of, as an output field's is on the table it reads, by the spelling's reach. A
--- node id decodes into the record instead, and an input object groups onto it. Reported at the
--- @field where one is written and at the field otherwise, the detail the spelling.
-SELECT v.graph_name, v.source_name, v.source_line, v.source_column, v.code, MIN(v.spelling)
-  FROM (SELECT o.graph_name, COALESCE(da.source_name, el.source_name) AS source_name,
-               COALESCE(da.source_line, el.source_line) AS source_line,
-               COALESCE(da.source_column, el.source_column) AS source_column,
-               COALESCE(cl.named, o.name) AS spelling,
-               CASE WHEN NOT EXISTS (SELECT 1 FROM sql_column_spelling sp
-                                      WHERE sp.source_name = st.source_name AND sp.table_schema = st.table_schema
-                                        AND sp.table_name = st.table_name
-                                        AND sp.spelling_upper = UPPER(COALESCE(cl.named, o.name)))
-                    THEN 'COLUMN_UNRESOLVED'
-                    WHEN EXISTS (SELECT 1 FROM sql_column_spelling sp
-                                  WHERE sp.source_name = st.source_name AND sp.table_schema = st.table_schema
-                                    AND sp.table_name = st.table_name
-                                    AND sp.spelling_upper = UPPER(COALESCE(cl.named, o.name)) AND sp.reach > 1)
-                    THEN 'COLUMN_AMBIGUOUS' END AS code
-          FROM graphitron_occurrence o
-          JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-          JOIN graphitron_type t
-            ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind IN ('SCALAR', 'ENUM')
-          JOIN graphitron_occurrence_built_class pr
-            ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
-          JOIN sql_table st
-            ON st.source_name = pr.record_source_name AND st.table_schema = pr.record_schema
-           AND st.table_name = pr.record_table
-          JOIN graphql_ast_element_entry el
-            ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
-          LEFT JOIN graphitron_binding_claim cl
-            ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
-          LEFT JOIN graphitron_directive_application da
-            ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
-           AND da.directive_name = 'field' AND da.ordinal = 0
-         WHERE o.kind = 'INPUT_FIELD'
-           AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                            WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                              AND x.kind = 'NODE_ID')) v
- WHERE v.code IS NOT NULL
- GROUP BY v.graph_name, v.source_name, v.source_line, v.source_column, v.code
 UNION ALL
 -- A named node id with no route written, at a slot on a table other than the node's, where no one
 -- foreign key joins the two, in either direction, a branch a @referenceFor names having its own
@@ -19039,10 +19045,12 @@ INSERT INTO meta_stage VALUES
   ('fetchers', 'graphitron', 27, 'no.sikt.graphitron.model.derive.Fetchers'),
   ('occurrence-participants', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
   ('occurrence-depths', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 31, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-builds', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 34, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 35, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -19122,6 +19130,12 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_result_table'),
   ('fetchers', 'graphitron_service_holder'),
   ('occurrence-depths', 'graphitron_entry_defect'),
+  ('occurrence-builds', 'graphitron_entry_defect'),
+  ('occurrence-builds', 'graphitron_occurrence_binding'),
+  ('occurrence-builds', 'graphitron_occurrence_binding_member'),
+  ('occurrence-builds', 'graphitron_occurrence_built_class'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_shape'),
+  ('occurrence-depth-defects', 'graphitron_entry_defect'),
   ('occurrence-depths', 'graphitron_entry_defect_method'),
   ('occurrence-depths', 'graphitron_join_path'),
   ('occurrence-depths', 'graphitron_join_path_claimed'),
@@ -19138,9 +19152,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_binding'),
   ('occurrence-depths', 'graphitron_occurrence_column'),
   ('occurrence-depths', 'graphitron_occurrence_node_id'),
-  ('occurrence-depths', 'graphitron_occurrence_node_id_shape'),
-  ('occurrence-depths', 'graphitron_occurrence_built_class'),
-  ('occurrence-depths', 'graphitron_occurrence_binding_member'),
   ('occurrence-depths', 'graphitron_occurrence_binding_table'),
   ('occurrence-depths', 'graphitron_occurrence_call'),
   ('occurrence-depths', 'graphitron_occurrence_call_candidate'),
@@ -19989,25 +20000,25 @@ INSERT INTO graphitron_defect_type VALUES
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
    'A write re-reads its committed rows by the keys it returned, which is not a page, so the generator emits nothing for a write @asConnection rewrote.', 'entry-defects'),
   ('LIST_OVER_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_OVER_ONE_VALUE',
-   'A field declares a list over what its producer hands back once: a service whose method returns one value, or a write returning an object, so there is nothing to list; declare one.', 'entry-defects'),
+   'A field declares a list over what its producer hands back once: a service whose method returns one value, or a write returning an object, so there is nothing to list; declare one.', 'occurrence-depth-defects'),
   ('MANY_KEYS_INTO_ONE', 'error', 'GRAPHITRON', 'GRAPHITRON_MANY_KEYS_INTO_ONE',
-   'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list.', 'entry-defects'),
+   'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list.', 'occurrence-depth-defects'),
   ('NO_KEY_FROM_PARENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_KEY_FROM_PARENT',
-   'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.', 'entry-defects'),
+   'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.', 'occurrence-depth-defects'),
   ('OUTCOME_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTCOME_IN_A_LIST',
-   'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.', 'entry-defects'),
+   'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.', 'occurrence-depth-defects'),
   ('WRITE_RESULT_HOLDS_ONLY_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_RESULT_HOLDS_ONLY_KEYS',
    'A field under the object type a write returns reads a member off what the write hands back, and a write hands back the keys of its rows, not an object of a class: re-read the rows by those keys, or encode them as an id.', 'entry-defects'),
   ('BUILT_CLASS_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_BUILT_CLASS_UNBUILDABLE',
-   'An input object is built into a class nothing says how to make: no public canonical constructor or no-argument constructor with setters, or a class no classpath entry of the build declares. Give the class one, or take the delivered map.', 'occurrence-depths'),
+   'An input object is built into a class nothing says how to make: no public canonical constructor or no-argument constructor with setters, or a class no classpath entry of the build declares. Give the class one, or take the delivered map.', 'occurrence-builds'),
   ('CONDITION_PARAMETER_RECORD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_PARAMETER_RECORD',
-   'A @condition method takes an input object as a jOOQ record, and a condition takes the input''s values as a bean or the delivered map, a record being a row to write: declare the parameter as a bean or a Map.', 'occurrence-depths'),
+   'A @condition method takes an input object as a jOOQ record, and a condition takes the input''s values as a bean or the delivered map, a record being a row to write: declare the parameter as a bean or a Map.', 'occurrence-builds'),
   ('MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_UNKNOWN',
-   'An input field fills no member of the class its input object is built into, under the name it matches on, its @field(name:) for a @service and its own name for a @condition, and groups nothing onto it, so its value would reach nothing: name a member the class has, or give the class one.', 'occurrence-depths'),
+   'An input field fills no member of the class its input object is built into, under the name it matches on, its @field(name:) for a @service and its own name for a @condition, and groups nothing onto it, so its value would reach nothing: name a member the class has, or give the class one.', 'occurrence-builds'),
   ('GROUPING_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_GROUPING_LIST',
-   'A list of input objects fills no member of the class its parent is built into, or sits under a jOOQ record, and a grouping fills the enclosing object once, which a list has no one value for: give the class a member for the list, or make the field one input object.', 'occurrence-depths'),
+   'A list of input objects fills no member of the class its parent is built into, or sits under a jOOQ record, and a grouping fills the enclosing object once, which a list has no one value for: give the class a member for the list, or make the field one input object.', 'occurrence-builds'),
   ('MEMBER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_FILLED_TWICE',
-   'Two input fields fill one member of one object, and nothing says which value it takes: rename one, or remove one. Node ids decoding into one record member are one record and allowed.', 'occurrence-depths'),
+   'Two input fields fill one member of one object, and nothing says which value it takes: rename one, or remove one. Node ids decoding into one record member are one record and allowed.', 'occurrence-builds'),
   ('REREAD_OF_DELETED_ROWS', 'error', 'GRAPHITRON', 'GRAPHITRON_REREAD_OF_DELETED_ROWS',
    'A field re-reads the rows a delete removed, and they are gone once it runs: a delete hands back the keys of its rows, so return their ids.', 'entry-defects'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
@@ -20053,11 +20064,11 @@ INSERT INTO graphitron_defect_type VALUES
   ('PARAMETER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_FILLED_TWICE',
    'A parameter of a method a @service or a @condition calls is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.', 'entry-defects'),
   ('KEY_ROW_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ROW_AMBIGUOUS',
-   'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.', 'entry-defects'),
+   'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.', 'occurrence-depth-defects'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
-   'A field fetching its own rows under a parent holding an object is batched by the primary key of the table its keys are records of, and that table has none: give the table a primary key, or fetch the field another way.', 'entry-defects'),
+   'A field fetching its own rows under a parent holding an object is batched by the primary key of the table its keys are records of, and that table has none: give the table a primary key, or fetch the field another way.', 'occurrence-depth-defects'),
   ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',
-   'A @service under an object type is fetched for many parents at once, and its method has no parameter taking their keys: add a Set or List parameter of the records the parents are keyed by, and return a Map by those keys or a List in their order.', 'entry-defects'),
+   'A @service under an object type is fetched for many parents at once, and its method has no parameter taking their keys: add a Set or List parameter of the records the parents are keyed by, and return a Map by those keys or a List in their order.', 'occurrence-depth-defects'),
   ('SERVICE_HOLDER_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_HOLDER_UNBUILDABLE',
    'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.', 'entry-defects'),
   ('ARGMAPPING_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED',
@@ -20171,9 +20182,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
    'A federation @key selects a field that is not a column of the entity''s own table, a nested selection, a name the type does not declare, or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.', 'entity-key-alternatives'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
-   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, so there is nothing to select or write: the name is misspelt, or the column lives on another table.', 'entry-defects'),
+   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, so there is nothing to select or write: the name is misspelt, or the column lives on another table.', 'occurrence-depth-defects'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',
-   'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.', 'entry-defects'),
+   'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.', 'occurrence-depth-defects'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',
    'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.', 'entry-defects'),
   ('DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', 'error', 'GRAPHITRON', 'GRAPHITRON_DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM',
@@ -20999,8 +21010,12 @@ INSERT INTO meta_relation VALUES
    'The entity key stage''s own defects, judged from how each key field binds at its entity''s table, which the occurrence bindings state, so the rule reads stored bindings rather than the classified fields the refusals were once made from.'),
   ('graphitron_occurrence_build_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example occurrence-depths inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.',
-   'The defects of what an input object is built into, written by the stage that writes the built classes and member bindings they read, as the outbox''s are, so the gatherer''s one rule over every arm, which H2 parses whole wherever it is named, does not grow with them.'),
+   'For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.',
+   'The defects of what an input object is built into, written by the occurrence-builds stage that writes the built classes and member bindings they read, as the outbox''s are, so the gatherer''s one rule over every arm, which H2 parses whole wherever it is named, does not carry them.'),
+  ('graphitron_occurrence_depth_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.',
+   'The defects judging the facts occurrence-depths and occurrence-builds write, a child producer''s lift and the column a field reads or writes, by a stage of their own after them, so neither the depth loop nor the gatherer''s one rule over every arm carries them.'),
   ('graphitron_outbox_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.',

@@ -20,6 +20,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -75,15 +76,18 @@ public final class EntryDefects {
     /** The outbox stage's rule. */
     public static final Rule OUTBOX = new Rule("outbox", GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE);
 
-    /** The build defects' rule, written by {@link OccurrenceDepths} after the built classes. */
-    public static final Rule BUILDS = new Rule("occurrence-depths", GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE);
+    /** The build and decode-shape defects' rule, {@link OccurrenceBuilds}. */
+    public static final Rule BUILDS = new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE);
+
+    /** The lift and column defects' rule, {@link OccurrenceDepthDefects}. */
+    public static final Rule DEPTHS = new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE);
 
     /** The entity key stage's rule, {@link EntityKeyAlternatives}. */
     public static final Rule ENTITY_KEYS =
         new Rule("entity-key-alternatives", GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE);
 
     /** Every owner's rule, one per owner stage. */
-    public static final List<Rule> RULES = List.of(ENTITY_KEYS, BUILDS, OUTBOX, GRAPHITRON);
+    public static final List<Rule> RULES = List.of(ENTITY_KEYS, BUILDS, DEPTHS, OUTBOX, GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

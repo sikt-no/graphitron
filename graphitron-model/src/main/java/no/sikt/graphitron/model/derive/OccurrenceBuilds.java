@@ -20,15 +20,27 @@ import static org.jooq.impl.DSL.val;
  * the {@code MEMBER} bindings of {@code graphitron_occurrence_binding_member}, the member of that
  * class each input field fills, from the rule views beside them, marked and swept.
  *
- * <p>A step of {@link OccurrenceDepths} after its depth loop, since the class at a parameter reads the
- * call the loop pins, and the loop writes calls and their parameters at different depths. It steps
- * through the depths itself: a member's and a grouping's class, and a field's member, read the built
+ * <p>The {@code occurrence-builds} stage, after {@link OccurrenceDepths}, since the class at a
+ * parameter reads the call that stage pins at one depth and the parameter it fills at another. It
+ * steps through the depths itself: a member's and a grouping's class, and a field's member, read the built
  * class of the occurrence one depth up, which this reading has written by then. Only that reading's
  * rows are read, so a parent an older reading left is not built on before the sweep removes it.
  */
 public final class OccurrenceBuilds {
 
     private OccurrenceBuilds() {}
+
+    /**
+     * The stage: the built classes and member bindings, then the shape each node id lands in, each
+     * swept, then the defects judging both.
+     */
+    public static void derive(DSLContext dsl, String graph, LocalDateTime readAt) {
+        write(dsl, graph, readAt);
+        sweep(dsl, graph, readAt);
+        OccurrenceNodeIdShapes.write(dsl, graph, readAt);
+        OccurrenceNodeIdShapes.sweep(dsl, graph, readAt);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.BUILDS);
+    }
 
     /** States the built classes and member bindings of every depth of {@code graph}. */
     public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {

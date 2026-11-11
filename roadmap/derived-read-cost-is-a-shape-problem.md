@@ -672,6 +672,13 @@ static method needs no holder.
       resolution from `sql_column_spelling`; reading what `graphitron_occurrence_column` leaves
       unbound, as `BuildQuery` does, they judge the binding the emitter writes. `COLUMN_AMBIGUOUS` on
       a record has no pinning case yet.
+    * **The node-id slot defects leave the gatherer's last rule with the call-parameter defects**
+      `open`, E's, off the critical path. The slot arm, `NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT` among its
+      codes, judges the decode shapes `occurrence-builds` writes, but stays in
+      `graphitron_entry_defect_rule`: `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT` is also
+      `graphitron_occurrence_call_parameter_defect`'s, and a code has one owning stage. Moving the
+      call-parameter defects to the stage that writes the call parameters takes the slot arm with
+      them.
     * **A shared input built into several classes names which in its defect** `open`, off the
       critical path. A build defect's detail is the least class or member where an input is built
       into several, so which class and occurrence failed is lost; a detail relation, as the
@@ -862,7 +869,9 @@ pass and no stratum that clears and recomputes.
       fact document and sis write the same `graphitron_entry_defect` rows before and after. The
       checks that read only the documents (`TYPE_NAME_CASE_COLLISION`, `CONNECTION_RETURN`,
       `DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM`, the subscription arm) go to a stage of the anchor, and the
-      depth loop's stages write theirs once after the last depth, ahead of the sweeps. A stage's
+      depth loop's go to `occurrence-depth-defects`, the stage straight after it, so the loop itself
+      stays lean (Alf, 2026-11-12); the lift and column families are there already, and the build
+      defects are `occurrence-builds`'. A stage's
       arms that expand one view several times read it once, from a table the stage writes. Priced
       by a prepare tally per stage on a cold capture before and after, against the 0.5 s the single
       rule costs today; `graphitron_entry_defect_rule` and the `entry-defects` stage go when their
