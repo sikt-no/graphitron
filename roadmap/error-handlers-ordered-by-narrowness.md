@@ -137,3 +137,31 @@ The `handlers` parameter row ("The first entry whose criteria match ... wins") a
 ## Architect consultation
 
 `principles-architect` was consulted on where the order lives. It favoured the store over the classifier, the split into a stored precedence relation and a Java-sorted order relation, the defect in `graphitron_entry_defect` replacing rule 8, and `graphitron_runtime_class` for the generated client exception; the plan follows all four. It also held that `message` cannot read a per-type order, because a type's handlers sorted alone can come out differently from their order inside a container, and proposed recording the claiming handler instead. The plan keeps the per-type order for `message` and states why the outcome is still well defined (end of "The rule"); recording the claim is listed above as considered. That disagreement is the first thing for the reviewer to weigh.
+
+## Reviewer findings
+
+### Round 1 (2026-11-11, Spec -> Ready, reviewer session 01FY5UvrebsVBt3mmPocP2yE)
+
+Verdict: withhold. One blocking finding on question one (viability), one smaller finding on question one (what the consumer is told). The goal comes across on a first read, the rule's containment rows agree with what `GenericMapping` and `DatabaseMapping` actually test, every symbol, relation, stage and manual passage the spec names exists as named, and the store is the right home for the order. On the fork the author asked the reviewer to weigh: the per-type order for `message:` is accepted. The fetcher is emitted once per type and a type can sit in several containers, so a container order is not available to it without the claim record, and the outcome as stated is deterministic.
+
+**Finding 1 (question one: viability; it also decides question two). The store holds no ancestry for JDK exceptions, and the plan's definition of a resolved class leaves the handlers this item is about out of the order.**
+
+`code_throwable` has a row only for a class read off a classpath entry. `CodeCapture.throwables` iterates `census.classes()`, and its javadoc says the chain runs "through classes that are on no classpath entry and have no rows"; `ClassHeaders` reads `jrt:/` only to follow a classpath class's ancestors. So `java.lang.RuntimeException`, `java.lang.IllegalStateException`, `java.lang.Exception`, `java.lang.Throwable` and `java.sql.SQLException` appear in the store only as a `supertype_name` under some classpath throwable, never as a `code_throwable` row with supertypes of their own.
+
+The plan says exception ancestry is already there, and under "Unresolved classes" defines the order over handlers whose class has a `code_throwable` row or is the generated client exception. Read as written, that excludes:
+
+- the catch-all in the Goal's own example (`java.lang.IllegalStateException`), and the `RuntimeException` / `Exception` / `Throwable` catch-alls the manual draft names;
+- the `GENERIC` on `java.sql.SQLException` half of the new equivalence defect;
+- every pair of two JDK classes (`IllegalArgumentException` under `RuntimeException`, `SQLIntegrityConstraintViolationException` under `SQLException` or under a bare `DATABASE` handler), for which no relation holds the subtype fact at all.
+
+The fallback the section names does not catch these either: the classifier resolves a JDK class by reflection and refuses nothing, so such a handler would silently keep declared order, which is the behaviour the item exists to remove.
+
+A pair whose narrower side is a classpath class and whose broader side is a JDK class is derivable today (the JDK name is a `supertype_name` row), so part of the rule works; the plan does not say that this is the intended reading, and it does not cover the JDK-under-JDK pairs. What would satisfy this: the plan states where the ancestry of a handler's class comes from when the class is the platform's, as a fact the store holds and owns (the modeling discipline's answer for a missing code fact is capturing it in the `code` family, not deriving it by reflection at read time), restates "resolves" so a JDK class resolves, and adds a JDK-under-JDK pair and a JDK catch-all to the fact document's cases. If the answer is a change to what `CodeCapture` admits, say whether that is in this item or a dependency.
+
+**Finding 2 (question one: what the consumer is told). The sort as specified can try a later-declared handler before an earlier-declared one that is not broader than it, which rule 3, the manual draft's third bullet and the changelog note all say does not happen.**
+
+Take `union E = T | V | U` with `T`: `GENERIC` on `IllegalStateException`; `V`: `GENERIC` on `RuntimeException`, `matches: "timeout"`; `U`: `GENERIC` on a subclass of `IllegalStateException`. `T` and `V` overlap and neither is narrower. `U` is narrower than `T`, so "take the earliest-declared handler that no remaining handler is narrower than" skips `T`, takes `V`, then `U`, then `T`. An `IllegalStateException("timeout")` routes to `T` today and to `V` after this item. That is a live handler changing its routing, not a dead one coming alive, so "the narrow handler is dead today, so the commit is a `feat`, not a breaking change" does not hold for it, and "the one declared first is tried first" is not what the author gets. With `T` and `V`'s handlers on one type instead, the same shape is the case where dispatch claims through one handler and `message:` reads the other's `description:`.
+
+What would satisfy this: either the sort is stated so that two incomparable handlers keep declared order whatever is narrower than one of them, or rule 3, the manual bullet and the changelog entry say what actually happens, with this shape among the fact document's cases.
+
+**Non-blocking.** `graphitron_runtime_class` has no superclass column and a `CHECK` on `kind`, so "add a kind and state its superclass" is a column plus a kind; graphql-java's jar is in the captured classpath (`CodeCaptureTest` reads `graphql.AssertException` from it), so the pickup check the plan asks for will pass.
