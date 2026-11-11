@@ -5,7 +5,7 @@ status: In Progress
 bucket: dx
 priority: 5
 theme: tooling
-depends-on: [R1160]
+depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
 last-updated: 2026-11-11
 ---
