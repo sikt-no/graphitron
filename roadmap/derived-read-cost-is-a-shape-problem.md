@@ -320,11 +320,11 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
       condition are the arguments bound (`RootLauncherRenderer.facetBindings`), built eagerly by the
       producer today whether or not they are selected (Alf, 2026-11-11). So the closure carries the
       producer's bound arguments and builds those conditions when its count or facets member is read.
-      Open for Alf and Filip: may an author's own field on a connection or an edge read an argument,
-      and through which surface (R1099's navigation is a candidate)?
-    * `PageInfo` is one generated class shared by every connection (Alf, 2026-11-11;
-      `emitter-conventions.adoc` § Return types). Open for Alf and Filip: whether every other object
-      type graphitron makes values of, each facets type among them, gets one generated class too.
+      An author's own fields on a connection or an edge type, and whether they may read an argument,
+      are left for later (Alf, 2026-11-11).
+    * `PageInfo` is one generated class shared by every connection, and each facets type and facet
+      value type has a generated class of its own (Alf, 2026-11-11; `emitter-conventions.adoc`
+      § Return types).
     * **The page info and facets fields are wired** `open`, G's. The shared generated `PageInfo`
       class and facets classes, each field explicitly registered, replace the maps. Pinned by the sakila
       connection, cursor-format and facets execution tests; `code-generation-triggers.adoc` changes.
@@ -378,7 +378,8 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
      facet counts under the connection's condition and every other facet's predicate, not its own,
      so facets read a variant of how the result set was produced rather than the result set. Still
      to be pinned by a test before it is modelled.
-  5. What does an author's extra field on a connection or an edge bind to?
+  5. What does an author's extra field on a connection or an edge bind to? Left for later (Alf,
+     2026-11-11).
   6. Does the hit being an edge reopen R427's decision to keep search apart from connections? R427's
      question, recorded there.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
