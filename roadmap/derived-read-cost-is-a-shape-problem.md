@@ -779,7 +779,30 @@ static method needs no holder.
     the id reaches through a foreign key. The model (Alf, 2026-11-10): the class each input object
     occurrence is built into, a `MEMBER` binding beside `VALUE` keyed into `code_write_slot` (matched
     on the bound name for a service and the GraphQL name for a condition), the node id slot stored
-    per call parameter for every call kind, and the shape relation widened to those slots.
+    per call parameter for every call kind, and the shape relation widened to those slots. The first
+    two are stated: `graphitron_occurrence_built_class` and `graphitron_occurrence_binding_member`,
+    which `BuildQuery` reads in place of matching member names.
+    * **`BuildQuery`'s refusals are defects** `open`, E's. A class nothing constructs, a field filling
+      no member, a list that cannot group, two fields on one member and a `@condition` parameter
+      taking a jOOQ record are refused in Java and fall back to the classified emitter; as defects
+      at the input field they fail the build where the classified generator already does. Which of
+      them the classified generator accepts (an unmatched scalar on a setter bean, dropped in
+      silence; a field binding no column of a record its input has no `@table` for) is Alf's to rule.
+    * **The node id slot is stored, and the shape rule reads it** `open`, E's. `graphitron_node_id_slot`
+      is a view, its landing the root parameter's class, and
+      `graphitron_occurrence_node_id_shape_rule` reads it, a view reading a view. Stored per node id
+      binding, a parameter's, a bean member's or a record's, it gives a bean member its landing and
+      the shape rule a table to read.
+    * **Grouping under a record is decided once** `open`, off the critical path.
+      `BuildQuery.columns` decides in Java that a nested input object under a jOOQ record groups onto
+      it, which `graphitron_occurrence_built_class` states as a `GROUPING` row; it reads the row.
+    * **A built class at a parameter names its call parameter** `open`, off the critical path.
+      `BuildQuery.roots` recomputes the class a parameter takes from `code_method_parameter` to find
+      its `PARAMETER` row; tied to the call parameter it lands on, the row is read directly.
+    * **A class's entry in the graph is resolved once** `open`, off the critical path. The graph's
+      first entry declaring a class, by name, is spelled in `graphitron_occurrence_source_object`,
+      `graphitron_occurrence_producer_result` and `graphitron_occurrence_built_class`; one stored
+      resolution of a class to its entry is read by all three.
   * **A service's key row is stored with its candidates, and its defects read them** `open`, folded
     into "A depth's key rows are written off its source" (Alf, 2026-11-10). The key-row stage stores a service's key table and each member of the parent's
     class returning its record as rows under the field, so `NO_KEY_FROM_PARENT` and
