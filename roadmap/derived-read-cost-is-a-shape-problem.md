@@ -286,6 +286,41 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * **A count or facets graphitron cannot run is a defect** `open`, G's. Under a producer graphitron
     does not compose, a `@service` connection, a `totalCount` or facets raises a defect rather than
     generating nothing.
+  * **A connection's producer returns the connection, and its fields read it** `open`, G's.
+    The producer hands back one generic object holding the shape: its page, each element with its
+    cursor, the page's bounds and whether there is a next or previous page, and the count and facets
+    as members that run when read. The connection's and its edge's fields read its members by
+    graphql-java's own property access, which also hands a member the environment, so the
+    `ConnectionHelper` resolvers and the per-type registrations in `FetcherRegistrationsEmitter` go.
+    It is the seam a result set graphitron did not produce fills too. Generated code changes, which
+    Alf authorised for this step (2026-11-11): it simplifies the model and makes it more powerful.
+    The design, with the principles-architect:
+    * One generated page class with a nested `Edge`, no type parameter until something hands over a
+      second element type; every producer hands over jOOQ records today. An edge encodes its cursor
+      when it is read, and the start and end cursors reuse the first and last edge.
+    * How the result set was produced is one member, what `Scoped` and `BatchCounts.Slot` are today,
+      carrying the facet plan and, multi-tenant, the `DSLContext`; the count and facets delegate to
+      it. Its absence is refused by "A count or facets graphitron cannot run is a defect", so the
+      null returns and the validator-unreachable null path in `MultiTablePolymorphicEmitter` go.
+    * The members are named after the specification's positions and graphitron's (`edges`, `nodes`,
+      `pageInfo`, `totalCount`, facets; `node`, `cursor`; the four page-info fields), so
+      `graphitron_runtime_member` is the template and "A connection is recognised by the
+      specification's shape" states which member a connection type's field fills, not a second
+      constant. A position binds as a sibling subtype of the `VALUE` binding keyed into
+      `graphitron_runtime_member`, since `graphitron_occurrence_binding_value` keys its member on
+      the classpath scan, which never sees a generated class.
+    * `RESULT_EXPRESSION`, whose only intended use was the cursor, retires, and so does
+      `CONNECTION_HELPER`'s cursor member.
+    * Behaviour is pinned by execution tests in `graphitron-sakila-example`: cursors keep their bytes,
+      both decode formats included; the count and facets run only when selected; facets count without
+      their own predicate; a batch shares one grouped count. The member-to-field rows get a fact
+      document. The docs change in the same commit: `emitter-conventions.adoc` § Return types,
+      `code-generation-triggers.adoc` § Producer and the `COUNT`/`FACETS` row,
+      `connections.adoc`, `runtime-api.adoc` and `runtime-extension-points.adoc`.
+    * Open for Alf and Filip: graphql-java's default property access calls a member taking the
+      environment, but that is its implementation rather than a documented contract, and a renamed
+      member would resolve to null at run time. Either one explicit registration per member, or the
+      default with an execution test per member as the enforcer.
 
   **What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
   The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
@@ -318,8 +353,10 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
      parent key, or the producer's result as the runtime reads it?
   3. Is a `@service` connection fused, the service handing back elements graphitron pages, or like an
      index, handing back hits whose `node` is lifted? Who supplies the cursors?
-  4. What do facets compute over today, the result set or the result set without their own filter?
-     Pinned by a test before it is modelled.
+  4. What do facets compute over today? Answered from the generated `ConnectionHelper.facets`: each
+     facet counts under the connection's condition and every other facet's predicate, not its own,
+     so facets read a variant of how the result set was produced rather than the result set. Still
+     to be pinned by a test before it is modelled.
   5. What does an author's extra field on a connection or an edge bind to?
   6. Does the hit being an edge reopen R427's decision to keep search apart from connections? R427's
      question, recorded there.
