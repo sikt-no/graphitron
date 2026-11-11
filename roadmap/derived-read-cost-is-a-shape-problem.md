@@ -1500,6 +1500,17 @@ someone to profile.
     Its merge was also the costliest statement to plan in the build: the rule reaches 116 relations
     through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`);
     at the 2026-11-09 re-profile it is 4% of that JVM, and each of the path-need rule's two upserts is 12%.
+  * **The TABLE binding's rule restricts to the graph and depth inside its view** `open`, unowned.
+    `OccurrenceTables` writes `graphitron_occurrence_binding_table` once per depth from
+    `graphitron_occurrence_binding_table_rule`, a union of five SELECTs under a DISTINCT with no
+    graph or depth predicate inside it. The writer's filter on graph and depth is a join outside the
+    view, which H2 does not push through the DISTINCT into the union, so each depth evaluates the
+    whole rule over every graph's occurrences, and the view is inlined twice, once for the binding
+    supertype and once for the subtype. On 2026-11-11 `GraphCountGrowthGateTest` failed on it,
+    writing the table in 13 ms alone and 120 ms as one of eight graphs, at load 5.8 inside the
+    model suite. It passed twice after at load 2.2, but 107 ms over is growth, not the few
+    milliseconds of a pause. The rule takes the graph and the depth inside each SELECT, or the
+    writer reads it as a parameterised select, and `prepare_ms` prices the change.
   * **An upsert finds the row it updates through one key** `done`.
   * **An upsert into a table with an independent unique key is decided per table** `open`.
     `graphitron_federation_definition` is unique by local name, and `graphitron_ast_reference_element_entry` and
