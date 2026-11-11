@@ -1,26 +1,30 @@
 package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.model.test.CatalogInput;
-
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
-import no.sikt.graphitron.model.test.TestRunContext;
+import no.sikt.graphitron.model.test.FactGraphs;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.table;
 
 /**
- * Every stage-written table holds exactly the rows the view stating its rule computes, on a store a
- * capture filled.
+ * Every stage-written table holds exactly the rows the view stating its rule computes, on every
+ * store the fact documents' captures filled.
  *
  * <p>The oracle a conversion rests on. A stage moves who evaluates a rule and when, and its whole
  * safety argument is that it moves nothing else; {@code EXCEPT} in both directions between the
@@ -34,18 +38,40 @@ import static org.jooq.impl.DSL.table;
  * stage or a mis-scoped {@code DELETE} produces; rows in the rule and not in the table are rows the
  * stage did not write, which is what a predicate in the wrong place produces.
  *
- * <p>Over a captured store rather than a seeded one, and over a fixture that reaches every arm of
- * the rule: a comparison between two empty relations passes while asserting nothing, and one over a
- * single arm passes while asserting a third of the rule. The non-vacuity cases below are what say
- * the fixture did its job.
+ * <p>Over the whole population of fact documents ({@link FactGraphs}), since the agreement is an
+ * invariant of any captured graph: every scenario's final reading is compared, a stepped scenario's
+ * included, so a row an earlier step left behind is seen. The population reaches nearly every arm;
+ * the one it cannot is a per-file configured tag, which no document can state, so that reading is
+ * captured into a store of this class's own. The non-vacuity cases say the population did its job:
+ * a comparison between two empty relations passes while asserting nothing, and one over a single
+ * arm passes while asserting a fraction of the rule.
  */
 class StageAnswerAgreementTest {
+
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     @TempDir
     Path tmp;
 
     /** One stage: the table it writes and the view stating the rule it inserts from. */
     private record Stage(String target, String ruleView) {}
+
+    /**
+     * The defect table several stages write, each from a rule view of its own, beside the walk,
+     * which writes its defects as it goes and has no view. Each rule's rows are held, and every held
+     * row of a code one of the rules' stages owns ({@code graphitron_defect_type.owner_stage}) is
+     * one some rule computes. Not each rule against its owner's codes alone: the graphitron rule
+     * also states the route codes the walk's stage owns, at the declaration of a field whose need no
+     * claim covers.
+     */
+    private static final String DEFECTS = "graphitron_entry_defect";
+
+    /** The defect rule views and the stages that run them, as {@code EntryDefects.RULES} has them. */
+    private static final Map<String, String> DEFECT_RULES = Map.of(
+        "graphitron_entity_key_entry_defect_rule", "entity-key-alternatives",
+        "graphitron_outbox_entry_defect_rule", "outbox",
+        "graphitron_entry_defect_rule", "entry-defects");
 
     /**
      * The stage-written tables and their rules, in stage order.
@@ -67,163 +93,142 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
         new Stage("graphitron_input_field_resolving_table",
             "graphitron_input_field_resolving_table_rule"),
-        new Stage("graphitron_entry_defect", "graphitron_entry_defect_rule"));
+        new Stage(DEFECTS, "graphitron_entity_key_entry_defect_rule"),
+        new Stage(DEFECTS, "graphitron_outbox_entry_defect_rule"),
+        new Stage(DEFECTS, "graphitron_entry_defect_rule"));
+
+    /**
+     * The bases each scope stage branches on, every one of which some graph must reach: an
+     * agreement over one basis asserts one rung of a rule whose whole shape is which rung answers
+     * where. The argument-site fan-out reaches the participant arm only through a field returning a
+     * multi-table container that declares an argument.
+     */
+    private static final Map<String, Set<String>> BASES = Map.of(
+        "graphitron_field_scope_table",
+        Set.of("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE", "PARTICIPANT_TABLE"),
+        "graphitron_argument_scope_table",
+        Set.of("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE", "PARTICIPANT_TABLE"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
     void everyStageAgreesWithTheRuleItInsertsFrom() {
-        for (var fixture : Fixture.values()) {
-            withCapturedStore(fixture, dsl -> {
-                for (Stage stage : STAGES) {
-                    assertThat(difference(dsl, stage.target(), stage.ruleView(), stage.ruleView()))
-                        .as(stage.target() + " holds rows " + stage.ruleView() + " does not compute"
-                            + " on the " + fixture + " fixture; a previous capture's rows the stage"
-                            + " did not clear, or rows written twice")
-                        .isEmpty();
-                    assertThat(difference(dsl, stage.ruleView(), stage.target(), stage.ruleView()))
-                        .as(stage.ruleView() + " computes rows " + stage.target() + " does not hold"
-                            + " on the " + fixture + " fixture; the stage did not write what the"
-                            + " rule states")
-                        .isEmpty();
+        var disagreements = new ArrayList<String>();
+        eachReading((reading, dsl) -> {
+            for (Stage stage : STAGES) {
+                if (stage.target().equals(DEFECTS)) {
+                    continue;
                 }
-            });
-        }
-    }
-
-    /**
-     * Every stage's table holds rows on at least one fixture, so no agreement above is between two
-     * empty relations. The per-rule cases below say which arms a fixture reaches; this one says only
-     * that no stage is compared over nothing, which is the floor every conversion owes and the one a
-     * new stage cannot land without meeting.
-     */
-    @Test
-    @DisplayName("every stage-written table holds rows on at least one fixture")
-    void noStageIsComparedOverAnEmptyRelation() {
-        var populated = new java.util.HashSet<String>();
-        for (var fixture : Fixture.values()) {
-            withCapturedStore(fixture, dsl -> STAGES.forEach(stage -> {
-                if (dsl.fetchCount(table(name(stage.target().toUpperCase()))) > 0) {
-                    populated.add(stage.target());
-                }
-            }));
-        }
-        assertThat(STAGES.stream().map(Stage::target).filter(t -> !populated.contains(t)).toList())
-            .as("stage-written tables no fixture populates; extend a fixture until one does")
+                difference(dsl, stage, true).forEach(row ->
+                    disagreements.add(stage.target() + " holds a row " + stage.ruleView()
+                        + " does not compute (" + reading + "): " + row));
+                difference(dsl, stage, false).forEach(row ->
+                    disagreements.add(stage.ruleView() + " computes a row " + stage.target()
+                        + " does not hold (" + reading + "): " + row));
+            }
+            for (var rule : DEFECT_RULES.keySet()) {
+                dsl.selectFrom(defectRule(dsl, rule).except(defectTable(dsl))).fetch().forEach(row ->
+                    disagreements.add(rule + " computes a row " + DEFECTS + " does not hold ("
+                        + reading + "): " + row));
+            }
+            var computed = DEFECT_RULES.keySet().stream()
+                .<org.jooq.Select<org.jooq.Record>>map(rule -> defectRule(dsl, rule))
+                .reduce((left, right) -> left.union(right)).orElseThrow();
+            dsl.selectFrom(defectTable(dsl)
+                    .where(field(name("CODE"), String.class).in(
+                        select(field(name("CODE"), String.class))
+                            .from(table(name("GRAPHITRON_DEFECT_TYPE")))
+                            .where(field(name("OWNER_STAGE"), String.class).in(DEFECT_RULES.values()))))
+                    .except(computed))
+                .fetch().forEach(row -> disagreements.add(DEFECTS + " holds a row of a code the rules'"
+                    + " stages own that no rule computes (" + reading + "): " + row));
+        });
+        assertThat(disagreements)
+            .as("a table's row its rule does not compute is a previous capture's row the stage did"
+                + " not clear, or one written twice; a rule's row its table lacks is one the stage"
+                + " did not write")
             .isEmpty();
     }
 
     /**
-     * The field-site scope stage's own non-vacuity case, over all four bases: the three ranked
-     * rungs and the participant arm that sits beside them. A comparison over one basis asserts one
-     * rung of a rule whose whole shape is which rung answers where.
+     * Every stage's table holds rows somewhere, and every scope stage reaches every basis, so no
+     * agreement above is between two empty relations or over one arm. The floor every conversion
+     * owes and the one a new stage cannot land without meeting: a stage no document reaches wants
+     * a document that reaches it.
      */
     @Test
-    @DisplayName("the fixture reaches all four bases of the field-site scope")
-    void theFixtureReachesEveryBasisOfTheFieldScope() {
-        withCapturedStore(dsl -> assertThat(dsl
-                .selectDistinct(org.jooq.impl.DSL.field(name("BASIS"), String.class))
-                .from(table(name("GRAPHITRON_FIELD_SCOPE_TABLE")))
-                .fetch(0, String.class))
-            .as("the bases the fixture reaches; an agreement over one rung asserts a quarter of"
-                + " the rule and passes all the same")
-            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE",
-                "PARTICIPANT_TABLE"));
+    @DisplayName("every stage-written table holds rows, and every scope basis is reached")
+    void noStageIsComparedOverAnEmptyRelation() {
+        var populated = new HashSet<String>();
+        var bases = new HashMap<String, Set<String>>();
+        eachReading((reading, dsl) -> {
+            STAGES.forEach(stage -> {
+                if (dsl.fetchCount(table(name(stage.ruleView().toUpperCase()))) > 0) {
+                    populated.add(stage.ruleView());
+                }
+            });
+            BASES.keySet().forEach(target -> bases.computeIfAbsent(target, t -> new HashSet<>())
+                .addAll(dsl.selectDistinct(field(name("BASIS"), String.class))
+                    .from(table(name(target.toUpperCase())))
+                    .fetch(0, String.class)));
+        });
+        assertThat(STAGES.stream().map(Stage::ruleView).filter(t -> !populated.contains(t)).toList())
+            .as("stage rules no fact document reaches; add a document that reaches one")
+            .isEmpty();
+        BASES.forEach((target, expected) -> assertThat(bases.get(target))
+            .as("the bases of " + target + " the fact documents reach")
+            .containsAll(expected));
     }
 
     /**
-     * The argument-site fan-out's own non-vacuity case. It is a fan-out and not a rule, so what it
-     * can get wrong is which arguments a field's rows reach rather than which rung answered; the
-     * bases are asserted all the same, because a fan-out over one basis is a fan-out over one arm
-     * of the relation it fans.
-     *
-     * <p>Three of the four rather than all four, and the missing one is the participant arm: it
-     * answers at a field returning a multi-table container, and reaching it through the fan-out
-     * needs such a field to declare an argument. The case above pins that arm on the relation whose
-     * rule it is, which is where the arm is stated.
+     * Runs {@code body} over each store of the population, every document captured first, and over
+     * the configured-tag reading no document can state.
      */
-    @Test
-    @DisplayName("the fixture fans three bases of the field-site scope out over arguments")
-    void theFixtureReachesMoreThanOneBasisOfTheArgumentScope() {
-        withCapturedStore(dsl -> assertThat(dsl
-                .selectDistinct(org.jooq.impl.DSL.field(name("BASIS"), String.class))
-                .from(table(name("GRAPHITRON_ARGUMENT_SCOPE_TABLE")))
-                .fetch(0, String.class))
-            .as("the bases the fan-out reaches; an agreement over one of them is an agreement over"
-                + " one arm of the relation being fanned out")
-            .containsExactlyInAnyOrder("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE"));
+    private void eachReading(java.util.function.BiConsumer<String, DSLContext> body) {
+        FACTS.warm(FACTS.paths());
+        FACTS.eachStore((dsl, graphs) -> {
+            body.accept("a store of the fact documents holding " + graphs.size() + " graphs", dsl);
+            return null;
+        });
+        try (var store = CapturedStore.tagged(tmp.resolve("configured-tag"), federationSdl(),
+                "catalog")) {
+            body.accept("the configured-tag reading", store.dsl());
+        }
     }
 
     /**
-     * The input-field resolving table's own non-vacuity case, on the property its key exists for: a
-     * field resolves against a table it is handed, so the relation is only asserting anything once
-     * the fixture reaches an input type from an argument whose field is rooted somewhere.
+     * The rows the stage's table holds and its rule does not compute ({@code tableSide}), or the
+     * reverse, compared on the rule's own columns. A table marking and sweeping carries the
+     * reading's instant beside what the rule states, and the instant is the writer's, not the
+     * rule's, so it is no part of whether the two agree.
      */
-    @Test
-    @DisplayName("the fixture reaches an input field under a resolving table")
-    void theFixtureReachesAnInputFieldResolvingTable() {
-        withCapturedStore(dsl -> assertThat(dsl
-                .selectDistinct(org.jooq.impl.DSL.field(name("TABLE_NAME"), String.class))
-                .from(table(name("GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE")))
-                .fetch(0, String.class))
-            .as("the tables the fixture classifies an input field against; an agreement over an"
-                + " empty relation asserts nothing at all")
-            .containsExactly("film"));
-    }
-
-    /**
-     * The rows of {@code left} that {@code right} lacks, compared on the rule's own columns. A
-     * table marking and sweeping carries the reading's instant beside what the rule states, and the
-     * instant is the writer's, not the rule's, so it is no part of whether the two agree.
-     */
-    private static List<String> difference(DSLContext dsl, String left, String right, String rule) {
-        var columns = dsl.select(org.jooq.impl.DSL.field(name("COLUMN_NAME"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-            .where(org.jooq.impl.DSL.field(name("TABLE_NAME"), String.class).eq(rule.toUpperCase()))
-            .orderBy(org.jooq.impl.DSL.field(name("ORDINAL_POSITION")))
-            .fetch(0, String.class).stream()
-            .map(column -> org.jooq.impl.DSL.field(name(column)))
-            .toList();
-        return dsl.select(columns).from(table(name(left.toUpperCase())))
-            .except(select(columns).from(table(name(right.toUpperCase()))))
+    private static List<String> difference(DSLContext dsl, Stage stage, boolean tableSide) {
+        var columns = columns(dsl, stage.ruleView());
+        var held = select(columns).from(table(name(stage.target().toUpperCase())));
+        var computed = select(columns).from(table(name(stage.ruleView().toUpperCase())));
+        return (tableSide ? dsl.selectFrom(held.except(computed)) : dsl.selectFrom(computed.except(held)))
             .fetch().stream()
             .map(Object::toString)
             .toList();
     }
 
-    /**
-     * The captured schemas the agreement runs over. {@link #sdl()} reaches every arm the per-rule
-     * cases name; the scaled fixture reaches the {@code @nodeId} decode chain and the
-     * input-field roles with rows to compare; {@link #mutationSdl()} reaches the write payload's
-     * refusal, key membership and destination, which neither of the other two populates;
-     * {@link #federationSdl()}, captured with a configured tag, reaches the configured tags, the
-     * minted types' coinage and the directives their carriers carry.
-     */
-    private enum Fixture { ARMS, NODE_ID, MUTATION, FEDERATION }
-
-    private void withCapturedStore(java.util.function.Consumer<DSLContext> body) {
-        withCapturedStore(Fixture.ARMS, body);
+    private static org.jooq.SelectJoinStep<org.jooq.Record> defectRule(DSLContext dsl, String rule) {
+        return select(columns(dsl, rule)).from(table(name(rule.toUpperCase())));
     }
 
-    private void withCapturedStore(Fixture fixture, java.util.function.Consumer<DSLContext> body) {
-        var ctx = TestRunContext.of();
-        var jooq = CatalogInput.of(ctx);
-        String schema = switch (fixture) {
-            case ARMS -> sdl();
-            case NODE_ID -> no.sikt.graphitron.model.test.ScaledSchemaFixture.scaledSdl(2);
-            case MUTATION -> mutationSdl();
-            case FEDERATION -> federationSdl();
-        };
-        Path directory = tmp.resolve("stages-" + fixture.name().toLowerCase());
-        // The arms fixture reads the classpath corpus as well, its condition path being routed by
-        // a method there.
-        try (var store = switch (fixture) {
-                case FEDERATION -> CapturedStore.tagged(directory, schema, "catalog");
-                case ARMS -> CapturedStore.ownStoreOfCatalogWith(directory, CapturedStore.GRAPH,
-                    schema, jooq, ClasspathCorpus.entries());
-                default -> CapturedStore.ownStoreOfCatalog(directory, schema, jooq);
-            }) {
-            body.accept(store.dsl());
-        }
+    private static org.jooq.SelectJoinStep<org.jooq.Record> defectTable(DSLContext dsl) {
+        return select(columns(dsl, "graphitron_entry_defect_rule"))
+            .from(table(name(DEFECTS.toUpperCase())));
+    }
+
+    /** The rule's own columns, in its order: what a comparison with its table is over. */
+    private static List<org.jooq.Field<Object>> columns(DSLContext dsl, String rule) {
+        return dsl.select(field(name("COLUMN_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(field(name("TABLE_NAME"), String.class).eq(rule.toUpperCase()))
+            .orderBy(field(name("ORDINAL_POSITION")))
+            .fetch(0, String.class).stream()
+            .map(column -> field(name(column)))
+            .toList();
     }
 
     /**
@@ -235,121 +240,6 @@ class StageAnswerAgreementTest {
         return """
             type Query { films: [Film!]! @asConnection @tag(name: "public") }
             type Film { title: String }
-            """;
-    }
-
-    /**
-     * Three UPDATEs and a DELETE over film: one whose payload the walkers admit whole and match
-     * through the primary key, one carrying a field that names no column, one carrying a
-     * {@code @nodeId} field decoding through a key film declares on language, and a DELETE by key.
-     * Between them they put rows in every relation of the write chain, the refusal and the key
-     * membership among them.
-     */
-    private static String mutationSdl() {
-        return """
-            interface Node { id: ID! }
-            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
-              id: ID! @nodeId
-              title: String
-              language: Language @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Language implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
-              id: ID! @nodeId
-              name: String
-            }
-            input FilmUpdateInput {
-              filmId: Int! @field(name: "film_id")
-              title: String
-            }
-            input FilmLanguageInput {
-              filmId: Int! @field(name: "film_id")
-              language: ID @nodeId(typeName: "Language")
-            }
-            input FilmBadInput {
-              filmId: Int! @field(name: "film_id")
-              nonsense: String
-            }
-            input FilmKeyInput { filmId: Int! @field(name: "film_id") }
-            type Query { films: [Film!]! }
-            type Mutation {
-              updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
-              updateFilmBad(in: FilmBadInput!): Film @mutation(typeName: UPDATE)
-              updateFilmLanguage(in: FilmLanguageInput!): Film @mutation(typeName: UPDATE)
-              deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
-            }
-            """;
-    }
-
-    /**
-     * One schema reaching every arm each stage above branches on. For the field-site column scope,
-     * all three navigation rules: an authored {@code @reference} path whose terminal element names
-     * a table (PATH_TERMINAL) and one a condition method routes, an object-typed field whose named type carries its own binding
-     * (NAMED_TYPE_TABLE), and leaf fields resolving in their parent's binding (PARENT_BINDING).
-     * Three outcomes: a {@code @service} one wrapping a bound type, an INSERT one wrapping the same,
-     * and a DELETE echo wrapping the {@code ID} scalar. For the field-site scope, all four bases:
-     * the INSERT carrier is the payload rung, the DELETE echo the {@code @mutation(table:)} rung,
-     * every object-typed field into a bound type the named-type rung, and the interface over two
-     * bound implementers the participant arm beside them.
-     */
-    private static String sdl() {
-        return """
-            type Film implements Media @table(name: "film") {
-              title: String
-              language: Language
-              actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"},
-                                                 {key: "film_actor_actor_id_fkey"}])
-              castings: [FilmActor!]! @reference(path: [{condition: {
-                className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
-                method: "filmToFilmActor"}}])
-              self: FilmSelf @reference(path: [{key: "film_pkey"}])
-            }
-            type FilmSelf @table(name: "film") {
-              title: String
-            }
-            type FilmActor @table(name: "film_actor") {
-              lastUpdate: String @field(name: "last_update")
-            }
-            type Language @table(name: "language") {
-              name: String
-            }
-            type Actor implements Media @table(name: "actor") {
-              title: String @field(name: "first_name")
-            }
-            interface Media {
-              title: String
-            }
-            type Query {
-              films(title: String): [Film!]!
-              media: [Media!]!
-            }
-            input FilmInput {
-              title: String
-            }
-            type DbErr @error(handlers: [{handler: DATABASE}]) {
-              path: [String!]!
-              message: String!
-            }
-            union WriteError = DbErr
-            type CreateFilmPayload {
-              film: Film
-              errors: [WriteError]
-            }
-            type InsertFilmPayload {
-              film: Film
-              errors: [WriteError]
-            }
-            type DeleteFilmPayload {
-              deletedId: ID
-              errors: [WriteError]
-            }
-            type Mutation {
-              createFilm: CreateFilmPayload
-                @service(service: {className: "com.example.FilmService", method: "create"})
-              insertFilm(in: FilmInput!): InsertFilmPayload
-                @mutation(typeName: INSERT, table: "film")
-              deleteFilm(filmId: Int): DeleteFilmPayload
-                @mutation(typeName: DELETE, table: "film")
-            }
             """;
     }
 }

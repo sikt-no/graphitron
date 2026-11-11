@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -141,7 +140,7 @@ class TypeBackingPartitionTest {
     }
 
     @Test
-    @DisplayName("one class name on two entries is two classes, and a contest")
+    @DisplayName("one class name on two entries is two classes, both backing the types they reach")
     void oneClassNameOnTwoEntriesIsTwoClasses() {
         assertThat(backings("both")).containsExactlyInAnyOrder(
             "Holder=" + HOLDER + " PRODUCER",
@@ -151,7 +150,6 @@ class TypeBackingPartitionTest {
             "LibBlurb=" + BLURB + " ACCESSOR",
             "LibBlurb=lib.Blurb ACCESSOR",
             "AssignmentInput=lib.Assignment PRODUCER");
-        assertThat(conflicts()).containsExactlyInAnyOrder("both Blurb 2", "both LibBlurb 2");
     }
 
     private static List<String> backings(String graph) {
@@ -161,13 +159,6 @@ class TypeBackingPartitionTest {
             .from(b)
             .where(b.GRAPH_NAME.eq(graph))
             .fetch(r -> r.value1() + "=" + r.value2() + " " + r.value3());
-    }
-
-    /** Every contest in the store, graph first, so a contest leaking across graphs shows. */
-    private static List<String> conflicts() {
-        var c = INTENT_TYPE_BACKING_CONFLICT;
-        return captured.dsl().selectFrom(c)
-            .fetch(r -> r.getGraphName() + " " + r.getTypeName() + " " + r.getCandidates());
     }
 
     /** The library compiled under a root of its own, as the consumer's own code. */

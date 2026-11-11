@@ -1,0 +1,4 @@
+# The first reading declares a directive with two formal arguments. The second drops one argument,
+# the third drops the directive.
+
+directive @shelf(size: Int, from: Int) on FIELD_DEFINITION

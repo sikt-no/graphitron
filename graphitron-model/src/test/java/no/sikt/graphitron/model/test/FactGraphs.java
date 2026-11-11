@@ -339,7 +339,7 @@ public final class FactGraphs implements AutoCloseable {
         }
 
         /** Every plain document's path, in folder then name order. */
-        Set<String> paths() {
+        public Set<String> paths() {
             return population().paths();
         }
 
@@ -353,7 +353,7 @@ public final class FactGraphs implements AutoCloseable {
          * transaction each, with the names of the graphs that store holds: for a check over the
          * whole population rather than over one graph.
          */
-        <T> List<T> eachStore(BiFunction<DSLContext, Set<String>, T> body) {
+        public <T> List<T> eachStore(BiFunction<DSLContext, Set<String>, T> body) {
             var results = new ArrayList<T>();
             for (var shard : population().shards.values()) {
                 var graphs = shard.graphs();

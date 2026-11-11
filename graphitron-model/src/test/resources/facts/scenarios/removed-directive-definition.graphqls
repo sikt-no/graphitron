@@ -1,0 +1,49 @@
+# removed-directive-definition, read in steps: a directive definition and its formal arguments go
+# when the corpus stops declaring them, one argument without its siblings and the directive with
+# whatever arguments it still had. Each @withFacts writes the files of one reading, the clock moving
+# between readings, and the claims after it check what that reading left.
+
+extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
+  {path: "shapes/removed-directive-definition/r-t0", as: "removed-directive-definition.r"}])
+
+extend schema @assertContains(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name
+  shelf,          size
+  shelf,          from
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/removed-directive-definition/r-t60", as: "removed-directive-definition.r"}])
+
+extend schema @assertAbsent(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name
+  shelf,          size
+  """)
+
+extend schema @assertContains(relation: "graphql_directive_argument", rows: """
+  directive_name, argument_name
+  shelf,          from
+  """)
+
+extend schema @assertContains(relation: "graphql_directive", rows: """
+  directive_name
+  shelf
+  """)
+
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/removed-directive-definition/r-t120", as: "removed-directive-definition.r"}])
+
+extend schema @assertAbsent(relation: "graphql_directive", rows: """
+  directive_name
+  shelf
+  """)
+
+extend schema @assertAbsent(relation: "graphql_directive_argument", rows: """
+  directive_name
+  shelf
+  """)

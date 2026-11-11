@@ -1,0 +1,3 @@
+# The second reading: the directive keeps only its from argument.
+
+directive @shelf(from: Int) on FIELD_DEFINITION
