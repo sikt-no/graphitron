@@ -1,7 +1,7 @@
 ---
 id: R1165
 title: "Error handlers are matched narrowest first, and an unreachable one fails the build"
-status: Spec
+status: Ready
 bucket: dx
 priority: 4
 theme: error-channel
