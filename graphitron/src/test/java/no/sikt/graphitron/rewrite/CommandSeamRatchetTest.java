@@ -116,9 +116,11 @@ class CommandSeamRatchetTest {
      * key extraction and the child service's key source went with it. Raised 61 to 62 when the
      * shared {@code PageInfo} was wired: the registrations emitter's arm for the page-info leaf,
      * the smallest repair of a field left to graphql-java's default fetcher; it moves to the
-     * store-reading connection emitter when the connection classes are generated.
+     * store-reading connection emitter when the connection classes are generated. Raised 62 to 64
+     * when the facets types were wired to their generated records: the registrations emitter's arm
+     * for the facets and facet value leaves, leaving with the connection units the same way.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 62;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 64;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -300,8 +302,12 @@ class CommandSeamRatchetTest {
      * <p>Raised 140 to 141 when the shared {@code PageInfo} was wired: the schema-shape planner's
      * page-info arm, which registers where the type declares a specification field; it leaves with
      * the connection units when the connection classes are generated from the store.
+     *
+     * <p>Raised 141 to 143 when the facets types were wired: the schema-shape planner's arm for the
+     * facets and facet value leaves, which register always; the facets row's producer reads the
+     * same leaves. Both leave when the facets records are written from the store.
      */
-    private static final int PLAN_LEAF_REFERENCES = 141;
+    private static final int PLAN_LEAF_REFERENCES = 143;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

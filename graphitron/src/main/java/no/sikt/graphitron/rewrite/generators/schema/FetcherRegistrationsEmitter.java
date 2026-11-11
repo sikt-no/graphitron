@@ -90,6 +90,10 @@ public final class FetcherRegistrationsEmitter {
                 body = edgeBody(name, units);
             } else if (type instanceof GraphitronType.PageInfoType pageInfo) {
                 body = pageInfoBody(pageInfo, units);
+            } else if (type instanceof GraphitronType.FacetsType
+                    || type instanceof GraphitronType.FacetValueType) {
+                body = facetRecordBody(name, ((no.sikt.graphitron.rewrite.model.CarriesObjectForm) type),
+                    outputPackage);
             } else if (type instanceof GraphitronType.TableType
                     || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType
@@ -194,8 +198,8 @@ public final class FetcherRegistrationsEmitter {
         // The facets resolver rides the same shape behind a has-facets gate. The gate is the
         // model's facets() view (not SDL presence: the facets field only exists when the promoter
         // synthesised it from that same list), and it drives ConnectionFetcherClassGenerator too so
-        // the reference and the method agree. The *FacetValue / <Conn>Facets types need no wiring;
-        // graphql-java's default property fetcher reads the resolver's nested maps by key.
+        // the reference and the method agree. The <Conn>Facets and *FacetValue types are wired to
+        // their records in util.Facets by facetRecordBody.
         if (!connectionType.facets().isEmpty()) {
             body.add("\n.dataFetcher($T.coordinates($S, $S), $T::facets)", FIELD_COORDS, connName, "facets", fetchers);
         }
@@ -219,6 +223,24 @@ public final class FetcherRegistrationsEmitter {
         for (String field : pageInfoType.declaredSpecFields()) {
             body.add("\n.dataFetcher($T.coordinates($S, $S), ($T env) -> (($T) env.getSource()).$L())",
                 FIELD_COORDS, name, field, env, pageInfo, field);
+        }
+        return body.add(";\n").unindent().build();
+    }
+
+    /**
+     * A facets type's or facet value type's fields, each registered to read the component of its
+     * name on the type's generated record in {@code util.Facets}.
+     */
+    private static CodeBlock facetRecordBody(String typeName,
+            no.sikt.graphitron.rewrite.model.CarriesObjectForm type, String outputPackage) {
+        var record = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.CLASS_NAME, typeName);
+        var env = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+        var body = CodeBlock.builder().add("codeRegistry").indent();
+        for (var field : type.schemaType().getFieldDefinitions()) {
+            body.add("\n.dataFetcher($T.coordinates($S, $S), ($T env) -> (($T) env.getSource()).$L())",
+                FIELD_COORDS, typeName, field.getName(), env, record,
+                no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.memberName(field.getName()));
         }
         return body.add(";\n").unindent().build();
     }

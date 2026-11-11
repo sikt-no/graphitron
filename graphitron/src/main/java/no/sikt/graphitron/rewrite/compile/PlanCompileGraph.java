@@ -278,6 +278,9 @@ public final class PlanCompileGraph {
                         precise(dispatch.unit(), require(GlobalUnitKind.ERROR_ROUTER));
                         precise(dispatch.unit(), require(GlobalUnitKind.CLIENT_EXCEPTION));
                     }
+                    // The facets and facet value records reference nothing generated; their
+                    // readers reach them by the precise edges in addBlanketEdges.
+                    case GlobalCommand.Facets ignored -> { }
                     case GlobalCommand.Fixed fixed -> addFixedKindEdges(fixed.kind(), fixed.units());
                 }
             }
@@ -304,6 +307,8 @@ public final class PlanCompileGraph {
                      SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }
+                // Always a Facets row, never a fixed one; its edges are the row's arm above.
+                case FACETS -> { }
                 // The context interface always names the per-operation carrier.
                 case GRAPHITRON_CONTEXT -> runtimeUnit("TenantConnections")
                     .ifPresent(t -> precise(units.get(0), t));
@@ -684,6 +689,13 @@ public final class PlanCompileGraph {
                 declared(fetchers, context);
                 declared(schemaClass, fetchers);
             }
+            // A faceted connection's facets delegate builds its facets record.
+            for (var row : plan.typeUnits().connectionFetchers()) {
+                if (schema.type(row.typeName()) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType ct
+                        && !ct.facets().isEmpty()) {
+                    precise(row.connection(), require(GlobalUnitKind.FACETS));
+                }
+            }
             for (var row : plan.typeUnits().schemaShapes()) {
                 declared(schemaClass, row.unit());
                 declared(row.unit(), lightFetcher);
@@ -696,6 +708,12 @@ public final class PlanCompileGraph {
                     if (schema.type(row.typeName()) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType pageInfo
                             && !pageInfo.declaredSpecFields().isEmpty()) {
                         precise(row.unit(), require(GlobalUnitKind.PAGE_INFO));
+                    }
+                    // A facets or facet value type's fields are registered to read its record.
+                    var type = schema.type(row.typeName());
+                    if (type instanceof no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType
+                            || type instanceof no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType) {
+                        precise(row.unit(), require(GlobalUnitKind.FACETS));
                     }
                 }
             }

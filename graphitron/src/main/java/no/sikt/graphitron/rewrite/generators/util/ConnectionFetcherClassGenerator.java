@@ -47,7 +47,7 @@ public final class ConnectionFetcherClassGenerator {
         // Facets delegate under the same has-facets gate as the registration emitter,
         // so the code-registry reference and the method can never drift.
         if (!ct.facets().isEmpty()) {
-            conn.addMethod(facetsDelegate(helper, outputPackage));
+            conn.addMethod(facetsDelegate(ct, helper, outputPackage));
         }
         var edge = TypeSpec.classBuilder(ct.edgeTypeName() + no.sikt.graphitron.plan.GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
@@ -75,13 +75,37 @@ public final class ConnectionFetcherClassGenerator {
      * redacted error; the page is unaffected) while the sibling delegates stay plain reads with no
      * SQL of their own. {@code totalCount} shares the gap by precedent and is tracked separately.
      */
-    private static MethodSpec facetsDelegate(ClassName helper, String outputPackage) {
+    private static MethodSpec facetsDelegate(GraphitronType.ConnectionType ct, ClassName helper,
+            String outputPackage) {
+        var facetsClass = ClassName.get(outputPackage + ".util", FacetsClassGenerator.CLASS_NAME);
+        var record = facetsClass.nestedClass(
+            no.sikt.graphitron.model.grammar.FacetNaming.facetsTypeName(ct.name()));
+        // The helper's buckets, by facet, become the connection's facets record: one component per
+        // facet in the facets type's field order, each bucket a record of its facet value type.
+        // A facet the client did not select has no buckets and its component stays null, unread.
+        var components = com.palantir.javapoet.CodeBlock.builder();
+        for (int i = 0; i < ct.facets().size(); i++) {
+            var spec = ct.facets().get(i);
+            if (i > 0) {
+                components.add(",\n");
+            }
+            components.add("buckets.get($S) == null ? null : buckets.get($S).stream()"
+                + ".map(e -> new $T(e.get(\"value\"), (Integer) e.get(\"count\"))).toList()",
+                spec.inputFieldName(), spec.inputFieldName(),
+                facetsClass.nestedClass(spec.facetValueTypeName()));
+        }
+        var buckets = com.palantir.javapoet.ParameterizedTypeName.get(ClassName.get(java.util.Map.class),
+            ClassName.get(String.class), com.palantir.javapoet.ParameterizedTypeName.get(
+                ClassName.get(java.util.List.class), com.palantir.javapoet.ParameterizedTypeName.get(
+                    ClassName.get(java.util.Map.class), ClassName.get(String.class), ClassName.get(Object.class))));
         return MethodSpec.methodBuilder("facets")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(ENV, "env")
             .beginControlFlow("try")
-            .addStatement("return $T.facets(env)", helper)
+            .addStatement("$T buckets = $T.facets(env)", buckets, helper)
+            .addStatement("if (buckets == null) return null")
+            .addStatement("return new $T(\n$>$L$<)", record, components.build())
             .nextControlFlow("catch ($T e)", Exception.class)
             .addStatement("return $L",
                 no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator

@@ -38,6 +38,10 @@ public sealed interface GlobalCommand {
             if (kind == null) {
                 throw new IllegalArgumentException("a global command requires a unit kind");
             }
+            if (kind == GlobalUnitKind.FACETS) {
+                throw new IllegalArgumentException(
+                    "the facets family's records are schema-dependent; produce a Facets row, never a fixed one");
+            }
             if (kind == GlobalUnitKind.ENTITY_FETCHER_DISPATCH) {
                 throw new IllegalArgumentException(
                     "the entity dispatch family's outbound references are schema-dependent;"
@@ -88,4 +92,44 @@ public sealed interface GlobalCommand {
             return List.of(unit);
         }
     }
+
+    /**
+     * The facets family's row: one record per facet value type (its {@code value} and
+     * {@code count}) and one per facets type, a component per facet naming the facet value type
+     * its buckets are. Present exactly when the schema has a faceted connection.
+     */
+    record Facets(UnitRef unit, List<String> facetValueTypes, List<FacetsRecord> facetsTypes)
+            implements GlobalCommand {
+
+        public Facets {
+            Objects.requireNonNull(unit, "unit");
+            if (facetsTypes == null || facetsTypes.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "the facets row exists exactly when a faceted connection exists; an empty set is a producer bug");
+            }
+            facetValueTypes = List.copyOf(facetValueTypes);
+            facetsTypes = List.copyOf(facetsTypes);
+        }
+
+        @Override
+        public GlobalUnitKind kind() {
+            return GlobalUnitKind.FACETS;
+        }
+
+        @Override
+        public List<UnitRef> units() {
+            return List.of(unit);
+        }
+    }
+
+    /** One facets type: its name and, in field order, each facet's field and facet value type. */
+    record FacetsRecord(String name, List<FacetComponent> facets) {
+
+        public FacetsRecord {
+            facets = List.copyOf(facets);
+        }
+    }
+
+    /** One facet of a facets type: the field's name and the facet value type its buckets are. */
+    record FacetComponent(String fieldName, String facetValueType) {}
 }

@@ -39,6 +39,7 @@ class EmitPlanTest {
         GlobalUnitKind.ONE_OF_DIRECTIVE_SDL,
         GlobalUnitKind.ENTITY_FETCHER_DISPATCH,
         GlobalUnitKind.QUERY_NODE_FETCHER,
+        GlobalUnitKind.FACETS,
         GlobalUnitKind.GRAPHITRON_CONTEXT,
         GlobalUnitKind.TRANSACTION_PROVIDER,
         GlobalUnitKind.CONSTRAINT_VIOLATIONS,

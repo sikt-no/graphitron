@@ -350,8 +350,8 @@ The occurrences under a producer shape its query rather than add fetchers. A `CO
 selected column, or under an argument a predicate on it. A join path is a join in the producer's
 query, or a nested `multiset` for a list. A `NODE_ID` binding packs or unpacks key columns, and an
 `EXPRESSION` binding is its method's value selected in place. A field that neither produces nor needs
-a value of its own, a plain type's field reading its parent's row, is served by the default property
-fetcher and generates nothing of its own.
+a value of its own, a plain type's field reading its parent's row, generates no query of its own;
+like every field it is wired (`emitter-conventions.adoc` § Return types).
 
 Between these facts and the code sits the planning tier as it stands today: emit joins what it
 reads into command rows, one per thing it will write, and renders each into a class or a method.

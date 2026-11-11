@@ -306,6 +306,11 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "ConnectionHelper");
     }
 
+    /** {@code <pkg>.util.Facets}: the facets and facet value records of the faceted connections. */
+    public UnitRef facets() {
+        return unit(SUB_UTIL, "Facets");
+    }
+
     /** {@code <pkg>.util.PageInfo}: the page info every connection shares. */
     public UnitRef pageInfo() {
         return unit(SUB_UTIL, "PageInfo");

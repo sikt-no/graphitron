@@ -5,7 +5,8 @@ package no.sikt.graphitron.command;
  * that commits a fixed-name unit set per run (the {@code GeneratedUnits} {@code singleton} /
  * {@code rootUnit} naming schemes) rather than one unit per schema type. Each kind appears at
  * most once in a produced plan; most appear exactly once, and the gated kinds
- * ({@link #ONE_OF_DIRECTIVE_SDL}, {@link #ENTITY_FETCHER_DISPATCH}, {@link #QUERY_NODE_FETCHER})
+ * ({@link #ONE_OF_DIRECTIVE_SDL}, {@link #ENTITY_FETCHER_DISPATCH}, {@link #QUERY_NODE_FETCHER},
+ * {@link #FACETS})
  * are absent when their producer-side membership predicate excludes them.
  *
  * <p>Seven kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
@@ -30,6 +31,8 @@ public enum GlobalUnitKind {
     CONNECTION_HELPER,
     /** The page info every connection hands its {@code pageInfo} field, one class shared by all. */
     PAGE_INFO,
+    /** Present exactly when the schema has a faceted connection: the facets and facet value records. */
+    FACETS,
     /** Present exactly when the schema is federated and uses {@code @oneOf}. */
     ONE_OF_DIRECTIVE_SDL,
     SELECTION_OCCURRENCES,

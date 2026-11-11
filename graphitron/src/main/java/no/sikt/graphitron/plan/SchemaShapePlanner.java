@@ -76,7 +76,8 @@ public final class SchemaShapePlanner {
      * rule per population, mirroring the retired registrations emitter's construction gates:
      * connection and edge carriers always (their delegate methods exist unconditionally), and the
      * shared page info where it declares a specification field, each reading the generated
-     * {@code PageInfo}'s member;
+     * {@code PageInfo}'s member; the facets and facet value types always, each field reading its
+     * generated record's component;
      * fetcher-hosting classifications exactly when the type owns a classified coordinate (an
      * all-unclassified body would be empty and its call site an orphan); everything else via
      * the reach fold's {@link NestingReach#ownsFetchers} gate. A hosting classification that is
@@ -86,6 +87,9 @@ public final class SchemaShapePlanner {
     private static boolean registersFetchers(GraphitronSchema schema, NestingReach reach,
                                              String name, GraphitronType type) {
         if (type instanceof GraphitronType.ConnectionType || type instanceof GraphitronType.EdgeType) {
+            return true;
+        }
+        if (type instanceof GraphitronType.FacetsType || type instanceof GraphitronType.FacetValueType) {
             return true;
         }
         if (type instanceof GraphitronType.PageInfoType pageInfo) {

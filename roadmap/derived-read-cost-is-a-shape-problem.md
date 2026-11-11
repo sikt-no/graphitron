@@ -280,12 +280,17 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     declares registered to its member; the specification's fields sit on
     `GraphitronType.PageInfoType` until "A connection is recognised by the specification's shape"
     states them as positions, and the wiring's leaf arms in the schema-shape planner and the
-    registrations emitter leave with the connection units. Open for Alf and Filip: a field an
-    author adds to `PageInfo` beyond the specification is still unwired; refused, or left with the
-    other custom connection fields?
-  * The facets types are served by graphql-java's `PropertyDataFetcher` reading maps today, which
-    the wiring rule forbids; `code-generation-triggers.adoc` still says a plain field is served by
-    the default property fetcher.
+    registrations emitter leave with the connection units. A field an author adds to `PageInfo`
+    beyond the specification is refused (Alf, 2026-11-11); the refusal is owed, with an existing
+    code if one fits and the reference page that states it.
+  * The facets types are wired to `util.Facets`, a record per facets type (one component per facet)
+    and per facet value type (`Object value`, `int count`: a facet value type is shared by columns
+    of different Java types). Rendered from a facets command row the plan produces off each faceted
+    connection's facet specs, the source the facets delegate reads too, since the store's facet
+    relations are views over views today; the command row goes when R606 stores the facets
+    derivation and a store-reading emitter writes the records. The per-connection facets delegate builds the record from
+    the helper's buckets, and its registrations arm, its schema-shape planner arm and its
+    compile-graph edges leave with the connection units.
   * Removing `ConnectionHelper.totalCount(env)`, which `runtime-api.adoc` documents, breaks
     consumers: that commit is `feat!` with a `BREAKING-CHANGE:` footer.
   * `totalCount` and facets read the producer's arguments: the count's condition and each facet's
@@ -297,9 +302,6 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   * `PageInfo` is one generated class shared by every connection, and each facets type and facet
     value type has a generated class of its own (Alf, 2026-11-11; `emitter-conventions.adoc`
     § Return types).
-  * **The facets fields are wired** `open`. A generated class for each facets type and facet value
-    type, each field explicitly registered, replaces the maps the facets resolver returns. Pinned by
-    the sakila facets execution tests.
   * "A count or facets graphitron cannot run is a defect" removes the null paths, and
     "A connection is recognised by the specification's shape" states the positions; both above,
     both before the classes.
