@@ -17,6 +17,10 @@ that is renamed or changes its signature fails the build or the classify-time ch
 resolving to null on a request. This holds for the values graphitron generates as much as for the
 consumer's own classes.
 
+A connection's `PageInfo` is one generated class shared by every connection, its fields registered
+like any other (Alf, 2026-11-11): the page info a connection hands its `pageInfo` field is an
+instance of it, never a map.
+
 == Selection-aware queries
 
 `DataFetchingFieldSelectionSet` and `SelectedField` are threaded through all table method
