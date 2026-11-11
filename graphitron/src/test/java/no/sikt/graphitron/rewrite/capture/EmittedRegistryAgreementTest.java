@@ -147,7 +147,7 @@ class EmittedRegistryAgreementTest {
                 // hands back the store-derived schema now, so going through it would
                 // compare the derivation with itself and agree vacuously.
                 var bundle = GraphitronSchemaBuilder.buildBundle(
-                    TestSchemaHelper.parseRegistryWithPrelude(sdl), ctx);
+                    TestSchemaHelper.parseRegistryWithPrelude(sdl), ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none());
                 incumbent = bundle.assembled();
                 model = bundle.model();
             } catch (RuntimeException e) {

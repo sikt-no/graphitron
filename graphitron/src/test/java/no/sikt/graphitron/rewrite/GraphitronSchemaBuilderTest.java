@@ -6568,7 +6568,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     void build_throwsWhenDirectiveMissingFromRegistry() {
         TypeDefinitionRegistry registry = new SchemaParser().parse("type Query { x: String }");
-        assertThatThrownBy(() -> GraphitronSchemaBuilder.build(registry, TestConfiguration.testContext()))
+        assertThatThrownBy(() -> GraphitronSchemaBuilder.build(registry, TestConfiguration.testContext(), no.sikt.graphitron.rewrite.model.EntityResolutions.none()))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("@");
     }

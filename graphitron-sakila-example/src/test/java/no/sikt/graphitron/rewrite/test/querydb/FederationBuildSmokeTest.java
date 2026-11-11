@@ -356,12 +356,11 @@ class FederationBuildSmokeTest {
     /**
      * A {@code @key(resolvable: false)} on a non-table-bound type (here {@code FilmRefStub},
      * a service-bound record carrier with no {@code @table} / {@code @node}) is a reference-only
-     * entity stub. {@code EntityResolutionBuilder} accepts it without demoting and without an
-     * {@code EntityResolution} (no backing table, no {@code _entities} handler), and the stub plus
-     * its {@code @key(... resolvable: false)} must still reach the served {@code _service.sdl} so
-     * the supergraph composer sees the reference. Pins the non-table-bound accept path end-to-end;
-     * the boundary (mixed resolvable/non-resolvable keys still rejects) is unit-covered in
-     * {@code EntityResolutionBuilderTest}.
+     * entity stub. It is accepted with no entity entry (no backing table, no {@code _entities}
+     * handler), and the stub plus its {@code @key(... resolvable: false)} must still reach the served
+     * {@code _service.sdl} so the supergraph composer sees the reference. Pins the non-table-bound
+     * accept path end-to-end; the boundary (mixed resolvable/non-resolvable keys still rejects) is
+     * pinned by the {@code defects/entity-key} fact document.
      */
     @Test
     void serviceSdlExposesNonTableBoundResolvableFalseStub() {

@@ -138,7 +138,7 @@ public final class QueryViewRenderer {
         Set<String> internal = prelude.directives();
         String full = prelude.text() + "\n" + fixtureSdl;
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
-        GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
+        GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext(), no.sikt.graphitron.rewrite.model.EntityResolutions.none()).assembled();
 
         Document doc = new Parser().parseDocument(selection);
         Touched touched = new Touched();

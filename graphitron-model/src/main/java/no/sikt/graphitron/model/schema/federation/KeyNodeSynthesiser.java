@@ -79,8 +79,8 @@ public final class KeyNodeSynthesiser {
      * Returns {@code true} when the type already carries a {@code @key(fields: "id", ...)}
      * directive, regardless of {@code resolvable:}. Compound keys ({@code "id sku"}) and
      * other-field keys ({@code "sku"}) do not count: synthesis still fires because federation
-     * needs the {@code "id"} alternative present for a node's implicit contract, and
-     * {@code EntityResolutionBuilder} will record both keys as separate alternatives.
+     * needs the {@code "id"} alternative present for a node's implicit contract, and the entity
+     * dispatch records both keys as separate alternatives.
      *
      * <p>The fields-argument string is compared after the {@link FederationKeyFieldsParser}
      * has accepted it; a malformed {@code fields:} string here is reported elsewhere by the

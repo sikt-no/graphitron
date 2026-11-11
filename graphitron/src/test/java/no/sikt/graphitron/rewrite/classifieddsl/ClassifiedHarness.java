@@ -96,7 +96,7 @@ public final class ClassifiedHarness {
     public static Result classify(String fixtureSdl) {
         String full = CorpusDocuments.prelude() + "\n" + fixtureSdl;
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
-        GraphitronSchema schema = GraphitronSchemaBuilder.build(registry, TestConfiguration.testContext());
+        GraphitronSchema schema = GraphitronSchemaBuilder.build(registry, TestConfiguration.testContext(), no.sikt.graphitron.rewrite.model.EntityResolutions.none());
 
         var fields = new ArrayList<FieldCase>();
         var types = new ArrayList<TypeCase>();

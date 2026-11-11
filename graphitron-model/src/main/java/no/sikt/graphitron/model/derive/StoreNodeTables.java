@@ -155,7 +155,7 @@ public final class StoreNodeTables {
      * <p>Reads {@code sql_table}, {@code sql_schema}, {@code sql_column}, {@code sql_primary_key} and
      * {@code sql_constraint_column}, which a caller outside this class folds into its own reads.
      */
-    static Optional<TableRef> tableRef(DSLContext dsl, String sourceName, String tableSchema,
+    public static Optional<TableRef> tableRef(DSLContext dsl, String sourceName, String tableSchema,
                                        String tableName) {
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;

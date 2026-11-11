@@ -111,3 +111,15 @@ extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   Rental,    NODE, id,     TRUE,       1
   Staff,     NODE, id,     TRUE,       1
   """)
+
+# How each authored key field binds at its entity's table: a column of the table, or the node's own id
+# alone. A field with no row binds nothing there, which is the refusal above: Staff's id beside a
+# column, Payment's node id reference, and Film's name it does not declare, nested selection and path.
+extend schema @expectEquals(relation: "graphitron_key_field_binding", rows: """
+  type_name, ordinal, position, field_name, kind
+  Actor,     0,       0,        id,         NODE_ID
+  Film,      0,       0,        filmId,     COLUMN
+  Rental,    0,       0,        id,         COLUMN
+  Staff,     0,       1,        firstName,  COLUMN
+  Store,     0,       0,        storeId,    COLUMN
+  """)

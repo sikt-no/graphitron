@@ -443,7 +443,7 @@ class IncrementalCompileHarnessTest {
         // parse + buildBundle matches the generator's attributed pipeline). The plan rides the
         // result: the projection reads what the run actually rendered from.
         TypeDefinitionRegistry registry = new SchemaParser().parse(directivesPrelude() + schemaText);
-        var model = GraphitronSchemaBuilder.buildBundle(registry, ctx).model();
+        var model = GraphitronSchemaBuilder.buildBundle(registry, ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none()).model();
         return new Generated(model, result.plan(), result.fixedRuntime(), result.emittedUnits(),
             result.changedUnits(), ctx.outputDirectory());
     }

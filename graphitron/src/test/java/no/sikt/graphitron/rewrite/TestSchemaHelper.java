@@ -56,7 +56,7 @@ public final class TestSchemaHelper {
 
     public static GraphitronSchema buildSchema(String schemaText, RunContext ctx) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
-        return GraphitronSchemaBuilder.build(registry, ctx);
+        return GraphitronSchemaBuilder.build(registry, ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none());
     }
 
     /**
@@ -91,9 +91,19 @@ public final class TestSchemaHelper {
      *
      * <p>The capture is the cost, and it is per call. What a fixture gets back is what a run would
      * emit for the same document, which is the only version of this worth asserting against.
+     *
+     * <p>No store with a catalog stands behind the model, so it is built with no entities: it plans no
+     * entity dispatch, no entity tenant routing and no {@code Query.node} resolution. A fixture whose
+     * subject is one of those reads {@link #storeBackedBundle}.
      */
     public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RunContext ctx) {
-        var bundle = GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
+        return withEmittedSchema(schemaText, ctx, GraphitronSchemaBuilder.buildBundle(
+            parseRegistryWithPrelude(schemaText), ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none()));
+    }
+
+    /** {@code bundle} with its assembled schema replaced by the emitted one derived for the text. */
+    private static GraphitronSchemaBuilder.Bundle withEmittedSchema(String schemaText, RunContext ctx,
+            GraphitronSchemaBuilder.Bundle bundle) {
         return new GraphitronSchemaBuilder.Bundle(bundle.model(), emittedSchema(schemaText, ctx),
             bundle.federationLink(), bundle.usesOneOf(), bundle.decodeLedger(), bundle.columnBindings());
     }
@@ -110,7 +120,7 @@ public final class TestSchemaHelper {
 
     /** {@link #walkBundle(String)} under the run context {@code ctx}. */
     public static GraphitronSchemaBuilder.Bundle walkBundle(String schemaText, RunContext ctx) {
-        return GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
+        return GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none());
     }
 
     /**
@@ -203,12 +213,41 @@ public final class TestSchemaHelper {
     }
 
     /** A store-backed plan and the store's record accessors, read in the one capture window. */
-    private record StoreBacked(no.sikt.graphitron.plan.EmitPlan plan,
+    private record StoreBacked(GraphitronSchemaBuilder.Bundle bundle, no.sikt.graphitron.plan.EmitPlan plan,
                                no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {}
+
+    /**
+     * The bundle a run produces for {@code schemaText}, its model built with the entities a store
+     * captured against the test catalog states, as a run's is. The arm for a fixture whose subject is
+     * entity dispatch, entity tenant routing or node resolution, which {@link #buildBundle} plans empty.
+     *
+     * @param directory a temp directory the fixture is written into, typically a {@code @TempDir}
+     */
+    public static GraphitronSchemaBuilder.Bundle storeBackedBundle(java.nio.file.Path directory,
+            String schemaText) {
+        return storeBackedBundle(directory, schemaText, TestConfiguration.testContext());
+    }
+
+    /** {@link #storeBackedBundle(java.nio.file.Path, String)} under a context the caller names. */
+    public static GraphitronSchemaBuilder.Bundle storeBackedBundle(java.nio.file.Path directory,
+            String schemaText, RunContext ctx) {
+        try (var store = CapturedStore.ofCatalogWith(directory, CapturedStore.GRAPH, schemaText,
+                no.sikt.graphitron.model.test.CatalogInput.of(ctx), testClasspath(),
+                no.sikt.graphitron.model.run.SubjectConfig.none())) {
+            return storeBackedBundle(schemaText, ctx,
+                new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH));
+        }
+    }
+
+    private static GraphitronSchemaBuilder.Bundle storeBackedBundle(String schemaText, RunContext ctx,
+            no.sikt.graphitron.model.read.StoreHandle handle) {
+        return withEmittedSchema(schemaText, ctx, GraphitronSchemaBuilder.buildBundle(
+            parseRegistryWithPrelude(schemaText), ctx,
+            no.sikt.graphitron.rewrite.schema.federation.StoreEntityResolutions.read(handle)));
+    }
 
     private static StoreBacked storeBacked(java.nio.file.Path directory, String schemaText, RunContext ctx,
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
-        var bundle = buildBundle(schemaText, ctx);
         // The run's outbox block, and the session handle its payload may read a member of, are the
         // configuration this capture carries over; everything else a context holds stays as the plan
         // tests have always seen it.
@@ -223,7 +262,8 @@ public final class TestSchemaHelper {
                 no.sikt.graphitron.model.test.CatalogInput.of(ctx),
                 testClasspath(), configuration)) {
             var handle = new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH);
-            return new StoreBacked(no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
+            var bundle = storeBackedBundle(schemaText, ctx, handle);
+            return new StoreBacked(bundle, no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
                 bundle.federationLink(), bundle.usesOneOf(), ctx.outputPackage(), projections, handle),
                 no.sikt.graphitron.emit.RecordAccessorQuery.read(handle));
         }
@@ -247,9 +287,9 @@ public final class TestSchemaHelper {
     /** {@link #storeBackedFetchers(java.nio.file.Path, String)} under a context the caller names. */
     public static java.util.List<com.palantir.javapoet.TypeSpec> storeBackedFetchers(
             java.nio.file.Path directory, String schemaText, RunContext ctx) {
-        var bundle = buildBundle(schemaText, ctx);
         var backed = storeBacked(directory, schemaText, ctx,
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections.empty());
+        var bundle = backed.bundle();
         var plan = backed.plan();
         return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
             bundle.model(), bundle.assembled(), ctx.outputPackage(), plan.launchers(),

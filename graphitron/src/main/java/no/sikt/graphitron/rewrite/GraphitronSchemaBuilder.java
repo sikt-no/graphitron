@@ -34,6 +34,7 @@ import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
+import no.sikt.graphitron.rewrite.model.EntityResolutions;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -48,7 +49,6 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.Rejection.InvalidSchema.CaseFoldCollision.Origin;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder;
 import no.sikt.graphitron.model.schema.federation.FederationSpec;
 import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 
@@ -80,7 +80,7 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
  * <p>This is the directive-reading boundary: the only place in the pipeline that reads schema
  * directives. Downstream code works exclusively with the produced model values.
  *
- * <p>The Maven plugin calls {@link #build(TypeDefinitionRegistry, RunContext)} before running
+ * <p>The Maven plugin calls {@link #build(TypeDefinitionRegistry, RunContext, EntityResolutions)} before running
  * {@link GraphitronSchemaValidator#validate(GraphitronSchema)}.
  */
 public class GraphitronSchemaBuilder {
@@ -117,7 +117,7 @@ public class GraphitronSchemaBuilder {
      * model does not carry it; both surface together. Production callers pass an
      * {@link AttributedRegistry} carrying the {@code federationLink} flag captured from
      * {@link FederationLinkApplier#apply}'s return value; tests that hand-craft a registry use
-     * the convenience overload {@link #buildBundle(TypeDefinitionRegistry, RunContext)},
+     * the convenience overload {@link #buildBundle(TypeDefinitionRegistry, RunContext, EntityResolutions)},
      * which derives the flag via {@link AttributedRegistry#from(TypeDefinitionRegistry)}.
      *
      * <p>{@code usesOneOf} is {@code federationLink}'s sibling schema-level fact, landed once
@@ -141,10 +141,11 @@ public class GraphitronSchemaBuilder {
      * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
      * a capture. Wraps via
      * {@link AttributedRegistry#from(TypeDefinitionRegistry)}; production code uses
-     * {@link #build(AttributedRegistry, RunContext)} directly.
+     * {@link #build(AttributedRegistry, RunContext, EntityResolutions)} directly.
      */
-    public static GraphitronSchema build(TypeDefinitionRegistry registry, RunContext ctx) {
-        return build(AttributedRegistry.from(registry), ctx);
+    public static GraphitronSchema build(TypeDefinitionRegistry registry, RunContext ctx,
+                                         EntityResolutions entities) {
+        return build(AttributedRegistry.from(registry), ctx, entities);
     }
 
     /**
@@ -152,30 +153,34 @@ public class GraphitronSchemaBuilder {
      * resulting {@link GraphitronSchema}. The registry must already include the Graphitron
      * directive definitions.
      */
-    public static GraphitronSchema build(AttributedRegistry attributed, RunContext ctx) {
-        return buildBundle(attributed, ctx).model();
+    public static GraphitronSchema build(AttributedRegistry attributed, RunContext ctx,
+                                         EntityResolutions entities) {
+        return buildBundle(attributed, ctx, entities).model();
     }
 
     /**
-     * Convenience overload for tests; see {@link #build(TypeDefinitionRegistry, RunContext)}.
+     * Convenience overload for tests; see {@link #build(TypeDefinitionRegistry, RunContext, EntityResolutions)}.
      */
-    public static Bundle buildBundle(TypeDefinitionRegistry registry, RunContext ctx) {
-        return buildBundle(AttributedRegistry.from(registry), ctx);
+    public static Bundle buildBundle(TypeDefinitionRegistry registry, RunContext ctx,
+                                     EntityResolutions entities) {
+        return buildBundle(AttributedRegistry.from(registry), ctx, entities);
     }
 
     /**
      * Classifies the {@link AttributedRegistry} and returns both the classified model and the
      * assembled {@link GraphQLSchema}. See {@link Bundle}.
      */
-    public static Bundle buildBundle(AttributedRegistry attributed, RunContext ctx) {
-        return buildBundle(attributed, assembleOrFail(SchemaAssembly.of(attributed.registry())), ctx);
+    public static Bundle buildBundle(AttributedRegistry attributed, RunContext ctx,
+                                     EntityResolutions entities) {
+        return buildBundle(attributed, assembleOrFail(SchemaAssembly.of(attributed.registry())), ctx,
+            entities);
     }
 
     /**
      * The assembly refusal a caller with nothing to record about it wants: the federation-recipe
      * translation where it applies, and otherwise the {@code SchemaProblem} graphql-java raised.
      *
-     * <p>Split out from {@link #buildBundle(AttributedRegistry, RunContext)} because the
+     * <p>Split out from {@link #buildBundle(AttributedRegistry, RunContext, EntityResolutions)} because the
      * pipeline assembles ahead of classification (so the refusal is captured as facts before
      * anything throws) and then needs this same translation at its own failure arm. One home for
      * it, so the two paths cannot disagree about which exception an unassemblable schema earns.
@@ -200,7 +205,8 @@ public class GraphitronSchemaBuilder {
      * twice would be both wasted work and two sources of truth, with the captured verdict coming
      * from a different call than the one the build actually classified.
      */
-    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx) {
+    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx,
+                                     EntityResolutions entities) {
         var registry = attributed.registry();
         boolean federationLink = attributed.federationLink();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
@@ -211,7 +217,7 @@ public class GraphitronSchemaBuilder {
         bctx.typeBuilder = typeBuilder;
         var fieldBuilder = new FieldBuilder(bctx, svc);
         fieldBuilder.setTypeBuilder(typeBuilder);
-        var result = buildSchema(bctx, typeBuilder, fieldBuilder);
+        var result = buildSchema(bctx, typeBuilder, fieldBuilder, entities);
         return new Bundle(result.model, result.assembled, federationLink,
             OneOfDirectiveSdl.usesOneOf(result.assembled), bctx.decodeLedger(),
             bctx.columnBindingLedger());
@@ -279,7 +285,8 @@ public class GraphitronSchemaBuilder {
 
     private record BuildResult(GraphitronSchema model, GraphQLSchema assembled) {}
 
-    private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
+    private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder,
+                                           EntityResolutions entities) {
         validateDirectiveSchema(ctx);
         // The single classify-and-emit walk: one traversal of the reachable surface (output and
         // input edges alike) classifies each type on enter and the fields of each reached object
@@ -326,8 +333,8 @@ public class GraphitronSchemaBuilder {
         rejectNonIdNodeId(ctx);
         rejectFacetMisuse(ctx, connectionSynthesis);
         var classifiedFields = ctx.fieldRegistry.entries();
-        Map<String, EntityResolution> entitiesByType =
-            EntityResolutionBuilder.build(ctx.typeRegistry, classifiedFields, rebuiltAssembled);
+        // The entities, read from the store before the build: an input, not a derivation.
+        Map<String, EntityResolution> entitiesByType = entities.byType();
         // The ancestor-product arrival fold, computed once over the assembled (pre-connection-
         // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk
         // order; threaded onto the schema for OutputField.source(Arrival) consumers to read
@@ -1039,9 +1046,7 @@ public class GraphitronSchemaBuilder {
      * make warning multiplicity a function of memo timing.
      *
      * <p>The plain {@link BuildWarning.NoRule} arm (not {@link BuildWarning.LintFinding}) is
-     * deliberate: this is a deprecation announcement, not a lint-engine finding. The live
-     * precedent for {@code NoRule} is the federation compound-key advisory in
-     * {@link EntityResolutionBuilder}. It carries no fix: {@code NoRule} has no fix field, and
+     * deliberate: this is a deprecation announcement, not a lint-engine finding. It carries no fix: {@code NoRule} has no fix field, and
      * {@link no.sikt.graphitron.model.lint.LintFix#deleteBareAppliedDirective} gates on the
      * directive definition declaring no arguments, which {@code @table} does not satisfy.
      * The advisory still reaches the LSP as a warning squiggle, which projects every located

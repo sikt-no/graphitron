@@ -645,8 +645,7 @@ public sealed interface GraphitronType
     /**
      * A type that could not be classified — examples include an unresolvable {@code @table}
      * name, mutually exclusive directives co-occurring, malformed {@code @node} key columns,
-     * a participant-list error on an interface or union, and federation-side {@code @key}
-     * rejections from {@link no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder}.
+     * and a participant-list error on an interface or union.
      * A schema containing unclassified types is invalid — the
      * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports a
      * {@link no.sikt.graphitron.model.diagnostics.ValidationError} whose kind is projected from the

@@ -22,9 +22,8 @@ public final class FederationKeyFieldsParser {
     /**
      * Parses {@code fields} and returns the field names in declaration order.
      *
-     * @throws ParseException when the input violates the grammar; the caller (e.g.
-     *         {@code EntityResolutionBuilder}) wraps the message into a {@code ValidationError}
-     *         with the directive's source location.
+     * @throws ParseException when the input violates the grammar; the caller wraps the message
+     *         into a {@code ValidationError} with the directive's source location.
      */
     public static List<String> parse(String fields) {
         if (fields == null) {

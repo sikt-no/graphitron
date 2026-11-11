@@ -16,9 +16,8 @@ import java.util.Optional;
  * is meaningful, rather than behind a nullable field:
  *
  * <ul>
- *   <li>{@link NoRule}: an untagged advisory not attributable to a lint rule (for example the
- *       federation compound-key advisory {@code EntityResolutionBuilder} emits). Shape-parallel to
- *       the previous flat record.</li>
+ *   <li>{@link NoRule}: an untagged advisory not attributable to a lint rule. Shape-parallel
+ *       to the previous flat record.</li>
  *   <li>{@link LintFinding}: a lint-rule finding carrying a typed {@link LintRule} and an
  *       {@link Optional} {@link LintFix}. The classifier-owned advisories (redundant {@code @record},
  *       {@code @splitQuery}-on-record, same-table {@code @asConnection}) are this arm too, tagged at

@@ -39,7 +39,7 @@ class FederationRecipeDiagnosticTest {
                 "type Foo @key(fields: \"id\") { id: ID! }\ntype Query { foo: Foo }");
         var ctx = TestConfiguration.testContext();
 
-        assertThatThrownBy(() -> GraphitronSchemaBuilder.buildBundle(registry, ctx))
+        assertThatThrownBy(() -> GraphitronSchemaBuilder.buildBundle(registry, ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none()))
                 .isInstanceOf(ValidationFailedException.class)
                 .satisfies(ex -> {
                     var errors = ((ValidationFailedException) ex).errors();
@@ -62,7 +62,7 @@ class FederationRecipeDiagnosticTest {
         var registry = registryWithDirectives("type Foo { id: ID! @madeUp }\ntype Query { foo: Foo }");
         var ctx = TestConfiguration.testContext();
 
-        assertThatThrownBy(() -> GraphitronSchemaBuilder.buildBundle(registry, ctx))
+        assertThatThrownBy(() -> GraphitronSchemaBuilder.buildBundle(registry, ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none()))
                 .isNotInstanceOf(ValidationFailedException.class)
                 .hasMessageContaining("madeUp");
     }
@@ -83,7 +83,7 @@ class FederationRecipeDiagnosticTest {
         // Should pass makeExecutableSchema (classification/validation errors may still occur
         // for an incomplete schema, but none should be the recipe diagnostic).
         try {
-            GraphitronSchemaBuilder.buildBundle(registry, ctx);
+            GraphitronSchemaBuilder.buildBundle(registry, ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none());
         } catch (ValidationFailedException e) {
             e.errors().forEach(err ->
                 assertThat(err.message()).doesNotContain("Pick one:"));
@@ -101,7 +101,7 @@ class FederationRecipeDiagnosticTest {
         var ctx = TestConfiguration.testContext();
 
         try {
-            var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
+            var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none());
             assertThat(bundle.federationLink()).isTrue();
         } catch (ValidationFailedException ignored) {
             // Classification/validation errors are irrelevant here; the flag is set before those.
@@ -113,7 +113,7 @@ class FederationRecipeDiagnosticTest {
         var registry = registryWithDirectives("type Foo { id: ID! }\ntype Query { foo: String }");
         var ctx = TestConfiguration.testContext();
 
-        var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
+        var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx, no.sikt.graphitron.rewrite.model.EntityResolutions.none());
         assertThat(bundle.federationLink()).isFalse();
     }
 }
