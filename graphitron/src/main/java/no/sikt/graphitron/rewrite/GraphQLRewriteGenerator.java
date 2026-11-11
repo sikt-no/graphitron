@@ -677,7 +677,12 @@ public class GraphQLRewriteGenerator {
             case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(
                 no.sikt.graphitron.emit.NodeIdEncoderQuery.read(store), outputPackage, legacyKeyShapes.shapes());
             case COLUMN_VALUES -> ColumnValuesClassGenerator.generate();
-            case ENTITY_FETCHER_DISPATCH -> EntityFetcherDispatchClassGenerator.generate(schema, outputPackage);
+            case ENTITY_FETCHER_DISPATCH -> {
+                var entities = no.sikt.graphitron.emit.EntityKeyQuery.read(store);
+                yield EntityFetcherDispatchClassGenerator.generate(entities,
+                    entityTenantRouting(schema, tenantKeyType, entities), Optional.ofNullable(tenantKeyType),
+                    outputPackage);
+            }
             case CONNECTION_RESULT -> ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null);
             case CONNECTION_HELPER -> ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null,
                 ctx.maxAllowedPageSize());
@@ -697,6 +702,21 @@ public class GraphQLRewriteGenerator {
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity);
             case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity);
         };
+    }
+
+    /**
+     * The entity dispatch's tenant routing: none in a single-tenant build, and in a multi-tenant one the
+     * walk's tenant fold over the classified entities, paired with the store's alternatives. The walk
+     * is this value's source until the tenant facts are stated in the store.
+     */
+    private static no.sikt.graphitron.rewrite.generators.util.EntityTenantRouting entityTenantRouting(
+            GraphitronSchema schema, TypeName tenantKeyType,
+            List<no.sikt.graphitron.emit.EntityKeyQuery.Entity> entities) {
+        if (tenantKeyType == null) {
+            return no.sikt.graphitron.rewrite.generators.util.EntityTenantRouting.none();
+        }
+        return no.sikt.graphitron.rewrite.generators.util.EntityTenantRouting.fromWalk(
+            schema.tenantBindings().byEntityType(), schema.entitiesByType(), entities);
     }
 
     private void writeCommand(GlobalCommand command, List<TypeSpec> specs, EmissionLog emittedThisRun) {

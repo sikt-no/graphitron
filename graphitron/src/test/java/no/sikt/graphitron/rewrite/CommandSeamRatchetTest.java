@@ -71,9 +71,10 @@ class CommandSeamRatchetTest {
      * place, and it has its own item.
      *
      * <p>9 to 7 when the node id encoder came to read its nodes from the store and the
-     * {@code Query.node} fetcher stopped reading the model for whether any node exists.
+     * {@code Query.node} fetcher stopped reading the model for whether any node exists; 7 to 6 when the
+     * entity dispatch came to render from the store's entities.
      */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 7;
+    private static final int MODEL_TAKING_ENTRY_POINTS = 6;
 
     /**
      * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.

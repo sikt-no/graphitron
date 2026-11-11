@@ -11,8 +11,7 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.ColumnRef;
-import no.sikt.graphitron.rewrite.model.EntityResolution;
-import no.sikt.graphitron.rewrite.model.KeyAlternative;
+import no.sikt.graphitron.emit.EntityKeyQuery;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 
 import javax.lang.model.element.Modifier;
@@ -59,7 +58,7 @@ final class SelectMethodBody {
      * entity).
      */
     static MethodSpec buildMethod(
-        EntityResolution entity, KeyAlternative alt, int altIndex,
+        EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
         String outputPackage, TenantBinding.EntityRepBound.TenantSource source
     ) {
         String methodName = "select" + entity.typeName() + "Alt" + altIndex;
@@ -76,21 +75,21 @@ final class SelectMethodBody {
     }
 
     private static CodeBlock body(
-        EntityResolution entity, KeyAlternative alt, int altIndex,
+        EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
         String outputPackage, TenantBinding.EntityRepBound.TenantSource source
     ) {
-        var jooqTableClass = CatalogRefs.tableClass(entity.table());
+        var jooqTableClass = CatalogRefs.className(entity.tableClass());
         var typeClass = ClassName.get(outputPackage + ".types", entity.typeName());
         String tableLocal = "t";
         String inputAlias = decap(entity.typeName()) + "Alt" + altIndex + "Input";
         List<ColumnRef> columns = switch (source) {
-            case null -> alt.columns();
-            case TenantBinding.EntityRepBound.TenantSource.KeyColumn ignored -> alt.columns();
+            case null -> EntityKeys.columns(alt);
+            case TenantBinding.EntityRepBound.TenantSource.KeyColumn ignored -> EntityKeys.columns(alt);
             // The key names no tenant, so the dispatcher appends the routed tenant as one more
             // cell of each binding, and the join matches it against the tenant column: the
             // lookup resolves exactly as a key carrying the tenant would.
             case TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault requestEntityDefault -> {
-                var withTenant = new java.util.ArrayList<>(alt.columns());
+                var withTenant = new java.util.ArrayList<>(EntityKeys.columns(alt));
                 withTenant.add(requestEntityDefault.tenantColumn());
                 yield List.copyOf(withTenant);
             }
@@ -100,7 +99,7 @@ final class SelectMethodBody {
         var b = CodeBlock.builder();
         b.addStatement("if (bindings.isEmpty()) return");
         b.addStatement("$T $L = $T.$L", jooqTableClass, tableLocal, jooqTableClass,
-            entity.table().javaFieldName());
+            entity.tableField());
 
         // The for-loop body stays here (not in the shared row-builder) because it decodes the
         // dispatcher-specific (idx, cols) binding tuple.

@@ -10,21 +10,18 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.EntityResolution;
-import no.sikt.graphitron.rewrite.model.KeyAlternative;
+import no.sikt.graphitron.emit.EntityKeyQuery;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 
 import javax.lang.model.element.Modifier;
-import java.util.Comparator;
 import java.util.List;
 
 /**
  * Generates the {@code EntityFetcherDispatch} class, the runtime dispatcher for the
  * Apollo Federation {@code Query._entities(representations:)} field.
  *
- * <p>Emitted only when the schema has at least one classified
- * {@link EntityResolution} entry. The generated class:
+ * <p>Rendered from the store's entities ({@link no.sikt.graphitron.emit.EntityKeyQuery}), and
+ * nothing when there are none. The generated class:
  * <ol>
  *   <li>{@code fetchEntities(env)}: reads {@code representations}, answers every one this
  *       subgraph cannot resolve (no {@code __typename}, or one outside
@@ -32,7 +29,7 @@ import java.util.List;
  *       path, dispatches the rest per {@code __typename} to a per-type handler, and returns
  *       {@code CompletableFuture<DataFetcherResult<List<Object>>>} preserving exact rep order.</li>
  *   <li>{@code handle<TypeName>(reps, indices, env, result)}: for each rep, selects the
- *       most-specific resolvable {@link KeyAlternative}, decodes the rep into a column-value
+ *       most-specific resolvable key alternative, decodes the rep into a column-value
  *       row (DIRECT: {@code ColumnValues.coerce}; NODE_ID: {@code NodeIdEncoder.decodeColumns}), and groups
  *       by alternative-index for batching.</li>
  *   <li>{@code select<TypeName>Alt<N>(bindings, env, dsl, result)}: issues one SELECT per
@@ -104,10 +101,14 @@ public final class EntityFetcherDispatchClassGenerator {
 
     private EntityFetcherDispatchClassGenerator() {}
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        var entities = schema.entitiesByType().values().stream()
-            .sorted(Comparator.comparing(EntityResolution::typeName))
-            .toList();
+    /**
+     * The dispatcher over {@code entities}, the store's entities in type name order. {@code tenantKey}
+     * is the request tenant set's element type in a multi-tenant build and empty in a single-tenant
+     * one, and {@code tenantRouting} says which entities route per tenant, by what; a single-tenant
+     * build passes {@link EntityTenantRouting#none()}.
+     */
+    public static List<TypeSpec> generate(List<EntityKeyQuery.Entity> entities, EntityTenantRouting tenantRouting,
+                                          java.util.Optional<TypeName> tenantKey, String outputPackage) {
         if (entities.isEmpty()) {
             return List.of();
         }
@@ -117,8 +118,7 @@ public final class EntityFetcherDispatchClassGenerator {
         // Multi-tenant routing for the dispatch surface: each tenant-scoped entity's grouping
         // widens per tenant at its classified tenant sources; global entities read the
         // default source. Null in single-tenant builds (byte-identical emission).
-        boolean multiTenant = schema.tenantScopes()
-            instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured;
+        boolean multiTenant = tenantKey.isPresent();
         var tenantConnections = ClassName.get(outputPackage + ".schema",
             ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
@@ -138,15 +138,14 @@ public final class EntityFetcherDispatchClassGenerator {
         for (var entity : entities) {
             HandleMethodBody.TenantRouting routing = multiTenant
                 ? new HandleMethodBody.TenantRouting(tenantConnections,
-                    schema.tenantBindings().byEntityType().get(entity.typeName()),
-                    schema.requestTenantKeyType().orElseThrow())
+                    tenantRouting.boundOf(entity.typeName()).orElse(null), tenantKey.orElseThrow())
                 : null;
             spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder, routing));
             var bound = routing == null ? null : routing.bound();
             for (int i = 0; i < entity.alternatives().size(); i++) {
                 var alt = entity.alternatives().get(i);
                 if (!alt.resolvable()) continue;
-                var source = bound == null ? null : HandleMethodBody.tenantSource(entity, bound, i);
+                var source = bound == null ? null : HandleMethodBody.tenantSource(entity, bound, alt, i);
                 spec.addMethod(buildSelectMethod(entity, alt, i, outputPackage, source));
             }
         }
@@ -160,10 +159,10 @@ public final class EntityFetcherDispatchClassGenerator {
      * {@code RESOLVABLE_TYPENAMES}: the entities with at least one resolvable key alternative,
      * sorted. A type outside it is one the router should never send here.
      */
-    private static FieldSpec buildResolvableTypenamesField(List<EntityResolution> entities) {
+    private static FieldSpec buildResolvableTypenamesField(List<EntityKeyQuery.Entity> entities) {
         var names = entities.stream()
-            .filter(EntityResolution::resolvable)
-            .map(EntityResolution::typeName)
+            .filter(EntityKeyQuery.Entity::resolvable)
+            .map(EntityKeyQuery.Entity::typeName)
             .sorted()
             .map(name -> CodeBlock.of("$S", name))
             .collect(CodeBlock.joining(", "));
@@ -224,7 +223,7 @@ public final class EntityFetcherDispatchClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildResolveByRepsMethod(List<EntityResolution> entities, boolean multiTenant) {
+    private static MethodSpec buildResolveByRepsMethod(List<EntityKeyQuery.Entity> entities, boolean multiTenant) {
         var listOfMap = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class)));
         return MethodSpec.methodBuilder(RESOLVE_BY_REPS_METHOD)
@@ -250,7 +249,7 @@ public final class EntityFetcherDispatchClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildTypenameForTypeIdMethod(List<EntityResolution> entities) {
+    private static MethodSpec buildTypenameForTypeIdMethod(List<EntityKeyQuery.Entity> entities) {
         // Map keyed by each @node entity's NodeId expectedTypeId (differs from the typename when
         // the consumer sets @node(typeId: ...)). Used by QueryNodeFetcher.rowsNodes after
         // peekTypeId to recover the GraphQL typename for synthesising reps.
@@ -263,15 +262,15 @@ public final class EntityFetcherDispatchClassGenerator {
             // @key-only entities have none. Its expectedTypeId is the wire prefix, keyed to the
             // typename here. Inclusion deliberately ignores resolvable.
             var nodeId = entity.alternatives().stream()
-                .filter(a -> a instanceof KeyAlternative.NodeId)
-                .map(a -> (KeyAlternative.NodeId) a)
+                .filter(a -> a instanceof EntityKeyQuery.Alternative.NodeId)
+                .map(a -> (EntityKeyQuery.Alternative.NodeId) a)
                 .findFirst()
                 .orElse(null);
             if (nodeId == null) continue;
             if (!first) b.add(",\n        ");
             else b.add("\n        ");
             first = false;
-            b.add("$T.entry($S, $S)", MAP, nodeId.expectedTypeId(), entity.typeName());
+            b.add("$T.entry($S, $S)", MAP, nodeId.typeId(), entity.typeName());
         }
         b.add(");\n");
         var fieldInit = b.build();
@@ -291,7 +290,7 @@ public final class EntityFetcherDispatchClassGenerator {
         return holder;
     }
 
-    private static CodeBlock resolveByRepsBody(List<EntityResolution> entities) {
+    private static CodeBlock resolveByRepsBody(List<EntityKeyQuery.Entity> entities) {
         var b = CodeBlock.builder();
         b.addStatement("Object[] result = new Object[reps.size()]");
         b.addStatement("$T<String, $T> byType = new $T<>()",
@@ -336,14 +335,14 @@ public final class EntityFetcherDispatchClassGenerator {
     }
 
     private static MethodSpec buildHandleMethod(
-        EntityResolution entity, String outputPackage, ClassName nodeIdEncoder,
+        EntityKeyQuery.Entity entity, String outputPackage, ClassName nodeIdEncoder,
         HandleMethodBody.TenantRouting routing
     ) {
         return new HandleMethodEmitter(entity, outputPackage, nodeIdEncoder, routing).build();
     }
 
     private static MethodSpec buildSelectMethod(
-        EntityResolution entity, KeyAlternative alt, int altIndex,
+        EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
         String outputPackage, TenantBinding.EntityRepBound.TenantSource source
     ) {
         return new SelectMethodEmitter(entity, alt, altIndex, outputPackage, source).build();
@@ -352,12 +351,12 @@ public final class EntityFetcherDispatchClassGenerator {
     // ----- Inner emitter classes -----
 
     private static final class HandleMethodEmitter {
-        final EntityResolution entity;
+        final EntityKeyQuery.Entity entity;
         final String outputPackage;
         final ClassName nodeIdEncoder;
         final HandleMethodBody.TenantRouting routing;
 
-        HandleMethodEmitter(EntityResolution entity, String outputPackage, ClassName nodeIdEncoder,
+        HandleMethodEmitter(EntityKeyQuery.Entity entity, String outputPackage, ClassName nodeIdEncoder,
                             HandleMethodBody.TenantRouting routing) {
             this.entity = entity;
             this.outputPackage = outputPackage;
@@ -384,13 +383,13 @@ public final class EntityFetcherDispatchClassGenerator {
     }
 
     private static final class SelectMethodEmitter {
-        final EntityResolution entity;
-        final KeyAlternative alt;
+        final EntityKeyQuery.Entity entity;
+        final EntityKeyQuery.Alternative alt;
         final int altIndex;
         final String outputPackage;
         final TenantBinding.EntityRepBound.TenantSource source;
 
-        SelectMethodEmitter(EntityResolution entity, KeyAlternative alt, int altIndex,
+        SelectMethodEmitter(EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
                             String outputPackage, TenantBinding.EntityRepBound.TenantSource source) {
             this.entity = entity;
             this.alt = alt;

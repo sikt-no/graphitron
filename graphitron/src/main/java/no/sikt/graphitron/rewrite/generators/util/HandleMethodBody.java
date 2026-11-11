@@ -7,12 +7,12 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.model.jooq.ColumnRef;
-import no.sikt.graphitron.rewrite.model.EntityResolution;
-import no.sikt.graphitron.rewrite.model.KeyAlternative;
+import no.sikt.graphitron.emit.EntityKeyQuery;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Emits the per-type {@code handle<TypeName>} method body for
@@ -76,19 +76,20 @@ final class HandleMethodBody {
      * {@code dslGlobal}). {@code tenantKey} is the boxed tenant column type, the type each tenant
      * group's key is held in.
      */
-    record TenantRouting(ClassName tenantConnections, TenantBinding.EntityRepBound bound, TypeName tenantKey) {}
+    record TenantRouting(ClassName tenantConnections, Map<EntityKeyQuery.Identity, EntityTenantRouting.Source> bound,
+                         TypeName tenantKey) {}
 
     /** Single-tenant emission: no tenant routing. */
-    static CodeBlock emit(EntityResolution entity, ClassName nodeIdEncoder) {
+    static CodeBlock emit(EntityKeyQuery.Entity entity, ClassName nodeIdEncoder) {
         return emit(entity, nodeIdEncoder, null);
     }
 
-    static CodeBlock emit(EntityResolution entity, ClassName nodeIdEncoder, TenantRouting routing) {
+    static CodeBlock emit(EntityKeyQuery.Entity entity, ClassName nodeIdEncoder, TenantRouting routing) {
         var b = CodeBlock.builder();
         boolean perTenant = routing != null && routing.bound() != null;
         emitGroupingMaps(b, perTenant);
-        if (perTenant && routing.bound().alternatives().stream()
-                .anyMatch(slot -> slot.source() instanceof TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault)) {
+        if (perTenant && routing.bound().values().stream()
+                .anyMatch(source -> source instanceof EntityTenantRouting.Source.RequestEntityDefault)) {
             // Read once per call: every rep of an alternative routed by the request groups on it.
             b.addStatement("$T entityDefaultTenant = $T.entityDefaultTenant(env).orElse(null)",
                 routing.tenantKey(), routing.tenantConnections());
@@ -111,7 +112,7 @@ final class HandleMethodBody {
         }
     }
 
-    private static void emitPerRepLoop(CodeBlock.Builder b, EntityResolution entity,
+    private static void emitPerRepLoop(CodeBlock.Builder b, EntityKeyQuery.Entity entity,
                                        ClassName nodeIdEncoder, TenantRouting routing) {
         b.beginControlFlow("for (int idx : indices)");
         b.addStatement("$T<String, Object> rep = reps.get(idx)", MAP);
@@ -136,30 +137,30 @@ final class HandleMethodBody {
         b.endControlFlow();
     }
 
-    private static String matchCondition(KeyAlternative alt) {
+    private static String matchCondition(EntityKeyQuery.Alternative alt) {
         var sb = new StringBuilder();
-        for (int i = 0; i < alt.requiredFields().size(); i++) {
+        for (int i = 0; i < EntityKeys.requiredFields(alt).size(); i++) {
             if (i > 0) sb.append(" && ");
             sb.append("rep.containsKey($S)");
         }
         return sb.toString();
     }
 
-    private static Object[] matchArgs(KeyAlternative alt) {
-        return alt.requiredFields().toArray();
+    private static Object[] matchArgs(EntityKeyQuery.Alternative alt) {
+        return EntityKeys.requiredFields(alt).toArray();
     }
 
     private static void emitDecodeAndGroup(
-        CodeBlock.Builder b, EntityResolution entity, KeyAlternative alt, int altIndex,
+        CodeBlock.Builder b, EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
         ClassName nodeIdEncoder, TenantRouting routing
     ) {
         TenantBinding.EntityRepBound.TenantSource source = routing != null && routing.bound() != null
-            ? tenantSource(entity, routing.bound(), altIndex)
+            ? tenantSource(entity, routing.bound(), alt, altIndex)
             : null;
         // Exhaustive sealed switch with no default arm: a future third key shape is a compile
         // error at this fork rather than a silent runtime gap.
         switch (alt) {
-            case KeyAlternative.NodeId nodeId -> {
+            case EntityKeyQuery.Alternative.NodeId nodeId -> {
                 if (source instanceof TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault) {
                     throw new IllegalStateException("Entity '" + entity.typeName() + "' routes its"
                         + " node id alternative #" + altIndex + " by the request's entity default tenant;"
@@ -178,12 +179,13 @@ final class HandleMethodBody {
                 // another row). Each becomes a skipped rep (null slot), matching the
                 // null-not-error contract.
                 b.addStatement("Object[] cols = $T.decodeColumns($S, idStr, $L, $L)",
-                    nodeIdEncoder, nodeId.expectedTypeId(), SlotParse.parseClasses(nodeId.columns()),
-                    columnRefs(entity, nodeId.columns()));
+                    nodeIdEncoder, nodeId.typeId(), SlotParse.parseClasses(EntityKeys.columns(nodeId)),
+                    columnRefs(entity, EntityKeys.columns(nodeId)));
                 b.addStatement("if (cols == null) continue");
             }
-            case KeyAlternative.Direct direct -> {
-                var bindings = direct.bindings();
+            case EntityKeyQuery.Alternative.Direct direct -> {
+                var bindings = direct.fields();
+                var bindingColumns = EntityKeys.columns(direct);
                 boolean requestEntityDefault =
                     source instanceof TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault;
                 if (requestEntityDefault) {
@@ -200,7 +202,7 @@ final class HandleMethodBody {
                 var columnValues = ClassName.get(nodeIdEncoder.packageName(), ColumnValuesClassGenerator.CLASS_NAME);
                 for (int i = 0; i < bindings.size(); i++) {
                     b.addStatement("cols[$L] = $T.coerce($L.getDataType(), rep.get($S))", i, columnValues,
-                        columnRef(entity, bindings.get(i).column()), bindings.get(i).repField());
+                        columnRef(entity, bindingColumns.get(i)), bindings.get(i).fieldName());
                     b.addStatement("if (cols[$L] == null) continue", i);
                 }
                 if (requestEntityDefault) {
@@ -243,27 +245,37 @@ final class HandleMethodBody {
     }
 
     /** {@code Tables.<TABLE>.<COLUMN>} for one of the entity table's columns. */
-    private static CodeBlock columnRef(EntityResolution entity, ColumnRef column) {
-        return CodeBlock.of("$T.$L.$L", CatalogRefs.constantsClass(entity.table()),
-            entity.table().javaFieldName(), column.javaName());
+    private static CodeBlock columnRef(EntityKeyQuery.Entity entity, ColumnRef column) {
+        return CodeBlock.of("$T.$L.$L", CatalogRefs.className(EntityKeys.tablesClass(entity)),
+            entity.tableField(), column.javaName());
     }
 
     /** {@link #columnRef} for each column, comma-separated, in key order. */
-    private static CodeBlock columnRefs(EntityResolution entity, List<ColumnRef> columns) {
+    private static CodeBlock columnRefs(EntityKeyQuery.Entity entity, List<ColumnRef> columns) {
         return columns.stream().map(c -> columnRef(entity, c)).collect(CodeBlock.joining(", "));
     }
 
     /** Where {@code altIndex}'s representations read their tenant. */
     static TenantBinding.EntityRepBound.TenantSource tenantSource(
-            EntityResolution entity, TenantBinding.EntityRepBound bound, int altIndex) {
-        // Classification admits an EntityRepBound only when every resolvable alternative carries
-        // a tenant slot, so a miss here means the classifier and this emitter disagree.
-        return bound.sourceOf(altIndex).orElseThrow(() -> new IllegalStateException(
-            "Entity '" + entity.typeName() + "' is tenant-bound but key alternative #" + altIndex
-                + " carries no tenant source; classification and emission disagree."));
+            EntityKeyQuery.Entity entity, Map<EntityKeyQuery.Identity, EntityTenantRouting.Source> bound,
+            EntityKeyQuery.Alternative alt, int altIndex) {
+        // A routed entity has a source for every resolvable alternative, so a miss here means the
+        // routing and this emitter disagree. A key column source names its column, found here
+        // among the columns the alternative selects by.
+        var source = bound.get(alt.identity());
+        if (source == null) {
+            throw new IllegalStateException("Entity '" + entity.typeName() + "' is tenant-bound but key"
+                + " alternative #" + altIndex + " carries no tenant source; classification and emission disagree.");
+        }
+        return switch (source) {
+            case EntityTenantRouting.Source.KeyColumn key -> new TenantBinding.EntityRepBound.TenantSource.KeyColumn(
+                EntityTenantRouting.positionOf(entity.typeName(), key, EntityKeys.columns(alt)));
+            case EntityTenantRouting.Source.RequestEntityDefault entityDefault ->
+                new TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault(entityDefault.tenantColumn());
+        };
     }
 
-    private static void emitGroupDispatch(CodeBlock.Builder b, EntityResolution entity, TenantRouting routing) {
+    private static void emitGroupDispatch(CodeBlock.Builder b, EntityKeyQuery.Entity entity, TenantRouting routing) {
         var listOfBindings = ParameterizedTypeName.get(LIST,
             com.palantir.javapoet.ArrayTypeName.of(ClassName.get(Object.class)));
         boolean perTenant = routing != null && routing.bound() != null;
@@ -344,7 +356,7 @@ final class HandleMethodBody {
         b.endControlFlow();
     }
 
-    private static void emitAltSwitch(CodeBlock.Builder b, EntityResolution entity) {
+    private static void emitAltSwitch(CodeBlock.Builder b, EntityKeyQuery.Entity entity) {
         // Switch over altIdx; one arm per resolvable alternative. The default arm is an empty
         // block (no trailing semicolon) since arrow-case + statement-vs-block is finicky in
         // JavaPoet's addStatement.
@@ -359,16 +371,16 @@ final class HandleMethodBody {
         b.endControlFlow();
     }
 
-    private record Prioritized(KeyAlternative alt, int declarationIndex) {}
+    private record Prioritized(EntityKeyQuery.Alternative alt, int declarationIndex) {}
 
-    private static List<Prioritized> priorityOrder(List<KeyAlternative> alternatives) {
+    private static List<Prioritized> priorityOrder(List<EntityKeyQuery.Alternative> alternatives) {
         var indexed = new java.util.ArrayList<Prioritized>(alternatives.size());
         for (int i = 0; i < alternatives.size(); i++) {
             indexed.add(new Prioritized(alternatives.get(i), i));
         }
         // Most required fields first; ties broken by declaration order.
         indexed.sort(Comparator
-            .comparingInt((Prioritized p) -> -p.alt().requiredFields().size())
+            .comparingInt((Prioritized p) -> -EntityKeys.requiredFields(p.alt()).size())
             .thenComparingInt(Prioritized::declarationIndex));
         return indexed;
     }

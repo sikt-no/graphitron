@@ -26,7 +26,15 @@ import no.sikt.graphitron.model.schema.federation.FederationKeyFieldsParser;
 import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
 
 /**
- * Builds the {@code entitiesByType} sidecar map: one {@link EntityResolution} per type whose
+ * Builds the {@code entitiesByType} sidecar map. The entity dispatch no longer renders from it: it
+ * renders from the store's entities ({@link no.sikt.graphitron.emit.EntityKeyQuery}) and takes from
+ * this map only the tenant routing {@link no.sikt.graphitron.rewrite.TenantBindingIndex} folds over
+ * it, paired with the store's alternatives through
+ * {@link no.sikt.graphitron.rewrite.generators.util.EntityTenantRouting}. Its other readers decide
+ * whether the dispatch is emitted at all, and the validator names entity types by it. The builder
+ * goes when the tenant facts are stated in the store and that decision is read from it.
+ *
+ * <p>One {@link EntityResolution} per type whose
  * SDL declaration carries a federation {@code @key} directive (or {@code @node}, which is
  * synthesised into a {@code @key(fields: "id", resolvable: true)} by
  * {@link KeyNodeSynthesiser} ahead of classify time).
