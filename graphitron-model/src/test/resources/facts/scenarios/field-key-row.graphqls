@@ -7,9 +7,9 @@
 # A service under a table row takes its keys off that row, so it states no key row of its own.
 type Film @table(name: "film") {
   title: String
-  # One hop riding film's own key to language, forward: a target lift keyed on that key.
+  # Selections under a row graphitron selected take no key off it: one hop forward,
   languageSplit: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
-  # Two hops: a source lift keyed on film's primary key.
+  # two hops,
   actors: [Actor!]! @splitQuery @reference(path: [{table: "film_actor"}, {table: "actor"}])
   # A plain object under a film row, whose split field is read off a row graphitron selected.
   details: FilmSplitDetails
@@ -17,19 +17,19 @@ type Film @table(name: "film") {
 }
 type Language @table(name: "language") {
   name: String
-  # One hop back along film's key to language, a list: a target lift keyed on language's own key.
+  # one hop back along a key, for a list,
   films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
 }
 type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
-# Not bound to a table: the forward hop under it is read off its parent's film row, but is taken
-# for a record handed over until the source says which it is, so it restarts from the source.
+# Not bound to a table, but passing on its parent's selected film row rather than a record handed
+# over, so the split field under it takes no key, as one under the film row would not.
 type FilmSplitDetails {
   language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
 }
 type Address @table(name: "address") { address: String }
 type Customer @table(name: "customer") {
   firstName: String @field(name: "first_name")
-  # One hop riding customer's key with a condition on it, which reads the customer: a source lift.
+  # or one hop carrying a condition.
   address: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey", condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
       method: "customerToAddress"}}])
@@ -112,35 +112,27 @@ extend schema @expectEquals(relation: "graphitron_field_key_row_accessor", rows:
   FilmKeySummary,        keyCensus,  no.sikt.graphitron.rewrite.test.services.FilmKeySummary,        film,             ()Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/records/FilmRecord;
   """)
 
-# The lift each child producer restarts its query by, per occurrence (code-generation-triggers.adoc §
-# Producer). A member handing over the target's records, and a re-fetch of the target's own record,
-# are target lifts keyed on its primary key; the forward key off a record a service handed over, and
-# a service taking its parent's own records, restart from the source, keyed on the source's primary
-# key. Under a film row, one hop riding a key is a target lift, forward on film's key to language or,
-# for a list, back on it to language's own key; two hops, or a hop carrying a condition, restart from
-# the source. Departures from the field-keyed key row above: FilmDetailsCarrier.language takes a source
-# lift where the field row reads film's columns off the record, a handed record guaranteeing only its
-# key; a service under a table row, Film.titleUppercase, states its lift where it stated none; and a
-# plain type under a film row, FilmSplitDetails, takes a source lift for its forward hop, its source
-# not yet saying the row is one graphitron selected.
+# The key each child producer is filled with from its source, per occurrence, as the field-keyed key
+# row above states it per field, with a service's key parameter in: a member handing over the key's
+# records, a re-fetch of the target's own record, a selection under a record handed over whose path
+# leaves the record's table by its first key, and a service keyed on its source's table. Departures
+# from the field-keyed row: a service under a table row, Film.titleUppercase, states its key where
+# the field row stated none, the frame reading the row's table either way. A selection under a row
+# graphitron selected, whether its path is one hop or several or carries a condition, and a plain type
+# under a table-bound one, take no key here, as they take no key row.
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", rows: """
-  coordinate,                                   lift,   read,     arity, key_table, key_constraint
-  Query.filmDetailsBatch.language,              SOURCE, COLUMNS,  ONE,   film,      film_pkey
-  Query.recentlyCreatedFilmsBatched.films,      TARGET, ACCESSOR, MANY,  film,      film_pkey
-  Query.nestedRecentlyCreatedFilms.films,       TARGET, ACCESSOR, MANY,  film,      film_pkey
-  Query.serviceFilmById.film,                   TARGET, COLUMNS,  ONE,   film,      film_pkey
-  Query.serviceFilmById.census,                 SOURCE, COLUMNS,  ONE,   film,      film_pkey
-  Query.filmKeySummaries.keyCensus,             TARGET, ACCESSOR, ONE,   film,      film_pkey
-  Query.occupantsBatch.occupants,               TARGET, ACCESSOR, MANY,  address,   address_pkey
-  Film.titleUppercase,                          SOURCE, COLUMNS,  ONE,   film,      film_pkey
-  Film.languageSplit,                           TARGET, COLUMNS,  ONE,   film,      film_language_id_fkey
-  Language.films,                               TARGET, COLUMNS,  ONE,   language,  language_pkey
-  Film.actors,                                  SOURCE, COLUMNS,  ONE,   film,      film_pkey
-  Customer.address,                             SOURCE, COLUMNS,  ONE,   customer,  customer_pkey
-  Film.details.language,                        SOURCE, COLUMNS,  ONE,   film,      film_pkey
+  coordinate,                                   read,     arity, key_table, key_constraint
+  Query.filmDetailsBatch.language,              COLUMNS,  ONE,   film,      film_pkey
+  Query.recentlyCreatedFilmsBatched.films,      ACCESSOR, MANY,  film,      film_pkey
+  Query.nestedRecentlyCreatedFilms.films,       ACCESSOR, MANY,  film,      film_pkey
+  Query.serviceFilmById.film,                   COLUMNS,  ONE,   film,      film_pkey
+  Query.serviceFilmById.census,                 COLUMNS,  ONE,   film,      film_pkey
+  Query.filmKeySummaries.keyCensus,             ACCESSOR, ONE,   film,      film_pkey
+  Query.occupantsBatch.occupants,               ACCESSOR, MANY,  address,   address_pkey
+  Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
   """)
 
-# An ACCESSOR lift names the member it reads through, its one candidate, as the field-keyed accessor
+# A key read through a member names the member, its one candidate, as the field-keyed accessor
 # row above does.
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift_accessor", rows: """
   coordinate,                              slot_class_name,                                                            slot_method_name

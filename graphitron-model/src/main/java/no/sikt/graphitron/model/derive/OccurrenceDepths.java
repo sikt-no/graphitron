@@ -19,7 +19,7 @@ import static org.jooq.impl.DSL.max;
  * child's object source at the next depth begins; the paths no claim covers, an empty one where the need starts on its
  * landing and an inferred one over the one foreign key; and the claimed needs walked into their
  * steps, each to its written or inherited path or to a stop, {@link Steps} writing the defects of
- * the walk as it takes it, and the lifts off them, {@link OccurrenceLifts}; then the node id, column and table each occurrence binds where its path lands; and last the
+ * the walk as it takes it, and the keys each child producer is filled with, {@link OccurrenceLifts}; then the node id, column and table each occurrence binds where its path lands; and last the
  * {@code @condition} calls, one per table an occurrence carrying one binds. A
  * child field or an argument under a field that writes a path starts
  * where that path's join path lands, so a depth reads the join paths of the depth above.
