@@ -254,3 +254,13 @@ extend schema @assertContains(relation: "graphitron_join_path_claim", rows: """
   Film.titleTexts,    TranslatedTexts, FIELD,      0,           0
   Query.rows,         Row,             FIELD,      1,           0
   """)
+
+# Each union and interface's members, each end a type of its kind: Searchable admits Film and
+# Language, MediaItem is implemented by Film, and Node by Language.
+extend schema @assertContains(relation: "graphitron_type_member", rows: """
+  container_name, container_kind, member_type_name, member_kind
+  Searchable,     UNION,          Film,             OBJECT
+  Searchable,     UNION,          Language,         OBJECT
+  MediaItem,      INTERFACE,      Film,             OBJECT
+  Node,           INTERFACE,      Language,         OBJECT
+  """)

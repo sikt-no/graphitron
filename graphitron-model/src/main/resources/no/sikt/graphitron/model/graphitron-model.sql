@@ -7756,6 +7756,57 @@ COMMENT ON COLUMN graphitron_code_reference.touched_at IS 'when the reading that
 CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
 COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: the namings in the view bodies (graphitron_entry_defect_table_rule, graphitron_argument_scope_table_rule, graphitron_path_element_routine_rule) all join on the graph and the spelling and nothing else. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, the type binding view since replaced by graphitron_tabletype 357 against 198, and a node id decode defect view since dissolved 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
 
+CREATE TABLE graphitron_type_member (
+  graph_name       VARCHAR   NOT NULL,
+  container_name   VARCHAR   NOT NULL,
+  container_kind   VARCHAR   NOT NULL,
+  member_type_name VARCHAR   NOT NULL,
+  member_kind      VARCHAR   NOT NULL,
+  position         INT       NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, container_name, member_type_name),
+  -- Both ends are types of the kinds that can stand there, held by the supertype's own key.
+  FOREIGN KEY (graph_name, container_name, container_kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, member_type_name, member_kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (container_kind IN ('UNION', 'INTERFACE')),
+  CHECK (member_kind IN ('OBJECT', 'INTERFACE'))
+);
+COMMENT ON TABLE graphitron_type_member IS 'A member of a polymorphic type: one row per union or interface and each type it admits. For example Searchable = Film | Language draws Film and Language under Searchable, and type Language implements Node draws Language under Node.';
+COMMENT ON COLUMN graphitron_type_member.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_type_member.container_name IS 'the union or interface; with the graph and the member, the grain';
+COMMENT ON COLUMN graphitron_type_member.container_kind IS 'UNION or INTERFACE, the container''s kind, pinned so the foreign key holds it to a type of that kind';
+COMMENT ON COLUMN graphitron_type_member.member_type_name IS 'the type the container admits: a union''s listed member, or a type implementing the interface';
+COMMENT ON COLUMN graphitron_type_member.member_kind IS 'OBJECT, or INTERFACE for an interface implementing another, pinned as the container''s kind is';
+COMMENT ON COLUMN graphitron_type_member.position IS 'the member''s place as its declaration states it: in the union''s list, or the interface''s place in the implementing type''s list, as graphql_union_member and graphql_implements_interface number them';
+COMMENT ON COLUMN graphitron_type_member.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_type_member_rule
+  (graph_name, container_name, container_kind, member_type_name, member_kind, position) AS
+SELECT u.graph_name, u.union_name, c.kind, u.member_type_name, m.kind, u.position
+  FROM graphql_union_member u
+  JOIN graphitron_type c
+    ON c.graph_name = u.graph_name AND c.type_name = u.union_name AND c.kind = 'UNION'
+  JOIN graphitron_type m
+    ON m.graph_name = u.graph_name AND m.type_name = u.member_type_name
+   AND m.kind IN ('OBJECT', 'INTERFACE')
+UNION ALL
+SELECT i.graph_name, i.interface_name, c.kind, i.type_name, m.kind, i.position
+  FROM graphql_implements_interface i
+  JOIN graphitron_type c
+    ON c.graph_name = i.graph_name AND c.type_name = i.interface_name AND c.kind = 'INTERFACE'
+  JOIN graphitron_type m
+    ON m.graph_name = i.graph_name AND m.type_name = i.type_name
+   AND m.kind IN ('OBJECT', 'INTERFACE');
+COMMENT ON VIEW graphitron_type_member_rule IS 'One row the type member rule computes, in the shape graphitron_type_member stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_member, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_type_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_member.graph_name';
+-- COMMENT ON COLUMN graphitron_type_member_rule.container_name IS 'the container_name of a row of this rule, which the stage writes into graphitron_type_member.container_name';
+-- COMMENT ON COLUMN graphitron_type_member_rule.container_kind IS 'the container_kind of a row of this rule, which the stage writes into graphitron_type_member.container_kind';
+-- COMMENT ON COLUMN graphitron_type_member_rule.member_type_name IS 'the member_type_name of a row of this rule, which the stage writes into graphitron_type_member.member_type_name';
+-- COMMENT ON COLUMN graphitron_type_member_rule.member_kind IS 'the member_kind of a row of this rule, which the stage writes into graphitron_type_member.member_kind';
+-- COMMENT ON COLUMN graphitron_type_member_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_type_member.position';
+
 CREATE TABLE graphitron_edge (
   graph_name     VARCHAR   NOT NULL,
   type_name      VARCHAR   NOT NULL,
@@ -16244,7 +16295,7 @@ WITH produced (graph_name, coordinate, kind, is_list, connection, target_kind, p
                   WHERE rr.graph_name = ft.graph_name AND rr.type_name = ft.target_type_name
                     AND rr.kind = 'LOOKUP'),
          b.table_source_name, b.table_schema, b.table_name,
-         EXISTS (SELECT 1 FROM graphql_poly_member pm
+         EXISTS (SELECT 1 FROM graphitron_type_member pm
                    JOIN graphitron_tabletype mb
                      ON mb.graph_name = pm.graph_name AND mb.type_name = pm.member_type_name
                   WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name),
@@ -18855,6 +18906,7 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_minted_coinage'),
   ('macro-expansion', 'graphitron_minted_conflict'),
   ('macro-expansion', 'graphitron_type'),
+  ('macro-expansion', 'graphitron_type_member'),
   ('macro-expansion', 'graphitron_edge'),
   ('macro-expansion', 'graphitron_connection'),
   ('federation-imports', 'graphitron_federation_link_import'),
@@ -19572,6 +19624,9 @@ INSERT INTO meta_grain VALUES
   ('expanded-type',
    'one type the generator works with in one graph, whether an author declared it or macro expansion minted it',
    'graph_name, type_name', 'sdl'),
+  ('type-member',
+   'one type a union or an interface admits in one graph, of the types the generator works with',
+   'graph_name, container_name, member_type_name', 'sdl'),
   ('expanded-field',
    'one field coordinate the generator works with in one graph, at the type expression the generator reads there',
    'graph_name, type_name, field_name', 'sdl'),
@@ -21138,6 +21193,14 @@ INSERT INTO meta_relation VALUES
    'Every field argument the generator works with, the author''s and the ones macro expansion minted: one row per argument coordinate, carrying the wrapping columns graphql_argument carries.',
    'For example the first and after arguments a connection carrier gets when its author wrote no pagination argument sit here, where graphql_argument holds only what the document declares and therefore holds no row for them.',
    'The argument grain, and the one this family gained rather than inherited. The connection expansion mints two arguments on a carrier whose author wrote no pagination argument, and until this relation the store recorded nothing about them: the expansion has two halves in two modules, one writing facts and one building schema objects, and only the second knew the arguments existed. So an argument the generator emits was reachable from the emitted schema and from no relation, which is the gap this closes. Total over the emitted population on graphitron_type''s terms.'),
+  ('graphitron_type_member', 'type-member', 'graphitron',
+   'A member of a polymorphic type: one row per union or interface and each type it admits.',
+   'For example Searchable = Film | Language draws Film and Language under Searchable, and type Language implements Node draws Language under Node.',
+   'The polymorphic subtype of graphitron_type: both ends key into the supertype with their kinds pinned, so a member is a type and a container a union or an interface by the database''s own key. Stored, beside the types macro expansion writes, so a rule asking a container''s members joins one table on its key rather than the graphql_poly_member view, a union of two transcription relations a rule view may not read. What a member is bound to, a table or none, is each reader''s join to graphitron_tabletype, so no caller''s filter is baked into the grain.'),
+  ('graphitron_type_member_rule', 'type-member', 'graphitron',
+   'One row the type member rule computes, in the shape graphitron_type_member stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_member, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_edge', 'expanded-type', 'graphitron',
    'An edge of a Relay connection and the item its node names: one row per edge type.',
    'For example FilmsEdge, whose node field names Film, draws one row naming Film, however many connections page through it.',
