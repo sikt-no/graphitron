@@ -46,7 +46,7 @@ class EntityKeyQueryTest {
 
     @Test
     void entitiesAreTheKeyedTypesAndTheResolvableNodesInTypeNameOrder() {
-        assertThat(federated).extracting(Entity::typeName).containsExactly("Actor", "Customer", "Film", "Rental");
+        assertThat(federated).extracting(Entity::typeName).containsExactly("Actor", "Address", "Customer", "Film", "Payment", "Rental");
         assertThat(unfederated).extracting(Entity::typeName).containsExactly("Film", "Language", "Store");
     }
 
@@ -84,6 +84,26 @@ class EntityKeyQueryTest {
         assertThat(nodeIdOnly(entity(unfederated, "Film"))).isEqualTo("F");
         assertThat(((Alternative.NodeId) entity(unfederated, "Film").alternatives().getFirst()).keyColumns())
             .extracting(Column::columnName).containsExactly("film_id");
+    }
+
+    @Test
+    void aNodeWhoseIdIsAColumnIsKeyedByThatColumnAndNeverDecoded() {
+        var payment = entity(federated, "Payment");
+        assertThat(payment.alternatives()).singleElement().isInstanceOf(Alternative.Direct.class);
+        var key = (Alternative.Direct) payment.alternatives().getFirst();
+        assertThat(key.identity()).isEqualTo(new Identity.Key(0));
+        assertThat(key.fields()).extracting(f -> f.fieldName(), f -> f.column().columnName())
+            .containsExactly(tuple("id", "payment_id"));
+    }
+
+    @Test
+    void theSynthesisedKeyOverAColumnIdMatchesTheColumn() {
+        var address = entity(federated, "Address");
+        assertThat(address.alternatives()).singleElement().isInstanceOf(Alternative.Direct.class);
+        var key = (Alternative.Direct) address.alternatives().getFirst();
+        assertThat(key.identity()).isEqualTo(new Identity.Key(0));
+        assertThat(key.fields()).extracting(f -> f.fieldName(), f -> f.column().columnName())
+            .containsExactly(tuple("id", "address_id"));
     }
 
     @Test

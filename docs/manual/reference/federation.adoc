@@ -12,7 +12,9 @@ A key over the node's own `id` is decoded rather than matched: the representatio
 
 == Synthesised keys
 
-In a federation-linked graph, every resolvable node type is given `@key(fields: "id")` after the keys its author wrote, unless an authored key already selects the node's own `id` alone. A key over an `id` carrying `@field(name:)` is a key on that column, so the node key is still synthesised beside it. A stub, `@node(resolvable: false)`, is given none.
+In a federation-linked graph, every resolvable node type is given `@key(fields: "id")` after the keys its author wrote, unless an authored key already selects `id` alone. Federation knows keys, not `Node.id`, so an authored `@key(fields: "id")` is the type's id key whatever its `id` reads, and how it resolves follows from that: decoded where `id` is the node's own, matched against the column where `id` carries `@field(name:)`. A stub, `@node(resolvable: false)`, is given none.
+
+A node whose `id` carries `@field(name:)` encodes no node id, so neither `Query.node` nor a representation's `id` is decoded for it; it is resolved only through the keys its author writes.
 
 == What a key may select
 

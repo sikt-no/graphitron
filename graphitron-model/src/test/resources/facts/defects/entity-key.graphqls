@@ -1,4 +1,4 @@
-"A federation entity is resolved by selecting its row from its table, matching the values a key carries against that table's columns. So a resolvable @key needs a table-bound object type, selects at least one field, and every field it selects reads a column of the entity's own table, the one exception being a key whose only field is the node's own id, which carries an encoded node id the generator decodes. Each refusal is at the @key that breaks it. Whether a key is the id contract is how the id binds: an id with no @field on a node is the node's own, and one carrying @field(name:) is a column, so a key over it is plain and federation mints the node key beside it."
+"A federation entity is resolved by selecting its row from its table, matching the values a key carries against that table's columns. So a resolvable @key needs a table-bound object type, selects at least one field, and every field it selects reads a column of the entity's own table, the one exception being a key whose only field is the node's own id, which carries an encoded node id the generator decodes. Each refusal is at the @key that breaks it. Whether a key is the id contract is how the id binds: an id with no @field on a node is the node's own, and one carrying @field(name:) is a column, so a key over it matches the column. An authored key spelling id is the type's id key either way, so federation mints no node key beside it."
 # A resolvable key on a type with no table: nothing to select it from.
 type Plain @key(fields: "plainId") {
   plainId: Int
@@ -63,8 +63,8 @@ type Staff @table(name: "staff") @node @key(fields: "id firstName") {
   firstName: String @field(name: "first_name")
 }
 
-# An id carrying @field reads a column: the key over it is a plain key, accepted, and the node key is
-# minted beside it.
+# An id carrying @field reads a column: the key over it matches the column, accepted, and as a key
+# spelling id it stands the node key down.
 type Rental @table(name: "rental") @node @key(fields: "id") {
   id: ID @field(name: "rental_id")
 }
@@ -103,17 +103,16 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   KEY_TYPE_NOT_TABLE_BOUND, Plain,     Plain
   """)
 
-# The id contract decides the mint: Actor's authored id key is the node's own and stands it down,
-# while Rental's is over a column and Staff's is compound, so each is given the node key after its
-# own.
+# A key spelling id stands the node key down whatever the id reads, Actor's node id and Rental's
+# column alike; Staff's compound key does not spell id, so it is given the node key after its own.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name, role, fields, resolvable, ordinal
-  Rental,    NODE, id,     TRUE,       1
   Staff,     NODE, id,     TRUE,       1
   """)
 
-# How each authored key field binds at its entity's table: a column of the table, or the node's own id
-# alone. A field with no row binds nothing there, which is the refusal above: Staff's id beside a
+# How each key field binds at its entity's table, Staff's synthesised node key included: a column of
+# the table, or the node's own id alone. A field with no row binds nothing there, which is the refusal
+# above: Staff's id beside a
 # column, Payment's node id reference, and Film's name it does not declare, nested selection and path.
 extend schema @expectEquals(relation: "graphitron_key_field_binding", rows: """
   type_name, ordinal, position, field_name, kind
@@ -121,5 +120,6 @@ extend schema @expectEquals(relation: "graphitron_key_field_binding", rows: """
   Film,      0,       0,        filmId,     COLUMN
   Rental,    0,       0,        id,         COLUMN
   Staff,     0,       1,        firstName,  COLUMN
+  Staff,     1,       0,        id,         NODE_ID
   Store,     0,       0,        storeId,    COLUMN
   """)

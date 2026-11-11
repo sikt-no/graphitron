@@ -115,8 +115,10 @@ public final class EntityResolutionBuilder {
             // Synthesise a NODE_ID alternative when no explicit @key(fields: "id") is among the
             // user-declared keys (KeyNodeSynthesiser fills this in at the registry level; tests
             // that bypass the attributed read rely on this synthesis instead). Prepend so the
-            // most-specific selection logic still finds the user's wider keys first.
-            if (isNodeType && !hasNodeIdAlternative(alternatives)) {
+            // most-specific selection logic still finds the user's wider keys first. Not where the
+            // node's id is a column mapping: an id carrying @field encodes no node id to decode.
+            if (isNodeType && !hasNodeIdAlternative(alternatives)
+                    && columnOf(fields.get(FieldCoordinates.coordinates(typeName, ID_FIELD))) == null) {
                 NodeType nt = (NodeType) gType;
                 alternatives.add(0, new KeyAlternative.NodeId(
                     nt.typeId(), List.copyOf(nt.nodeKeyColumns()), true));

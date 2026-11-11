@@ -12,6 +12,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_KEY_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -34,11 +35,13 @@ import static org.jooq.impl.DSL.selectOne;
  * <p>The alternatives are the type's {@code @key} applications in ordinal order, so the authored keys
  * come first and a minted one after them. A key whose fields bind columns of the type's own table
  * ({@code graphitron_key_field_binding}, kind {@code COLUMN}) is {@link Alternative.Direct}, each
- * field's column read off {@code graphitron_occurrence_column}; an authored key whose one field binds
- * the node's own id ({@code NODE_ID}), and a key minted by federation's entity rule
- * ({@code graphitron_minted_key}, role {@code NODE}), is {@link Alternative.NodeId}, decoded with the
- * node's type id and key columns. A resolvable node none of whose keys is the node id alternative is
- * given one ahead of the rest, so {@code Query.node} resolves it. An entity whose node id alternative
+ * field's column read off {@code graphitron_occurrence_column}; a key whose one field binds the node's
+ * own id ({@code NODE_ID}) is {@link Alternative.NodeId}, decoded with the node's type id and key
+ * columns. The node key federation synthesises is no different: it is a key whose field binds as the
+ * node's {@code id} does, the node id, or the column where the {@code id} carries {@code @field}. A resolvable node none of whose keys is the node id alternative is
+ * given one ahead of the rest, so {@code Query.node} resolves it, unless its {@code id} is a column
+ * mapping: an {@code id} carrying {@code @field} reads that column and encodes no node id, so neither
+ * {@code Query.node} nor a representation's {@code id} is decoded for it. An entity whose node id alternative
  * belongs to a node this subgraph does not resolve, a federation stub, is no entity here: the subgraph
  * owning it resolves it. A key the store refuses never reaches here, since a refused graph is not
  * generated.
@@ -123,7 +126,7 @@ public final class EntityKeyQuery {
 
     private record RawField(String fieldName, String kind, Column column) {}
 
-    private record RawKey(int ordinal, String mintedRole, boolean resolvable, List<RawField> fields) {}
+    private record RawKey(int ordinal, boolean resolvable, List<RawField> fields) {}
 
     private record RawNode(String typeId, List<Column> keyColumns) {}
 
@@ -141,6 +144,12 @@ public final class EntityKeyQuery {
         var nc = SQL_COLUMN.as("nc");
         var t = SQL_TABLE;
         var sc = SQL_SCHEMA;
+        var b = GRAPHITRON_OCCURRENCE_BINDING;
+        // A node this subgraph resolves by its id: resolvable, and its id binding the node id at its
+        // table, which an id carrying @field does not, reading the column instead.
+        var servedById = n.RESOLVABLE.isTrue().andExists(selectOne().from(b)
+            .where(b.GRAPH_NAME.eq(n.GRAPH_NAME), b.COORDINATE.eq(n.TYPE_NAME.concat(inline(".id"))),
+                b.BOUND.eq(tt.TABLE_SCHEMA.concat(inline(".")).concat(tt.TABLE_NAME)), b.KIND.eq("NODE_ID")));
 
         // A key's fields in position order, each COLUMN field with the column it reads.
         var fields = multiset(
@@ -158,7 +167,7 @@ public final class EntityKeyQuery {
         // A key's resolvable: an authored key's as written, true where the author left it out; a
         // minted key's as the rule that minted it states.
         var keys = multiset(
-            select(a.ORDINAL, mk.ROLE, coalesce(ke.RESOLVABLE, mk.RESOLVABLE, inline(true)), fields)
+            select(a.ORDINAL, coalesce(ke.RESOLVABLE, mk.RESOLVABLE, inline(true)), fields)
                 .from(a)
                 .leftJoin(ke).on(ke.GRAPH_NAME.eq(a.GRAPH_NAME), ke.SOURCE_NAME.eq(a.SOURCE_NAME),
                     ke.SOURCE_LINE.eq(a.SOURCE_LINE), ke.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
@@ -179,7 +188,7 @@ public final class EntityKeyQuery {
                         .orderBy(nk.POSITION))
                     .convertFrom(r -> r.map(Records.mapping(Column::new))))
                 .from(n)
-                .where(n.GRAPH_NAME.eq(tt.GRAPH_NAME), n.TYPE_NAME.eq(tt.TYPE_NAME), n.RESOLVABLE.isTrue()))
+                .where(n.GRAPH_NAME.eq(tt.GRAPH_NAME), n.TYPE_NAME.eq(tt.TYPE_NAME), servedById))
             .convertFrom(r -> r.map(Records.mapping(RawNode::new)));
 
         var out = new ArrayList<Entity>();
@@ -194,7 +203,7 @@ public final class EntityKeyQuery {
             .and(exists(selectOne().from(a).where(a.GRAPH_NAME.eq(tt.GRAPH_NAME),
                     a.COORDINATE.eq(tt.TYPE_NAME), a.DIRECTIVE_NAME.eq("key")))
                 .or(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(tt.GRAPH_NAME),
-                    n.TYPE_NAME.eq(tt.TYPE_NAME), n.RESOLVABLE.isTrue()))))
+                    n.TYPE_NAME.eq(tt.TYPE_NAME), servedById))))
             .orderBy(tt.TYPE_NAME)
             .forEach(r -> entity(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(),
                 r.value7().isEmpty() ? null : r.value7().getFirst(), r.value8()).ifPresent(out::add));
@@ -210,8 +219,10 @@ public final class EntityKeyQuery {
                                                      RawNode node, List<RawKey> keys) {
         var alternatives = new ArrayList<Alternative>();
         for (var key : keys) {
-            boolean nodeId = "NODE".equals(key.mintedRole())
-                || (key.fields().size() == 1 && "NODE_ID".equals(key.fields().getFirst().kind()));
+            if (key.fields().isEmpty()) {
+                continue;
+            }
+            boolean nodeId = key.fields().size() == 1 && "NODE_ID".equals(key.fields().getFirst().kind());
             if (nodeId) {
                 if (node == null) {
                     return java.util.Optional.empty();

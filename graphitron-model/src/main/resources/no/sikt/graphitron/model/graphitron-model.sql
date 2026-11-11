@@ -7566,13 +7566,13 @@ CREATE TABLE graphitron_minted_key (
 COMMENT ON TABLE graphitron_minted_key IS 'One federation key a graph mints on one of its table-bound types, with the rule that minted it. For example a node type of a federation-linked graph whose author wrote no id key carries one NODE row, fields id and resolvable.';
 COMMENT ON COLUMN graphitron_minted_key.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_minted_key.type_name IS 'the type the key is minted on. Into graphitron_tabletype because every rule minting a key mints it on a table-bound type, and cascading because a type that stops resolving to a table stops carrying one';
-COMMENT ON COLUMN graphitron_minted_key.role IS 'the rule that minted the key: NODE, federation''s entity rule, a resolvable node of a federated graph keyed by its id where no authored key states that contract';
+COMMENT ON COLUMN graphitron_minted_key.role IS 'the rule that minted the key: NODE, federation''s entity rule, a resolvable node of a federated graph keyed by its id where no authored key spells id';
 COMMENT ON COLUMN graphitron_minted_key.fields IS 'the key''s field set as federation spells it inside @key(fields:), unquoted: id for a NODE key';
 COMMENT ON COLUMN graphitron_minted_key.resolvable IS 'what the key''s resolvable: argument says, whether this subgraph resolves the entity by it: true for a NODE key, a stub never being minted one';
 COMMENT ON COLUMN graphitron_minted_key.ordinal IS 'the key''s place among the type''s @key applications: after every key its author wrote, then in the order of the roles that minted keys on it. Stated here rather than counted by each set that renders the application, so the application and its arguments cannot disagree about which @key they are';
 
 -- Federation's entity rule: a node of a federated graph is keyed by its id unless an authored key
--- already states that contract, federation needing the entity declaration in the emitted SDL and a
+-- already spells id, federation needing the entity declaration in the emitted SDL and a
 -- node carrying a globally unique id by definition. A node is graphitron_node's, explicit or inferred
 -- from the table's node metadata alike, and a graph is federated however it opted in. A stub,
 -- @node(resolvable: false), is another subgraph's to resolve and has no id field to key on. The key
@@ -7587,12 +7587,12 @@ SELECT n.graph_name, n.type_name, 'NODE', 'id', TRUE,
   FROM graphitron_node n
  WHERE n.resolvable
    AND EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
-   -- An authored key states the id contract when it selects one path, that path is id, and the id
-   -- is the node's own: no @field on it, which is what makes it bind the node id rather than a
-   -- column (the id-contract ruling in fact-model.adoc). The decode is reached through the
-   -- application the corpus honours, at the at sign both share. Positions are dense from zero, so one selection whose one segment is id is the selection at
-   -- zero, its segment at zero named id, with no selection at one and no second segment: each a
-   -- probe on the entries' whole key.
+   -- An authored key spelling id is the type's id key, whatever the id binds: federation knows keys,
+   -- and a second key spelling id would publish one key twice (the federation-keys ruling in
+   -- fact-model.adoc). How it resolves is its binding's. The decode is reached through the
+   -- application the corpus honours, at the at sign both share. Positions are dense from zero, so
+   -- one selection whose one segment is id is the selection at zero, its segment at zero named id,
+   -- with no selection at one and no second segment: each a probe on the entries' whole key.
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                      JOIN graphitron_ast_federation_key_segment_entry g
                        ON g.graph_name = d.graph_name AND g.source_name = d.source_name
@@ -7608,11 +7608,7 @@ SELECT n.graph_name, n.type_name, 'NODE', 'id', TRUE,
                                        WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
                                          AND h.source_line = g.source_line
                                          AND h.source_column = g.source_column AND h.position = 0
-                                         AND h.segment_position = 1)
-                      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application f
-                                       WHERE f.graph_name = d.graph_name
-                                         AND f.coordinate = d.coordinate || '.id'
-                                         AND f.directive_name = 'field'));
+                                         AND h.segment_position = 1));
 COMMENT ON VIEW graphitron_minted_key_rule IS 'One key the minting rules compute, in the shape graphitron_minted_key stores: the rules themselves, evaluated on demand rather than read off disk. For example the minted-keys stage writes this view''s rows for one graph into graphitron_minted_key, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_minted_key_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_minted_key_rule.type_name IS 'the type the key is minted on';
@@ -13599,12 +13595,12 @@ CREATE TABLE graphitron_key_field_binding (
   -- The node id binds only as a key's sole field; the rule writes the "sole" half, which spans rows.
   CHECK (kind <> 'NODE_ID' OR position = 0)
 );
-COMMENT ON TABLE graphitron_key_field_binding IS 'One field an authored federation key selects on a table-bound object type, and how it binds at that type''s own table. For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and @key(fields: "id") on a node type draws one NODE_ID row.';
+COMMENT ON TABLE graphitron_key_field_binding IS 'One field a federation key selects on a table-bound object type, authored or synthesised, and how it binds at that type''s own table. For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and the @key(fields: "id") synthesised for a node type draws one NODE_ID row, or a COLUMN row where its id carries @field.';
 COMMENT ON COLUMN graphitron_key_field_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_key_field_binding.type_name IS 'the entity type the key is applied to, the coordinate of its directive application';
 COMMENT ON COLUMN graphitron_key_field_binding.directive_name IS 'always key; carried so the row references its directive application whole';
 COMMENT ON COLUMN graphitron_key_field_binding.ordinal IS 'the key''s place among the type''s @key applications, the application''s own ordinal';
-COMMENT ON COLUMN graphitron_key_field_binding.position IS 'the field''s place in the key''s field set as the author wrote it, numbered from zero';
+COMMENT ON COLUMN graphitron_key_field_binding.position IS 'the field''s place in the key''s field set as it is written, numbered from zero; 0 for the synthesised key''s one field';
 COMMENT ON COLUMN graphitron_key_field_binding.field_name IS 'the field the key selects, a top-level field of the type';
 COMMENT ON COLUMN graphitron_key_field_binding.coordinate IS 'the field''s coordinate, type and field joined by a dot, as its occurrence binding spells it';
 COMMENT ON COLUMN graphitron_key_field_binding.bound IS 'the type''s own table, schema-qualified, as the binding spells it';
@@ -13613,7 +13609,8 @@ COMMENT ON COLUMN graphitron_key_field_binding.table_source_name IS 'the catalog
 COMMENT ON COLUMN graphitron_key_field_binding.table_schema IS 'the schema of the type''s table';
 COMMENT ON COLUMN graphitron_key_field_binding.table_name IS 'the type''s table';
 
--- How each field of an authored @key binds at its entity's own table. A field binds there when it is
+-- How each field of a @key binds at its entity's own table, an authored key's and the node key
+-- federation synthesises alike. A field binds there when it is
 -- a single-segment selection whose occurrence binds a column of that table, or when it is the key's
 -- only field and the node's own id, which binds the node id (the id-contract ruling in
 -- fact-model.adoc: an id carrying @field(name:) binds a column instead). A selection that binds
@@ -13649,6 +13646,27 @@ SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, p.position, g.se
                              WHERE q.graph_name = p.graph_name AND q.source_name = p.source_name
                                AND q.source_line = p.source_line AND q.source_column = p.source_column
                                AND q.position = 1)
+            AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                         WHERE n.graph_name = b.graph_name AND n.coordinate = b.coordinate
+                           AND n.bound = b.bound AND n.position = 0
+                           AND n.node_type_name = a.coordinate)))
+UNION ALL
+-- The node key federation synthesises is a key like any other and binds the same way: its one field,
+-- id, binds the node id where the id is the node's own and the column where it carries @field.
+SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, 0, 'id',
+       b.coordinate, b.bound, b.kind, tt.table_source_name, tt.table_schema, tt.table_name
+  FROM graphitron_directive_application a
+  JOIN graphitron_minted_key mk
+    ON mk.graph_name = a.graph_name AND mk.type_name = a.coordinate AND mk.ordinal = a.ordinal
+   AND mk.role = 'NODE'
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = a.graph_name AND tt.type_name = a.coordinate AND tt.named_type_kind = 'OBJECT'
+  JOIN graphitron_occurrence_binding b
+    ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate || '.id'
+   AND b.bound = tt.table_schema || '.' || tt.table_name
+ WHERE a.directive_name = 'key' AND a.origin = 'MINTED'
+   AND (b.kind = 'COLUMN'
+        OR (b.kind = 'NODE_ID'
             AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
                          WHERE n.graph_name = b.graph_name AND n.coordinate = b.coordinate
                            AND n.bound = b.bound AND n.position = 0
@@ -19537,7 +19555,7 @@ INSERT INTO meta_grain VALUES
    'one federation key a macro mints on one type, by the rule that minted it',
    'graph_name, type_name, role', 'sdl'),
   ('key-field',
-   'one field one authored federation key selects, at its place in the key, on one type in one graph',
+   'one field one federation key selects, at its place in the key, on one type in one graph',
    'graph_name, type_name, directive_name, ordinal, position', 'sdl'),
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
@@ -21149,8 +21167,8 @@ INSERT INTO meta_relation VALUES
    'For example a Customer carrying @node over @table draws a row, a type merely implementing Node over a table whose class publishes __NODE_TYPE_ID draws one beside it, and a @node on a type with no @table draws none.',
    'Nodehood as a resolved fact rather than a membership view over two arms, which is the difference between what an author wrote and what took effect. @node only takes effect on a type that also carries @table, so the table binding is the precondition on both arms and not a filter a reader remembers; a @node on an unbound type stays in the decode, and the anti-join between the two is where an author is told the directive did nothing. The type id rides along because it is total over this population and over no other: three tiers answer, the author''s declaration, the backing class''s published constant and the type''s own name, and the last always answers, so a reader encoding an id needs no fallback and the column needs no nullness. Which tier answered is a column because a diagnostic about two types colliding on one id has to say where each came from. The key columns are not here and that is deliberate: an author may declare the id and leave the columns to the catalog or the reverse, so the two axes resolve separately and a single declared-versus-inferred flag over the node would be wrong for half the schemas that have one. Written as a stage of the graphitron gatherer after the binding it stands on, both sources being in hand there: the catalog crawler has flushed and the @node decode is the gatherer''s own.'),
   ('graphitron_key_field_binding', 'key-field', 'graphitron',
-   'One field an authored federation key selects on a table-bound object type, and how it binds at that type''s own table.',
-   'For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and @key(fields: "id") on a node type draws one NODE_ID row.',
+   'One field a federation key selects on a table-bound object type, authored or synthesised, and how it binds at that type''s own table.',
+   'For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and the @key(fields: "id") synthesised for a node type draws one NODE_ID row, or a COLUMN row where its id carries @field.',
    'The one fact an entity key alternative needs that no other relation states: which of the type''s occurrence bindings each key field resolves to at the entity''s table. Everything else an alternative carries, the column, the node''s type id and key columns, the resolvability, is stated elsewhere, so only the binding is stored and a reader composes the rest from the relations that state it. Keyed by the key''s directive application and the field''s place in the parse, since a key on an extension can name a field declared in another file; referencing the application, the occurrence binding (which carries the kind) and the type''s table, so a row is a binding at the type''s own table by construction. A selection with no row binds nothing there, which is the entity key stage''s refusal.'),
   ('graphitron_key_field_binding_rule', 'key-field', 'graphitron',
    'One key field binding the entity key rule computes, in the shape graphitron_key_field_binding stores: the rule itself, evaluated on demand rather than read off disk.',

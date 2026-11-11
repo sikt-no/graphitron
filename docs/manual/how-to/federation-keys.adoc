@@ -75,7 +75,7 @@ This matters for cross-subgraph contracts: a federation gateway may route a repr
 
 Graphitron's xref:../reference/directives/node.adoc[`@node`] directive synthesises a `@key(fields: "id", resolvable: true)` per type in a federation-linked graph. The opaque `id:` is decoded through the same `NodeIdEncoder` the Relay-side `Query.node` uses, and the resulting column values feed the same dispatcher as a `@key(fields: "...")` would. Point being: `@node` is enough on its own; you don't need to add `@key(fields: "id")` for the synthesised path.
 
-An authored `@key(fields: "id")` takes the synthesised key's place only when `id` is the node's own: an `id` with no `@field`, which carries the encoded node id. An `id` carrying `@field(name:)` reads a column like any other field, so a key over it is a plain key on that column, and the node key is synthesised beside it. A compound key that includes the node's own `id` is refused with `KEY_FIELD_NOT_A_COLUMN`, since the encoded id is not a column value.
+An authored `@key(fields: "id")` always takes the synthesised key's place: federation looks entities up by their keys, and one key spelling `id` is enough. How it resolves follows from what `id` reads. The node's own `id`, with no `@field`, carries the encoded node id and is decoded; an `id` carrying `@field(name:)` reads a column like any other field, so the key matches that column, and the type is not resolved by a decoded node id at all. A compound key that includes the node's own `id` is refused with `KEY_FIELD_NOT_A_COLUMN`, since the encoded id is not a column value.
 
 A `@node` type with an additional explicit `@key` gets *both* alternatives:
 

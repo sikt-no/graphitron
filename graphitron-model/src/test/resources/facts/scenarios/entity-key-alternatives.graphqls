@@ -1,4 +1,4 @@
-"An entity is resolved by selecting its row from its table, by any of its keys. Each authored key's fields bind at the entity's own table: a key over columns carries their values, and the node's own id alone carries an encoded id the generator decodes. A node federation keys by its id where no authored key states that contract is given the node key after the keys its author wrote."
+"An entity is resolved by selecting its row from its table, by any of its keys. Each authored key's fields bind at the entity's own table: a key over columns carries their values, and the node's own id alone carries an encoded id the generator decodes. A node no authored key spelling id keys is given the node key after the keys its author wrote; one whose id carries @field reads a column, so its id key matches the column and nothing decodes a node id for it."
 type Film implements Node @table(name: "film") @node @key(fields: "languageId") {
   id: ID!
   languageId: Int @field(name: "language_id")
@@ -14,6 +14,18 @@ type Customer implements Node @table(name: "customer") @node {
   id: ID!
 }
 
+# No key written, and an id carrying @field: the node key is synthesised all the same, and as its
+# field reads the column, it matches the column.
+type Address implements Node @table(name: "address") @node {
+  id: ID! @field(name: "address_id")
+}
+
+# An id carrying @field reads a column: the authored id key matches it, stands the node key down, and
+# no node id is decoded for the type.
+type Payment implements Node @table(name: "payment") @node @key(fields: "id") {
+  id: ID! @field(name: "payment_id")
+}
+
 # Two keys over columns, one this subgraph does not resolve by.
 type Rental @table(name: "rental") @key(fields: "rentalId inventoryId") @key(fields: "rentalId", resolvable: false) {
   rentalId: Int @field(name: "rental_id")
@@ -27,19 +39,34 @@ interface Node {
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
 type Query {
+  addresses: [Address!]!
   films: [Film!]!
   actors: [Actor!]!
   customers: [Customer!]!
+  payments: [Payment!]!
   rentals: [Rental!]!
 }
 
-# Each authored key field's binding at its type's table, by key and place in the key; the minted keys
-# draw none, being no author's.
+# Each key field's binding at its type's table, by key and place in the key, the synthesised node
+# keys' included: the node id where the id is the node's own, the column where it carries @field.
 extend schema @expectEquals(relation: "graphitron_key_field_binding", rows: """
   type_name, ordinal, position, field_name,  kind,    bound
   Actor,     0,       0,        id,          NODE_ID, public.actor
+  Address,   0,       0,        id,          COLUMN,  public.address
+  Customer,  0,       0,        id,          NODE_ID, public.customer
   Film,      0,       0,        languageId,  COLUMN,  public.film
+  Film,      1,       0,        id,          NODE_ID, public.film
+  Payment,   0,       0,        id,          COLUMN,  public.payment
   Rental,    0,       0,        rentalId,    COLUMN,  public.rental
   Rental,    0,       1,        inventoryId, COLUMN,  public.rental
   Rental,    1,       0,        rentalId,    COLUMN,  public.rental
+  """)
+
+# The node key goes to the nodes no authored key spelling id keys: Film's key is over another field,
+# Customer and Address have none. Actor's and Payment's id keys stand it down, whatever their id reads.
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name, role, fields, resolvable, ordinal
+  Address,   NODE, id,     TRUE,       0
+  Customer,  NODE, id,     TRUE,       0
+  Film,      NODE, id,     TRUE,       1
   """)
