@@ -516,10 +516,10 @@ class NodeIdLeafResolverTest {
             .isEqualTo(direct.liftedSourceColumns().stream().map(c -> c.sqlName()).toList());
     }
 
-    // ===== A @table-only target over a metadata table decodes from its catalog node metadata =====
+    // ===== A federation stub decodes on its own tiers, under its own name =====
 
-    /** The leaf's decode is minted from the target table's catalog metadata, under the type's name. */
-    private static void assertCatalogDecode(no.sikt.graphitron.rewrite.model.HelperRef.Decode decode,
+    /** The leaf's decode is minted for the stub under the type's name, its key off the table's metadata. */
+    private static void assertStubDecode(no.sikt.graphitron.rewrite.model.HelperRef.Decode decode,
                                             String typeName, String typeId, String table, String... keys) {
         assertThat(decode.methodName()).isEqualTo("decode" + typeName);
         assertThat(decode.targetTypeName()).isEqualTo(typeName);
@@ -529,9 +529,9 @@ class NodeIdLeafResolverTest {
     }
 
     @Test
-    void tableOnlyTarget_sameTable_decodesFromCatalogMetadata() {
+    void stubTarget_sameTable_decodesOnTheStubsTiers() {
         String sdl = """
-            type Baz @table(name: "baz") { code: String @field(name: "id") }
+            type Baz @table(name: "baz") @node(resolvable: false) { code: String @field(name: "id") }
             type Query {
                 bazesByIds(ids: [ID!]! @nodeId(typeName: "Baz")): [Baz!]!
             }
@@ -544,14 +544,14 @@ class NodeIdLeafResolverTest {
             /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.SameTable.class,
-            sameTable -> assertCatalogDecode(sameTable.decodeMethod(), "Baz", "Baz", "baz", "id"));
+            sameTable -> assertStubDecode(sameTable.decodeMethod(), "Baz", "Baz", "baz", "id"));
     }
 
     @Test
-    void tableOnlyTarget_directFk_decodesFromCatalogMetadata() {
+    void stubTarget_directFk_decodesOnTheStubsTiers() {
         String sdl = """
             type Bar @table(name: "bar") { name: String }
-            type Baz @table(name: "baz") { code: String @field(name: "id") }
+            type Baz @table(name: "baz") @node(resolvable: false) { code: String @field(name: "id") }
             type Query {
                 barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): [Bar!]!
             }
@@ -564,15 +564,15 @@ class NodeIdLeafResolverTest {
             /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.FkTarget.DirectFk.class, direct -> {
-            assertCatalogDecode(direct.decodeMethod(), "Baz", "Baz", "baz", "id");
+            assertStubDecode(direct.decodeMethod(), "Baz", "Baz", "baz", "id");
             assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName()).containsExactly("id_1");
         });
     }
 
     @Test
-    void tableOnlyTarget_translatedFk_decodesFromCatalogMetadata() {
+    void stubTarget_translatedFk_decodesOnTheStubsTiers() {
         String sdl = """
-            type ParentNode @table(name: "parent_node") { altKey: String @field(name: "alt_key") }
+            type ParentNode @table(name: "parent_node") @node(resolvable: false) { altKey: String @field(name: "alt_key") }
             type ChildRef @table(name: "child_ref") {
                 childId: String! @field(name: "child_id")
             }
@@ -588,17 +588,17 @@ class NodeIdLeafResolverTest {
             bctx.resolveTable("child_ref").orElseThrow(), /*participant=*/null, /*authorOwnedPredicate=*/false);
 
         assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk.class,
-            translated -> assertCatalogDecode(translated.decodeMethod(), "ParentNode", "ParentNode",
+            translated -> assertStubDecode(translated.decodeMethod(), "ParentNode", "ParentNode",
                 "parent_node", "pk_id"));
     }
 
     @Test
-    void tableOnlyTarget_authorOwnedPredicate_decodesFromCatalogMetadata() {
+    void stubTarget_authorOwnedPredicate_decodesOnTheStubsTiers() {
         // qux has no foreign key to baz, so no route resolves; the leaf's own override owns the
         // predicate, and the decode is still the generator's.
         String sdl = """
             type Qux @table(name: "qux") { name: String }
-            type Baz @table(name: "baz") { code: String @field(name: "id") }
+            type Baz @table(name: "baz") @node(resolvable: false) { code: String @field(name: "id") }
             type Query {
                 quxesByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): [Qux!]!
             }
@@ -611,11 +611,11 @@ class NodeIdLeafResolverTest {
             /*participant=*/null, /*authorOwnedPredicate=*/true);
 
         assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.AuthorOwnedPredicate.class,
-            owned -> assertCatalogDecode(owned.decodeMethod(), "Baz", "Baz", "baz", "id"));
+            owned -> assertStubDecode(owned.decodeMethod(), "Baz", "Baz", "baz", "id"));
     }
 
     @Test
-    void tableOnlyTarget_withoutMetadata_rejectsNamingBothRemedies() {
+    void tableOnlyTarget_isRefusedNamingBothRemedies() {
         String sdl = """
             type Qux @table(name: "qux") { name: String }
             type Query {
@@ -631,7 +631,7 @@ class NodeIdLeafResolverTest {
 
         assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.Rejected.class,
             rejected -> assertThat(rejected.message())
-                .contains("not a @node type (no NodeId catalog metadata, no @node directive)"));
+                .contains("which is not a node type: write @node on it, or @node(resolvable: false)"));
     }
 
     @Test
@@ -658,10 +658,13 @@ class NodeIdLeafResolverTest {
     }
 
     @Test
-    void targetKeys_recordWhichSourceAnswered() {
+    void targetKeys_answerForANodeAndAStubAndRefuseTheRest() {
+        // Bar's table publishes node metadata, but without @node it is no node: the store refuses
+        // naming it as NODE_ID_TYPE_NAME_UNDECLARED_STUB, and the walk agrees.
         String sdl = """
             type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Bar @table(name: "bar") { name: String }
+            type BarStub @table(name: "bar") @node(resolvable: false) { name: String }
             type Qux @table(name: "qux") @node { name: String }
             type Query { x: String }
             """;
@@ -672,16 +675,13 @@ class NodeIdLeafResolverTest {
                 assertThat(ofNode.node().name()).isEqualTo("Baz");
                 assertThat(ofNode.typeId()).isEqualTo("Baz");
             });
-        assertThat(targetKeys(bctx, "Bar", "bar"))
-            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfCatalog.class, ofCatalog -> {
-                assertThat(ofCatalog.typeId()).isEqualTo("Bar");
-                assertThat(ofCatalog.keyColumns()).extracting(c -> c.sqlName()).containsExactly("id_1", "id_2");
+        assertThat(targetKeys(bctx, "BarStub", "bar"))
+            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfStub.class, stub -> {
+                assertThat(stub.typeId()).isEqualTo("Bar");
+                assertThat(stub.keyColumns()).extracting(c -> c.sqlName()).containsExactly("id_1", "id_2");
             });
-        assertThat(targetKeys(bctx, "Qux", "qux"))
-            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfDeclaredNode.class, declared -> {
-                assertThat(declared.typeId()).isEqualTo("Qux");
-                assertThat(declared.keyColumns()).extracting(c -> c.sqlName()).containsExactly("name");
-            });
+        assertThat(targetKeys(bctx, "Bar", "bar")).isInstanceOf(BuildContext.TargetKeys.Rejected.class);
+        assertThat(targetKeys(bctx, "Qux", "qux")).isInstanceOf(BuildContext.TargetKeys.Rejected.class);
     }
 
     private static BuildContext.TargetKeys targetKeys(BuildContext bctx, String typeName, String table) {

@@ -355,7 +355,7 @@ final class NodeIdLeafResolver {
                 + " jOOQ's typed Row22 cap. Reduce key arity or expose components as separate"
                 + " scalar arguments."));
         }
-        // Resolve the target TableRef ahead of every arm: a catalog decode is minted onto it, and
+        // Resolve the target TableRef ahead of every arm: a stub's decode is minted onto it, and
         // resolveFkJoinPath's parsePath call passes ref and name together, letting the
         // terminal-target verdict compare jOOQ table-class identity rather than the
         // schema-qualified @table echo. An unresolvable @table is UnclassifiedType upstream and
@@ -365,25 +365,13 @@ final class NodeIdLeafResolver {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
-        // Where the decode helper comes from follows from which source answered the key, and keys
-        // on refTypeName, not on targetTableName: by this point the type name is settled, either
-        // authored as @nodeId(typeName:) or inferred only where inference was unambiguous, so
-        // several types sharing the backing table is not this leaf's problem. A node type carries
-        // its own helper. A @table-only type over a table with catalog node metadata gets one minted
-        // under its own name, reading only its own table, so no table is ever mapped back to a type.
-        // A type carrying @node that did not classify as a node has no helper, and the reason is
-        // the error already reported on that type.
+        // A node type carries its own helper; a stub's is minted under its own name, the encoder
+        // emitting one for every node the store holds, a stub's included.
         HelperRef.Decode decodeMethod;
         switch (keys) {
             case BuildContext.TargetKeys.OfNode ofNode -> decodeMethod = ofNode.node().decodeMethod();
-            case BuildContext.TargetKeys.OfCatalog ofCatalog ->
-                decodeMethod = ctx.catalogNodeDecode(refTypeName, targetTable, ofCatalog);
-            case BuildContext.TargetKeys.OfDeclaredNode ignored -> {
-                return new Resolved.Rejected(Rejection.structural("@nodeId(typeName: '" + refTypeName
-                    + "') on leaf '" + leafName + "': '" + refTypeName + "' carries @node but did not"
-                    + " classify as a node type, so there is no decode helper to install here. See the"
-                    + " error reported on '" + refTypeName + "' itself."));
-            }
+            case BuildContext.TargetKeys.OfStub ofStub ->
+                decodeMethod = ctx.stubDecode(refTypeName, targetTable, ofStub);
         }
 
         // The route is chosen before the same-table short-circuit because the short-circuit's own

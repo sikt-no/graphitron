@@ -1973,10 +1973,11 @@ class TenantBindingClassificationTest {
 
     /**
      * A code table with catalog node metadata (type id {@code Baz}, key {@code id}) exposed as a
-     * plain {@code @table} type: no {@code implements Node}, no {@code @node}, and no tenant column.
+     * federation stub: no {@code implements Node}, {@code @node(resolvable: false)}, and no tenant
+     * column. A plain {@code @table} type over it is no node the store lets an id name.
      */
-    private static final String TABLE_ONLY_BAZ = """
-        type Baz @table(name: "baz") { code: String @field(name: "id") }
+    private static final String STUB_BAZ = """
+        type Baz @table(name: "baz") @node(resolvable: false) { code: String @field(name: "id") }
         """;
 
     /**
@@ -1996,8 +1997,8 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aJooqRecordParameterDecodingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode() {
-        var schema = build(SERVICE_TYPES + TABLE_ONLY_BAZ + """
+    void aJooqRecordParameterDecodingAStubWithoutTheTenantInItsKeySkipsTheDecode() {
+        var schema = build(SERVICE_TYPES + STUB_BAZ + """
             input ModifyBazInput { id: ID! @nodeId(typeName: "Baz") }
             type Mutation { modifyBaz(in: ModifyBazInput!): RateFilmsPayload %s }
             """.formatted(service("modifyBaz")));
@@ -2006,10 +2007,10 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aJooqRecordParameterReferencingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode() {
+    void aJooqRecordParameterReferencingAStubWithoutTheTenantInItsKeySkipsTheDecode() {
         // The reported shape: a foreign key loaded from the id of a code table that is no longer
         // a node type in this schema, beside plain column bindings for the rest of the record.
-        var schema = build(SERVICE_TYPES + TABLE_ONLY_BAZ + """
+        var schema = build(SERVICE_TYPES + STUB_BAZ + """
             input ModifyBarInput {
                 bazId: ID @nodeId(typeName: "Baz")
                 id2: String! @field(name: "id_2")
@@ -2022,8 +2023,8 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aRecordSlotDecodingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode() {
-        var schema = build(SERVICE_TYPES + TABLE_ONLY_BAZ + """
+    void aRecordSlotDecodingAStubWithoutTheTenantInItsKeySkipsTheDecode() {
+        var schema = build(SERVICE_TYPES + STUB_BAZ + """
             type Mutation { pickBaz(baz: ID! @nodeId(typeName: "Baz")): RateFilmsPayload %s }
             """.formatted(service("pickBaz")));
 
@@ -2031,11 +2032,11 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aJooqRecordParameterDecodingATableOnlyTypeWithTheTenantInItsKeyDeclines() {
+    void aJooqRecordParameterDecodingAStubWithTheTenantInItsKeyDeclines() {
         // The node-type twin is aJooqRecordParameterDecodingACompositeKeyReadsTheTenantPosition:
         // same table, same key, but there the decode helper exists to route on.
         var schema = build(SERVICE_TYPES + """
-            type FilmActorCode @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
+            type FilmActorCode @table(name: "film_actor") @node(resolvable: false) { actorId: Int @field(name: "actor_id") }
             input PickByFilmActorInput { id: ID! @nodeId(typeName: "FilmActorCode") }
             type Mutation { pickFilmForFilmActor(in: PickByFilmActorInput!): Film %s }
             """.formatted(service("pickFilmForFilmActor")));
@@ -2054,11 +2055,11 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aScalarArgumentOrFilterFieldNamingATableOnlyTypeDecodesFromCatalogMetadata() {
-        // A leaf naming a @table-only type over a metadata table decodes against that metadata,
+    void aScalarArgumentOrFilterFieldNamingAStubDecodesOnTheStubsTiers() {
+        // A leaf naming a stub over a metadata table decodes against that metadata,
         // through a decode helper minted under the type's own name. baz is global, so neither
         // field binds a tenant slot.
-        var schema = build(TABLE_ONLY_BAZ + """
+        var schema = build(STUB_BAZ + """
             input BazFilter { id: ID @nodeId(typeName: "Baz") }
             type Query {
                 baz(id: ID! @nodeId(typeName: "Baz")): Baz
@@ -2078,11 +2079,11 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aFilterFieldNamingATableOnlyTypeWithTheTenantInItsKeyRoutesOnTheCatalogDecode() {
+    void aFilterFieldNamingAStubWithTheTenantInItsKeyRoutesOnTheStubsDecode() {
         // The node-type twin is nodeIdFilterInputFieldDivinesTheDecodedSlot: same table, same key,
-        // and the catalog decode helper routes exactly as the node type's does.
+        // and the stub's decode helper routes exactly as the node type's does.
         var schema = build("""
-            type FilmActorCode @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
+            type FilmActorCode @table(name: "film_actor") @node(resolvable: false) { actorId: Int @field(name: "actor_id") }
             input FilmActorCodeFilter { id: ID! @nodeId(typeName: "FilmActorCode") }
             type Query { filmActorCodes(filter: FilmActorCodeFilter!): [FilmActorCode!]! }
             """);

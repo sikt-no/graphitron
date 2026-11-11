@@ -3599,8 +3599,8 @@ class BuildContext {
      * named-parameter key slot, a {@code @service} parameter that takes a decoded key, and that slot
      * leaves the check of its Java parameter type against the key to the fact store, whose views read
      * node types only; a {@code @table}-only target there would reach the Java compiler unchecked. A
-     * {@code @nodeId} leaf classifies itself entirely in the walk and mints its catalog decode
-     * through {@link #catalogNodeDecode} instead. Coordinates that legitimately hold only a table
+     * {@code @nodeId} leaf classifies itself entirely in the walk and mints a stub's decode
+     * through {@link #stubDecode} instead. Coordinates that legitimately hold only a table
      * resolve through {@link NodeIndex#forTable} at their own site, where an ambiguous table is a
      * rejection naming {@code typeName:} rather than a silent pick.
      */
@@ -3610,13 +3610,13 @@ class BuildContext {
     }
 
     /**
-     * The reference a {@code @nodeId(typeName:)} leaf holds to the {@code decode<TypeName>} helper of a
-     * target that is no node type here, a federation stub: the method name is the authored type name,
+     * The reference a {@code @nodeId(typeName:)} leaf holds to a federation stub's
+     * {@code decode<TypeName>} helper, a stub being no node type here: the method name is the authored type name,
      * as for a node type. The helper itself is emitted from the store's nodes, a stub among them, so a
      * reference to one the store does not hold fails to compile.
      */
-    no.sikt.graphitron.rewrite.model.HelperRef.Decode catalogNodeDecode(
-            String refTypeName, TableRef targetTable, TargetKeys.OfCatalog keys) {
+    no.sikt.graphitron.rewrite.model.HelperRef.Decode stubDecode(
+            String refTypeName, TableRef targetTable, TargetKeys.OfStub keys) {
         var encoderClass = com.palantir.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
@@ -3626,11 +3626,10 @@ class BuildContext {
     }
 
     /**
-     * Resolved key metadata for a {@code @nodeId(typeName:)} target, sealed over which source
-     * answered: the wire-format {@code typeId} plus the key {@link ColumnRef} list on the three
-     * {@link Resolved} arms, or a {@link Rejected} message when none of the three resolution sources
-     * (the {@link NodeIndex} entry, catalog metadata, or {@code @node} on the SDL with PK columns from
-     * the catalog) produce a usable pair. Shared shape: both {@link NodeIdLeafResolver#resolve} and
+     * Resolved key metadata for a {@code @nodeId(typeName:)} target, sealed over which kind of node
+     * answered: the wire-format {@code typeId} plus the key {@link ColumnRef} list on the two
+     * {@link Resolved} arms, a classified node or a federation stub, or a {@link Rejected} message for
+     * any other target, which the store refuses as a defect before the walk runs. Shared shape: both {@link NodeIdLeafResolver#resolve} and
      * {@link #resolveNodeIdRecordDecode} read their key columns through {@link #resolveTargetKeys},
      * so the {@code @node(keyColumns:)} fallback lives in exactly one place. The record path reads
      * only {@link Resolved}; the leaf reads the source too, because it decides where the decode
@@ -3650,37 +3649,26 @@ class BuildContext {
             @Override public List<ColumnRef> keyColumns() { return node.nodeKeyColumns(); }
         }
 
-        /** No {@link NodeType} under the name, and the target table carries catalog node metadata. */
-        record OfCatalog(String typeId, List<ColumnRef> keyColumns) implements Resolved {
-            public OfCatalog {
-                keyColumns = List.copyOf(keyColumns);
-            }
-        }
-
         /**
-         * The target carries {@code @node} on the SDL but did not classify as a {@link NodeType},
-         * over a table without catalog node metadata: the type id and the primary key columns.
+         * A federation stub, {@code @node(resolvable: false)}: a node for its id that is no
+         * {@link NodeType}, since this subgraph does not fetch it.
          */
-        record OfDeclaredNode(String typeId, List<ColumnRef> keyColumns) implements Resolved {
-            public OfDeclaredNode {
+        record OfStub(String typeId, List<ColumnRef> keyColumns) implements Resolved {
+            public OfStub {
                 keyColumns = List.copyOf(keyColumns);
             }
         }
 
-        /** None of the sources answered; {@code message} is ready for a rejection. */
+        /** The target is no node; {@code message} is ready for a rejection. */
         record Rejected(String message) implements TargetKeys {}
     }
 
     /**
-     * Resolves the target table's key metadata: prefers the {@link NodeIndex} entry, falls back to
-     * catalog metadata, then to {@code @node} on the SDL with PK columns from the catalog. Returns
-     * {@link TargetKeys.Rejected} when none of those produce a usable {@code typeId} +
-     * {@code keyColumns} pair.
-     *
-     * <p>The third arm is unreachable for a node whose {@code @node} was inferred, and stays a
-     * {@code @node}-only read for that reason: inference requires catalog metadata, so the second arm
-     * answers first whenever the index lookup misses. It survives for the shape it was written for, a
-     * {@code @node} type over a table the catalog carries no metadata for.
+     * Resolves the target's key metadata: the {@link NodeIndex} entry for a node type, a stub's own
+     * tiers for a stub, and {@link TargetKeys.Rejected} for anything else. Anything else is a defect
+     * the store states, {@code NODE_ID_TYPE_NAME_NOT_NODE}, {@code NODE_ID_TYPE_NAME_UNDECLARED_STUB},
+     * {@code NODE_ID_MEMBER_NOT_NODE_TYPE} or the unresolved node's own, so a graph that generates
+     * never reaches the rejection.
      */
     TargetKeys resolveTargetKeys(GraphQLObjectType targetObj, String refTypeName,
                                  String targetTableName) {
@@ -3732,30 +3720,16 @@ class BuildContext {
                     + refTypeName + "' over table '" + targetTableName + "', which has no key columns"
                     + " (no @node(keyColumns:), no catalog metadata, no primary key)");
             }
-            return new TargetKeys.OfCatalog(typeId, keyColumns);
-        }
-        // No NodeType under that name: the target is a @table-only type (or failed classification)
-        // over a metadata-carrying table. The table fact is the only source left.
-        if (meta.isPresent()) {
-            return new TargetKeys.OfCatalog(meta.get().typeId(), meta.get().keyColumns());
+            return new TargetKeys.OfStub(typeId, keyColumns);
         }
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
-            String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
-            var pkCols = catalog.findPkColumns(targetTableName).stream()
-                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()))
-                .toList();
-            if (pkCols.isEmpty()) {
-                return new TargetKeys.Rejected(
-                    "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-                    + "' which has @node but no resolvable key columns (no catalog metadata, "
-                    + "no @node(keyColumns:), no primary key)");
-            }
-            return new TargetKeys.OfDeclaredNode(typeId, pkCols);
+            return new TargetKeys.Rejected("@nodeId(typeName: '" + refTypeName + "'): '" + refTypeName
+                + "' carries @node but did not classify as a node type, so there is no decode helper to"
+                + " install here. See the error reported on '" + refTypeName + "' itself.");
         }
         return new TargetKeys.Rejected(
-            "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-            + "' which is not a @node type (no NodeId catalog metadata, no @node directive)"
-            + " — annotate the target type with @node or surface the metadata via KjerneJooqGenerator");
+            "@nodeId(typeName: '" + refTypeName + "') targets '" + refTypeName + "', which is not a node"
+            + " type: write @node on it, or @node(resolvable: false) where another subgraph owns it");
     }
 
     /**
