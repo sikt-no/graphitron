@@ -31,7 +31,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
@@ -70,8 +70,8 @@ import static org.jooq.impl.DSL.when;
  *       field's own join path, from the routine's result to that table, each step stating the column
  *       pairs it joins on;</li>
  *   <li>an <b>object</b> held on the routine's result ({@link ObjectResult}) is re-read by the child
- *       occurrences under the field that take a key row, each paired by name from the routine's
- *       result to the table the key row names.</li>
+ *       occurrences under the field filled with columns, each paired by name from the routine's
+ *       result to the table its fill names.</li>
  * </ul>
  *
  * <p>Admission is those facts being present and nothing else: a coordinate has a row where the store
@@ -226,7 +226,7 @@ public final class RoutineWriteQuery {
     }
 
     /**
-     * One child occurrence re-reading an object result: the field, the table its key row names, and
+     * One child occurrence re-reading an object result: the field, the table its fill names, and
      * the pairing that captures that table's key out of the routine's result.
      *
      * @param listReturn    whether the re-reading field returns a list, which is how many keys the
@@ -388,7 +388,7 @@ public final class RoutineWriteQuery {
      * One routine-write occurrence on the mutation root, as the store states it: the shape of its
      * producer's result and the table records are lifted onto, whether the field's join path lands
      * on that table or on the routine's own result, the path's steps, the children that re-read by
-     * key row, and whether a child binds a node id.
+     * their fill's key, and whether a child binds a node id.
      */
     private record Occurrence(String typeName, String fieldName, String returnTypeName,
                               boolean listReturn, String shape, Call call, Table liftTable,
@@ -707,22 +707,22 @@ public final class RoutineWriteQuery {
     }
 
     /**
-     * A child occurrence that takes a key row, as read: its coordinate, which the pairing statement
-     * is keyed by, its field, the table the key row names, its list-ness, whether it is a non-null
+     * A child occurrence filled with keys, as read: its coordinate, which the pairing statement
+     * is keyed by, its field, the table its fill names, its list-ness, whether it is a non-null
      * single, and whether the key is matched by name out of the routine's result.
      */
     private record RawReRead(String coordinate, String fieldName, Table table, boolean listReturn,
                              boolean nonNullSingle, boolean keyMatched) {}
 
     /**
-     * The occurrences directly under the field that start on a key row of columns: each re-reads
-     * the table the key row names, by the keys the write captured. The key is matched out of the
+     * The occurrences directly under the field that are filled with columns: each re-reads
+     * the table the fill names, by the keys the write captured. The key is matched out of the
      * function's own table, the routine the producer calls.
      */
     private static Field<List<RawReRead>> reReads(Field<String> graph, Field<String> occurrence,
                                                   GraphitronOccurrenceProducerRoutine pr) {
         var co = GRAPHITRON_OCCURRENCE.as("re_reading");
-        var kr = GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
+        var kr = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
         var cf = GRAPHITRON_FIELD.as("re_reading_field");
         var kt = SQL_TABLE.as("re_read_table");
         var ks = SQL_SCHEMA.as("re_read_schema");
@@ -733,14 +733,14 @@ public final class RoutineWriteQuery {
                 field(cf.IS_LIST.isFalse().and(cf.NON_NULL.isTrue())),
                 field(exists(selectOne().from(nm).where(nm.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME),
                     nm.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA), nm.TABLE_NAME.eq(pr.ROUTINE_NAME),
-                    nm.TO_SOURCE_NAME.eq(kr.TABLE_SOURCE_NAME), nm.TO_SCHEMA.eq(kr.TABLE_SCHEMA),
-                    nm.TO_TABLE.eq(kr.TABLE_NAME)))))
+                    nm.TO_SOURCE_NAME.eq(kr.KEY_SOURCE_NAME), nm.TO_SCHEMA.eq(kr.KEY_SCHEMA),
+                    nm.TO_TABLE.eq(kr.KEY_TABLE)))))
                 .from(co)
                 .join(kr).on(kr.GRAPH_NAME.eq(co.GRAPH_NAME), kr.COORDINATE.eq(co.COORDINATE),
-                    kr.KEY_KIND.eq("COLUMNS"))
+                    kr.READ.eq("COLUMNS"))
                 .join(cf).on(cf.GRAPH_NAME.eq(co.GRAPH_NAME), cf.COORDINATE.eq(co.ELEMENT_COORDINATE))
-                .join(kt).on(kt.SOURCE_NAME.eq(kr.TABLE_SOURCE_NAME),
-                    kt.TABLE_SCHEMA.eq(kr.TABLE_SCHEMA), kt.TABLE_NAME.eq(kr.TABLE_NAME))
+                .join(kt).on(kt.SOURCE_NAME.eq(kr.KEY_SOURCE_NAME),
+                    kt.TABLE_SCHEMA.eq(kr.KEY_SCHEMA), kt.TABLE_NAME.eq(kr.KEY_TABLE))
                 .join(ks).on(ks.SOURCE_NAME.eq(kt.SOURCE_NAME), ks.TABLE_SCHEMA.eq(kt.TABLE_SCHEMA))
                 .where(co.GRAPH_NAME.eq(graph), co.PARENT_COORDINATE.eq(occurrence),
                     co.KIND.eq("FIELD"))
@@ -800,14 +800,14 @@ public final class RoutineWriteQuery {
     /**
      * Each admitted re-reading child's captured key pairing, keyed by the child's coordinate: the
      * routine result's column of each name beside the primary-key column of that name on the table
-     * the child's key row names, in key order. The relation holds only total pairings, since a
+     * the child's fill names, in key order. The relation holds only total pairings, since a
      * capture missing one key column filters on a partial key and re-reads a row the write did not
      * commit. The routine result is the function's own table, the routine the parent's producer
      * calls.
      */
     private static Map<String, List<Pair>> reReadPairs(StoreHandle store, List<Occurrence> admitted) {
         var co = GRAPHITRON_OCCURRENCE.as("re_reading");
-        var kr = GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
+        var kr = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
         var pr = GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
         var nm = SQL_NAME_MATCHED_KEY_COLUMN;
         var src = SQL_COLUMN.as("source_column");
@@ -825,15 +825,15 @@ public final class RoutineWriteQuery {
             .join(pr).on(pr.GRAPH_NAME.eq(co.GRAPH_NAME), pr.COORDINATE.eq(co.PARENT_COORDINATE))
             .join(nm).on(nm.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME),
                 nm.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA), nm.TABLE_NAME.eq(pr.ROUTINE_NAME),
-                nm.TO_SOURCE_NAME.eq(kr.TABLE_SOURCE_NAME), nm.TO_SCHEMA.eq(kr.TABLE_SCHEMA),
-                nm.TO_TABLE.eq(kr.TABLE_NAME))
+                nm.TO_SOURCE_NAME.eq(kr.KEY_SOURCE_NAME), nm.TO_SCHEMA.eq(kr.KEY_SCHEMA),
+                nm.TO_TABLE.eq(kr.KEY_TABLE))
             .join(src).on(src.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME),
                 src.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA), src.TABLE_NAME.eq(pr.ROUTINE_NAME),
                 src.COLUMN_NAME.eq(nm.COLUMN_NAME))
-            .join(tgt).on(tgt.SOURCE_NAME.eq(kr.TABLE_SOURCE_NAME),
-                tgt.TABLE_SCHEMA.eq(kr.TABLE_SCHEMA), tgt.TABLE_NAME.eq(kr.TABLE_NAME),
+            .join(tgt).on(tgt.SOURCE_NAME.eq(kr.KEY_SOURCE_NAME),
+                tgt.TABLE_SCHEMA.eq(kr.KEY_SCHEMA), tgt.TABLE_NAME.eq(kr.KEY_TABLE),
                 tgt.COLUMN_NAME.eq(nm.TO_COLUMN))
-            .where(kr.GRAPH_NAME.eq(store.graphName()), kr.KEY_KIND.eq("COLUMNS"),
+            .where(kr.GRAPH_NAME.eq(store.graphName()), kr.READ.eq("COLUMNS"),
                 kr.COORDINATE.in(children))
             .orderBy(kr.COORDINATE, nm.POSITION)
             .forEach(r -> byKey

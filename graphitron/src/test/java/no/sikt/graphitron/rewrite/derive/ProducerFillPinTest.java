@@ -19,24 +19,30 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static org.jooq.impl.DSL.selectOne;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The agreement anchor for how a field under a held object takes its keys: the store's
- * {@code graphitron_field_key_row}, derived relationally from the parent's class, the path's
- * elements and the classpath, and the classifier's {@link KeyLift} on each batched leaf, decided by
- * reflection while it builds the field. Over the whole sakila example schema, every field whose
- * parent is a result type carries the same kind, arity and method on both sides.
+ * The agreement anchor for how a producer under a held object takes its keys: the store's
+ * {@code graphitron_occurrence_producer_lift}, derived relationally per occurrence from the parent's
+ * class, the path's elements and the classpath, and the classifier's {@link KeyLift} on each batched
+ * leaf, decided by reflection while it builds the field. Over the whole sakila example schema, every
+ * field whose parent is a result type carries the same read, arity and method on both sides, under
+ * every occurrence of it.
  *
  * <p>{@link KeyLift.FkColumns} and {@link KeyLift.ProducedRecords} both read the keys as columns
  * off the object, the store's {@code COLUMNS}; which columns is the path's, so the comparison does
  * not ask. A polymorphic field under a table-row parent carries a lift too, but its parent holds a
- * row, not an object, and has no key row.
+ * row, not an object; a service under one is filled off that row, which the classifier states as
+ * {@link ServiceKeySource.FromTableRow}, so the comparison leaves both out.
  */
 @PipelineTier
-class FieldKeyRowPinTest {
+class ProducerFillPinTest {
 
     @TempDir
     Path tmp;
@@ -49,17 +55,25 @@ class FieldKeyRowPinTest {
         try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
                 CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath())) {
             var dsl = store.dsl();
-            var k = GRAPHITRON_FIELD_KEY_ROW;
-            var a = GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
+            var k = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+            var a = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
+            var o = GRAPHITRON_OCCURRENCE;
+            var f = GRAPHITRON_FIELD;
+            var tt = GRAPHITRON_TABLETYPE;
             var stored = new TreeMap<String, String>();
-            // An accessor key names the member it reads, its code_read_slot row.
-            dsl.select(k.TYPE_NAME, k.FIELD_NAME, k.KIND, k.ARITY, a.SLOT_METHOD_NAME)
+            // An accessor key names the member it reads, its code_read_slot row. A field reached
+            // under several parents is filled once per occurrence, the same way each time.
+            dsl.select(f.TYPE_NAME, f.FIELD_NAME, k.READ, k.ARITY, a.SLOT_METHOD_NAME)
                 .from(k)
-                .leftJoin(a).on(a.GRAPH_NAME.eq(k.GRAPH_NAME), a.TYPE_NAME.eq(k.TYPE_NAME),
-                    a.FIELD_NAME.eq(k.FIELD_NAME))
+                .join(o).on(o.GRAPH_NAME.eq(k.GRAPH_NAME), o.COORDINATE.eq(k.COORDINATE))
+                .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+                .leftJoin(a).on(a.GRAPH_NAME.eq(k.GRAPH_NAME), a.COORDINATE.eq(k.COORDINATE))
+                .whereNotExists(selectOne().from(tt)
+                    .where(tt.GRAPH_NAME.eq(f.GRAPH_NAME), tt.TYPE_NAME.eq(f.TYPE_NAME)))
                 .fetch()
-                .forEach(r -> stored.put(r.value1() + "." + r.value2(),
-                    r.value3() + " " + r.value4() + (r.value5() == null ? "" : " " + r.value5())));
+                .forEach(r -> stored.merge(r.value1() + "." + r.value2(),
+                    r.value3() + " " + r.value4() + (r.value5() == null ? "" : " " + r.value5()),
+                    (x, y) -> x.equals(y) ? x : x + " | " + y));
             assertThat(walked).as("the classifier lifts keys off a held object at this many fields")
                 .hasSizeGreaterThanOrEqualTo(30);
             var onlyWalked = new TreeMap<>(walked);
@@ -70,8 +84,8 @@ class FieldKeyRowPinTest {
                 .containsOnlyKeys(agreed.keySet());
             assertThat(agreed.entrySet()).as("and the same way, field by field, where both do")
                 .allMatch(e -> e.getValue().equals(stored.get(e.getKey())));
-            assertThat(onlyWalked.keySet()).as("no field the classifier lifts keys at goes without a key"
-                + " row in the store").isEmpty();
+            assertThat(onlyWalked.keySet()).as("no field the classifier lifts keys at goes unfilled in"
+                + " the store").isEmpty();
         }
     }
 

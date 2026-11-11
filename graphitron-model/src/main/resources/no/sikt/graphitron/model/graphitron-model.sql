@@ -6534,7 +6534,7 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- question about a catalog, so the relation carries no graph either; and because it does not, the
 -- two consumers that ask it can find their two ends in completely different places.
 -- graphitron_join_path_step_rule finds them in an authored path element, and a routine
--- write finds them in its own path's landing and its payload data field's key row. Keyed by a coordinate, the rule would have had to be written once per kind of
+-- write finds them in its own path's landing and its payload data field's fill. Keyed by a coordinate, the rule would have had to be written once per kind of
 -- coordinate that asks, which is the duplication the generator carries today and the reason this
 -- relation exists.
 
@@ -8303,70 +8303,9 @@ INSERT INTO graphitron_runtime_member VALUES
   ('CONNECTION_EDGE', 'cursor', '()Ljava/lang/String;', FALSE),
   ('CONNECTION_HELPER', 'encodeCursor', '(Lorg/jooq/Record;Ljava/util/List;)Ljava/lang/String;', TRUE);
 
-CREATE TABLE graphitron_field_key_row (
-  graph_name        VARCHAR   NOT NULL,
-  type_name         VARCHAR   NOT NULL,
-  field_name        VARCHAR   NOT NULL,
-  kind              VARCHAR   NOT NULL,
-  table_source_name VARCHAR   NOT NULL,
-  table_schema      VARCHAR   NOT NULL,
-  table_name        VARCHAR   NOT NULL,
-  arity             VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  UNIQUE (graph_name, type_name, field_name, kind),
-  -- What a path started on the key row references, so the start goes when the key or its table does.
-  UNIQUE (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
-  FOREIGN KEY (table_source_name, table_schema, table_name)
-    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  CHECK (kind IN ('COLUMNS', 'ACCESSOR')),
-  CHECK (arity IN ('ONE', 'MANY'))
-);
-COMMENT ON TABLE graphitron_field_key_row IS 'How a field takes the keys its rows are fetched by off the object its parent holds: one row per field whose parent holds an OBJECT and that fetches its own rows. For example FilmDetailsCarrier.language, under a FilmRecord, takes film''s columns off the record, and CreateFilmsPayload.films takes the film records its films() accessor returns.';
-COMMENT ON COLUMN graphitron_field_key_row.graph_name IS 'the owning graph''s partition, carried from the field';
-COMMENT ON COLUMN graphitron_field_key_row.type_name IS 'the type owning the field, one that holds an OBJECT';
-COMMENT ON COLUMN graphitron_field_key_row.field_name IS 'the field; with the column above a reference into graphitron_field';
-COMMENT ON COLUMN graphitron_field_key_row.kind IS 'how the keys are taken, a closed vocabulary of two. COLUMNS: read as columns off the object, a table record or members named like the columns: the target''s key where the object is what a write or a service produced (a re-fetch), the first key''s columns where a path departs from it. ACCESSOR: the table records a member of the object returns, their primary key';
-COMMENT ON COLUMN graphitron_field_key_row.table_source_name IS 'the catalog partition of the table whose columns the keys are';
-COMMENT ON COLUMN graphitron_field_key_row.table_schema IS 'that table''s SQL schema';
-COMMENT ON COLUMN graphitron_field_key_row.table_name IS 'the table whose columns the keys are: the target for a re-fetch, the record''s table for a table record or an accessor';
-COMMENT ON COLUMN graphitron_field_key_row.arity IS 'ONE where one parent object yields one key, MANY where it yields several: a list of produced records, or an accessor returning a collection';
-COMMENT ON COLUMN graphitron_field_key_row.touched_at IS 'when the reading that derived this row ran; the stage sweeps the graph''s rows carrying another instant';
-
-CREATE TABLE graphitron_field_key_row_accessor (
-  graph_name       VARCHAR   NOT NULL,
-  type_name        VARCHAR   NOT NULL,
-  field_name       VARCHAR   NOT NULL,
-  kind             VARCHAR   NOT NULL,
-  slot_source_name VARCHAR   NOT NULL,
-  slot_class_name  VARCHAR   NOT NULL,
-  slot_method_name VARCHAR   NOT NULL,
-  slot_descriptor  VARCHAR   NOT NULL,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  -- The key row it details, pinned to the kind that takes its keys through a member.
-  FOREIGN KEY (graph_name, type_name, field_name, kind)
-    REFERENCES graphitron_field_key_row (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
-  FOREIGN KEY (slot_source_name, slot_class_name, slot_method_name, slot_descriptor)
-    REFERENCES code_read_slot (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
-  CHECK (kind = 'ACCESSOR')
-);
-COMMENT ON TABLE graphitron_field_key_row_accessor IS 'The member an ACCESSOR key row takes its keys through: one row per such key row, naming the member''s code_read_slot row. For example CreateFilmsPayload.films takes its film keys from the records CreateFilmsPayload.films() returns.';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.graph_name IS 'the owning graph''s partition, carried from the key row';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.type_name IS 'the type owning the field, as on the key row';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.field_name IS 'the field; with the two columns before it, the key row''s key and this row''s';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.kind IS 'ACCESSOR, carried so the reference into the key row can name the kind and a member cannot hang off a COLUMNS row';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_source_name IS 'the entry the parent''s class was read from, the slot key''s leading column';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_class_name IS 'the class offering the member, the parent''s class';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_method_name IS 'the method that reads the member, which the generated code calls on the parent';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.slot_descriptor IS 'that method''s descriptor, completing the slot''s key';
-COMMENT ON COLUMN graphitron_field_key_row_accessor.touched_at IS 'when the reading that derived this row ran; the stage sweeps the graph''s rows carrying another instant';
-
 CREATE INDEX graphql_ast_field_definition_entry_coordinate_ix
   ON graphql_ast_field_definition_entry (graph_name, type_name, name);
-COMMENT ON INDEX graphql_ast_field_definition_entry_coordinate_ix IS 'The coordinate side''s probe: graphitron_field_key_row_rule reaches a producing field''s definition site from its type and name, where the primary key leads with the site.';
+COMMENT ON INDEX graphql_ast_field_definition_entry_coordinate_ix IS 'The coordinate side''s probe: graphitron_entry_defect_rule reaches a producing field''s definition site from its type and name, where the primary key leads with the site.';
 
 -- How a field reads the result its parent holds: under a ROW, a column of it, an expression
 -- projected into it, or a row nested in it; under an OBJECT, an accessor. A field that is a
@@ -11292,51 +11231,6 @@ COMMENT ON COLUMN graphitron_occurrence_producer.kind IS 'what it runs, in graph
 COMMENT ON COLUMN graphitron_occurrence_producer.start IS 'ROOT for an occurrence on a root type, which has no source and executes from nothing; CHILD for one that starts its own query from what its parent produced';
 COMMENT ON COLUMN graphitron_occurrence_producer.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
-CREATE VIEW graphitron_occurrence_producer_key_row_rule
-  (graph_name, coordinate, key_kind, table_source_name, table_schema, table_name, arity) AS
--- A child producer that takes its keys off the object its parent holds starts on the key's table.
-SELECT p.graph_name, p.coordinate, k.kind, k.table_source_name, k.table_schema, k.table_name, k.arity
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_field_key_row k
-    ON k.graph_name = f.graph_name AND k.type_name = f.type_name AND k.field_name = f.field_name
- WHERE p.start = 'CHILD';
-COMMENT ON VIEW graphitron_occurrence_producer_key_row_rule IS 'One row the key-row start rule computes, in the shape graphitron_occurrence_producer_key_row stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_key_row, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.key_kind IS 'the key_kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.key_kind';
--- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.table_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_key_row_rule.arity IS 'the arity of a row of this rule, which the stage writes into graphitron_occurrence_producer_key_row.arity';
-
-CREATE TABLE graphitron_occurrence_producer_key_row (
-  graph_name        VARCHAR   NOT NULL,
-  coordinate        VARCHAR   NOT NULL,
-  key_kind          VARCHAR   NOT NULL,
-  table_source_name VARCHAR   NOT NULL,
-  table_schema      VARCHAR   NOT NULL,
-  table_name        VARCHAR   NOT NULL,
-  arity             VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate),
-  FOREIGN KEY (graph_name, coordinate)
-    REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
-  FOREIGN KEY (table_source_name, table_schema, table_name)
-    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  CHECK (key_kind IN ('COLUMNS', 'ACCESSOR')),
-  CHECK (arity IN ('ONE', 'MANY'))
-);
-COMMENT ON TABLE graphitron_occurrence_producer_key_row IS 'Where a child producer starts when its parent holds an object: the key it takes off that object, lifted onto the key''s table; one row per such producer. For example FilmDetailsCarrier.language under a FilmRecord starts on film, taking film''s columns off the record.';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.coordinate IS 'the producing occurrence, the whole key: one start per producer';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.key_kind IS 'how it takes the key, as graphitron_field_key_row says: COLUMNS, the record''s own columns, or ACCESSOR, a member returning another table''s record';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.table_source_name IS 'the catalog entry of the key''s table, with the schema and the name a sql_table key';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.table_schema IS 'the key''s table''s schema';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.table_name IS 'the key''s table, the table the producer''s query starts on';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.arity IS 'ONE or MANY keys per parent, as graphitron_field_key_row says';
-COMMENT ON COLUMN graphitron_occurrence_producer_key_row.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- A call's candidate methods, each of whose parameters the fills below are stated for, and the one
 -- the call pins: the fills decide the pin, so a call with several candidates takes the one every
@@ -12791,9 +12685,8 @@ COMMENT ON VIEW graphitron_occurrence_producer_lift_candidate_rule IS 'One row t
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_descriptor IS 'the slot_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_descriptor';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.found_by IS 'the found_by of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.found_by';
 
--- How a child producer's keys are filled from its source, written at the end of each depth. The arms
--- are the field-keyed key row's, stated per occurrence and with services in, so nothing reading a
--- key changes: a member handing over the key's records, a re-fetch of the source's own rows, a
+-- How a child producer's keys are filled from its source, written at the end of each depth, per
+-- occurrence and with services in: a member handing over the key's records, a re-fetch of the source's own rows, a
 -- selection under a record handed over whose path leaves the record's table by its first key, and
 -- a service keyed on its source's table.
 CREATE VIEW graphitron_occurrence_producer_lift_rule
@@ -15245,7 +15138,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
            -- Judged only where the store has read the class and its members, what it holds being
            -- unknown otherwise, as NO_KEY_FROM_PARENT's selection arm judges.
            AND EXISTS (SELECT 1 FROM code_read_slot known WHERE known.class_name = rc.class_name)
-           -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a key row's.
+           -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a fill's.
            AND EXISTS (SELECT 1 FROM code_method_parameter mp JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
                         WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                           AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
@@ -17126,191 +17019,6 @@ COMMENT ON VIEW intent_type_backing_conflict IS 'Deprecated with the whole inten
 -- COMMENT ON COLUMN intent_type_backing_conflict.type_name IS 'the contested SDL type';
 -- COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; distinct, so a class both arms name counts once, and the arity a rejection stands on, on graphitron_spelled_table.candidates'' terms';
 
-CREATE VIEW graphitron_field_key_row_rule
-  (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name, arity,
-   slot_source_name, slot_class_name, slot_method_name, slot_descriptor) AS
--- The fields that fetch their own rows under a parent holding an OBJECT, with what the parent holds
--- and what the field reads. A parent holding several classes takes no part: which one arrives is the
--- producer's, so no one key is the field's.
-WITH field_at (graph_name, type_name, field_name, class_name, record_source_name, record_schema,
-               record_table, target_type_name, many, polymorphic, base_name, def_source_name,
-               def_line, def_column) AS (
-  SELECT p.graph_name, p.type_name, p.field_name, rc.class_name,
-         rt.source_name, rt.table_schema, rt.table_name,
-         ft.target_type_name,
-         f.is_list OR ft.wrapper_type_name IS NOT NULL,
-         tt.kind IN ('INTERFACE', 'UNION'),
-         f.bound_name,
-         d.source_name, d.source_line, d.source_column
-    FROM graphitron_producer p
-    JOIN graphitron_result r
-      ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
-    JOIN graphitron_field f
-      ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
-    JOIN graphitron_field_target ft
-      ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
-    JOIN graphitron_type tt
-      ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
-    LEFT JOIN graphitron_result_class rc
-      ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
-    LEFT JOIN sql_table rt
-      ON rt.record_class_fqn = rc.class_name
-    LEFT JOIN graphql_ast_field_definition_entry d
-      ON d.graph_name = p.graph_name AND d.type_name = p.type_name AND d.name = p.field_name
-   WHERE p.kind IN ('SELECT', 'LOOKUP')
-     AND (SELECT COUNT(*) FROM graphitron_result_class c2
-           WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) <= 1
-),
--- The types a write returns as an object, with whether the write yields many rows: an insert, update
--- or delete taking a list or matching many, and for a routine nothing said, its function's table
--- result not saying how many rows a call writes.
-written (graph_name, type_name, yields_many) AS (
-  SELECT wt.graph_name, wt.target_type_name,
-         MAX(CASE WHEN wp.kind IN ('INSERT', 'UPDATE', 'DELETE')
-                    THEN CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument a
-                                            WHERE a.graph_name = wp.graph_name
-                                              AND a.type_name = wp.type_name
-                                              AND a.field_name = wp.field_name AND a.is_list)
-                                OR EXISTS (SELECT 1 FROM graphitron_producer_write pw
-                                            WHERE pw.graph_name = wp.graph_name
-                                              AND pw.type_name = wp.type_name
-                                              AND pw.field_name = wp.field_name
-                                              AND pw.matches = 'MANY')
-                              THEN 1 ELSE 0 END END)
-    FROM graphitron_producer wp
-    JOIN graphitron_field_target wt
-      ON wt.graph_name = wp.graph_name AND wt.type_name = wp.type_name AND wt.field_name = wp.field_name
-   WHERE wp.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE')
-   GROUP BY wt.graph_name, wt.target_type_name
-),
-target (graph_name, type_name, field_name, source_name, table_schema, table_name) AS (
-  SELECT fa.graph_name, fa.type_name, fa.field_name, b.table_source_name, b.table_schema, b.table_name
-    FROM field_at fa
-    JOIN graphitron_tabletype b
-      ON b.graph_name = fa.graph_name AND b.type_name = fa.target_type_name
-   WHERE NOT fa.polymorphic
-),
-first_key (graph_name, type_name, field_name, source_name, table_schema, table_name,
-           referenced_source_name, referenced_schema, referenced_table) AS (
-  SELECT fa.graph_name, fa.type_name, fa.field_name, rk.source_name, rk.table_schema, rk.table_name,
-         rk.referenced_source_name, rk.referenced_schema, rk.referenced_table
-    FROM field_at fa
-    JOIN graphitron_ast_field_path_entry e
-      ON e.graph_name = fa.graph_name AND e.source_name = fa.def_source_name
-     AND e.field_line = fa.def_line AND e.field_column = fa.def_column AND e.position = 0
-    JOIN graphitron_path_element_key k
-      ON k.graph_name = e.graph_name AND k.source_name = e.source_name
-     AND k.source_line = e.element_line AND k.source_column = e.element_column
-    JOIN sql_referential_constraint rk
-      ON rk.source_name = k.constraint_source_name AND rk.table_schema = k.constraint_schema
-     AND rk.table_name = k.constraint_table AND rk.constraint_name = k.constraint_name
-),
--- A member of the parent's class named as the field reads, returning table records: of the target's
--- table where the target is one table, of any table where it is several, that table being the hub the
--- members hang off. Its arity is what the member delivers, a collection or one, whatever the field
--- declares: a list field taking one row is a list of at most one, and a single field taking a
--- collection is MANY_KEYS_INTO_ONE.
-accessor (graph_name, type_name, field_name, source_name, class_name, method_name, descriptor,
-          table_source_name, table_schema, table_name, arity) AS (
-  SELECT fa.graph_name, fa.type_name, fa.field_name, s.source_name, s.class_name, s.method_name,
-         s.descriptor, et.source_name, et.table_schema, et.table_name,
-         CASE WHEN s.delivery = 'MANY' THEN 'MANY' ELSE 'ONE' END
-    FROM field_at fa
-    JOIN code_read_slot s
-      ON s.class_name = fa.class_name AND s.slot_name = fa.base_name
-    JOIN sql_table et
-      ON et.record_class_fqn = s.element_class
-    LEFT JOIN target t
-      ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
-   WHERE fa.record_table IS NULL
-     AND (fa.polymorphic OR (et.source_name = t.source_name AND et.table_schema = t.table_schema
-                             AND et.table_name = t.table_name))
-)
-,
--- A service under a parent holding an OBJECT, and the table whose records its one source parameter
--- collects, the key's table: the batch is keyed by that table's records, read off the parent.
-service_at (graph_name, type_name, field_name, class_name, record_source_name, record_schema,
-            record_table, key_source_name, key_schema, key_table, key_record_class) AS (
-  SELECT ps.graph_name, ps.type_name, ps.field_name, rc.class_name, rt.source_name, rt.table_schema,
-         rt.table_name, kt.source_name, kt.table_schema, kt.table_name, kt.record_class_fqn
-    FROM graphitron_producer_service ps
-    JOIN graphitron_result r
-      ON r.graph_name = ps.graph_name AND r.type_name = ps.type_name AND r.shape = 'OBJECT'
-    LEFT JOIN graphitron_result_class rc
-      ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
-    LEFT JOIN sql_table rt
-      ON rt.record_class_fqn = rc.class_name
-    JOIN code_method_parameter mp
-      ON mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
-     AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor AND mp.delivery = 'MANY'
-    JOIN sql_table kt
-      ON kt.record_class_fqn = mp.element_class
-   WHERE (SELECT COUNT(*) FROM graphitron_result_class c2
-           WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) <= 1
-     AND (SELECT COUNT(*) FROM code_method_parameter mp2
-            JOIN sql_table kt2 ON kt2.record_class_fqn = mp2.element_class
-           WHERE mp2.source_name = mp.source_name AND mp2.class_name = mp.class_name
-             AND mp2.method_name = mp.method_name AND mp2.descriptor = mp.descriptor
-             AND mp2.delivery = 'MANY') = 1
-)
--- A re-fetch: the parent is the object a write hands back, or a record of the target's own table
--- a service produced, so the target's key is read straight off it. Its arity is how many rows the
--- write yields where the write says, and the field's own where it does not.
-SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.table_schema,
-       t.table_name,
-       CASE WHEN w.yields_many = 1 THEN 'MANY' WHEN w.yields_many = 0 THEN 'ONE'
-            WHEN fa.many THEN 'MANY' ELSE 'ONE' END,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM field_at fa
-  JOIN target t
-    ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
-  LEFT JOIN written w
-    ON w.graph_name = fa.graph_name AND w.type_name = fa.type_name
- WHERE w.type_name IS NOT NULL
-    OR (fa.record_table = t.table_name AND fa.record_schema = t.table_schema
-        AND fa.record_source_name = t.source_name)
-UNION ALL
--- A table record the path departs from, by its first key or, to several tables, by its own key.
-SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', fa.record_source_name,
-       fa.record_schema, fa.record_table, 'ONE',
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM field_at fa
- WHERE fa.record_table IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM target t WHERE t.graph_name = fa.graph_name
-                     AND t.type_name = fa.type_name AND t.field_name = fa.field_name
-                     AND t.table_name = fa.record_table AND t.table_schema = fa.record_schema
-                     AND t.source_name = fa.record_source_name)
-   AND (fa.polymorphic OR EXISTS (SELECT 1 FROM first_key fk WHERE fk.graph_name = fa.graph_name
-                                    AND fk.type_name = fa.type_name AND fk.field_name = fa.field_name))
-UNION ALL
--- An accessor of the parent's class, where nothing above took the keys and exactly one matches,
--- with the member that hands the keys over.
-SELECT a.graph_name, a.type_name, a.field_name, 'ACCESSOR', a.table_source_name, a.table_schema,
-       a.table_name, a.arity, a.source_name, a.class_name, a.method_name, a.descriptor
-  FROM accessor a
- WHERE (SELECT COUNT(*) FROM accessor a2 WHERE a2.graph_name = a.graph_name
-          AND a2.type_name = a.type_name AND a2.field_name = a.field_name) = 1
-UNION ALL
--- A service whose parent is the key's table's record reads the key off the parent itself.
-SELECT sa.graph_name, sa.type_name, sa.field_name, 'COLUMNS', sa.key_source_name, sa.key_schema,
-       sa.key_table, 'ONE',
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM service_at sa
- WHERE sa.record_source_name = sa.key_source_name AND sa.record_schema = sa.key_schema
-   AND sa.record_table = sa.key_table
-UNION ALL
--- Otherwise through the one member of the parent's class returning one such record, found by what it
--- returns rather than by its name.
-SELECT sa.graph_name, sa.type_name, sa.field_name, 'ACCESSOR', sa.key_source_name, sa.key_schema,
-       sa.key_table, 'ONE', s.source_name, s.class_name, s.method_name, s.descriptor
-  FROM service_at sa
-  JOIN code_read_slot s
-    ON s.class_name = sa.class_name AND s.element_class = sa.key_record_class AND s.delivery = 'DIRECT'
- WHERE sa.record_table IS DISTINCT FROM sa.key_table
-   AND (SELECT COUNT(*) FROM code_read_slot s2
-         WHERE s2.class_name = sa.class_name AND s2.element_class = sa.key_record_class
-           AND s2.delivery = 'DIRECT') = 1;
-COMMENT ON VIEW graphitron_field_key_row_rule IS 'One row the key-row rule computes, in the shape graphitron_field_key_row and its method subtype store together: the rule itself, evaluated on demand rather than read off disk. For example a capture writes this view''s rows for one graph into the two relations, which are the names every reader spells.';
 
 CREATE TABLE graphitron_field_scope_table (
   graph_name        VARCHAR NOT NULL,
@@ -18738,13 +18446,12 @@ INSERT INTO meta_stage VALUES
   ('path-claims', 'graphitron', 24, 'no.sikt.graphitron.model.derive.PathClaims'),
   ('type-backings', 'graphitron', 25, 'no.sikt.graphitron.model.derive.TypeBackings'),
   ('fetchers', 'graphitron', 26, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('field-key-rows', 'graphitron', 27, 'no.sikt.graphitron.model.derive.FieldKeyRows'),
-  ('occurrence-participants', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-depths', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-values', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 31, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-participants', 'graphitron', 27, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-depths', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-values', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 30, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 31, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 32, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -18820,8 +18527,6 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_result_pivot'),
   ('fetchers', 'graphitron_result_table'),
   ('fetchers', 'graphitron_service_holder'),
-  ('field-key-rows', 'graphitron_field_key_row'),
-  ('field-key-rows', 'graphitron_field_key_row_accessor'),
   ('occurrence-depths', 'graphitron_entry_defect'),
   ('occurrence-depths', 'graphitron_entry_defect_method'),
   ('occurrence-depths', 'graphitron_join_path'),
@@ -18850,7 +18555,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_producer'),
-  ('occurrence-depths', 'graphitron_occurrence_producer_key_row'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_accessor'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate'),
@@ -19988,14 +19692,6 @@ INSERT INTO meta_relation VALUES
    'One row the occurrence producer rule computes, in the shape graphitron_occurrence_producer stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
-  ('graphitron_occurrence_producer_key_row', 'graph-occurrence', 'graphitron',
-   'Where a child producer starts when its parent holds an object: the key it takes off that object, lifted onto the key''s table; one row per such producer.',
-   'For example FilmDetailsCarrier.language under a FilmRecord starts on film, taking film''s columns off the record.',
-   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
-  ('graphitron_occurrence_producer_key_row_rule', 'graph-occurrence', 'graphitron',
-   'One row the key-row start rule computes, in the shape graphitron_occurrence_producer_key_row stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_key_row, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call', 'graph-occurrence-call', 'graphitron',
    'One call an occurrence makes: one row per occurrence and call, of whatever kind.',
    'For example Query.filmsByPath''s service call is its producer call, and each parameter of FilmService#filmsByIds is filled under it.',
@@ -20003,7 +19699,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_producer_lift', 'graph-occurrence', 'graphitron',
    'How a child producer''s keys are filled from its source: one row per child producer that takes keys off its parent''s value, the key constraint whose values the source supplies, how they are read and how many per parent.',
    'For example FilmDetailsCarrier.language under a FilmRecord a service handed over is keyed on film''s primary key read off the record, and CreateFilmsPayload.films on film''s through the films() member.',
-   'The key the field-keyed key row states, stated per occurrence and with a service''s key parameter in, so a selection''s batch key and a service''s parameter are read one way. Written at the end of each depth inside occurrence-depths; it replaces graphitron_occurrence_producer_key_row and the field-keyed key row once their readers move. Where the query restarts is a separate fact, stated when a reader asks for it.'),
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can be filled differently under each, and with a service''s key parameter in, so a selection''s batch key and a service''s parameter are read one way: the frame, a routine''s re-reads, the outbox and the key defects all read it. Written at the end of each depth inside occurrence-depths. Where the query restarts is a separate fact, stated when a reader asks for it.'),
   ('graphitron_occurrence_producer_lift_rule', 'graph-occurrence', 'graphitron',
    'One row the lift rule computes, in the shape graphitron_occurrence_producer_lift stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift, which is the name every reader spells.',
@@ -20019,7 +19715,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_producer_lift_candidate', 'graph-occurrence-lift-candidate', 'graphitron',
    'A member of the class a child producer''s source is an instance of that could hand it its keys: one row per producer and member.',
    'For example CreateFilmsPayload.films under a CreateFilmsPayload has its films() member, returning the film records it re-reads.',
-   'The members stored once, so the lift takes the one where there is exactly one and the key-row defects read none or several off the same rows rather than counting them again. Written per depth after the depth''s sources, whose object names the class.'),
+   'The members stored once, so the lift takes the one where there is exactly one and the key defects read none or several off the same rows rather than counting them again. Written per depth after the depth''s sources, whose object names the class.'),
   ('graphitron_occurrence_producer_lift_candidate_rule', 'graph-occurrence-lift-candidate', 'graphitron',
    'One row the lift candidate rule computes, in the shape graphitron_occurrence_producer_lift_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_candidate, which is the name every reader spells.',
@@ -20083,7 +19779,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_source_object', 'graph-occurrence', 'graphitron',
    'The class an occurrence''s values are an instance of: one row per occurrence whose source is an object.',
    'For example Query.filmBlurbHolder.blurb is read off the FilmBlurbHolder its parent''s service hands back.',
-   'A value a producer hands back with a class but no table record and no key row is rows of no table, so its occurrences read it as an object, the start of an accessor path. The class is the parent field''s own producer''s result and nothing else, so a source never guesses among the classes a type may be backed by.'),
+   'A value a producer hands back with a class but no table record and no fill is rows of no table, so its occurrences read it as an object, the start of an accessor path. The class is the parent field''s own producer''s result and nothing else, so a source never guesses among the classes a type may be backed by.'),
   ('graphitron_path_need', 'path-need', 'graphitron',
    'One type an occurrence must reach from its source: one row per occurrence and target type, with whether the path toward it starts on a table or on an object.',
    'For example Query.search(languageId:), an argument of a field returning a union of Film and Language, needs Film and Language, each from a table.',
@@ -21111,18 +20807,6 @@ INSERT INTO meta_relation VALUES
    'Where a field''s path ends on a @routine: one row per field whose last written element is a @routine naming one routine, with the function whose result the rows of the type it returns are.',
    'For example Actor.films over @routine(name: "films_for_actor") returns ActorFilm, whose rows are films_for_actor''s result; a mutation''s @routine is a write and draws no row.',
    'A @routine binds no table, so what such a type''s rows are is a fact about the field that calls the routine, stated once here from the written path for every reader that asks where the type is read: the result rule, the source table, the column claims. It needs no walk, the function being where any path ending on it lands. Stored, because those readers ask it as a probe per type, which a view answers by evaluating its whole rule again.'),
-  ('graphitron_field_key_row', 'graph-field', 'graphitron',
-   'How a field takes the keys its rows are fetched by off the object its parent holds: one row per field whose parent holds an OBJECT and that fetches its own rows.',
-   'For example FilmDetailsCarrier.language, under a FilmRecord, takes film''s columns off the record, and CreateFilmsPayload.films takes the film records its films() accessor returns.',
-   'A field under a held object fetches its rows by keys only that object can give, so how the keys are taken is a fact about the field and its parent''s class, stated once here, not worked out again by the generator from the class at build time. The kind names the generator''s key lift and the table says whose columns the keys are, so the walk can depart from it.'),
-  ('graphitron_field_key_row_accessor', 'graph-field', 'graphitron',
-   'The member an ACCESSOR key row takes its keys through: one row per such key row, naming the member''s code_read_slot row.',
-   'For example CreateFilmsPayload.films takes its film keys from the records CreateFilmsPayload.films() returns.',
-   'The frame of a field under a held object reads its keys off the parent, and through an accessor it has to call that member: the rule finds it when it decides ACCESSOR, so it is stated here as a reference to the slot rather than found again, and goes with the slot or the key row.'),
-  ('graphitron_field_key_row_rule', 'graph-field', 'graphitron',
-   'One row the key-row rule computes, in the shape graphitron_field_key_row and its method subtype store together: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture writes this view''s rows for one graph into the two relations, which are the names every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_routine_result_rule', 'graph-field', 'graphitron',
    'One row the routine result rule computes, in the shape graphitron_routine_result stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_routine_result, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',

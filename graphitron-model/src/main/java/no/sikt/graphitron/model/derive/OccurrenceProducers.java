@@ -9,8 +9,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
@@ -64,8 +62,6 @@ public final class OccurrenceProducers {
                 .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE), r.KIND.eq(p.KIND)))
             .execute();
         refresh(dsl, p, r, graph, depth, touchedAt);
-        refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW, GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW_RULE,
-            graph, depth, touchedAt);
         // The calls' candidates, stored before the pin and the fills read them; a candidate this
         // reading no longer states goes now, or the pin would weigh it.
         var k = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
@@ -104,7 +100,7 @@ public final class OccurrenceProducers {
 
     /** Deletes the rows no depth of this reading marked, subtypes before the producer they hang on. */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        for (Table<?> t : List.of(GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW, GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE,
+        for (Table<?> t : List.of(GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE,
                 GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE,
                 GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_CALL_METHOD, GRAPHITRON_OCCURRENCE_PRODUCER,
                 GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_CANDIDATE)) {

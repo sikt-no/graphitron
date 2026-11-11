@@ -9,8 +9,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
@@ -33,9 +33,9 @@ import static org.jooq.impl.DSL.select;
  * service under an object reads off its own result, and its parent is what it was reached from.
  *
  * <p>Service producers only. Under an object whose declaring type binds no table the parent holds an
- * object, and the key is its key row's: the records of the table the call's source parameter
+ * object, and the key is its fill's: the records of the table the call's source parameter
  * collects, read off the parent where it is such a record, or off what the one member of its class
- * returning one hands back. A producer with no key row has no frame here.
+ * returning one hands back. A producer with no fill has no frame here.
  */
 public final class FrameQuery {
 
@@ -110,8 +110,8 @@ public final class FrameQuery {
         var f = GRAPHITRON_FIELD;
         var po = GRAPHITRON_PRODUCER_OUTCOME;
         var tt = GRAPHITRON_TABLETYPE;
-        var kr = GRAPHITRON_OCCURRENCE_PRODUCER_KEY_ROW;
-        var ka = GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
+        var kr = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+        var ka = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
         return store.dsl()
@@ -127,14 +127,14 @@ public final class FrameQuery {
             // Under an object, the parent is a row of the table the declaring type binds.
             .leftJoin(tt).on(tt.GRAPH_NAME.eq(f.GRAPH_NAME), tt.TYPE_NAME.eq(f.TYPE_NAME),
                 p.START.eq("CHILD"))
-            // Under an object holding a plain object, the key row's table, and its member where the
-            // key is read through one.
+            // Under an object holding a plain object, the table the producer's keys are filled from,
+            // and the member they are read through where they are.
             .leftJoin(kr).on(kr.GRAPH_NAME.eq(p.GRAPH_NAME), kr.COORDINATE.eq(p.COORDINATE), tt.TYPE_NAME.isNull())
-            .leftJoin(ka).on(ka.GRAPH_NAME.eq(f.GRAPH_NAME), ka.TYPE_NAME.eq(f.TYPE_NAME),
-                ka.FIELD_NAME.eq(f.FIELD_NAME), kr.KEY_KIND.eq("ACCESSOR"))
-            .leftJoin(t).on(t.SOURCE_NAME.eq(coalesce(tt.TABLE_SOURCE_NAME, kr.TABLE_SOURCE_NAME)),
-                t.TABLE_SCHEMA.eq(coalesce(tt.TABLE_SCHEMA, kr.TABLE_SCHEMA)),
-                t.TABLE_NAME.eq(coalesce(tt.TABLE_NAME, kr.TABLE_NAME)))
+            .leftJoin(ka).on(ka.GRAPH_NAME.eq(kr.GRAPH_NAME), ka.COORDINATE.eq(kr.COORDINATE),
+                ka.READ.eq(kr.READ))
+            .leftJoin(t).on(t.SOURCE_NAME.eq(coalesce(tt.TABLE_SOURCE_NAME, kr.KEY_SOURCE_NAME)),
+                t.TABLE_SCHEMA.eq(coalesce(tt.TABLE_SCHEMA, kr.KEY_SCHEMA)),
+                t.TABLE_NAME.eq(coalesce(tt.TABLE_NAME, kr.KEY_TABLE)))
             .leftJoin(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
             .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"),
                 p.START.eq("ROOT").or(t.TABLE_NAME.isNotNull()))

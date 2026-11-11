@@ -14,12 +14,11 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
@@ -264,7 +263,7 @@ class NameMatchedKeyPairTest {
 
     /**
      * Every carrier hop the fixture graph holds, one string per row: the producing field, the data
-     * field, where the producing field's routine path lands and the table the data field's key row
+     * field, where the producing field's routine path lands and the table the data field's fill
      * names. Asserted whole so a payload that should name no hop cannot hide behind a filter.
      */
     private static List<String> carrierHops(DSLContext dsl) {
@@ -272,20 +271,21 @@ class NameMatchedKeyPairTest {
         var o = GRAPHITRON_OCCURRENCE;
         var f = GRAPHITRON_FIELD;
         var pr = GRAPHITRON_PRODUCER;
-        var t = GRAPHITRON_FIELD_TARGET;
-        var k = GRAPHITRON_FIELD_KEY_ROW;
-        return dsl.select(f.TYPE_NAME, f.FIELD_NAME, k.TYPE_NAME, k.FIELD_NAME, j.TARGET_TABLE,
-                k.TABLE_NAME)
+        var co = GRAPHITRON_OCCURRENCE.as("data_occurrence");
+        var cf = GRAPHITRON_FIELD.as("data_field");
+        var k = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+        return dsl.selectDistinct(f.TYPE_NAME, f.FIELD_NAME, cf.TYPE_NAME, cf.FIELD_NAME, j.TARGET_TABLE,
+                k.KEY_TABLE)
             .from(j)
             .join(o).on(o.GRAPH_NAME.eq(j.GRAPH_NAME), o.COORDINATE.eq(j.COORDINATE),
                 o.KIND.eq("FIELD"))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .join(pr).on(pr.GRAPH_NAME.eq(f.GRAPH_NAME), pr.TYPE_NAME.eq(f.TYPE_NAME),
                 pr.FIELD_NAME.eq(f.FIELD_NAME), pr.KIND.eq("ROUTINE"))
-            .join(t).on(t.GRAPH_NAME.eq(f.GRAPH_NAME), t.TYPE_NAME.eq(f.TYPE_NAME),
-                t.FIELD_NAME.eq(f.FIELD_NAME))
-            .join(k).on(k.GRAPH_NAME.eq(t.GRAPH_NAME), k.TYPE_NAME.eq(t.TARGET_TYPE_NAME),
-                k.KIND.eq("COLUMNS"))
+            .join(co).on(co.GRAPH_NAME.eq(o.GRAPH_NAME), co.PARENT_COORDINATE.eq(o.COORDINATE))
+            .join(cf).on(cf.GRAPH_NAME.eq(co.GRAPH_NAME), cf.COORDINATE.eq(co.ELEMENT_COORDINATE))
+            .join(k).on(k.GRAPH_NAME.eq(co.GRAPH_NAME), k.COORDINATE.eq(co.COORDINATE),
+                k.READ.eq("COLUMNS"))
             .where(j.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(f.TYPE_NAME, f.FIELD_NAME)
             .fetch()

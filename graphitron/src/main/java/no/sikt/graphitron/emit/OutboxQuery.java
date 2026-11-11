@@ -14,7 +14,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_VALUE;
@@ -320,7 +320,7 @@ public final class OutboxQuery {
     /**
      * The methods a key read off a service's returned value calls, outermost first: each step of its
      * path that reads a member, by the member its value binding names, or for the record a node id is
-     * encoded from, by the member its field takes its keys through. A step the value passes through
+     * encoded from, by the member its producer's keys are read through. A step the value passes through
      * calls nothing, and a node id's own last step is the encoding, not a call.
      */
     private static List<Accessor> accessors(StoreHandle store, String coordinate, int ordinal, String key,
@@ -329,7 +329,7 @@ public final class OutboxQuery {
         var oc = GRAPHITRON_OCCURRENCE;
         var f = GRAPHITRON_FIELD;
         var v = GRAPHITRON_OCCURRENCE_BINDING_VALUE;
-        var ka = GRAPHITRON_FIELD_KEY_ROW_ACCESSOR;
+        var ka = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
         var cs = CODE_READ_SLOT;
         var method = DSL.coalesce(v.SLOT_METHOD_NAME, ka.SLOT_METHOD_NAME);
         return store.dsl()
@@ -338,8 +338,7 @@ public final class OutboxQuery {
             .join(oc).on(oc.GRAPH_NAME.eq(st.GRAPH_NAME), oc.COORDINATE.eq(st.STEP_COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(oc.GRAPH_NAME), f.COORDINATE.eq(oc.ELEMENT_COORDINATE))
             .leftJoin(v).on(v.GRAPH_NAME.eq(st.GRAPH_NAME), v.COORDINATE.eq(st.STEP_COORDINATE))
-            .leftJoin(ka).on(ka.GRAPH_NAME.eq(f.GRAPH_NAME), ka.TYPE_NAME.eq(f.TYPE_NAME),
-                ka.FIELD_NAME.eq(f.FIELD_NAME))
+            .leftJoin(ka).on(ka.GRAPH_NAME.eq(st.GRAPH_NAME), ka.COORDINATE.eq(st.STEP_COORDINATE))
             .leftJoin(cs).on(cs.SOURCE_NAME.eq(v.SLOT_SOURCE_NAME), cs.CLASS_NAME.eq(v.SLOT_CLASS_NAME),
                 cs.METHOD_NAME.eq(v.SLOT_METHOD_NAME), cs.DESCRIPTOR.eq(v.SLOT_DESCRIPTOR))
             .where(st.GRAPH_NAME.eq(store.graphName()), st.DIRECTIVE_NAME.eq("outbox"),

@@ -33,14 +33,14 @@ class FactAssertionsTest {
         var file = FactAssertions.read(write("holds.graphqls", """
             extend schema @factDocument(path: "scenarios/field-key-row")
 
-            extend schema @assertContains(relation: "graphitron_field_key_row", rows: \"""
-              type_name,          field_name, kind
-              FilmDetailsCarrier, language,   COLUMNS
+            extend schema @assertContains(relation: "graphitron_occurrence_producer_lift", rows: \"""
+              coordinate,                      read
+              Query.filmDetailsBatch.language, COLUMNS
               \""")
 
-            extend schema @assertAbsent(relation: "graphitron_field_key_row", rows: \"""
-              type_name,          field_name, kind
-              FilmDetailsCarrier, language,   ACCESSOR
+            extend schema @assertAbsent(relation: "graphitron_occurrence_producer_lift", rows: \"""
+              coordinate,                      read
+              Query.filmDetailsBatch.language, ACCESSOR
               \""")
             """));
         assertThat(file.document()).isEqualTo(DOCUMENT);
@@ -55,9 +55,9 @@ class FactAssertionsTest {
         var file = FactAssertions.read(write("false.graphqls", """
             extend schema @factDocument(path: "scenarios/field-key-row")
 
-            extend schema @assertContains(relation: "graphitron_field_key_row", rows: \"""
-              type_name,          field_name, kind
-              FilmDetailsCarrier, language,   ACCESSOR
+            extend schema @assertContains(relation: "graphitron_occurrence_producer_lift", rows: \"""
+              coordinate,                      read
+              Query.filmDetailsBatch.language, ACCESSOR
               \""")
             """));
         assertThat(divergences(file)).singleElement().asString().contains("NOT_PRODUCED");
@@ -69,9 +69,9 @@ class FactAssertionsTest {
         var file = FactAssertions.read(write("whole.graphqls", """
             extend schema @factDocument(path: "scenarios/field-key-row")
             extend schema @assertEmpty(relation: "graphitron_entry_defect")
-            extend schema @expectEquals(relation: "graphitron_field_key_row", rows: \"""
-              type_name,          field_name
-              FilmDetailsCarrier, language
+            extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", rows: \"""
+              coordinate
+              Query.filmDetailsBatch.language
               \""")
             """));
         assertThat(file.refusals(Set.of(DOCUMENT)))

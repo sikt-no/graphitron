@@ -1177,20 +1177,22 @@ classified records have no reader left and can go with the walk.
     `graphitron_occurrence_source_object` decides it, so a reader joins the class's members on their
     key rather than scanning the census by name, which is what the field-keyed key row's accessor arm
     does at about 5 s an evaluation on sakila.
-  * **A depth's key rows are written off its source** `open`. Each child producer that takes keys
+  * **A depth's key rows are written off its source** `done`. Each child producer that takes keys
     off its parent's value states per occurrence, at the end of its depth, the key its source fills
-    it with: the key constraint, read off the source's columns or through a member, and how many per
-    parent, a selection's batch key and a service's key parameter alike, since a service fills with
-    the data a lookup lifts from (Alf, 2026-11-11). The population is the field-keyed key row's, so no
-    reader changes (scope is simplification and performance, Alf 2026-11-11): a member handing over
-    the key's records, a re-fetch, a selection under a record handed over whose path leaves the
-    record's table by its first key, and a service keyed on its source's table. The candidates are the
-    rows the key-row defects read, judged per occurrence, two candidates raising `KEY_ROW_AMBIGUOUS` on
-    every arm (Alf, 2026-11-10), the refused service shapes taking `NO_KEY_FROM_PARENT` with its
-    statement widened. The readers move (sources, defects, `FrameQuery`, `RoutineWriteQuery`), then
-    `graphitron_field_key_row`, its accessor table, its rule, the `field-key-rows` stage and
-    `FieldKeyRows` go: about 14 s of a sakila capture's 38. Where a query resumes, at the source or
-    at the target, is stated with the shortcut that reads it.
+    it with (`graphitron_occurrence_producer_lift`): the key constraint, read off the source's
+    columns or through a member (`_lift_accessor`), and how many per parent, a selection's batch key
+    and a service's key parameter alike, since a service fills with the data a lookup lifts from
+    (Alf, 2026-11-11). The population is the field-keyed key row's with services under a table row
+    in, so no generated code changes (scope is simplification and performance, Alf 2026-11-11). The
+    members that could hand the keys over are stored once (`_lift_candidate`), and the key defects
+    read them per occurrence: two raise `KEY_ROW_AMBIGUOUS` on the selection arm too, where they
+    raised `NO_KEY_FROM_PARENT` (Alf, 2026-11-11). `REREAD_OF_DELETED_ROWS` is stated on the
+    occurrence's producers, a child selection of a table type under a delete, since a delete naming
+    no table gives its child no key table to fill. The sources, the defects, the outbox,
+    `FrameQuery` and `RoutineWriteQuery` read the fill; `graphitron_field_key_row`, its accessor table,
+    its rule, the `field-key-rows` stage, `FieldKeyRows` and `graphitron_occurrence_producer_key_row`
+    are gone, about 14 s of a sakila capture's 38. Where a query resumes, at the source or at the
+    target, is stated with the shortcut that reads it.
   * **A source says whether graphitron selected its rows** `open`, F's.
     `graphitron_occurrence_source` carries its basis, `SELECTED` or `HANDED`, so a lift tells a row
     graphitron selected from a record a service or a write handed over, which guarantees only its key.
@@ -2892,6 +2894,14 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 
 For the retirement sweep at the Done gate. Determined by diffing the schema's relation names across
 the item's life. Already swept once, with seven survivors found and fixed.
+
+**The field-keyed key row dissolved into the fill** (2026-11-11). `graphitron_field_key_row`,
+`graphitron_field_key_row_accessor`, `graphitron_field_key_row_rule`, the `field-key-rows` stage and
+its writer `FieldKeyRows`, and `graphitron_occurrence_producer_key_row` with its rule are
+`graphitron_occurrence_producer_lift`, `_lift_accessor` and `_lift_candidate`, keyed per occurrence;
+the key row's `kind` is the fill's `read`, its `table_*` columns the fill's `key_*`. The pin test
+`FieldKeyRowPinTest` is `ProducerFillPinTest`. The fact document `scenarios/field-key-row` keeps its
+name.
 
 **Path relations renamed or dropped before they had readers.** `graphitron_path_anchor` is
 `graphitron_path_claim`, its writer `PathAnchors` is `PathClaims`, and `anchor_kind`,

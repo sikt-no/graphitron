@@ -24,9 +24,9 @@ import java.util.stream.Stream;
  * <pre>{@code
  * extend schema @factDocument(path: "scenarios/field-key-row")
  *
- * extend schema @assertContains(relation: "graphitron_field_key_row", rows: """
- *   type_name,      field_name, kind
- *   FilmKeySummary, keyCensus,  ACCESSOR
+ * extend schema @assertContains(relation: "graphitron_occurrence_producer_lift", rows: """
+ *   coordinate,                       read
+ *   Query.filmKeySummaries.keyCensus, ACCESSOR
  *   """)
  * }</pre>
  *

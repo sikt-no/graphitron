@@ -1,10 +1,10 @@
-# A field that fetches its own rows under a parent holding an object takes the keys off that object,
-# and how is stated per field. COLUMNS reads them as columns: the target's own key where the object
-# is what a service produced of that table (a re-fetch), or the first key's columns where a path
-# departs from a table's record. ACCESSOR takes the table records a member of the object returns: of
-# the target's table, or of the table a union's members hang off.
+# A producer that fetches its own rows under a parent holding an object takes the keys off that
+# object, and how is stated per producer, as its fill. COLUMNS reads them as columns: the target's
+# own key where the object is what a service produced of that table (a re-fetch), or the first key's
+# columns where a path departs from a table's record. ACCESSOR takes the table records a member of
+# the object returns: of the target's table, or of the table a union's members hang off.
 
-# A service under a table row takes its keys off that row, so it states no key row of its own.
+# A service under a table row takes its keys off that row, its fill naming the row's table.
 type Film @table(name: "film") {
   title: String
   # Selections under a row graphitron selected take no key off it: one hop forward,
@@ -90,36 +90,12 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayloadService", method: "occupantsBatch"})
 }
 
-extend schema @expectEquals(relation: "graphitron_field_key_row", rows: """
-  type_name,             field_name, kind,     table_name, arity
-  FilmDetailsCarrier,    language,   COLUMNS,  film,       ONE
-  CreateFilmsPayload,    films,      ACCESSOR, film,       MANY
-  NestedFilmsPayload,    films,      ACCESSOR, film,       MANY
-  FilmServicePayload,    film,       COLUMNS,  film,       ONE
-  FilmServicePayload,    census,     COLUMNS,  film,       ONE
-  FilmKeySummary,        keyCensus,  ACCESSOR, film,       ONE
-  OccupantsBatchPayload, occupants,  ACCESSOR, address,    MANY
-  """)
-
-
-# An ACCESSOR key row names the member it takes its keys through: the record component the
-# payload's class offers, by its method and descriptor, so the frame calls that member on the parent.
-extend schema @expectEquals(relation: "graphitron_field_key_row_accessor", rows: """
-  type_name,             field_name, slot_class_name,                                                slot_method_name, slot_descriptor
-  CreateFilmsPayload,    films,      no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,    films,            ()Ljava/util/List;
-  OccupantsBatchPayload, occupants,  no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload, addresses,        ()Ljava/util/List;
-  NestedFilmsPayload,    films,      no.sikt.graphitron.rewrite.test.services.NestedFilmsPayloadHolder$Payload, films, ()Ljava/util/List;
-  FilmKeySummary,        keyCensus,  no.sikt.graphitron.rewrite.test.services.FilmKeySummary,        film,             ()Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/records/FilmRecord;
-  """)
-
-# The key each child producer is filled with from its source, per occurrence, as the field-keyed key
-# row above states it per field, with a service's key parameter in: a member handing over the key's
-# records, a re-fetch of the target's own record, a selection under a record handed over whose path
-# leaves the record's table by its first key, and a service keyed on its source's table. Departures
-# from the field-keyed row: a service under a table row, Film.titleUppercase, states its key where
-# the field row stated none, the frame reading the row's table either way. A selection under a row
-# graphitron selected, whether its path is one hop or several or carries a condition, and a plain type
-# under a table-bound one, take no key here, as they take no key row.
+# The key each child producer is filled with from its source, per occurrence: a member handing over
+# the key's records, a re-fetch of the target's own record, a selection under a record handed over
+# whose path leaves the record's table by its first key, and a service keyed on its source's table,
+# whether that source is a record handed over or a row graphitron selected (Film.titleUppercase). A
+# selection under a row graphitron selected, whether its path is one hop or several or carries a
+# condition, and a plain type under a table-bound one, take no key here.
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", rows: """
   coordinate,                                   read,     arity, key_table, key_constraint
   Query.filmDetailsBatch.language,              COLUMNS,  ONE,   film,      film_pkey
@@ -132,8 +108,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", row
   Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
   """)
 
-# A key read through a member names the member, its one candidate, as the field-keyed accessor
-# row above does.
+# A key read through a member names the member, its one candidate: the record component the
+# payload's class offers, so the frame calls that member on the parent.
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift_accessor", rows: """
   coordinate,                              slot_class_name,                                                            slot_method_name
   Query.recentlyCreatedFilmsBatched.films, no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,                films

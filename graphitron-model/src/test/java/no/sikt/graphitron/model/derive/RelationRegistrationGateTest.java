@@ -313,9 +313,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_type_federation", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_site", Arm.DERIVED);
         registrations.put("graphitron_code_reference", Arm.DERIVED);
-        registrations.put("graphitron_field_key_row", Arm.DERIVED);
-        registrations.put("graphitron_field_key_row_accessor", Arm.DERIVED);
-        registrations.put("graphitron_field_key_row_rule", Arm.DERIVED);
         // The paths keyed per need, derived from the entries and the catalog; what pins them is the
         // schema's own keys and checks.
         registrations.put("graphitron_join_path_claim", Arm.DERIVED);
@@ -469,14 +466,12 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_node_id_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_rule", Arm.DERIVED);
-        registrations.put("graphitron_occurrence_producer_key_row", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_lift", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_lift_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_lift_accessor", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_lift_accessor_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_lift_candidate", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_lift_candidate_rule", Arm.DERIVED);
-        registrations.put("graphitron_occurrence_producer_key_row_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_service", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_service_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_producer_routine", Arm.DERIVED);

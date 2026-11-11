@@ -254,8 +254,10 @@ constructor its object is made with;
 `graphitron_occurrence_producer_write` a write's table. `graphitron_occurrence_call_parameter` says
 what fills each parameter of a call: an argument, which then binds that parameter, as
 `Query.filmsByService(ids:)` binds the second parameter of `filmsByService`, or a value graphitron
-supplies, such as the jOOQ context. `graphitron_occurrence_producer_key_row` states where a child
-producer under an object starts: the key it takes off that object, lifted onto the key's table.
+supplies, such as the jOOQ context. `graphitron_occurrence_producer_lift` states how a child
+producer under an object is filled from it: the key constraint whose values the object supplies,
+read as columns or through a member (`graphitron_occurrence_producer_lift_accessor`), and how many
+per parent.
 
 An output occurrence's source is the value its parent holds, as the parent's producer lifted it: a
 row of a table-bound parent's table, a table record as rows of its table, any other class as an

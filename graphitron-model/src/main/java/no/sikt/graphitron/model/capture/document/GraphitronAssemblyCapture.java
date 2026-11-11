@@ -23,7 +23,6 @@ import no.sikt.graphitron.model.derive.Outboxes;
 import no.sikt.graphitron.model.derive.PathClaims;
 import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.ProducerClaims;
-import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.TypeBackings;
@@ -129,17 +128,13 @@ public final class GraphitronAssemblyCapture {
         // Each output field's fetcher, off the targets, bindings and backings above.
         new AnchorStage("fetchers", Fetchers.class,
             Fetchers::derive),
-        // How each field under a held object takes its keys off it, off the producers and results
-        // just written and the path elements above; the walk departs from these.
-        new AnchorStage("field-key-rows", FieldKeyRows.class,
-            FieldKeyRows::derive),
         // The types each polymorphic occurrence's rows may be and how a row is told apart as each, off
         // the occurrences, the table types and the discriminator directives;
         // before the depths, whose table bindings read them.
         new AnchorStage("occurrence-participants", OccurrenceParticipants.class,
             OccurrenceParticipants::derive),
         // Each occurrence's producer, its calls' pins and fills, source, needs, paths and the node id
-        // and column it binds, a depth at a time, off the occurrences, the landings, the key rows and the claims above: one stage, each
+        // and column it binds, a depth at a time, off the occurrences, the landings and the claims above: one stage, each
         // depth reading what the depth above it wrote.
         new AnchorStage("occurrence-depths", OccurrenceDepths.class,
             OccurrenceDepths::derive),
