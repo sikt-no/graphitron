@@ -91,7 +91,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
   at "No `graphitron_*_entry` survives, an entry being the transcription's alone".
 * `graphitron_routine_entry`, written by the anchor and by the registry decode. Ends at
   "`graphitron_routine_entry` is gone".
-* `graphitron_path_element_*` beside the step hops. Ends at "Nothing resolves a path but the walk".
+* `graphitron_path_element_*` beside the join path's steps. Ends at "Nothing resolves a path but the walk".
 * Argument and input-field paths from `graphitron_field_scope_table` beside the path relations. Ends at
   "The readers read the paths, and the old path relations go".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
@@ -101,8 +101,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
   `BuildContext.synthesizeNameMatchedJoin`. Ends at "`sql_name_matched_key_column` is gone".
 * Clear-and-recompute in `DerivationStratum` and the assembly steps beside mark and sweep. Ends at
   "`DerivationStratum` is gone, each step anchored by its owner".
-* A field's departure table in `graphitron_field_source_table`'s interim rules and in
-  `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
+* A field's departure table in the occurrence's source and in `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
 * A routine write's refusals in the store's codes and in the walk's routine classification. Ends
   at "A routine write's refusals are codes a stage writes".
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
@@ -195,9 +194,6 @@ walk, starting from the source and reading each written element once, resolves e
 grain into rows that say where each step comes from, where it goes and how it joins; the readings,
 resolutions and links built beside it are gone.
 
-* **Capture states each field's path in the order it was written** `done`.
-* **A path is resolved by a deterministic forward walk over what each element names** `done`.
-* **A table-bound type no field returns is walked from its binding** `done`.
 * **An inferred join follows the key the field's cardinality allows** `open`. Where no path is written and two foreign keys join the tables, a list field follows the key its target holds and a single field the key its parent holds or a unique key on the target, so `Store.occupants: [Occupant!]!` takes `staff_store_id_fkey` and a manager field `store_manager_staff_id_fkey`, and only two keys fitting one cardinality stay `ROUTE_AMBIGUOUS`. The store's route count, the path stage that writes `graphitron_join_path_step` and the walk's `BuildContext.parsePath` apply it together, or the store and the walk disagree.
 * **A round of the walk steps only its newest layer** `open`. Each round re-reads the rule from every
   start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
@@ -207,29 +203,12 @@ resolutions and links built beside it are gone.
   table or has no source, an element naming nothing, and `@reference` beside `@referenceFor` or
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
   neither a result table nor a key row starts the walk.
-  * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
-  * **`CHAIN_WITHOUT_TARGET` reads the target table** `blocked`, on "A path starts at its parent's table and targets a table".
-    A written path after a `@routine` to an unbound type, or on a field returning an unbound
-    object, names no target table, which the defect already says through its own routine probes;
-    every path past a `@routine` on the six stores ends on a bound type (2026-10-27).
-  * **A table-bound child is a join, and `SameRowTableField` goes** `open`, off the critical path, breaking. A child whose
-    type is bound to its parent's own table joins as any bound child does, its key inferred or
-    written and its absence a defect, so a same-row read is the author's condition on the primary
-    key; this reverts R1045's leaf and its uncorrelated narrowed read, first released in RC44.
-* **The field grain reads only the walk** `done`.
-* **A key element states which name it matched by** `done`.
-* **The step targets' readers read the walk** `done`.
-* **A scalar with a path has a target column where its path lands** `done`. `graphitron_field_target_column`
-  states the table a read arrives at beside the one it departs from, read off `graphitron_field_path_landing`
-  where a path is written, so `COLUMN_UNRESOLVED` and the `@field` hint judge the arrival.
-  Applications compose in written order, a path the walk stops on has no column and only the path's
-  defect, and an object field's directives resolve against `graphitron_field_target_table`.
-  `graphitron_field_column_scope` is gone.
-* **Nothing resolves a path but the walk** `open`. The step hops and `graphitron_condition_method_route` go last, and the `@reference`
-  page says a path is read from source to target only.
-* **Every field has a path, the written one or the one discovery implies** `open`. Where nothing is written the one key between source and target
-  is stated as path rows, so no reader falls back to discovery for itself, and the editor's
-  omitted-`@reference` hint fills in from those rows.
+* **Nothing resolves a path but the walk** `open`. The step hops and `graphitron_condition_method_route`
+  are gone; `graphitron_path_element_*` goes last, and the `@reference` page says a path is read from
+  source to target only.
+* **Every field has a path, the written one or the one discovery implies** `open`. Inference is
+  stored as path rows; what is left is the editor's omitted-`@reference` hint (`InlayHints`), which
+  fills in from those rows rather than discovering for itself.
 
 ### Arguments and input fields are resolved as fields are, from a target model `open`
 
@@ -240,148 +219,134 @@ argument's path is anchored at the argument; an input field's exists only per oc
 output field; both start on a step of their field's path, the one an author named with `as:`, or at
 its landing. The rules are stated in "User documentation (first-client check): paths" below, the
 relations in "Path model (draft)", and `scenarios/path-rules` asserts both. Today
-`graphitron_field_scope_table`, `intent_argument_reference_step_hop` and the argument and input-field step targets derive part of
-this at read time, keyed by field alone; the `intent_argmapping_` relations go with "The argMapping readers read the landing, and the candidate and match go". R1099, the
+`graphitron_field_scope_table`, `graphitron_argument_scope_table` and `graphitron_input_field_resolving_table`
+derive part of this at read time, keyed by field alone; the `intent_argmapping_` relations go with "The argMapping readers read the landing, and the candidate and match go". R1099, the
 author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
-this branch rather than modelling inputs again. Taken up on 2026-10-31. The relations it retires
-are among the costliest statements the build plans: the argument step targets, `graphitron_field_path`
-with its methods, and the field reference step hops hold about 265 CPU-seconds of preparation over a
-`graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
+this branch rather than modelling inputs again. Taken up on 2026-10-31. The relations it has
+retired, the argument step targets, `graphitron_field_path` with its methods and the field reference
+step hops, were among the costliest statements the build planned, about 265 CPU-seconds of
+preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 
 * **A single-table implementer without its own `@table` is a defect** `open`. The manual requires
   an implementer of a `@table` interface to carry the same `@table`; without one it has no
   `graphitron_tabletype` row and its fields no source, and nothing says so.
-* **A connection's fields bind into its producer's page** `blocked`, G's, on "A connection's producer states its page as its result".
-  The occurrences already hang under the returning field, the connection's fields and its edge's;
-  they bind positions of what that field's producer produces, a page in the class graphitron
-  generates: `nodes` and `edges.node` the elements, `edges` each element with its cursor,
-  `edges.cursor` a function of the element and the ordering (`RESULT_EXPRESSION`) and `pageInfo` the
-  page. `edges.node` binds the record only where the producer selected it; where something else
-  produced the result set (a search index, a service) the edge is what it handed over and
-  `edges.node` may be a producer lifted from its key (
-  "A source says whether graphitron selected its rows"). `totalCount` and facets run queries of their own, and only where graphitron selected
-  the result set.
-  * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
-    The result a producer states for a field returning a connection is a page of
-    `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
-    classes and the members the connection's fields bind to being stated there already.
-  * **A connection is recognised by the specification's shape** `open`, G's. The Relay Cursor
-    Connections specification states the shape: a connection has `edges` and `pageInfo` and may have
-    more fields, an edge has `node` and `cursor` and may have more, and `PageInfo` has
-    `hasPreviousPage`, `hasNextPage`, `startCursor` and `endCursor`; `nodes` and `totalCount` are
-    conventions graphitron adds and facets graphitron's own. The shape is a constant beside
-    `graphitron_runtime_class`, and a type-field relation says which position each field fills.
-    Today's test, `edges` to an OBJECT edge to `node`, is narrower than the specification although
-    `graphitron_connection_element_type`'s rationale calls it the specification's own; recognising
-    the full shape changes what is recognised, so it goes with `asConnection.adoc` and Alf's ruling.
-  * **An authored connection type that departs from the shape is a defect** `blocked`, G's, on "A connection is recognised by the specification's shape".
-    A type used as a connection that lacks a required field raises a defect at the type, and the
-    manual states the refusal. What an extra field binds is the open question below.
-  * **A connection's `totalCount` is a producer of its own** `open`, G's. It starts from the
-    returning producer, whose path, conditions and argument values say how the result set was
-    produced, and is counted by running that producer's statement where graphitron selected it; it
-    runs only when queried.
-  * **A connection's facets are a producer of their own** `open`, G's. The `FACETS` sibling of
-    `totalCount`, with the same start.
-  * **A count or facets graphitron cannot run is a defect** `open`, G's. Under a producer graphitron
-    does not compose, a `@service` connection, a `totalCount` or facets raises a defect rather than
-    generating nothing.
-  * **A connection's producer returns the connection, and its fields read it** `open`, G's.
-    A connection's producer returns an instance of a class graphitron generates for the connection
-    type, holding the page and closures over how the result set was produced, and each field of the
-    connection, its edge and its page info is registered to read one member (Alf, 2026-11-11:
-    generated code changes authorised, it simplifies the model and makes it more powerful; every
-    field is wired, `emitter-conventions.adoc` § Return types). The store states which position each
-    field fills; the class names and members are the emitter's. `ConnectionHelper`'s resolvers, the
-    per-type fetcher delegates and the maps behind `pageInfo` and facets go.
-    The design, with the principles-architect:
-    * One class per connection type and one per edge type, not generic: graphql-java registers a
-      fetcher per type and field, so what differs per producer (table, condition, ordering, the
-      tenant's `DSLContext`, how a hit's `node` is fetched) is supplied by the producer as closures
-      over the values it already bound, never as a type parameter or an argument bag. The element is
-      the table's record class where the element names one table, else `Record`.
-    * A cursor is computed from the element and the ordering, a keyset position, never from the
-      element's index in the page. Cursor encoding and decoding, whose bytes the manual promises, and
-      the batch-count memo stay as one small generated utility.
-    * The template is a constant vocabulary of positions (`EDGES`, `NODES`, `PAGE_INFO`,
-      `TOTAL_COUNT`, `FACETS`, `NODE`, `CURSOR` and the four page-info positions) and a relation at the
-      field's grain saying which position a field fills; the emitter maps a position to a member. The
-      connection rows of `graphitron_runtime_class` and `graphitron_runtime_member`,
-      `graphitron_occurrence_producer_result.runtime_kind` and `RESULT_EXPRESSION` go; the earlier
-      idea of binding positions to runtime members is withdrawn.
-    * The classes are written by an emitter reading the store, counted by `EmissionCensusTest`; the
-      plan layer's connection units shrink rather than grow.
-    * `PageInfo` and the facets types are served by graphql-java's `PropertyDataFetcher` reading maps
-      today, which the wiring rule forbids; `code-generation-triggers.adoc` still says a plain field
-      is served by the default property fetcher.
-    * Removing `ConnectionHelper.totalCount(env)`, which `runtime-api.adoc` documents, breaks
-      consumers: that commit is `feat!` with a `BREAKING-CHANGE:` footer.
-    * `totalCount` and facets read the producer's arguments: the count's condition and each facet's
-      condition are the arguments bound (`RootLauncherRenderer.facetBindings`), built eagerly by the
-      producer today whether or not they are selected (Alf, 2026-11-11). So the closure carries the
-      producer's bound arguments and builds those conditions when its count or facets member is read.
-      An author's own fields on a connection or an edge type, and whether they may read an argument,
-      are left for later (Alf, 2026-11-11).
-    * `PageInfo` is one generated class shared by every connection, and each facets type and facet
-      value type has a generated class of its own (Alf, 2026-11-11; `emitter-conventions.adoc`
-      § Return types).
-    * **The page info and facets fields are wired** `open`, G's. The shared generated `PageInfo`
-      class and facets classes, each field explicitly registered, replace the maps. Pinned by the sakila
-      connection, cursor-format and facets execution tests; `code-generation-triggers.adoc` changes.
-    * "A count or facets graphitron cannot run is a defect" removes the null paths, and "A connection
-      is recognised by the specification's shape" states the positions; both above, both before the
-      classes.
-    * **Each connection type and edge type has a generated class** `blocked`, G's, on "A connection is recognised by the specification's shape".
-      An emitter writes the classes from the store while the producers still return
-      `ConnectionResult`. Pinned by the sakila compile and the emission census.
-    * **The producers return the connection type's class** `blocked`, G's, on "Each connection type and edge type has a generated class" and "A count or facets graphitron cannot run is a defect".
-      The five construction sites change, and the per-type fetchers and `ConnectionHelper`'s resolvers
-      go. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
-      batched-count execution tests; `emitter-conventions.adoc`, `connections.adoc`,
-      `runtime-api.adoc`, `runtime-extension-points.adoc` and `code-generation-triggers.adoc` change.
-    * **The runtime connection vocabulary goes** `blocked`, G's, on "The producers return the connection type's class".
-      The connection runtime rows, `runtime_kind`, `RESULT_EXPRESSION`, `ConnectionResult` and
-      `ResultShape.Connection`'s helper and carrier go, with the retirement sweep.
+* **A connection is recognised by the specification's shape** `open`. The Relay Cursor
+  Connections specification states the shape: a connection has `edges` and `pageInfo` and may have
+  more fields, an edge has `node` and `cursor` and may have more, and `PageInfo` has
+  `hasPreviousPage`, `hasNextPage`, `startCursor` and `endCursor`; `nodes` and `totalCount` are
+  conventions graphitron adds and facets graphitron's own. The shape is a constant beside
+  `graphitron_runtime_class`, and a type-field relation says which position each field fills.
+  Today's test, `edges` to an OBJECT edge to `node`, is narrower than the specification although
+  `graphitron_connection_element_type`'s rationale calls it the specification's own; recognising
+  the full shape changes what is recognised, so it goes with `asConnection.adoc` and Alf's ruling.
+* **An authored connection type that departs from the shape is a defect** `blocked`, on "A connection is recognised by the specification's shape".
+  A type used as a connection that lacks a required field raises a defect at the type, and the
+  manual states the refusal. What an extra field binds is the open question below.
+* **A connection's `totalCount` is a producer of its own** `open`. It starts from the
+  returning producer, whose path, conditions and argument values say how the result set was
+  produced, and is counted by running that producer's statement where graphitron selected it; it
+  runs only when queried.
+* **A connection's facets are a producer of their own** `open`. The `FACETS` sibling of
+  `totalCount`, with the same start.
+* **A count or facets graphitron cannot run is a defect** `open`. Under a producer graphitron
+  does not compose, a `@service` connection, a `totalCount` or facets raises a defect rather than
+  generating nothing.
+* **A connection's producer returns the connection, and its fields read it** `open`.
+  A connection's producer returns an instance of a class graphitron generates for the connection
+  type, holding the page and closures over how the result set was produced, and each field of the
+  connection, its edge and its page info is registered to read one member (Alf, 2026-11-11:
+  generated code changes authorised, it simplifies the model and makes it more powerful; every
+  field is wired, `emitter-conventions.adoc` § Return types). The store states which position each
+  field fills; the class names and members are the emitter's. `ConnectionHelper`'s resolvers, the
+  per-type fetcher delegates and the maps behind `pageInfo` and facets go.
+  The design, with the principles-architect:
+  * One class per connection type and one per edge type, not generic: graphql-java registers a
+    fetcher per type and field, so what differs per producer (table, condition, ordering, the
+    tenant's `DSLContext`, how a hit's `node` is fetched) is supplied by the producer as closures
+    over the values it already bound, never as a type parameter or an argument bag. The element is
+    the table's record class where the element names one table, else `Record`.
+  * A cursor is computed from the element and the ordering, a keyset position, never from the
+    element's index in the page. Cursor encoding and decoding, whose bytes the manual promises, and
+    the batch-count memo stay as one small generated utility.
+  * The template is a constant vocabulary of positions (`EDGES`, `NODES`, `PAGE_INFO`,
+    `TOTAL_COUNT`, `FACETS`, `NODE`, `CURSOR` and the four page-info positions) and a relation at the
+    field's grain saying which position a field fills; the emitter maps a position to a member. The
+    connection rows of `graphitron_runtime_class` and `graphitron_runtime_member`,
+    `graphitron_occurrence_producer_result.runtime_kind` and `RESULT_EXPRESSION` go; the earlier
+    idea of binding positions to runtime members is withdrawn.
+  * The classes are written by an emitter reading the store, counted by `EmissionCensusTest`; the
+    plan layer's connection units shrink rather than grow.
+  * `PageInfo` and the facets types are served by graphql-java's `PropertyDataFetcher` reading maps
+    today, which the wiring rule forbids; `code-generation-triggers.adoc` still says a plain field
+    is served by the default property fetcher.
+  * Removing `ConnectionHelper.totalCount(env)`, which `runtime-api.adoc` documents, breaks
+    consumers: that commit is `feat!` with a `BREAKING-CHANGE:` footer.
+  * `totalCount` and facets read the producer's arguments: the count's condition and each facet's
+    condition are the arguments bound (`RootLauncherRenderer.facetBindings`), built eagerly by the
+    producer today whether or not they are selected (Alf, 2026-11-11). So the closure carries the
+    producer's bound arguments and builds those conditions when its count or facets member is read.
+    An author's own fields on a connection or an edge type, and whether they may read an argument,
+    are left for later (Alf, 2026-11-11).
+  * `PageInfo` is one generated class shared by every connection, and each facets type and facet
+    value type has a generated class of its own (Alf, 2026-11-11; `emitter-conventions.adoc`
+    § Return types).
+  * **The page info and facets fields are wired** `open`. The shared generated `PageInfo`
+    class and facets classes, each field explicitly registered, replace the maps. Pinned by the sakila
+    connection, cursor-format and facets execution tests; `code-generation-triggers.adoc` changes.
+  * "A count or facets graphitron cannot run is a defect" removes the null paths, and
+    "A connection is recognised by the specification's shape" states the positions; both above,
+    both before the classes.
+  * **Each connection type and edge type has a generated class** `blocked`, on "A connection is recognised by the specification's shape".
+    An emitter writes the classes from the store while the producers still return
+    `ConnectionResult`. Pinned by the sakila compile and the emission census.
+  * **The producers return the connection type's class** `blocked`, on "Each connection type and edge type has a generated class" and "A count or facets graphitron cannot run is a defect".
+    The five construction sites change, and the per-type fetchers and `ConnectionHelper`'s resolvers
+    go. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
+    batched-count execution tests; `emitter-conventions.adoc`, `connections.adoc`,
+    `runtime-api.adoc`, `runtime-extension-points.adoc` and `code-generation-triggers.adoc` change.
+  * **The runtime connection vocabulary goes** `blocked`, on "The producers return the connection type's class".
+    The connection runtime rows, `runtime_kind`, `RESULT_EXPRESSION`, `ConnectionResult` and
+    `ResultShape.Connection`'s helper and carrier go, with the retirement sweep.
 
-  **What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
-  The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
-  *environment*) are working terms for thinking, not rulings.
-  * `graphitron_result` models a connection badly and works by accident: it treats each wrapper as an
-    object flowing down through readers, and needs the carrier exclusion in its reader arm to stop
-    that object reaching the element. Each level has a source of its own instead, narrowing: the
-    connection, an element with its position, the element's row.
-  * What a connection's own fields beyond the specification need is what `totalCount` and facets
-    already use: the table and condition the result set was produced with. The specification allows
-    such fields on a connection and on an edge.
-  * Graphitron writing the query, cursor included, over rows of one table is an assumption, not the
-    model. Where a search index or a service produces the result set, the edge (a hit: key, type,
-    score, highlights) and the node (the entity) are two things, and `node`/`nodes` may be a lookup
-    producer lifted from the hit's key, batched over the page, which may miss a row a stale index
-    still names. Where graphitron selected the rows, edge and node coincide and the lookup is free.
-  * `totalCount` and facets are facts about the result set; running the producer's statement again is
-    how graphitron obtains them where it selected the result set, not what they are. A search engine
-    returns both in its response.
+**What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
+The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
+*environment*) are working terms for thinking, not rulings.
+* `graphitron_result` models a connection badly and works by accident: it treats each wrapper as an
+  object flowing down through readers, and needs the carrier exclusion in its reader arm to stop
+  that object reaching the element. Each level has a source of its own instead, narrowing: the
+  connection, an element with its position, the element's row.
+* What a connection's own fields beyond the specification need is what `totalCount` and facets
+  already use: the table and condition the result set was produced with. The specification allows
+  such fields on a connection and on an edge.
+* Graphitron writing the query, cursor included, over rows of one table is an assumption, not the
+  model. Where a search index or a service produces the result set, the edge (a hit: key, type,
+  score, highlights) and the node (the entity) are two things, and `node`/`nodes` may be a lookup
+  producer lifted from the hit's key, batched over the page, which may miss a row a stale index
+  still names. Where graphitron selected the rows, edge and node coincide and the lookup is free.
+* `totalCount` and facets are facts about the result set; running the producer's statement again is
+  how graphitron obtains them where it selected the result set, not what they are. A search engine
+  returns both in its response.
 
-  **Open for Alf and Filip.**
-  1. Does the 2026-11-03 ruling that a source states its tables or class and never a pointer to the
-     occurrence it came from stand for a connection? The principles-architect recommends it does: the
-     connection and its edge are object sources of `CONNECTION_RESULT` and `CONNECTION_EDGE`, and how
-     the result set was produced is the producing occurrence's own facts, reached through the
-     producer; a count or facets' start is then a fact between producers on
-     `graphitron_occurrence_producer`. The thread leaned towards a source that is the connection
-     itself, its result and how it was produced.
-  2. Is a result set a fact of its own grain, one per producer and, for a child connection, per
-     parent key, or the producer's result as the runtime reads it?
-  3. Is a `@service` connection fused, the service handing back elements graphitron pages, or like an
-     index, handing back hits whose `node` is lifted? Who supplies the cursors?
-  4. What do facets compute over today? Answered from the generated `ConnectionHelper.facets`: each
-     facet counts under the connection's condition and every other facet's predicate, not its own,
-     so facets read a variant of how the result set was produced rather than the result set. Still
-     to be pinned by a test before it is modelled.
-  5. What does an author's extra field on a connection or an edge bind to? Left for later (Alf,
-     2026-11-11).
-  6. Does the hit being an edge reopen R427's decision to keep search apart from connections? R427's
-     question, recorded there.
+**Open for Alf and Filip.**
+1. Does the 2026-11-03 ruling that a source states its tables or class and never a pointer to the
+   occurrence it came from stand for a connection? The principles-architect recommends it does: the
+   connection and its edge are object sources of `CONNECTION_RESULT` and `CONNECTION_EDGE`, and how
+   the result set was produced is the producing occurrence's own facts, reached through the
+   producer; a count or facets' start is then a fact between producers on
+   `graphitron_occurrence_producer`. The thread leaned towards a source that is the connection
+   itself, its result and how it was produced.
+2. Is a result set a fact of its own grain, one per producer and, for a child connection, per
+   parent key, or the producer's result as the runtime reads it?
+3. Is a `@service` connection fused, the service handing back elements graphitron pages, or like an
+   index, handing back hits whose `node` is lifted? Who supplies the cursors?
+4. What do facets compute over today? Answered from the generated `ConnectionHelper.facets`: each
+   facet counts under the connection's condition and every other facet's predicate, not its own,
+   so facets read a variant of how the result set was produced rather than the result set. Still
+   to be pinned by a test before it is modelled.
+5. What does an author's extra field on a connection or an edge bind to? Left for later (Alf,
+   2026-11-11).
+6. Does the hit being an edge reopen R427's decision to keep search apart from connections? R427's
+   question, recorded there.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
   The rules re-derive what a type is, its table and its members, so the type grain is stated as
   structure first (Alf, 2026-11-11): `graphitron_type` is the strict supertype, complete over the
@@ -413,9 +378,9 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     `graphitron_fetcher` is read: `graphitron_producer` and `graphitron_reader` key into it as its
     subtypes and `graphitron_entry_defect_rule` reads it, a reach a census of Java readers does not
     see; it goes with them under "The producer's readers read the occurrence producer, and the field-keyed family goes".
-    E's, answered (2026-11-07): `graphitron_occurrence_producer_key_row` is read by the frame's
-    batch key, "A split carries the target's key where the source states it", an `ACCESSOR` key
-    row handing the target's key where `COLUMNS` hands the parent's; `graphitron_occurrence_producer_write`
+    E's, answered (2026-11-07): the key row is gone, its fill `graphitron_occurrence_producer_lift`
+    read by `FrameQuery`, `RoutineWriteQuery`, the sources, the key defects and the outbox, and by
+    "A split carries the target's key where the source states it"; `graphitron_occurrence_producer_write`
     by "A `@mutation(table:)` that disagrees with its return's table is a defect" and by the write
     producer's readers under
     "The producer's readers read the occurrence producer, and the field-keyed family goes";
@@ -428,69 +393,27 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   * **Settings and catalog facts nothing reads go** `open`, F's. The audit's fourth group, among
     them the `store_graph_` settings and `sql_table_record_supertype`, each checked against the
     generator's configuration first.
-* **A path is keyed per pair of tables** `open`.
-  Steps, columns, keys, methods, routines, parameters and stops move from (type, field, start table)
-  to `graphitron_path`, their readers with them, with a sis timing before and after. A claim's path, walked and
-  reaching its target, is a `WRITTEN` or `INHERITED` `graphitron_path` row with its `_claimed` row,
-  and an `INFERRED` path's one step its `_inferred_key` row, or, from a routine's derived table, its
-  primary-key match by column name. A path written on an interface's field
-  is a row per implementation, resolved from the implementation's own table; the implementation's
-  own claim beats the inherited one, an interface extending another overrides the claim it
-  redeclares, `@referenceFor` is inherited member by member, and two interfaces neither extending
-  the other that both claim the field are `INHERITED_PATH_AMBIGUOUS`. The walk's refusals give way
-  to these rows. The generator's own acceptance of a same-table field narrowed by an argument, which
-  the inference node left in place, is gone: the generator refuses a same-table field with no path
-  whatever its arguments, and infers the one self-referencing key as the store does (2026-11-07). A condition step's overload
-  is chosen by its two tables on `graphitron_join_path_step_method`, where `CONDITION_NO_OVERLOAD_FOR_PAIR`,
-  `CONDITION_OVERLOAD_TIE` and their `graphitron_entry_defect_method` rows are read from, and
-  `graphitron_field_path_method_candidate` goes with the old family.
+* **A path is keyed per pair of tables** `blocked`, on "A walked landing judges `PATH_LANDING_UNKNOWN`".
+  Landed but for its child.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
     A scalar's written path whose last element names no table is `PATH_LANDING_UNKNOWN` at its claim.
-  * **A value object is reached by its accessor path** `done`, taken over from F with the path
-    model (Alf, 2026-11-08), for the outbox's service results. A field read off an object has a
-    need that starts on the object, `graphitron_path_need_object`, and an `ACCESSOR` path meets it,
-    with `graphitron_accessor_path` and its `graphitron_accessor_path_step`; its children read off
-    the class the path reaches, so `Query.filmBlurbHolder.blurb.description` now has the object
-    source `FilmBlurb` it lacked. A payload's data element that the service's own class backs passes
-    the object through. `outbox-service-result`, `occurrence-source` and `path-origin` pin it.
-    Beside the join path, from object to object: `graphitron_accessor_path`, the path is accessor
-    calls with its target class, written by field names and `@field(name:)`, and its steps
-    (`graphitron_accessor_path_step`, one member call each), built when value objects are bound,
-    each step a `code_read_slot` row as a key row's accessor is (`graphitron_field_key_row_accessor`).
-    Every field occurrence with an object source has one, read off its own facts: one step where the
-    field's bound name finds exactly one non-collection member on the source class; empty where it
-    finds none and the field's type holds the same class, the object passing through, as
-    `BlurbPayload.holder` over `FilmBlurbHolder`; none where neither holds. A member returning a jOOQ
-    record of the field's table-bound type is not a step but the lift, the `ACCESSOR` key row, so the
-    chain goes on table-side. It is a path like any other: an `ACCESSOR` `graphitron_path` meeting
-    the occurrence's need, origin `INFERRED` for a member and `EMPTY` for an object passing through,
-    with `graphitron_accessor_path` naming the class reached and `graphitron_accessor_path_step` one
-    member call, each a `code_read_slot` row. Written in `occurrence-depths` beside the sources, and a
-    child's object source is where its parent's accessor path ends, which `OccurrenceSources` reads
-    a depth on; marked and swept.
-    * **A need starts on a table or on an object** `done`. `graphitron_path_need` keeps the key, a
-      start kind, the mark and the target type; the start and landing tables are
-      `graphitron_path_need_table`, the `TABLE` subtype, and every reader of them reads it (the
-      entry-defect, column, node-id and decode hop rules, `PathNeeds`, `Paths`, `Steps`, the editor
-      and the MCP server). `PathNeeds` writes the need and then its subtype, its rule read once for
-      each, a cost accepted until the rule is cheap (Alf, 2026-11-08). The `OBJECT` subtype, naming
-      the start class off the occurrence's object source, follows with the accessor paths that meet
-      it.
-* **`scenarios/path-rules` runs** `open`.
-  Its output-field rows run, with `defects/path-rule-defects` beside it; its argument rows join them, and
-  the condition cases of the six documents the draft below lists move into it.
+* **`scenarios/path-rules` runs** `open`. It runs as a scenario; the condition cases of the six
+  documents the draft below lists have not moved into it.
 * **The readers read the paths, and the old path relations go** `blocked`, on "`scenarios/path-rules` runs".
   The condition, lookup-key, node-id and `argMapping` readers move, and the relations
   "Path model (draft)" lists as replaced go.
 * **The manual states the path rules** `blocked`, on "The readers read the paths, and the old path relations go".
-  `reference.adoc`, `referenceFor.adoc` and `how-to/polymorphic-types.adoc` take the docs draft below,
-  its examples rendered from query files over `scenarios/path-rules`.
-* **A `@referenceFor` the classification never reaches draws no participant defect** `open`.
-  `ReferenceForParticipantDefects` gates its input-field arm only on the input type being consumed
-  somewhere, and `intent_input_occurrence_path` is seeded from every argument with no domain
-  filter, so an input type used only under a type nothing reaches may draw a defect the walk never
-  would. A fact document settles it; if it fires, the arm gains the domain gate the argument arm
-  has, ahead of the nodes below.
+  `reference.adoc` carries them; `referenceFor.adoc`, `how-to/polymorphic-types.adoc` and the
+  examples rendered from query files over `scenarios/path-rules` remain.
+* **Every defect code is stated on its reference page** `open`. The rule is
+  `docs/manual/reference/index.adoc`'s, and no page under `docs/manual` names `LIST_OVER_ONE_VALUE`,
+  `MANY_KEYS_INTO_ONE`, `OUTCOME_IN_A_LIST`, `WRITE_RESULT_HOLDS_ONLY_KEYS`, `REREAD_OF_DELETED_ROWS`,
+  `CONNECTION_RETURN`, `WRITE_TABLES_DISAGREE`, `CONDITION_ON_WRITE_RESULT`,
+  `ARGMAPPING_PATH_UNRESOLVED`, `SCOPE_MEMBER_UNKNOWN`, `ARGMAPPING_SOURCE_MISFIT`,
+  `NODE_ID_LANDS_ON_TABLE`, `NODE_ID_LANDING_TYPE_DISAGREES`, `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`,
+  `NODE_ID_MEMBER_NOT_NODE_TYPE` or `MUTATION_WITHOUT_VERB`. `mutation.adoc` still advertises
+  `UPSERT`, which `MUTATION_UPSERT` refuses, and a nesting type's id rule (a column unless the type
+  implements `Node`) is not on its page.
 * **Each node-id rule is an entry defect** `open`. The store's checks on `@nodeId` and
   `@referenceFor` become codes in `graphitron_defect_type` and arms of `graphitron_entry_defect_rule`,
   each row at the application's written position, so the editor shows them beside the build:
@@ -509,9 +432,9 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   polymorphic id at a parameter bound through `argMapping`, which only the store may check, and the
   participant set's single-table message at the argument site, which has no test.
 * **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `open`.
-  The landing and participant arms read the walk from the using field's target, and the occurrence,
-  scope, resolving and step-target relations go; the decode relations and
-  `graphitron_node_id_instruction` are gone already. Neither side
+  The landing and participant arms read the walk from the using field's target, and
+  `graphitron_argument_scope_table`, `graphitron_field_scope_table` and
+  `graphitron_input_field_resolving_table` go. Neither side
   checks where a `@referenceFor` route lands today; it becomes a landing arm here.
   `NodeIdDecodeCoverage` stays, comparing the census with the walk's ledger, until the walk goes.
 
@@ -526,7 +449,7 @@ classpath and catalog, and every reader reads that resolution rather than a view
   folds declarations its call `method(sourceAlias, targetAlias)` cannot reach, which refused
   `agreeingOnBoth(Customer, Address)` beside the same with a `String` though the store keeps the
   two-parameter declaration.
-* **The per-site copies and coordinate-keyed entries go** `blocked`, on "The code-reference subject converts". The twins lose their
+* **The per-site copies and coordinate-keyed entries go** `open`. The twins lose their
   class, method and argMapping columns.
 * **`sql_name_matched_key_column` is gone** `blocked`, on the child below. With `NameMatchedKeys`,
   and `fact-model.adoc` stops citing it; the walk's name-match step reads it today and moves too.
@@ -561,16 +484,6 @@ static method needs no holder.
 * **The generated jOOQ classes are read with their members** `open`, off the critical path. The census's header-only
   package goes, so tables, records, `Routines`, package classes and DAOs are read like any other
   class, with a sis capture timed before and after.
-* **A service class's construction is stated** `done`. `code_constructor` and
-  `code_constructor_parameter` hold the public constructors of every class a non-static
-  `code_service_method` row is declared on, the code gatherer's own candidate set, each position with
-  its name and the role `code_method_parameter`'s rule gives it, kept apart from the methods as the
-  census keeps them and apart from `code_construction`, which says how a value is made.
-* **A parameter states its type's first argument** `done`. `code_method_parameter` carries the class
-  the census reads at type-argument path `0`, so `Set<FilmRecord>` is told from
-  `Set<List<FilmRecord>>` without parsing a spelling.
-* **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
-  `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
 * **The argMapping readers read the landing, and the candidate and match go** `open`, E's. R1099's step 2 stored where an argument path lands, `graphitron_argmapping_landing`, under each occurrence of its call; what follows is its readers.
   `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
@@ -579,26 +492,10 @@ static method needs no holder.
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
-* **A producer's fetcher parts are emitted from the store** `open`, E's. Additive: beside today's
-  emitters, each part a fetcher is built from gets an emitter of its own, reading the store through a
-  jOOQ query of its own, `multiset` for what nests, and unit-tested from captured fact documents; read
-  off the generated code, they are the same for every kind of producer but the call:
-  * the frame, `x(env)`: the jOOQ context and its tenant routing (none, named from argument slots,
-    divined from the parent, global), the error routing or the `Outcome` claim, and under an object the
-    loader, partitioned by tenant where it routes, and the key off the parent;
-  * the fills: each parameter's value, from its call's `PARAMETER` bindings, the validation of input
-    elements before the call, and the one overload they all bind;
-  * the call: the service on its holder, the routine, or the write;
-  * the re-read: the rows at a path's end for keys on its start, in the keys' order, per parent under
-    an object; a service's path is empty, a routine write's runs its chain;
-  * the polymorphic re-read: each participant's rows with its type, or the discriminator's.
-
-  Routine writes, already emitted from the store, take the re-read first, which orders their re-read
-  (today an unordered `IN`, a bug), then the frame, which drops the error channel and tenancy their
-  caller hands `RoutineWriteEmitter` as values; services then take all five, the fills last. A carrier
-  payload's re-read is its data field's own `LOOKUP` producer, not the service's. Every other family
-  takes the parts in its own flip under "`TypeFetcherGenerator` reads the store, one family of field
-  at a time", where the per-field `rowsX`, `loadX` and decode copies go.
+* **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
+  call, the re-read and the polymorphic re-read each have an emitter reading the store; what remains
+  is routine writes, which take neither the re-read, today an unordered `IN` (a bug), nor the frame,
+  whose error channel and tenancy their caller still hands `RoutineWriteEmitter` as values.
 * **The projection units are rendered from the store** `blocked`, on the facts below.
   The store-fed lift selects through `<Type>.$project`, the projection unit `ProjectionUnitRenderer`
   renders from `ProjectionCommand` rows, which `ProjectionCommands` derives from the classified
@@ -625,33 +522,11 @@ static method needs no holder.
   * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
     `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
     parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
-  * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on the three
-    below. The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
+  * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on
+    "A `@condition` is a call per table its occurrence binds". The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
     name, with whether it reads context or the session; the multiset's filter and the `dsl` closure
     read it there, and `graphitron_code_reference` is no longer read for a `@condition` (Alf,
     2026-11-09, the shape weighed with the principles review the same day).
-    * **Every call an occurrence makes is a row of one supertype** `done`.
-      `graphitron_occurrence_call(graph, coordinate, call, call_kind)`, `call` spelled from the
-      subtype's own key as `graphitron_occurrence_binding.bound` is (`producer` for a producer's
-      service or routine, `condition:<bound>`, later `step:<target_type>:<position>` and the
-      expression), each subtype keyed into it with a `call_kind` column of its own, so
-      `graphitron_occurrence_producer_service` is a subtype of both the producer and the call. The
-      parameter fills, `graphitron_occurrence_call_parameter` as the routine call node widens it, are
-      re-keyed by the call and position and carry `call_kind`, so a fill only some calls take is a
-      check (`TABLE` on a condition, `SOURCE` on a producer's call), and the `PARAMETER` binding's
-      place is spelled from the same key; nothing a reader sees changes. The service readers
-      (`CallQuery`, `BuildQuery`, `FillQuery`) keep filtering to service calls, and a routine
-      parameter filled from a `$source` column is a fill of its own, never `SOURCE`, which is the
-      batch's keys; the routine call node rebases onto this one (Alf and F, 2026-11-09).
-    * **A call's fills are stated per candidate overload, and its method is the one candidate every position fills** `done`.
-      `graphitron_occurrence_call_candidate` states each call's candidate methods and the fill views
-      are keyed by candidate; `graphitron_occurrence_call_pin` takes a call's one candidate, filled or
-      not, so an unfilled parameter stays its method's defect, or of several the one every position
-      fills. `occurrence-call-parameters` folds into `occurrence-depths`, each depth's producers, then
-      its calls' pins and fills, then what they produce, then its sources: `SOURCE` is inferred from
-      the producer starting as `CHILD` rather than read off the call's source, which read the result
-      the pin decides. A service keeps the one candidate its name-unique reference resolves, so
-      nothing a reader sees changes; overloaded services are their own node (Alf, 2026-11-09).
     * **An overloaded `@service` method is pinned by its fills** `open`, off the critical path. A
       service's candidates are every method of its reference's class and name rather than the one a
       name-unique reference resolves, so an overload set the store refuses today pins the overload every
@@ -674,53 +549,12 @@ static method needs no holder.
       `call_kind`, into the one stored `graphitron_occurrence_call_parameter`, whose check gains a
       `TABLE` fill only a condition takes, the table being the call's `bound`. The depth writer marks
       and sweeps calls by kind, so a `@condition` whose binding goes leaves no call and no fills.
-      Three commits, the principles review's shape (Alf, 2026-11-10):
-      * **A call's candidates are stored and its method is a fact of the call** `done`. A refactor
-        over services only: `graphitron_occurrence_call_candidate` becomes a table written per depth
-        before any fill, so no fill or pin view reads a view, and the pinned method moves to
-        `graphitron_occurrence_call_method`, one row per pinned call cascading from `code_method`, off
-        `graphitron_occurrence_producer_service`, which keeps its constructor. Whether a call reads
-        context or the session is read off its stored fills, never a flag.
-      * **A `@condition`'s calls, candidates and fills are written per depth** `open`. Its candidates
-        are the `code_condition_method` overloads whose table parameter takes the bound table, its
-        own class over any table; the call, the method, `graphitron_occurrence_condition` and the
-        fills are stated, `graphitron_occurrence_condition_parameter_rule` reproducing the manual's
-        rules, and `CallParameterFillPinTest` holds them to the classifier's binding over the sakila
-        schema, two gaps listed: a field under a plain nesting type the test cannot see, and a root
-        `@routine` field, whose derived table binds nothing yet. `ConditionEmitter` emits the
-        authored calls off them beside the generated terms, `override:` read as written: on a field
-        it drops every generated term under it, on an argument or input field its own and those
-        beneath, an authored call standing either way; run against the database. Sixteen of the
-        example schema's 34 authored sites emit; left, each a census reason: a condition applied to
-        a node id's table or taking a decoded key (`AUTHORED_NODE_ID`, 10), an input object taken
-        as a bean (`AUTHORED_BEAN`, 4), and the request context or the session, which the emitted
-        method's parameters do not carry (`AUTHORED_CONTEXT`, 4). A condition's fill writes no `PARAMETER`
-        binding yet: one overload applied to two tables is two calls taking one argument at one
-        position, which `bound`, spelled from the method alone, cannot tell apart; how to spell it is
-        decided when the bindings are first read (Alf, 2026-11-10).
-      * **A node id's key column a projection takes is stated at the landing** `done`. Read by the
-        node-id authored conditions. `graphitron_argmapping_landing` states whether
-        its path descends past the slot it opens; `graphitron_argmapping_landing_key_column`,
-        keyed by the landing and the `graphitron_occurrence_node_id` binding it reads, names the key
-        position a descending or trailing-named landing on a node id projects, its trailing name
-        resolved through `sql_column_spelling`, else a one-column key's, written at the landing's
-        depth after its node ids; `graphitron_occurrence_call_parameter_pair` states the written
-        pair a fill came from. A projection resolving to no column is the pair's defect, and a
-        parameter whose type is not the column's is `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`, widened
-        to every call and to a projected column, its projected arm reported at the call with the
-        parameter named under it; `ARGMAPPING_KEY_COLUMN_UNRESOLVED` is reported where the pair is
-        written, the key columns it could have meant in `graphitron_entry_defect_key_column`. A
-        polymorphic node id's projection is refused for now; the third by-type step does not project. The `intent_` projection readers and its other
-        verdicts (bare node id, two trailing names, missing `typeName`) move in a node of their own
-        (Alf, 2026-11-10, the shape weighed with the principles review the same day).
-      * **A call's parameter defects are stated for every call** `done`. `PARAMETER_UNFILLED`,
-        `PARAMETER_AMBIGUOUS` and `PARAMETER_FILLED_TWICE` read `graphitron_occurrence_call_parameter_defect`,
-        which states a `@condition`'s unfilled parameter beside a service's, their statements worded
-        for a method either calls; `graphitron_entry_defect_parameter` names, under each defect, the
-        occurrence, call and position it is about, so one written directive is one defect however
-        many calls it leaves unfilled. Locating the written directive is the one per-kind branch, the
-        `@service` or `@condition` reference (Alf, 2026-11-10). A condition's ambiguity by type is
-        reported as unfilled, as the classifier reports it.
+      What remains of the principles review's three commits (Alf, 2026-11-10):
+      * **A `@condition`'s calls, candidates and fills are written per depth** `open`. Landed but
+        for two things: a condition applied to a node id's table or taking a decoded key does not
+        emit (`AUTHORED_NODE_ID`), and a condition's fill writes no `PARAMETER` binding, one overload
+        applied to two tables being two calls taking one argument at one position, which `bound`,
+        spelled from the method alone, cannot tell apart (Alf, 2026-11-10).
     * **A `@condition` and a service pair a parameter with an argument by one rule** `open`, off the
       critical path. The condition keeps its own by-type pairing through the flip; the differences
       from the service's, listed under "A `@condition`'s fills", are closed then, one rule for every
@@ -737,8 +571,8 @@ static method needs no holder.
   * **A `@pivot` is resolved against the catalog** `open`. The attribute table, its on and value
     columns as `sql_column` rows, and each slot's token, where today the entry holds the strings
     written and the slots bind no column.
-  * **A child producer states the parent columns it is handed** `open`. Beside
-    `graphitron_occurrence_producer_key_row`'s table, the columns of the parent occurrence's table its
+  * **A child producer states the parent columns it is handed** `open`. Beside the key
+    `graphitron_occurrence_producer_lift` fills it with, the columns of the parent occurrence's table its
     loader keys on, so the parent's unit projects them by a join from the producer rather than by
     `correlationKeyArm`.
   * **A single child's null contract is stated** `blocked`, on the expression and condition nodes.
@@ -841,16 +675,6 @@ static method needs no holder.
       first entry declaring a class, by name, is spelled in `graphitron_occurrence_source_object`,
       `graphitron_occurrence_producer_result` and `graphitron_occurrence_built_class`; one stored
       resolution of a class to its entry is read by all three.
-  * **A service's key row is stored with its candidates, and its defects read them** `open`, folded
-    into "A depth's key rows are written off its source" (Alf, 2026-11-10). The key-row stage stores a service's key table and each member of the parent's
-    class returning its record as rows under the field, so `NO_KEY_FROM_PARENT` and
-    `KEY_ROW_AMBIGUOUS` read those rows rather than deriving them again, a copy that already
-    disagrees with the rule on a method with two record-set parameters.
-  * **The key-row defects are judged per occurrence** `open`, folded into "A depth's key rows are
-    written off its source" (Alf, 2026-11-10). They read the
-    producer and `graphitron_field_key_row` per declared field; judged on
-    `graphitron_occurrence_producer_key_row` per child producer, a type reached under two parents
-    says which parent's class fails.
   * **A record's writer per column is stated in the store** `open`, off the critical path. Which input
     field writes each column of a jOOQ record, a live one over a deprecated one, is decided in
     `BuildQuery`, again in `BuildEmitter`'s conflict label and a third time in `ValidationEmitter`'s
@@ -882,66 +706,12 @@ static method needs no holder.
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
   producer but a join step of the path; under `@splitQuery` the producer is the split's derived source
   lookup. Then `graphitron_routine_entry` and the routine decode go.
-  * **A child `@routine` is a lateral step of the path** `open`, F's. Only a root's first `@routine` is
-    called as a producer; any other is a step from the table the walk stands on to its function, called with
-    that table's columns and the field's arguments, and still produces its result where the field's type is unbound. Each parameter's source is a row of the step,
-    `graphitron_field_path_parameter`, read off `graphitron_field_path_parameter_binding`.
-    `columnMapping` is gone: an `argMapping` entry names an argument, or with `$source.<column>` a
-    column of the standing table, and one that binds nothing is `ROUTINE_PARAMETER_UNBOUND`. A path ending on a `@routine` whose field returns a table-bound type
-    takes one more step, from the function's result to that table by name: a walk step at the next
-    place with no written element. The MCP server shows the routine step and the inferred one; what
-    is left is the editor, whose `argMapping` completion at a path routine offers the field's
-    arguments and not yet the standing table's columns. `graphitron_path_element_routine`, what a
-    `@routine` element names, sits on the walk's side of
-    "`graphitron_path_element_*` beside the step hops", which stays as it is; it retired
-    `graphitron_producer_routine`'s own spelling of the same lookup.
+  * **A child `@routine` is a lateral step of the path** `open`, F's. The step and its parameters
+    are stated, `graphitron_join_path_step_parameter`; what is left is the editor, whose `argMapping`
+    completion at a path routine offers the field's arguments and not yet the standing table's columns.
   * **A split child `@routine` is a path routine** `blocked`, F's, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
     `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
     the walk's first step from the parent's keys.
-* **An outbox message is a business event: graphitron fills its type and payload** `done`, off the
-  critical path. `@outbox` was never meant to take on Debezium's semantics (Alf, 2026-11-09), yet the
-  table target filled `aggregatetype` with the written table and named `aggregateid` as a role,
-  which made a message one aggregate instance's change: a service has no table to name, and an event
-  changing several ids has no one key. A message is a business fact instead, what happened as the
-  author names it and a body they shape, and graphitron fills only those two, `type` and `payload`,
-  on a table or a routine. Everything else a target has (an event id, a timestamp, routing columns)
-  is the database's, filled by its defaults; routing and partitioning are the relay's, configured
-  on `type` or a payload field by whoever runs it. The practice it keeps, against the common
-  mistakes of naive outboxes:
-  ** a message is written in the write's own transaction and published by a relay, never sent from
-     the request (graphitron already does);
-  ** every message has a unique id, since a relay delivers at least once and a consumer drops
-     duplicates by it: a table target needs a primary key, refused otherwise;
-  ** a `NOT NULL` column graphitron does not fill has a default, refused otherwise, which needs
-     `sql_column` to state a column's default (jOOQ's `defaulted()` or an identity);
-  ** order is per key and the relay's, never global, and a new version of an event is a new
-     `@outbox` beside the published one;
-  ** the manual says what the relay owns: deleting or archiving sent rows, keying, and what a payload
-     must not carry.
-  `aggregatetype` and `aggregateid` stop being roles, on the table, the routine and in `<columns>`;
-  no author has used `@outbox`, so nothing is deprecated. The example's table becomes an event table
-  (an `id` and an `occurred_at` by default, `type`, `payload`), its routine takes the two.
-* **An `@outbox` on a `@service` mutation emits from the store** `done`, off the critical path.
-  R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk.
-  It builds on R1113's shipped seam (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in
-  `TypeFetcherGenerator`); what it adds is the admission of a service write and a `$result` read
-  off the returned value, since a service has no written key to read rows back by.
-  * **The outbox on a service is emitted where the service call is** `done`. Field by field with
-    the flip rather than after it (Alf, 2026-11-09): a service `@outbox` is emitted wherever
-    `ServiceEmission` emits its field, and refused at generation, naming the census verdict,
-    wherever it does not yet, so a service `@outbox` is never accepted without being emitted and
-    the refusal shrinks with the census and goes with the flip's last field.
-    `OUTBOX_NOT_A_WRITE` admits a `@service` on a mutation; the emitted body runs inside one owned
-    transaction whose `DSLContext` the service is handed, then R1113's companion, which reads each
-    `$result` key off the returned value through its `VALUE` bindings' members, a node id from the
-    record a member hands back; a lifted service's keys read no result, which no key rule admits.
-    R1101's phase 2, nested scopes joining the field's transaction, which it also needed, has
-    shipped. As landed: `ServiceEmission` wraps the body in `<field>Written`, which opens the owned
-    transaction, calls the body on `DSL.using(tx)` and then the companion; `OutboxQuery` reads a
-    service row with each key's accessor chain off `graphitron_argmapping_step`'s value bindings and
-    the key row's accessor; the refusal reads `ServiceEmission.verdict`. `ServiceOutboxExecutionTest`
-    pins the transaction and the three `$result` reads, `ServiceOutboxRejectionPipelineTest` the
-    refusal.
 * **An `@outbox` binds its target's columns, its payload a selection set** `open`, off the critical
   path. `argMapping` binds a call's parameters on `@service` and `@routine`, its left side a name the
   store checks; on `@outbox` it names JSON keys nothing declared, and the target's columns are two
@@ -1066,99 +836,11 @@ pass and no stratum that clears and recomputes.
     is encouraged to add subtype and other detail relations where a defect has more to say than its
     code and detail, each keyed by the defect's key with a foreign key to it `ON DELETE CASCADE`, so
     a swept defect takes its details with it.
-    * **A defect code names the stage that writes it** `done`. `meta_stage` rosters the stages
-      that own something, each with its gatherer and its class, held to a class that exists;
-      `graphitron_defect_type.owner_stage` replaces `owner_gatherer`; the stage running `Steps` owns
-      the seven codes of the walk it writes, and `entry-defects`, `EntryDefects` as the anchor phase's last step,
-      every other graphitron code, from `graphitron_entry_defect_rule`. The gatherer sweeps its
-      stages' codes once. `DefectOwnerGateTest` holds a stage to exactly the codes it writes, and
-      found two codes with two writers, which the gatherer-level gate could not tell apart.
     * **A route defect has one writer** `open`. `ROUTE_AMBIGUOUS` and `NO_ROUTE_TO_TARGET` are
       written by `Steps` for a route the walk takes from a written path and by the rule's
       inferred-route arm for one no path is written for, two statements of one rule with nothing
       comparing them; `occurrence-depths` owns them and the gate lists the arm as a second writer
       until it moves to the walk.
-    * **A stage's rule reads only what its own and earlier stages wrote** `done`. `meta_stage`
-      rosters the graphitron anchor phase's 33 stages with their positions, the gatherer runs
-      `GraphitronAstCapture.STAGES` in that order, and `meta_stage_write` declares the 102 relations
-      they write, held to what every fact document's capture records per stage in
-      `store_graph_write_stage`, which also prices each stage. The depth loop is one
-      stage, `occurrence-depths`, each depth reading the one above. `StageRosterGateTest` refuses a
-      stage rule view that reaches a relation a later stage writes; the sweep is the gatherer's,
-      after its stages.
-    * **An outbox message is a call of its occurrence** `done`. The outbox views predate the
-      occurrence model and derive at read time what it now states: the `@outbox` applications of a
-      field, three times over by type and field; whether the field writes, off the field-keyed
-      `graphitron_producer_write`; an argument source, off `graphitron_argmapping_candidate`; a
-      `$session` member, matched again; and a `$result` path, walked by hand over result classes and
-      read slots in `graphitron_outbox_result_step`, beside a node-per-table check of its own
-      (Alf, 2026-11-08). Restated over the occurrence:
-      * a message is one row per `@outbox` application, keyed by the occurrence and the ordinal and
-        referencing `graphitron_occurrence_producer`, so a field with no write or service producer
-        is `OUTBOX_NOT_A_WRITE` and a service outbox needs nothing new;
-      * a payload key, the message's own and the common payload's, is a parameter of that call, one
-        row per message and key name with a `fill` in `graphitron_occurrence_call_parameter`'s
-        vocabulary, `ARGUMENT` and `SESSION_MEMBER` as there, and `RESULT` and `SCOPE` added; a
-        relation of its own beside the service call's, since a key is named where a parameter is
-        positioned and hangs off a message where a parameter hangs off the producer;
-      * a `$result` path lands as an argument path does: `graphitron_argmapping_call` admits
-        `@outbox`, and a `$result` path walks field occurrences down from the call, each head the
-        child under the occurrence or, where the type it stands on is table-bound and so starts a
-        chain, that type's own `Type.field`; the key reads its landed occurrence's
-        `graphitron_occurrence_column`, `graphitron_occurrence_node_id` or
-        `graphitron_occurrence_source_object`;
-      * the two targets stay configuration resolved against the catalog, one row per graph, stored.
-
-      `graphitron_outbox_result_step`, `graphitron_outbox_leaf` and the outbox's reading of
-      `graphitron_argmapping_candidate` go, which moves "The argMapping readers read the landing, and
-      the candidate and match go" one reader on. One `outbox` stage after `occurrence-participants`
-      writes the messages and keys and owns the `OUTBOX_*` codes, each read off its relations: a key
-      with no fill is unresolved, a landed binding whose type is not carriable is unserializable,
-      and two keys of a message by one name conflict. `OutboxQuery` reads the message and its keys.
-      Every fact document and sis write the same `graphitron_entry_defect` rows before and after.
-      Merging the payload keys into `graphitron_occurrence_call_parameter`, an occurrence holding
-      several calls, is for when a third kind of call appears. Done here rather than under R1113,
-      whose phase 3 then builds on it.
-      * **The messages and targets are stored by the outbox stage** `done`. `graphitron_outbox_message`
-        holds each application keyed by field and ordinal, with its event and a reference to the
-        field's occurrence where one reaches it, so a message on a field nothing reaches is still
-        judged; the two targets are tables beside their `_rule` views; the `outbox` stage writes all
-        three and `OUTBOX_NOT_A_WRITE`, `OUTBOX_NO_TARGET`, `OUTBOX_TARGET_INVALID` and
-        `OUTBOX_DUPLICATE_EVENT` from `graphitron_outbox_entry_defect_rule`, placement read off
-        `graphitron_occurrence_producer_write`.
-      * **A `$result` path lands on field occurrences** `done`. `graphitron_argmapping_call` admits
-        `@outbox`, its `$result` paths with the sigil taken off, and the step rules walk field
-        occurrences for them: a head under the call, or the returned type's own `Type.field` where
-        that type is bound to a table and so starts a chain, and each later name the same way from
-        what the step before returns. A path through a list lands as any other, a list being its
-        reader's to judge. `graphitron_argmapping_pair_defect_rule`'s path arm judges an `@outbox`
-        path as it does any other's. `outbox-applications` and `outbox-service-result` pin the landings.
-      * **A payload key is a filled parameter of its message** `done`. The key relation and its fills, the remaining `OUTBOX_*`
-        codes, and `OutboxQuery` on the message and keys; `graphitron_outbox_leaf` and
-        `graphitron_outbox_result_step` go. A `$result` key reads its landed occurrence's binding,
-        `COLUMN` or `NODE_ID` table-side and `VALUE` object-side, so an unresolved path is one that
-        lands on no binding and an unserializable one a binding whose type a payload cannot carry.
-        Done whole rather than with the service half waiting (Alf, 2026-11-08). The common payload's
-        keys are crossed with the messages through an outer join, so the message drives and probes
-        the handful of entries rather than the reverse.
-      * **A pair's source is judged once for every directive** `done`. `graphitron_argmapping_pair_defect_rule` already judges a
-        pair by the kind of source it binds, `$session`, `$context` and argument paths, whatever
-        directive wrote it; the outbox's restatements fold into it (Alf, 2026-11-08): the argument
-        half of `OUTBOX_SOURCE_UNRESOLVED` is `ARGMAPPING_PATH_UNRESOLVED` once `@outbox` lands, its
-        `$result` and `$scope` halves join the path family as their sigils', and the two
-        `*_UNSERIALIZABLE` codes are the source's type not fitting the place it binds, a parameter's
-        declared type or a payload key's JSON, beside `SESSION_BINDING_TYPE_MISMATCH`. No release
-        carried the outbox codes, so they retire without a deprecation; the outbox keeps placement,
-        its targets, its events and its common payload. A message is the code's statement and its
-        detail, read beside the directive it sits at, and a per-directive wording, should one be
-        wanted, is a statement keyed by code and directive. As landed (Alf, 2026-11-09): an argument
-        or `$result` path landing nowhere is `ARGMAPPING_PATH_UNRESOLVED`, a `$scope` member that is
-        not one `SCOPE_MEMBER_UNKNOWN` beside `SESSION_MEMBER_UNKNOWN`, and a source found that
-        cannot fill its place one `ARGMAPPING_SOURCE_MISFIT`, its detail naming the type or the
-        reason (a path through a list, a write's field off the written row), so a parameter-side
-        misfit joins it later rather than minting a code. Each is a row per entry; the views the pair
-        rule now reads come later in the DDL, so it and `graphitron_entry_defect_rule` sit after the
-        outbox's.
     * **An arm belongs to the last stage whose facts it reads** `open`. Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
       that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every
       fact document and sis write the same `graphitron_entry_defect` rows before and after. The
@@ -1169,8 +851,8 @@ pass and no stratum that clears and recomputes.
       by a prepare tally per stage on a cold capture before and after, against the 0.5 s the single
       rule costs today; `graphitron_entry_defect_rule` and the `entry-defects` stage go when their
       last arm leaves.
-    * **The detail writers move with their codes** `blocked`, on "An arm belongs to the last stage
-      whose facts it reads". `EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
+    * **The detail writers move with their codes** `blocked`, on
+      "An arm belongs to the last stage whose facts it reads". `EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
       `ConditionShapeDefectMethods` and `ArgMappingPairDefects` each write their rows in the stage
       that owns the codes they detail, so no defect writer runs after the stages but the gatherer's
       one sweep.
@@ -1179,36 +861,15 @@ pass and no stratum that clears and recomputes.
       field no hop reaches and `REFERENCE_WITHOUT_TARGET_TABLE` at a path on a payload return, so
       only what a write alone refuses is a code of its own, and `RoutineWriteQuery`'s verdict and
       the walk's routine refusals go as each lands.
-      * **`RoutineWriteQuery` admits a write on the re-read its occurrence states** `done`. A
-        records result by the join path to its lift table, an object result by the key rows of the
-        occurrences under it, as the sealed `RoutineWriteQuery.Row`, `Seat` and the verdict gone.
-      * **A root `@routine` naming no routine is `ELEMENT_UNRESOLVED`** `done`. As a child's is, at
-        the element, though no walk stands on a root's leading routine, it being the producer's call.
       * **A table-bound return with no written path is a lift** `open`. The store states the
         write's result as records of the return's table re-read by its key in a statement of their
         own, a write's statement joining nothing onward since it holds its locks, and the emitter
         refuses the shape only because it has no lift for a write.
-      * **What a write alone refuses is stated** `done`. A routine written after a `@reference` is
-        `ROOT_REFERENCE_WITHOUT_ROUTINE`, a root field like any other, and a condition on the step out
-        of the result is `CONDITION_ON_WRITE_RESULT`, the result being re-read by its key without it.
     * **What a producer's object result holds is judged by the families it is stated in** `open`.
       The walk's single-channel rules for the type a write, a routine or a service returns are no
-      rule of the model: each field under the result is an occurrence with its own key row, so two
+      rule of the model: each field under the result is an occurrence with its own lift off its parent, so two
       fields re-reading the same rows, a child `@service`, a filter on a re-read and a path from the
       key table are each a field's own (Alf, 2026-11-09).
-      * **A write's table is the one the tables it is read on agree on** `done`. However many fields
-        re-read its rows, `WRITE_TABLES_DISAGREE` at the `@mutation` where they and
-        `@mutation(table:)` disagree, the scope's `REREAD_TABLE` rung likewise.
-      * **What a write's result holds is stated** `done`. `WRITE_RESULT_HOLDS_ONLY_KEYS` at a field
-        reading a member off it, `REREAD_OF_DELETED_ROWS` at a re-read of a delete's rows, and
-        `CONNECTION_RETURN` on every write; a `@reference` on a routine write's object return keeps
-        `REFERENCE_WITHOUT_TARGET_TABLE`, a true rule for it.
-      * **Arity and keys are codes** `done`. `LIST_OVER_ONE_VALUE`, `MANY_KEYS_INTO_ONE`,
-        `NO_KEY_FROM_PARENT` and `OUTCOME_IN_A_LIST` at the field, a key row's arity being what a
-        write yields or a member delivers, a routine's and a service record's the field's own.
-      * **A nested class's members are read** `open`. The classpath capture writes no
-        `code_read_slot` rows for a nested record such as `NestedFilmsPayloadHolder.Payload`, so its
-        `films()` keys no key row and `NO_KEY_FROM_PARENT` stands aside for a class with no members read.
       * **A field read off its parent's member is no lookup** `open`. `graphitron_producer_rule`
         calls `FilmBlurbHolder.blurb` a `LOOKUP` for its table-bound type though `blurb()` hands back
         the value it reads, so `NO_KEY_FROM_PARENT` exempts it by the member rather than the claim.
@@ -1217,7 +878,7 @@ pass and no stratum that clears and recomputes.
         foreign key and not the name-matched keys that carry the node's key out of the result.
       * **What the model admits the emitters follow** `open`. An id encoded from returned keys, a
         non-null single field under a routine with no errors field, a list field taking one row by
-        an arity-one key row, a routine lift with no step and several fields re-reading a routine's
+        a lift of one key per parent, a routine lift with no step and several fields re-reading a routine's
         rows are no defect, the routine ones `RoutineWriteQuery.Unrendered`, kept out of the rows by
         name, so each emitter refusal joins
         "The store, the generator and the emitters agree on what a service call can be" before the walk's refusals go.
@@ -1237,19 +898,7 @@ pass and no stratum that clears and recomputes.
   * **Each stratum step moves into its owner's anchor phase, marked and swept** `open`.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture` goes with the
     relation it writes.
-* **`FactSink` and `FactWrites` are gone, each writer stating its own insert** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". A capture site builds a generated record, sets one column at a time and hands it to a sink that assembles the insert at run time, with `FactWrites` overriding that for thirteen relations; the statement a writer issues is nowhere in its source. Twenty-nine relations still arrive that way: the legacy `graphitron_*_entry` decodes from `GraphitronFactCapture`, which leave with their node, then the schema inputs and extensions from `SdlFactCapture` and `SdlCoordinates`, the configuration from `StoredRecipe`, the Java declarations from `EmittedRegistry`, the build warnings, rejections, lint findings and javac diagnostics, and the `sql_` catalog from `JooqFactCapture`. Each writes through its own statement instead, set-based where it reads the store and bound once per row through `BindBatch` where it reads a corpus, the shape `GraphQLAstEntries` writes in. It absorbs R701, which stated the same end from the column side.
-* **The federation capture writes in the capture's shape, marked and swept** `done`.
-  `FederationCapture` writes each `federation_version*` relation through one `BindBatch`
-  statement, marks every row with `touched_at` and sweeps the library's rows a reading did not
-  write, parents first, so a definition the library dropped takes a graph's
-  `graphitron_federation_definition` rows with it and one it kept leaves them alone. The library is
-  probed once per loaded library. `GraphitronStoreTest` went from 12,138 statement executions to
-  3,528.
-
-### `capture` runs against the model alone `done`
-
-The goal opens the store, captures and closes it, and each gatherer commits as it goes, so a failed
-capture leaves its progress on disk.
+* **`FactSink` and `FactWrites` are gone, each writer stating its own insert** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". A capture site builds a generated record, sets one column at a time and hands it to a sink that assembles the insert at run time, with `FactWrites` overriding that for six relations; the statement a writer issues is nowhere in its source. Twenty-nine relations still arrive that way: the legacy `graphitron_*_entry` decodes from `GraphitronFactCapture`, which leave with their node, then the schema inputs and extensions from `SdlFactCapture` and `SdlCoordinates`, the configuration from `StoredRecipe`, the Java declarations from `EmittedRegistry`, the build warnings, rejections, lint findings and javac diagnostics, and the `sql_` catalog from `JooqFactCapture`. Each writes through its own statement instead, set-based where it reads the store and bound once per row through `BindBatch` where it reads a corpus, the shape `GraphQLAstEntries` writes in. It absorbs R701, which stated the same end from the column side.
 
 ### The classified model dissolves into the store `open`
 
@@ -1261,118 +910,26 @@ classified records have no reader left and can go with the walk.
   pins the update, delete and service re-reads, as the routine and insert ones already are.
 * **The matched key is stated** `open`. `graphitron_producer_matched_key` holds one row per `ONE`
   write and each key its input columns cover, keyed to the producer and `sql_constraint`.
-* **The DataLoader's key is read from the key row** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". The fetcher's batch key and its lift are
-  generated from the stored row, not from the leaf's `KeyLift`.
-* **A field's key row is stated** `open`, E's. `graphitron_field_key_row` holds, per field
-  taking keys from its parent's object, how it takes them (`COLUMNS`, `ACCESSOR`) and
-  whose columns they are, pinned against the classifier's key lift over sakila but for the gaps below.
-  * **A table with no record class says so** `open`. `sql_table.record_class_fqn` is NULL where jOOQ
-    generated no record class, so a generic record names no table: sakila's `recordless_note`, none
-    on sis.
-  * **A type an `@externalField` returns holds an OBJECT** `done`. `code_method` states its result
-    type's first argument, so an `@externalField` method's `Field<FilmRecord>` backs `FilmCard` with
-    `FilmRecord`, and the result rule hands that value down as an OBJECT rather than the parent's row.
+* **The DataLoader's key is read from the producer's lift** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time".
+  The fetcher's batch key and its lift are generated from `graphitron_occurrence_producer_lift`, not
+  from the leaf's `KeyLift`.
+* **A child producer's lift agrees with the classifier's key lift** `open`, E's.
+  `graphitron_occurrence_producer_lift`, with `_lift_candidate` and `_lift_accessor`, states the key
+  each child producer's source fills it with, pinned against the classifier's key lift over sakila
+  but for the gap below.
   * **A record's method beside its components is a read slot** `open`. A record offers only its
     components, so `FilmCardData.example()` backs nothing and `RecordExample` holds an OBJECT of no
     class, where the classifier reads it through that accessor.
-  * **An error-carrying payload's data element holds its class** `done`. Where a service's object
-    passes through its payload's one data field, the class backs the data element as well as the
-    payload, so `FilmWithActorsResult` is backed by `FilmWithActors` and its table children take key
-    rows off its members; on sis, the 19 payloads that do so.
-  * **A nested class is read** `open`. The code family skips `NestedFilmsPayloadHolder$Payload` and
-    its kind, so their accessors are unknown.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
-* **What an occurrence takes is a binding** `open`, F's and E's.
-  `graphitron_occurrence_binding` and its `COLUMN` and `NODE_ID` subtypes stand; F writes the `TABLE`
-  subtype beside the needs, which `graphitron_field_target_table`'s readers move to, and E the
-  `PARAMETER` and `EXPRESSION` ones, `PARAMETER` decided before `COLUMN`, while `VALUE` waits on a
-  producer's value object being bound.
-  * **An occurrence binds the table its rows or its value land on** `done`.
-    `graphitron_occurrence_binding_table`, the `TABLE` subtype, written by `OccurrenceTables` per depth
-    inside `occurrence-depths` after that depth's column and node id bindings, off
-    `graphitron_occurrence_binding_table_rule`, reading stored rows only and no rule inside
-    `PathNeeds`. The landing is the join path's target where a path was walked, else the need's
-    landing. A field below a source whose values are a table's rows binds each table-bound type its
-    need lands on. A root field has no need, only its arguments do, so it binds by its producer: a
-    root `@service` the table its producer's result names, which its rows reach through the lift,
-    any other root field each participant's table, else its type's; `occurrence-participants` moves
-    ahead of `occurrence-depths` for this, its rule reading only upstream. An argument or input field
-    no column or node id takes binds where its need lands when it is an input object, whose fields
-    filter there, or a scalar a `@condition` takes; a scalar nothing filters by, `first:` or
-    `after:`, binds nothing, a narrowing of "an unmatched scalar" the review is asked to confirm. A
-    record-taking service argument binds the record's table its need lands on, by the same rule. A
-    need whose path stops has no landing, so no binding, only the path's defect. With `COLUMN` and
-    `NODE_ID`, every occurrence that filters or is filtered binds a table, which a `@condition` call
-    is keyed by. Written by the session flipping the conditions, F reviewing the shape (Alf and F,
-    2026-11-09).
-    * **The column and node id bindings are written per depth** `done`. `occurrence-columns` and
-      `occurrence-node-ids` fold into `occurrence-depths`, each depth's after its `Steps`, so a
-      binding that is written where no column or node id takes the value, and a condition's fills,
-      read them upstream; their rules read only needs and join paths already.
-  * **A member's value off its parent's object binds `VALUE`** `done`. Every occurrence an accessor
-    path meets binds `VALUE`, `Class#member` or the class alone where the object passes through,
-    and `graphitron_occurrence_binding_value` names the class read off, the value's class and the
-    member's `code_read_slot` row; the `occurrence-values` stage writes it after `occurrence-columns`,
-    marked and swept by kind; what an outbox `$result` key reads over a service's value, and what
-    the service flip's object-side reads read (Alf, 2026-11-08). `outbox-service-result` pins it.
-* **A field's source is its parent's result** `open`, F's.
-  A field's source is its occurrence's source: its declaring type's table at a chain start, nothing
-  at a root, and its parent's path end below it; its readers read that source where they read
-  `graphitron_field_source_table`'s inherited rule today.
-* **The result relations dissolve into the producer's result** `open`, E's.
-  The producer knows what it produces (Alf, 2026-11-03): its result, one record, a list of records,
-  a connection page or a `@service`'s object, each with its class where it has one, is a fact of the
-  producing occurrence, and the occurrences under it bind into it. `graphitron_result`,
-  `_result_table`, `_result_class` and `_result_pivot` say per type what the producer's result says
-  per producer, so they go, their type-level readers (the LSP's type hover and inlays, the outbox
-  rule, `RESULT_SHAPES_CONFLICT`) reading the results grouped by type, and the result rule's
-  fixpoint goes; the source reads a class off its producer's result. The generator's `ResultShape`
-  (`SingleRecord`, `RecordList`, `Connection`, `LoaderDelegated`) is that fact today.
-  `graphitron_field_key_row` re-keys onto the occurrence and reads its parent's
-  source rather than "the parent holds an `OBJECT`"; since a child producer's key-row start reads the
-  key row and a depth's sources read that depth's producers, E's producer step, at the marked place
-  in the source's depth loop, writes a depth's key rows and producers before its sources, both swept
-  after the loop. The rules and the relations are E's, the cadence the source's.
-  * **A producer's result names its class by its key** `done`. `graphitron_occurrence_producer_result`
-    carries the class's `code_class` key, the graph's first entry declaring it as
-    `graphitron_occurrence_source_object` decides it, so a reader joins the class's members on their
-    key rather than scanning the census by name, which is what the field-keyed key row's accessor arm
-    does at about 5 s an evaluation on sakila.
-  * **A depth's key rows are written off its source** `done`. Each child producer that takes keys
-    off its parent's value states per occurrence, at the end of its depth, the key its source fills
-    it with (`graphitron_occurrence_producer_lift`): the key constraint, read off the source's
-    columns or through a member (`_lift_accessor`), and how many per parent, a selection's batch key
-    and a service's key parameter alike, since a service fills with the data a lookup lifts from
-    (Alf, 2026-11-11). The population is the field-keyed key row's with services under a table row
-    in, so no generated code changes (scope is simplification and performance, Alf 2026-11-11). The
-    members that could hand the keys over are stored once (`_lift_candidate`), and the key defects
-    read them per occurrence: two raise `KEY_ROW_AMBIGUOUS` on the selection arm too, where they
-    raised `NO_KEY_FROM_PARENT` (Alf, 2026-11-11). `REREAD_OF_DELETED_ROWS` is stated on the
-    occurrence's producers, a child selection of a table type under a delete, since a delete naming
-    no table gives its child no key table to fill. The sources, the defects, the outbox,
-    `FrameQuery` and `RoutineWriteQuery` read the fill; `graphitron_field_key_row`, its accessor table,
-    its rule, the `field-key-rows` stage, `FieldKeyRows` and `graphitron_occurrence_producer_key_row`
-    are gone: the sakila example's full capture went from about 58 s to 38, the stage itself having
-    cost about 16 s. Where a query resumes, at the source or at the target, is stated with the
-    shortcut that reads it.
-  * **A connection's shape is stored once** `done`. `graphitron_connection_element_type` is a
-    table, written by the `field-targets` stage ahead of the targets it unwraps from its rule view
-    `graphitron_connection_element_type_rule`, and names the connection's edge type beside its
-    element. The result rule's reader arm asked, as two anti-joins over `graphitron_field_target`,
-    whether a parent is a connection or a connection's edge paging the field's target; that was
-    nearly all of the rule's cost, and the `fetchers` fixpoint evaluates the rule fifteen times a
-    capture. As key probes on the stored fact the sakila example's full capture went from about
-    38 s to 27 and the `fetchers` stage from about 15 s to 1.5, with the result family, readers,
-    fetchers, producers and occurrence sources unchanged row for row. Correlating the anti-joins
-    on the field's own columns rather than the parent CTE's was measured and changed nothing. The
-    old second anti-join skipped the hand-on of every type any field of a connection returns, and a
-    minted connection always has `nodes`, so it also skipped a field of the element returning the
-    element itself; now only the connection and its edge are skipped. Such a self-reference adds
-    nothing to a type-keyed closure unless it is a `@pivot`, an `@externalField` or ends on a
-    `@routine`, where it may now add a row the old rule did not. The sakila example's rows are
-    unchanged and every fixture's tests pass; whether that case should hand its parent on is Alf's
-    call, and it wants a fact document pinning it when it is made.
+* **What an occurrence takes is a binding** `open`, F's and E's. The `COLUMN`, `NODE_ID`, `TABLE`,
+  `VALUE`, `MEMBER` and `PARAMETER` bindings are written; what is left is `EXPRESSION`, which has only
+  its kind in the binding's check and no writer.
+* **The result relations dissolve into the producer's result** `open`, E's. The key-row half has
+  landed; `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` remain, saying per
+  type what the producer's result says per producer, and go with the result rule's fixpoint, their
+  type-level readers (the LSP's type hover and inlays, the outbox rule, `RESULT_SHAPES_CONFLICT`)
+  reading the results grouped by type.
   * **The other spellings of a connection read the stored shape** `open`. `graphitron_producer_rule`'s
     `COUNT`, `FACETS` and page arms and `graphitron_occurrence_start_rule` still ask whether a type
     is a connection or its edge over `graphitron_field_target`; each moves onto
@@ -1392,9 +949,9 @@ classified records have no reader left and can go with the walk.
     graphitron selected from a record a service or a write handed over, which guarantees only its key.
     `edges.node` under a page graphitron selected is `SELECTED`, the case where an element and the
     result set it sits in come from one statement.
-  * **A child producer's source is its parent's value** `open`, F's. `keyRow`, `ownServiceRecord`
-    and `rootRoutine` leave `OccurrenceSources`, and `writePayload`/`writePayloadMember` read the
-    written rows; the § Source bullets of `code-generation-triggers.adoc` change with them (Alf,
+  * **A child producer's source is its parent's value** `open`, F's. `keyRow` has left
+    `OccurrenceSources`; `ownServiceRecord` and `rootRoutine` leave it, and
+    `writePayload`/`writePayloadMember` read the written rows; the § Source bullets of `code-generation-triggers.adoc` change with them (Alf,
     2026-11-10).
   * **The classifier lifts by the settled rule** `open`. `OnFkSlots` only on a single forward hop off
     a selected row; a path of several hops and a `@service` or write record's foreign key take
@@ -1404,10 +961,8 @@ classified records have no reader left and can go with the walk.
     each shape.
   * **A write's payload member on another table is a defect** `open`, E's. A union or interface
     member of a root write's payload bound to a table other than the written one is never produced.
-* **A `@mutation(table:)` that disagrees with its return's table is a defect** `open`, E's. The
-  manual rejects a `@mutation(table:)` naming another table than the one the return names; the store
-  gives that write no `graphitron_producer_write` row and raises nothing, so the defect is the write
-  producer's, at the `@mutation` application with both tables in the detail.
+* **A `@mutation(table:)` that disagrees with its return's table is a defect** `open`, E's.
+  `WRITE_TABLES_DISAGREE` raises it at the `@mutation`; what remains is its detail naming both tables.
 * **The producer's readers read the occurrence producer, and the field-keyed family goes** `blocked`, E's, on "The result relations dissolve into the producer's result".
   `graphitron_occurrence_producer` and its start and call subtypes state per occurrence what
   `graphitron_producer`, `_service`, `_routine`, `_write` and `graphitron_service_holder` state per
@@ -1420,35 +975,16 @@ classified records have no reader left and can go with the walk.
   2026-11-04); each stops producing, its join path continuing its producer's query, when the
   generator learns to join it.
 * **An object result is lifted onto a key row** `open`, E's.
-  Under an object parent the producer that starts a field lifts it onto its key row's table, a lift
-  the producer states over E's key row while the field's source names only that table
+  Under an object parent the producer that starts a field lifts it onto the table of the key its
+  source fills, `graphitron_occurrence_producer_lift`, while the field's source names only that table
   ("Producer, bind and call on the occurrence (draft)"), and only a key on the source side lifts one,
-  a `COLUMNS` key on the parent's record table, so a field whose key re-fetches its own target gets
-  none. E keeps the key row and the first key; the hover's departing table for an input type's
+  a key read off the parent's record table's columns, so a field whose key re-fetches its own target
+  gets none. E keeps the fill and the first key; the hover's departing table for an input type's
   record binding is a reader of the source, kept, not dropped.
-  * **A field under an object starts its path on its key row** `done`. `graphitron_field_path_start`
-    gains `LIFTED` and its subtype `graphitron_field_path_start_lifted`, referencing the key row, so
-    `FilmDetailsCarrier.language` starts on film; an `ACCESSOR` key row, the target's own record,
-    starts none.
-  * **`graphitron_field_source_table` dissolves into the results** `blocked`, F's, on "A field's source is its parent's result".
-    The column match and the hover read the occurrence's start where they read the source table's
-    interim rules, and the source table, its rule and its stage go.
-  * **A binding that names several tables is a row of none of them** `done`. The result rule took a
-    bound type's table from every candidate of its binding, so a type bound to a bare name two
-    schemas declare held a ROW of both; it is still a ROW, of no table, the ambiguity being the
-    binding's own defect.
   * **A `@pivot` gives an OBJECT result** `open`, off the critical path. A `@pivot` field's type holds an OBJECT, so
     `graphitron_result_pivot` goes, and a type both nested under a table's field and pivoted holds
     two shapes, `RESULT_SHAPES_CONFLICT`; R1096 plans `@localized`
     on a constructed row, which this replaces.
-* **The result and path model is stated before it is built** `done`. For a service field it is
-  three facts the store already shapes: a producer's object arrives on its data element, a payload's
-  data field passing it forward as a connection passes its cursored result, so the class backs the
-  data element's type in `graphitron_type_backing`; a member returning a jOOQ record lifts onto a key
-  row of that record's table, `graphitron_field_key_row`'s `ACCESSOR` kind, matched by name through
-  `@field(name:)` as the backing closure already does; and a bound field under an object starts its
-  path on that key row. An OBJECT's class stays at the type grain, an OBJECT may have no class, and
-  a service field needs no relation of a field's own result.
 * **The backing closure stops at a table-bound type** `open`, off the critical path. The class a
   table-bound type holds is its record class, which `BOUND_TABLE` already states, so the
   `graphitron_type_backing` closure need not walk on from it; since a service's object passes
@@ -1464,14 +1000,13 @@ classified records have no reader left and can go with the walk.
   supersedes the row of its function that a `@routine` read with nothing after it has handed since
   `0428ef411`, and `graphitron_routine_result` and the landing's row with no place go. Today Tilgang
   holds a ROW and an OBJECT, and Brukertilgang's three bound children have no start and no key.
-* **A path starts at its parent's table and targets a table** `blocked`, off the critical path, on "A routine's result is an object of its function's record class", "Every field has a path, the written one or the one discovery implies"
-  and "An error-carrying payload's data element holds its class".
+* **A path starts at its parent's table and targets a table** `blocked`, off the critical path, on "A routine's result is an object of its function's record class" and "Every field has a path, the written one or the one discovery implies".
   A table-bound parent starts every field's path on its binding, whatever its result, so for almost
   every field the start is known before the results and the editor completes on an unreached type;
   only an unbound parent asks its result, a nested type starting on its result's tables and an
   OBJECT lifted into a derived table by mapping it onto a key row, and a root `@routine`
   establishes a result, a path to the field's target where that is table-bound. The target is
-  `graphitron_field_target_table`'s or a scalar's written path's, so the start rule, the result
+  the occurrence's `TABLE` binding's or a scalar's written path's, so the start rule, the result
   rule and the column match read the binding, the result and the target instead of probing
   whether a `@reference` was written, and the RESULT start narrows to unbound parents. A paginated
   field's path runs from its parent to its items' table, its connection and edge types passing the
@@ -1499,8 +1034,7 @@ before `generate` does.
   schema's refusals are, and the log names it.
 * **Each rule the walk enforces is a located defect** `open`. Every walk rejection becomes a code
   and a branch of `graphitron_entry_defect_rule`, and the walk's hand-built validation test for it
-  becomes a fact document or goes with its rule. The `errorGuard` rules are writable now, over
-  `graphitron_errors_field` and `graphitron_producer_outcome`.
+  becomes a fact document or goes with its rule.
   * **A select's condition, paging and ordering are keyed to its producer** `open`. The
     modifiers are stated over `graphitron_producer`, so the operation rules are written over them
     once.
@@ -1529,8 +1063,6 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
 * **The generator reads its configuration from the store** `open`. Each setting it still takes off
   `RunContext` or `BuildContext` (the tenant column, the lint configuration, the session hooks, the
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
-  * **A generating harness captures the run's output coordinates** `done`.
-  * **The output package is read from the store** `done`.
   * **The tenant column and the session hook signature are captured** `blocked`, on "The generator builds no schema".
     `<tenantColumn>` is one pattern, matched against database names as jOOQ matches them: a Java
     regular expression, case-insensitive, whole-name against `column`, `table.column` or
@@ -1571,7 +1103,6 @@ generated Java or SQL as text.
   from the store, and `PlanCompileGraph` and `FetcherEdgeRelation` go.
 * **`emit` imports no `render` class** `open`. The shared one-spelling helpers move into `emit`, the
   old renderers import them from there, and the import rule's exception list is empty.
-* **The error-mapping constant is named by its outcome type, and the dedup goes** `done`.
 * **Routine writes read only the store** `blocked`, E's, on "The tenant column and the session hook signature are captured". The write's tenancy is read from the tenant table that node captures, not decided a second
   way, so `RoutineWriteEmitter` takes nothing from `GraphitronSchema`, and its inherited and
   argument-bound routings, which a rejected tenant-scoped write never reaches, go.
@@ -1583,8 +1114,9 @@ generated Java or SQL as text.
   a node id decoded into a service parameter (any but the node's own record a defect, that one the
   generator's refusal), three node ids filling one member, a checked exception no `@error` handler
   covers, and a service under a table taking no source. Each becomes a located defect or a supported
-  shape, its emitter path following, and the tests stating it by hand (`NodeIdFillEmitterTest`,
-  `NodeIdBuildEmitterTest`, `CallEmitterTest`, `ServiceEmissionCensusTest`) read it from a document.
+  shape, its emitter path following. The tests read documents already: `NodeIdFillEmitterTest` and
+  `NodeIdBuildEmitterTest` `scenarios/node-id-decode-record`, `CallEmitterTest`
+  `scenarios/service-call-shapes`, and the service census is part of `EmissionCensusTest`.
 * **No emitter reads a leaf** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". `CommandSeamRatchetTest` counts no leaf `instanceof`, case pattern or `plan`
   reference left in the generator.
 
@@ -1594,7 +1126,6 @@ The generator turns over one emitter at a time, each held to behaviour by tests 
 generated classes against PostgreSQL from the fact scenarios. The fixed runtime classes and the
 output package they are written to are settled.
 
-* **The schema package's fixed classes are written without a plan** `done`.
 * **The fixed classes' renderers move into `emit`** `open`. The six classes `FixedRuntimeEmitter`
   renders are written by generators that name `GeneratedUnits`, `ErrorDispatchFragments` and the
   model, so the emitter sits beside them in `rewrite.generators.schema` rather than in `emit`.
@@ -1607,17 +1138,13 @@ output package they are written to are settled.
 * **The configuration-read runtime classes read the store** `blocked`, on "The generator reads its configuration from the store". `ConnectionRuntime`'s units,
   `GraphitronConnectionInstrumentation`, `ConnectionResult` and `ConnectionHelper` take the tenancy
   and the session hooks from the store rather than from `GraphitronSchema`.
-* **The node id encoder reads the store** `done`. The encoder renders its helpers from
-  `NodeIdEncoderQuery`'s rows, one per `graphitron_node` row with its key columns, a stub's included,
-  and `NodeIdHelperNames` is the helpers' one spelling. A stub gains an `encode<Stub>` the walk never
-  emitted, read off `graphitron_node.resolvable`'s comment; whether its id is encodable here is
-  unruled, Alf and Filip's to say.
-  * **The encoder is not planned** `open`. It is written straight from the store, as
-    `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER` goes, with
-    `PlanCompileGraph`'s edge to it.
-  * **The walk's catalog decode goes** `open`. `BuildContext.catalogNodeDecode`'s arm for a `@table`
-    type with no `@node` is unreachable on a graph that generates, the store refusing it as
-    `NODE_ID_TYPE_NAME_UNDECLARED_STUB`; count that over the scenarios, then delete it.
+* **The node id encoder is not planned** `open`. It renders from the store already and is written
+  straight from it, as `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER`
+  goes, with `PlanCompileGraph`'s edge to it. Whether a stub's id is encodable here is unruled, Alf
+  and Filip's to say.
+* **The walk's catalog decode goes** `open`. `BuildContext.catalogNodeDecode`'s arm for a `@table`
+  type with no `@node` is unreachable on a graph that generates, the store refusing it as
+  `NODE_ID_TYPE_NAME_UNDECLARED_STUB`; count that over the scenarios, then delete it.
 * **The node and entity dispatch reads the store** `blocked`, on "Entity resolution is stated" and
   "The generator reads its configuration from the store". `EntityFetcherDispatchClassGenerator` and
   `QueryNodeFetcherClassGenerator` move together, the fetcher calling the dispatch, which reads the
@@ -1673,14 +1200,9 @@ someone to profile.
   `GraphCountGrowthGateTest` holds it as a backstop, one graph's write and read time per relation
   alone and as one of eight within a generous multiple, and `UpsertKeyGateTest` holds the upsert
   shape the slack would miss; what is left is the tables both name as known.
-  * **A stage's time includes its reads** `done`. A stage that fetches a rule into Java and inserts
-    the rows spent its time in the read, where no one looked: one such rule went from 7.7 to 37.9 s
-    on a large schema unseen. `store_graph_read` records, per capture, each relation a gatherer
-    read for a millisecond or more, beside `store_graph_write`, and MCP `status`, the `graphitron:dev`
-    line and the backstop rank both.
-  * **A stage's time includes its preparation** `open`. `WriteTimes` starts its clock at jOOQ's
-    `executeStart`, after H2 has parsed and planned, so every stage figure, the backstop's among
-    them, misses what is about 70% of the store-heavy test JVMs' samples
+  * **A stage's time includes its preparation** `open`. A capture records `prepare_ms` beside the
+    execution time; what remains is `GraphCountGrowthGateTest.times()`, which sums execution only, so
+    the backstop still misses preparation, about 70% of the store-heavy test JVMs' samples
     (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
   * **A stage's rows written count every row a batch writes** `open`. `store_graph_write.rows_written`
     undercounts writes that bind one row per batch entry: on sis it records 22 rows for
@@ -1713,7 +1235,6 @@ someone to profile.
     model suite. It passed twice after at load 2.2, but 107 ms over is growth, not the few
     milliseconds of a pause. The rule takes the graph and the depth inside each SELECT, or the
     writer reads it as a parameterised select, and `prepare_ms` prices the change.
-  * **An upsert finds the row it updates through one key** `done`.
   * **An upsert into a table with an independent unique key is decided per table** `open`.
     `graphitron_federation_definition` is unique by local name, and `graphitron_ast_reference_element_entry` and
     `graphitron_ast_error_handler_entry` by the application's position and ordinal, none derived
@@ -1722,10 +1243,21 @@ someone to profile.
 * **A stage's statement reads tables, not a chain of views** `open`. A gate holds the cost of
   preparing each stage's statement, since on a fresh store most of a capture's time goes to H2
   expanding views rather than executing them.
-* **A per-depth rule is planned once per depth** `open`. `PathNeeds.write` inlines its rule's union
+* **A per-depth rule is planned once per depth** `open`. `PathNeeds.writeDepth` inlines its rule's union
   into two upserts and `OccurrenceSources.write` into four, so H2 plans the whole union that many
   times a depth; together they are a sixth to a fifth of the verification build's CPU, all of it
   planning (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
+* **No view reads a view, and every rule view is simple** `open`. The store's rulings
+  (`fact-model.adoc` § Every relation has a grain) are not yet met. Views reading views:
+  `graphitron_occurrence_call_pin` (and `_call_rule`, `_call_method_rule` reading it),
+  `graphitron_entry_defect_parameter_rule`, `graphitron_outbox_key_rule`,
+  `graphitron_argmapping_pair_defect_rule`, `graphitron_entry_defect_member_rule` (over the
+  `graphitron_node_id_slot` view and `graphql_poly_member`), `graphitron_occurrence_call_parameter_rule`
+  and `_defect`, `graphitron_argmapping_step_head_rule` and `graphitron_occurrence_node_id_rule`.
+  Oversized rule views, each a derivation skipped upstream: `graphitron_entry_defect_rule`,
+  `graphitron_occurrence_condition_parameter_rule`, `graphitron_occurrence_producer_lift_rule` and
+  `graphitron_join_path_step_rule`. Each is fixed by storing the skipped derivation at its own
+  grain, priced by `prepare_ms` on a cold capture.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's
   own shutdown hook closes the database, so a long session's store does not keep growing.
 
@@ -1736,13 +1268,8 @@ what the edit touched rather than what the project holds. Deletion rides on the 
 class, a document or an entry that goes takes what hung off it by cascade. What a sis round does
 today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.md`.
 
-* **A schema edit re-anchors only what the edited document feeds** `blocked`, on the children below. The graphql family's only inputs are the documents and the bundled ones, so its rows are kept by key: the foreign keys say what a change reaches, and a round with no change reaches nothing.
-  * **A directive and its arguments hang off their element anchors** `open`. `graphql_field`, `graphql_argument` and `graphql_enum_value` reference their element anchor with a cascade, so a coordinate that goes takes its row; `graphql_directive` references only `store_graph` and `graphql_directive_argument` only `graphql_directive`. They reference `graphql_directive_element` and `graphql_directive_argument_element` with a cascade, which sis holds: its 42 directives and 50 formal arguments match their anchors exactly.
-  * **Every element anchor keys its coordinate and checks its spelling** `open`. `graphql_field_element`, `graphql_argument_element` and `graphql_directive_argument_element` declare `UNIQUE (graph_name, coordinate)`, and only the first two check the coordinate against their parts. The type, enum value and directive anchors gain the unique key, and all four that lack it gain the check (`type_name`, `type_name.value_name`, `@directive_name`, `@directive_name(argument_name:)`); sis has no row that would fail one. `graphql_enum_value_element`'s column comments move up beside its table.
-  * **No relation claims an applied directive has a definition** `open`. `SdlFactCapture`'s javadoc says every application's directive resolves to a definition. On sis 395 applications and 356 application arguments resolve to none: `@key`, `@link`, `@shareable`, `@inaccessible` and `@tag` arrive through `@link`, and a misspelt directive must be captured to be reported. So no foreign key joins `graphql_directive_application` to `graphql_directive`, and the javadoc says what holds.
 * **A classpath change reruns only the gatherers that read the classpath** `open`. A round that
   succeeds says which gatherers it ran and which it skipped.
-* **A document that does not parse ends the round at the parse** `done`.
 * **Every `code_` row hangs off a class** `open`. `code_throwable` and `code_throwable_supertype`
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`
@@ -1813,12 +1340,9 @@ Today that answer is settled from coordinate copies of `@node` and `@table`, ref
 reading, and `graphitron_node_type` adds every written `@node` to it, so readers and the editor
 disagree with the build about which types are nodes.
 
-* **The node is settled from the position-keyed entries, in one place** `blocked`, on "The table-binding and node subject converts". `TableTypes`, `Nodes` and `NodeKeyColumns` read
-  `graphitron_ast_table_entry`, `graphitron_ast_node_entry` and
-  `graphitron_ast_node_keycolumn_entry`, and `NodeKeyColumns` runs in the anchor beside `Nodes`.
-  All three read the entries now; the move into the anchor is left.
-* **Table types, nodes and node key columns are marked and swept** `blocked`, on "The node is settled from the position-keyed entries, in one place". An unchanged binding keeps its node and
-  key columns rather than losing them to a clear and refill.
+* **Table types, nodes and node key columns are marked and swept** `open`. An unchanged binding
+  keeps its node and key columns rather than losing them to a clear and refill; `Nodes.derive` still
+  deletes and refills `graphitron_node`.
 * **A node is what the manual says takes effect** `open`.
   `graphitron_node_type` goes, its readers read `graphitron_node`, and
   `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
@@ -1835,10 +1359,9 @@ relations kept a private model of the route; both were replaced from scratch, re
 `intent_`, and are gone. `graphitron_node_id_instruction`'s insert cost 23 CPU-seconds of preparation over a
 `graphitron` test phase, reaching 24 relations through 4 views (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`).
 The replacement is the binding's `NODE_ID` subtype, `graphitron_occurrence_node_id`: at each
-occurrence, the node type, the rule that decided it and the node's key columns on its own table. The
-branch is G's (Alf, 2026-11-05).
+occurrence, the node type, the rule that decided it and the node's key columns on its own table.
 
-* **The corpus is written against the model** `open`, G's. Fact documents state a written
+* **The corpus is written against the model** `open`. Fact documents state a written
   `typeName:` naming an interface over nodes beside the union already stated, and a bare `@nodeId`
   on a `@reference` field once its path's landing is filled.
 * **An output field's node id is encoded from the store** `open`, F's.
@@ -1871,14 +1394,11 @@ and a reshape breaks tests whose behaviour did not change. Every seeded class be
 document or a captured Java case, and `SeededStore` is deleted; this frees the subtractions
 elsewhere in the graph.
 
-* **The code-reference subject converts** `open`. The classes seeding code references through
-  `seedService`, `seedFieldCondition` and their siblings become documents, each corpus gap added
-  to the sakila catalog or service module first.
-* **The table-binding and node subject converts** `open`. The classes seeding `@table` and `@node`
-  through `seedTableBinding` and `seedNode` become documents.
-* **Every other seeded class converts by its subject** `open`. Fields, mutations, input fields and
-  arguments convert whole, a subject listing its corpus gaps once before its first conversion.
-* **`SeededStore` is deleted** `blocked`, on "The code-reference subject converts", "The table-binding and node subject converts" and "Every other seeded class converts by its subject". The fixture goes, and `SeedingDissolutionGateTest` goes with them.
+* **Every other seeded class converts by its subject** `open`. 21 test classes still name
+  `SeededStore`, against `SeedingDissolutionGateTest`'s ceiling of 16; fields, mutations, input
+  fields and arguments convert whole, a subject listing its corpus gaps once before its first
+  conversion.
+* **`SeededStore` is deleted** `blocked`, on "Every other seeded class converts by its subject". The fixture goes, and `SeedingDissolutionGateTest` goes with them.
 
 ### What the converted seeded cases turned up is fixed `open`
 
@@ -1886,7 +1406,7 @@ Stating the seeded cases as documents put real schemas in front of rules that ha
 hand-written rows, and six of those rules answered wrongly, threw, or never fired. Each is fixed
 here with a document that shows it.
 
-* **A `@nodeId` beside `@field(name:)` names a target of the decode's shape** `blocked`, G's, on "A table class's column fields are stated" and "What an occurrence takes is a binding".
+* **A `@nodeId` beside `@field(name:)` names a target of the decode's shape** `blocked`, on "A table class's column fields are stated" and "What an occurrence takes is a binding".
   The name is the `NODE_ID` claim's target: under a table source a column, under an object source a
   member, and its type, a column's generated `Field<T>` or the member's, matches the shape the encode
   or decode needs, a mismatch the defect (Alf, 2026-11-05).
@@ -1925,8 +1445,8 @@ relation rather than what it shadows.
   silence check goes, and `@assertEmpty` applies to every relation carrying the graph.
 * **The fact model cites what pins it** `blocked`, on "A registration says what pins a relation, not what it shadows". `fact-model.adoc` stops naming `FactCaptureAgreementTest`.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on "The oracle writers' lifecycle cases stay with their writers", "A registration says what pins a relation, not what it shadows" and "Any relation that carries the graph can be asserted empty".
-* **The shadow tests go with their walk side** `blocked`, on "A node is what the manual says takes effect" and "The generator builds no schema". `RoutineSpentInputShadowTest`,
-  `InputOccurrenceShadowTest` and `NodeTypeShadowTest` are deleted.
+* **The shadow tests go with their walk side** `blocked`, on "A node is what the manual says takes effect" and "The generator builds no schema". `RoutineSpentInputShadowTest`
+  and `NodeTypeShadowTest` are deleted.
 * **The corpus goes** `blocked`, on "The shadow tests go with their walk side". The corpus
   documents and `CorpusStore` are deleted, each reader becoming a fact document or going with the walk
   it tests; `CorpusExpectations` and `CorpusDocuments` stay, the fact documents' assertions and loader.
@@ -1970,20 +1490,6 @@ A build that hangs or fails for reasons no change caused costs every session a r
 real failure look like noise. The LSP test JVM crash seen once is in the two
 `roadmap/audits/2026-10-21-lsp-test-jvm-sigsegv-*` audits, for a recurrence to be read against.
 
-* **Class initialization cannot deadlock in javapoet** `open`. `TypeName`'s initializer builds no
-  `ClassName`, and a test initializing the two from opposite ends on two threads pins it.
-* **A capture stopped partway leaves no stamp vouching for rows it did not write** `done`. Each
-  gatherer commits on its own, and the source readings committed a file's or an entry's stamp
-  before the gatherers that transcribe it; a build cancelled in between left the stamp vouching for
-  half a transcription, and every later run skipped the source on its word, the sakila example
-  drawing 326 defects on its valid schema until its store was deleted by hand. The stamps are now
-  written by `GraphQLSourceCapture.vouch` and `ClasspathSourceCapture.vouch`, which the pass calls
-  once the transcription has committed, so an interrupted capture leaves them unknown and the next
-  one reads the source again. Taken as a drive-by on this item (Alf, 2026-11-10).
-* **A refused compaction does not depend on luck** `done`.
-* **The flaky failures seen in this item's builds have their causes fixed** `done`. A `{@link}`
-  into the nameless package no longer compiles it with parameter names, a zone switch, two rental
-  cleanups and a warning capture no longer reach across concurrent test classes.
 * **A capture's mark is a UTC instant, bound without the JVM's zone** `open`. `touched_at` binds
   through `java.sql.Timestamp` and the default zone, so a zone switch mid-capture splits the mark
   and the sweep deletes parents under live children; a `forcedType` binding that hands H2 the
@@ -2464,12 +1970,11 @@ where it rebuilds them per edge today.
 4. As their readers move to path ends, `graphitron_field_scope_table`,
    `graphitron_argument_scope_table` and `graphitron_input_field_resolving_table` go, each in the
    commit that moves its last reader, and `intent_input_occurrence_path` with them.
-5. E: "`graphitron_field_source_table` dissolves into the results" and
-   "A field's source is its parent's result" are the occurrence's source and come off E's graph into
-   step 2.
-   "A field's key row is stated" stays E's, keyed on the occurrence; "An object result is lifted onto
-   a key row" is the producer's key-row lift, E's, and "A plain object's first key is read off its members" is
-   discarded, a plain object not lifting. The argMapping binding
+5. E: `graphitron_field_source_table` and a field's source are the occurrence's source and come off
+   E's graph into step 2 (both landed).
+   "A child producer's lift agrees with the classifier's key lift" stays E's, keyed on the occurrence;
+   "An object result is lifted onto a key row" is the producer's lift, E's, and a plain object's first
+   key read off its members is discarded, a plain object not lifting. The argMapping binding
    binds to occurrences and leaves the unpack to step 3; the fill of a jOOQ record reads its columns
    off path ends rather than `sql_table.record_class_fqn` to `sql_column`.
 6. Whoever moves their readers: `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`
@@ -2515,7 +2020,7 @@ hands back. A *join path* goes from table to table by joins, the SQL path `@refe
 and an *accessor path* from object to object by accessors, the Java path field names and
 `@field(name:)` write. A *lift* is where the two worlds cross, an object made rows of a table; it is
 the producer's, stated by the producer that makes it and not by the source.
-Today's writers build the table side; the accessor path is "A value object is reached by its accessor path".
+Today's writers build both sides, the accessor path being `graphitron_accessor_path`.
 
 * *Source*: what its values come from, stated on the occurrence itself rather than as a pointer to
   another: rows of one or more tables, or an instance of a class. The writer derives it by rules no
@@ -2541,7 +2046,7 @@ Today's writers build the table side; the accessor path is "A value object is re
   scope; the source reads its class off its producer's result, the parent field's own producer's
   result class, else the type's one class. A root field with no `@routine` has no source. A carrier
   graphitron builds has the class it generates; a connection's fields take their source from the
-  returning producer's result ("A connection's fields bind into its producer's page");
+  returning producer's result ("A connection's producer returns the connection, and its fields read it");
   an errors field's subtree has no source yet. Where the parent forks, the occurrence has a table
   source row per table.
 * *Path*: how it gets from its source to one type it reaches, one path per occurrence and target
@@ -2684,7 +2189,7 @@ entry.
      of a check's reach; an
      inherited one is a row per implementation, its claim possibly in another file, so no reader joins
      through implementations. An `INFERRED` one is claimed by nothing: its one step's key is inferred.
-  ** `graphitron_accessor_path`: the object side's path, under "A value object is reached by its accessor path".
+  ** `graphitron_accessor_path`: the object side's path.
 * `graphitron_join_path_step`: one step a join path takes, keyed by the need's key and the
   position with a cascading foreign key to the need, with its from and
   to table, the place of the element it resolved in its claim's written list (none where inferred,
@@ -2763,8 +2268,8 @@ reference that can cross files is anchored to names or to an element's place in 
 author chose and which do not move when the file around them is edited. So a holder is keyed by its
 coordinate spelled from names, a path names the written claim it follows and a step the element's
 place, and a path's start is a step's `as:` name, so an inserted step moves nothing. An application
-itself is named by its coordinate, directive and ordinal ("An application is named by its coordinate,
-directive and ordinal"). Inheritance is a row per implementation, its written claim
+itself is named by its coordinate, directive and ordinal
+("An application is named by its coordinate, directive and ordinal"). Inheritance is a row per implementation, its written claim
 possibly in another file. The landing type is a key column of a path. A path holder is a coordinate,
 and a claim is a coordinate and a target type (2026-11-02). It is the field that is lifted onto a
 key row, not its parent, so a lifted start is read off the field's own key row. Every occurrence
@@ -2965,8 +2470,8 @@ the same key.
 
 **A `@condition`'s fills** (Alf, 2026-11-09). The rules are the manual's, maintained in
 `reference/directives/condition.adoc` § How the method's parameters are bound, which the flip
-reproduces. Where its by-type rule differs from the service's, to be closed by "A `@condition` and a
-service pair a parameter with an argument by one rule": the service pairs on list-ness and element
+reproduces. Where its by-type rule differs from the service's, to be closed by
+"A `@condition` and a service pair a parameter with an argument by one rule": the service pairs on list-ness and element
 type with each other's only candidate and, failing that, the last open parameter and argument where
 type cannot tell them apart, and reads an input object as any non-JDK class; the condition, in three
 steps the manual now states (Alf, 2026-11-10), pairs one remaining parameter with one remaining
@@ -2982,7 +2487,7 @@ place in the source's loop and read today off the field-keyed producer relations
 occurrence's field: on the six stores every field producer but a connection's count and facets is a
 producer at each of its occurrences and nothing else is. `_result` states what each produces, its
 shape (`SINGLE_RECORD`, `RECORD_LIST`, `CONNECTION`, `OBJECT`, `SCALAR`), its class and, for records,
-the table they are rows of. A connection's `COUNT` and `FACETS` producers are G's, stated on this
+the table they are rows of. A connection's `COUNT` and `FACETS` producers are stated on this
 family by the connection model (Alf, 2026-11-04).
 
 **What this replaces.** `graphitron_code_reference`, keyed by a reference's written position,
@@ -2998,13 +2503,12 @@ call's `$context` fills.
 
 * Owners: the producer with its lift E's, written per depth inside the source's loop, before that
   depth's sources, beside the key rows; the source F's; the calls and their parameters E's; the
-  connection's `totalCount` G's, with the connection model.
+  connection's `totalCount` unowned, with the connection model.
 * Whether a `@condition` under `UPDATE` and `DELETE` applies to the rows they match, and whether the
   defect for a condition that decides nothing exists already or is new.
 * Settled (Alf, 2026-11-09): the call holders share a supertype, `graphitron_occurrence_call`, for
   the parameter rows' one foreign key, and a `@condition` is one call per table its occurrence binds,
-  pinning an overload for each, as the join path step does per implementation; see
-  "Every call an occurrence makes is a row of one supertype".
+  pinning an overload for each, as the join path step does per implementation.
 
 ## Tests
 
