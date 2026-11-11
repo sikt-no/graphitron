@@ -13896,16 +13896,10 @@ UNION ALL
 -- that member's value instead, even where its type is a table's, so it fetches nothing. Where two
 -- members of the class could hand over the key's records, KEY_ROW_AMBIGUOUS, the detail the class.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       CASE WHEN (SELECT COUNT(DISTINCT c.slot_method_name) FROM graphitron_occurrence o
-                    JOIN graphitron_occurrence_producer_lift_candidate c
-                      ON c.graph_name = o.graph_name AND c.coordinate = o.coordinate
-                   WHERE o.graph_name = f.graph_name AND o.element_coordinate = f.coordinate) > 1
-            THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
-       (SELECT MIN(c.slot_class_name) FROM graphitron_occurrence o
-          JOIN graphitron_occurrence_producer_lift_candidate c
-            ON c.graph_name = o.graph_name AND c.coordinate = o.coordinate
-         WHERE o.graph_name = f.graph_name AND o.element_coordinate = f.coordinate
-        HAVING COUNT(DISTINCT c.slot_method_name) > 1)
+       -- Ambiguous as the fill judges it: an occurrence with more than one candidate, a candidate
+       -- being one member by its whole slot key.
+       CASE WHEN amb.class_name IS NOT NULL THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
+       amb.class_name
   FROM graphitron_producer p
   JOIN graphitron_result r
     ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
@@ -13913,6 +13907,14 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
   JOIN graphql_ast_element_entry el
     ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  LEFT JOIN (SELECT o.graph_name, o.element_coordinate, MIN(c.slot_class_name) AS class_name
+               FROM graphitron_occurrence o
+               JOIN graphitron_occurrence_producer_lift_candidate c
+                 ON c.graph_name = o.graph_name AND c.coordinate = o.coordinate
+              WHERE (SELECT COUNT(*) FROM graphitron_occurrence_producer_lift_candidate c2
+                      WHERE c2.graph_name = o.graph_name AND c2.coordinate = o.coordinate) > 1
+              GROUP BY o.graph_name, o.element_coordinate) amb
+    ON amb.graph_name = f.graph_name AND amb.element_coordinate = f.coordinate
  WHERE p.kind = 'LOOKUP'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence o
                      JOIN graphitron_occurrence_producer_lift l
@@ -15161,14 +15163,16 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
 UNION ALL
 -- A fill on a table with no primary key, at the field's definition: a batch is keyed by the
 -- table's primary key, so there is nothing to key it by. The detail is the table.
-SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'KEY_TABLE_WITHOUT_PRIMARY_KEY', l.key_table
+-- One row per field however many occurrences fill it, the detail the first such table by name.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'KEY_TABLE_WITHOUT_PRIMARY_KEY', MIN(l.key_table)
   FROM graphitron_occurrence_producer_lift l
   JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
  WHERE l.key_constraint IS NULL
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
 UNION ALL
 -- A service under a table's row or an object of a known class whose method has no parameter the
 -- batch's keys reach, at the field's definition: it is fetched for many parents at once, and its keys
@@ -19437,7 +19441,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('PARAMETER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_FILLED_TWICE',
    'A parameter of a method a @service or a @condition calls is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.', 'entry-defects'),
   ('KEY_ROW_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ROW_AMBIGUOUS',
-   'A @service under a parent holding an object takes its keys through the member of the object''s class returning records of the table its source parameter collects, and more than one member does, so nothing says which: keep one.', 'entry-defects'),
+   'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.', 'entry-defects'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
    'A field fetching its own rows under a parent holding an object is batched by the primary key of the table its keys are records of, and that table has none: give the table a primary key, or fetch the field another way.', 'entry-defects'),
   ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',

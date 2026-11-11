@@ -1193,6 +1193,14 @@ classified records have no reader left and can go with the walk.
     its rule, the `field-key-rows` stage, `FieldKeyRows` and `graphitron_occurrence_producer_key_row`
     are gone, about 14 s of a sakila capture's 38. Where a query resumes, at the source or at the
     target, is stated with the shortcut that reads it.
+  * **The key defects read the fill's candidates alone** `open`. The service arm of
+    `NO_KEY_FROM_PARENT`/`KEY_ROW_AMBIGUOUS` still counts members itself over `code_read_slot` and
+    `code_method_parameter`, a second spelling of the candidates that disagrees with the fill on a
+    method with two record-set parameters; it reads the stored `RECORD` candidates per occurrence
+    instead, and the selection arm reads the occurrence's source object rather than the field-keyed
+    `graphitron_result`. The details move to `graphitron_entry_defect_occurrence` with its table and
+    method rows, where a field filled differently under two parents now keeps one. The fill rule's
+    service arm stops reading `org.jooq.Record`/`Row` key types off the class name.
   * **A source says whether graphitron selected its rows** `open`, F's.
     `graphitron_occurrence_source` carries its basis, `SELECTED` or `HANDED`, so a lift tells a row
     graphitron selected from a record a service or a write handed over, which guarantees only its key.
