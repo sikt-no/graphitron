@@ -431,7 +431,7 @@ public final class OutboxEmitter {
                 c.javaName())).toList(), ", ");
         return b.addStatement("$L.add($L.value($L == null ? $T.val(($T) null, $T.class) : $T.val($T.$L($L))))",
                 entries, key, current, DSL, String.class, String.class, DSL, encoder,
-                "encode" + leaf.nodeType(), args)
+                NodeIdHelperNames.encode(leaf.nodeType()), args)
             .build();
     }
 
@@ -501,7 +501,7 @@ public final class OutboxEmitter {
             throw new IllegalStateException("the node type " + leaf.nodeType() + " read by "
                 + row.typeName() + "." + row.fieldName() + " states no key column");
         }
-        String method = "encode" + leaf.nodeType();
+        String method = NodeIdHelperNames.encode(leaf.nodeType());
         if (listResult) {
             var args = CodeBlock.join(columns.stream()
                 .map(c -> CodeBlock.of("r.get(t.$L)", c.javaName())).toList(), ", ");

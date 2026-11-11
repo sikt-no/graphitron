@@ -119,7 +119,7 @@ default Validator getValidator(DataFetchingEnvironment env) {
 
 == `NodeIdEncoder` utility
 
-Emitted by `NodeIdEncoderClassGenerator` into `<outputPackage>.util`, unconditionally: the class ships on every run, and a schema with no `@node` type simply gets no per-type helpers on it. Static, non-extendable encode/decode helpers for Relay global IDs:
+Emitted into `<outputPackage>.util` unconditionally: the class ships on every run, and a schema with no node type simply gets no per-type helpers on it. Static, non-extendable encode/decode helpers for Relay global IDs:
 
 [source,java]
 ----
@@ -139,7 +139,7 @@ public final class NodeIdEncoder {
     public static void requireColumnAgreement(
         String conflictLabel, DataType<?> type, Object a, Object b);
 
-    // Per-Node helpers, one pair per @node type:
+    // Per-Node helpers, one pair per node type:
     public static String  encode<TypeName>(T1 v1, ..., TN vN);
     public static RecordN<T1, ..., TN> decode<TypeName>(String base64Id);
 }
@@ -153,10 +153,10 @@ Every Graphitron-emitted nodeId is base64-url-encoded `"typeId:v1,v2,..."` (no p
 
 === Per-Node helpers
 
-For each `@node`-decorated type the generator emits two static helpers named after the GraphQL type:
+For each node type the generator emits two static helpers named after the GraphQL type. A node type is a `@table` type carrying `@node`, or implementing `Node` over a table whose generated class publishes node metadata; a federation stub, `@node(resolvable: false)`, is one too, since its id encodes and decodes like any node's even though `Query.node` does not fetch it:
 
 * `encode<TypeName>(T1 v1, ..., TN vN)` -- bakes the typeId into the helper name so call sites pass typed key values directly. Returns `null` if any value is `null`.
-* `decode<TypeName>(String base64Id)` -- returns a jOOQ `RecordN<T1, ..., TN>` typed against the bound table's PK columns, or `null` uniformly on malformed input, a typeId mismatch, the wrong number of key values, or a key value that is not a value of its column. Carrier consumers wrap that null through the matching `CallSiteExtraction.NodeIdDecodeKeys.*` arm.
+* `decode<TypeName>(String base64Id)` -- returns a jOOQ `RecordN<T1, ..., TN>` typed against the node's key columns, or `null` uniformly on malformed input, a typeId mismatch, the wrong number of key values, or a key value that is not a value of its column. Carrier consumers wrap that null through the matching `CallSiteExtraction.NodeIdDecodeKeys.*` arm.
 
 `peekTypeId(base64Id)` reads the typeId off the wire string without decoding the rest. `Query.node(id:)` uses this to dispatch to the right `@node` type's table; a non-typed reader can call it the same way.
 

@@ -8,11 +8,8 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 
 import javax.lang.model.element.Modifier;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -30,7 +27,9 @@ import java.util.List;
  * the field returns null" contract; opacity says we never leak decoding errors back to the
  * client.
  *
- * <p>Emitted only when at least one {@link NodeType} is classified for the schema.
+ * <p>Whether the class is emitted at all is the plan's to say; what it holds does not depend on which
+ * types are nodes, those being {@code EntityFetcherDispatch}'s to know, so the only fact it takes is
+ * whether the build is multi-tenant.
  */
 public class QueryNodeFetcherClassGenerator {
 
@@ -69,16 +68,11 @@ public class QueryNodeFetcherClassGenerator {
     private static final ClassName CODE_REGISTRY_BLDR     = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
     private static final ClassName DATA_FETCHER_RESULT    = ClassName.get("graphql.execution", "DataFetcherResult");
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        var nodeTypes = schema.types().values().stream()
-            .filter(t -> t instanceof NodeType)
-            .map(t -> (NodeType) t)
-            .sorted(Comparator.comparing(NodeType::typeId))
-            .toList();
-        if (nodeTypes.isEmpty()) {
-            return List.of();
-        }
-
+    /**
+     * The {@code QueryNodeFetcher} class. {@code multiTenant} says whether the build routes per tenant,
+     * which makes each resolved node a {@code DataFetcherResult} carrying its tenant.
+     */
+    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
         var fieldWildcard    = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
@@ -92,8 +86,6 @@ public class QueryNodeFetcherClassGenerator {
         // back as its field value and nodes keeps each one as a list element, so neither wraps a
         // slot again (graphql-java unwraps one level per value). Single-tenant slots stay bare
         // Records, and so does this emission.
-        boolean multiTenant = schema.tenantScopes()
-            instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured;
         TypeName nodeResult = multiTenant ? ParameterizedTypeName.get(DATA_FETCHER_RESULT, RECORD) : RECORD;
         TypeName rowType = multiTenant ? ClassName.get(Object.class) : RECORD;
         CodeBlock noNode = multiTenant
@@ -182,7 +174,7 @@ public class QueryNodeFetcherClassGenerator {
             // segment here: ids are undecoded at the loader boundary, and the dispatcher
             // partitions the batch per decoded tenant downstream, so the batch itself may span
             // tenants safely.
-            .addCode(schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured
+            .addCode(multiTenant
                 ? CodeBlock.builder().addStatement("$T path = $T.loaderName(env, $S)",
                     String.class,
                     ClassName.get(outputPackage + ".schema",

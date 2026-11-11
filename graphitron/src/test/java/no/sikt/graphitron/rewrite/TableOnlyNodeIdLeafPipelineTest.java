@@ -1,8 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -10,17 +7,14 @@ import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
 import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A {@code @nodeId(typeName: T)} leaf on a DML input, a filter input or a filter argument, where
  * {@code T} is a federation stub, {@code @node(resolvable: false)} over a table carrying catalog
- * node metadata. The leaf decodes against the stub's id, through a {@code decode<T>} helper the
- * walk mints under the type's own name and {@code NodeIdEncoder} emits; no {@code encode<T>} is
- * emitted, because nothing encodes such a type's id.
+ * node metadata. The leaf decodes against the stub's id, through the {@code decode<T>} helper named
+ * for the type; which helpers {@code NodeIdEncoder} carries is {@code NodeIdEncoderQueryTest}'s.
  *
  * <p>Fixture: {@code idreffixture.studieprogram} carries metadata (type id {@code Studieprogram},
  * key {@code studieprogram_id}), and {@code studierett} has two non-key foreign keys to it, the
@@ -63,8 +57,6 @@ class TableOnlyNodeIdLeafPipelineTest {
         assertThat(updateRows.setColumns()).allSatisfy(set -> assertThat(set.extraction())
             .isInstanceOfSatisfying(CallSiteExtraction.NodeIdDecodeKeys.class,
                 keys -> assertThat(keys.decodeMethod().methodName()).isEqualTo("decodeStudieprogram")));
-
-        assertDecodeOnly(schema, "Studieprogram");
     }
 
     @Test
@@ -93,7 +85,6 @@ class TableOnlyNodeIdLeafPipelineTest {
             .containsExactly("child_id");
         assertThat(updateRows.setColumns()).extracting(s -> s.targetColumn().sqlName())
             .containsExactly("fk_a", "fk_b", "fk_c");
-        assertDecodeOnly(schema, "ReorderedPkParent");
     }
 
     @Test
@@ -105,7 +96,6 @@ class TableOnlyNodeIdLeafPipelineTest {
             """);
 
         assertClassifies(schema, "Query", "studieretter");
-        assertDecodeOnly(schema, "Studieprogram");
     }
 
     @Test
@@ -117,7 +107,6 @@ class TableOnlyNodeIdLeafPipelineTest {
             """);
 
         assertClassifies(schema, "Query", "studieretter");
-        assertDecodeOnly(schema, "Studieprogram");
     }
 
     @Test
@@ -130,7 +119,6 @@ class TableOnlyNodeIdLeafPipelineTest {
             """);
 
         assertClassifies(schema, "Query", "studieretter");
-        assertDecodeOnly(schema, "Studieprogram");
     }
 
     @Test
@@ -146,9 +134,6 @@ class TableOnlyNodeIdLeafPipelineTest {
             """);
 
         assertClassifies(schema, "Query", "studieretter");
-        assertThat(schema.catalogNodeDecodes())
-            .singleElement()
-            .satisfies(decode -> assertThat(decode.typeId()).isEqualTo("SP"));
     }
 
     @Test
@@ -161,34 +146,10 @@ class TableOnlyNodeIdLeafPipelineTest {
             .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class);
     }
 
-    @Test
-    void aTableTypeNamedByNoLeafGetsNoHelper() {
-        // Studieprogram's table carries metadata, but no @nodeId names the type, so nothing decodes
-        // it and nothing is emitted for it.
-        var schema = TestSchemaHelper.buildSchema(STUDIEPROGRAM + """
-            type Query { studieprogrammer: [Studieprogram!]! }
-            """);
-
-        assertThat(schema.catalogNodeDecodes()).isEmpty();
-        assertThat(encoderMethodNames(schema))
-            .noneMatch(name -> name.endsWith("Studieprogram"));
-    }
-
     private static void assertClassifies(GraphitronSchema schema, String type, String field) {
         assertThat(schema.field(type, field)).as(type + "." + field)
             .isNotNull()
             .isNotInstanceOf(UnclassifiedField.class);
         assertThat(TestSchemaHelper.diagnosticMessages(schema)).doesNotContain("is not a node type");
-    }
-
-    private static void assertDecodeOnly(GraphitronSchema schema, String typeName) {
-        assertThat(encoderMethodNames(schema))
-            .contains("decode" + typeName)
-            .doesNotContain("encode" + typeName);
-    }
-
-    private static java.util.List<String> encoderMethodNames(GraphitronSchema schema) {
-        TypeSpec encoder = NodeIdEncoderClassGenerator.generate(schema, "fake.code.generated", List.of()).getFirst();
-        return encoder.methodSpecs().stream().map(MethodSpec::name).toList();
     }
 }

@@ -12,11 +12,10 @@ import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.SlotParse;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.emit.NodeIdEncoderQuery;
+import no.sikt.graphitron.emit.NodeIdHelperNames;
 import no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.LegacyKeyShape;
 import no.sikt.graphitron.model.jooq.ColumnRef;
-import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
-import no.sikt.graphitron.rewrite.model.HelperRef;
 
 import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
@@ -43,20 +42,14 @@ import java.util.stream.Collectors;
  * {@code null} when any value is {@code null}, so the GraphQL field resolves to {@code null}
  * rather than emitting a malformed ID.
  *
- * <p>For each node type the generator emits static {@code encode<TypeName>} /
- * {@code decode<TypeName>} helpers, and a {@code decode<TypeName>} alone for each {@code @table}
- * type a {@code @nodeId} leaf decodes from catalog node metadata
- * ({@link GraphitronSchema#catalogNodeDecodes()}): nothing encodes such a type's id, because its
- * output side has no node id. The typeId is baked into the helper name, so call sites pass
- * typed key values, not the wire string. {@code decode<TypeName>} returns {@code null} uniformly
- * on malformed input, typeId mismatch or a key value that is not exactly one the encoder writes
- * for a value of its column (the {@code ColumnValues} exact rule, see
- * {@link ColumnValuesClassGenerator}); carrier consumers wrap that null through the
- * {@code CallSiteExtraction.NodeIdDecodeKeys} arms. Call sites resolve the helpers through
- * {@link HelperRef} references pre-computed on {@link NodeType#encodeMethod()} /
- * {@link NodeType#decodeMethod()} or minted with the catalog decode, and each decode is emitted
- * from the very reference its call sites hold, so the encoder generator and the call-site emitters
- * cannot drift on naming.
+ * <p>For each node of the graph, read from the store by {@link NodeIdEncoderQuery}, the generator
+ * emits static {@code encode<TypeName>} / {@code decode<TypeName>} helpers, a federation stub's
+ * among them. The typeId is baked into the helper name, so call sites pass typed key values, not
+ * the wire string. {@code decode<TypeName>} returns {@code null} uniformly on malformed input,
+ * typeId mismatch or a key value that is not exactly one the encoder writes for a value of its
+ * column (the {@code ColumnValues} exact rule, see {@link ColumnValuesClassGenerator}); carrier
+ * consumers wrap that null through the {@code CallSiteExtraction.NodeIdDecodeKeys} arms. Every
+ * call site names a helper through {@link NodeIdHelperNames}, as this does.
  *
  * <p>Every decode surface reaches a key slot through {@code decodeColumns}, which is therefore where
  * a refused slot over a converter's user type is told apart from a malformed one: when the column's
@@ -101,25 +94,14 @@ public class NodeIdEncoderClassGenerator {
     private static final int LOG_SAFE_LIMIT = 64;
 
     /**
-     * Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>}
-     * helpers, then a {@code decode<TypeName>} for each catalog decode. {@code outputPackage}
+     * Emits the encoder class with an {@code encode<TypeName>} / {@code decode<TypeName>} pair per
+     * node, in the order {@code nodes} gives them. {@code outputPackage}
      * locates the sibling {@code ColumnValues} every key slot is checked through, and
      * {@code legacyKeyShapes} are the type ids whose old ids {@code decodeColumns} converts.
      */
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
+    public static List<TypeSpec> generate(List<NodeIdEncoderQuery.Node> nodes, String outputPackage,
                                           List<LegacyKeyShape> legacyKeyShapes) {
-        var nodeTypes = schema.types().values().stream()
-            .filter(t -> t instanceof NodeType)
-            .map(t -> (NodeType) t)
-            .collect(Collectors.toUnmodifiableList());
         var columnValues = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
-        return generate(nodeTypes, schema.catalogNodeDecodes(), columnValues, legacyKeyShapes);
-    }
-
-    private static List<TypeSpec> generate(List<NodeType> nodeTypes,
-                                           List<HelperRef.Decode> catalogNodeDecodes,
-                                           ClassName columnValues,
-                                           List<LegacyKeyShape> legacyKeyShapes) {
         var privateCtor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
             .build();
@@ -376,12 +358,9 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(buildRequireColumnAgreement())
             .addMethod(buildDecodeInto());
 
-        for (NodeType nt : nodeTypes) {
-            classBuilder.addMethod(buildPerTypeEncode(nt));
-            classBuilder.addMethod(buildPerTypeDecode(nt.decodeMethod()));
-        }
-        for (HelperRef.Decode decode : catalogNodeDecodes) {
-            classBuilder.addMethod(buildPerTypeDecode(decode));
+        for (NodeIdEncoderQuery.Node node : nodes) {
+            classBuilder.addMethod(buildPerTypeEncode(node));
+            classBuilder.addMethod(buildPerTypeDecode(node));
         }
 
         return List.of(classBuilder.build());
@@ -475,19 +454,18 @@ public class NodeIdEncoderClassGenerator {
     }
 
     /** Emits {@code static String encode<TypeName>(T1 v0, ..., TN vN-1)}. */
-    private static MethodSpec buildPerTypeEncode(NodeType nt) {
-        HelperRef.Encode ref = nt.encodeMethod();
-        var b = MethodSpec.methodBuilder(ref.methodName())
+    private static MethodSpec buildPerTypeEncode(NodeIdEncoderQuery.Node node) {
+        var b = MethodSpec.methodBuilder(NodeIdHelperNames.encode(node.typeName()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class);
         StringBuilder argList = new StringBuilder();
-        for (int i = 0; i < ref.paramSignature().size(); i++) {
-            ColumnRef col = ref.paramSignature().get(i);
+        for (int i = 0; i < node.keyColumns().size(); i++) {
+            ColumnRef col = node.keyColumns().get(i);
             String paramName = "v" + i;
             b.addParameter(CatalogRefs.columnType(col), paramName);
             argList.append(", ").append(paramName);
         }
-        b.addStatement("return encode($S" + argList + ")", nt.typeId());
+        b.addStatement("return encode($S" + argList + ")", node.typeId());
         return b.build();
     }
 
@@ -496,18 +474,20 @@ public class NodeIdEncoderClassGenerator {
      * {@code null} on malformed input, typeId mismatch, wrong arity or a key value that is not a
      * value of its column ({@code decodeColumns}), and otherwise materialising a typed
      * {@link org.jooq.Record} populated from the table's {@link org.jooq.Field} references. Every
-     * fact the body needs is on the reference: the method name, the output shape, the wire type id
-     * and the table.
+     * fact the body needs is on the node's row: the type name, the key columns, the wire type id and
+     * the table.
      */
-    private static MethodSpec buildPerTypeDecode(HelperRef.Decode ref) {
-        TypeName recordType = ref.returnType();
-        int n = ref.outputColumnShape().size();
-        String tableField = ref.table().javaFieldName();
+    private static MethodSpec buildPerTypeDecode(NodeIdEncoderQuery.Node node) {
+        List<ColumnRef> key = node.keyColumns();
+        int n = key.size();
+        TypeName recordType = ParameterizedTypeName.get(ClassName.get("org.jooq", "Record" + n),
+            key.stream().map(CatalogRefs::columnType).toArray(TypeName[]::new));
+        String tableField = node.tableField();
         // Each decode method references its own table's Tables class, so multi-schema codegen
         // layouts get schema-segmented references.
-        ClassName tablesClass = CatalogRefs.constantsClass(ref.table());
+        ClassName tablesClass = CatalogRefs.className(node.tablesClass());
 
-        var b = MethodSpec.methodBuilder(ref.methodName())
+        var b = MethodSpec.methodBuilder(NodeIdHelperNames.decode(node.typeName()))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(recordType)
             .addParameter(String.class, "base64Id");
@@ -515,15 +495,15 @@ public class NodeIdEncoderClassGenerator {
         StringBuilder fieldsList = new StringBuilder();
         for (int i = 0; i < n; i++) {
             if (i > 0) fieldsList.append(", ");
-            ColumnRef col = ref.outputColumnShape().get(i);
+            ColumnRef col = key.get(i);
             fieldsList.append("$T.").append(tableField).append(".").append(col.javaName());
         }
         Object[] tablesRefs = new Object[n];
         for (int i = 0; i < n; i++) tablesRefs[i] = tablesClass;
 
         Object[] decodeArgs = new Object[n + 2];
-        decodeArgs[0] = ref.typeId();
-        decodeArgs[1] = SlotParse.parseClasses(ref.outputColumnShape());
+        decodeArgs[0] = node.typeId();
+        decodeArgs[1] = SlotParse.parseClasses(key);
         System.arraycopy(tablesRefs, 0, decodeArgs, 2, n);
         b.addStatement("Object[] values = decodeColumns($S, base64Id, $L, " + fieldsList + ")", decodeArgs);
         b.addStatement("if (values == null) return null");
@@ -536,7 +516,7 @@ public class NodeIdEncoderClassGenerator {
         // Each value is already the column's canonical value, so the cast through the column's
         // own type is exact.
         for (int i = 0; i < n; i++) {
-            ColumnRef col = ref.outputColumnShape().get(i);
+            ColumnRef col = key.get(i);
             b.addStatement("rec.set($T.$L.$L, $T.$L.$L.getType().cast(values[$L]))",
                 tablesClass, tableField, col.javaName(),
                 tablesClass, tableField, col.javaName(),

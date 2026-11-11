@@ -109,8 +109,7 @@ class EmissionCensusTest {
         }
         var units = new java.util.HashMap<String, TypeSpec>();
         units.put("census.Conditions", type.build());
-        var schema = TestSchemaHelper.buildSchema("type Query { x: Int }");
-        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(schema, "census", List.of())) {
+        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(List.of(), "census", List.of())) {
             units.put("census.util." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {

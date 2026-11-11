@@ -1654,8 +1654,8 @@ class TypeBuilder {
         ClassName encoderClass = ClassName.get(
             ctx.ctx.outputPackage() + ".util",
             NodeIdEncoderClassGenerator.CLASS_NAME);
-        var encodeMethod = new HelperRef.Encode(encoderClass, "encode" + name, keyColumns);
-        var decodeMethod = new HelperRef.Decode(encoderClass, "decode" + name, keyColumns, typeId,
+        var encodeMethod = new HelperRef.Encode(encoderClass, no.sikt.graphitron.emit.NodeIdHelperNames.encode(name), keyColumns);
+        var decodeMethod = new HelperRef.Decode(encoderClass, no.sikt.graphitron.emit.NodeIdHelperNames.decode(name), keyColumns, typeId,
             tableRef);
         return new NodeType(name, location, tableRef, typeId, keyColumns, encodeMethod, decodeMethod,
             provenance);

@@ -2,7 +2,6 @@ package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
@@ -76,8 +75,7 @@ class ConditionEmitterExecutionTest {
         }
         var units = new HashMap<String, TypeSpec>();
         units.put(PACKAGE + ".Conditions", type.build());
-        var schema = TestSchemaHelper.buildSchema("type Query { x: Int }");
-        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(schema, PACKAGE, List.of())) {
+        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(List.of(), PACKAGE, List.of())) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {

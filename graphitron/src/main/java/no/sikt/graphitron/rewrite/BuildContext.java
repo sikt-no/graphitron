@@ -3610,43 +3610,19 @@ class BuildContext {
     }
 
     /**
-     * The {@code decode<TypeName>} helpers {@link #catalogNodeDecode} minted for {@code @table}-only
-     * {@code @nodeId(typeName:)} targets, keyed by type name. Written once per name: a mint is a
-     * pure function of the type name and the catalog, so a repeat is a no-op and the content does
-     * not depend on walk order. Every {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode} a
-     * carrier holds came from a {@link NodeType} or from here, and {@code NodeIdEncoder} emits both,
-     * which is what makes "every decode a carrier calls exists" hold by construction.
-     */
-    private final Map<String, no.sikt.graphitron.rewrite.model.HelperRef.Decode> catalogNodeDecodes =
-        new HashMap<>();
-
-    /**
-     * Mints, and registers for emission, the {@code decode<TypeName>} helper of a {@code @table}
-     * type over a table with catalog node metadata, for a {@code @nodeId(typeName:)} leaf that names
-     * it. The method name is the authored type name, as for a node type; two {@code @table} types over
-     * one metadata table get two helpers with the same body, and a {@code @table} type cannot collide
-     * with a node type because GraphQL type names are unique.
+     * The reference a {@code @nodeId(typeName:)} leaf holds to the {@code decode<TypeName>} helper of a
+     * target that is no node type here, a federation stub: the method name is the authored type name,
+     * as for a node type. The helper itself is emitted from the store's nodes, a stub among them, so a
+     * reference to one the store does not hold fails to compile.
      */
     no.sikt.graphitron.rewrite.model.HelperRef.Decode catalogNodeDecode(
             String refTypeName, TableRef targetTable, TargetKeys.OfCatalog keys) {
         var encoderClass = com.palantir.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
-        var decode = new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
-            encoderClass, "decode" + refTypeName, keys.keyColumns(), keys.typeId(), targetTable);
-        var prior = catalogNodeDecodes.putIfAbsent(refTypeName, decode);
-        return prior != null ? prior : decode;
-    }
-
-    /**
-     * The catalog decodes minted during the walk, sorted by type name so the emitted helper order
-     * does not depend on walk order. Read once, by {@link GraphitronSchemaBuilder}, after the walk.
-     */
-    List<no.sikt.graphitron.rewrite.model.HelperRef.Decode> catalogNodeDecodes() {
-        return catalogNodeDecodes.entrySet().stream()
-            .sorted(Map.Entry.comparingByKey())
-            .map(Map.Entry::getValue)
-            .toList();
+        return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(encoderClass,
+            no.sikt.graphitron.emit.NodeIdHelperNames.decode(refTypeName), keys.keyColumns(), keys.typeId(),
+            targetTable);
     }
 
     /**

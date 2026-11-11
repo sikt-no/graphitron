@@ -674,8 +674,8 @@ public class GraphQLRewriteGenerator {
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
             case LIGHT_FETCHER -> LightFetcherClassGenerator.generate(outputPackage);
-            case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(schema, outputPackage,
-                legacyKeyShapes.shapes());
+            case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(
+                no.sikt.graphitron.emit.NodeIdEncoderQuery.read(store), outputPackage, legacyKeyShapes.shapes());
             case COLUMN_VALUES -> ColumnValuesClassGenerator.generate();
             case ENTITY_FETCHER_DISPATCH -> EntityFetcherDispatchClassGenerator.generate(schema, outputPackage);
             case CONNECTION_RESULT -> ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null);
@@ -692,7 +692,7 @@ public class GraphQLRewriteGenerator {
                 + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
-            case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);
+            case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, tenantKeyType != null);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity);
             case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity);

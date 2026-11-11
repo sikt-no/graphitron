@@ -5,7 +5,6 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.emit.stub.Stock;
 import no.sikt.graphitron.model.test.FactGraphs;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
@@ -83,10 +82,9 @@ class NodeIdBuildEmitterTest {
                 com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class),
                 com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class)), "in")
             .addStatement("return buildStock(in)").build());
-        var schema = TestSchemaHelper.buildSchema("type Query { x: Int }");
         var units = new HashMap<String, TypeSpec>();
         units.put(PACKAGE + ".Probes", host.build());
-        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(schema, PACKAGE, List.of())) {
+        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(List.of(), PACKAGE, List.of())) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {

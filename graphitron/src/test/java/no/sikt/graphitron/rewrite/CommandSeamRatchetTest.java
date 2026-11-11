@@ -69,8 +69,11 @@ class CommandSeamRatchetTest {
      * this count's shape: {@code TypeFetcherGenerator} builds a launcher relation mid-emit for
      * nesting-reached types, which is the plan carrying too little rather than a call in the wrong
      * place, and it has its own item.
+     *
+     * <p>9 to 7 when the node id encoder came to read its nodes from the store and the
+     * {@code Query.node} fetcher stopped reading the model for whether any node exists.
      */
-    private static final int MODEL_TAKING_ENTRY_POINTS = 9;
+    private static final int MODEL_TAKING_ENTRY_POINTS = 7;
 
     /**
      * {@code instanceof} sites in {@code generators/} naming a leaf of the seven hierarchies.

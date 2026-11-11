@@ -1441,9 +1441,23 @@ output package they are written to are settled.
 * **The configuration-read runtime classes read the store** `blocked`, on "The generator reads its configuration from the store". `ConnectionRuntime`'s units,
   `GraphitronConnectionInstrumentation`, `ConnectionResult` and `ConnectionHelper` take the tenancy
   and the session hooks from the store rather than from `GraphitronSchema`.
-* **The node and entity generators read the store** `open`. `NodeIdEncoderClassGenerator`,
-  `EntityFetcherDispatchClassGenerator` and `QueryNodeFetcherClassGenerator` read node types and
-  keys from `graphitron_node` instead of `GraphitronSchema`.
+* **The node id encoder reads the store** `done`. The encoder renders its helpers from
+  `NodeIdEncoderQuery`'s rows, one per `graphitron_node` row with its key columns, a stub's included,
+  and `NodeIdHelperNames` is the helpers' one spelling. A stub gains an `encode<Stub>` the walk never
+  emitted, read off `graphitron_node.resolvable`'s comment; whether its id is encodable here is
+  unruled, Alf and Filip's to say.
+  * **The encoder is not planned** `open`. It is written straight from the store, as
+    `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER` goes, with
+    `PlanCompileGraph`'s edge to it.
+  * **The walk's catalog decode goes** `open`. `BuildContext.catalogNodeDecode`'s arm for a `@table`
+    type with no `@node` is unreachable on a graph that generates, the store refusing it as
+    `NODE_ID_TYPE_NAME_UNDECLARED_STUB`; count that over the scenarios, then delete it.
+* **The node and entity dispatch reads the store** `blocked`, on "Entity resolution is stated" and
+  "The generator reads its configuration from the store". `EntityFetcherDispatchClassGenerator` and
+  `QueryNodeFetcherClassGenerator` move together, the fetcher calling the dispatch, which reads the
+  entity key alternatives, each entity's tenant binding and the per-type projection classes. The
+  fetcher takes only the tenancy flag now, and whether either is emitted, decided from the walk by the
+  plan, the schema class and the facade alike, is one fact the facade node states once.
 * **The facade, dev executor, registrations and schema class read the store** `open`.
   `GraphitronFacadeGenerator`, `GraphitronDevExecutorGenerator`, `FetcherRegistrationsEmitter` and
   `GraphitronSchemaClassGenerator` take roots, nodes, scalars, error types and entities from the
@@ -2951,6 +2965,11 @@ name.
 speaks of, and `graphitron_ast_path_entry`'s `anchor_line` and `anchor_column`. `graphitron_path_holder`
 went into `graphitron_occurrence`, a holder being just a coordinate. The anchor's spelling
 `Store.people[Staff]` and the argument spelling `Query.people.storeId` are retired with them.
+
+**The walk's catalog decodes went with the store's encoder** (2026-11-11).
+`GraphitronSchema.catalogNodeDecodes` and `BuildContext.catalogNodeDecodes()`, the walk's registry of
+the decode helpers it minted for `@nodeId` targets that are no node type, are gone: the encoder emits
+a helper for each `graphitron_node` row, a stub's included.
 
 **Transitional columns.** `graphitron_occurrence_condition.override_written` copies the `override:` a
 `@condition` was written with off `graphql_directive_application_arg`; the consumption-rule node

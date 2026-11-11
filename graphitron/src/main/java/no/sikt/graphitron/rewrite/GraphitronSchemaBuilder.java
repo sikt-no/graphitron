@@ -369,8 +369,7 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(classifiedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            connectionSynthesis, operationMembers, deliveryFacts,
-            ctx.catalogNodeDecodes());
+            connectionSynthesis, operationMembers, deliveryFacts);
         return new BuildResult(model, rebuiltAssembled);
     }
 

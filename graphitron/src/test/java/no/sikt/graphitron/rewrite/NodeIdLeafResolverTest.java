@@ -545,7 +545,6 @@ class NodeIdLeafResolverTest {
 
         assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.SameTable.class,
             sameTable -> assertCatalogDecode(sameTable.decodeMethod(), "Baz", "Baz", "baz", "id"));
-        assertThat(bctx.catalogNodeDecodes()).extracting(d -> d.methodName()).containsExactly("decodeBaz");
     }
 
     @Test
@@ -633,7 +632,6 @@ class NodeIdLeafResolverTest {
         assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.Rejected.class,
             rejected -> assertThat(rejected.message())
                 .contains("not a @node type (no NodeId catalog metadata, no @node directive)"));
-        assertThat(bctx.catalogNodeDecodes()).isEmpty();
     }
 
     @Test

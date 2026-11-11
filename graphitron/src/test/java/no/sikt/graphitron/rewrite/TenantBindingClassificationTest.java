@@ -2075,8 +2075,6 @@ class TenantBindingClassificationTest {
                 .noneMatch(e -> e.coordinate().equals("Query." + field));
         }
         assertThat(TestSchemaHelper.diagnosticMessages(schema)).doesNotContain("'Baz' is not a node type");
-        assertThat(schema.catalogNodeDecodes()).singleElement()
-            .satisfies(decode -> assertThat(decode.methodName()).isEqualTo("decodeBaz"));
     }
 
     @Test

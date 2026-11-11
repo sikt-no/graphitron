@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
@@ -37,9 +36,8 @@ class NodeIdDecodeIntoTest {
 
     @BeforeAll
     static void compile() throws Exception {
-        var schema = TestSchemaHelper.buildSchema("type Query { x: Int }");
         var units = new HashMap<String, TypeSpec>();
-        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(schema, PACKAGE, List.of())) {
+        for (TypeSpec spec : NodeIdEncoderClassGenerator.generate(List.of(), PACKAGE, List.of())) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
         }
         for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {

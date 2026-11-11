@@ -5,7 +5,6 @@ import no.sikt.graphitron.rewrite.model.Arrival;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.Presence;
 import no.sikt.graphitron.rewrite.model.ReachableSourceShape;
@@ -63,11 +62,6 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * ({@link ConnectionSynthesisRelation}): one row per Relay connection carrier the classify walk
  * visited, plus the schema-grain minted names. The plan's facet producers read it by coordinate.
  * {@link ConnectionSynthesisRelation#EMPTY} for every schema built without the classify walk.
- *
- * <p>{@link #catalogNodeDecodes} is the set of {@code decode<TypeName>} helpers the walk minted for
- * {@code @table} types that a {@code @nodeId} leaf decodes from catalog node metadata, sorted by type
- * name. It is the set the walk minted rather than a reading of the classified types, because such a
- * target need not be reached by the walk. Empty for every test-constructed schema.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -83,8 +77,7 @@ public record GraphitronSchema(
     TenantBindingIndex tenantBindings,
     ConnectionSynthesisRelation connectionSynthesis,
     OperationMemberRelation operationMembers,
-    DeliveryFactRelation deliveryFacts,
-    List<HelperRef.Decode> catalogNodeDecodes
+    DeliveryFactRelation deliveryFacts
 ) {
 
     public GraphitronSchema {
@@ -95,7 +88,6 @@ public record GraphitronSchema(
         connectionSynthesis = connectionSynthesis == null ? ConnectionSynthesisRelation.EMPTY : connectionSynthesis;
         operationMembers = operationMembers == null ? OperationMemberRelation.EMPTY : operationMembers;
         deliveryFacts = deliveryFacts == null ? DeliveryFactRelation.EMPTY : deliveryFacts;
-        catalogNodeDecodes = catalogNodeDecodes == null ? List.of() : List.copyOf(catalogNodeDecodes);
     }
 
     /**
@@ -141,7 +133,7 @@ public record GraphitronSchema(
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY,
             ConnectionSynthesisRelation.EMPTY, OperationMemberRelation.EMPTY,
-            DeliveryFactRelation.EMPTY, List.of());
+            DeliveryFactRelation.EMPTY);
     }
 
     /**
@@ -235,34 +227,10 @@ public record GraphitronSchema(
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers,
                             DeliveryFactRelation deliveryFacts) {
-        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            tenantScopes, tenantBindings, connectionSynthesis,
-            operationMembers, deliveryFacts, List.of());
-    }
-
-    /**
-     * The {@link GraphitronSchemaBuilder} constructor with the catalog decodes: the
-     * {@code decode<TypeName>} helpers the walk minted for {@code @table} types a {@code @nodeId}
-     * leaf decodes from catalog node metadata, sorted by type name. {@code NodeIdEncoder} emits them
-     * after the node types' own helpers.
-     */
-    public GraphitronSchema(Map<String, GraphitronType> types,
-                            Map<FieldCoordinates, GraphitronField> fields,
-                            Map<String, EntityResolution> entitiesByType,
-                            List<BuildWarning> warnings,
-                            List<ValidationError> diagnostics,
-                            Map<String, Arrival> arrivals,
-                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
-                            TenantScopes tenantScopes,
-                            TenantBindingIndex tenantBindings,
-                            ConnectionSynthesisRelation connectionSynthesis,
-                            OperationMemberRelation operationMembers,
-                            DeliveryFactRelation deliveryFacts,
-                            List<HelperRef.Decode> catalogNodeDecodes) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics),
             Map.copyOf(arrivals), Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings,
-            connectionSynthesis, operationMembers, deliveryFacts, catalogNodeDecodes);
+            connectionSynthesis, operationMembers, deliveryFacts);
     }
 
     /**
@@ -290,8 +258,7 @@ public record GraphitronSchema(
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, ConnectionSynthesisRelation.EMPTY,
-            OperationMemberRelation.EMPTY, DeliveryFactRelation.EMPTY,
-            List.of());
+            OperationMemberRelation.EMPTY, DeliveryFactRelation.EMPTY);
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
