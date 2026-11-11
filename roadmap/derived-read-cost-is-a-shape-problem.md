@@ -316,13 +316,17 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
       is served by the default property fetcher.
     * Removing `ConnectionHelper.totalCount(env)`, which `runtime-api.adoc` documents, breaks
       consumers: that commit is `feat!` with a `BREAKING-CHANGE:` footer.
-    * Open for Alf and Filip: which field reads an argument value, and through which authoring
-      surface (R1099's navigation is a candidate)? Until a reader is named the closure captures no
-      arguments, only what the producer bound. And does every object type graphitron makes values of
-      get one generated class, `PageInfo` one shared class and each facets type its own? If so it is
-      written beside the wiring rule.
-    * **The page info and facets fields are wired** `open`, G's. A generated `PageInfo` class and
-      facets classes, each field explicitly registered, replace the maps. Pinned by the sakila
+    * `totalCount` and facets read the producer's arguments: the count's condition and each facet's
+      condition are the arguments bound (`RootLauncherRenderer.facetBindings`), built eagerly by the
+      producer today whether or not they are selected (Alf, 2026-11-11). So the closure carries the
+      producer's bound arguments and builds those conditions when its count or facets member is read.
+      Open for Alf and Filip: may an author's own field on a connection or an edge read an argument,
+      and through which surface (R1099's navigation is a candidate)?
+    * `PageInfo` is one generated class shared by every connection (Alf, 2026-11-11;
+      `emitter-conventions.adoc` § Return types). Open for Alf and Filip: whether every other object
+      type graphitron makes values of, each facets type among them, gets one generated class too.
+    * **The page info and facets fields are wired** `open`, G's. The shared generated `PageInfo`
+      class and facets classes, each field explicitly registered, replace the maps. Pinned by the sakila
       connection, cursor-format and facets execution tests; `code-generation-triggers.adoc` changes.
     * "A count or facets graphitron cannot run is a defect" removes the null paths, and "A connection
       is recognised by the specification's shape" states the positions; both above, both before the
