@@ -287,40 +287,57 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
     does not compose, a `@service` connection, a `totalCount` or facets raises a defect rather than
     generating nothing.
   * **A connection's producer returns the connection, and its fields read it** `open`, G's.
-    The producer hands back one generic object holding the shape: its page, each element with its
-    cursor, the page's bounds and whether there is a next or previous page, and the count and facets
-    as members that run when read. The connection's and its edge's fields read its members by
-    graphql-java's own property access, which also hands a member the environment, so the
-    `ConnectionHelper` resolvers and the per-type registrations in `FetcherRegistrationsEmitter` go.
-    It is the seam a result set graphitron did not produce fills too. Generated code changes, which
-    Alf authorised for this step (2026-11-11): it simplifies the model and makes it more powerful.
+    A connection's producer returns an instance of a class graphitron generates for the connection
+    type, holding the page and closures over how the result set was produced, and each field of the
+    connection, its edge and its page info is registered to read one member (Alf, 2026-11-11:
+    generated code changes authorised, it simplifies the model and makes it more powerful; every
+    field is wired, `emitter-conventions.adoc` § Return types). The store states which position each
+    field fills; the class names and members are the emitter's. `ConnectionHelper`'s resolvers, the
+    per-type fetcher delegates and the maps behind `pageInfo` and facets go.
     The design, with the principles-architect:
-    * One generated page class with a nested `Edge`, no type parameter until something hands over a
-      second element type; every producer hands over jOOQ records today. An edge encodes its cursor
-      when it is read, and the start and end cursors reuse the first and last edge.
-    * How the result set was produced is one member, what `Scoped` and `BatchCounts.Slot` are today,
-      carrying the facet plan and, multi-tenant, the `DSLContext`; the count and facets delegate to
-      it. Its absence is refused by "A count or facets graphitron cannot run is a defect", so the
-      null returns and the validator-unreachable null path in `MultiTablePolymorphicEmitter` go.
-    * The members are named after the specification's positions and graphitron's (`edges`, `nodes`,
-      `pageInfo`, `totalCount`, facets; `node`, `cursor`; the four page-info fields), so
-      `graphitron_runtime_member` is the template and "A connection is recognised by the
-      specification's shape" states which member a connection type's field fills, not a second
-      constant. A position binds as a sibling subtype of the `VALUE` binding keyed into
-      `graphitron_runtime_member`, since `graphitron_occurrence_binding_value` keys its member on
-      the classpath scan, which never sees a generated class.
-    * `RESULT_EXPRESSION`, whose only intended use was the cursor, retires, and so does
-      `CONNECTION_HELPER`'s cursor member.
-    * Behaviour is pinned by execution tests in `graphitron-sakila-example`: cursors keep their bytes,
-      both decode formats included; the count and facets run only when selected; facets count without
-      their own predicate; a batch shares one grouped count. The member-to-field rows get a fact
-      document. The docs change in the same commit: `emitter-conventions.adoc` § Return types,
-      `code-generation-triggers.adoc` § Producer and the `COUNT`/`FACETS` row,
-      `connections.adoc`, `runtime-api.adoc` and `runtime-extension-points.adoc`.
-    * Each member is read through its own registration, as every field is: graphitron wires every
-      field in the schema and never falls back to graphql-java's `PropertyDataFetcher` (Alf,
-      2026-11-11; `emitter-conventions.adoc` § Return types). The registrations are the same for
-      every connection rather than per type.
+    * One class per connection type and one per edge type, not generic: graphql-java registers a
+      fetcher per type and field, so what differs per producer (table, condition, ordering, the
+      tenant's `DSLContext`, how a hit's `node` is fetched) is supplied by the producer as closures
+      over the values it already bound, never as a type parameter or an argument bag. The element is
+      the table's record class where the element names one table, else `Record`.
+    * A cursor is computed from the element and the ordering, a keyset position, never from the
+      element's index in the page. Cursor encoding and decoding, whose bytes the manual promises, and
+      the batch-count memo stay as one small generated utility.
+    * The template is a constant vocabulary of positions (`EDGES`, `NODES`, `PAGE_INFO`,
+      `TOTAL_COUNT`, `FACETS`, `NODE`, `CURSOR` and the four page-info positions) and a relation at the
+      field's grain saying which position a field fills; the emitter maps a position to a member. The
+      connection rows of `graphitron_runtime_class` and `graphitron_runtime_member`,
+      `graphitron_occurrence_producer_result.runtime_kind` and `RESULT_EXPRESSION` go; the earlier
+      idea of binding positions to runtime members is withdrawn.
+    * The classes are written by an emitter reading the store, counted by `EmissionCensusTest`; the
+      plan layer's connection units shrink rather than grow.
+    * `PageInfo` and the facets types are served by graphql-java's `PropertyDataFetcher` reading maps
+      today, which the wiring rule forbids; `code-generation-triggers.adoc` still says a plain field
+      is served by the default property fetcher.
+    * Removing `ConnectionHelper.totalCount(env)`, which `runtime-api.adoc` documents, breaks
+      consumers: that commit is `feat!` with a `BREAKING-CHANGE:` footer.
+    * Open for Alf and Filip: which field reads an argument value, and through which authoring
+      surface (R1099's navigation is a candidate)? Until a reader is named the closure captures no
+      arguments, only what the producer bound. And does every object type graphitron makes values of
+      get one generated class, `PageInfo` one shared class and each facets type its own? If so it is
+      written beside the wiring rule.
+    * **The page info and facets fields are wired** `open`, G's. A generated `PageInfo` class and
+      facets classes, each field explicitly registered, replace the maps. Pinned by the sakila
+      connection, cursor-format and facets execution tests; `code-generation-triggers.adoc` changes.
+    * "A count or facets graphitron cannot run is a defect" removes the null paths, and "A connection
+      is recognised by the specification's shape" states the positions; both above, both before the
+      classes.
+    * **Each connection type and edge type has a generated class** `blocked`, G's, on "A connection is recognised by the specification's shape".
+      An emitter writes the classes from the store while the producers still return
+      `ConnectionResult`. Pinned by the sakila compile and the emission census.
+    * **The producers return the connection type's class** `blocked`, G's, on "Each connection type and edge type has a generated class" and "A count or facets graphitron cannot run is a defect".
+      The five construction sites change, and the per-type fetchers and `ConnectionHelper`'s resolvers
+      go. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
+      batched-count execution tests; `emitter-conventions.adoc`, `connections.adoc`,
+      `runtime-api.adoc`, `runtime-extension-points.adoc` and `code-generation-triggers.adoc` change.
+    * **The runtime connection vocabulary goes** `blocked`, G's, on "The producers return the connection type's class".
+      The connection runtime rows, `runtime_kind`, `RESULT_EXPRESSION`, `ConnectionResult` and
+      `ResultShape.Connection`'s helper and carrier go, with the retirement sweep.
 
   **What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
   The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
