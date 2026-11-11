@@ -330,6 +330,16 @@ A projection onto a `@nodeId` naming an interface or union, several node binding
 is refused for now, and the condition's third by-type step, which binds a field one level in as
 if `argMapping` named it, does not project (Alf, 2026-11-10).
 
+A root field we produce a query for has no source and so no path: the query starts on the table
+the field's type is bound to, and that table is the field's binding in
+`graphitron_occurrence_binding_table`. For a field returning a connection the type is the one the
+connection carries, `graphitron_field_target.target_type_name`, not the connection type the macro
+minted; a field below a source already lands there along its path. A field's filter, its generated
+terms and its `@condition` calls alike, is applied in that query against that binding, and a
+condition on an argument or input field reaches the table it is applied to along the path its
+occurrence already states. Neither the filter a condition sits in nor the join that reaches it is a
+relation of its own (Alf, 2026-11-11).
+
 == Ownership: the second axis, and why `intent_` dissolves
 
 Phase answers what a row is a function of. It does not answer who is responsible for keeping the row current, and that is a different question with different consequences. A relation has both answers, and `intent_` today conflates them: the family is named for the first and is being used to carry the second, which is why it holds rules that have no business being derived at read time and rules that could not be anything else, under one prefix that cannot tell them apart.
