@@ -948,6 +948,14 @@ is the mitigation.
    migration is exactly the one field it backs. Design body updated
    (Runtime semantics, Implementation sites, Tests).
 
+- **Does a hit being an edge reopen decision 1?** (Raised 2026-11-11 from R876's connection
+  thread, not decided.) R876 found that a connection's edge and node are two things wherever
+  something other than graphitron's own statement produces the result set: the edge is what that
+  producer hands over per position, a hit with its key, type, score and highlights, and `node` is
+  the entity, a lookup lifted from the hit's key that may miss a row a stale index still names. That
+  gives hit-level metadata the landing zone on a connection's edges whose absence decision 1 cites.
+  Whether it changes the decision is this item's question; R876 builds nothing for the index case.
+
 ## Dead ends (recorded so they are not relitigated)
 
 - **`orderBy: RELEVANCE` on existing connections**: argument-correlation

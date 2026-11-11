@@ -253,16 +253,76 @@ with its methods, and the field reference step hops hold about 265 CPU-seconds o
   `graphitron_tabletype` row and its fields no source, and nothing says so.
 * **A connection's fields bind into its producer's page** `blocked`, G's, on "A connection's producer states its page as its result".
   The occurrences already hang under the returning field, the connection's fields and its edge's;
-  they bind into what that field's producer produces, a page of records with its ordering in the
-  class graphitron generates: `nodes` the page's records, `edges` each record with its cursor,
-  `edges.node` the record, `edges.cursor` a function of the record and the page's ordering
-  (`RESULT_EXPRESSION`) and `pageInfo` the page; only `totalCount` runs a query.
+  they bind positions of what that field's producer produces, a page in the class graphitron
+  generates: `nodes` and `edges.node` the elements, `edges` each element with its cursor,
+  `edges.cursor` a function of the element and the ordering (`RESULT_EXPRESSION`) and `pageInfo` the
+  page. `edges.node` binds the record only where the producer selected it; where something else
+  produced the result set (a search index, a service) the edge is what it handed over and
+  `edges.node` may be a producer lifted from its key ("A source says whether graphitron selected
+  its rows"). `totalCount` and facets run queries of their own, and only where graphitron selected
+  the result set.
   * **A connection's producer states its page as its result** `blocked`, E's, on "The result relations dissolve into the producer's result".
     The result a producer states for a field returning a connection is a page of
     `graphitron_runtime_class`'s `CONNECTION_RESULT`, with a `CONNECTION_EDGE` per record, the
     classes and the members the connection's fields bind to being stated there already.
-  * **A connection's `totalCount` is a producer of its own** `open`, G's. It shares the returning
-    producer's source and argument values, its statement counted, and runs only when queried.
+  * **A connection is recognised by the specification's shape** `open`, G's. The Relay Cursor
+    Connections specification states the shape: a connection has `edges` and `pageInfo` and may have
+    more fields, an edge has `node` and `cursor` and may have more, and `PageInfo` has
+    `hasPreviousPage`, `hasNextPage`, `startCursor` and `endCursor`; `nodes` and `totalCount` are
+    conventions graphitron adds and facets graphitron's own. The shape is a constant beside
+    `graphitron_runtime_class`, and a type-field relation says which position each field fills.
+    Today's test, `edges` to an OBJECT edge to `node`, is narrower than the specification although
+    `graphitron_connection_element_type`'s rationale calls it the specification's own; recognising
+    the full shape changes what is recognised, so it goes with `asConnection.adoc` and Alf's ruling.
+  * **An authored connection type that departs from the shape is a defect** `blocked`, G's, on "A connection is recognised by the specification's shape".
+    A type used as a connection that lacks a required field raises a defect at the type, and the
+    manual states the refusal. What an extra field binds is the open question below.
+  * **A connection's `totalCount` is a producer of its own** `open`, G's. It starts from the
+    returning producer, whose path, conditions and argument values say how the result set was
+    produced, and is counted by running that producer's statement where graphitron selected it; it
+    runs only when queried.
+  * **A connection's facets are a producer of their own** `open`, G's. The `FACETS` sibling of
+    `totalCount`, with the same start.
+  * **A count or facets graphitron cannot run is a defect** `open`, G's. Under a producer graphitron
+    does not compose, a `@service` connection, a `totalCount` or facets raises a defect rather than
+    generating nothing.
+
+  **What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
+  The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
+  *environment*) are working terms for thinking, not rulings.
+  * `graphitron_result` models a connection badly and works by accident: it treats each wrapper as an
+    object flowing down through readers, and needs the carrier exclusion in its reader arm to stop
+    that object reaching the element. Each level has a source of its own instead, narrowing: the
+    connection, an element with its position, the element's row.
+  * What a connection's own fields beyond the specification need is what `totalCount` and facets
+    already use: the table and condition the result set was produced with. The specification allows
+    such fields on a connection and on an edge.
+  * Graphitron writing the query, cursor included, over rows of one table is an assumption, not the
+    model. Where a search index or a service produces the result set, the edge (a hit: key, type,
+    score, highlights) and the node (the entity) are two things, and `node`/`nodes` may be a lookup
+    producer lifted from the hit's key, batched over the page, which may miss a row a stale index
+    still names. Where graphitron selected the rows, edge and node coincide and the lookup is free.
+  * `totalCount` and facets are facts about the result set; running the producer's statement again is
+    how graphitron obtains them where it selected the result set, not what they are. A search engine
+    returns both in its response.
+
+  **Open for Alf and Filip.**
+  1. Does the 2026-11-03 ruling that a source states its tables or class and never a pointer to the
+     occurrence it came from stand for a connection? The principles-architect recommends it does: the
+     connection and its edge are object sources of `CONNECTION_RESULT` and `CONNECTION_EDGE`, and how
+     the result set was produced is the producing occurrence's own facts, reached through the
+     producer; a count or facets' start is then a fact between producers on
+     `graphitron_occurrence_producer`. The thread leaned towards a source that is the connection
+     itself, its result and how it was produced.
+  2. Is a result set a fact of its own grain, one per producer and, for a child connection, per
+     parent key, or the producer's result as the runtime reads it?
+  3. Is a `@service` connection fused, the service handing back elements graphitron pages, or like an
+     index, handing back hits whose `node` is lifted? Who supplies the cursors?
+  4. What do facets compute over today, the result set or the result set without their own filter?
+     Pinned by a test before it is modelled.
+  5. What does an author's extra field on a connection or an edge bind to?
+  6. Does the hit being an edge reopen R427's decision to keep search apart from connections? R427's
+     question, recorded there.
 * **The occurrence source is written once per depth** `open`, F's. The writer recomputes its union of rule arms for each relation it writes, so `graphitron_occurrence_source` costs about 1.6 s and its two subtypes 0.55 s on sis, against 0.5 s for `graphitron_occurrence` over the same 10,394 occurrences; a depth's rows written once, the supertype read off them, is the expected fix.
 * **Relations nobody reads go** `open`, F's.
   A census of every relation's readers, static over the main sources and at runtime over a full
@@ -1214,7 +1274,9 @@ classified records have no reader left and can go with the walk.
   * **The other spellings of a connection read the stored shape** `open`. `graphitron_producer_rule`'s
     `COUNT`, `FACETS` and page arms and `graphitron_occurrence_start_rule` still ask whether a type
     is a connection or its edge over `graphitron_field_target`; each moves onto
-    `graphitron_connection_element_type` with its own row-for-row agreement against trunk.
+    `graphitron_connection_element_type` with its own row-for-row agreement against trunk. A read
+    swap only: the field-keyed arms gain nothing, and they go with "The producer's readers read the
+    occurrence producer, and the field-keyed family goes".
   * **The key defects read the fill's candidates alone** `open`. The service arm of
     `NO_KEY_FROM_PARENT`/`KEY_ROW_AMBIGUOUS` still counts members itself over `code_read_slot` and
     `code_method_parameter`, a second spelling of the candidates that disagrees with the fill on a
@@ -1226,6 +1288,8 @@ classified records have no reader left and can go with the walk.
   * **A source says whether graphitron selected its rows** `open`, F's.
     `graphitron_occurrence_source` carries its basis, `SELECTED` or `HANDED`, so a lift tells a row
     graphitron selected from a record a service or a write handed over, which guarantees only its key.
+    `edges.node` under a page graphitron selected is `SELECTED`, the case where an element and the
+    result set it sits in come from one statement.
   * **A child producer's source is its parent's value** `open`, F's. `keyRow`, `ownServiceRecord`
     and `rootRoutine` leave `OccurrenceSources`, and `writePayload`/`writePayloadMember` read the
     written rows; the § Source bullets of `code-generation-triggers.adoc` change with them (Alf,
