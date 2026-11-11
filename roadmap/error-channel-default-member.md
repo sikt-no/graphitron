@@ -34,5 +34,5 @@ A `GENERIC` handler on a `DataAccessException` class (sis's `UgyldigId`) or on `
 
 - Grain: Graphitron 9's default was application-wide. Candidates are per schema (plugin configuration, like `recordValidation`), per channel, or per `@error` type (a marker on the type, used wherever it is a member). A channel without the default member among its members has no default.
 - Graphitron 9 registered `IllegalArgumentException` for an operation only when `schemaErrorType` was among its errors, and a `DataAccessException` only when the operation had a `DATABASE` handler or a `GENERIC` handler whose class covers it; whether the default inherits those conditions.
-- `path:` of a default error: Graphitron 9 answered `[fieldName]` for the database default and the response path for `IllegalArgumentException`; R1167's divergence (d) ruling decides the first.
+- `path:` of a default error: Graphitron 9 answered `[fieldName]` for the database default and the response path for `IllegalArgumentException`. Alf's ruling of 2026-11-11 on R1167's divergence (d) makes it the response path for both.
 - The `migrating-from-legacy.adoc` advice "declare a catch-all `@error` member last" is replaced by this, and `error.adoc` and `error-channel.adoc` describe the step.
