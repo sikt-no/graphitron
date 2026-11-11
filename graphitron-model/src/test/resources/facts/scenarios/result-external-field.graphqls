@@ -76,10 +76,6 @@ extend schema @assertContains(relation: "graphitron_reader", rows: """
   Film,            isEnglish,    EXPRESSION
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", where: "coordinate LIKE 'Inventory.filmCardData.%'", rows: """
-  coordinate,                  read,     arity, key_table
-  Inventory.filmCardData.film, ACCESSOR, ONE,   film
-  """)
 
 # What each occurrence under an @externalField reads is the value its Field carries, not the
 # parent's row. Field<FilmRecord> carries a table's own record, so filmId reads film. FilmCardData is

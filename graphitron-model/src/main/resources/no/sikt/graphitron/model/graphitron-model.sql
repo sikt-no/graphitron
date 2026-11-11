@@ -12686,9 +12686,10 @@ COMMENT ON VIEW graphitron_occurrence_producer_lift_candidate_rule IS 'One row t
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.found_by IS 'the found_by of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.found_by';
 
 -- How a child producer's keys are filled from its source, written at the end of each depth, per
--- occurrence and with services in: a member handing over the key's records, a re-fetch of the source's own rows, a
--- selection under a record handed over whose path leaves the record's table by its first key, and
--- a service keyed on its source's table.
+-- occurrence and with services in: a member handing over the key's records, a re-fetch of the
+-- source's own rows, a re-read of the target's rows matched out of a routine's result, a selection
+-- under a record handed over whose path leaves the record's table by its first key, and a service
+-- keyed on its source's table.
 CREATE VIEW graphitron_occurrence_producer_lift_rule
   (graph_name, coordinate, read, arity, key_source_name, key_schema, key_table, key_constraint) AS
 -- A key table with no primary key gives a row with no constraint, which KEY_TABLE_WITHOUT_PRIMARY_KEY
@@ -12815,6 +12816,31 @@ SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
                       AND pk.source_line = e.element_line AND pk.source_column = e.element_column
                     WHERE d.graph_name = f.graph_name AND d.type_name = f.type_name
                       AND d.name = f.field_name))
+UNION ALL
+-- A re-read under a routine: the routine's result rows are its function's, not the target's, so the
+-- target's own key is matched out of them by name and the field re-reads its table, as many keys per
+-- parent as the field declares.
+SELECT p.graph_name, p.coordinate, 'COLUMNS', CASE WHEN f.is_list THEN 'MANY' ELSE 'ONE' END,
+       b.table_source_name, b.table_schema, b.table_name, k.constraint_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_occurrence_producer pp
+    ON pp.graph_name = o.graph_name AND pp.coordinate = o.parent_coordinate AND pp.kind = 'ROUTINE'
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype b ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+  LEFT JOIN sql_constraint k
+    ON k.source_name = b.table_source_name AND k.table_schema = b.table_schema
+   AND k.table_name = b.table_name AND k.constraint_type = 'PRIMARY KEY'
+ WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype dt
+                    WHERE dt.graph_name = f.graph_name AND dt.type_name = f.type_name)
+   -- Where the routine's rows are the target's own the re-fetch above keys them.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st
+                    WHERE st.graph_name = p.graph_name AND st.coordinate = p.coordinate
+                      AND st.table_source_name = b.table_source_name
+                      AND st.table_schema = b.table_schema AND st.table_name = b.table_name)
 UNION ALL
 -- A service under a row or a record of its source's table, keyed on that table's primary key: its
 -- key parameter takes that table's records or, under a row graphitron selected, its key columns.

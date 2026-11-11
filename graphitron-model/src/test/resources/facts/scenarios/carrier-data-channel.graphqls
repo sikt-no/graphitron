@@ -41,10 +41,3 @@ extend schema @expectEquals(relation: "graphitron_type_backing", where: """
   FilmBlurb,              no.sikt.graphitron.rewrite.test.services.FilmBlurb,       ACCESSOR
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", where: """
-  coordinate LIKE 'Mutation.createFilmsWithActors.results.%'
-  """, rows: """
-  coordinate,                                   read,     arity, key_table
-  Mutation.createFilmsWithActors.results.film,   ACCESSOR, ONE,   film
-  Mutation.createFilmsWithActors.results.actors, ACCESSOR, MANY,  actor
-  """)

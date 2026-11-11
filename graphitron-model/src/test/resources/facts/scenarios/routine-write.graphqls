@@ -1,7 +1,8 @@
 # A @routine write the generator emits, its result re-read in a statement of its own after the write
 # commits. Records of a table are re-read along the path the field writes from the routine's result:
 # one step to rental, or on through rental's foreign key to customer. An object result is re-read by
-# the field under it whose key row takes rental's key out of the result by name. A DML insert beside
+# the field under it, filled with rental's key matched out of the result by name, as
+# scenarios/field-key-row pins. A DML insert beside
 # them is a write of another kind, through no routine.
 
 type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
@@ -46,7 +47,3 @@ extend schema @assertContains(relation: "graphitron_join_path", rows: """
   Mutation.rentFilmCustomer, Customer,    customer
   """)
 
-extend schema @assertContains(relation: "graphitron_occurrence_producer_lift", rows: """
-  coordinate,                      read,    arity, key_table
-  Mutation.rentFilmPayload.rental, COLUMNS, ONE,   rental
-  """)

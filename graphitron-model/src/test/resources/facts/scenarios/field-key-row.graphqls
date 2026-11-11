@@ -67,6 +67,11 @@ type FilmKeySummary {
   keyCensus: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
 }
 
+# A routine's result object, under which rental is re-read by its key matched out of the routine's
+# result by name.
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+type RentFilmPayload { rental: Rental }
+
 # A plain class whose addresses() returns AddressRecords, the table the union's members hang off.
 type OccupantsBatchPayload {
   occupants: [AddressOccupant!]! @field(name: "addresses")
@@ -90,12 +95,18 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayloadService", method: "occupantsBatch"})
 }
 
+type Mutation {
+  rentFilmPayload(inventoryId: Int!, customerId: Int!): RentFilmPayload
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+}
+
 # The key each child producer is filled with from its source, per occurrence: a member handing over
 # the key's records, a re-fetch of the target's own record, a selection under a record handed over
-# whose path leaves the record's table by its first key, and a service keyed on its source's table,
-# whether that source is a record handed over or a row graphitron selected (Film.titleUppercase). A
-# selection under a row graphitron selected, whether its path is one hop or several or carries a
-# condition, and a plain type under a table-bound one, take no key here.
+# whose path leaves the record's table by its first key, a re-read of the target's rows matched out
+# of a routine's result, and a service keyed on its source's table, whether that source is a record
+# handed over or a row graphitron selected (Film.titleUppercase). A selection under a row graphitron
+# selected, whether its path is one hop or several or carries a condition, and a plain type under a
+# table-bound one, take no key here.
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", rows: """
   coordinate,                                   read,     arity, key_table, key_constraint
   Query.filmDetailsBatch.language,              COLUMNS,  ONE,   film,      film_pkey
@@ -106,6 +117,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", row
   Query.filmKeySummaries.keyCensus,             ACCESSOR, ONE,   film,      film_pkey
   Query.occupantsBatch.occupants,               ACCESSOR, MANY,  address,   address_pkey
   Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
+  Mutation.rentFilmPayload.rental,              COLUMNS,  ONE,   rental,    rental_pkey
   """)
 
 # A key read through a member names the member, its one candidate: the record component the
